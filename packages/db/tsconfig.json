@@ -1,0 +1,11 @@
+{
+  // Type-checks sources, integration tests and tool configs. Emission uses tsconfig.build.json.
+  "extends": "@workloom/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src", "integration", "drizzle.config.ts", "vitest.config.ts", "vitest.integration.config.ts"]
+}

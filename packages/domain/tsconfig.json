@@ -1,0 +1,12 @@
+{
+  // The domain is runtime-neutral: no Node ambient types, no persistence or HTTP imports.
+  "extends": "@workloom/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": []
+  },
+  "include": ["src"]
+}

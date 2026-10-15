@@ -1,0 +1,63 @@
+import * as Dialog from '@radix-ui/react-dialog';
+import { X } from 'lucide-react';
+import { useRef, type ReactElement, type ReactNode } from 'react';
+
+export interface DialogShellProps {
+  title: string;
+  description: string;
+  /** Opens the dialog; without one, focus returns to whatever was focused when it opened. */
+  trigger?: ReactElement | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** `drawer` slides in from the right and takes the full width on small screens. */
+  variant?: 'center' | 'drawer' | undefined;
+  children: ReactNode;
+}
+
+const contentClasses = {
+  center:
+    'fixed top-1/2 left-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-xl outline-none sm:p-6',
+  // The drawer does not scroll itself: its content scrolls inside and keeps the actions anchored below.
+  drawer:
+    'fixed inset-y-0 right-0 z-50 flex h-dvh w-full max-w-full flex-col overflow-hidden border-l border-line bg-surface p-5 shadow-xl outline-none sm:max-w-xl sm:p-6',
+} as const;
+
+/** Radix dialog with a title, description and a visible close button; Escape also closes it. */
+export function DialogShell({ title, description, trigger, open, onOpenChange, variant = 'center', children }: DialogShellProps) {
+  const openerRef = useRef<HTMLElement | null>(null);
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      {trigger ? <Dialog.Trigger asChild>{trigger}</Dialog.Trigger> : null}
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-slate-900/30" />
+        <Dialog.Content
+          className={contentClasses[variant]}
+          onOpenAutoFocus={() => {
+            // Focus has not moved yet, so this is the control that opened the dialog.
+            openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          }}
+          onCloseAutoFocus={(event) => {
+            if (trigger) return;
+            event.preventDefault();
+            if (openerRef.current?.isConnected) openerRef.current.focus();
+          }}
+        >
+          <div className="flex shrink-0 items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <Dialog.Title className="text-base font-semibold [overflow-wrap:anywhere] text-ink">{title}</Dialog.Title>
+              <Dialog.Description className="mt-1 text-sm leading-relaxed text-muted">{description}</Dialog.Description>
+            </div>
+            <Dialog.Close
+              aria-label="Закрыть"
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-slate-100 hover:text-ink"
+            >
+              <X size={16} aria-hidden="true" />
+            </Dialog.Close>
+          </div>
+          {children}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}

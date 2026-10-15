@@ -1,0 +1,33 @@
+{
+  "name": "@workloom/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Workloom domain commands, ports, capability policy and typed errors. Never imports persistence or HTTP code.",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:unit": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@workloom/contracts": "*"
+  },
+  "devDependencies": {
+    "@workloom/config": "*"
+  }
+}

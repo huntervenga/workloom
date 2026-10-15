@@ -1,0 +1,10 @@
+{
+  // Contracts are imported by the browser too: no Node ambient types.
+  "extends": "@workloom/config/tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": []
+  },
+  "include": ["src"]
+}

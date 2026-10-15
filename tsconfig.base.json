@@ -1,0 +1,5 @@
+{
+  // Alias for packages that extend by relative path. Canonical file: packages/config/tsconfig.base.json
+  // (also reachable as "@workloom/config/tsconfig.base.json").
+  "extends": "./packages/config/tsconfig.base.json"
+}

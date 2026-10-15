@@ -1,0 +1,11 @@
+{
+  // Type-checks root tooling configs and root tests/. Each workspace owns its own tsconfig.json.
+  "extends": "./packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // DOM for Playwright page.evaluate callbacks in tests/e2e; the shared server baseline stays ES2023-only.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["vitest.config.ts", "playwright.config.ts", "tests/**/*.ts"]
+}

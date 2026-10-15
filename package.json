@@ -1,0 +1,54 @@
+{
+  "name": "workloom",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workloom team task tracker monorepo",
+  "type": "module",
+  "engines": {
+    "node": ">=24.19.0 <25"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run build:libs && concurrently --kill-others --names api,web --prefix-colors blue,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "node --env-file-if-exists=.env scripts/with-env.mjs run dev --workspace @workloom/api",
+    "dev:web": "npm run dev --workspace @workloom/web",
+    "build": "node scripts/run-workspaces.mjs build",
+    "build:libs": "node scripts/run-workspaces.mjs build --libs",
+    "start": "node --env-file-if-exists=.env scripts/with-env.mjs run start --workspace @workloom/api",
+    "typecheck": "npm run build:libs && node scripts/run-workspaces.mjs typecheck && tsc -p tsconfig.json",
+    "lint": "eslint . --max-warnings=0 && npm run check:boundaries",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check": "npm run lint && npm run typecheck",
+    "test:unit": "npm run build:libs && vitest run --project unit && npm run test --workspace @workloom/web",
+    "test:integration": "npm run build && vitest run --project integration",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
+    "db:up": "docker compose -f infra/docker/compose.yaml up -d --wait postgres",
+    "db:down": "docker compose -f infra/docker/compose.yaml down",
+    "db:generate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:generate --workspace @workloom/db",
+    "db:migrate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:migrate --workspace @workloom/db",
+    "db:seed:demo": "node --env-file-if-exists=.env scripts/with-env.mjs run db:seed:demo --workspace @workloom/db"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.4",
+    "@playwright/test": "1.64.1",
+    "@types/node": "24.10.1",
+    "concurrently": "10.0.6",
+    "drizzle-orm": "^0.45.4",
+    "eslint": "9.39.4",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.2",
+    "vite": "^7.1.9",
+    "vitest": "5.0.5"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.4"
+    }
+  }
+}

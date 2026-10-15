@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792108800000,
+      "tag": "0000_p0_identity_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792108800001,
+      "tag": "0001_p1a_tasks",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,387 @@
+import type { MembershipDto, ProjectDto, SectionDto, TaskDto, TaskStatusDto, WorkspaceDto } from '@workloom/contracts';
+import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
+import { ArrowLeft, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router';
+import { RenameProjectDialog } from '../features/projects/ProjectDialogs';
+import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMutation } from '../features/projects/queries';
+import { CreateSectionDialog, RenameSectionDialog } from '../features/projects/SectionDialogs';
+import { TaskTable, dedupeTasks } from '../features/task-table';
+import { TagManagerDialog } from '../features/tasks/TagDialogs';
+import { TaskDrawer } from '../features/tasks/TaskDrawer';
+import {
+  TaskFilters,
+  emptyTaskFilters,
+  hasActiveTaskFilters,
+  useDebouncedValue,
+  type TaskFilterValue,
+} from '../features/tasks/TaskFilters';
+import { loadedTaskScope, useTagsQuery, useTaskListQuery } from '../features/tasks/queries';
+import { useTaskCommands, type CreateRequest } from '../features/tasks/useTaskCommands';
+import { useMembershipsQuery } from '../features/workspace/queries';
+import { describeError } from '../lib/errors';
+import { isUuid } from '../lib/format';
+import { useDocumentTitle } from '../lib/useDocumentTitle';
+import { QueryErrorState } from '../shared/QueryErrorState';
+import { useWorkspaceContext } from './WorkspaceLayout';
+
+const SEARCH_DEBOUNCE_MS = 250;
+
+/** Today's calendar date in the workspace time zone, or undefined if the zone is unknown here. */
+function todayIn(timeZone: string): string | undefined {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(
+      new Date(),
+    );
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
+    const [year, month, day] = [part('year'), part('month'), part('day')];
+    return year && month && day ? `${year}-${month}-${day}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Fetches the project with the route guard; the loaded content owns every other query. */
+export function ProjectPage() {
+  const { actorId, workspace } = useWorkspaceContext();
+  const { projectId = '' } = useParams();
+  const project = useProjectQuery(actorId, workspace.id, projectId);
+  const projectsHref = `/w/${workspace.id}/projects`;
+  useDocumentTitle(project.isSuccess ? `${project.data.name} · ${workspace.name}` : `Проект · ${workspace.name}`);
+
+  if (!isUuid(projectId)) return <ProjectUnavailable projectsHref={projectsHref} />;
+
+  if (project.isPending) {
+    return (
+      <div role="status" className="space-y-4">
+        <span className="sr-only">Загрузка проекта</span>
+        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-8 w-72 max-w-full" />
+        <Skeleton className="h-48 rounded-2xl" />
+      </div>
+    );
+  }
+
+  // Errors win over loaded data, so a denied refetch hides the project.
+  if (project.isError) {
+    if (describeError(project.error, 'project').unavailable) return <ProjectUnavailable projectsHref={projectsHref} />;
+    return (
+      <QueryErrorState
+        error={project.error}
+        subject="project"
+        headingLevel={1}
+        retrying={project.isFetching}
+        onRetry={() => void project.refetch()}
+      />
+    );
+  }
+
+  return (
+    <ProjectContent
+      key={project.data.id}
+      actorId={actorId}
+      workspace={workspace}
+      project={project.data}
+      projectsHref={projectsHref}
+    />
+  );
+}
+
+interface ProjectContentProps {
+  actorId: string;
+  workspace: WorkspaceDto;
+  project: ProjectDto;
+  projectsHref: string;
+}
+
+function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectContentProps) {
+  const sections = useSectionsQuery(actorId, workspace.id, project.id);
+  const statuses = useStatusesQuery(actorId, workspace.id, project.id);
+  const members = useMembershipsQuery(actorId, workspace.id);
+  const tags = useTagsQuery(actorId, workspace.id);
+  // Owned here so that closing the drawer keeps uncertain commands and drafts.
+  const commands = useTaskCommands(actorId, workspace.id);
+  const renameSectionMutation = useUpdateSectionMutation(actorId, workspace.id);
+  const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
+  const [creating, setCreating] = useState<CreateRequest | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const [filters, setFilters] = useState<TaskFilterValue>(emptyTaskFilters);
+  const search = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const taskId = searchParams.get('task');
+
+  const tasks = useTaskListQuery(actorId, workspace.id, {
+    projectId: project.id,
+    search,
+    statusId: filters.statusId || undefined,
+    participantMembershipId: filters.participantMembershipId || undefined,
+    includeArchived: filters.includeArchived,
+  });
+
+  const canEdit = workspace.role !== 'viewer';
+  const writable = canEdit && project.archivedAt === null;
+  const metadata = [
+    { query: sections, subject: 'sections' },
+    { query: statuses, subject: 'statuses' },
+    { query: members, subject: 'members' },
+    { query: tags, subject: 'tags' },
+  ] as const;
+  const metadataError = metadata.find((item) => item.query.isError);
+  // The editor waits for real sections, statuses, members and tags.
+  const metadataReady = metadataError === undefined && metadata.every((item) => item.query.isSuccess);
+
+  const setTaskParam = (next: string | null) =>
+    setSearchParams((previous) => {
+      const params = new URLSearchParams(previous);
+      if (next === null) params.delete('task');
+      else params.set('task', next);
+      return params;
+    });
+
+  const openTask = (id: string) => {
+    setCreating(null);
+    setTaskParam(id);
+  };
+  const startCreate = (request: CreateRequest) => {
+    if (!writable || request.parent?.archivedAt) return;
+    setTaskParam(null);
+    setCreating(commands.createSession.current?.request ?? request);
+  };
+  const closeDrawer = () => {
+    setCreating(null);
+    if (taskId !== null) setTaskParam(null);
+  };
+  // A rename still being sent or unconfirmed keeps its section: reopening shows that one.
+  const heldSectionId =
+    renameSectionMutation.pendingCommand?.variables.sectionId ?? renameSectionMutation.uncertain?.variables.sectionId ?? null;
+  const renameSection = (section: SectionDto) =>
+    setRenamingSection(sections.data?.find((item) => item.id === heldSectionId) ?? section);
+
+  return (
+    <div className="space-y-6">
+      <BackToProjects href={projectsHref} />
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight [overflow-wrap:anywhere] text-ink sm:text-[1.75rem]">
+              {project.name}
+            </h1>
+            {project.archivedAt ? <Badge tone="muted">В архиве</Badge> : null}
+          </div>
+          <p className="text-[15px] text-muted">Проект пространства «{workspace.name}».</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canEdit ? (
+            <RenameProjectDialog
+              actorId={actorId}
+              workspaceId={workspace.id}
+              project={project}
+              trigger={
+                <Button>
+                  <Pencil size={16} aria-hidden="true" />
+                  Переименовать
+                </Button>
+              }
+            />
+          ) : null}
+          <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
+          {writable ? (
+            <CreateSectionDialog
+              actorId={actorId}
+              workspaceId={workspace.id}
+              projectId={project.id}
+              trigger={
+                <Button>
+                  <FolderPlus size={16} aria-hidden="true" />
+                  Новый раздел
+                </Button>
+              }
+              onCreated={(section) => setAnnouncement(`Раздел «${section.name}» создан.`)}
+            />
+          ) : null}
+          {writable && metadataReady ? (
+            <Button variant="primary" onClick={() => startCreate({ sectionId: null, parent: null })}>
+              <Plus size={16} aria-hidden="true" />
+              Новая задача
+            </Button>
+          ) : null}
+        </div>
+      </header>
+
+      <div role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
+
+      {metadataError ? (
+        <QueryErrorState
+          error={metadataError.query.error}
+          subject={metadataError.subject}
+          headingLevel={2}
+          retrying={metadataError.query.isFetching}
+          onRetry={() => void metadataError.query.refetch()}
+        />
+      ) : sections.isSuccess && statuses.isSuccess && members.isSuccess && tags.isSuccess ? (
+        <>
+          <TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} />
+          <TaskList
+            query={tasks}
+            filtered={hasActiveTaskFilters(filters)}
+            project={project}
+            workspace={workspace}
+            sections={sections.data}
+            statuses={statuses.data}
+            members={members.data}
+            writable={writable}
+            onOpenTask={openTask}
+            onCreateTask={(sectionId) => startCreate({ sectionId: sectionId ?? null, parent: null })}
+            onCreateChild={(parent) => startCreate({ sectionId: parent.sectionId, parent })}
+            onRenameSection={writable ? renameSection : undefined}
+          />
+          <TaskDrawer
+            actorId={actorId}
+            workspace={workspace}
+            project={project}
+            sections={sections.data}
+            statuses={statuses.data}
+            members={members.data}
+            tags={tags.data}
+            writable={writable}
+            commands={commands}
+            taskId={taskId}
+            creating={creating}
+            onClose={closeDrawer}
+            onOpenTask={openTask}
+            onResumeCreate={() => startCreate({ sectionId: null, parent: null })}
+            onCreated={(task) => {
+              closeDrawer();
+              setAnnouncement(`Задача «${task.title}» создана.`);
+            }}
+            onAnnounce={setAnnouncement}
+          />
+          <RenameSectionDialog
+            actorId={actorId}
+            workspaceId={workspace.id}
+            section={renamingSection}
+            mutation={renameSectionMutation}
+            onClose={() => setRenamingSection(null)}
+            onRenamed={(section) => setAnnouncement(`Раздел переименован в «${section.name}».`)}
+          />
+        </>
+      ) : (
+        <div role="status" className="space-y-3">
+          <span className="sr-only">Загрузка задач проекта</span>
+          <Skeleton className="h-10 rounded-xl" />
+          <Skeleton className="h-64 rounded-2xl" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface TaskListProps {
+  query: ReturnType<typeof useTaskListQuery>;
+  filtered: boolean;
+  project: ProjectDto;
+  workspace: WorkspaceDto;
+  sections: readonly SectionDto[];
+  statuses: readonly TaskStatusDto[];
+  members: readonly MembershipDto[];
+  writable: boolean;
+  onOpenTask: (taskId: string) => void;
+  onCreateTask: (sectionId?: string | null) => void;
+  onCreateChild: (parent: TaskDto) => void;
+  onRenameSection: ((section: SectionDto) => void) | undefined;
+}
+
+function TaskList({ query, filtered, project, workspace, ...table }: TaskListProps) {
+  if (query.isPending) {
+    return (
+      <div role="status" className="space-y-3">
+        <span className="sr-only">Загрузка задач</span>
+        <Skeleton className="h-64 rounded-2xl" />
+      </div>
+    );
+  }
+
+  // A failed first page hides the list; a failed next page keeps the loaded part.
+  if (query.isError && !query.isFetchNextPageError) {
+    return (
+      <QueryErrorState
+        error={query.error}
+        subject="tasks"
+        headingLevel={2}
+        retrying={query.isFetching}
+        onRetry={() => void query.refetch()}
+      />
+    );
+  }
+
+  const scope = loadedTaskScope(query.data);
+  return (
+    <div className="space-y-3">
+      <TaskTable
+        {...table}
+        tasks={dedupeTasks(scope.tasks)}
+        partial={filtered || !scope.complete}
+        today={todayIn(workspace.timezone)}
+        caption={`Задачи проекта «${project.name}»`}
+      />
+      {query.isFetchNextPageError ? (
+        <QueryErrorState
+          error={query.error}
+          subject="tasks"
+          headingLevel={3}
+          retrying={query.isFetchingNextPage}
+          onRetry={() => void query.fetchNextPage()}
+        />
+      ) : null}
+      {query.hasNextPage && !query.isFetchNextPageError ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            aria-disabled={query.isFetchingNextPage || undefined}
+            onClick={() => {
+              if (!query.isFetchingNextPage) void query.fetchNextPage();
+            }}
+          >
+            <RefreshCw
+              size={16}
+              aria-hidden="true"
+              className={query.isFetchingNextPage ? 'motion-safe:animate-spin' : undefined}
+            />
+            {query.isFetchingNextPage ? 'Загружаем…' : 'Загрузить ещё задачи'}
+          </Button>
+          <span className="text-sm text-muted">Загружена часть задач проекта.</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BackToProjects({ href }: { href: string }) {
+  return (
+    <Link
+      to={href}
+      className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-accent-ink hover:text-accent-strong"
+    >
+      <ArrowLeft size={16} aria-hidden="true" />
+      Все проекты
+    </Link>
+  );
+}
+
+function ProjectUnavailable({ projectsHref }: { projectsHref: string }) {
+  return (
+    <StateCard
+      headingLevel={1}
+      icon={<Lock size={18} aria-hidden="true" />}
+      title="Проект недоступен"
+      description="Такого проекта нет или у текущего пользователя нет к нему доступа."
+      actions={
+        <Link to={projectsHref} className={buttonClassName({ variant: 'primary' })}>
+          <ArrowLeft size={16} aria-hidden="true" />
+          К списку проектов
+        </Link>
+      }
+    />
+  );
+}

@@ -1,0 +1,65 @@
+export {
+  createDatabase,
+  isDatabase,
+  tables,
+  type CreateDatabaseOptions,
+  type Database,
+  type WorkloomDb,
+  type WorkloomExecutor,
+  type WorkloomSchema,
+  type WorkloomTransaction,
+} from './client.js';
+export {
+  DatabaseConfigError,
+  isLoopbackHost,
+  parseDatabaseUrl,
+  type DatabaseUrlInfo,
+  type ParseDatabaseUrlOptions,
+} from './database-url.js';
+export {
+  databaseErrorCode,
+  describeErrorForLog,
+  isDatabaseUnavailableError,
+  type LoggableError,
+} from './database-errors.js';
+export {
+  UnsafeEnvironmentError,
+  assertLocalSyntheticEnvironment,
+  findRailwayMarkers,
+  loadEnvFileIfPresent,
+  type EnvironmentSource,
+} from './env-guard.js';
+export {
+  MIGRATIONS_FOLDER,
+  MIGRATIONS_SCHEMA,
+  MIGRATIONS_TABLE,
+  MigrationStateError,
+  inspectMigrationState,
+  readExpectedMigrations,
+  runMigrations,
+  type ExpectedMigration,
+  type MigrationRunResult,
+  type MigrationState,
+  type MigrationStatus,
+  type RunMigrationsOptions,
+} from './migrations.js';
+export {
+  createReadinessProbe,
+  type ReadinessCheckResult,
+  type ReadinessProbe,
+  type ReadinessProbeOptions,
+  type ReadinessReport,
+} from './readiness.js';
+export { createAccessRepository } from './repositories/access-repository.js';
+export { createTaskRepository } from './repositories/task-repository.js';
+export { createTaskApplication, type TaskApplicationOptions } from './tasks/task-application.js';
+export {
+  createWorkspaceWriteRunner,
+  runWorkspaceWrite,
+  type DbWorkspaceWriteScope,
+  type WorkspaceWriteOptions,
+} from './transactions/workspace-write.js';
+export { seedDemoData, type DemoSeedResult, type SeedTableResult } from './seed/demo-seed.js';
+export * from './fixtures.js';
+export * as schema from './schema.js';
+export { REQUIRED_TABLES } from './schema.js';

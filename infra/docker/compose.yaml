@@ -1,0 +1,25 @@
+# Local development PostgreSQL only. Synthetic credentials; never reuse for staging/production.
+# Start: npm run db:up   Stop (keeps data): npm run db:down
+name: workloom-local
+
+services:
+  postgres:
+    # PostgreSQL 17 by tag, no digest pin yet. Keep the major in sync with CI and Railway.
+    image: postgres:17.7
+    environment:
+      POSTGRES_DB: workloom
+      POSTGRES_USER: workloom
+      POSTGRES_PASSWORD: workloom_local
+    ports:
+      # Loopback only: the database is not reachable from the network.
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workloom -d workloom"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres-data:
