@@ -1,12 +1,31 @@
-import type { MembershipDto, ProjectDto, SectionDto, TaskDto, TaskStatusDto, WorkspaceDto } from '@workloom/contracts';
+import type {
+  MembershipDto,
+  ProjectColumnsDto,
+  ProjectDto,
+  SectionDto,
+  TaskDto,
+  TaskFieldDefinitionDto,
+  TaskFieldValueDto,
+  TaskStatusDto,
+  WorkspaceDto,
+} from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
+import {
+  FieldManagerDialog,
+  FieldValueDisplay,
+  useProjectColumnsQuery,
+  useProjectFieldValuesQuery,
+  useSetTaskFieldValueMutation,
+  useTaskFieldsQuery,
+  type FieldValueDraftStore,
+} from '../features/fields';
 import { RenameProjectDialog } from '../features/projects/ProjectDialogs';
 import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMutation } from '../features/projects/queries';
 import { CreateSectionDialog, RenameSectionDialog } from '../features/projects/SectionDialogs';
-import { TaskTable, dedupeTasks } from '../features/task-table';
+import { TaskTable, dedupeTasks, type TaskTableCustomColumn } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
 import { TaskDrawer } from '../features/tasks/TaskDrawer';
 import {
@@ -39,6 +58,44 @@ function todayIn(timeZone: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+interface FieldColumn {
+  field: TaskFieldDefinitionDto;
+  width: number;
+}
+
+/** Visible columns of active fields in the shared settings' order; settings without a known field are skipped. */
+function visibleFieldColumns(definitions: readonly TaskFieldDefinitionDto[], settings: ProjectColumnsDto): FieldColumn[] {
+  const activeById = new Map(
+    definitions.filter((field) => field.archivedAt === null).map((field) => [field.id.toLowerCase(), field]),
+  );
+  return settings.columns
+    .filter((column) => column.visible)
+    .sort((a, b) => a.position - b.position)
+    .flatMap((column) => {
+      const field = activeById.get(column.fieldId.toLowerCase());
+      return field === undefined ? [] : [{ field, width: column.width }];
+    });
+}
+
+function fieldValueKey(taskId: string, fieldId: string): string {
+  return `${taskId.toLowerCase()}:${fieldId.toLowerCase()}`;
+}
+
+function ValueLoadingCell() {
+  return (
+    <>
+      <span aria-hidden="true" className="text-subtle">
+        …
+      </span>
+      <span className="sr-only">Значение загружается</span>
+    </>
+  );
+}
+
+function ValueUnavailableCell() {
+  return <span className="text-xs text-amber-800">Не загружено</span>;
 }
 
 /** Fetches the project with the route guard; the loaded content owns every other query. */
@@ -101,6 +158,25 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const tags = useTagsQuery(actorId, workspace.id);
   // Owned here so that closing the drawer keeps uncertain commands and drafts.
   const commands = useTaskCommands(actorId, workspace.id);
+  // Same for custom field values: a hidden drawer keeps a value write that is pending or unconfirmed.
+  const fieldValueMutation = useSetTaskFieldValueMutation(actorId, workspace.id);
+  const fieldValueDrafts = useRef<FieldValueDraftStore>(new Map());
+  // The write may finish while its drawer is closed. Retire only that confirmed draft;
+  // later unsent changes are kept until the next command actually receives an answer.
+  useEffect(() => {
+    const confirmed = fieldValueMutation.data;
+    if (!confirmed) return;
+    const key = confirmed.taskId.toLowerCase();
+    const drafts = fieldValueDrafts.current.get(key);
+    if (drafts) {
+      fieldValueDrafts.current.set(
+        key,
+        Object.fromEntries(Object.entries(drafts).filter(([id]) => id !== confirmed.fieldId.toLowerCase())),
+      );
+    }
+  }, [fieldValueMutation.data]);
+  const fieldDefinitions = useTaskFieldsQuery(actorId, workspace.id, project.id);
+  const projectColumns = useProjectColumnsQuery(actorId, workspace.id, project.id);
   const renameSectionMutation = useUpdateSectionMutation(actorId, workspace.id);
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
@@ -120,6 +196,57 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 
   const canEdit = workspace.role !== 'viewer';
   const writable = canEdit && project.archivedAt === null;
+  // The server enforces the role; this only hides controls that would be refused.
+  const canManageFields = (workspace.role === 'owner' || workspace.role === 'admin') && project.archivedAt === null;
+
+  // Errors win over loaded data, so a denied refetch hides the custom columns.
+  const fieldColumns =
+    fieldDefinitions.isSuccess && projectColumns.isSuccess
+      ? visibleFieldColumns(fieldDefinitions.data, projectColumns.data)
+      : [];
+  // Values are requested, in batches, only for the tasks the table shows and only while a custom column is visible.
+  const shownTasks =
+    tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [];
+  const fieldValues = useProjectFieldValuesQuery(
+    actorId,
+    workspace.id,
+    project.id,
+    fieldColumns.length > 0 ? shownTasks.map((task) => task.id) : [],
+  );
+  const valueByKey = new Map<string, TaskFieldValueDto>(
+    fieldValues.data.map((value) => [fieldValueKey(value.taskId, value.fieldId), value]),
+  );
+  const customColumns: TaskTableCustomColumn[] = fieldColumns.map(({ field, width }) => ({
+    id: field.id,
+    label: field.name,
+    width,
+    // An unloaded value is not an unset one: `null` is shown only after a known read.
+    renderCell: (task) =>
+      fieldValues.isError ? (
+        <ValueUnavailableCell />
+      ) : fieldValues.isPending ? (
+        <ValueLoadingCell />
+      ) : (
+        <FieldValueDisplay
+          field={field}
+          value={valueByKey.get(fieldValueKey(task.id, field.id))?.value ?? null}
+          members={members.data ?? []}
+          compact
+        />
+      ),
+  }));
+  const fieldsError = fieldDefinitions.isError
+    ? { query: fieldDefinitions, subject: 'fields' as const }
+    : projectColumns.isError
+      ? { query: projectColumns, subject: 'columns' as const }
+      : fieldColumns.length > 0 && fieldValues.isError
+        ? { query: fieldValues, subject: 'fieldValues' as const }
+        : null;
+
+  // A value write still being sent or unconfirmed stays reachable while its task is not open.
+  const heldFieldValue = fieldValueMutation.uncertain ?? fieldValueMutation.pendingCommand;
+  const heldFieldTaskId = heldFieldValue?.variables.taskId ?? null;
+  const showHeldFieldValue = heldFieldTaskId !== null && taskId?.toLowerCase() !== heldFieldTaskId.toLowerCase();
   const metadata = [
     { query: sections, subject: 'sections' },
     { query: statuses, subject: 'statuses' },
@@ -185,6 +312,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             />
           ) : null}
           <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
+          <FieldManagerDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
           {writable ? (
             <CreateSectionDialog
               actorId={actorId}
@@ -222,7 +350,37 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         />
       ) : sections.isSuccess && statuses.isSuccess && members.isSuccess && tags.isSuccess ? (
         <>
+          {showHeldFieldValue ? (
+            <div
+              role="status"
+              className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm text-amber-900"
+            >
+              <span className="min-w-0 flex-1">
+                {fieldValueMutation.pendingCommand
+                  ? 'Значение поля задачи ещё отправляется.'
+                  : 'Значение поля задачи не подтверждено. Пока его результат неизвестен, другие значения полей не отправляются.'}
+              </span>
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (heldFieldTaskId !== null) openTask(heldFieldTaskId);
+                }}
+              >
+                Открыть отправку
+              </Button>
+            </div>
+          ) : null}
           <TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} />
+          {/* A custom field failure never hides the built-in table. */}
+          {fieldsError ? (
+            <QueryErrorState
+              error={fieldsError.query.error}
+              subject={fieldsError.subject}
+              headingLevel={2}
+              retrying={fieldsError.query.isFetching}
+              onRetry={() => void fieldsError.query.refetch()}
+            />
+          ) : null}
           <TaskList
             query={tasks}
             filtered={hasActiveTaskFilters(filters)}
@@ -231,6 +389,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             sections={sections.data}
             statuses={statuses.data}
             members={members.data}
+            customColumns={customColumns}
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startCreate({ sectionId: sectionId ?? null, parent: null })}
@@ -247,6 +406,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             tags={tags.data}
             writable={writable}
             commands={commands}
+            fieldValueMutation={fieldValueMutation}
+            fieldValueDrafts={fieldValueDrafts.current}
             taskId={taskId}
             creating={creating}
             onClose={closeDrawer}
@@ -286,6 +447,7 @@ interface TaskListProps {
   sections: readonly SectionDto[];
   statuses: readonly TaskStatusDto[];
   members: readonly MembershipDto[];
+  customColumns: readonly TaskTableCustomColumn[];
   writable: boolean;
   onOpenTask: (taskId: string) => void;
   onCreateTask: (sectionId?: string | null) => void;

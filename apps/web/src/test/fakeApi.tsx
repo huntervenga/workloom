@@ -73,6 +73,30 @@ export interface FakeRequest {
 
 export type RouteTable = Record<string, (request: FakeRequest) => Response | Promise<Response>>;
 
+const segment = '([^/]+)';
+
+/**
+ * Empty answers for custom field reads that tests written before them do not register: no
+ * fields, revision-1 column settings and no values. A registered handler always wins.
+ */
+function defaultFieldRoute(request: FakeRequest): Response | null {
+  if (request.method !== 'GET') return null;
+  const workspaces = '^/api/v1/workspaces/';
+  if (new RegExp(`${workspaces}${segment}/fields$`).test(request.path)) return ok([]);
+  const columns = new RegExp(`${workspaces}${segment}/projects/${segment}/columns$`).exec(request.path);
+  if (columns) {
+    const [, workspaceId = '', projectId = ''] = columns;
+    return ok({
+      workspaceId: decodeURIComponent(workspaceId),
+      projectId: decodeURIComponent(projectId),
+      revision: 1,
+      columns: [],
+    });
+  }
+  if (new RegExp(`${workspaces}${segment}/(projects|tasks)/${segment}/field-values$`).test(request.path)) return ok([]);
+  return null;
+}
+
 /** Replaces fetch with a table of "METHOD /path" handlers; unknown routes answer 404. */
 export function installFakeApi(table: RouteTable): { calls: FakeRequest[] } {
   const calls: FakeRequest[] = [];
@@ -87,7 +111,8 @@ export function installFakeApi(table: RouteTable): { calls: FakeRequest[] } {
     };
     calls.push(request);
     const handler = table[`${request.method} ${request.path}`];
-    return handler ? handler(request) : failure(404, 'NOT_FOUND', 'Route not found');
+    if (handler) return handler(request);
+    return defaultFieldRoute(request) ?? failure(404, 'NOT_FOUND', 'Route not found');
   });
   vi.stubGlobal('fetch', fetchMock);
   return { calls };

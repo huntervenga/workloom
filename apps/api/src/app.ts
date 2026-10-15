@@ -6,18 +6,20 @@ import {
   createDatabase,
   createReadinessProbe,
   createTaskApplication,
+  createTaskFieldApplication,
   describeErrorForLog,
   FIXTURE_ACTOR_IDS,
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { AccessRepository, TaskApplication } from '@workloom/domain';
+import type { AccessRepository, TaskApplication, TaskFieldApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
 import { createDevSessionStore, type DevSessionStore } from './identity/dev-sessions.js';
 import { createDevIdentityAdapter, type IdentityAdapter } from './identity/identity-adapter.js';
 import { mapError } from './http/errors.js';
+import { registerFieldRoutes } from './http/field-routes.js';
 import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from './http/request-guards.js';
 import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './http/routes.js';
 import { registerTaskRoutes } from './http/task-routes.js';
@@ -35,6 +37,11 @@ export interface AppDependencies {
    * database (P0 HTTP tests), the P1a task routes are not registered.
    */
   readonly taskApplication?: TaskApplication;
+  /**
+   * Overrides the custom field service built from the database (HTTP tests). Without it and
+   * without a database (P0/P1a HTTP tests), the P1b field routes are not registered.
+   */
+  readonly taskFieldApplication?: TaskFieldApplication;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
   /** Web dist directory; null disables static serving. Default: apps/web/dist when config.serveWeb. */
@@ -63,6 +70,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   // Reuses the same pool; no additional connection is opened.
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
+  const taskFieldApplication =
+    dependencies.taskFieldApplication ?? (database === undefined ? undefined : createTaskFieldApplication(database));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
   const identity =
     dependencies.identityAdapter ??
@@ -145,6 +154,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   registerApiRoutes(app, routeDeps);
   if (taskApplication !== undefined) {
     registerTaskRoutes(app, { identity, tasks: taskApplication });
+  }
+  if (taskFieldApplication !== undefined) {
+    registerFieldRoutes(app, { identity, fields: taskFieldApplication });
   }
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);

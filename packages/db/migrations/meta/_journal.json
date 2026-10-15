@@ -15,6 +15,13 @@
       "when": 1792108800001,
       "tag": "0001_p1a_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792108800002,
+      "tag": "0002_p1b_fields",
+      "breakpoints": true
     }
   ]
 }

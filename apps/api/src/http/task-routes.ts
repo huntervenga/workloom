@@ -49,7 +49,7 @@ const BASE = '/api/v1/workspaces/:workspaceId';
  * Reads the Idempotency-Key header. The key is only passed on: replay, payload hashing and
  * IDEMPOTENCY_KEY_REUSED are decided by the domain service, not cached here.
  */
-function readIdempotencyKey(request: FastifyRequest): string {
+export function readIdempotencyKey(request: FastifyRequest): string {
   const value = request.headers['idempotency-key'];
   if (typeof value !== 'string' || !IDEMPOTENCY_KEY_PATTERN.test(value)) {
     throw new DomainError('VALIDATION_FAILED', IDEMPOTENCY_KEY_MESSAGE, { details: { fields: ['Idempotency-Key'] } });

@@ -1,0 +1,367 @@
+import type { TaskFieldDefinitionDto, TaskFieldOptionDto } from '@workloom/contracts';
+import { Badge, Button, TextInput, cn } from '@workloom/ui';
+import { Archive, ArchiveRestore, Pencil, Plus } from 'lucide-react';
+import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { ApiError } from '../../lib/api';
+import { SaveFeedback } from '../../shared/SaveFeedback';
+import { FIELDS_SAVE_SUBJECT, OPTION_NAME_MAX, optionNameProblem, sentCommand } from './FieldDefinitionForm';
+import type { useCreateTaskFieldOptionMutation, useUpdateTaskFieldOptionMutation } from './queries';
+
+type CreateOptionMutation = ReturnType<typeof useCreateTaskFieldOptionMutation>;
+type UpdateOptionMutation = ReturnType<typeof useUpdateTaskFieldOptionMutation>;
+
+function orderOptions(options: readonly TaskFieldOptionDto[]): TaskFieldOptionDto[] {
+  return [...options].sort(
+    (a, b) => Number(a.archivedAt !== null) - Number(b.archivedAt !== null) || a.position - b.position,
+  );
+}
+
+function OptionSwatch({ color }: { color: string | null }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn('inline-block size-2.5 shrink-0 rounded-full', color === null && 'bg-subtle')}
+      style={color === null ? undefined : { backgroundColor: color }}
+    />
+  );
+}
+
+export interface FieldOptionsEditorProps {
+  /** The field as last loaded or saved here; its `revision` guards every option write. */
+  field: TaskFieldDefinitionDto;
+  /** Both owned by a component that outlives the dialog, so an unconfirmed write is not forgotten. */
+  createMutation: CreateOptionMutation;
+  updateMutation: UpdateOptionMutation;
+  /** A definition write to this field is pending or unconfirmed; option writes wait for it. */
+  definitionBusy: boolean;
+  /** Shown with a conflict or rejected write: reloads the field without touching the drafts. */
+  reloadAction: ReactNode;
+  onSaved: (field: TaskFieldDefinitionDto) => void;
+}
+
+/**
+ * Options of a select field: add, rename, archive and restore. IDs stay stable, so tasks and
+ * history keep referring to the same option; nothing is deleted. One option write at a time,
+ * each against the field revision the user is looking at.
+ */
+export function FieldOptionsEditor({
+  field,
+  createMutation,
+  updateMutation,
+  definitionBusy,
+  reloadAction,
+  onSaved,
+}: FieldOptionsEditorProps) {
+  const createCommand = sentCommand(createMutation);
+  const updateCommand = sentCommand(updateMutation);
+  const ownCreate = createCommand !== null && createCommand.variables.fieldId === field.id ? createCommand : null;
+  const ownUpdate = updateCommand !== null && updateCommand.variables.fieldId === field.id ? updateCommand : null;
+  const createElsewhere = createCommand !== null && ownCreate === null;
+  const updateElsewhere = updateCommand !== null && ownUpdate === null;
+  // Every write moves the field revision, so writes to this field never overlap.
+  const busy = definitionBusy || ownCreate !== null || ownUpdate !== null;
+  const createError = createMutation.variables?.fieldId === field.id ? createMutation.error : null;
+  const updateError = updateMutation.variables?.fieldId === field.id ? updateMutation.error : null;
+  const error = createError ?? updateError;
+  const correctable = error instanceof ApiError && (error.kind === 'conflict' || error.kind === 'validation');
+
+  const [newName, setNewName] = useState(() => (createError ? (createMutation.variables?.input.name ?? '') : ''));
+  const [renaming, setRenaming] = useState<{ optionId: string; name: string } | null>(() => {
+    const failed = updateError ? updateMutation.variables : undefined;
+    const failedName = failed?.input.name;
+    return failed && failedName !== undefined ? { optionId: failed.optionId, name: failedName } : null;
+  });
+  const [addError, setAddError] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState('');
+  const addRef = useRef<HTMLInputElement>(null);
+  const renameRef = useRef<HTMLInputElement>(null);
+  const ids = { add: useId(), addError: useId(), rename: useId(), renameError: useId(), hint: useId() };
+
+  // The visible state of an own update comes from what was sent: a rename shows its name, an archive its row.
+  const sentName = ownUpdate?.variables.input.name;
+  const sentRename =
+    ownUpdate && sentName !== undefined ? { optionId: ownUpdate.variables.optionId, name: sentName } : null;
+  const activeRename = sentRename ?? renaming;
+  const sentArchive = ownUpdate && ownUpdate.variables.input.archived !== undefined ? ownUpdate : null;
+  const uncertainError =
+    ownCreate && !ownCreate.pending
+      ? (createMutation.uncertain?.error ?? null)
+      : ownUpdate && !ownUpdate.pending
+        ? (updateMutation.uncertain?.error ?? null)
+        : null;
+
+  const elsewhere = createElsewhere ? createCommand : updateElsewhere ? updateCommand : null;
+  const notice = elsewhere
+    ? elsewhere.pending
+      ? 'Сохраняется вариант другой колонки. Варианты этой колонки можно будет изменить после ответа сервера.'
+      : 'Изменение варианта другой колонки не подтверждено. Сначала откройте ту колонку и повторите отправку.'
+    : definitionBusy
+      ? 'Варианты можно будет изменить после подтверждения изменений колонки.'
+      : null;
+
+  const saved = (message: string) => (result: TaskFieldDefinitionDto) => {
+    onSaved(result);
+    setAnnouncement(message);
+  };
+
+  const add = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (createMutation.pendingCommand !== null || createElsewhere) return;
+    if (ownCreate) {
+      createMutation.retryUncertain({
+        onSuccess: (result) => {
+          setNewName('');
+          saved('Вариант добавлен.')(result);
+        },
+      });
+      return;
+    }
+    if (busy) return;
+    const name = newName.trim();
+    const problem = optionNameProblem(name);
+    setAddError(problem);
+    if (problem) {
+      addRef.current?.focus();
+      return;
+    }
+    setNewName(name);
+    createMutation.mutate(
+      { fieldId: field.id, input: { expectedRevision: field.revision, name, color: null } },
+      {
+        onSuccess: (result) => {
+          setNewName('');
+          saved(`Вариант «${name}» добавлен.`)(result);
+        },
+      },
+    );
+  };
+
+  const rename = (event: FormEvent<HTMLFormElement>, option: TaskFieldOptionDto) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (updateMutation.pendingCommand !== null || updateElsewhere) return;
+    if (ownUpdate) {
+      updateMutation.retryUncertain({
+        onSuccess: (result) => {
+          setRenaming(null);
+          saved('Вариант сохранён.')(result);
+        },
+      });
+      return;
+    }
+    if (busy || !renaming) return;
+    const name = renaming.name.trim();
+    const problem = optionNameProblem(name);
+    setRenameError(problem);
+    if (problem) {
+      renameRef.current?.focus();
+      return;
+    }
+    if (name === option.name) {
+      setRenaming(null);
+      return;
+    }
+    setRenaming({ optionId: option.id, name });
+    updateMutation.mutate(
+      { fieldId: field.id, optionId: option.id, input: { expectedRevision: field.revision, name } },
+      {
+        onSuccess: (result) => {
+          setRenaming(null);
+          saved(`Вариант «${name}» сохранён.`)(result);
+        },
+      },
+    );
+  };
+
+  const setArchived = (option: TaskFieldOptionDto, archived: boolean) => {
+    if (busy || updateElsewhere) return;
+    setRenaming(null);
+    updateMutation.mutate(
+      { fieldId: field.id, optionId: option.id, input: { expectedRevision: field.revision, archived } },
+      { onSuccess: saved(archived ? `Вариант «${option.name}» в архиве.` : `Вариант «${option.name}» возвращён.`) },
+    );
+  };
+
+  const options = orderOptions(field.options);
+  const addFrozen = busy || createElsewhere;
+  const shownNewName = ownCreate ? ownCreate.variables.input.name : newName;
+
+  return (
+    <section aria-label="Варианты" className="space-y-3">
+      <h3 className="text-sm font-medium text-ink">Варианты</h3>
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
+      <p id={ids.hint} className="text-xs leading-relaxed text-subtle">
+        Архивный вариант нельзя выбрать для новых значений, но задачи и история сохраняют его. Вариант можно вернуть.
+      </p>
+
+      {options.length === 0 ? (
+        <p className="text-sm text-muted">Вариантов пока нет.</p>
+      ) : (
+        <ul aria-label="Варианты колонки" className="divide-y divide-line rounded-xl border border-line">
+          {options.map((option) => {
+            const archived = option.archivedAt !== null;
+            const editing = activeRename?.optionId === option.id;
+            const own = sentRename?.optionId === option.id;
+            const archiving = sentArchive?.variables.optionId === option.id ? sentArchive : null;
+            if (editing && activeRename) {
+              return (
+                <li key={option.id} className="px-3 py-2">
+                  <form noValidate onSubmit={(event) => rename(event, option)} className="space-y-2">
+                    <label htmlFor={ids.rename} className="sr-only">
+                      Название варианта
+                    </label>
+                    <TextInput
+                      ref={renameRef}
+                      id={ids.rename}
+                      value={activeRename.name}
+                      maxLength={OPTION_NAME_MAX}
+                      readOnly={own || busy || updateElsewhere}
+                      autoComplete="off"
+                      aria-invalid={renameError ? true : undefined}
+                      aria-describedby={renameError ? ids.renameError : undefined}
+                      onChange={(event) => {
+                        setRenaming({ optionId: option.id, name: event.target.value });
+                        if (renameError) setRenameError(null);
+                      }}
+                    />
+                    {renameError ? (
+                      <p id={ids.renameError} className="text-sm text-red-700">
+                        {renameError}
+                      </p>
+                    ) : null}
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                      {own ? null : (
+                        <Button size="sm" onClick={() => setRenaming(null)}>
+                          Отмена
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        type="submit"
+                        variant="primary"
+                        aria-disabled={(own && ownUpdate?.pending) || (!own && busy) || updateElsewhere || undefined}
+                      >
+                        {own && ownUpdate?.pending ? 'Сохраняем…' : own ? 'Повторить отправку' : 'Сохранить вариант'}
+                      </Button>
+                    </div>
+                  </form>
+                </li>
+              );
+            }
+            return (
+              <li key={option.id} className="flex min-w-0 items-center gap-1.5 px-3 py-1.5">
+                <OptionSwatch color={option.color} />
+                <span
+                  className={cn('min-w-0 flex-1 truncate text-sm', archived ? 'text-muted' : 'text-ink')}
+                  title={option.name}
+                >
+                  {option.name}
+                </span>
+                {archived ? <Badge tone="muted">В архиве</Badge> : null}
+                {archiving?.pending ? (
+                  <Badge tone="warning">Сохраняем…</Badge>
+                ) : archiving ? (
+                  <Button
+                    size="sm"
+                    onClick={() => updateMutation.retryUncertain({ onSuccess: saved('Вариант сохранён.') })}
+                  >
+                    Повторить отправку
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="px-2"
+                      aria-label={`Переименовать вариант «${option.name}»`}
+                      disabled={busy || updateElsewhere}
+                      onClick={() => {
+                        setRenameError(null);
+                        setRenaming({ optionId: option.id, name: option.name });
+                      }}
+                    >
+                      <Pencil size={14} aria-hidden="true" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="px-2"
+                      aria-label={archived ? `Вернуть вариант «${option.name}»` : `Архивировать вариант «${option.name}»`}
+                      aria-describedby={ids.hint}
+                      disabled={busy || updateElsewhere}
+                      onClick={() => setArchived(option, !archived)}
+                    >
+                      {archived ? (
+                        <ArchiveRestore size={14} aria-hidden="true" />
+                      ) : (
+                        <Archive size={14} aria-hidden="true" />
+                      )}
+                    </Button>
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <form noValidate onSubmit={add} className="space-y-2">
+        <label htmlFor={ids.add} className="text-sm text-ink-soft">
+          Новый вариант
+        </label>
+        <div className="flex gap-2">
+          <TextInput
+            ref={addRef}
+            id={ids.add}
+            value={shownNewName}
+            maxLength={OPTION_NAME_MAX}
+            readOnly={addFrozen}
+            autoComplete="off"
+            aria-invalid={addError ? true : undefined}
+            aria-describedby={addError ? ids.addError : undefined}
+            onChange={(event) => {
+              setNewName(event.target.value);
+              if (addError) setAddError(null);
+            }}
+          />
+          <Button
+            type="submit"
+            aria-disabled={(ownCreate?.pending ?? false) || (!ownCreate && busy) || createElsewhere || undefined}
+          >
+            {ownCreate?.pending ? (
+              'Сохраняем…'
+            ) : ownCreate ? (
+              'Повторить отправку'
+            ) : (
+              <>
+                <Plus size={16} aria-hidden="true" />
+                Добавить вариант
+              </>
+            )}
+          </Button>
+        </div>
+        {addError ? (
+          <p id={ids.addError} className="text-sm text-red-700">
+            {addError}
+          </p>
+        ) : null}
+      </form>
+
+      <SaveFeedback
+        error={error}
+        uncertainError={uncertainError}
+        subject={FIELDS_SAVE_SUBJECT}
+        action={correctable ? reloadAction : null}
+      />
+      {notice ? (
+        <p role="status" className="rounded-lg bg-canvas px-3 py-2.5 text-sm leading-relaxed text-ink-soft">
+          {notice}
+        </p>
+      ) : null}
+    </section>
+  );
+}

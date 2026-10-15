@@ -52,6 +52,13 @@ export {
 } from './readiness.js';
 export { createAccessRepository } from './repositories/access-repository.js';
 export { createTaskRepository } from './repositories/task-repository.js';
+export { createTaskFieldRepository } from './repositories/task-field-repository.js';
+export { createTaskFieldApplication, type TaskFieldApplicationOptions } from './fields/task-field-application.js';
+export {
+  createTaskFieldHistoryCursorCodec,
+  type TaskFieldHistoryCursorCodec,
+  type TaskFieldHistoryCursorCodecOptions,
+} from './fields/history-cursor.js';
 export { createTaskApplication, type TaskApplicationOptions } from './tasks/task-application.js';
 export {
   createWorkspaceWriteRunner,

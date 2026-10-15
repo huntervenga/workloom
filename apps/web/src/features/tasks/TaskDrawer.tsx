@@ -18,6 +18,7 @@ import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
+import { TaskCustomFields, type FieldValueDraftStore, type useSetTaskFieldValueMutation } from '../fields';
 import { formatEstimateInput } from '../task-table';
 import { taskWouldRegress, useReloadTask, useTaskQuery } from './queries';
 import { CreateTagDialog } from './TagDialogs';
@@ -56,6 +57,12 @@ export interface TaskDrawerProps {
   writable: boolean;
   /** Owned by the page, so closing the drawer keeps uncertain commands and drafts. */
   commands: TaskCommands;
+  /**
+   * Custom field value writes, owned by the page for the same reason as `commands`. Without it
+   * the saved-task form shows no custom fields.
+   */
+  fieldValueMutation?: ReturnType<typeof useSetTaskFieldValueMutation> | undefined;
+  fieldValueDrafts?: FieldValueDraftStore | undefined;
   /** The `task` URL parameter as given; it is validated here. */
   taskId: string | null;
   creating: CreateRequest | null;
@@ -225,8 +232,21 @@ function useLookups(props: TaskDrawerProps, extra: readonly TagDto[]) {
 type TaskCommandName = 'update' | 'archive' | 'restore';
 
 function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
-  const { actorId, workspace, latest, statuses, sections, members, writable, commands, onOpenTask, onResumeCreate, onAnnounce } =
-    props;
+  const {
+    actorId,
+    workspace,
+    latest,
+    statuses,
+    sections,
+    members,
+    writable,
+    commands,
+    fieldValueMutation,
+    fieldValueDrafts,
+    onOpenTask,
+    onResumeCreate,
+    onAnnounce,
+  } = props;
   const { update, archive, restore, editSessions } = commands;
   const taskId = latest.id;
   const reloadTask = useReloadTask(actorId, workspace.id);
@@ -446,6 +466,20 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
             }
           />
         </fieldset>
+
+        {/* Values have their own revisions and commands, independent of the task form above. */}
+        {fieldValueMutation ? (
+          <TaskCustomFields
+            actorId={actorId}
+            workspaceId={workspace.id}
+            task={latest}
+            members={members}
+            writable={canEdit && latest.archivedAt === null}
+            mutation={fieldValueMutation}
+            draftStore={fieldValueDrafts}
+            onOpenTask={onOpenTask}
+          />
+        ) : null}
 
         {errors.form ? <p className="text-sm text-red-700">{errors.form}</p> : null}
         <SaveFeedback

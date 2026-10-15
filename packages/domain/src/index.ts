@@ -47,6 +47,18 @@ export {
   type WorkspaceScope,
   type WorkspaceView,
 } from './access/access-queries.js';
+export type { TaskFieldApplication, TaskFieldHistoryPage } from './fields/application.js';
+export type {
+  TaskFieldApplicationDependencies,
+  TaskFieldHistoryAnchor,
+  TaskFieldHistoryCursorPayload,
+  TaskFieldOptionRecord,
+  TaskFieldRepository,
+  TaskFieldTools,
+  TaskFieldUnitOfWork,
+  TaskFieldWriteScope,
+} from './fields/ports.js';
+export { createTaskFieldApplication } from './fields/service.js';
 export type { TaskApplication, TaskPage } from './tasks/application.js';
 export { createTaskApplication } from './tasks/service.js';
 export type {

@@ -1,8 +1,9 @@
 /**
- * Drizzle description of the P0 and P1a schema. The executable source of truth is the
+ * Drizzle description of the P0, P1a and P1b schema. The executable source of truth is the
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
  * produce no diff). Immutability triggers live only in SQL.
  */
+import type { TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
@@ -456,6 +457,350 @@ export const commandIdempotency = pgTable(
   ],
 );
 
+// P1b: project-scoped typed custom task fields, shared column settings and value history.
+
+export const taskFieldTypeEnum = pgEnum('task_field_type', [
+  'text',
+  'number',
+  'duration',
+  'date',
+  'single_select',
+  'multi_select',
+  'person',
+  'boolean',
+  'url',
+]);
+
+/**
+ * Current field definition; the type is immutable. Archived fields keep their name reserved
+ * (case-insensitive) so a restore never collides. `definition_version_id` points at the current
+ * immutable version. Its FK to task_field_definition_versions is DEFERRABLE INITIALLY DEFERRED and
+ * exists only in SQL: the definition row is inserted before its first version in the same
+ * transaction, and declaring it here would make the two tables reference each other.
+ */
+export const taskFieldDefinitions = pgTable(
+  'task_field_definitions',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    name: text('name').notNull(),
+    type: taskFieldTypeEnum('type').notNull(),
+    revision: integer('revision').notNull().default(1),
+    definitionVersionId: uuid('definition_version_id').notNull(),
+    historyEnabled: boolean('history_enabled').notNull().default(true),
+    locked: boolean('locked').notNull().default(false),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'task_field_definitions_project_fk',
+      columns: [table.workspaceId, table.projectId],
+      foreignColumns: [projects.workspaceId, projects.id],
+    }),
+    unique('task_field_definitions_workspace_project_id_unique').on(table.workspaceId, table.projectId, table.id),
+    unique('task_field_definitions_workspace_project_id_type_unique').on(
+      table.workspaceId,
+      table.projectId,
+      table.id,
+      table.type,
+    ),
+    uniqueIndex('task_field_definitions_project_name_unique_idx').on(
+      table.workspaceId,
+      table.projectId,
+      sql`lower(name)`,
+    ),
+    check('task_field_definitions_name_length', sql`char_length(btrim(name)) between 1 and 160`),
+    check('task_field_definitions_revision_positive', sql`revision >= 1`),
+  ],
+);
+
+/**
+ * Immutable definition versions (UPDATE/DELETE/TRUNCATE rejected by trigger). `snapshot` is the
+ * full definition DTO at that revision, including every option (ID, label, color, archived) and
+ * the history/lock policy, so history never relabels the past.
+ */
+export const taskFieldDefinitionVersions = pgTable(
+  'task_field_definition_versions',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    fieldId: uuid('field_id').notNull(),
+    revision: integer('revision').notNull(),
+    snapshot: jsonb('snapshot').$type<TaskFieldDefinitionDto>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'task_field_definition_versions_field_fk',
+      columns: [table.workspaceId, table.projectId, table.fieldId],
+      foreignColumns: [taskFieldDefinitions.workspaceId, taskFieldDefinitions.projectId, taskFieldDefinitions.id],
+    }),
+    unique('task_field_definition_versions_workspace_project_field_id_unique').on(
+      table.workspaceId,
+      table.projectId,
+      table.fieldId,
+      table.id,
+    ),
+    unique('task_field_definition_versions_field_revision_unique').on(
+      table.workspaceId,
+      table.projectId,
+      table.fieldId,
+      table.revision,
+    ),
+    check('task_field_definition_versions_revision_positive', sql`revision >= 1`),
+    check(
+      'task_field_definition_versions_snapshot_identity',
+      sql`(jsonb_typeof(snapshot) = 'object' and snapshot ->> 'id' = field_id::text and snapshot ->> 'workspaceId' = workspace_id::text and snapshot ->> 'projectId' = project_id::text and snapshot ->> 'definitionVersionId' = id::text and snapshot -> 'revision' = to_jsonb(revision)) is true`,
+    ),
+  ],
+);
+
+/** Select options. IDs are stable across rename and archive; archived names stay reserved. */
+export const taskFieldOptions = pgTable(
+  'task_field_options',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    fieldId: uuid('field_id').notNull(),
+    name: text('name').notNull(),
+    color: text('color'),
+    position: integer('position').notNull(),
+    revision: integer('revision').notNull().default(1),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  (table) => [
+    foreignKey({
+      name: 'task_field_options_field_fk',
+      columns: [table.workspaceId, table.projectId, table.fieldId],
+      foreignColumns: [taskFieldDefinitions.workspaceId, taskFieldDefinitions.projectId, taskFieldDefinitions.id],
+    }),
+    unique('task_field_options_workspace_project_field_id_unique').on(
+      table.workspaceId,
+      table.projectId,
+      table.fieldId,
+      table.id,
+    ),
+    uniqueIndex('task_field_options_field_name_unique_idx').on(
+      table.workspaceId,
+      table.projectId,
+      table.fieldId,
+      sql`lower(name)`,
+    ),
+    check('task_field_options_name_length', sql`char_length(btrim(name)) between 1 and 100`),
+    check('task_field_options_color_hex', sql`color is null or color ~ '^#[0-9a-f]{6}$'`),
+    check('task_field_options_position_nonnegative', sql`position >= 0`),
+    check('task_field_options_revision_positive', sql`revision >= 1`),
+  ],
+);
+
+/**
+ * Shared project column settings header. Absent means virtual revision 1 with no columns; the
+ * first write (the first field append) inserts revision 2.
+ */
+export const projectColumnSettings = pgTable(
+  'project_column_settings',
+  {
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    revision: integer('revision').notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'project_column_settings_pk', columns: [table.workspaceId, table.projectId] }),
+    foreignKey({
+      name: 'project_column_settings_project_fk',
+      columns: [table.workspaceId, table.projectId],
+      foreignColumns: [projects.workspaceId, projects.id],
+    }),
+    check('project_column_settings_revision_positive', sql`revision >= 1`),
+  ],
+);
+
+/**
+ * Column bindings for active fields. A settings replacement deletes all of the project's rows
+ * before inserting the new set; this is configuration only and never touches values or history.
+ */
+export const projectColumns = pgTable(
+  'project_columns',
+  {
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    fieldId: uuid('field_id').notNull(),
+    visible: boolean('visible').notNull().default(true),
+    width: integer('width').notNull(),
+    position: integer('position').notNull(),
+  },
+  (table) => [
+    primaryKey({ name: 'project_columns_pk', columns: [table.workspaceId, table.projectId, table.fieldId] }),
+    foreignKey({
+      name: 'project_columns_settings_fk',
+      columns: [table.workspaceId, table.projectId],
+      foreignColumns: [projectColumnSettings.workspaceId, projectColumnSettings.projectId],
+    }),
+    foreignKey({
+      name: 'project_columns_field_fk',
+      columns: [table.workspaceId, table.projectId, table.fieldId],
+      foreignColumns: [taskFieldDefinitions.workspaceId, taskFieldDefinitions.projectId, taskFieldDefinitions.id],
+    }),
+    unique('project_columns_workspace_project_position_unique').on(table.workspaceId, table.projectId, table.position),
+    check('project_columns_width_range', sql`width between 80 and 640`),
+    check('project_columns_position_nonnegative', sql`position >= 0`),
+  ],
+);
+
+/**
+ * Current typed value per (task, field). `value` is `{type, value}` where `type` equals the
+ * field type and `value` is JSON null (an explicit clear) or a primitive of that type. Option and
+ * membership references inside the value are validated by the domain under the workspace barrier.
+ */
+export const taskFieldValues = pgTable(
+  'task_field_values',
+  {
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    fieldId: uuid('field_id').notNull(),
+    fieldType: taskFieldTypeEnum('field_type').notNull(),
+    definitionVersionId: uuid('definition_version_id').notNull(),
+    revision: integer('revision').notNull().default(1),
+    value: jsonb('value').$type<TaskFieldData>().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ name: 'task_field_values_pk', columns: [table.workspaceId, table.taskId, table.fieldId] }),
+    foreignKey({
+      name: 'task_field_values_task_fk',
+      columns: [table.workspaceId, table.projectId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.projectId, tasks.id],
+    }),
+    foreignKey({
+      name: 'task_field_values_field_type_fk',
+      columns: [table.workspaceId, table.projectId, table.fieldId, table.fieldType],
+      foreignColumns: [
+        taskFieldDefinitions.workspaceId,
+        taskFieldDefinitions.projectId,
+        taskFieldDefinitions.id,
+        taskFieldDefinitions.type,
+      ],
+    }),
+    foreignKey({
+      name: 'task_field_values_definition_version_fk',
+      columns: [table.workspaceId, table.projectId, table.fieldId, table.definitionVersionId],
+      foreignColumns: [
+        taskFieldDefinitionVersions.workspaceId,
+        taskFieldDefinitionVersions.projectId,
+        taskFieldDefinitionVersions.fieldId,
+        taskFieldDefinitionVersions.id,
+      ],
+    }),
+    index('task_field_values_field_idx').on(table.workspaceId, table.projectId, table.fieldId),
+    check('task_field_values_revision_positive', sql`revision >= 1`),
+    check(
+      'task_field_values_value_shape',
+      sql`(case when jsonb_typeof(value) = 'object' then value ? 'type' and value ? 'value' and value - 'type' - 'value' = '{}'::jsonb and jsonb_typeof(value -> 'type') = 'string' else false end) is true`,
+    ),
+    check('task_field_values_value_type_matches', sql`(value ->> 'type' = field_type::text) is true`),
+    check(
+      'task_field_values_value_primitive',
+      sql`(jsonb_typeof(value -> 'value') = 'null' or case
+        when field_type = 'text' then jsonb_typeof(value -> 'value') = 'string' and char_length(value ->> 'value') <= 10000
+        when field_type = 'number' then case when jsonb_typeof(value -> 'value') = 'number' then (value -> 'value')::numeric between -1000000000000 and 1000000000000 else false end
+        when field_type = 'duration' then case when jsonb_typeof(value -> 'value') = 'number' then (value -> 'value')::numeric between 0 and 2147483647 and (value -> 'value')::numeric = trunc((value -> 'value')::numeric) else false end
+        when field_type = 'date' then jsonb_typeof(value -> 'value') = 'string' and value ->> 'value' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+        when field_type = 'single_select' then jsonb_typeof(value -> 'value') = 'string' and value ->> 'value' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        when field_type in ('multi_select', 'person') then case when jsonb_typeof(value -> 'value') = 'array' then jsonb_array_length(value -> 'value') <= 100 and not jsonb_path_exists(value -> 'value', '$[*] ? (@.type() != "string" || !(@ like_regex "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))') else false end
+        when field_type = 'boolean' then jsonb_typeof(value -> 'value') = 'boolean'
+        when field_type = 'url' then jsonb_typeof(value -> 'value') = 'string' and char_length(value ->> 'value') <= 2048 and value ->> 'value' ~* '^https?://'
+        else false
+      end) is true`,
+    ),
+  ],
+);
+
+/**
+ * Immutable value history (UPDATE/DELETE/TRUNCATE rejected by trigger), written only for changed
+ * values while the field has history enabled. `before` NULL means no row existed; a typed
+ * `{"value": null}` is a clear. The definition label set comes from the referenced version's
+ * snapshot; the actor display name is snapshotted here. Full before/after values live only here,
+ * never in audit_events or outbox_events. One row per audit event ordinal.
+ */
+export const taskFieldValueHistory = pgTable(
+  'task_field_value_history',
+  {
+    id: uuid('id').primaryKey(),
+    workspaceId: uuid('workspace_id').notNull(),
+    projectId: uuid('project_id').notNull(),
+    taskId: uuid('task_id').notNull(),
+    fieldId: uuid('field_id').notNull(),
+    definitionVersionId: uuid('definition_version_id').notNull(),
+    valueRevision: integer('value_revision').notNull(),
+    before: jsonb('before').$type<TaskFieldData>(),
+    after: jsonb('after').$type<TaskFieldData>().notNull(),
+    actorUserId: uuid('actor_user_id').notNull(),
+    actorDisplayName: text('actor_display_name').notNull(),
+    source: commandSourceEnum('source').notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+    changeSeq: bigint('change_seq', { mode: 'bigint' }).notNull(),
+    eventOrdinal: integer('event_ordinal').notNull(),
+  },
+  (table) => [
+    foreignKey({
+      name: 'task_field_value_history_task_fk',
+      columns: [table.workspaceId, table.projectId, table.taskId],
+      foreignColumns: [tasks.workspaceId, tasks.projectId, tasks.id],
+    }),
+    foreignKey({
+      name: 'task_field_value_history_field_fk',
+      columns: [table.workspaceId, table.projectId, table.fieldId],
+      foreignColumns: [taskFieldDefinitions.workspaceId, taskFieldDefinitions.projectId, taskFieldDefinitions.id],
+    }),
+    foreignKey({
+      name: 'task_field_value_history_definition_version_fk',
+      columns: [table.workspaceId, table.projectId, table.fieldId, table.definitionVersionId],
+      foreignColumns: [
+        taskFieldDefinitionVersions.workspaceId,
+        taskFieldDefinitionVersions.projectId,
+        taskFieldDefinitionVersions.fieldId,
+        taskFieldDefinitionVersions.id,
+      ],
+    }),
+    foreignKey({ name: 'task_field_value_history_actor_user_fk', columns: [table.actorUserId], foreignColumns: [users.id] }),
+    unique('task_field_value_history_workspace_seq_ordinal_unique').on(
+      table.workspaceId,
+      table.changeSeq,
+      table.eventOrdinal,
+    ),
+    // Scanned backward for newest-first keyset pages.
+    index('task_field_value_history_keyset_idx').on(
+      table.workspaceId,
+      table.taskId,
+      table.fieldId,
+      table.changeSeq,
+      table.eventOrdinal,
+      table.id,
+    ),
+    check('task_field_value_history_value_revision_positive', sql`value_revision >= 1`),
+    check('task_field_value_history_change_seq_positive', sql`change_seq >= 1`),
+    check('task_field_value_history_event_ordinal_positive', sql`event_ordinal >= 1`),
+    check(
+      'task_field_value_history_actor_display_name_length',
+      sql`char_length(btrim(actor_display_name)) between 1 and 200`,
+    ),
+    check(
+      'task_field_value_history_after_shape',
+      sql`(case when jsonb_typeof("after") = 'object' then "after" ? 'type' and "after" ? 'value' and "after" - 'type' - 'value' = '{}'::jsonb and jsonb_typeof("after" -> 'type') = 'string' and "after" ->> 'type' in ('text', 'number', 'duration', 'date', 'single_select', 'multi_select', 'person', 'boolean', 'url') else false end) is true`,
+    ),
+    check(
+      'task_field_value_history_before_shape',
+      sql`"before" is null or (case when jsonb_typeof("before") = 'object' then "before" ? 'type' and "before" ? 'value' and "before" - 'type' - 'value' = '{}'::jsonb and jsonb_typeof("before" -> 'type') = 'string' and "before" ->> 'type' = "after" ->> 'type' else false end) is true`,
+    ),
+  ],
+);
+
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
   'users',
@@ -472,4 +817,11 @@ export const REQUIRED_TABLES = [
   'task_participants',
   'task_tags',
   'command_idempotency',
+  'task_field_definitions',
+  'task_field_definition_versions',
+  'task_field_options',
+  'project_column_settings',
+  'project_columns',
+  'task_field_values',
+  'task_field_value_history',
 ] as const;

@@ -9,11 +9,21 @@ import type {
 } from '@workloom/contracts';
 import { Avatar, Badge, Button, cn } from '@workloom/ui';
 import { ChevronDown, ChevronRight, Flag, Link2, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { pluralizeRu } from '../../lib/format';
 import { formatEstimate } from './estimate';
 import { buildTaskGroups, visibleTaskRows, type TaskGroup, type TaskTreeNode } from './taskTree';
 import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
+
+/** A column supplied by the parent, shown after «Приоритет» and before the estimate. */
+export interface TaskTableCustomColumn {
+  /** Stable key, e.g. the field ID. */
+  id: string;
+  label: string;
+  /** Column width in pixels. */
+  width: number;
+  renderCell: (task: TaskDto) => ReactNode;
+}
 
 export interface TaskTableProps {
   /** Loaded tasks of one project. The table never fetches or invents tasks. */
@@ -43,10 +53,15 @@ export interface TaskTableProps {
   today?: string | undefined;
   /** Accessible table caption. */
   caption?: string | undefined;
+  /** Extra columns in this order; the table renders what the parent gives and fetches nothing. */
+  customColumns?: readonly TaskTableCustomColumn[] | undefined;
   className?: string | undefined;
 }
 
 const COLUMN_COUNT = 8;
+/** Width of the built-in columns at the minimum table width: title 360px plus 800px. */
+const BASE_MIN_WIDTH = 1160;
+const noCustomColumns: readonly TaskTableCustomColumn[] = [];
 
 /** Icon-only control; callers add its size and text color. */
 const iconButtonClassName =
@@ -291,6 +306,7 @@ interface RowContext {
   onCreateChild: ((parent: TaskDto) => void) | null;
   partial: boolean;
   today: string | undefined;
+  customColumns: readonly TaskTableCustomColumn[];
 }
 
 function sectionLabel(sectionId: string | null, sectionById: ReadonlyMap<string, SectionDto>): string {
@@ -312,7 +328,9 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
 
   return (
     <tr className="group h-11 border-t border-line hover:bg-canvas/70">
-      <td className="py-1 pr-3" style={{ paddingLeft: `${12 + node.depth * 20}px` }}>
+      <td
+        className="py-1 pr-3 lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]"
+        style={{ paddingLeft: `${12 + node.depth * 20}px` }}>
         <div className="flex min-w-0 items-center gap-1.5">
           {childCount > 0 ? (
             <button
@@ -403,6 +421,11 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
       <td className="px-3 py-1">
         <PriorityCell priority={task.priority} />
       </td>
+      {ctx.customColumns.map((column) => (
+        <td key={column.id} className="min-w-0 overflow-hidden px-3 py-1">
+          {column.renderCell(task)}
+        </td>
+      ))}
       <td
         className={cn(
           'px-3 py-1 text-right',
@@ -427,12 +450,14 @@ function GroupHeader({
   group,
   writable,
   partial,
+  columnCount,
   onCreateTask,
   onRenameSection,
 }: {
   group: TaskGroup;
   writable: boolean;
   partial: boolean;
+  columnCount: number;
   onCreateTask: (sectionId?: string | null) => void;
   onRenameSection: ((section: SectionDto) => void) | undefined;
 }) {
@@ -444,7 +469,7 @@ function GroupHeader({
 
   return (
     <tr className="h-10 border-t border-line bg-canvas">
-      <th scope="rowgroup" colSpan={COLUMN_COUNT} className="px-3 py-1 text-left font-normal">
+      <th scope="rowgroup" colSpan={columnCount} className="px-3 py-1 text-left font-normal">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[13px] font-semibold text-ink">{title}</span>
           <span className="shrink-0 text-xs text-muted tabular-nums">
@@ -481,11 +506,11 @@ function GroupHeader({
   );
 }
 
-function SummaryRow({ summary, partial }: { summary: WorkPackageSummary; partial: boolean }) {
+function SummaryRow({ summary, partial, columnCount }: { summary: WorkPackageSummary; partial: boolean; columnCount: number }) {
   const { total } = summary;
   return (
     <tr className="h-11 border-t border-line-strong bg-canvas">
-      <td colSpan={COLUMN_COUNT - 1} className="px-3 py-1.5 text-xs text-muted">
+      <td colSpan={columnCount - 1} className="px-3 py-1.5 text-xs text-muted">
         <span className="font-medium text-ink-soft">Оценка загруженных задач</span>
         <span> · Оценки показывают общий объём работы команды.</span>
         <span> · Загружено: {formatTaskCount(summary.taskCount)}</span>
@@ -525,8 +550,11 @@ export function TaskTable({
   partial = false,
   today,
   caption = 'Задачи проекта',
+  customColumns = noCustomColumns,
   className,
 }: TaskTableProps) {
+  const columnCount = COLUMN_COUNT + customColumns.length;
+  const minWidth = BASE_MIN_WIDTH + customColumns.reduce((sum, column) => sum + column.width, 0);
   const groups = useMemo(() => buildTaskGroups(tasks, sections), [tasks, sections]);
   const summary = useMemo(() => summarizeWorkPackages(tasks), [tasks]);
   const statusById = useMemo(() => new Map(statuses.map((status) => [status.id, status])), [statuses]);
@@ -554,14 +582,15 @@ export function TaskTable({
     onCreateChild: writable ? onCreateChild : null,
     partial,
     today,
+    customColumns,
   };
 
   return (
     <div className={cn('relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
-      <table className="w-full min-w-[1160px] table-fixed border-collapse text-left text-sm">
+      <table className="w-full min-w-[1160px] table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>
-          {/* The secondary columns take 800px, leaving the title 360px at the minimum width. */}
+          {/* The secondary columns take 800px plus the custom widths, leaving the title 360px at the minimum width. */}
           <col />
           <col className="w-28" />
           <col className="w-36" />
@@ -569,11 +598,17 @@ export function TaskTable({
           <col className="w-24" />
           <col className="w-32" />
           <col className="w-24" />
+          {customColumns.map((column) => (
+            <col key={column.id} style={{ width: column.width }} />
+          ))}
           <col className="w-32" />
         </colgroup>
         <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]">
           <tr className="h-9">
-            <th scope="col" className="px-3 font-medium">
+            <th
+              scope="col"
+              className="px-3 font-medium lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),inset_0_-1px_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)]"
+            >
               <span className="pl-[30px]">Задача</span>
             </th>
             <th scope="col" className="px-3 font-medium">
@@ -594,6 +629,13 @@ export function TaskTable({
             <th scope="col" className="px-3 font-medium">
               Приоритет
             </th>
+            {customColumns.map((column) => (
+              <th key={column.id} scope="col" className="px-3 font-medium">
+                <span className="block truncate" title={column.label}>
+                  {column.label}
+                </span>
+              </th>
+            ))}
             {/* Same as `stickyEstimateClassName`, plus the header's bottom line its background would cover. */}
             <th
               scope="col"
@@ -611,12 +653,13 @@ export function TaskTable({
                 group={group}
                 writable={writable}
                 partial={partial}
+                columnCount={columnCount}
                 onCreateTask={onCreateTask}
                 onRenameSection={onRenameSection}
               />
               {rows.length === 0 ? (
                 <tr className="h-11 border-t border-line">
-                  <td colSpan={COLUMN_COUNT} className="py-1 pr-3 pl-[42px] text-sm text-muted">
+                  <td colSpan={columnCount} className="py-1 pr-3 pl-[42px] text-sm text-muted">
                     {partial ? 'Среди загруженных задач здесь ничего нет' : 'Задач пока нет'}
                   </td>
                 </tr>
@@ -627,7 +670,7 @@ export function TaskTable({
           );
         })}
         <tfoot className="sticky bottom-0 z-10">
-          <SummaryRow summary={summary} partial={partial} />
+          <SummaryRow summary={summary} partial={partial} columnCount={columnCount} />
         </tfoot>
       </table>
     </div>

@@ -31,7 +31,45 @@ export const queryKeys = {
     ['actor', actorId, 'workspace', workspaceId, 'tasks', 'list', projectId, params] as const,
   task: (actorId: string, workspaceId: string, taskId: string) =>
     ['actor', actorId, 'workspace', workspaceId, 'tasks', 'detail', taskId] as const,
+  /**
+   * Prefix of custom field definitions, column settings, values and value history. Field keys
+   * lowercase their project, task and field IDs, so a read keyed by a mixed-case ID is
+   * invalidated by a write whose confirmed answer carries the canonical lowercase ID.
+   */
+  fields: (actorId: string, workspaceId: string) => ['actor', actorId, 'workspace', workspaceId, 'fields'] as const,
+  fieldDefinitions: (actorId: string, workspaceId: string, projectId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'fields', 'definitions', canonicalId(projectId)] as const,
+  projectColumns: (actorId: string, workspaceId: string, projectId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'fields', 'columns', canonicalId(projectId)] as const,
+  /** Prefix of every value query, per task and per project batch. */
+  fieldValues: (actorId: string, workspaceId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'fields', 'values'] as const,
+  taskFieldValues: (actorId: string, workspaceId: string, taskId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'fields', 'values', 'task', canonicalId(taskId)] as const,
+  /** Prefix of a project's value batches. */
+  projectFieldValues: (actorId: string, workspaceId: string, projectId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'fields', 'values', 'project', canonicalId(projectId)] as const,
+  /** `taskIds` is one chunk: unique, sorted, at most 200. */
+  projectFieldValueChunk: (actorId: string, workspaceId: string, projectId: string, taskIds: readonly string[]) =>
+    [
+      'actor',
+      actorId,
+      'workspace',
+      workspaceId,
+      'fields',
+      'values',
+      'project',
+      canonicalId(projectId),
+      taskIds.map(canonicalId),
+    ] as const,
+  taskFieldHistory: (actorId: string, workspaceId: string, taskId: string, fieldId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'fields', 'history', canonicalId(taskId), canonicalId(fieldId)] as const,
 };
+
+/** UUIDs compare case-insensitively; field keys store them lowercase. */
+function canonicalId(id: string): string {
+  return id.toLowerCase();
+}
 
 /** The workspace key that scopes `key`, or null for keys outside any workspace. */
 export function workspaceScopeOf(key: QueryKey): ReturnType<typeof queryKeys.workspace> | null {

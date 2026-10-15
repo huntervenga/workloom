@@ -1,4 +1,4 @@
-export { TaskTable, type TaskTableProps } from './TaskTable';
+export { TaskTable, type TaskTableCustomColumn, type TaskTableProps } from './TaskTable';
 export {
   MAX_ESTIMATE_MINUTES,
   formatEstimate,

@@ -56,7 +56,7 @@ export interface ResponseParser<T> {
   safeParse(input: unknown): { success: true; data: T } | { success: false };
 }
 
-export type ApiMethod = 'GET' | 'POST' | 'PATCH';
+export type ApiMethod = 'GET' | 'POST' | 'PATCH' | 'PUT';
 export type MutationMethod = Exclude<ApiMethod, 'GET'>;
 
 export interface ApiRequestOptions {

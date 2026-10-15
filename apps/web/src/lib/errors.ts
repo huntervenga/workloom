@@ -16,7 +16,14 @@ export type ErrorSubject =
   | 'tagSave'
   | 'tasks'
   | 'task'
-  | 'taskSave';
+  | 'taskSave'
+  | 'fields'
+  | 'fieldSave'
+  | 'columns'
+  | 'columnsSave'
+  | 'fieldValues'
+  | 'fieldValueSave'
+  | 'fieldHistory';
 
 export interface ErrorDescription {
   title: string;
@@ -44,6 +51,13 @@ const subjectTitles: Record<ErrorSubject, string> = {
   tasks: 'Не удалось загрузить задачи',
   task: 'Не удалось открыть задачу',
   taskSave: 'Не удалось сохранить задачу',
+  fields: 'Не удалось загрузить поля',
+  fieldSave: 'Не удалось сохранить поле',
+  columns: 'Не удалось загрузить настройки колонок',
+  columnsSave: 'Не удалось сохранить настройки колонок',
+  fieldValues: 'Не удалось загрузить значения полей',
+  fieldValueSave: 'Не удалось сохранить значение поля',
+  fieldHistory: 'Не удалось загрузить историю значения',
 };
 
 const kindDescriptions: Record<ApiErrorKind, string> = {
@@ -90,7 +104,18 @@ const unavailableCopy: Partial<Record<ErrorSubject, { title: string; description
  * Writes. The form keeps the user's input, so the copy says what to do with it;
  * a conflict needs fresh data first, so resubmitting as is is not offered.
  */
-const saveSubjects: ReadonlySet<ErrorSubject> = new Set(['projectSave', 'sectionSave', 'tagSave', 'taskSave']);
+const saveSubjects: ReadonlySet<ErrorSubject> = new Set([
+  'projectSave',
+  'sectionSave',
+  'tagSave',
+  'taskSave',
+  'fieldSave',
+  'columnsSave',
+  'fieldValueSave',
+]);
+
+/** A value write to a locked field; reloading and resending would be refused again. */
+const fieldLockedDescription = 'Поле заблокировано: его значения сейчас нельзя изменить.';
 
 const saveDescriptions: Partial<Record<ApiErrorKind, string>> = {
   network: 'Нет связи с сервером. Введённые данные остались в форме — отправьте их ещё раз.',
@@ -116,6 +141,16 @@ export function describeError(error: unknown, subject: ErrorSubject): ErrorDescr
   const hidden = unavailableCopy[subject];
   if (hidden && (error.kind === 'forbidden' || error.kind === 'not_found' || error.kind === 'validation')) {
     return { ...hidden, retryable: false, unavailable: true, requestId: error.requestId };
+  }
+
+  if (error.kind === 'conflict' && error.code === 'FIELD_LOCKED') {
+    return {
+      title: subjectTitles[subject],
+      description: fieldLockedDescription,
+      retryable: false,
+      unavailable: false,
+      requestId: error.requestId,
+    };
   }
 
   const isSave = saveSubjects.has(subject);
