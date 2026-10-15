@@ -284,6 +284,8 @@ Web Claude passes: data `163997aa-7d33-4fb8-8045-d03299cd0cec`, editors `4a4b6ae
 - [p1b-mobile-task-fields.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p1b-mobile-task-fields.png)
 - [p1b-mobile-value-history.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p1b-mobile-value-history.png)
 
+**Source checkpoint P1b.** После принятия root создал локальный source commit `dee59bae06be4505b4a60e0bf469d31c8816aeda`; рабочее дерево сразу после коммита чистое. Он фиксирует принятый P1b, без повторного запуска тестов ради commit hash. Результаты выше относятся к замороженному рабочему дереву до этого checkpoint; точные области широкого и postvisual targeted gate сохраняются. Эта последующая правка только записывает provenance, исходники/runtime/данные не меняет; push не выполнялся.
+
 ### Текущий статус по областям
 
 | Область | Статус | Примечание |

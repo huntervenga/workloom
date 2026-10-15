@@ -47,7 +47,7 @@
 - Принятый bounded scope: 9 типов custom fields ([06 P1.4–P1.5](06-implementation-plan.md#p1-таблица-задач-и-дополнительные-поля)), настройки полей проекта, ревизии значений и выборочная история; ручная блокировка custom field (`locked`) подтверждена в контракте; она отдельна от недельного baseline P2.
 - Приёмка, реальный PostgreSQL: persist, rollback, replay, tenant safety; стабильные IDs options и сохранение при архиве; валидация типа; null отличается от 0; история с момента включения, отключение не удаляет записанное; блокировка действует во всех каналах; конфликт параллельных ревизий.
 - Приёмка, реальный browser: создание поля, правка, перезагрузка, история — desktop и mobile.
-- Статус: bounded P1b принят root после исправления 3 визуальных findings. Source checkpoint готовится; раздельные факты широкого и последнего targeted gate — только в [11](11-implementation-progress.md#текущий-статус-по-областям). Полный P1/MVP не завершён.
+- Статус: bounded P1b принят root после исправления 3 визуальных findings. Source checkpoint `dee59bae06be4505b4a60e0bf469d31c8816aeda` создан root, дерево после коммита чистое; раздельные факты широкого и последнего targeted gate — только в [11](11-implementation-progress.md#текущий-статус-по-областям). Полный P1/MVP не завершён.
 
 ## Подготовка P2 (параллельно, только read-only)
 
@@ -57,4 +57,4 @@
 
 | Время UTC | Срез | Статус | Ссылка на доказательство в 11 |
 | --- | --- | --- | --- |
-| после root visual acceptance (16 октября local) | bounded P1b | принят локально; source commit ожидается | [11](11-implementation-progress.md#p1b--targeted-gate-после-визуальных-исправлений) |
+| после root visual acceptance (16 октября local) | bounded P1b | принят локально; source `dee59bae06be4505b4a60e0bf469d31c8816aeda`, дерево после коммита чистое | [11](11-implementation-progress.md#p1b--targeted-gate-после-визуальных-исправлений) |
