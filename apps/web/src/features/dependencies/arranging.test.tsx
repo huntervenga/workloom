@@ -20,6 +20,10 @@ vi.mock('./layout', () => ({ arrangeGraph: async () => {
 } }));
 
 it('cannot save a prior reset while automatic layout is loading, then saves every completed position', async () => {
+  const originalRect = HTMLElement.prototype.getBoundingClientRect;
+  const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    return this.hasAttribute('data-graph-measure-node') ? new DOMRect(0, 0, 240, 190) : originalRect.call(this);
+  });
   const tasks = [taskAt(1), taskAt(2), taskAt(3)];
   const positions = tasks.map((task, index) => ({ taskId: task.id, x: index * 300, y: 24 }));
   const computed = Object.fromEntries(positions.map(({ taskId, x, y }) => [taskId, { x, y }]));
@@ -47,6 +51,7 @@ it('cannot save a prior reset while automatic layout is loading, then saves ever
     const save = screen.getByRole('button', { name: "Save my layout" });
     expect(save).toBeEnabled();
     const arrange = screen.getByRole('button', { name: "Apply automatic layout" });
+    await waitFor(() => expect(arrange).toBeEnabled());
     await user.click(arrange);
     expect(arrange).toBeDisabled();
     expect(save).toBeDisabled();
@@ -63,6 +68,6 @@ it('cannot save a prior reset while automatic layout is loading, then saves ever
     await waitFor(() => expect(save).toBeDisabled());
   } finally {
     loaded.resolve();
-    view.unmount(); client.clear();
+    view.unmount(); client.clear(); measure.mockRestore();
   }
 });

@@ -147,11 +147,14 @@
     "saveBlockingRule": "Save blocking rule",
     "discardRuleChange": "Discard rule change",
     "refreshRule": "Refresh rule",
-    "readFailed": "Could not read the latest data."
+    "readFailed": "Could not read the latest data.",
+    "measuringNodes": "Measuring task cards for automatic placement…"
   },
   "layout": {
     "couldNotCalculateFiniteGraphPositions": "Could not calculate finite graph positions.",
-    "couldNotCalculateFiniteGraphBounds": "Could not calculate finite graph bounds."
+    "couldNotCalculateFiniteGraphBounds": "Could not calculate finite graph bounds.",
+    "couldNotMeasureNodes": "Task card sizes are unavailable. Check the graph again.",
+    "measuredLayoutTooLarge": "These task cards cannot fit the graph layout limits without overlapping. Current positions have been kept. Use the task list or choose fewer starting tasks."
   },
   "graphBlockers": {
     "view": "View blockers ({{count}})",

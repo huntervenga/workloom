@@ -60,3 +60,38 @@ describe('automatic-coordinate normalization', () => {
     expect(() => fitAutomaticPositions({ a: { x: Infinity, y: 0 } })).toThrow();
   });
 });
+
+describe('measured graph node layout', () => {
+  it('keeps full variable-height rectangles separated instead of using the old 128px model', () => {
+    const ids = ['a', 'b', 'c'];
+    const sizes = { a: { width: 240, height: 500 }, b: { width: 240, height: 190 }, c: { width: 240, height: 166 } };
+    const before = structuredClone(sizes);
+    const positions = arrangeGraph(ids, [], sizes);
+    expect(sizes).toEqual(before);
+    for (const [index, id] of ids.entries()) for (const other of ids.slice(index + 1)) {
+      const a = positions[id], b = positions[other];
+      if (!a || !b) throw new Error('Missing measured layout position');
+      const sa = sizes[id as keyof typeof sizes], sb = sizes[other as keyof typeof sizes];
+      expect(a.x + sa.width <= b.x || b.x + sb.width <= a.x || a.y + sa.height <= b.y || b.y + sb.height <= a.y).toBe(true);
+    }
+  });
+  it('preserves all 500 measured rectangles without compression and remains deterministic', () => {
+    const { ids, edges } = chain(500);
+    const sizes = Object.fromEntries(ids.map((id, i) => [id, { width: 240, height: 166 + (i % 3) * 100 }]));
+    const positions = arrangeGraph(ids, edges, sizes);
+    expect(arrangeGraph([...ids].reverse(), [...edges].reverse(), sizes)).toEqual(positions);
+    for (const id of ids) {
+      const point = positions[id], size = sizes[id];
+      if (!point || !size) throw new Error('Missing measured rectangle');
+      expect(point.x).toBeGreaterThanOrEqual(-100000); expect(point.y).toBeGreaterThanOrEqual(-100000);
+      expect(point.x + size.width).toBeLessThanOrEqual(100000); expect(point.y + size.height).toBeLessThanOrEqual(100000);
+    }
+  });
+  it('rejects incomplete or invalid measurements', () => {
+    const invalid: Parameters<typeof arrangeGraph>[2][] = [{}, { a: { width: 0, height: 190 } }, { a: { width: 240, height: NaN } }];
+    for (const sizes of invalid) expect(() => arrangeGraph(['a'], [], sizes)).toThrow();
+  });
+  it('rejects measured rectangles that cannot fit the coordinate boundary without compression', () => {
+    expect(() => arrangeGraph(['a'], [], { a: { width: 240, height: 200001 } })).toThrow();
+  });
+});
