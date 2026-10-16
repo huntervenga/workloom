@@ -4,6 +4,7 @@ import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
 import {manualPeriodWorkLogSchema,recordedWorkLogSchema} from './common/recorded-work.js';
 import {meetingSnapshotSchema} from './common/meeting.js';
+import {recurrenceSnapshotSectionSchema} from './common/recurrence.js';
 export {manualPeriodWorkLogSchema} from './common/recorded-work.js';
 import { taskFieldDefinitionSchema, taskFieldValueSchema } from './fields.js';
 import { calendarDateSchema, minutesSchema, revisionSchema, taskSchema, utcTimestampSchema } from './tasks.js';
@@ -97,6 +98,8 @@ export const planningSnapshotSchema = z.object({
   sourcePersonalBaselineIds: z.array(idSchema),
   /** Optional without default: historical pinned JSON remains unchanged. */
   meetings:z.array(meetingSnapshotSchema).optional(),
+  /** P3b calendar-only recurrence census; optional without default, never a personal plan or minute cohort. */
+  recurrence:recurrenceSnapshotSectionSchema.optional(),
 });
 export const freezeScopeSchema = z.enum(['self', 'project']);
 export const freezePreviewInputSchema = z.strictObject({ scope: freezeScopeSchema });

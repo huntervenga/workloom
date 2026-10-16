@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {idSchema} from './ids.js';
 import {revisionSchema,utcTimestampSchema} from '../tasks.js';
+import {recurrenceOccurrenceRefSchema} from './recurrence.js';
 export const meetingTimezoneSchema=z.string().min(1).max(100).refine(value=>{try{new Intl.DateTimeFormat('en',{timeZone:value}).format();return !/^[+-]/.test(value);}catch{return false;}},'Expected an IANA time zone.');
 export const meetingLinkSchema=z.url().max(2048).refine(value=>/^https?:\/\//i.test(value),'Expected an HTTP(S) link.');
 export const meetingSchema=z.object({
@@ -9,6 +10,8 @@ export const meetingSchema=z.object({
  organizerMembershipId:idSchema,state:z.enum(['scheduled','cancelled']),actualStartAt:utcTimestampSchema.nullable(),actualDurationMinutes:z.number().int().min(1).max(1440).nullable(),
  joinUrl:meetingLinkSchema.nullable(),recordingUrl:meetingLinkSchema.nullable(),summaryUrl:meetingLinkSchema.nullable(),summaryText:z.string().max(20000).nullable(),
  scheduleFrozen:z.boolean(),hasPostedAttendance:z.boolean(),createdAt:utcTimestampSchema,updatedAt:utcTimestampSchema,
+ /** P3b: optional, no default. Absent on single meetings and on every stored P3a snapshot/outcome. */
+ recurrence:recurrenceOccurrenceRefSchema.optional(),
 });
 export const meetingSnapshotSchema=z.object({meeting:meetingSchema,attendees:z.array(z.object({id:idSchema,membershipId:idSchema,revision:revisionSchema,rosterActive:z.boolean()})),commitmentIds:z.array(idSchema)});
 export type MeetingDto=z.infer<typeof meetingSchema>;

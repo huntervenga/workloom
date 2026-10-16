@@ -3,6 +3,10 @@ import { MeetingDrawer, MeetingCommandNotices } from '../features/meetings/Meeti
 import { useMeetingWorkspace } from '../features/meetings/useMeetingWorkspace';
 import { useMeetingsQuery, useRecordedWorkQuery } from '../features/meetings/queries';
 import { CreateMeetingDialog } from '../features/meetings/CreateMeetingDialog';
+import { RecurrencePanel } from '../features/recurrence/RecurrencePanel';
+import { recurrenceKeys } from '../features/recurrence/queries';
+import { useRecurrenceWorkspace } from '../features/recurrence/useRecurrenceWorkspace';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSectionsQuery, useStatusesQuery } from '../features/projects/queries';
 import { RecordedWorkLabel } from '../shared/RecordedWorkLabel';
 import type { PeriodCommitmentDto, ProjectDto, WorkspaceDto } from '@workloom/contracts';
@@ -58,6 +62,9 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   // Every command and draft outlives period query changes and hidden dialogs.
   const commands = usePlanningCommands(actorId, workspace.id, project.id);
   const categoryCommands = useWorkCategoryCommands(actorId, workspace.id, project.id);
+  const recurrenceController = useRecurrenceWorkspace(actorId, workspace.id, project.id);
+  const recurrenceRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
   const [planDrafts, setPlanDrafts] = useState<Record<string, CommitmentSession>>({});
   const [factDrafts, setFactDrafts] = useState<Record<string, FactSession>>({});
   const [planKey, setPlanKey] = useState<string | null>(null);
@@ -105,6 +112,23 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
       const next = new URLSearchParams(before); next.set('period', periodId); return next;
     }, { replace: true });
   }, [params, periodId, setParams]);
+  // ?series= mirrors the selected series. A URL change (link, back/forward) is applied once per distinct value;
+  // panel selections write the URL and the controller together. Drafts, commands, period and view are untouched.
+  const seriesParam = params.get('series');
+  const requestedSeriesId = seriesParam !== null && isUuid(seriesParam) ? seriesParam.toLowerCase() : null;
+  const appliedSeriesParam = useRef<string | null>(null);
+  const { setSelectedSeriesId } = recurrenceController;
+  useEffect(() => {
+    if (appliedSeriesParam.current === requestedSeriesId) return;
+    appliedSeriesParam.current = requestedSeriesId;
+    setSelectedSeriesId(requestedSeriesId);
+  }, [requestedSeriesId, setSelectedSeriesId]);
+  const selectSeries = (id: string | null) => {
+    const canonical = id === null ? null : id.toLowerCase();
+    appliedSeriesParam.current = canonical;
+    setSelectedSeriesId(canonical);
+    setParams((before) => { const next = new URLSearchParams(before); if (canonical === null) next.delete('series'); else next.set('series', canonical); return next; });
+  };
 
   const openPlan = (base: PeriodCommitmentDto | null) => {
     if (!period.data) return;
@@ -156,6 +180,14 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   const selectedReport = (id: string, targetPeriodId: string) => setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'report'); if (id) next.set('run', id); else next.delete('run'); return next; });
   const selectedTypeReport = (id: string, targetPeriodId: string) => setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'work-types'); if (id) next.set('typeRun', id); else next.delete('typeRun'); return next; });
   const heldTypeReport = categoryCommands.createReport.pendingCommand?.variables ?? categoryCommands.createReport.uncertain?.variables ?? null;
+  const recurrencePeriod = !periods.isSuccess || !validProject ? null : period.data ?? orderedPeriods.find((item) => item.id === periodId) ?? null;
+  // Freeze rejected for unprepared series meetings: show the original period's readiness; nothing is sent here.
+  const revealRecurrence = (targetPeriodId: string) => {
+    setFreezeOpen(false);
+    setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'plan'); next.delete('run'); next.delete('typeRun'); return next; });
+    void queryClient.invalidateQueries({ queryKey: recurrenceKeys.readiness(actorId, workspace.id, targetPeriodId) });
+    window.setTimeout(() => { recurrenceRef.current?.scrollIntoView({ block: 'start' }); recurrenceRef.current?.focus({ preventScroll: true }); }, 0);
+  };
 
   return (
     <div className="space-y-6">
@@ -181,13 +213,15 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
           <div hidden={view !== 'work-types'}><WorkTypeReport actorId={actorId} workspaceId={workspace.id} period={period.data} members={members.data ?? []} runId={params.get('typeRun') ?? ''} selection={typeSelections[periodId]} onSelectionChange={(selection) => setTypeSelections((before) => ({ ...before, [periodId]: selection }))} mutation={categoryCommands.createReport} onSelectRun={selectedTypeReport} /></div>
         </>}
       </>}
+      {/* Stays mounted across views, periods and dialogs so held recurrence commands remain reachable. */}
+      <div ref={recurrenceRef} tabIndex={-1} className="scroll-mt-4"><RecurrencePanel controller={recurrenceController} actorId={actorId} workspace={workspace} project={project} period={recurrencePeriod} periods={periods.isSuccess ? orderedPeriods : []} members={members.isSuccess ? members.data : []} statuses={meetingStatuses.isSuccess ? meetingStatuses.data : []} sections={meetingSections.isSuccess ? meetingSections.data : []} writable={canWrite} accessDenied={denied || [meetingStatuses.error, meetingSections.error].some(isAccessDenied)} onSelectPeriod={selectPeriod} onSelectSeries={selectSeries} onOpenMeeting={(taskId, targetPeriodId) => meetingController.setTarget({ taskId, tab: 'meeting', requestedPeriodId: targetPeriodId })} /></div>
       <>
         <CreateMeetingDialog accessDenied={denied||[meetingStatuses.error,meetingSections.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={orderedPeriods} statuses={meetingStatuses.data??[]} sections={meetingSections.data??[]} ownMembershipId={ownMembershipId??''} timezone={workspace.timezone} onCreated={taskId=>meetingController.setTarget({taskId,tab:'plan'})}/>
         {meetingController.target?<MeetingDrawer key={meetingController.target.taskId} controller={meetingController} actorId={actorId} workspace={workspace} project={project} members={members.data??[]} taskId={meetingController.target.taskId} requestedPeriodId={meetingController.target.requestedPeriodId} onAcceptOriginalPeriod={selectPeriod} initialMembershipId={meetingController.target.membershipId} initialAttendanceId={meetingController.target.attendanceId} initialTab={meetingController.target.tab} open={!denied} onClose={()=>meetingController.setTarget(null)}/>:null}
         <PeriodDialog projectId={project.id} timezone={workspace.timezone} fields={fields.isSuccess ? fields.data : []} mutation={commands.createPeriod} open={periodOpen && !denied} onOpenChange={setPeriodOpen} onCreated={(id) => { setPeriodOpen(false); selectPeriod(id); setAnnouncement('Недельный период создан.'); }} />
         <CommitmentDialog session={selectedPlan} open={planOpen && !denied} packages={packages.isSuccess ? packages.data : []} tasks={taskItems} members={members.isSuccess ? members.data : []} ownMembershipId={ownMembershipId} canWriteOthers={canManage} writable={canWrite} commands={commands} hasMoreTasks={tasks.hasNextPage} loadingMoreTasks={tasks.isFetchingNextPage} onLoadTasks={() => void tasks.fetchNextPage()} onChange={(session) => setPlanDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setPlanOpen(false)} onSaved={savePlan} onReload={async (session) => { const fresh = await fetchPeriodCommitments(workspace.id, session.period.id); return fresh.find((item) => session.base ? item.id === session.base.id : item.workPackageId === session.packageId && item.membershipId === session.membershipId) ?? null; }} />
         <FactDialog session={selectedFact} open={factOpen && !denied} tasks={taskItems} members={members.isSuccess ? members.data : []} ownMembershipId={ownMembershipId} canWriteOthers={canManage} writable={canWrite} mutation={commands.setFact} hasMoreTasks={tasks.hasNextPage} loadingMoreTasks={tasks.isFetchingNextPage} onLoadTasks={() => void tasks.fetchNextPage()} onChange={(session) => setFactDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setFactOpen(false)} onSaved={saveFact} onReload={async (session) => { const fresh = await fetchPeriodWorkLogs(workspace.id, session.period.id); return fresh.find((item) => item.taskId === session.taskId && item.membershipId === session.membershipId) ?? null; }} />
-        <FreezeDialog workspaceId={workspace.id} request={freezeRequest} open={freezeOpen && !denied} mutation={commands.freeze} onClose={() => setFreezeOpen(false)} onFrozen={(target, baselineId) => { setFreezeOpen(false); selectPeriod(target); setAnnouncement(`План зафиксирован. Снимок ${baselineId.slice(0, 8)}.`); }} />
+        <FreezeDialog workspaceId={workspace.id} request={freezeRequest} open={freezeOpen && !denied} mutation={commands.freeze} onClose={() => setFreezeOpen(false)} onMaterializationRequired={revealRecurrence} onFrozen={(target, baselineId) => { setFreezeOpen(false); selectPeriod(target); setAnnouncement(`План зафиксирован. Снимок ${baselineId.slice(0, 8)}.`); }} />
       </>
     </div>
   );

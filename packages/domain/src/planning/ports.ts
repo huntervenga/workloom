@@ -1,7 +1,7 @@
 import type {MeetingMutationCommand} from '../meetings/ports.js';
 import type { WorkCategoryResolver, WorkCategoryMutationCommand } from '../categories/ports.js';
 import type {
-  MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
+  FreezeScope,RecurrenceSnapshotSectionDto,MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
   PlanningPackageDto, PlanningPeriodDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto,
   WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto,
 } from '@workloom/contracts';
@@ -10,6 +10,8 @@ import type { CommandContext } from '../access/context.js';
 import type { TaskFieldRepository } from '../fields/ports.js';
 import type { TaskRepository } from '../tasks/ports.js';
 import type { WorkspaceWriteScope } from '../transactions/ports.js';
+import type { RecurrenceMutationCommand } from '../recurrence/ports.js';
+import type { RecurrenceScopedMaterializer } from '../recurrence/ports.js';
 
 export interface ProjectPlanningSources {
   readonly packages: PlanningPackageDto[];
@@ -34,6 +36,8 @@ export interface PlanningRepository {
   readonly fields: TaskFieldRepository;
   /** One consistent project read; implementations must not hide a row/page limit. */
   captureProject(workspaceId:string,projectId:string):Promise<ProjectPlanningSources>;
+  /** Read-only full census: incomplete registered sources reject without reserving or materializing. */
+  captureRecurrenceSnapshot(period:PlanningPeriodDto,kind:FreezeScope,memberId:string|null):Promise<RecurrenceSnapshotSectionDto|undefined>;
   listPeriods(workspaceId:string,projectId?:string):Promise<PlanningPeriodDto[]>;
   findPeriod(workspaceId:string,id:string):Promise<PlanningPeriodDto|null>;
   insertPeriod(row:PlanningPeriodDto):Promise<void>;
@@ -67,7 +71,12 @@ export interface PlanningRepository {
   findReportRun(workspaceId:string,id:string):Promise<{run:WeeklyPlanFactReportRunDto;rows:WeeklyPlanFactRowDto[]}|null>;
   insertReportRun(run:WeeklyPlanFactReportRunDto,rows:WeeklyPlanFactRowDto[]):Promise<void>;
 }
-export interface PlanningWriteScope extends WorkspaceWriteScope { readonly repository:PlanningRepository }
+export interface PlanningWriteScope extends WorkspaceWriteScope {
+  readonly repository:PlanningRepository;
+  /** P3b mandatory same-TX census bound by every real composition (no optional no-op production bypass).
+   * The shared guard resolves the affected footprint through it and performFreeze ensures/captures census with it. */
+  readonly recurrenceCensus:RecurrenceScopedMaterializer;
+}
 /** The time-writing application must always resolve first-source categories under its TX. */
 export interface PlanningApplicationWriteScope extends PlanningWriteScope {readonly categoryResolver:WorkCategoryResolver}
 export interface PlanningUnitOfWork {
@@ -96,7 +105,8 @@ export type PlanningMutationIntent =
  | {readonly family:'field';readonly command:FieldMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'planning';readonly command:PlanningMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'meeting';readonly command:MeetingMutationCommand;readonly target:unknown;readonly input:unknown}
- | {readonly family:'category';readonly command:WorkCategoryMutationCommand;readonly target:unknown;readonly input:unknown};
+ | {readonly family:'category';readonly command:WorkCategoryMutationCommand;readonly target:unknown;readonly input:unknown}
+ | {readonly family:'recurrence';readonly command:RecurrenceMutationCommand;readonly target:unknown;readonly input:unknown};
 export interface CommittedPlanningRejection {
   readonly __workloomPlanningOutcome:'rejected';readonly code:'FIELD_LOCKED'|'PREVIEW_STALE';
   readonly details:{readonly committed:true;readonly baselineIds:string[]};

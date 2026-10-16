@@ -1,8 +1,10 @@
 import { isDatabaseUnavailableError } from '@workloom/db';
 import { isDomainError, type DomainErrorCode } from '@workloom/domain';
-import type { ErrorResponseDto } from '@workloom/contracts';
+import { RECURRENCE_ERROR_HTTP_STATUS, type ErrorResponseDto } from '@workloom/contracts';
 
 export const DOMAIN_ERROR_STATUS: Readonly<Record<DomainErrorCode, number>> = {
+  // Contract-owned controlled 409 MATERIALIZATION_REQUIRED; recovery goes through recurrence-readiness.
+  ...RECURRENCE_ERROR_HTTP_STATUS,
   VALIDATION_FAILED: 400,
   UNAUTHENTICATED: 401,
   CAPABILITY_REQUIRED: 403,

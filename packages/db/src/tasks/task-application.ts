@@ -1,4 +1,3 @@
-import { createPlanningRepository } from '../repositories/planning-repository.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   createPlanningMutationGuard,
@@ -9,6 +8,7 @@ import {
 } from '@workloom/domain';
 
 import type { Database, WorkloomExecutor } from '../client.js';
+import { composeRecurrenceCensusScope, createRecurrenceRuntime } from '../recurrence/census-scope.js';
 import { createTaskRepository } from '../repositories/task-repository.js';
 import { createWorkspaceWriteRunner, type WorkspaceWriteOptions } from '../transactions/workspace-write.js';
 import { createTaskCursorCodec } from './cursor.js';
@@ -33,19 +33,24 @@ export function createTaskApplication(
   const { cursorSecret, ...writeOptions } = options;
   const runner = createWorkspaceWriteRunner(source, writeOptions);
   const codec = createTaskCursorCodec(cursorSecret === undefined ? {} : { secret: cursorSecret });
+  const recurrence = createRecurrenceRuntime(cursorSecret === undefined ? {} : { cursorSecret });
 
   const writer: TaskUnitOfWork = {
     run(context, capability, work) {
-      return runner.run(context, capability, (scope) =>
-        work({
+      return runner.run(context, capability, (scope) => {
+        // The planning guard gets the mandatory same-TX recurrence census; no bypass composition exists.
+        const census = composeRecurrenceCensusScope(scope, recurrence);
+        const taskScope = {
           context: scope.context,
           access: scope.access,
           barrierAt: scope.barrierAt,
           recordChange: scope.recordChange,
           repository: createTaskRepository(scope.tx),
-          planningGuard: createPlanningMutationGuard({ ...scope, repository: createPlanningRepository(scope.tx) }, tools),
-        }),
-      );
+          recurrenceCensus: census.recurrenceCensus,
+          planningGuard: createPlanningMutationGuard(census, tools),
+        };
+        return work(taskScope);
+      });
     },
   };
 

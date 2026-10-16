@@ -5,6 +5,7 @@ import postgres from 'postgres';
 import { parseDatabaseUrl, type DatabaseUrlInfo } from './database-url.js';
 import {
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
+  recurrenceSeries,recurrenceSeriesVersions,recurrencePeriodBindings,recurrenceInstances,recurrenceExceptionVersions,recurrenceGenerationAuthorizations,recurrenceCalendarLocks,
   auditEvents,
   planningPeriods,
   projectWorkCategoryBindings,
@@ -44,6 +45,7 @@ import {
 
 export const tables = {
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
+  recurrenceSeries,recurrenceSeriesVersions,recurrencePeriodBindings,recurrenceInstances,recurrenceExceptionVersions,recurrenceGenerationAuthorizations,recurrenceCalendarLocks,
   planningPeriods,
   projectWorkCategoryBindings,
   projectWorkCategoryBindingVersions,

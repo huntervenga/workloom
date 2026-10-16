@@ -30,13 +30,16 @@
     "test:unit": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:migrate": "tsx src/cli/migrate.ts",
+    "db:queue:migrate": "tsx src/cli/queue-migrate.ts",
     "db:seed:demo": "tsx src/cli/seed-demo.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.9.0",
     "@workloom/contracts": "*",
     "@workloom/domain": "*",
     "drizzle-orm": "^0.45.4",
+    "pg-boss": "12.38.0",
     "postgres": "^3.4.7"
   },
   "devDependencies": {

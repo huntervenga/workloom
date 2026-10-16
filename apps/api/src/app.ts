@@ -7,6 +7,7 @@ import {
   createMeetingApplication,
   createPlanningApplication,
   createReadinessProbe,
+  createRecurrenceApplication,
   createTaskApplication,
   createTaskFieldApplication,
   createWorkCategoryApplication,
@@ -15,7 +16,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { AccessRepository, MeetingApplication, PlanningApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { AccessRepository, MeetingApplication, PlanningApplication, RecurrenceApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
@@ -26,6 +27,7 @@ import { registerCategoryRoutes } from './http/category-routes.js';
 import { registerFieldRoutes } from './http/field-routes.js';
 import { registerMeetingRoutes } from './http/meeting-routes.js';
 import { registerPlanningRoutes } from './http/planning-routes.js';
+import { registerRecurrenceRoutes } from './http/recurrence-routes.js';
 import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from './http/request-guards.js';
 import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './http/routes.js';
 import { registerTaskRoutes } from './http/task-routes.js';
@@ -54,6 +56,8 @@ export interface AppDependencies {
   readonly workCategoryApplication?: WorkCategoryApplication;
   /** Shared dated-meeting service; current ACL and attendance guards stay in domain. */
   readonly meetingApplication?: MeetingApplication;
+  /** Shared P3b recurrence service, or an injected transport-test port; uses the existing pool. */
+  readonly recurrenceApplication?: RecurrenceApplication;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
   /** Web dist directory; null disables static serving. Default: apps/web/dist when config.serveWeb. */
@@ -90,6 +94,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.workCategoryApplication ?? (database === undefined ? undefined : createWorkCategoryApplication(database));
   const meetingApplication =
     dependencies.meetingApplication ?? (database === undefined ? undefined : createMeetingApplication(database));
+  const recurrenceApplication =
+    dependencies.recurrenceApplication ?? (database === undefined ? undefined : createRecurrenceApplication(database));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
   const identity =
     dependencies.identityAdapter ??
@@ -184,6 +190,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   if (meetingApplication !== undefined) {
     registerMeetingRoutes(app, { identity, meetings: meetingApplication });
+  }
+  if (recurrenceApplication !== undefined) {
+    registerRecurrenceRoutes(app, { identity, recurrence: recurrenceApplication });
   }
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);

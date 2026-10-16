@@ -81,7 +81,7 @@ export type {
 } from './transactions/ports.js';
 export type { PlanningApplication, PlanningPage } from './planning/application.js';
 export type { ProjectPlanningSources, PackageFreezeObservation, PlanningLock, PlanningRepository, PlanningWriteScope, PlanningUnitOfWork, PlanningCursor, PlanningTools, PlanningApplicationDependencies, TaskMutationCommand, FieldMutationCommand, PlanningMutationCommand, PlanningMutationIntent, CommittedPlanningRejection, PlanningMutationGuard } from './planning/ports.js';
-export { captureFreezeSnapshot, freezePreviewHash, performFreeze, createPlanningMutationGuard, isCommittedPlanningRejection, unwrapPlanningOutcome } from './planning/freeze.js';
+export { captureFreezeSnapshot, freezePreviewHash, performFreeze, createPlanningMutationGuard, isCommittedPlanningRejection, unwrapPlanningOutcome, materializationRequiredError } from './planning/freeze.js';
 export { createPlanningApplication } from './planning/service.js';
 export type { WorkCategoryApplication } from './categories/application.js';
 export type { WorkCategoryRepository, WorkCategoryBindingRecord, WorkCategoryBindingVersion, WorkCategoryWriteScope, WorkCategoryUnitOfWork, WorkCategoryApplicationDependencies, WorkCategoryResolver, WorkCategoryMutationCommand } from './categories/ports.js';
@@ -91,4 +91,18 @@ export { createWorkCategoryApplication, workTypeBuckets } from './categories/ser
 
 export * from './meetings/application.js';
 export * from './meetings/ports.js';
-export {createMeetingApplication,meetingLocalDate,requireMeetingPeriod} from './meetings/service.js';
+export {createMeetingApplication,createSingleMeetingInScope,updateSingleMeetingInScope,meetingLocalDate,requireMeetingPeriod} from './meetings/service.js';
+
+export * from './recurrence/application.js';
+export * from './recurrence/ports.js';
+export {createRecurrenceApplication,recurrenceProtectedReasons} from './recurrence/service.js';
+export {createRecurrenceWorkerFacade} from './recurrence/worker.js';
+export {createRecurrenceOccurrenceComposer,occurrenceMeetingInput,reviseOccurrenceMeetingInScope,type OccurrenceMeetingTarget} from './recurrence/composer.js';
+export {resolveRecurrenceAffectedProjects,type RecurrenceFootprintScope} from './recurrence/footprint.js';
+export {
+  createRecurrenceScopedMaterializer,evaluatePeriodCensus,validateGenerationAuthority,bindingManifestInput,bindingSourceManifestHash,periodManifestHash,
+  requestMaterialization,planCandidates,scheduleSegments,owningPeriods,resolutionInPeriod,desiredOccurrence,assessmentOf,progressOf,snapshotSectionOf,
+  type RecurrenceFreezeCensus,type EvaluatedBinding,type BindingCensus,type PlannedCandidate,type DesiredOccurrence,type RecurrenceSeriesContext,type RecurrenceRequestReason,
+} from './recurrence/materializer.js';
+
+export {createRecurrenceOccurrenceResolver,buildRecurrenceScheduleSegments,RECURRENCE_RESOLVER_IMPLEMENTATION} from './recurrence/schedule.js';

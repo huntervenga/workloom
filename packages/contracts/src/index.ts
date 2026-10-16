@@ -9,3 +9,4 @@ export * from './common/work-category.js';
 export * from './categories.js';
 export * from './common/recorded-work.js';
 export * from './meetings.js';
+export * from './recurrence.js';

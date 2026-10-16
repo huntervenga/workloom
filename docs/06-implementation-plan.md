@@ -1,6 +1,6 @@
 # План реализации Workloom
 
-Версия от 16 октября 2026 года. Состояние: локально проверены и приняты P0 и ограниченные P1a/P1b/P2a с локальными source checkpoints; P2b (категории работы и быстрый ввод) также принят локально; ограниченный P3a (разовые shared meetings, explicit personal plan и attendance) принят координатором после функциональных и визуальных gates, source checkpoint `9443e063aba5b15eedb41b4ed6f4f43c68cf4baf` создан; точные раздельные результаты в [11](11-implementation-progress.md). Полный P1/P2 и P3–P6 не завершены. Полный MVP и пилот не достигнуты. Фактические доказательства — в [11](11-implementation-progress.md). Стек и границы — [02](02-architecture.md), доменные правила — [03](03-domain-and-data.md), API — [04](04-api-and-integrations.md), клиент — [05](05-client-and-ux.md).
+Версия от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b; P3b добавил конечные серии встреч, protected calendar census и отдельный recurrence worker. Точные gates, initial failures, исправления и source checkpoints — в [11](11-implementation-progress.md). Полный P1/P2/P3, P4–P6, MVP и пилот не завершены. Приёмка ниже сохраняет будущие требования. Стек — [02](02-architecture.md), данные — [03](03-domain-and-data.md), API — [04](04-api-and-integrations.md), клиент — [05](05-client-and-ux.md).
 
 ## Порядок работы
 
@@ -46,7 +46,7 @@
 
 Минимальные fixtures: 6 участников команды, второй workspace с чужим пользователем, стабильные IDs и заведомо синтетические имена. Права должны быть server-owned. Переключение fixture actor — dev-only функция с allowlist, не универсальный header в production.
 
-Корневые команды P0 (актуальный список и quickstart — в корневом [README](../README.md), результаты прогонов — в [11](11-implementation-progress.md)): `npm run dev`, `dev:api`, `dev:web`, `build`, `typecheck`, `lint`, `test:unit`, `test:integration`, `test:e2e`, `db:generate`, `db:migrate`, `db:seed:demo`. P0 реализует применимые команды; test:e2e может ограничиться одним smoke. Для P3 появятся `dev:worker` и `start:worker`; для P5 — `mcp:stdio`. Не создавать пустые зелёные тест-команды.
+Корневые команды P0 (актуальный список и quickstart — в корневом [README](../README.md), результаты прогонов — в [11](11-implementation-progress.md)): `npm run dev`, `dev:api`, `dev:web`, `build`, `typecheck`, `lint`, `test:unit`, `test:integration`, `test:e2e`, `db:generate`, `db:migrate`, `db:seed:demo`. P0 реализует применимые команды; test:e2e может ограничиться одним smoke. Для текущего worker доступны workspace scripts `npm run dev --workspace @workloom/worker` и `npm run start --workspace @workloom/worker`, явная queue migration — `npm run db:queue:migrate`; для P5 — `mcp:stdio`. Не создавать пустые зелёные тест-команды.
 
 Демонстрация: локально открыть страницу без логина, увидеть пространство из PostgreSQL, сменить тестового actor и получить корректную выборку. Перезапуск сохраняет workspace. Публичная APP_ENV=staging/production или Railway environment с AUTH_MODE=dev отклоняется. Отдельно проверяется локальная оптимизированная dist-сборка: APP_ENV=local, NODE_ENV=production, loopback и синтетическая БД.
 
@@ -100,6 +100,8 @@
 Демонстрация: оценка 8 часов → фиксация → split на 3 и 7 часов факта → отчёт +2 часа/+25%; добавленная работа отдельно. Другая задача 20 часов с недельным планом 6 сравнивается с недельным фактом, а полная точность — после завершения пакета. Повторное открытие закрытого отчёта даёт те же исходные цифры.
 
 ## P3 Общие встречи и повторения
+
+Статус: ограниченные P3a/P3b локально приняты. Разовые/повторяющиеся shared meetings, explicit personal plan/attendance, DST preview, exceptions/version edits, полный bounded census перед freeze и отдельный worker реализованы по [15](15-p3a-contract.md)/[16](16-p3b-contract.md). Это не полный P3: private grant list, полная My Tasks projection, внешние календари и production не проверены. Последовательность actual gates и найденные исправления — в [11](11-implementation-progress.md).
 
 Цель: пять общих задач вместо пяти личных копий на каждого сотрудника.
 

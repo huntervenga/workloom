@@ -1,10 +1,20 @@
-import { idSchema, type FreezeScope, type PlanBaselineDto, type PlanningPeriodDto, type PlanningSnapshotDto } from '@workloom/contracts';
+import { RECURRENCE_LIMITS, idSchema, type FreezeScope, type PlanBaselineDto, type PlanningPeriodDto, type PlanningSnapshotDto } from '@workloom/contracts';
 import type { CommandContext } from '../access/context.js';
 import { DomainError } from '../errors.js';
+import { RECURRENCE_PREREQUISITE_BY_COMMAND, type RecurrenceCensusAssessment } from '../recurrence/ports.js';
 import { canonicalJson } from '../tasks/service.js';
 import type { CommittedPlanningRejection, PlanningMutationGuard, PlanningMutationIntent, PlanningRepository, PlanningTools, PlanningWriteScope } from './ports.js';
 
 function rule(message:string):DomainError {return new DomainError('DOMAIN_VALIDATION_FAILED',message);}
+/** Public controlled 409; clients recover through GET recurrence-readiness, not through these bounded details. */
+export function materializationRequiredError(periodId:string,assessment:Pick<RecurrenceCensusAssessment,'status'|'missingCount'>):DomainError {
+  return new DomainError('MATERIALIZATION_REQUIRED','Recurring meetings of this period must be prepared before it can be frozen. Check the period readiness.',{details:{periodId,state:assessment.status,missingCount:assessment.missingCount}});
+}
+function requireCensus(scope:PlanningWriteScope):PlanningWriteScope['recurrenceCensus'] {
+  // Fail closed for a composition that has not bound the mandatory census yet; never a silent no-op.
+  if(!scope.recurrenceCensus)throw new Error('Every planning write scope must bind the mandatory recurrence census.');
+  return scope.recurrenceCensus;
+}
 function record(value:unknown):Record<string,unknown> {return typeof value==='object'&&value!==null?value as Record<string,unknown>:{};}
 function sorted<T extends {id:string}>(rows:T[]):T[] {return [...rows].sort((a,b)=>a.id.localeCompare(b.id));}
 
@@ -32,7 +42,16 @@ export async function captureFreezeSnapshot(repo:PlanningRepository,period:Plann
     const inherited=inheritedMeetings.find(m=>m.meeting.id===meeting.id);
     return {meeting:inherited?.meeting??meeting,attendees:inherited?.attendees??(await repo.listAttendance(ws,meeting.id)).map(a=>({id:a.id,membershipId:a.membershipId,revision:a.revision,rosterActive:a.rosterActive})),commitmentIds:commitments.filter(c=>c.workPackageId===meeting.workPackageId).map(c=>c.id).sort()};
   }));
+  const currentCalendar=await repo.captureRecurrenceSnapshot(period,scope,memberId);
+  const inheritedCalendars=own.flatMap(b=>b.snapshot.recurrence?[b.snapshot.recurrence]:[]);
+  const calendarBase=currentCalendar??inheritedCalendars[0];
+  const calendarEntries=new Map<string,NonNullable<PlanningSnapshotDto['recurrence']>['census'][number]>();
+  for(const section of [...inheritedCalendars,...(currentCalendar?[currentCalendar]:[])])for(const entry of section.census)if(!calendarEntries.has(entry.instanceId))calendarEntries.set(entry.instanceId,entry);
+  const calendarBindings=new Map<string,NonNullable<PlanningSnapshotDto['recurrence']>['bindings'][number]>();
+  for(const section of [...inheritedCalendars,...(currentCalendar?[currentCalendar]:[])])for(const binding of section.bindings)calendarBindings.set(binding.bindingId,binding);
+  const recurrence=calendarBase?{...calendarBase,bindings:[...calendarBindings.values()].sort((a,b)=>a.bindingId.localeCompare(b.bindingId)),census:[...calendarEntries.values()].sort((a,b)=>a.seriesId.localeCompare(b.seriesId)||a.occurrenceKey.localeCompare(b.occurrenceKey))}:undefined;
   return {
+    ...(recurrence?{recurrence}:{}),
     schemaVersion:1,period,commitments:sorted(commitments),packages:sorted(packages),projectPackageIds:sources.packages.map(p=>p.id).sort(),
     tasks:sorted(tasks.filter(t=>taskIds.has(t.id))),memberships:sorted(sources.memberships.map(m=>own.find(b=>b.membershipId===m.id)?.snapshot.memberships.find(old=>old.id===m.id)??m)),
     fieldDefinitions:sorted(fields),fieldValues:values.sort((a,b)=>(a.taskId+a.fieldId).localeCompare(b.taskId+b.fieldId)),
@@ -50,6 +69,9 @@ export async function performFreeze(scope:PlanningWriteScope,period:PlanningPeri
   const repo=scope.repository,ws=period.workspaceId;
   const existing=(await repo.listBaselines(ws,period.id)).find(b=>b.scope===kind&&b.membershipId===memberId);
   if(existing)return existing;
+  // Both scopes require a complete period census; personal locks remain restricted to their roster.
+  const ensured=await requireCensus(scope).ensurePeriod(period,{maxCreates:RECURRENCE_LIMITS.maxRealCreatesPerChunk,reason:'freeze',cursor:null,bindingId:null});
+  if(ensured.status!=='complete')throw materializationRequiredError(period.id,{status:ensured.status,missingCount:ensured.remainingCount});
   if(kind==='project') {
     // Each person's original freeze remains independently inspectable and can drive a personal report.
     const sources=await repo.captureProject(ws,period.projectId);
@@ -87,6 +109,14 @@ export async function performFreeze(scope:PlanningWriteScope,period:PlanningPeri
   for(const v of snapshot.fieldValues)locks.push({...common,id:tools.newId(),kind:'custom_value' as const,taskId:v.taskId,fieldId:v.fieldId,workPackageId:null,commitmentId:null});
   await repo.insertLocks(locks);
   for(const entry of snapshot.meetings??[])await repo.insertMeetingLock(ws,entry.meeting.id,baselineId,tools.newId());
+  if(snapshot.recurrence) {
+    // Calendar locks follow instance identity (cancelled header-only rows included); a real occurrence meeting also
+    // gets the existing P3a schedule/roster lock so generic meeting/task commands cannot rewrite its original calendar.
+    const census=requireCensus(scope);
+    await census.insertCalendarLocks(census.calendarLocksFor(snapshot.recurrence,baselineId,period.projectId));
+    const locked=new Set((snapshot.meetings??[]).map(m=>m.meeting.id));
+    for(const entry of snapshot.recurrence.census)if(entry.meetingId!==null&&!locked.has(entry.meetingId)){locked.add(entry.meetingId);await repo.insertMeetingLock(ws,entry.meetingId,baselineId,tools.newId());}
+  }
   const current=(await repo.findPeriod(ws,period.id))??period;
   await repo.savePeriod({...current,revision:current.revision+1,updatedAt:now,...(kind==='project'?{state:'frozen' as const,projectBaselineId:baselineId}:{})});
   return baseline;
@@ -102,13 +132,26 @@ export function unwrapPlanningOutcome<T>(value:T|CommittedPlanningRejection):T {
 }
 function never(value:never):never {throw new Error(`Unhandled planning mutation intent: ${String(value)}`);}
 
-/** Mandatory shared pre-handler policy: all command families are exhaustively classified. */
+/** Mandatory shared pre-handler policy: all command families are exhaustively classified.
+ * Order under the barrier (docs16 §8): typed recovery bypass → affected footprint → due freezes (affected periods
+ * ensure their census or fail closed; unrelated periods freeze only when already complete) → complete affected census.
+ */
 export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<PlanningTools,'newId'|'digest'>):PlanningMutationGuard {
   return {async check(intent:PlanningMutationIntent) {
-    const repo=scope.repository,ws=scope.context.workspaceId;
+    const repo=scope.repository,ws=scope.context.workspaceId,census=requireCensus(scope);
+    // materializePeriod and authorizeGeneration bypass every due-freeze loop; their handlers create only approved
+    // target-period census or replace grant metadata, and never depend on a revoked old grant.
+    if(intent.family==='recurrence'&&RECURRENCE_PREREQUISITE_BY_COMMAND[intent.command]!=='full_due_freeze')return null;
+    const footprint=await census.resolveAffectedProjects(intent);
+    const affected=new Set(footprint.kind==='projects'?footprint.projectIds:[]);
     const due=(await repo.listPeriods(ws)).filter(p=>p.state==='planning'&&Date.parse(p.cutoffAt)<=scope.barrierAt.getTime());
-    const newlyFrozen:string[]=[];
-    for(const period of due)newlyFrozen.push((await performFreeze(scope,period,'project',null,'cutoff',tools)).id);
+    const newlyFrozen:string[]=[],frozenDue:PlanningPeriodDto[]=[];
+    for(const period of due) {
+      // An unrelated project's pending/blocked census stays visible in readiness and never makes this write unwritable.
+      if(!affected.has(period.projectId)&&(await census.assessPeriod(period)).status!=='complete')continue;
+      newlyFrozen.push((await performFreeze(scope,period,'project',null,'cutoff',tools)).id);frozenDue.push(period);
+    }
+    await census.requireCompleteCensus(footprint);
     const locks=await repo.listLocks(ws);
     const input=record(intent.input),target=record(intent.target);
     let blocked:string[]=[];
@@ -184,9 +227,13 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
           case 'meeting.update': {
             if(typeof target['taskId']==='string') {
               const meeting=await repo.findMeetingByTask(ws,target['taskId']);
+              // A recurring occurrence keeps its calendar in the series: move/skip/restore go through exceptions.
+              if(meeting?.recurrence&&((typeof input['plannedStartAt']==='string'&&Date.parse(input['plannedStartAt'])!==Date.parse(meeting.plannedStartAt))||(input['timezone']!==undefined&&input['timezone']!==meeting.timezone)||(input['state']!==undefined&&input['state']!==meeting.state)))
+                throw rule('Use the recurring meeting exception to move, skip or restore this occurrence.');
               if(meeting) {
                 const rosterChanged=Array.isArray(input['attendeeMembershipIds'])&&canonicalJson([...input['attendeeMembershipIds']].sort())!==canonicalJson((await repo.listAttendance(ws,meeting.id)).filter(a=>a.rosterActive).map(a=>a.membershipId).sort());
                 const plannedChanged=rosterChanged||(typeof input['plannedStartAt']==='string'&&Date.parse(input['plannedStartAt'])!==Date.parse(meeting.plannedStartAt))||(input['timezone']!==undefined&&input['timezone']!==meeting.timezone)||(input['plannedDurationMinutes']!==undefined&&input['plannedDurationMinutes']!==meeting.plannedDurationMinutes)||(input['organizerMembershipId']!==undefined&&input['organizerMembershipId']!==meeting.organizerMembershipId);
+                if(meeting.recurrence&&(plannedChanged||(input['state']!==undefined&&input['state']!==meeting.state)))throw rule('Use the recurrence series or exception commands to change planned time, duration, organizer, roster or state.');
                 if(plannedChanged){blocked=(await repo.listMeetingLocks(ws,meeting.id)).map(l=>l.baselineId);if(meeting.hasPostedAttendance&&!blocked.length)return {__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:newlyFrozen}};}
               }
             }
@@ -209,9 +256,18 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
           default:never(intent);
         }
         break;
+      case 'recurrence':
+        switch(intent.command) {
+          // Protected recurrence targets (past/done/posted/frozen/cross-period) are classified by the recurrence
+          // handlers and reject the whole command; recovery commands returned above.
+          case 'recurrence.series.create':case 'recurrence.series.edit':case 'recurrence.series.state':case 'recurrence.periods.add':
+          case 'recurrence.exception.set':case 'recurrence.generation.authorize':case 'recurrence.period.materialize':break;
+          default:never(intent);
+        }
+        break;
       default:never(intent);
     }
-    if(!blocked.length&&newlyFrozen.length&&intent.family==='meeting'&&intent.command==='meeting.plan.apply'&&typeof target['taskId']==='string'){const meeting=await repo.findMeetingByTask(ws,target['taskId']);if(meeting&&due.some(p=>p.id===meeting.plannedPeriodId))return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};}
+    if(!blocked.length&&newlyFrozen.length&&intent.family==='meeting'&&intent.command==='meeting.plan.apply'&&typeof target['taskId']==='string'){const meeting=await repo.findMeetingByTask(ws,target['taskId']);if(meeting&&frozenDue.some(p=>p.id===meeting.plannedPeriodId))return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};}
     return blocked.length?{__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[...new Set([...blocked,...newlyFrozen])].sort()}}:null;
   }};
 }

@@ -1,10 +1,11 @@
+import {createHash} from 'node:crypto';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type {
   RecordedWorkLogDto,AttendanceWorkLogDto,
   PackageBaselineDto, PlanBaselineDto,
   PlanningPeriodDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto,
 } from '@workloom/contracts';
-import { legacyWorkCategory, notFoundError, type PackageFreezeObservation, type PlanningLock, type PlanningRepository } from '@workloom/domain';
+import { DomainError,assessmentOf,evaluatePeriodCensus,snapshotSectionOf,createRecurrenceOccurrenceResolver,legacyWorkCategory, notFoundError, type PackageFreezeObservation, type PlanningLock, type PlanningRepository } from '@workloom/domain';
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
 import {
   meetings,meetingAttendances,meetingScheduleLocks,
@@ -14,6 +15,7 @@ import {
 } from '../schema.js';
 import { createTaskFieldRepository } from './task-field-repository.js';
 import { createTaskRepository } from './task-repository.js';
+import {createRecurrenceRepository} from './recurrence-repository.js';
 
 const iso = (v:Date):string => v.toISOString();
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -41,6 +43,15 @@ export function createPlanningRepository(source:Database|WorkloomExecutor):Plann
   const fieldRepo=createTaskFieldRepository(source);
   const repo:PlanningRepository={
     tasks:taskRepo, fields:fieldRepo,
+    async captureRecurrenceSnapshot(period,kind,memberId) {
+      const recurrence=createRecurrenceRepository(db,{planning:repo,readOnly:true});
+      const resolver=createRecurrenceOccurrenceResolver({tzdataVersion:process.versions.tz??null,icuVersion:process.versions.icu??null});
+      const [clock]=await db.execute<{at:Date|string}>(sql`select clock_timestamp() as at`);
+      const evaluated=await evaluatePeriodCensus(recurrence,{resolver,digest:value=>createHash('sha256').update(value,'utf8').digest('hex')},period,new Date(clock?.at??Date.now()));
+      const assessment=assessmentOf(period.id,evaluated);
+      if(assessment.status!=='complete')throw new DomainError('MATERIALIZATION_REQUIRED','Prepare the registered recurring meetings before reviewing this freeze.');
+      return snapshotSectionOf(recurrence,resolver.policyVersion,evaluated,kind,memberId);
+    },
     async currentChangeSeq(ws) {const [r]=await db.select({seq:workspaces.changeSeq}).from(workspaces).where(eq(workspaces.id,ws));if(!r)throw notFoundError();return r.seq.toString();},
     async captureProject(ws,projectId) {
       const [packageRows,taskRows,memberRows,fields,baselineRows]=await Promise.all([

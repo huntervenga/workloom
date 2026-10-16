@@ -1,6 +1,6 @@
 # Журнал доказательств реализации
 
-Снимок от 16 октября 2026 года. **Ограниченные P1b, P2a и P2b локально приняты координатором** после широкого gate, трёх визуальных исправлений и targeted web/browser gate ниже. Статус: **локальный P0 проверен**; **ограниченный P1a проверен и принят координатором локально** после широкого gate, исправления найденных визуальных проблем и последнего targeted gate (разделы P1a ниже). Полный P1 сверх принятых срезов (приватные ACL, сохранённые представления, массовые правки), полный P2 сверх ограниченного P2a, P3–P6, общий Auth, worker, календарные connectors, production и обновление старых вкладок — будущие и не проверены. P2a и P2b прошли описанные ниже функциональные и визуальные gates; первоначальный browser14 P2b содержит QA fixture failure, corrected targeted2 отдельно. Полный MVP и пилот не достигнуты. Задание и приёмка P0 — в [09](09-first-implementation-task.md), этапы — в [06](06-implementation-plan.md), формат проверок — в [07](07-verification-and-pilot.md), локальный quickstart — в корневом [README](../README.md).
+Снимок от 16 октября 2026 года. Локально проверены P0 и ограниченные P1a/P1b/P2a/P2b/P3a; P3b прошёл описанные ниже core/API/worker, real PostgreSQL, upgrade/replay и browser gates, визуальные исправления приняты координатором. Ограниченный P3b принят координатором; source checkpoint ожидается. Полный P1/P2/P3, MVP и пилот не завершены; private ACL, общий Auth, внешние календарные connectors, P4–P6, production и обновление старых вкладок не проверены. Исторические failures и targeted reruns ниже сохранены отдельно. Этапы — [06](06-implementation-plan.md), проверки — [07](07-verification-and-pilot.md), quickstart — [README](../README.md).
 
 ## Происхождение
 
@@ -553,3 +553,77 @@ Durable frames после attendance/history correction, до последней
 - [mobile attendance history](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-mobile-attendance-history.png) — root reviewed
 
 Финальные documentation-only checks:20 Markdown файлов (root README/AGENTS и docs01–17),246 локальных file links,0 broken; `git diff --check` pass. Product tests ради этих prose изменений не повторялись.
+
+
+## P3b — genuine pre0006 P3a fixture (частично)
+
+Историческое снятие fixture до0006: на тот момент migration/replay ещё не выполнялись. Итоговые upgrade и raw replay подтверждены в финальном разделе P3b ниже.
+
+**Происхождение.** Скрипт написан Claude prep session `9968…` (`--model opus --effort high`). Временный внешний доступ инструментов к `/tmp` сначала был отклонён; скрипт написан в игнорируемый project path `test-results/qa-prep/workloom-create-p3a-compat.mjs`, Codex проверил `node --check`, скопировал в `/tmp/workloom-create-p3a-compat.mjs` и выполнил Node24 `--env-file=.env`, exit0. Bypass flags не использовались.
+
+**Факты снятия** (через принятый P3a API4310, source `9443e063aba5b15eedb41b4ed6f4f43c68cf4baf`): `/tmp/workloom-p3a-compat-fixture.json` mode0600, SHA256 `a9ef2ef54627c216d83f1554f1ee69f1465ad48a6feb68e3dfad416793e9aef5`; readable копия в `test-results/qa-prep/`. Synthetic project `fd0202d9-d80b-4313-82a2-5bebcb750fa6`, period `e336dca1-3811-4284-9e81-ee8efcee412e`, meeting `56a03f84-c16d-435a-a276-68e5b93d0af5`, task `7f189d56-dc1e-452f-a5e6-80b7b3f54378`. Budget180, plan180, attendance90 (60+30+planned_absence0),3 occurrence sources; оба pinned report types90/count3. Сохранены20 scoped SQL old-column наборов:2 meeting revisions,6 attendance history,3 work revisions; 4 текущих meeting cache rows, все `cacheMatchesHttp` true. Перед снятием прежние manual3 exact raw replays и их cache rows неизменны; legacy source `5e46a8e4a50d747bd01a810dcc37a0506bc95e7c` сохранён вложенным.
+
+Верификатор `test-results/qa-prep/workloom-verify-p3b-compat.mjs` подготовлен, не выполнялся; запуск только после согласованного quiet0006 и свежего P3b API. Claude Opus high подготовил16 HTTP/PG cases (session `9d65cc18-6469-4f18-a688-45920f23443c`) и7 worker cases (`2540dfc7-6478-4f41-bc7b-5d6c05400098`); они ещё не выполнялись. Exact-file ESLint всех3 QA-файлов прошёл у Codex. Root QA no-emit прошёл до появления worker-файла, поэтому worker type pass не заявлен.
+
+
+### P3b — lifecycle очереди pg-boss (частично)
+
+Проверка подготовлена Claude session `f8db4ef4-f910-4e36-a1fc-e3c81966731c` (Opus high), выполнена Codex. Proof `/tmp/workloom-p3b-queue-final-proof.json` (Claude CLI Read не имел доступа к `/tmp`; Codex прочитал proof и выполнил проверку). Время `2026-10-16T03:26:04.644Z`; Node24.19.0, PostgreSQL17.5, pg-boss12.38.0, schema46.
+
+- Собственная изолированная throwaway DB: только принятые0000–0005, pending0006 **не применялась**; принятые dev DB/runtime не затронуты.
+- Официальный `migrateWorkloomQueue`: install, затем повтор на current. Сначала DLQ; обе очереди через native `getQueue` со strict проверкой всех options, включая terminal `deadLetter:null`.
+- Native PgBoss `migrate:false/createSchema:false` start сохранил тот же queue DDL.
+- Три контролируемых drift (main `retryDelay`5→6, main DLQ→null, DLQ `retryLimit`0→1) строго отклонены без auto-repair; каждый явно восстановлен, затем снова current.
+- Все40 принятых public tables и3 посторонних outbox rows неизменны в14 full-row digest проверках. Свой client остановлен, DB удалена, temp folder удалён.
+
+Это совместимость library/schema/config lifecycle, **не** полный worker bootstrap, applicationReadiness, handler, relay или ack-loss coverage. Core0006/API/web остаются candidate; P3b не принят, новых product gate claims нет.
+
+
+### P3b — первый focused HTTP/worker gate, ещё candidate
+
+QA собрал libraries/API/worker; root QA no-emit и scoped lint прошли. Actual `vitest --project integration` двух новых файлов: **23 tests:16 pass/7 fail**,53,05с (`/tmp/workloom-p3b-focused.log`). Раздельно worker **7/7 pass**, HTTP **9/16 pass**. Это первый кандидат, не принятие P3b.
+
+Worker real PostgreSQL/PgBoss: actual transactional enqueue+receipt rollback, valid v1 за8 malformed/unknown subscribed rows при limit1, untouched unrelated outbox, native post-domain-commit/pre-ACK throw и retry новым клиентом. Durable receipt возвращает исходный результат createdCount5; полный public snapshot после retry неизменен. Current authorization проверяется до completed receipt; fresh facade повторяет stale outcome без второго refresh. Также pause/sync recovery, stored-authorizer reauthorization и retained DLQ + real runtime health. Terminal failure использует per-job retryLimit0 в изолированной БД; длительная последовательность production retries не проверялась. Pending worker chunk>100 одним binding не возникал; manual multi-binding recovery проверяется отдельно.
+
+Все7 HTTP failures классифицированы после подтверждения root/foundation как QA fixtures/assumptions: duplicate DST period sameproject/date; snapshot до собственной revocation; guessed protected409 вместо разрешённого422; guessed rebind code вместо409 REVISION_CONFLICT; обе late packages server-added75, а не30added/45unplanned; и неверное требование новой outbox continuation от **manual** chunk. Контракт уточнён: manual chunk отдаёт cursor для следующего клика; worker pending continuation остаётся same-UOW передACK. Поведение сохранения state/replay/census не ослаблено. Исправленный HTTP rerun18 начат после отдельных root review fixes template propagation и desired-past; результат пока не заявлен.
+
+Первичные HTTP16/worker7 authored Claude Opus high sessions `9d65cc18-6469-4f18-a688-45920f23443c` / `2540dfc7-6478-4f41-bc7b-5d6c05400098`. После actual quota rejection (follow-ups exit1 до записи, reset07:50UTC) Codex high добавил8 malformed poison rows внутри прежнего worker test, full snapshot/current-grant/durable-stale assertions, исправил QA assumptions и добавил2 HTTP regressions и2 browser cases. Browser tests пока не выполнялись; accepted dev/runtime не затронуты.
+
+
+После approved corrections HTTP18:16 pass/2 QA semantic failures (56,76с, `/tmp/workloom-p3b-http-corrected.log`). Root уточнил bounded lazy cutoff: ordinary write при≤100 missing может в том же UOW materialize+freeze, затем создать proposed work; >100/blocked fail closed. Cancelled manual skip с неизменным resolution/sourceVersion — retain при title-only series edit; restore по-прежнему protected. Targeted3 после этих уточнений **3 pass/16 intentional skips**,50,35с (`/tmp/workloom-p3b-http-targeted3.log`): две112 недели продвигаются A100/B100/A12/B12 независимо, readonly B preview не подготавливает её; отдельный ordinary≤100 baseline исключает созданный после freeze task.
+
+Root review обнаружил реальный reset-after-version bug. Первый QA repro остановился на корректной защите nonnull actualStart (fixture), затем corrected real HTTP repro **1 fail/19 intentional skips**,3,27с (`/tmp/workloom-p3b-reset-repro2.log`): после move→series duration/zone/roster edit→reset header60/Berlin/new version, а materialized Meeting всё ещё30/Nicosia/old organizer. ActualDuration20/material notes сохранены. Finding исправлен planned-calendar-only reset/restore sync и required before/after preview contexts; результат отдельного green и последующего broad gate ниже.
+
+
+### P3b — итоговые core, PostgreSQL, upgrade и browser gates
+
+Reset-after-version green: **1 pass/19 intentional skips**,3,09с (`/tmp/workloom-p3b-reset-green.log`). Before/after context и materialized Meeting согласованы по instant/zone/duration/organizer/roster; stable IDs, ordinary title/status/section/join, actualDuration20/materials и прежняя immutable history сохранены. Self census использует текущий состав materialized occurrence. Это реальный red→green, не замена проверки mock.
+
+| Gate | Результат и область |
+| --- | --- |
+| `npm run test:integration` | Все7 workspaces собраны, включая worker; **147 tests/14 files pass**,113,50с. Реальный PG17.5 и PgBoss; `/tmp/workloom-p3b-full-integration.log` |
+| `npm run lint` | pass;188 browser boundaries, `/tmp/workloom-p3b-root-lint.log` |
+| `npm run typecheck` | pass, все workspaces и root QA; `/tmp/workloom-p3b-root-types.log` |
+| `npm run test:unit` | core/API/worker **919/46 pass**,3,03с; отдельно web **206/35 pass**,7,50с; `/tmp/workloom-p3b-root-unit-web.log` |
+| Первый полный browser18 | **17 pass/1 product CSS failure**,44,0с: mobile document828 при viewport390; `/tmp/workloom-p3b-browser.log` |
+| После узкой CSS-правки | fresh web build, root QA types/exact test lint pass; targeted recurrence browser **2/2 pass**,7,0с (`/tmp/workloom-p3b-browser-targeted2.log`). Прежние16 проходили в исходном18; одного полностью зелёного18 не заявляем |
+
+Counts пересекающихся focused suites не суммируются с147/919/206. После единственной responsive class-правки неизменные core/DB gates не повторялись. CSS failure вызвал absolute sr-only header за пределами static scroll wrapper; `relative` ограничил его локальным scroller. GET-only probe до и после открытия drawer: document390=viewport390. Горизонтальный scroll таблицы остаётся локальным.
+
+**Quiet upgrade0006** выполнен foundation после подтверждённого stop только принятого API, worker был OFF: все40 прежних таблиц по исходным колонкам имеют прежние counts/hashes; genuine command cache rows и оба pinned report JSON точные. Только0006 applied,current7,repeat[];12 прежних SQL/snapshot файлов0000–0005 и journal prefix неизменны. Proof `/tmp/workloom-p3b-upgrade-preservation.json`. Queue DDL отдельно, не скрыто в application migration.
+
+**Genuine raw compatibility**: `/tmp/workloom-p3b-compat-proof.json`, verified04:07:43.900UTC:7 exact raw HTTP replays,7 cached hashes/results без изменений;20 scoped old-column projections неизменны; оба старых pinned report types точные. Старые single Meeting/baseline JSON не получают recurrence keys;3 occurrence work sources/revisions не дублированы. Новые расчёты plan180/fact90 и type90/count3. Это проверка server compatibility, не запуск старого browser bundle.
+
+**Browser действия:** desktop1440 создаёт weekday series, видит reserved null locators, явно prepares5, проверяет skip/restore/move, this-and-future version и reset planned-context45→60/roster3→2 с прежними identities. Mobile390 показывает настоящий server DST gap03:30→04:00, теряет ответ после реального create commit, exact same-key/body retry не дублирует header; prepares1 и открывает shared MeetingDrawer. Автоматического personal plan/fact нет. Восемь текущих PNG — во внешнем каталоге `workloom-evidence/p3b-*.png`; pre-fix8 сохранены в `p3b-before-overflow/`. Root просмотрел четыре desktop frames и corrected mobile overflow/DST/instance surfaces, принял layout; полную приёмку всех восьми кадров не заявляем. Хронологическая UI сортировка полной страницы — nonblocking follow-up после checkpoint.
+
+**Фактический compiled worker entrypoint:** после controlled browser явно `db:queue:migrate` установил schema46/DLQ+main, повтор current. `/tmp/workloom-p3b-worker-entry-proof.json` verified04:17:45.665UTC: Node24.19.0 child PID8535 автоматически подготовил3 reserved headers в3 уникальных Meeting/Task/Package, IDs сохранены;0 commitments/0 worklogs. Реальные immediate `worker.started`, `worker.health` statusok и `worker.health_queue` обеих очередей в `/tmp/workloom-p3b-worker-entry.log`. SIGTERM exit0, worker после smoke OFF. Background обработал только подписанные recurrence requests; unrelated outbox invariant доказан отдельным real-PG тестом. Это локальная эксплуатационная проба, не deploy и не многодневный soak.
+
+Принятый до upgrade API65721 завершился clean; новый compiled API session56168/PID6837 на4310, dev current7. Native PG и исходные demo/compat projects сохранены. `npm run dev` по-прежнему запускает только API+web; автоматическая подготовка требует отдельного worker процесса. Полный P3/private ACL/Auth/внешние календари/production остаются будущими.
+
+**Авторство:** начальные HTTP/worker тесты и queue probe — Claude Opus high sessions выше; последующие corrections, четыре дополнительных HTTP invariants, browser2, reset red→green, operator smoke и текущие docs — разрешённый Codex gpt-6.1-sol high после фактического quota rejection. Foundation initial Opus и последующие Codex fixes перечислены в `/tmp/workloom-p3b-foundation-provenance.json`; reset07:50UTC позже deadline07:18:10, повторных probes нет. Команды выполняли агенты, не Claude. Source checkpoint будет записан отдельной узкой provenance-правкой без reruns.
+
+
+**Финальная оптимизированная SPA:** root independently GET-only подтвердил200 и byte parity HTML+referencedJS+CSS с текущим dist. HTML551 bytes SHA256 `d8a68521a2f440df837877b5ef82e24ed2eae60c7af738e6b496176ef3484371`; JS `index-DRYS-aeR.js`1157900 bytes SHA256 `1ac41fc9296435dc505ed4f072ca57465347e1edca612898eff78b471e7296bc`; CSS `index-CLlfV33S.css`52501 bytes SHA256 `f62de4c64562e7af292e1faf298ae6e87834a47a6f46509b8fba9503de018a31`. Root принял все bounded functional/visual gates. Проверки не повторяются ради будущего hash.
+
+
+Documentation-only freeze:21 Markdown files (root README/AGENTS, docs01–17, worker README),206 local file links checked,0 broken; `git diff --check` pass. Новых product reruns ради prose/hash нет.

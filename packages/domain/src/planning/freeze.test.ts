@@ -18,10 +18,12 @@ const snapshot=(who:string,c:PeriodCommitmentDto,title:string,label:string):Plan
 const baseline=(member:string,c:PeriodCommitmentDto,n:number,seq:string,title:string,label:string):PlanBaselineDto=>({id:id(n),workspaceId:ws,projectId:project,periodId,scope:'self',membershipId:member,mode:'manual',requestedCutoffAt:period.cutoffAt,frozenAt:time,actorUserId:id(20),source:'api',changeSeq:seq,snapshot:snapshot(member,c,title,label)});
 const ctx:CommandContext={workspaceId:ws,actor:{userId:id(20),displayName:'Alice',kind:'fixture'},source:'api',requestId:'test'};
 const tools:PlanningTools={newId:()=>id(99),digest:value=>value,encodeCursor:()=>'',decodeCursor:()=>{throw new Error('unused');}};
+// Explicit policy fake for the mandatory census: a workspace without recurrence bindings.
+const recurrenceCensus:PlanningWriteScope['recurrenceCensus']={resolveAffectedProjects:async()=>({kind:'none'}),assessPeriod:async p=>({periodId:p.id,status:'complete',missingCount:0,bindings:[]}),ensurePeriod:async p=>({periodId:p.id,status:'complete',missingCount:0,bindings:[],createdCount:0,remainingCount:0,nextCursor:null}),requireCompleteCensus:async()=>{},captureSnapshotSection:async()=>undefined,calendarLocksFor:()=>[],insertCalendarLocks:async()=>{}};
 
 // These doubles exercise pure source-selection/guard decisions; real PG tests own atomicity/races.
 function repository(overrides:Partial<PlanningRepository>={}):PlanningRepository {
-  return {listMeetings:async()=>[],listAttendance:async()=>[],listMeetingLocks:async()=>[],findMeetingByTask:async()=>null,captureProject:async()=>clone(sources),listCommitments:async()=>[first,second],listBaselines:async()=>[],listPeriods:async()=>[],listLocks:async()=>[],tasks:{permissionEpoch:async()=>'0',findTask:async()=>task},...overrides} as unknown as PlanningRepository;
+  return {captureRecurrenceSnapshot:async()=>undefined,listMeetings:async()=>[],listAttendance:async()=>[],listMeetingLocks:async()=>[],findMeetingByTask:async()=>null,captureProject:async()=>clone(sources),listCommitments:async()=>[first,second],listBaselines:async()=>[],listPeriods:async()=>[],listLocks:async()=>[],tasks:{permissionEpoch:async()=>'0',findTask:async()=>task},...overrides} as unknown as PlanningRepository;
 }
 
 describe('planning immutable source selection',()=>{
@@ -62,7 +64,7 @@ describe('planning immutable source selection',()=>{
 describe('planning identity guards and committed outcome',()=>{
   it('protects a selected field identity even when the value row is absent',async()=>{
     const baselineId=id(50),repo=repository({listLocks:async()=>[{id:id(51),workspaceId:ws,projectId:project,baselineId,kind:'custom_value',taskId,fieldId,commitmentId:null,workPackageId:null}]});
-    const scope={context:ctx,repository:repo,barrierAt:new Date(time)} as PlanningWriteScope;
+    const scope={context:ctx,repository:repo,barrierAt:new Date(time),recurrenceCensus} as PlanningWriteScope;
     const outcome=await createPlanningMutationGuard(scope,tools).check({family:'field',command:'field.value.set',target:{taskId,fieldId},input:{expectedRevision:0,value:{type:'text',value:null}}});
     expect(outcome?.details).toEqual({committed:true,baselineIds:[baselineId]});
     expect(()=>unwrapPlanningOutcome(outcome)).toThrow(expect.objectContaining({code:'FIELD_LOCKED',details:{committed:true,baselineIds:[baselineId]}}));
@@ -70,7 +72,7 @@ describe('planning identity guards and committed outcome',()=>{
 
   it('protects an unknown whole-package estimate through any shared child identity',async()=>{
     const baselineId=id(60),repo=repository({listLocks:async()=>[{id:id(61),workspaceId:ws,projectId:project,baselineId,kind:'estimate',taskId:null,fieldId:null,commitmentId:null,workPackageId:pkg}]});
-    const scope={context:ctx,repository:repo,barrierAt:new Date(time)} as PlanningWriteScope;
+    const scope={context:ctx,repository:repo,barrierAt:new Date(time),recurrenceCensus} as PlanningWriteScope;
     const result=await createPlanningMutationGuard(scope,tools).check({family:'task',command:'task.update',target:taskId,input:{estimateMinutes:0}});
     expect(result?.details.baselineIds).toEqual([baselineId]);
   });

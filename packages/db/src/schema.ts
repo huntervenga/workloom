@@ -3,6 +3,7 @@
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
  * produce no diff). Immutability triggers live only in SQL.
  */
+import type { RecurrenceResolutionDto, RecurrenceScheduleInput, RecurrenceTemplateInput } from '@workloom/contracts';
 import type { MeetingDto, AttendanceDto, AttendanceHistoryDto, AttendanceAttribution, TaskFieldData, TaskFieldDefinitionDto, PlanningSnapshotDto, PeriodCommitmentDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto, WorkCategorySnapshot, WorkTypeReportRunDto, WorkTypeReportRowDto } from '@workloom/contracts';
 import { sql } from 'drizzle-orm';
 import {
@@ -839,6 +840,8 @@ export const REQUIRED_TABLES = [
   'project_work_category_bindings',
   'project_work_category_binding_versions',
   'work_type_report_runs',
+  'recurrence_series','recurrence_series_versions','recurrence_generation_authorizations','recurrence_period_bindings',
+  'recurrence_instances','recurrence_exception_versions','recurrence_calendar_locks',
 ] as const;
 
 
@@ -1067,4 +1070,196 @@ export const workTypeReportRuns=pgTable('work_type_report_runs',{
  unique('work_type_report_runs_workspace_id_unique').on(t.workspaceId,t.id),
  foreignKey({name:'work_type_report_runs_period_fk',columns:[t.workspaceId,t.projectId,t.periodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
  check('work_type_report_runs_document_identity',sql`(jsonb_typeof(document) = 'object' and document->>'id' = id::text and document->>'workspaceId' = workspace_id::text and document->>'projectId' = project_id::text and document->>'periodId' = period_id::text and document->>'metricVersion' = 'weekly_work_type_v1' and jsonb_typeof(rows) = 'array' and jsonb_array_length(rows) = (document->>'rowCount')::integer and jsonb_typeof(document->'workLogRevisionIds') = 'array' and jsonb_array_length(document->'workLogRevisionIds') = jsonb_array_length(rows)) is true`),
+]);
+
+
+// P3b: finite recurring meeting series, explicit period bindings, stable reserved instance headers,
+// immutable versions/exceptions/grants and calendar-only freeze locks (docs/16-p3b-contract.md).
+// Circular head references live only in SQL as DEFERRABLE INITIALLY DEFERRED FKs (series → current
+// version, series → current authorization, instance → exception head), as for task_field_definitions.
+// Immutability, attach-once, head/version and meeting/task/package consistency guards are SQL triggers.
+export const recurrenceSeriesStateEnum=pgEnum('recurrence_series_state',['active','paused']);
+export const recurrenceCalendarStateEnum=pgEnum('recurrence_calendar_state',['scheduled','cancelled']);
+export const recurrenceExceptionKindEnum=pgEnum('recurrence_exception_kind',['skip','move','restore','reset']);
+
+/** Mutable series head. Pause stops only background generation; it never removes registered census. */
+export const recurrenceSeries=pgTable('recurrence_series',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),
+ revision:integer('revision').notNull(),state:recurrenceSeriesStateEnum('state').notNull(),currentVersionId:uuid('current_version_id').notNull(),
+ authorizationId:uuid('authorization_id'),authorizationRevision:integer('authorization_revision'),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[
+ unique('recurrence_series_workspace_id_unique').on(t.workspaceId,t.id),
+ unique('recurrence_series_scope_id_unique').on(t.workspaceId,t.projectId,t.id),
+ foreignKey({name:'recurrence_series_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
+ index('recurrence_series_project_idx').on(t.workspaceId,t.projectId,t.state,t.id),
+ check('recurrence_series_revision',sql`revision >= 1`),
+ check('recurrence_series_authorization_pair',sql`((authorization_id is null and authorization_revision is null) or (authorization_id is not null and authorization_revision >= 1)) is true`),
+]);
+
+/** Immutable "this and future" versions with a pinned policy. Several versions may share an effective
+ * boundary: for each nominal date the highest revision with effective_from <= date wins, so a later write
+ * supersedes even older future segments. */
+export const recurrenceSeriesVersions=pgTable('recurrence_series_versions',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),seriesId:uuid('series_id').notNull(),
+ revision:integer('revision').notNull(),effectiveFromNominalDate:date('effective_from_nominal_date',{mode:'string'}).notNull(),
+ schedule:jsonb('schedule').$type<RecurrenceScheduleInput>().notNull(),template:jsonb('template').$type<RecurrenceTemplateInput>().notNull(),
+ policyVersion:text('policy_version').notNull(),
+ actorUserId:uuid('actor_user_id').notNull(),source:commandSourceEnum('source').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+},t=>[
+ unique('recurrence_series_versions_workspace_id_unique').on(t.workspaceId,t.id),
+ unique('recurrence_series_versions_head_unique').on(t.workspaceId,t.projectId,t.seriesId,t.id),
+ unique('recurrence_series_versions_revision_unique').on(t.workspaceId,t.seriesId,t.revision),
+ index('recurrence_series_versions_effective_idx').on(t.workspaceId,t.seriesId,t.effectiveFromNominalDate,t.revision),
+ foreignKey({name:'recurrence_series_versions_series_fk',columns:[t.workspaceId,t.projectId,t.seriesId],foreignColumns:[recurrenceSeries.workspaceId,recurrenceSeries.projectId,recurrenceSeries.id]}),
+ foreignKey({name:'recurrence_series_versions_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),
+ check('recurrence_series_versions_values',sql`revision >= 1 and change_seq >= 1 and policy_version = 'first_valid_gap_earlier_overlap_v1' and effective_from_nominal_date between '2000-01-01' and '2100-12-31'`),
+ check('recurrence_series_versions_schedule_shape',sql`(case when jsonb_typeof(schedule) = 'object' then
+    schedule ?& array['startDate','localTime','timezone','frequency','plannedDurationMinutes','end']
+    and schedule - array['startDate','localTime','timezone','frequency','weekdays','plannedDurationMinutes','end'] = '{}'::jsonb
+    and jsonb_typeof(schedule->'startDate') = 'string' and schedule->>'startDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' and schedule->>'startDate' between '2000-01-01' and '2100-12-31'
+    and jsonb_typeof(schedule->'localTime') = 'string' and schedule->>'localTime' ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+    and jsonb_typeof(schedule->'timezone') = 'string' and char_length(schedule->>'timezone') between 1 and 100
+    and case when jsonb_typeof(schedule->'plannedDurationMinutes') = 'number' then (schedule->'plannedDurationMinutes')::numeric between 1 and 1440 and (schedule->'plannedDurationMinutes')::numeric = trunc((schedule->'plannedDurationMinutes')::numeric) else false end
+    and case
+      when schedule->>'frequency' = 'daily' then not schedule ? 'weekdays'
+      when schedule->>'frequency' = 'weekly' then case when jsonb_typeof(schedule->'weekdays') = 'array' then jsonb_array_length(schedule->'weekdays') between 1 and 7 and not jsonb_path_exists(schedule->'weekdays', '$[*] ? (@.type() != "number" || @ < 1 || @ > 7 || @.floor() != @)') else false end
+      else false end
+    and case when jsonb_typeof(schedule->'end') = 'object' then case
+      when schedule#>>'{end,kind}' = 'on_date' then (schedule->'end') - 'kind' - 'endDate' = '{}'::jsonb and jsonb_typeof(schedule#>'{end,endDate}') = 'string' and schedule#>>'{end,endDate}' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' and schedule#>>'{end,endDate}' between schedule->>'startDate' and '2100-12-31'
+      when schedule#>>'{end,kind}' = 'after_count' then (schedule->'end') - 'kind' - 'count' = '{}'::jsonb and case when jsonb_typeof(schedule#>'{end,count}') = 'number' then (schedule#>'{end,count}')::numeric between 1 and 366 and (schedule#>'{end,count}')::numeric = trunc((schedule#>'{end,count}')::numeric) else false end
+      else false end else false end
+  else false end) is true`),
+ check('recurrence_series_versions_template_shape',sql`(case when jsonb_typeof(template) = 'object' then
+    template ?& array['title','statusId','organizerMembershipId','attendeeMembershipIds']
+    and template - array['title','statusId','sectionId','organizerMembershipId','attendeeMembershipIds','joinUrl'] = '{}'::jsonb
+    and jsonb_typeof(template->'title') = 'string' and char_length(btrim(template->>'title')) between 1 and 500
+    and jsonb_typeof(template->'statusId') = 'string' and template->>'statusId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    and jsonb_typeof(template->'organizerMembershipId') = 'string' and template->>'organizerMembershipId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    and (not template ? 'sectionId' or jsonb_typeof(template->'sectionId') = 'null' or (jsonb_typeof(template->'sectionId') = 'string' and template->>'sectionId' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
+    and case when jsonb_typeof(template->'attendeeMembershipIds') = 'array' then jsonb_array_length(template->'attendeeMembershipIds') between 1 and 100 and not jsonb_path_exists(template->'attendeeMembershipIds', '$[*] ? (@.type() != "string" || !(@ like_regex "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))') else false end
+    and (not template ? 'joinUrl' or jsonb_typeof(template->'joinUrl') = 'null' or (jsonb_typeof(template->'joinUrl') = 'string' and char_length(template->>'joinUrl') <= 2048 and template->>'joinUrl' ~* '^https?://'))
+  else false end) is true`),
+]);
+
+/** Immutable explicit generation grants; the worker resolves and revalidates the stored authorizer, never a payload actor. */
+export const recurrenceGenerationAuthorizations=pgTable('recurrence_generation_authorizations',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),seriesId:uuid('series_id').notNull(),
+ revision:integer('revision').notNull(),authorizerUserId:uuid('authorizer_user_id').notNull(),authorizerMembershipId:uuid('authorizer_membership_id').notNull(),
+ actorUserId:uuid('actor_user_id').notNull(),source:commandSourceEnum('source').notNull(),
+ recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+},t=>[
+ unique('recurrence_generation_authorizations_workspace_id_unique').on(t.workspaceId,t.id),
+ unique('recurrence_generation_authorizations_head_unique').on(t.workspaceId,t.seriesId,t.id,t.revision),
+ unique('recurrence_generation_authorizations_revision_unique').on(t.workspaceId,t.seriesId,t.revision),
+ foreignKey({name:'recurrence_generation_authorizations_series_fk',columns:[t.workspaceId,t.projectId,t.seriesId],foreignColumns:[recurrenceSeries.workspaceId,recurrenceSeries.projectId,recurrenceSeries.id]}),
+ foreignKey({name:'recurrence_generation_authorizations_membership_fk',columns:[t.workspaceId,t.authorizerMembershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),
+ foreignKey({name:'recurrence_generation_authorizations_authorizer_fk',columns:[t.workspaceId,t.authorizerUserId],foreignColumns:[memberships.workspaceId,memberships.userId]}),
+ foreignKey({name:'recurrence_generation_authorizations_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),
+ check('recurrence_generation_authorizations_values',sql`revision >= 1 and change_seq >= 1`),
+]);
+
+/** Explicit finite period association; series/period and candidate ownership are immutable once bound. */
+export const recurrencePeriodBindings=pgTable('recurrence_period_bindings',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),
+ seriesId:uuid('series_id').notNull(),periodId:uuid('period_id').notNull(),revision:integer('revision').notNull(),
+ sourceManifestHash:text('source_manifest_hash').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
+},t=>[
+ unique('recurrence_period_bindings_workspace_id_unique').on(t.workspaceId,t.id),
+ unique('recurrence_period_bindings_series_period_unique').on(t.workspaceId,t.seriesId,t.periodId),
+ unique('recurrence_period_bindings_source_unique').on(t.workspaceId,t.projectId,t.seriesId,t.id,t.periodId),
+ foreignKey({name:'recurrence_period_bindings_series_fk',columns:[t.workspaceId,t.projectId,t.seriesId],foreignColumns:[recurrenceSeries.workspaceId,recurrenceSeries.projectId,recurrenceSeries.id]}),
+ foreignKey({name:'recurrence_period_bindings_period_fk',columns:[t.workspaceId,t.projectId,t.periodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
+ index('recurrence_period_bindings_period_idx').on(t.workspaceId,t.periodId,t.seriesId),
+ check('recurrence_period_bindings_revision',sql`revision >= 1`),
+ check('recurrence_period_bindings_hash',sql`source_manifest_hash ~ '^[0-9a-f]{64}$'`),
+]);
+
+/**
+ * Stable reserved header with natural key (workspace, series, original nominal date). The key, sequence,
+ * binding and period never change; real meeting/task/package locators are all-or-none and attach once.
+ * A never-materialized cancelled header is valid header-only calendar census.
+ */
+export const recurrenceInstances=pgTable('recurrence_instances',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),
+ seriesId:uuid('series_id').notNull(),bindingId:uuid('binding_id').notNull(),periodId:uuid('period_id').notNull(),
+ occurrenceKey:date('occurrence_key',{mode:'string'}).notNull(),nominalSequence:integer('nominal_sequence'),
+ sourceVersionId:uuid('source_version_id').notNull(),revision:integer('revision').notNull(),
+ calendarState:recurrenceCalendarStateEnum('calendar_state').notNull(),resolution:jsonb('resolution').$type<RecurrenceResolutionDto>().notNull(),
+ exceptionVersionId:uuid('exception_version_id'),
+ meetingId:uuid('meeting_id'),taskId:uuid('task_id'),workPackageId:uuid('work_package_id'),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[
+ unique('recurrence_instances_natural_key_unique').on(t.workspaceId,t.seriesId,t.occurrenceKey),
+ unique('recurrence_instances_sequence_unique').on(t.workspaceId,t.seriesId,t.nominalSequence),
+ unique('recurrence_instances_workspace_id_unique').on(t.workspaceId,t.id),
+ unique('recurrence_instances_scope_id_unique').on(t.workspaceId,t.projectId,t.id),
+ unique('recurrence_instances_meeting_lock_unique').on(t.workspaceId,t.id,t.meetingId),
+ unique('recurrence_instances_meeting_unique').on(t.workspaceId,t.meetingId),
+ unique('recurrence_instances_task_unique').on(t.workspaceId,t.taskId),
+ unique('recurrence_instances_package_unique').on(t.workspaceId,t.workPackageId),
+ foreignKey({name:'recurrence_instances_series_fk',columns:[t.workspaceId,t.projectId,t.seriesId],foreignColumns:[recurrenceSeries.workspaceId,recurrenceSeries.projectId,recurrenceSeries.id]}),
+ foreignKey({name:'recurrence_instances_binding_fk',columns:[t.workspaceId,t.projectId,t.seriesId,t.bindingId,t.periodId],foreignColumns:[recurrencePeriodBindings.workspaceId,recurrencePeriodBindings.projectId,recurrencePeriodBindings.seriesId,recurrencePeriodBindings.id,recurrencePeriodBindings.periodId]}),
+ foreignKey({name:'recurrence_instances_source_version_fk',columns:[t.workspaceId,t.projectId,t.seriesId,t.sourceVersionId],foreignColumns:[recurrenceSeriesVersions.workspaceId,recurrenceSeriesVersions.projectId,recurrenceSeriesVersions.seriesId,recurrenceSeriesVersions.id]}),
+ foreignKey({name:'recurrence_instances_meeting_fk',columns:[t.workspaceId,t.projectId,t.meetingId],foreignColumns:[meetings.workspaceId,meetings.projectId,meetings.id]}),
+ foreignKey({name:'recurrence_instances_meeting_source_fk',columns:[t.workspaceId,t.meetingId,t.taskId,t.periodId],foreignColumns:[meetings.workspaceId,meetings.id,meetings.taskId,meetings.plannedPeriodId]}),
+ foreignKey({name:'recurrence_instances_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+ foreignKey({name:'recurrence_instances_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
+ index('recurrence_instances_binding_idx').on(t.workspaceId,t.bindingId,t.occurrenceKey),
+ check('recurrence_instances_values',sql`revision >= 1 and occurrence_key between '2000-01-01' and '2100-12-31' and (nominal_sequence is null or nominal_sequence between 1 and 366)`),
+ check('recurrence_instances_locator_all_or_none',sql`((meeting_id is null and task_id is null and work_package_id is null) or (meeting_id is not null and task_id is not null and work_package_id is not null)) is true`),
+ check('recurrence_instances_resolution_shape',sql`(case when jsonb_typeof(resolution) = 'object' then
+    resolution ?& array['policyVersion','intendedLocalDate','intendedLocalTime','resolvedStartAt','resolvedEndAt','resolvedLocalDate','resolvedLocalTime','resolvedOffset','plannedDurationMinutes','warning','provenance']
+    and resolution - array['policyVersion','intendedLocalDate','intendedLocalTime','resolvedStartAt','resolvedEndAt','resolvedLocalDate','resolvedLocalTime','resolvedOffset','plannedDurationMinutes','warning','provenance'] = '{}'::jsonb
+    and jsonb_typeof(resolution->'policyVersion') = 'string' and resolution->>'policyVersion' = 'first_valid_gap_earlier_overlap_v1'
+    and jsonb_typeof(resolution->'intendedLocalDate') = 'string' and resolution->>'intendedLocalDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' and resolution->>'intendedLocalDate' between '2000-01-01' and '2100-12-31'
+    and jsonb_typeof(resolution->'resolvedLocalDate') = 'string' and resolution->>'resolvedLocalDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' and resolution->>'resolvedLocalDate' between '2000-01-01' and '2100-12-31'
+    and jsonb_typeof(resolution->'intendedLocalTime') = 'string' and resolution->>'intendedLocalTime' ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+    and jsonb_typeof(resolution->'resolvedLocalTime') = 'string' and resolution->>'resolvedLocalTime' ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+    and jsonb_typeof(resolution->'resolvedStartAt') = 'string' and resolution->>'resolvedStartAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}([.][0-9]+)?)?Z$'
+    and jsonb_typeof(resolution->'resolvedEndAt') = 'string' and resolution->>'resolvedEndAt' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}([.][0-9]+)?)?Z$'
+    and jsonb_typeof(resolution->'resolvedOffset') = 'string' and resolution->>'resolvedOffset' ~ '^[+-]([01][0-9]|2[0-3]):[0-5][0-9]$'
+    and case when jsonb_typeof(resolution->'plannedDurationMinutes') = 'number' then (resolution->'plannedDurationMinutes')::numeric between 1 and 1440 and (resolution->'plannedDurationMinutes')::numeric = trunc((resolution->'plannedDurationMinutes')::numeric) else false end
+    and (jsonb_typeof(resolution->'warning') = 'null' or (jsonb_typeof(resolution->'warning') = 'string' and resolution->>'warning' in ('ambiguous_earlier','gap_first_valid','skipped_local_date')))
+    and case when jsonb_typeof(resolution->'provenance') = 'object' then
+      resolution->'provenance' ?& array['timezone','implementation','tzdataVersion','icuVersion']
+      and (resolution->'provenance') - array['timezone','implementation','tzdataVersion','icuVersion'] = '{}'::jsonb
+      and jsonb_typeof(resolution#>'{provenance,timezone}') = 'string' and char_length(resolution#>>'{provenance,timezone}') between 1 and 100
+      and jsonb_typeof(resolution#>'{provenance,implementation}') = 'string' and char_length(resolution#>>'{provenance,implementation}') between 1 and 100
+      and (jsonb_typeof(resolution#>'{provenance,tzdataVersion}') = 'null' or (jsonb_typeof(resolution#>'{provenance,tzdataVersion}') = 'string' and char_length(resolution#>>'{provenance,tzdataVersion}') between 1 and 40))
+      and (jsonb_typeof(resolution#>'{provenance,icuVersion}') = 'null' or (jsonb_typeof(resolution#>'{provenance,icuVersion}') = 'string' and char_length(resolution#>>'{provenance,icuVersion}') between 1 and 40))
+    else false end
+  else false end) is true`),
+]);
+
+/** Immutable "only this one" exception versions; the current head is instances.exception_version_id. */
+export const recurrenceExceptionVersions=pgTable('recurrence_exception_versions',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),instanceId:uuid('instance_id').notNull(),
+ revision:integer('revision').notNull(),kind:recurrenceExceptionKindEnum('kind').notNull(),
+ localDate:date('local_date',{mode:'string'}),localTime:text('local_time'),reason:text('reason').notNull(),
+ actorUserId:uuid('actor_user_id').notNull(),source:commandSourceEnum('source').notNull(),
+ recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+},t=>[
+ unique('recurrence_exception_versions_workspace_id_unique').on(t.workspaceId,t.id),
+ unique('recurrence_exception_versions_head_unique').on(t.workspaceId,t.instanceId,t.id),
+ unique('recurrence_exception_versions_revision_unique').on(t.workspaceId,t.instanceId,t.revision),
+ foreignKey({name:'recurrence_exception_versions_instance_fk',columns:[t.workspaceId,t.projectId,t.instanceId],foreignColumns:[recurrenceInstances.workspaceId,recurrenceInstances.projectId,recurrenceInstances.id]}),
+ foreignKey({name:'recurrence_exception_versions_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),
+ check('recurrence_exception_versions_values',sql`revision >= 1 and change_seq >= 1 and char_length(btrim(reason)) between 1 and 1000`),
+ check('recurrence_exception_versions_move_shape',sql`((kind = 'move' and local_date between '2000-01-01' and '2100-12-31' and local_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$') or (kind <> 'move' and local_date is null and local_time is null)) is true`),
+]);
+
+/** Immutable calendar-only freeze locks: original schedule/roster provenance per instance identity, even when
+ * the header was never materialized (meeting null). No commitment, minute cohort or package baseline. */
+export const recurrenceCalendarLocks=pgTable('recurrence_calendar_locks',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),
+ baselineId:uuid('baseline_id').notNull(),instanceId:uuid('instance_id').notNull(),meetingId:uuid('meeting_id'),
+},t=>[
+ unique('recurrence_calendar_locks_baseline_instance_unique').on(t.workspaceId,t.baselineId,t.instanceId),
+ foreignKey({name:'recurrence_calendar_locks_baseline_fk',columns:[t.workspaceId,t.projectId,t.baselineId],foreignColumns:[planBaselines.workspaceId,planBaselines.projectId,planBaselines.id]}),
+ foreignKey({name:'recurrence_calendar_locks_instance_fk',columns:[t.workspaceId,t.projectId,t.instanceId],foreignColumns:[recurrenceInstances.workspaceId,recurrenceInstances.projectId,recurrenceInstances.id]}),
+ foreignKey({name:'recurrence_calendar_locks_instance_meeting_fk',columns:[t.workspaceId,t.instanceId,t.meetingId],foreignColumns:[recurrenceInstances.workspaceId,recurrenceInstances.id,recurrenceInstances.meetingId]}),
+ foreignKey({name:'recurrence_calendar_locks_meeting_fk',columns:[t.workspaceId,t.projectId,t.meetingId],foreignColumns:[meetings.workspaceId,meetings.projectId,meetings.id]}),
+ index('recurrence_calendar_locks_instance_idx').on(t.workspaceId,t.instanceId),
 ]);

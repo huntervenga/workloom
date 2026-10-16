@@ -44,6 +44,22 @@ export {
   type RunMigrationsOptions,
 } from './migrations.js';
 export {
+  PG_BOSS_SCHEMA_VERSION,
+  PG_BOSS_VERSION,
+  QueueSchemaStateError,
+  RECURRENCE_DEAD_LETTER_QUEUE,
+  RECURRENCE_DEAD_LETTER_QUEUE_OPTIONS,
+  RECURRENCE_MATERIALIZE_QUEUE,
+  RECURRENCE_MATERIALIZE_QUEUE_OPTIONS,
+  RECURRENCE_QUEUE_REGISTRATIONS,
+  WORKLOOM_QUEUE_SCHEMA,
+  findQueueOptionMismatches,
+  migrateWorkloomQueue,
+  type MigrateWorkloomQueueOptions,
+  type QueueOptionMismatch,
+  type WorkloomQueueMigrationResult,
+} from './queue/schema.js';
+export {
   createReadinessProbe,
   type ReadinessCheckResult,
   type ReadinessProbe,
@@ -78,3 +94,9 @@ export { createWorkCategoryApplication, type WorkCategoryApplicationOptions } fr
 export { createWorkCategoryRepository } from './repositories/work-category-repository.js';
 
 export {createMeetingApplication,type MeetingApplicationOptions} from './meetings/meeting-application.js';
+
+export {createRecurrenceApplication,type RecurrenceApplicationOptions} from './recurrence/recurrence-application.js';
+export {createRecurrenceWorkerFacade,type RecurrenceWorkerFacadeOptions} from './recurrence/worker-facade.js';
+export {createRecurrenceOutboxRelay,RECURRENCE_RELAY_DEFAULT_LIMIT,RECURRENCE_RELAY_MAX_LIMIT,type RecurrenceOutboxRelayOptions} from './recurrence/outbox-relay.js';
+export {createRecurrenceCursorCodec,type RecurrenceCursorCodec,type RecurrenceCursorCodecOptions} from './recurrence/cursor.js';
+export {createRecurrenceRepository,type RecurrenceRepositoryOptions} from './repositories/recurrence-repository.js';

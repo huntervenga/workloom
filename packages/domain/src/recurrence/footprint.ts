@@ -1,0 +1,84 @@
+import type {PlanningMutationIntent,PlanningRepository} from '../planning/ports.js';
+import type {RecurrenceAffectedFootprint,RecurrenceGuardIntent,RecurrenceRepository} from './ports.js';
+
+/** Exhaustive typed footprint matrix (docs16 §8): the exact source projects an intent may change.
+ * Internal signature: resolveRecurrenceAffectedProjects(scope:{context,repository,recurrence},intent):Promise<RecurrenceAffectedFootprint>.
+ * A malformed target/input shape is never guessed — it throws (unexpected → whole tx rolls back). A well-formed
+ * target that does not exist yields 'none'; its handler then answers 404 and nothing commits.
+ */
+export interface RecurrenceFootprintScope {
+ readonly context:{readonly workspaceId:string};readonly repository:PlanningRepository;readonly recurrence:RecurrenceRepository;
+}
+const none:RecurrenceAffectedFootprint={kind:'none'};
+function projects(...ids:(string|null|undefined)[]):RecurrenceAffectedFootprint {
+ const list=[...new Set(ids.filter((id):id is string=>typeof id==='string'))].sort();return list.length?{kind:'projects',projectIds:list}:none;
+}
+function record(value:unknown,what:string):Record<string,unknown> {if(typeof value!=='object'||value===null)throw new Error(`Unknown recurrence footprint: ${what} is not an object.`);return value as Record<string,unknown>;}
+function text(value:unknown,what:string):string {if(typeof value!=='string')throw new Error(`Unknown recurrence footprint: ${what} is not an ID.`);return value;}
+function never(value:never):never {throw new Error(`Unhandled recurrence footprint intent: ${String(value)}`);}
+
+export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprintScope,intent:RecurrenceGuardIntent):Promise<RecurrenceAffectedFootprint> {
+ const repo=scope.repository,ws=scope.context.workspaceId,i=intent as PlanningMutationIntent;
+ const taskProject=async(id:string)=>(await repo.tasks.findTask(ws,id))?.projectId;
+ const periodProject=async(id:string)=>(await repo.findPeriod(ws,id))?.projectId;
+ const fieldProject=async(id:string)=>(await repo.fields.findField(ws,id))?.projectId;
+ const seriesProject=async(id:string)=>(await scope.recurrence.findSeries(ws,id))?.projectId;
+ const meetingProject=async(taskId:string)=>(await repo.findMeetingByTask(ws,taskId))?.projectId??await taskProject(taskId);
+ // Broad sources (a workspace tag) include every project and period owner: fail closed, never narrowed by guess.
+ const allProjects=async()=>projects(...(await repo.tasks.listProjects(ws)).map(p=>p.id),...(await repo.listPeriods(ws)).map(p=>p.projectId));
+ switch(i.family){
+  case 'task':
+   switch(i.command){
+    case 'project.create':case 'tag.create':return none;
+    case 'project.update':case 'section.create':return projects((await repo.tasks.findProject(ws,text(i.target,'project')))?.id);
+    case 'section.update':return projects((await repo.tasks.findSection(ws,text(i.target,'section')))?.projectId);
+    case 'tag.update':return allProjects();
+    case 'task.create':return projects((await repo.tasks.findProject(ws,text(record(i.input,'task input')['projectId'],'task project')))?.id);
+    case 'task.update':case 'task.archive':case 'task.restore':return projects(await taskProject(text(i.target,'task')));
+    default:return never(i);
+   }
+  case 'field':
+   switch(i.command){
+    case 'field.create':return projects((await repo.tasks.findProject(ws,text(record(i.input,'field input')['projectId'],'field project')))?.id);
+    case 'field.update':case 'field.option.create':return projects(await fieldProject(text(i.target,'field')));
+    case 'field.option.update':return projects(await fieldProject(text(record(i.target,'option target')['fieldId'],'field')));
+    case 'field.columns.update':return projects((await repo.tasks.findProject(ws,text(i.target,'project')))?.id);
+    case 'field.value.set':{const t=record(i.target,'value target');return projects(await taskProject(text(t['taskId'],'task')),await fieldProject(text(t['fieldId'],'field')));}
+    default:return never(i);
+   }
+  case 'planning':
+   switch(i.command){
+    case 'period.create':return projects((await repo.tasks.findProject(ws,text(record(i.input,'period input')['projectId'],'period project')))?.id);
+    case 'period.update':case 'commitment.create':case 'commitment.update':case 'plan.freeze':return projects(await periodProject(text(record(i.target,'period target')['periodId'],'period')));
+    case 'work.set':{const t=record(i.target,'work target');return projects(await periodProject(text(t['periodId'],'period')),await taskProject(text(t['taskId'],'task')));}
+    case 'report.create':return projects((await repo.findBaseline(ws,text(record(i.target,'report target')['baselineId'],'baseline')))?.projectId);
+    default:return never(i);
+   }
+  case 'meeting':
+   switch(i.command){
+    case 'meeting.create':return projects((await repo.tasks.findProject(ws,text(record(i.target,'meeting target')['projectId'],'project')))?.id);
+    case 'meeting.update':case 'meeting.attendance.confirm':case 'meeting.plan.apply':return projects(await meetingProject(text(record(i.target,'meeting target')['taskId'],'meeting task')));
+    default:return never(i);
+   }
+  case 'category':
+   switch(i.command){
+    case 'category.binding.update':return projects((await repo.tasks.findProject(ws,text(record(i.target,'binding target')['projectId'],'project')))?.id);
+    case 'work.recategorize':{
+     const id=text(record(i.target,'work target')['workLogId'],'work log');
+     for(const period of await repo.listPeriods(ws)){const log=(await repo.listRecordedWork(ws,period.id)).find(w=>w.id===id);if(log)return projects(log.projectId);}
+     return none;
+    }
+    case 'work_type_report.create':return projects(await periodProject(text(record(i.target,'report target')['periodId'],'period')));
+    default:return never(i);
+   }
+  case 'recurrence':
+   switch(i.command){
+    case 'recurrence.series.create':return projects((await repo.tasks.findProject(ws,text(record(i.target,'series target')['projectId'],'project')))?.id);
+    case 'recurrence.series.edit':case 'recurrence.series.state':case 'recurrence.periods.add':case 'recurrence.generation.authorize':case 'recurrence.exception.set':
+     return projects(await seriesProject(text(record(i.target,'series target')['seriesId'],'series')));
+    case 'recurrence.period.materialize':return projects(await periodProject(text(record(i.target,'period target')['periodId'],'period')));
+    default:return never(i);
+   }
+  default:return never(i);
+ }
+}

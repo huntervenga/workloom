@@ -30,6 +30,7 @@
     "db:down": "docker compose -f infra/docker/compose.yaml down",
     "db:generate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:generate --workspace @workloom/db",
     "db:migrate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:migrate --workspace @workloom/db",
+    "db:queue:migrate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:queue:migrate --workspace @workloom/db",
     "db:seed:demo": "node --env-file-if-exists=.env scripts/with-env.mjs run db:seed:demo --workspace @workloom/db"
   },
   "devDependencies": {

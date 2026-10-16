@@ -25,7 +25,8 @@
     "test:unit": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
-    "@workloom/contracts": "*"
+    "@workloom/contracts": "*",
+    "temporal-polyfill": "1.0.6"
   },
   "devDependencies": {
     "@workloom/config": "*"

@@ -1,179 +1,172 @@
-# P3b: повторяющиеся встречи и bounded worker — проект контракта
+# P3b: конечные серии встреч и worker
 
-Статус: **draft для ревью, 16 октября 2026 года**. P3a-кандидат проходит QA; этот файл не утверждает готовность P3a и не разрешает P3b source/dependency/worker changes. Координатор поручил подготовить следующее ограниченное решение. Автор — Codex gpt-6.1-sol high в согласованном fallback после фактического лимита Claude; новых Claude-запросов нет. Владение этим новым draft — API lane, другие исходники не менялись.
+Статус на 16 октября 2026 года: **принятый ограниченный P3b**. Функциональные проверки, реальная миграция заполненной базы и старые replay/report fixtures, текущие desktop/mobile workflows и локальный compiled worker приняты. Точная хронология широких и последующих targeted проверок, первоначальные сбои и исправления записаны в [журнале](11-implementation-progress.md). Это не означает завершение всего P3, production worker hosting или old-tab upgrade certification.
 
-Основания: [recurrence identity и DST](03-domain-and-data.md), [P3 acceptance](06-implementation-plan.md), [worker/operations](08-railway-and-operations.md), [P3a meetings/attendance](15-p3a-contract.md). Публичные имена/лимиты ниже — предложение к совместному freeze, не существующие exports.
+Основания: [продукт](01-product-spec.md), [архитектура](02-architecture.md), [domain](03-domain-and-data.md), [API](04-api-and-integrations.md), [этапы](06-implementation-plan.md), [планирование](13-p2a-contract.md), [категории](14-p2b-contract.md), [одиночные встречи](15-p3a-contract.md). P4 описан отдельно в [planned-контракте](17-p4-contract.md).
 
-## 1. Результат и граница
+## 0. Зафиксированный срез
 
-Одна серия daily/weekly создаёт отдельные P3a Meeting/Task/WorkPackage по номинальным локальным датам. Пользователь задаёт IANA timezone, local time, weekdays, start/end либо count и явно выбранные planning periods. Worker заранее materialize ограниченный горизонт; freeze синхронно проверяет/достраивает выбранный период тем же in-transaction domain path. Retry/restart не создаёт вторых экземпляров и не начисляет часы.
+1. Конечные daily/weekly серии с выбранными weekdays, local time и IANA zone. Только явно связанные существующие периоды: до 52 периодов и 366 nominal candidates на серию. Нет фонового 28-дневного горизонта или бесконечного календаря.
+2. Стабильный reserved header каждой occurrence; настоящий meeting/task/package появляется при materialization. Natural key — workspace + series + **исходная nominal local date**, а не UTC instant, новая дата после move или номер версии.
+3. Общий resolver и policy `first_valid_gap_earlier_overlap_v1` для preview, синхронного ensure и worker. Записанный resolved instant и provenance не пересчитываются при обновлении tzdata.
+4. Полный calendar census перед freeze; личный и проектный snapshots, самостоятельные календарные locks, включая cancelled header без созданной встречи. Календарь сам не создаёт личные commitments, факты или PackageBaseline.
+5. Typed materialization recovery с максимумом 100 **реальных** compositions за transaction, signed cursor и независимым продвижением двух overdue периодов. Cancelled header без locator не считается missing и не расходует create cap.
+6. Единственная outbox-подписка — `recurrence.materialization_requested`, schemaVersion 1. Worker continuation и актуальный запрос после stale job записываются в том же UOW. Manual materialize продолжает работу через возвращённый cursor и не обязан создавать дополнительный continuation event.
+7. Worker использует stored generation authorization, проверенную под workspace barrier; входной job не содержит actor. Durable receipt не позволяет повторной доставке повторить stale/continuation effects, в том числе после смены authorizer.
+8. UI использует существующую карточку P3a для actuals, attendance и reports. Создание серии и materialization предлагают планы, но не записывают их автоматически.
 
-Создание серии/экземпляра создаёт **только предложения** персонального плана, как P3a. Нет автоматических commitments или attendance. Plan preview/apply и присутствие используют прежние явные authorized commands. Нельзя тихо восстановить модель «час × список участников» как автоматическую запись чужого плана/факта.
+P3b не добавляет calendar invitations, внешнюю доставку, arbitrary RRULE, monthly/yearly rules, cross-period moves, service principal, shared Auth/private ACL, production hosting или old-tab upgrade certification. P4/Gantt и оставшиеся части P2 остаются отдельными этапами.
 
-Объём: daily и weekly с выбранными weekdays; конец по дате либо count; skip/restore/move одного экземпляра; preview/apply «эта и будущие»; pause/resume генерации; bounded generation/outbox relay/health и restart proof. Произвольный RRULE, monthly, несколько номинальных вхождений серии в день, перенос записанного факта между периодами, private ACL/Auth, remote calendar OAuth, внешние уведомления/рассылки, import/export jobs и hosting/deployment отложены. Все встречи остаются workspace-visible. Cross-period move P3a всё ещё отклоняется; P3b не прячет transfer/correction внутри exception.
+## 1. Доступ и совместимость
 
-## 2. Модель и долговечная identity
+Чтение использует current `task.read`; preview и изменения серии — current `task.edit`. Actor/workspace/source/requestId задаёт доверенный adapter. Все изменения keyed, Origin/Host guards действуют и для POST-preview. Scope по-прежнему workspace-visible; будущие private task ACL здесь не реализованы.
 
-| Сущность | Предложенные поля и invariants |
+Публичные previews — repeatable-read, read-only: не reservе headers, не создают entity IDs и не вызывают materializer. Hash покрывает relevant immutable versions, bindings, headers/exceptions, текущие meeting/task/roster/package revisions, periods/locks и actor/access/permission epoch. Apply пересчитывает его под barrier. `PREVIEW_STALE` требует нового preview; key и payload не подменяются после uncertain response.
+
+Добавления `MeetingDto.recurrence` и `PlanningSnapshotDto.recurrence` optional и **без defaults**. Старые task/meeting/manual-work command inputs, hashes, cached outcomes и pinned reports не переписываются. Fresh reads дают актуальные locators; отсутствие optional поля в старом stored outcome не доказывает, что задача обычная. Старые браузерные bundles — отдельная проверка P6.
+
+## 2. Модель и постоянные identities
+
+Новые таблицы миграции `0006_recurrence_materialization`:
+
+- `recurrence_series`: mutable head/state, текущая версия и generation grant.
+- `recurrence_series_versions`: immutable schedule/template versions и inclusive effective boundary.
+- `recurrence_period_bindings`: явная immutable принадлежность series/period, revision и source manifest hash.
+- `recurrence_instances`: reserved headers, original key/sequence, calendar state, pinned resolution, exception head и nullable locators.
+- `recurrence_exception_versions`: immutable skip/move/restore/reset с reason и actor/source/changeSeq.
+- `recurrence_generation_authorizations`: immutable grants с authorizer user/membership и actor provenance.
+- `recurrence_calendar_locks`: immutable baseline/instance locks независимо от наличия Meeting.
+
+Scoped composite FKs удерживают workspace/project/period identity. `meeting_id/task_id/work_package_id` все null либо все заполнены; locator attaches once и не заменяется. Header key, nominal sequence и period binding не меняются после skip/move/restore. History/head consistency и append-only guards находятся в SQL; malformed JSON не проходит через SQL UNKNOWN.
+
+`RecurrenceSeriesDto` содержит currentVersion, generation state, `boundPeriodIds`/согласованный boundPeriodCount и nominalCandidateCount. Reload не требует опрашивать каждую неделю, чтобы узнать исходный выбор. `RecurrenceInstanceDto` содержит calendarState, immutable occurrenceKey/nominalSequence, resolution, nullable meeting/task/package IDs, current meetingRevision и exception head.
+
+## 3. Schedule, template и пределы
+
+| Параметр | Контракт |
 | --- | --- |
-| RecurrenceSeries | id/workspaceId/projectId, revision, state active/paused, currentVersionId, generationAuthorizationId/revision, createdAt/updatedAt |
-| RecurrenceSeriesVersion | id/seriesId/revision, effectiveFromNominalDate, immutable schedule/template, actor/source/time/changeSeq |
-| RecurrencePeriodBinding | id/workspaceId/projectId/seriesId/periodId, revision, server-approved candidate ownership manifest; explicit period association |
-| RecurrenceInstance | id/workspaceId/projectId/seriesId, occurrenceKey=originalLocalDate, periodBindingId, meetingId/taskId/workPackageId, sourceVersionId, resolvedStartAt/offset, resolutionPolicyVersion, revision/state |
-| RecurrenceExceptionVersion | id/instanceId, revision, kind skip/move/restore/reset, intended/override inputs, reason, actor/source/time/changeSeq; immutable, current head separately |
-| RecurrenceGeneration | id/bindingId, bounded requested range, source manifest hash, afterKey/throughKey, status/result counters; durable retry cursor, not accounting |
-| RecurrenceGenerationAuthorization | id/seriesId, revision, authorizing user/membership, explicit enabled state; worker resolves current identity from DB |
+| Даты recurrence | Валидные ISO calendar dates от 2000-01-01 до 2100-12-31 включительно |
+| Время | HH:mm; IANA zone, без произвольного numeric zone |
+| Частота | daily либо weekly с уникальными ISO weekdays 1–7 |
+| Завершение | on_date с inclusive span до 366 дней либо after_count 1–366 |
+| after_count scan | Не более 3660 calendar days; превышение — ошибка, не truncation |
+| Кандидаты | До 366 на серию, до 52 явно связанных периодов |
+| Duration/roster | 1–1440 elapsed minutes; 1–100 уникальных attendee membership IDs |
+| Materialization | 1–100 реальных meeting/task/package compositions за UOW |
+| Списки | Signed pagination; bounded readiness/materialization bindings до 100 с явным `truncated` |
 
-Unique `(workspaceId,seriesId,occurrenceKey)` живёт дольше queue retention. Key — **первоначальная номинальная локальная дата**, не UTC start, не новый день после move/DST и не series version. Stable instance/meeting/task/package IDs не меняются при edit/cancel/restore/regeneration. Каждому instance соответствует одна Meeting и одна Task; серия сама не Task/package и не получает часов. Scoped FK связывают весь граф; JSON не заменяет source identity constraints.
+Template содержит title, statusId, optional sectionId, organizerMembershipId, attendeeMembershipIds и optional HTTP(S) joinUrl. Новые occurrences создаются тем же single-meeting primitive P3a: отдельный Task/WorkPackage, nominal budget = duration × roster count, unknown attendance и предложения личных планов. Budget не является фактом или автоматически распределённым личным планом.
 
-Recurrence fields добавляются в fresh Meeting/task read locator как explicit metadata, а в старые stored DTO/snapshots — optional/no-default. Старые single-meeting IDs, worklog keys/heads, input hashes и report JSON не переписываются. Attendance source остаётся attendanceId, не occurrence date; исправление расписания не создаёт другой источник времени.
+## 4. Явные periods и source manifest
 
-## 3. Schedule DTO и правила
+Series привязана только к явно выбранным periods того же проекта. Periods могут перекрываться; если candidate разрешается одновременно в нескольких выбранных periods, команда отклоняется целиком. Нет «выбрать первый». Назначенный original key никогда не перебиндивается, даже после cancel; конфликт — `REVISION_CONFLICT`409. Move должен остаться в исходном периоде по resolved instant в timezone этого периода.
 
-`RecurrenceScheduleInput = {startDate,localTime,timezone,frequency,weekdays?,plannedDurationMinutes,end}`:
+Не связанные candidates остаются видимыми как «Период не выбран», не получают скрытых task IDs и не обещают будущую автоматическую генерацию. Add-periods проходит отдельный preview/apply; суммарный boundPeriodIds остаётся не более 52.
 
-- startDate — calendar YYYY-MM-DD; localTime — HH:mm; timezone — IANA, не browser zone;
-- frequency daily: каждый nominal date, weekdays отсутствует; weekly: weekdays —1–7 unique ISO weekday IDs;
-- duration1–1440 elapsed minutes;
-- end — `{kind:'on_date',endDate}` inclusive либо `{kind:'after_count',count:1..366}`; no unbounded series;
-- on_date максимум366 nominal-calendar дней от startDate; вычисление after_count просматривает максимум3660 дней, превышение — явный422, без truncation;
-- template: title/statusId/sectionId/organizerMembershipId/attendeeMembershipIds/joinUrl по P3a bounds/HTTP(S); recordings/summary/actual details не входят в шаблон.
+`sourceManifestHash` включает generation **inputs**: immutable version IDs/revisions/effective boundaries, semantic exception heads, series/binding/period ownership, immutable local period bounds и authorization revision. Он исключает generated entity/header IDs, materialization progress, attach revisions, changed timestamps и period revision, изменённую freeze. Поэтому собственный успешный chunk не инвалидирует следующий cursor. Полный previewHash отдельно включает output state и access sources.
 
-Не больше одного nominal candidate серии в день. Count — **полный nominal budget серии при создании, не число оставшихся встреч**. Для after_count первоначальные startDate/frequency/weekdays/count определяют неизменную упорядоченную последовательность N nominal dates. Их редактирование и смена end kind в P3b отложены; explicit follow-up series — отдельное действие, не скрытое продление. Можно версионировать template/localTime/timezone/duration для будущих первоначальных dates, с прежними period/protection checks. Preview показывает consumedNominalCount (позиции до effective date), remainingNominalCount, skipped/cancelled counts; skip всё равно consumes свою позицию и не добавляет встречу в конце. Move сохраняет ту же позицию/key.
+## 5. Публичные exports и HTTP — 15 операций
 
-Для on_date cadence/weekdays/endDate можно менять только на будущих effective-date segments; startDate остаётся immutable. Preview явно перечисляет новые и исключённые future dates. Исторические отменённые rows прежней версии остаются как history; возвращение даты требует explicit restore того же ID. Нельзя задним числом пересчитать прошедший count или трактовать новый count как remaining future count.
+Schemas/types находятся в `packages/contracts/src/recurrence.ts` и standalone `common/recurrence.ts`; domain port — `RecurrenceApplication`. Все методы ctx-first Promise. Реальная factory — `@workloom/db.createRecurrenceApplication(source, {cursorSecret?, ...WorkspaceWriteOptions})`, без второго pool.
 
-`RecurrenceSeriesDto` возвращает current version, state, authorization readiness и число **явно связанных** периодов, а не обещание бесконечной генерации. `RecurrenceInstanceDto` возвращает nominal key, plannedPeriodId, sourceVersionId, current meeting locator, exception head и resolution warning. Calendar показывает intended local date/time и resolved local time/offset отдельно при сдвиге.
+Все пути ниже под `/api/v1/workspaces/:workspaceId`; `{S}` означает `/recurrence-series/:seriesId`, `{I}` — `{S}/instances/:occurrenceKey`. Occurrence key проходит `recurrenceCalendarDateSchema`, а не UUID parser.
 
-## 4. Явная связь с planning periods
-
-Существующие periods могут перекрываться; timezone периода может отличаться от timezone серии. Поэтому series create принимает **explicit targetPeriodIds:UUID[1..52]**, все принадлежат project. Позднее отдельная команда добавляет выбранные period IDs. Worker не выбирает «первый подходящий period», не создаёт новые недели и не начисляет один instance в несколько периодов.
-
-Binding preview перечисляет nominal candidates, resolved instants и выбранный period для каждого. При выбранных перекрывающихся periods, претендующих на один series/key, ответ422 требует снять неоднозначность. Уже назначенный series/key не перепривязывается к другому period даже после отмены; добавление конфликтующего binding —409. Assignment сохраняется независимо от worker order. **Любое** изменение timezone/localTime/rule/exception, которое переносит resolved instant уже назначенного nominal key за границу его immutable period, отклоняет весь edit409/422 до user writes. Нельзя обойти запрет через cancel старого instance и создание replacement в соседнем period. Даты серии без явно связанного period не materialize, UI показывает «Период не выбран», а не подставляет текущую неделю.
-
-Candidate принадлежит периоду по **resolved instant**, проверенному в timezone периода. Nominal key может быть другой локальной датой в timezone серии. При DST gap/skipped date resolved instant может перейти в другой день; preview показывает это до apply. Нельзя спрятать cross-period transfer изменением zone/exception; move обязан оставаться внутри назначенного period.
-
-Bindings не являются плановыми commitments. Их candidate ownership/census нужен для однозначного generation и freeze, включая cancelled/uncommitted occurrences. Выбор/добавление periods — явное изменение revision/source manifest и инвалидация старого preview.
-
-## 5. Предложенный HTTP каталог
-
-Все пути под `/api/v1/workspaces/:workspaceId`. Strict query/body, canonical UUID, trusted ctx, current task access. Mutations keyed; POST preview read-only/keyless с Origin. Все list pages1–100/default50, signed cursor actor/workspace/permission epoch/filter-bound.
-
-| Метод и путь | Вход / ответ / порт RecurrenceApplication |
+| Метод/путь | Domain method → результат |
 | --- | --- |
-| GET `/projects/:projectId/recurrence-series` | query state/limit/cursor → SeriesDto page; listSeries(ctx,projectId,query) |
-| POST `/projects/:projectId/recurrence-preview` | CreateRecurrenceSeriesInput → proposed candidates/warnings/period ownership/previewHash; previewCreate(ctx,projectId,input) |
-| POST `/projects/:projectId/recurrence-series` | CreateRecurrenceSeriesInput + previewHash → SeriesDto,201; createSeries(ctx,projectId,input) |
-| GET `/recurrence-series/:seriesId` | SeriesDto; getSeries(ctx,seriesId) |
-| POST `/recurrence-series/:seriesId/edit-preview` | expectedRevision,effectiveFromNominalDate,desired schedule/template → full affected-instance plan/hash; previewEdit(ctx,seriesId,input) |
-| POST `/recurrence-series/:seriesId/edit` | same input + previewHash → SeriesDto/result,200; editSeries(ctx,seriesId,input) |
-| PATCH `/recurrence-series/:seriesId/state` | expectedRevision,state active/paused → SeriesDto; setState(ctx,seriesId,input) |
-| POST `/recurrence-series/:seriesId/period-preview` | expectedRevision,periodIds → candidate ownership/hash; previewPeriods(ctx,seriesId,input) |
-| POST `/recurrence-series/:seriesId/periods` | same input + previewHash → bindings/SeriesDto; addPeriods(ctx,seriesId,input) |
-| POST `/recurrence-series/:seriesId/generation-authorization` | expectedRevision,expectedAuthorizationRevision → current actor authorization; authorizeGeneration(ctx,seriesId,input) |
-| GET `/recurrence-series/:seriesId/instances` | periodId required,includeCancelled,limit/cursor → InstanceDto page; listInstances(ctx,seriesId,query) |
-| POST `/recurrence-series/:seriesId/instances/:occurrenceKey/exception-preview` | expectedSeriesRevision,expectedInstanceRevision,desired skip/move/restore/reset + reason → old/new schedule/protected impacts/hash; previewException(ctx,seriesId,key,input) |
-| POST `/recurrence-series/:seriesId/instances/:occurrenceKey/exception` | same input + previewHash → InstanceDto; setException(ctx,seriesId,key,input) |
-| POST `/periods/:periodId/materialize-meetings` | bounded limit1–100,afterKey?/sourceManifestHash? → MaterializationResultDto; materializePeriod(ctx,periodId,input) |
-| GET `/periods/:periodId/recurrence-readiness` | ReadinessDto pending/blocked/complete + bounded IDs available to actor; getReadiness(ctx,periodId) |
+| GET `/projects/:projectId/recurrence-series` | listSeries → page SeriesDto |
+| POST `/projects/:projectId/recurrence-preview` | previewCreate → CreatePreviewDto |
+| POST `/projects/:projectId/recurrence-series` | createSeries → SeriesDto, 201 |
+| GET `{S}` | getSeries → SeriesDto |
+| POST `{S}/edit-preview` | previewEdit → EditPreviewDto |
+| POST `{S}/edit` | editSeries → SeriesDto |
+| PATCH `{S}/state` | setState → SeriesDto |
+| POST `{S}/period-preview` | previewPeriods → PeriodPreviewDto |
+| POST `{S}/periods` | addPeriods → `{series,bindings}` |
+| POST `{S}/generation-authorization` | authorizeGeneration → SeriesDto |
+| GET `{S}/instances` | listInstances → page InstanceDto; periodId обязателен |
+| POST `{I}/exception-preview` | previewException → ExceptionPreviewDto |
+| POST `{I}/exception` | setException → InstanceDto |
+| POST `/periods/:periodId/materialize-meetings` | materializePeriod → MaterializationResultDto |
+| GET `/periods/:periodId/recurrence-readiness` | getReadiness → ReadinessDto |
 
-Это каталог proposals, не разрешение расширять P3a в текущем gate. Root может разделить management/exception UX на следующий checkpoint, но без stable identity, DST, freeze materialization и retry proof worker не выпускается. Поля actor/source/job capability/server time не принимаются ни одним input.
+Остальные успехи — 200 с общим envelope/meta.requestId/meta.nextCursor. Create/edit/template-bearing previews имеют scoped body cap 64 KiB; legacy global cap не расширяется. Wire includeCancelled допускает точные true/false, не truthiness строки `'false'`.
 
-## 6. Pure resolution и DST policy
+Inputs/export names: recurrenceCreatePreviewInputSchema/createRecurrenceSeriesInputSchema; recurrenceEditPreviewInputSchema/editRecurrenceSeriesInputSchema; setRecurrenceSeriesStateInputSchema; recurrencePeriodPreviewInputSchema/addRecurrencePeriodsInputSchema; authorizeRecurrenceGenerationInputSchema; recurrenceExceptionPreviewInputSchema/setRecurrenceExceptionInputSchema; materializePeriodInputSchema. DTOs/response schemas именованы по соответствующим create/edit/period/exception preview и result, не по прежнему draft-каталогу.
 
-Одна domain-функция `enumerateNominalCandidates(scheduleSegments,range)` работает с calendar dates; `.add({days:1})`/weekday, не UTC +24h. `resolveOccurrence(nominalDate,localTime,ianaZone,policyVersion)` возвращает intended date/time, resolved instant/local date/time/offset, warning и runtime timezone-data provenance. Resolver общий для preview, materialization и worker.
+Materialization result содержит periodId/status, global createdCount/remainingCount, nextCursor, bounded bindings, **required truncated**, frozenBaselineIds. Readiness содержит periodRevision/state, global missingCount/blockedCount, bounded bindings и truncated. `truncated=true` означает subset списка bindings; totals не суммируются из показанной части. UI восстанавливается через readiness, а не произвольные error details.
 
-Versioned policy `first_valid_gap_earlier_overlap_v1`:
+## 6. Единая политика DST
 
-1. Валидный local time → exact instant.
-2. Autumn overlap → более ранний instant, warning ambiguous_earlier.
-3. Spring gap → **первая допустимая граница после gap**, не compatible-сдвиг на размер gap:02:30 →03:00 при gap02:00–03:00.
-4. Полностью пропущенная локальная дата → первая допустимая граница после skipped date; original key не меняется, warning skipped_local_date. Может совпасть с другим nominal candidate — preview показывает два разных instances, не merge/copy часов.
-5. End = resolved instant + duration elapsed minutes. Calendar/IANA timezone пространства не переинтерпретирует existing resolved snapshots.
+Domain resolver использует pinned `temporal-polyfill`1.0.6 и calendar-date arithmetic; не прибавляет UTC 24 часа для получения следующей nominal date. Resolution сохраняет intended local date/time, resolved start/end/local date/time/offset, policy version, warning и implementation/tzdata/ICU provenance. DB composition передаёт реальные Node tz/ICU versions. Непредставимые second-level offsets/transitions отклоняются, не округляются.
 
-Temporal умеет различать gap/overlap, а `getTimeZoneTransition` даёт boundary нового offset. Предложенный resolver сравнивает earlier/later round-trip: обе совпали с intended wall time — overlap/обычный; ни одна не совпала — gap, берётся соответствующая transition boundary и проверяется, что она действительно закрывает этот gap. Не использовать startOfDay вместо arbitrary-gap boundary или бесконечный минутный поиск.
+`first_valid_gap_earlier_overlap_v1`: обычное время разрешается точно; overlap выбирает ранний instant; gap выбирает первую допустимую **границу**, а не compatible-сдвиг с сохранением минут; полностью пропущенная дата переходит на первую допустимую границу следующей даты. End = start + elapsed duration. Два nominal keys с одним resolved instant остаются разными occurrences; preview показывает collision.
 
-Проверки минимум: Asia/Nicosia spring02:30/03:30 вокруг реального перехода и autumn repeated hour; America/New_York02:30→03:00/earlier01:30; Australia/Lord_Howe30-minute gap/overlap; Pacific/Apia — 2011-12-30 skipped date; timezone UTC без transitions. Точные даты/локальные часы фиксируются по IANA runtime в fixtures; не предполагать, что переход каждого региона происходит в02:00. Pin Node/runtime image и записывать tz/ICU version, resolver/policy version; timezone-data upgrade не переписывает materialized старые instances автоматически.
-
-Read-only probe существующей установленной Temporal implementation на Node24.19.0 / tz2026b / ICU78.3 подтвердил следующие expected values. Это проверка примеров draft, **не** тест ещё несуществующего P3b resolver/worker; install/source/runtime mutations не выполнялись.
-
-| Zone / intended local | First-valid / earlier-overlap result |
+| Zone / intended local | Resolution |
 | --- | --- |
-| Asia/Nicosia — 2026-03-29 03:30 | 2026-03-29 04:00+03:00 |
-| Asia/Nicosia — 2026-10-25 03:30 | 2026-10-25 03:30+03:00 (раньше +02:00) |
-| America/New_York — 2026-03-08 02:30 | 2026-03-08 03:00-04:00 |
-| America/New_York — 2026-11-01 01:30 | 2026-11-01 01:30-04:00 |
-| Australia/Lord_Howe — 2026-10-04 02:15 | 2026-10-04 02:30+11:00 |
-| Australia/Lord_Howe — 2026-04-05 01:45 | 2026-04-05 01:45+11:00 |
-| Pacific/Apia — 2011-12-30 09:00 | 2011-12-31 00:00+14:00, key остаётся2011-12-30 |
-| UTC — 2026-03-29 03:30 | Без сдвига, +00:00 |
+| Asia/Nicosia 2026-03-29 03:30 | 04:00 +03:00, gap_first_valid |
+| Asia/Nicosia 2026-10-25 03:30 | 03:30 +03:00, ambiguous_earlier |
+| America/New_York 2026-03-08 02:30 | 03:00 -04:00, gap_first_valid |
+| America/New_York 2026-11-01 01:30 | 01:30 -04:00, ambiguous_earlier |
+| Australia/Lord_Howe 2026-10-04 02:15 | 02:30 +11:00, gap_first_valid |
+| Australia/Lord_Howe 2026-04-05 01:45 | 01:45 +11:00, ambiguous_earlier |
+| Pacific/Apia 2011-12-30 09:00 | 2011-12-31 00:00 +14:00, skipped_local_date; key остаётся 2011-12-30 |
+| UTC 2026-03-29 03:30 | Без сдвига, +00:00 |
 
-## 7. Версии, exceptions и protected occurrences
+Это executable reference vectors кандидата, а не замена итоговой приёмки. Фактические pure/HTTP проверки и версии runtime указываются в журнале.
 
-«Эта и будущие» создаёт immutable SeriesVersion с inclusive effectiveFromNominalDate, не меняет старую строку. Effective segments не перекрываются. Preview показывает update/create/cancel/retained IDs, clashes, count/end consequences и hash полной source census (series/versions/bindings/instances/exceptions/meeting/task/roster/package revisions, period/locks, current authorization/memberships/permission epoch). Apply пересчитывает под barrier; stale409 до proposed writes.
+## 7. Версии, exceptions и direct-edit boundary
 
-Pause/resume означает **только фоновую подготовку worker**, не отмену расписания. Уже registered bindings/candidates остаются обязательными для sync ensure/freeze при active и paused. UI label — «Приостановить фоновую подготовку». Pause не удаляет original census, не снимает lock и не превращает blocked grant в complete; для остановки будущего календарного расписания нужен отдельный previewed version edit до его защиты. После cutoff нельзя скрыть исходные candidates посредством pause.
+«Эта и будущие» добавляет immutable SeriesVersion. Для каждой nominal date выигрывает **наибольшая numeric revision** среди версий с effectiveFrom <= date. Повторные edits с одной boundary разрешены. Более поздняя запись с ранней boundary также заменяет запланированные будущие segments старых versions; старая версия не «возвращается» позже. Все immutable версии остаются в истории/manifest.
 
-Bounded policy: version edit, затрагивающий уже прошедший, Done, ever-posted или schedule-frozen instance, целиком отклоняется с перечнем доступных actor protected targets; UI предлагает более позднюю effective date. Нет скрытого частичного редактирования будущего и нет переписывания baseline. Новые post-freeze occurrences/packages получают существующую added/unplanned classification, не становятся original задним числом.
+Start date и end kind immutable. У after_count также immutable исходные cadence/weekdays/count: skips расходуют позиции, новые даты не дописываются после N. On_date future edits ограничены общим cap. Новые либо уже существующие occurrences нельзя редактированием перенести в прошлое; completed/ever-posted/frozen/cross-period targets защищены. Preview показывает фактически затронутые protected IDs, apply отклоняет весь edit с `DOMAIN_VALIDATION_FAILED`422. Это не скрытый частичный update.
 
-«Только эта» — immutable exception version. Move сохраняет key/IDs и допускается только в прежнем period и по P3a schedule/roster locks. Skip/cancel не удаляет Task/Attendance/commitment/history и не void факты; опубликованный факт требует отдельной явной P3a correction. Restore переиспользует старый instance ID, не создаёт ещё один nominal source. Manual exception имеет приоритет над regeneration/новой series version, пока явный reset с expected revisions/reason/hash не отменит override.
+Exceptions skip/move/restore/reset имеют независимую immutable историю, reason и expected series/instance revisions. Original key, nominal sequence, период и реальные entity IDs сохраняются. Fresh ExceptionPreviewDto дополнительно содержит required nonnull beforePlannedCalendar/afterPlannedCalendar: timezone, plannedDurationMinutes, organizerMembershipId и attendeeMembershipIds. Reset/restore наследуют effective planned calendar/roster, skip/move сохраняют исходный planned context; оба контекста входят в preview hash. Calendar-only sync не переписывает обычные title/status/section/join/materials, actuals и историю. Manual skip/move не стирается regeneration. Cancelled manual-skip header с неизменными resolution/sourceVersion — retain при template-only edit; он не обязан попасть в protectedTargets такого edit. Его restore/reset/реальное изменение всё равно проверяет calendar lock по instance identity, даже при null locators.
 
-Удалённый правилом ещё незащищённый future nominal occurrence остаётся cancelled; если дата возвращается, нужен явный restore того же ID через preview/apply. Worker не оживляет cancelled row автоматически. Recurrence edits не меняют actualStart/duration, recording/summary, attendance status, категории прошлого факта или personal plans.
+Direct P3a `meeting.update` для recurrence-owned meeting отклоняет значимые planned time/timezone/duration/organizer/roster/state изменения422: используются series/exception commands. Same effective planned inputs допустимы как no-op и проверяют revisions. Actual start/duration, join/recording/summary links и attendance остаются доступны по правилам P3a; старые manual-work endpoints не становятся attendance bypass.
 
-## 8. Общий transaction primitive и freeze
+## 8. Census, previews, materialization и freeze
 
-Foundation подтвердил reusable boundary: извлечь persistence/orchestration P3a create handler в `createSingleMeetingInScope(scope,normalizedInput,stableOccurrenceIdentity,tools)`. Он получает **уже открытый MeetingWriteScope**, не вызывает public createMeeting, writer.run, runWorkspaceWrite, PlanningApplication либо shared planning guard повторно. Никакой DB lock не удерживается во время внешнего HTTP/queue ожидания.
+Every real task/field/planning/category/meeting/recurrence composition несёт обязательный same-TX census. Exhaustive source-footprint guard ограничивает affected projects: revoked grant проекта A не делает несвязанный B недоступным. Broad workspace mutations честно затрагивают все свои проекты.
 
-Предлагаемый следующий internal port: `ensurePeriodOccurrencesInScope(scope:PlanningWriteScope,periodId,options:{maxCreates,reason:'worker'|'explicit'|'freeze'}):Promise<MaterializationOutcome>`. Реальная DB composition даёт bound repositories/helper на **том же tx** и scope.recordChange; freeze/task/field/planning/category/meeting factories получают обязательный materializer. Нет optional no-op production bypass и нет новой transaction при входе из performFreeze. Конкретный тип адаптера между PlanningWriteScope и MeetingWriteScope утверждает foundation до source.
+Readonly freeze preview требует complete census, включает её в полный source hash и ничего не reservе/materialize. Missing/blocked census → `MATERIALIZATION_REQUIRED`409; UI показывает readiness и предлагает подготовить выбранный период. Нормальная mutation может выполнить bounded lazy-cutoff prerequisite: до её proposed writes создать до 100 отсутствующих occurrences и complete freeze атомарно. Если после этого census incomplete/blocked, **весь** UOW откатывается; user write и partial baseline не фиксируются. Это и означает fail closed.
 
-Порядок под workspace barrier: current triggering principal/target access + existing replay → affected-project/source footprint новой операции → отдельно validated persisted generation authorizer только affected scope → due period/source discovery → shared internal ensure для периода → полный snapshot/locks/исходный baseline → proposed user mutation либо tagged controlled rejection → idempotency/audit/outbox → единый commit. Existing idempotent replay проверяется после current ACL и до новой materialization; replay не переписывает исходный stored outcome.
+Typed materializePeriod recovery обходит все full due-freeze loops, проверяет current actor/stored authorities и создаёт только approved census целевого периода. MaxCreates считает реальные compositions; reserved/cancelled header-only rows не расходуют cap. Signed cursor связан с actor/workspace/permission epoch/period/input manifest; source change требует restart, собственный progress hash не меняет. Manual pending chunk продолжается следующим keyed вызовом с cursor; дополнительный outbox continuation ему не обязателен.
 
-Pure enumeration/resolution сообщает число missing candidates до proposed inserts. Одна transaction создаёт максимум100 occurrences. Если freeze требует больше, он **не фиксирует частичный baseline**: controlled MATERIALIZATION_REQUIRED просит explicit/worker chunks. Explicit materialize commits bounded chunk и возвращает sourceManifestHash/nextCursor/complete; следующая chunk под barrier revalidates manifest/version/ownership, changed sources →409/restart enumeration, unique keys сохраняют уже созданные IDs.
+Финальный complete chunk overdue периода в том же UOW замораживает **только этот** target period. Два периода по >100 продвигаются независимо без A-requires-B/B-requires-A loop. Уже complete период может быть lazy-cutoff prerequisite обычной команды; неизменность другого unfinished периода после explicit final chunk проверяется отдельно от такого обычного write.
 
-Read-only planning/series previews не создают экземпляры. Если обязательные occurrences отсутствуют, freeze-preview возвращает controlled409 MATERIALIZATION_REQUIRED с разрешёнными target IDs/counts и действием materialize, затем пользователь получает новый настоящий preview. Не строить виртуальные random-ID/createdAt snapshots: они дают вечный PREVIEW_STALE при превращении в настоящие строки.
+Project freeze включает весь зарегистрированный active/paused calendar census. Self freeze требует той же глобальной completeness, но snapshot/locks включают только entries данного membership по фактическому roster материализованной встречи; для header без locator используется roster его source version. Чужой календарь личный freeze не блокирует. Project merge сохраняет earliest personal original по numeric changeSeq и все sourcePersonalBaselineIds. Optional recurrence section отсутствует у периода без релевантного calendar census; old snapshots не backfill-ятся текущими данными.
 
-Если ранее валидный manual freeze preview сталкивается с новой recurrence/materialization, pre-handler может commit **только** необходимую materialization и вернуть tagged committed PREVIEW_STALE для refresh; старый preview не создаёт baseline. Нужные cutoff freeze/materialization эффекты не откатываются бесконечным stale-preview loop. Решение typed/scoped to target period принимается до arbitrary handler writes, не catch после частичных user writes. Lazy cutoff performFreeze materialize и snapshot выполняются атомарно; другие protected command families используют тот же путь. Missing/blocked authorization или generation failure не маркируются complete и не дают baseline с потерянными встречами.
+Calendar-only snapshot не добавляет commitments/minutes/PackageBaseline. Cancelled никогда не materialized header остаётся оригинальным census и lock-ится по instance ID. Новые после freeze packages/occurrences не переписывают old census: их факты относятся к added scope независимо от наличия нового личного commitment. Existing detail/package lineage и отчётные denominators P2a/P2b сохраняются.
 
-Обязательное scope refinement к текущему workspace-wide due loop: `resolveAffectedProjects(intent,repo)` до materialization определяет реальные source projects операции. Task/field/project/period/report mutations замораживают свои affected projects; workspace-tag change включает все projects, чьи source snapshots реально используют tag. Если blocked grant находится только в несвязанном project A, write project B не пытается завершить A и не становится навсегда unwritable. Readiness/worker backlog A остаётся явно blocked, baseline A не заявляется готовым. Broad source mutation, действительно затрагивающая A+B, fail-closed до recovery A; неизвестный footprint не угадывается. Для scope mapping нужен exhaustive typed intent matrix и real-PG A/B regression до GO. Это не разрешение игнорировать blocked series внутри затронутого периода.
+Internal `createSingleMeetingInScope` работает на уже открытом scope, без public createMeeting/нового runner/guard. Recurrence composer требует reserved occurrence identity и validated generation authority; same-TX attach связывает header с реальными entity IDs. Необязательная identity допускается только на обычном single-create helper path.
 
-Freeze snapshot получает optional/no-default recurrence manifest: series version/policy/binding IDs, candidate census/instance keys/IDs, resolved start/exception versions. Включается calendar census **всех registered candidates выбранного периода, active и paused**, даже если пользователь ещё не применил персональные proposals. Calendar-only lock защищает именно original schedule/roster provenance; он не создаёт личный commitment, plannedMinutes, package budget baseline или новый minute cohort. Отчёт с отсутствующим персональным планом сохраняет missing/unplanned semantics P2a. Skipped/cancelled nominal candidates остаются в census с явным состоянием, не исчезают из неё. Это **не** превращает proposals в commitments и не заявляет известный персональный план; P2a minute cohort остаётся по настоящим commitments. Какие meeting fields блокирует такой calendar-only snapshot, фиксируется отдельно: минимально original schedule/roster с текущим policy, без изобретённых часов.
+## 9. Stored grants, outbox, очередь и worker
 
-## 9. Worker, grants, queue и restart
+Generation grant хранит explicit authorizer user/membership/revision. Под barrier проверяются его current active membership и task.edit. Triggering ctx actor/source не заменяется authorizer; audit записывает обе provenance. Нет organizer/owner fallback или общего system bypass. Отозванный grant возвращает controlled blocked; явный authorizeGeneration с expected revisions — узкое metadata recovery до prerequisite старого grant, без смены schedule/binding/fact/baseline.
 
-Будущий отдельный apps/worker использует тот же commit/runtime, Node24/Postgres17, серверные packages и loopback/synthetic DB guard локального режима. Никаких HTTP public endpoints, Shared Auth fallback, Railway provisioning или deployment. Предложенные runtime dependencies после отдельного GO: pg-boss и уже принятый Temporal implementation; runtime dependencies не dev-only.
+Paused означает «Приостановить фоновую подготовку»: worker возвращает paused без hot retry; sync census и freeze по-прежнему учитывают серию. Resume создаёт новый запрос по affected binding. Нет скрытого удаления исходных candidates через pause.
 
-Pg-boss — транспорт **at least once**. Business uniqueness/idempotency durable в domain/DB; job singleton или «exactly once» маркетинговое описание не заменяют unique series/key и immutable attendance sources. Worker startup регистрирует bounded queues; отдельный единственный migration command управляет pg-boss schema lifecycle, а не гонка всех replicas. Закреплённая версия и populated upgrade/rollback compatibility проверяются до запуска.
+Подписка ровно на `recurrence.materialization_requested` v1; create/edit/addPeriods/authorize/resume записывают один запрос на affected binding. Relay выбирает bounded valid v1 rows с FOR UPDATE SKIP LOCKED; enqueue callback получает тот же Drizzle transaction, и только эти rows помечаются dispatched. Ошибка откатывает enqueue и receipt. Malformed/unsupported subscribed rows удерживаются и видны как blocked health, не лишают valid v1 продвижения; unrelated historical outbox не выбирается и не считается этим consumer.
 
-Queues первого среза: recurrence.materialize и internal outbox relay. Worker horizon28дней только по explicit bindings, job максимум один period/series либо100creates; global concurrency2, per-workspace1, runtime/statement timeout с измерением, bounded retries5/backoff, lease/heartbeat и terminal blocked reason. Это стартовые bounds для local test, не SLA. Cutoff correctness обеспечивает shared sync path; отдельный широкополномочный cutoff sweep/notifications/import queue не добавляется скрыто.
+`createRecurrenceWorkerFacade(...).materializeBinding(job)` принимает workspaceId/seriesId/bindingId/sourceManifestHash/authorizationRevision/requestId без actor. Worker pending chunk записывает continuation в том же UOW до acknowledgement; stale job аналогично durably запрашивает текущий source. Normal progress не расходует failure retry budget.
 
-Job payload содержит только workspaceId/seriesId/bindingId/sourceManifestHash/authorizationRevision и request correlation. Actor/capabilities/time не доверяются payload. В bounded варианте worker разрешает actor из persisted explicit generation authorization, затем проверяет его действующее membership/task.edit под barrier; source=job, server requestId. Нет impersonation по organizer, автоматической подстановки owner или безграничного system bypass. При revoke/deactivation job блокируется, не materialize; действующий уполномоченный member/admin может явно переавторизовать серию собой. Sync freeze не пропускает blocked series затронутого периода молча: предлагает explicit reauthorize, без старых прав из snapshot. Pause останавливает только background generation и **не** восстанавливает grant/не удаляет обязательную census; это не обход blocked freeze. Более общий service principal — отдельное Auth/operations решение.
+Durable receipt использует внутренний namespace `recurrence.job.materialize` существующей command cache. Request ID digest ищется по workspace/namespace **через authorizers** под workspace barrier. Payload hash проверяет все source targets/manifest/grant revision; changed payload409. Current persisted grant проверяется **до replay**. Exact delivery replay возвращает сохранённый original outcome, включая original createdCount: это не число повторно созданных rows. Ack-loss не создаёт новый stale/continuation outbox event; unexpected handler failures откатывают source/receipt/events целиком.
 
-Validator отдельно проверяет persisted authorizer user/membership/task.edit и authorization revision **под тем же barrier**, даже если triggering command вызвал viewer с reports.read или участник с time.write_self. Triggering ctx actor/source не заменяются authorizer и не получают его общих прав. Internal helper получает `ValidatedGenerationAuthority`, построенный сервером в этом tx, плюс исходный scope; это разрешение только на approved occurrences. Audit хранит trigger actor/source и generationAuthorizerUserId/membershipId/authorizationId/revision раздельно. Workers также не принимают actor из payload.
+Pinned dependencies: pg-boss12.38.0, обязательный peer @opentelemetry/api1.9.0 без SDK, temporal-polyfill1.0.6. Только `npm run db:queue:migrate` устанавливает/обновляет `workloom_queue` schema46 официальными plans и проверяет схему/настройки. Сначала регистрируется `workloom.recurrence.dead_letter.v1`, затем `workloom.recurrence.materialize.v1` с deadLetter link. Runtime worker не create/update/migrate очереди и fail-closed при отсутствии/drift.
 
-Recovery command generation-authorization — узкое metadata replacement: после проверки current actor task.edit и expected revisions, под тем же barrier оно **может выполниться до prerequisite, требующего отозванный старый grant**. Иначе reauthorize сам deadlock-ится на старой authority. Команда не меняет schedule/binding/attendance/baseline, записывает actor/grant audit и idempotent outcome; следующий ensure валидирует уже новый grant. Нет произвольного catch/commit handler failures, owner impersonation или публичного system bypass.
+Materialization queue: standard/nonpartitioned, retryLimit5, retryDelay5s, exponential backoff с max300s, expire300s, retention/deleteAfter7days. DLQ: standard/nonpartitioned, retryLimit0, expire300s, retention/deleteAfter7days; терминальные jobs наблюдаемы. Concurrency максимум2 **на процесс**; DB barrier сериализует workspace между replicas, не обещает global2.
 
-Outbox relay имеет explicit known recurrence subscription (предложение: recurrence.series_created, recurrence.series_edited, recurrence.period_bound, recurrence.generation_authorized, recurrence.generation_state_changed; exact labels/schema versions утверждаются freeze). Существующие unrelated P0–P3a pending outbox rows не выбираются, не acknowledged и не помечаются dispatched этим worker. Unknown version **подписанного** event fail-closed/dead-letter; неподписанный event не является ошибкой этого consumer. Health oldest-pending/backlog и retry counters считают тот же subscribed набор, не всю историческую outbox. Materialization meeting.created events не подписаны, чтобы не создать relay loop.
-
-Outbox relay: SELECT bounded **subscribed** pending rows FOR UPDATE SKIP LOCKED; enqueue с deterministic event ID и отметка dispatchedAt в **одной** SQL transaction через approved pg-boss Drizzle adapter. Crash до commit откатывает оба; crash после commit не повторяет relay. Handler открывает один workspace UOW и выполняет internal primitive; crash после domain commit до queue acknowledgement безопасен благодаря durable occurrence IDs/source-manifest checks. Не включать pg-boss transactional worker вокруг handler, который затем открывает второй независимый domain transaction. Lease loss/retry не должно дать вторую встречу.
-
-SIGTERM прекращает приём jobs, завершает короткие active transactions либо отдаёт retry lease; лимит graceful shutdown не бесконечен. Health — heartbeat + queue lag + oldest pending outbox + missing occurrences/freeze lag, без фиктивного HTTP200. Логи — IDs/type/result/timing, без названий встреч/URL/tokens/частных payloads. Restore БД — consumers остановлены, watermarks сверены до включения; никакой автоматической внешней доставки.
+Health/initial grant resolution имеют finite SQL lock/statement budgets. Health/logs различают unavailable и zero, operational queue/delivery counts и accounting totals, отражают subscribed lag/unsupported rows/DLQ. SIGTERM прекращает intake/timers, завершает bounded in-flight work и закрывает owned pools. Нет production crash flag, automatic DLQ replay или repair UI. Операционные команды и тестовый ack boundary описаны в [worker README](../apps/worker/README.md).
 
 ## 10. Приёмка и переход
 
-1. Пять weekdays одной серии → пять stable meetings/tasks/packages, proposals only, без commitments/attendance; retry одного/двух workers и crash commit→ack не меняют counts/IDs.
-2. Natural key остаётся original date после move/DST/version edit; skip consumes count; reset/restore не создают копии, исключение не затирается regeneration.
-3. Все DST fixtures секции6: first-valid boundary, earlier overlap,30-minute shift, skipped day, elapsed duration; collision двух nominal keys показан, не merge.
-4. Explicit overlapping period selection отклоняет ambiguity; worker order не назначает period. No binding → явная неподготовленность, не автонеделя. Cross-period moves не обходят P3a ограничения.
-5. Worker остановлен перед неделей: explicit/sync materialize создаёт полную необходимую census до freeze; readonly preview ничего не пишет; cap требует chunks, частичный baseline невозможен. Никаких nested UOW/reentrant guards/deadlock.
-6. Preview→concurrent edit/grant revoke/DSTpolicy change/materialization → контролируемый stale/block без частичных user writes или rollback-loop обязательного cutoff. Old baseline/JSON/inputhash/replay unchanged.
-7. Generation не пишет чужие планы/attendance. Revoke actor блокирует job и sync prerequisite его affected period до explicit reauthorization; pause не удаляет census. Отдельный metadata recovery может заменить grant до blocked prerequisite, затем ensure проходит; unrelated project B остаётся writable, global mutation реально затрагивающая A блокируется. Owner не подставляется; trigger и authorizer audit различимы. Foreign workspace/task/binding IDs404; current rights проверяются перед replay.
-8. Outbox enqueue+mark atomic; unrelated historical P0–P3a rows остаются untouched и не портят recurrence backlog. Unknown subscribed event schema fail-closed/dead-letter; retry/restart/source edit не меняют fact sums. Pool/barrier wait bounded, SIGTERM recoverable.
-9. Browser: preview/create series → выбрать периоды → materialize выбранную неделю → apply только явно выбранные личные планы → attendance/report прежними P3a командами. Failed/uncertain command сохраняет original scope/key/draft при навигации; denied refetch скрывает cache.
+Gate включает pure DST/calendar/version tests; real HTTP/PG identities, protected edits, readonly preview, independent >100 overdue recovery, actual source grants и SQL append-only/FK checks; atomic relay/queue crash/retry/receipts; upgrade populated P3a с exact old raw inputs/hashes/cached outcomes/pinned JSON; current browser/keyboard/mobile/uncertain-command и visual review. Skipped/blocked проверка не является pass; итоговая хронология — только в журнале.
 
-Порядок: P3a checkpoint → review/решения по этому draft (особенно explicit period bindings, calendar-only freeze census, grant и cap) → точный DTO/port freeze → одна migration/domain/helper lane → тонкий API и worker/UI → реальные PostgreSQL, crash/retry и browser gates. Этот draft не разрешает install, worker launch, внешние сообщения или production действия.
+Application migration0006 добавляет семь таблиц к40; queue schema развивается отдельно и не подменяет application migration. Применённые0000–0005 и journal prefix сохраняются. Реальная проверка fresh install/repeat/drift queue не объявляется проверкой upgrade от старой установленной версии pg-boss, если такого fixture не было.
 
-## Официальные источники для будущей dependency freeze
+Принятый gate включает широкие 919 core/API/worker unit tests, 206 web tests и 147 real HTTP/PG tests; отдельное сохранение всех 40 старых таблиц при `0006` и exact replay семи старых команд/отчётов. Browser initial 17/18 и последующие исправленные targeted 2/2 отражаются раздельно в журнале; root принял текущие desktop/mobile visuals. Отдельный compiled worker smoke создал три встречи без автоматических планов/фактов, подтвердил health и SIGTERM exit 0. Итоговая проверка served assets и local source checkpoint оформляются coordinator отдельно. Полный P3/MVP, Auth, hosting и old-tab coverage из этого не следуют. До отдельного GO следующий P4 остаётся planned.
 
-- [pg-boss repository/requirements](https://github.com/timgit/pg-boss): проверенный кандидат12.38.0, MIT, Node>=22.12/PostgreSQL>=13; совместим с целевыми24/17. [Transaction adapters](https://github.com/timgit/pg-boss/blob/master/docs/api/adapters.md) описывают fromDrizzle(tx,sql) для postgres-js; [scheduling](https://github.com/timgit/pg-boss/blob/master/docs/api/scheduling.md) не заменяет domain catch-up после downtime.
-- [temporal-polyfill implementation](https://github.com/fullcalendar/temporal-polyfill/blob/main/polyfill/README.md): проверенный кандидат1.0.6, MIT, ESM/Node24 CI. Использовать выбранный общий implementation и policy, не две несовпадающие библиотеки для preview/worker.
-- [Temporal ambiguity](https://tc39.es/proposal-temporal/docs/timezone.html) и [transition boundary](https://tc39.es/proposal-temporal/docs/zoneddatetime.html#zonedDateTime.getTimeZoneTransition) объясняют разницу compatible-gap shift и нужной первой допустимой границы. Перед install фиксируются фактические package versions/license/lock и повторяются целевые runtime tests.
+## 11. Первичные технические источники
+
+- [pg-boss repository](https://github.com/timgit/pg-boss), [Drizzle transaction adapters](https://github.com/timgit/pg-boss/blob/master/docs/api/adapters.md): используемые schema plans и same-TX enqueue; runtime version закреплена lockfile.
+- [temporal-polyfill](https://github.com/fullcalendar/temporal-polyfill/blob/main/polyfill/README.md), [Temporal ambiguity](https://tc39.es/proposal-temporal/docs/timezone.html), [transition boundaries](https://tc39.es/proposal-temporal/docs/zoneddatetime.html#zonedDateTime.getTimeZoneTransition): distinction между compatible gap shift и выбранной first-valid boundary policy.

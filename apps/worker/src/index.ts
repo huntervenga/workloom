@@ -1,0 +1,100 @@
+export {
+  WORKER_INTEGER_SETTINGS,
+  WORKER_LOG_LEVELS,
+  WorkerConfigError,
+  loadWorkerConfig,
+  type WorkerConfig,
+  type WorkerLogLevel,
+} from './config.js';
+export {
+  REDACTED,
+  classifyError,
+  createWorkerLogger,
+  type LogFields,
+  type LogSeverity,
+  type LogSink,
+  type SafeErrorInfo,
+  type WorkerLogger,
+  type WorkerLoggerOptions,
+} from './logging.js';
+export {
+  bindShutdownSignals,
+  createShutdown,
+  type BindShutdownSignalsOptions,
+  type ShutdownController,
+  type ShutdownFailure,
+  type ShutdownOptions,
+  type ShutdownPhase,
+  type ShutdownPlan,
+  type ShutdownResult,
+  type ShutdownSignal,
+  type ShutdownStep,
+  type ShutdownStepRef,
+  type SignalSource,
+} from './shutdown.js';
+export {
+  QUEUE_APPLICATION_NAME,
+  createPgBossQueueClient,
+  pgBossRuntimeOptions,
+  wrapPgBoss,
+  type PgBossClientOptions,
+  type QueueJob,
+  type QueueJobHandler,
+  type QueueRegistration,
+  type QueueSendOptions,
+  type QueueStopOptions,
+  type QueueWorkOptions,
+  type WorkerQueueClient,
+} from './queue.js';
+export {
+  DEFAULT_RELAY_BATCH,
+  MATERIALIZE_JOB_RETRY,
+  MAX_RELAY_BACKOFF_MS,
+  MAX_RELAY_BATCH,
+  MaterializationEventRejectedError,
+  createMaterializationEnqueue,
+  createRelayPoller,
+  materializationRequestId,
+  type RelayPoller,
+  type RelayPollerOptions,
+  type RelayPollerSnapshot,
+  type RelaySchedule,
+} from './relay.js';
+export {
+  InvalidMaterializationJobError,
+  InvalidWorkerOutcomeError,
+  MaterializationJobFailedError,
+  RECURRENCE_WORKER_STATUSES,
+  UnexpectedJobBatchError,
+  createMaterializationHandler,
+  type MaterializationHandler,
+  type MaterializationHandlerOptions,
+  type MaterializationJobCounters,
+  type MaterializationJobResult,
+} from './materialize.js';
+export {
+  assessQueueRegistration,
+  buildHealthReport,
+  type ApprovedQueueRegistration,
+  type HealthInputs,
+  type QueueAssessment,
+  type QueueHealth,
+  type QueueRegistrationState,
+  type WorkerHealthReason,
+  type WorkerHealthReport,
+  type WorkerLifecycle,
+} from './health.js';
+export {
+  ApplicationSchemaUnreadyError,
+  QueueRegistrationError,
+  WorkerRuntimeStateError,
+  WorkerStartAbortedError,
+  createWorkerRuntime,
+  type ApplicationReadiness,
+  type OwnedResource,
+  type WorkerRuntime,
+  type WorkerRuntimeDependencies,
+} from './runtime.js';
+export { WORKER_DB_APPLICATION_NAME, createWorkerFromConfig } from './bootstrap.js';
+
+export { HEALTH_OBSERVATION_INTERVAL_MS, createHealthMonitor, logHealthReport, type HealthMonitor, type HealthMonitorOptions, type HealthSchedule } from './health-monitor.js';

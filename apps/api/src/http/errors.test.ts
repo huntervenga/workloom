@@ -1,4 +1,4 @@
-import { errorResponseSchema } from '@workloom/contracts';
+import { errorResponseSchema, MATERIALIZATION_REQUIRED } from '@workloom/contracts';
 import { DOMAIN_ERROR_CODES, DomainError, notFoundError } from '@workloom/domain';
 import { describe, expect, it } from 'vitest';
 
@@ -15,6 +15,19 @@ describe('mapError', () => {
     expect(mapError(new DomainError('REVISION_CONFLICT', 'no')).statusCode).toBe(409);
     expect(mapError(new DomainError('PLAN_VALUE_UNRESOLVED', 'no')).statusCode).toBe(422);
     expect(mapError(new DomainError('TEMPORARILY_UNAVAILABLE', 'later')).body.error.retryable).toBe(true);
+  });
+
+  it('maps the contract MATERIALIZATION_REQUIRED code to a controlled 409 with domain-owned details', () => {
+    const code = MATERIALIZATION_REQUIRED;
+    expect(DOMAIN_ERROR_STATUS[code]).toBe(409);
+    const details = { periodIds: ['5eed0000-0000-4000-8000-000000000601'], action: 'materialize' };
+    const error = new DomainError(code, 'Materialize the period census first.', { details, cause: new Error('select secret') });
+    expect(mapError(error)).toEqual({
+      statusCode: 409,
+      unexpected: false,
+      body: { error: { code: MATERIALIZATION_REQUIRED, message: 'Materialize the period census first.', details, retryable: error.retryable } },
+    });
+    expect(JSON.stringify(mapError(error).body)).not.toContain('secret');
   });
 
   it('keeps object details and drops non-object details', () => {

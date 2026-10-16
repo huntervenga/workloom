@@ -2,7 +2,7 @@
 
 Рабочее название собственного командного трекера: привычная таблица задач, история оценок, недельные планы, общие созвоны, зависимости и автоматические отчёты.
 
-Создано 16 октября 2026 года. Сейчас здесь P0 и принятые ограниченные P1a/P1b/P2a/P2b/P3a. P0 — цепочка React → Fastify → реальный PostgreSQL с синтетической локальной identity. P1a — проекты, секции, задачи и теги; P1b — типизированные колонки проекта, их значения и история; P2a — недельный план, фиксация, ручной факт и воспроизводимый план/факт; P2b — категории работы, отчёт по типам и быстрый недельный ввод из таблицы. Эти срезы реализованы в браузере, API, domain и PostgreSQL (подробнее ниже). Полный P1, MVP и командный пилот не завершены. Что, когда и кем реально проверено — в [журнале доказательств](docs/11-implementation-progress.md); этот README результатов прогонов не фиксирует.
+Создано 16 октября 2026 года. Сейчас здесь P0 и принятые ограниченные P1a/P1b/P2a/P2b/P3a/P3b. P0 — цепочка React → Fastify → реальный PostgreSQL с синтетической локальной identity. P1a — проекты, секции, задачи и теги; P1b — типизированные колонки проекта, их значения и история; P2a — недельный план, фиксация, ручной факт и воспроизводимый план/факт; P2b — категории работы, отчёт по типам и быстрый недельный ввод из таблицы. Эти срезы реализованы в браузере, API, domain и PostgreSQL (подробнее ниже). Полный P1, MVP и командный пилот не завершены. Что, когда и кем реально проверено — в [журнале доказательств](docs/11-implementation-progress.md); этот README результатов прогонов не фиксирует.
 
 ## Начать здесь
 
@@ -15,6 +15,8 @@
 - [Точный контракт ограниченного P2a](docs/13-p2a-contract.md)
 - [Точный контракт ограниченного P2b](docs/14-p2b-contract.md)
 - [Контракт ограниченного P3a: разовые встречи и присутствие](docs/15-p3a-contract.md)
+- [Контракт P3b: серии и подготовка встреч](docs/16-p3b-contract.md)
+- [Локальный worker: запуск, health и остановка](apps/worker/README.md)
 
 ## Стек и границы
 
@@ -72,9 +74,18 @@ React + TypeScript + Vite для клиента, Node.js + TypeScript + Fastify 
 - Неделя выбирается явно; перенос между периодами пока отклоняется. UI разрешает локальное время в выбранной IANA zone, отвергает DST gap и спрашивает offset при overlap; API принимает точный UTC instant. Персональные/проектные snapshots и когда-либо записанное attendance защищают исходное planned расписание/состав; generic task/manual команды не обходят meeting guards.
 - Общие чтения и новые отчёты учитывают manual и attendance sources один раз. Старые manual endpoints, parsed inputs/hashes, точные cached outcomes и pinned JSON сохранены; это не сертификация старого browser bundle.
 
-Разовые встречи workspace-visible, без private ACL и внешней рассылки приглашений. Повторяющиеся серии, materialization worker и внешние календарные connectors сюда не входят; [P3b draft](docs/16-p3b-contract.md) и [P4 draft](docs/17-p4-contract.md) остаются планами, не реализованными этапами.
+Встречи workspace-visible, без private ACL и внешней рассылки приглашений.
 
-Ещё не реализовано: приватные ACL, общий Auth, сохранённые представления, массовые операции и полная история встроенных полей (полный P1); закрытие факта и исправления закрытых периодов, полная точность завершённого пакета, принятие поздней неизвестной оценки, полноценные split/replace/transfer/carryover и дневной факт (полный P2); повторяющиеся встречи и их worker (P3b); календарные connectors, внешние MCP-адаптеры и deployment. Текущий интерфейс не является завершённым MVP.
+### Ограниченный P3b: серии встреч и worker
+
+- Daily/weekday серии с конечной датой или числом встреч и явно выбранными периодами. Серверный preview показывает nominal wall time, разрешённый instant и DST warnings; устойчивый occurrence key не меняется при переносе.
+- Экземпляры сначала имеют reserved header; явная подготовка периода или отдельный worker создаёт одну shared meeting/task/package. Подготовка не подтверждает личный план или факт автоматически.
+- Изменение с даты, pause, skip/move/restore/reset используют ревизии и preview; зафиксированное расписание и когда-либо записанное присутствие защищены. Reset/restore отдельно показывают плановый состав/длительность до и после.
+- Перед freeze выполняется полный календарный census, включая отменённые header-only экземпляры. Большой backlog подготавливается ограниченными chunks; worker retry не дублирует сущности. Current stored authorizer проверяется при каждом выполнении.
+
+Локальный worker использует явную миграцию очереди, точную подписку outbox и отдельный процесс. Это bounded реализация по [16](docs/16-p3b-contract.md), а не общий планировщик произвольных jobs.
+
+Ещё не реализовано: приватные ACL, общий Auth, сохранённые представления, массовые операции и полная история встроенных полей (полный P1); закрытие факта и исправления закрытых периодов, полная точность завершённого пакета, принятие поздней неизвестной оценки, полноценные split/replace/transfer/carryover и дневной факт (полный P2); полный P3/My Tasks, зависимости/Gantt P4, импорт и внешние MCP-адаптеры, календарные connectors и deployment. Текущий интерфейс не является завершённым MVP.
 
 ### Неопределённый результат записи
 
@@ -103,6 +114,7 @@ npm run dev              # API на 127.0.0.1:4310, клиент на http://127
 cp -n .env.example .env  # не перезаписывает существующий .env; синтетические значения без секретов
 npm ci
 npm run db:up            # PostgreSQL 17 в Docker на 127.0.0.1:54329
+npm run build
 npm run db:migrate
 npm run db:seed:demo     # синтетические участники и пространства
 npm run dev              # API на 127.0.0.1:4310, клиент на http://127.0.0.1:4311
@@ -111,6 +123,19 @@ npm run dev              # API на 127.0.0.1:4310, клиент на http://127
 Режим без входа (`AUTH_MODE=dev`) предназначен только для локальной разработки на синтетических данных. Скрипты `dev:api`, `start` и `db:*` читают корневой `.env`; переменные, уже заданные в окружении, имеют приоритет.
 
 Курсоры списков задач, истории значений и недельного планирования подписываются локальным секретом процесса API. После перезапуска API выданные курсоры отклоняются с 400; автоматического восстановления в клиенте нет, поэтому список или страницу нужно перезагрузить вручную. Долговременной публичной конфигурации ключа нет до P6.
+
+### Автоматическая подготовка встреч
+
+`npm run dev` запускает только API и web. Для автоматической подготовки серий нужен отдельный процесс из корня репозитория:
+
+```sh
+npm run build
+npm run db:migrate
+npm run db:queue:migrate        # явная установка/проверка pg-boss schema и обеих очередей
+npm run start --workspace @workloom/worker
+```
+
+Worker при старте только проверяет application/queue readiness и настройки; сам DDL не создаёт и drift не исправляет. Health — JSON logs `worker.health`/`worker.health_queue`; SIGTERM завершает работу с drain. Подробности и ограничения — [apps/worker/README](apps/worker/README.md). В текущем checkout после проверки worker остановлен; API/web и синтетические данные сохранены.
 
 ### Проверка production-сборки
 
@@ -123,7 +148,7 @@ NODE_ENV=production npm start   # собранный API и SPA на http://127.
 
 ### Тесты
 
-- `npm run test:unit` — unit-тесты contracts, domain, db и API, затем jsdom-тесты `@workloom/web`. У `@workloom/ui` отдельного набора тестов нет.
+- `npm run test:unit` — unit-тесты contracts, domain, db, API и worker, затем jsdom-тесты `@workloom/web`. У `@workloom/ui` отдельного набора тестов нет.
 - `npm run test:integration` сначала выполняет полную сборку (`npm run build`), потому что набор включает smoke собранного API и ассетов SPA. `.env` не читается: экспортируйте отдельный `TEST_DATABASE_URL=postgres://<user>:<password>@127.0.0.1:<port>/workloom_test`. Имя базы должно начинаться с `workloom_test` или заканчиваться на `_test` и не совпадать с `DATABASE_URL`.
 - Браузерные тесты: один раз `npm run test:e2e:install`, затем `npm run test:e2e`. Playwright сам запускает `npm run dev` (или использует уже запущенный) и открывает `http://127.0.0.1:4311`. PostgreSQL он не поднимает: база должна быть запущена, мигрирована и заполнена демо-данными.
 
@@ -133,13 +158,15 @@ NODE_ENV=production npm start   # собранный API и SPA на http://127.
 
 | Команда | Что делает |
 | --- | --- |
-| `npm run dev` | Собирает библиотеки и запускает API и Vite dev server |
-| `npm run build` | Собирает пакеты и приложения по порядку: contracts → domain → db → ui → api → web |
+| `npm run dev` | Собирает библиотеки и запускает API и Vite dev server; worker отдельно |
+| `npm run build` | Собирает пакеты и приложения по порядку: contracts → domain → db → ui → api → web → worker |
+| `npm run db:queue:migrate` | Явно устанавливает/проверяет pg-boss schema и approved main/DLQ queues |
+| `npm run start --workspace @workloom/worker` | Запускает отдельный собранный recurrence worker |
 | `npm start` | Запускает собранный API (`apps/api/dist/main.js`) |
 | `npm run lint` | ESLint без предупреждений и проверка границ браузерного кода |
 | `npm run typecheck` | Проверка типов во всех пакетах, корневых конфигурациях и `tests/` |
 | `npm run check` | `lint` и `typecheck` |
-| `npm run test:unit` | Unit-тесты contracts, domain, db и API, затем jsdom-тесты `@workloom/web` |
+| `npm run test:unit` | Unit-тесты contracts, domain, db, API и worker, затем jsdom-тесты `@workloom/web` |
 | `npm run test:integration` | Полная сборка, затем интеграционные тесты на PostgreSQL и smoke собранного API/SPA (нужен `TEST_DATABASE_URL`) |
 | `npm run test:e2e` | Браузерные тесты Playwright в Chromium |
 | `npm run db:up` / `npm run db:down` | Запуск и остановка PostgreSQL в Docker; `db:down` сохраняет данные |
@@ -150,7 +177,7 @@ NODE_ENV=production npm start   # собранный API и SPA на http://127.
 ```text
 apps/web/          React SPA
 apps/api/          HTTP API и выдача собранного SPA
-apps/worker/       Повторения, отчёты, импорт и outbox
+apps/worker/       Подготовка recurrence и точный outbox relay
 packages/contracts/ Общие DTO и схемы валидации
 packages/domain/   Прикладные команды и правила
 packages/db/       PostgreSQL, Drizzle и миграции
