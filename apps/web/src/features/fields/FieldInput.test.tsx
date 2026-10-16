@@ -161,7 +161,7 @@ describe('FieldValueDisplay', () => {
 
   it('shows a calendar date without a time zone shift and labels retained references', () => {
     show(makeField('date'), { type: 'date', value: '2026-01-01' });
-    expect(screen.getByText('01.01.2026')).toHaveAttribute('dateTime', '2026-01-01');
+    expect(screen.getByText('01/01/2026')).toHaveAttribute('dateTime', '2026-01-01');
     show(tagsField, { type: 'multi_select', value: [BETA, MISSING] });
     expect(screen.getByText("Бета (archived)")).toBeInTheDocument();
     expect(screen.getByText("Option unavailable")).toBeInTheDocument();

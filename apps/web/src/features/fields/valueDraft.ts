@@ -91,8 +91,12 @@ export function formatFieldNumber(value: number): string {
   const [whole = '0', fraction] = plainDecimal(value).split('.');
   const negative = whole.startsWith('-');
   const grouped = integerFormat.format(Number(negative ? whole.slice(1) : whole));
-  const decimal = new Intl.NumberFormat(localization.getLocale()).formatToParts(1.1).find(part => part.type === 'decimal')?.value ?? '.';
-  return `${negative ? '−' : ''}${grouped}${fraction ? `${decimal}${fraction}` : ''}`;
+  const formatter = new Intl.NumberFormat(localization.getLocale());
+  const decimal = formatter.formatToParts(1.1).find(part => part.type === 'decimal')?.value ?? '.';
+  // Format individual digits, never the fraction as a number: leading zeroes and every
+  // expanded decimal must survive, including values smaller than Intl's precision limit.
+  const localizedFraction = fraction?.replace(/[0-9]/g, digit => formatter.format(Number(digit)));
+  return `${negative ? '−' : ''}${grouped}${localizedFraction ? `${decimal}${localizedFraction}` : ''}`;
 }
 
 function parseNumberText(text: string): { ok: true; value: number } | { ok: false; message: string } {

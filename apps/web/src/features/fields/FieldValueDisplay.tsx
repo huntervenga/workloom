@@ -1,5 +1,5 @@
 import { t, useTranslation } from '../../i18n';
-import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
+import { calendarDateSchema, type MembershipDto, type TaskFieldData, type TaskFieldDefinitionDto } from '@workloom/contracts';
 import { cn } from '@workloom/ui';
 import { formatEstimate } from '../task-table/estimate';
 import {
@@ -21,7 +21,6 @@ export interface FieldValueDisplayProps {
 }
 
 const UNREADABLE = () => t('fields.fieldValueDisplay.valueUnavailable');
-const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const SWATCH_COLOR = /^#[0-9a-f]{6}$/i;
 
 function Muted({ text, compact }: { text: string; compact: boolean }) {
@@ -67,7 +66,7 @@ function References({ labels, compact }: { labels: readonly ReferenceLabel[]; co
 
 /** Read-only value of a custom field. Handles cleared, unknown and hostile values without guessing. */
 export function FieldValueDisplay({ field, value, members, compact = false }: FieldValueDisplayProps) {
-  const { t } = useTranslation();
+  const { t, formatDate } = useTranslation();
   if (value === null || value === undefined || value.value === null) {
     return compact ? (
       <span title={NOT_SET()} className="text-muted">
@@ -96,13 +95,11 @@ export function FieldValueDisplay({ field, value, members, compact = false }: Fi
         <Muted text={UNREADABLE()} compact={compact} />
       );
     case 'date': {
-      // A calendar date has no time zone: show its own digits, never through `Date`.
-      const match = CALENDAR_DATE.exec(value.value);
-      if (!match) return <Muted text={UNREADABLE()} compact={compact} />;
-      const [, year, month, day] = match;
+      if (!calendarDateSchema.safeParse(value.value).success) return <Muted text={UNREADABLE()} compact={compact} />;
+      // Pass the date-only string so the shared formatter keeps its calendar day in UTC.
       return (
         <time dateTime={value.value} className={cn('tabular-nums', compact && 'block truncate')}>
-          {`${day}.${month}.${year}`}
+          {formatDate(value.value, { year: 'numeric', month: '2-digit', day: '2-digit' })}
         </time>
       );
     }
