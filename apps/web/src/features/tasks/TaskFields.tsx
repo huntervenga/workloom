@@ -1,8 +1,9 @@
 import { t, useTranslation } from '../../i18n';
-import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto } from '@workloom/contracts';
+import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto, TaskStatusGroup } from '@workloom/contracts';
 import { TextInput, cn, inputClassName } from '@workloom/ui';
 import { UserRound } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { formatEstimate, parseEstimateInput } from '../task-table';
 import { TagSwatch } from './TagDialogs';
 import { TASK_DESCRIPTION_MAX, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors, type TaskDraftIssue, type TaskDraftKey } from './taskDraft';
@@ -16,6 +17,10 @@ export const priorityLabels: Record<TaskPriority, string> = {
 };
 
 const priorities: TaskPriority[] = ['none', 'low', 'medium', 'high', 'urgent'];
+
+// Picker dots match the task table: slate/accent/emerald status dots, amber/rose priorities.
+const statusColors: Record<TaskStatusGroup, string> = { todo: '#94a3b8', in_progress: '#6366f1', done: '#10b981', cancelled: '#cbd5e1' };
+const priorityColors: Record<TaskPriority, string | undefined> = { none: undefined, low: '#94a3b8', medium: '#64748b', high: '#d97706', urgent: '#e11d48' };
 
 export const fieldLabels: Record<TaskDraftKey, string> = {
   get title() { return t('tasks.taskFields.taskName'); },
@@ -107,7 +112,6 @@ export interface TaskFieldsProps {
   autoFocusTitle?: boolean | undefined;
 }
 
-const selectClassName = inputClassName('mt-1.5 pr-8');
 const labelClassName = 'text-sm font-medium text-ink';
 const errorClassName = 'mt-1.5 text-sm text-red-700';
 
@@ -173,6 +177,31 @@ export function TaskFields({
   const responsibleKnown =
     draft.responsibleMembershipId === null || members.some((member) => member.id === draft.responsibleMembershipId);
 
+  // A current reference without a known record stays as its own neutral choice, never renamed.
+  const statusChoices: ChoiceOption[] = [
+    ...(statusKnown ? [] : [{ value: draft.statusId, label: t('tasks.taskFields.statusUnavailable') }]),
+    ...orderedStatuses.map((status) => ({ value: status.id, label: status.name, color: statusColors[status.group] })),
+  ];
+  // '' is the picker value for null: Unassigned and No section are ordinary choices.
+  const responsibleChoices: ChoiceOption[] = [
+    { value: '', label: t('tasks.taskFields.unassigned') },
+    ...(responsibleKnown ? [] : [{ value: draft.responsibleMembershipId ?? '', label: UNAVAILABLE_MEMBER() }]),
+    ...members.map((member) => ({ value: member.id, label: member.displayName, avatarName: member.displayName })),
+  ];
+  const sectionChoices: ChoiceOption[] = [
+    { value: '', label: t('tasks.taskFields.noSection') },
+    ...(sectionKnown ? [] : [{ value: draft.sectionId ?? '', label: t('tasks.taskFields.sectionUnavailable') }]),
+    ...sectionOptions.map((section) => ({
+      value: section.id,
+      label: section.archivedAt === null ? section.name : t('tasks.taskFields.valueArchived', { p0: section.name }),
+    })),
+  ];
+  const priorityChoices: ChoiceOption[] = priorities.map((priority) => ({
+    value: priority,
+    label: priorityLabels[priority],
+    color: priorityColors[priority],
+  }));
+
   // Retained references to memberships outside the workspace: shown without names, removable.
   const memberIds = new Set(members.map((member) => member.id));
   const savedRetained = new Set(unavailableParticipantIds);
@@ -214,38 +243,25 @@ export function TaskFields({
 <div className="grid gap-3 sm:grid-cols-2"><div>
           <label htmlFor={ids.status} className={labelClassName}>
             {t('tasks.taskFields.status')}</label>
-          <select
+          <ChoicePicker
             id={ids.status}
-            className={selectClassName}
+            className="mt-1.5"
+            label={t('tasks.taskFields.status')}
             value={draft.statusId}
-            onChange={(event) => onChange({ statusId: event.target.value })}
-          >
-            {statusKnown ? null : <option value={draft.statusId}>{t('tasks.taskFields.statusUnavailable')}</option>}
-            {orderedStatuses.map((status) => (
-              <option key={status.id} value={status.id}>
-                {status.name}
-              </option>
-            ))}
-          </select>
+            options={statusChoices}
+            onValueChange={(statusId) => onChange({ statusId })}
+          />
         </div><div>
           <label htmlFor={ids.responsible} className={labelClassName}>
             {t('tasks.taskFields.assignee')}</label>
-          <select
+          <ChoicePicker
             id={ids.responsible}
-            className={selectClassName}
+            className="mt-1.5"
+            label={t('tasks.taskFields.assignee')}
             value={draft.responsibleMembershipId ?? ''}
-            onChange={(event) =>
-              onChange({ responsibleMembershipId: event.target.value === '' ? null : event.target.value })
-            }
-          >
-            <option value="">{t('tasks.taskFields.unassigned')}</option>
-            {responsibleKnown ? null : <option value={draft.responsibleMembershipId ?? ''}>{UNAVAILABLE_MEMBER()}</option>}
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.displayName}
-              </option>
-            ))}
-          </select>
+            options={responsibleChoices}
+            onValueChange={(value) => onChange({ responsibleMembershipId: value === '' ? null : value })}
+          />
         </div><div>
           <label htmlFor={ids.due} className={labelClassName}>
             {t('tasks.taskFields.dueDate')}</label>
@@ -281,20 +297,14 @@ export function TaskFields({
 <div className="mt-4 space-y-4"><div className="grid gap-4 sm:grid-cols-2"><div>
           <label htmlFor={ids.section} className={labelClassName}>
             {t('tasks.taskFields.section')}</label>
-          <select
+          <ChoicePicker
             id={ids.section}
-            className={selectClassName}
+            className="mt-1.5"
+            label={t('tasks.taskFields.section')}
             value={draft.sectionId ?? ''}
-            onChange={(event) => onChange({ sectionId: event.target.value === '' ? null : event.target.value })}
-          >
-            <option value="">{t('tasks.taskFields.noSection')}</option>
-            {sectionKnown ? null : <option value={draft.sectionId ?? ''}>{t('tasks.taskFields.sectionUnavailable')}</option>}
-            {sectionOptions.map((section) => (
-              <option key={section.id} value={section.id}>
-                {section.archivedAt === null ? section.name : t('tasks.taskFields.valueArchived', { p0: section.name })}
-              </option>
-            ))}
-          </select>
+            options={sectionChoices}
+            onValueChange={(value) => onChange({ sectionId: value === '' ? null : value })}
+          />
         </div><div>
           <label htmlFor={ids.start} className={labelClassName}>{t('tasks.taskFields.startDate')}</label>
           <TextInput id={ids.start} type="date" min="0001-01-01" max="9999-12-31" className="mt-1.5" value={draft.startDate ?? ''} aria-invalid={errors.startDate ? true : undefined} aria-describedby={errors.startDate ? ids.startError : undefined} onChange={event => onChange({ startDate: event.target.value })} />
@@ -302,21 +312,17 @@ export function TaskFields({
         </div><div>
           <label htmlFor={ids.priority} className={labelClassName}>
             {t('tasks.taskFields.priority')}</label>
-          <select
+          <ChoicePicker
             id={ids.priority}
-            className={selectClassName}
+            className="mt-1.5"
+            label={t('tasks.taskFields.priority')}
             value={draft.priority}
-            onChange={(event) => {
-              const next = priorities.find((priority) => priority === event.target.value);
+            options={priorityChoices}
+            onValueChange={(value) => {
+              const next = priorities.find((priority) => priority === value);
               if (next) onChange({ priority: next });
             }}
-          >
-            {priorities.map((priority) => (
-              <option key={priority} value={priority}>
-                {priorityLabels[priority]}
-              </option>
-            ))}
-          </select>
+          />
         </div><div>
           <label htmlFor={ids.estimate} className={labelClassName}>
             {t('tasks.taskFields.teamEstimateHours')}</label>

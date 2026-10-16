@@ -34,11 +34,59 @@ describe('everyday task fields', () => {
     await user.click(screen.getByText('More details'));
     expect(screen.getByLabelText('Team estimate, hours')).toBeVisible();
     expect(screen.getByText(/Weekly personal plans and actual hours are recorded separately/)).toBeVisible();
-    await user.selectOptions(screen.getByLabelText('Priority'), 'urgent');
+    await user.click(screen.getByRole('combobox', { name: 'Priority' }));
+    await user.click(screen.getByRole('option', { name: 'Urgent' }));
     await user.click(screen.getByText('More details'));
     await user.click(screen.getByText('More details'));
-    expect(screen.getByLabelText('Priority')).toHaveValue('urgent');
-    expect(screen.getByLabelText('Section')).toHaveValue(section.id);
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('Urgent');
+    expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Stored section');
+  });
+
+  it('chooses status, assignee and section in pickers, keeping null choices and unknown references distinct', async () => {
+    const user = userEvent.setup();
+    const changes: Partial<TaskDraft>[] = [];
+    const retained = { ...initial, statusId: 'status-missing', responsibleMembershipId: 'member-gone', sectionId: 'section-gone' };
+    function Example() {
+      const [draft, setDraft] = useState<TaskDraft>(retained);
+      return <TaskFields draft={draft} onChange={patch => { changes.push(patch); setDraft(before => ({ ...before, ...patch })); }} errors={{}} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} />;
+    }
+    render(<Example />);
+    const status = screen.getByRole('combobox', { name: 'Status' });
+    const responsible = screen.getByRole('combobox', { name: 'Assignee' });
+    expect(status).toHaveTextContent('Status unavailable');
+    expect(responsible).toHaveTextContent('Member unavailable');
+    expect(screen.getByLabelText('Status')).toBe(status);
+
+    await user.click(status);
+    expect(screen.getByRole('option', { name: 'Status unavailable' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('option', { name: statuses[1]?.name ?? '' }));
+    expect(changes.at(-1)).toEqual({ statusId: statuses[1]?.id });
+    expect(status).toHaveFocus();
+
+    await user.click(responsible);
+    expect(screen.getByRole('option', { name: 'Stored participant' })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: 'Unassigned' }));
+    expect(changes.at(-1)).toEqual({ responsibleMembershipId: null });
+    await user.click(responsible);
+    await user.click(screen.getByRole('option', { name: 'Stored participant' }));
+    expect(changes.at(-1)).toEqual({ responsibleMembershipId: assignee.id });
+
+    await user.click(screen.getByText('More details'));
+    const sectionPicker = screen.getByRole('combobox', { name: 'Section' });
+    expect(sectionPicker).toHaveTextContent('Section unavailable');
+    await user.click(sectionPicker);
+    await user.click(screen.getByRole('option', { name: 'No section' }));
+    expect(changes.at(-1)).toEqual({ sectionId: null });
+  });
+
+  it('locks every picker inside a disabled fieldset', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<fieldset disabled><TaskFields draft={initial} onChange={onChange} errors={{}} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} /></fieldset>);
+    for (const name of ['Status', 'Assignee', 'Section', 'Priority']) expect(screen.getByRole('combobox', { name })).toBeDisabled();
+    await user.click(screen.getByRole('combobox', { name: 'Status' }));
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('reveals optional field errors automatically and keeps them linked to the input', () => {

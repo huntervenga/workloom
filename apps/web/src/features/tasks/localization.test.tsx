@@ -65,7 +65,7 @@ describe('owned UI live locale feedback', () => {
     expect(screen.getByText('Heures QA invalides.')).toBeVisible();
     expect(screen.getByLabelText('Budget équipe, heures')).toHaveValue('invalid');
     expect(screen.getByLabelText('Description')).toHaveValue('Unsaved description');
-    expect(screen.getByLabelText('Priority')).toHaveValue('high');
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('High');
     switchLocale('en');
     expect(screen.getByText('Enter hours, such as 1.5 or 1:30.')).toBeVisible();
   });

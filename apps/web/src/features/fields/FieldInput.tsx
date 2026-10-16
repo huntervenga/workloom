@@ -1,7 +1,9 @@
 import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
-import { Button, TextInput, cn, inputClassName } from '@workloom/ui';
+import { Avatar, Button, TextInput, cn, inputClassName } from '@workloom/ui';
+import { UserRound } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
+import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import {
   NOT_SET,
   clearedFieldDraft,
@@ -127,21 +129,21 @@ export function FieldInput({
       break;
     }
     case 'boolean':
+      // '' is the picker value for an explicit null; false stays its own choice.
       control = (
-        <select
+        <ChoicePicker
           id={inputId}
-          className={inputClassName('pr-8')}
+          label={field.name}
           value={draft.value === null ? '' : String(draft.value)}
+          options={[
+            { value: '', label: NOT_SET() },
+            { value: 'true', label: t('fields.fieldInput.yes') },
+            { value: 'false', label: t('fields.fieldInput.no') },
+          ]}
           disabled={disabled}
           {...linkage()}
-          onChange={(event) =>
-            onChange({ type: 'boolean', value: event.target.value === '' ? null : event.target.value === 'true' })
-          }
-        >
-          <option value="">{NOT_SET()}</option>
-          <option value="true">{t('fields.fieldInput.yes')}</option>
-          <option value="false">{t('fields.fieldInput.no')}</option>
-        </select>
+          onValueChange={(value) => onChange({ type: 'boolean', value: value === '' ? null : value === 'true' })}
+        />
       );
       break;
     case 'single_select': {
@@ -150,26 +152,28 @@ export function FieldInput({
       if (choices.some((choice) => choice.state !== 'active')) {
         hint = t('fields.fieldInput.anArchivedOrUnavailableOptionStaysUntilYou');
       }
+      // IDs compare case-insensitively; show the stored value as its listed option.
+      const selectedChoice = current === null ? undefined : choices.find((choice) => sameId(choice.id, current));
+      const options: ChoiceOption[] = [
+        { value: '', label: NOT_SET() },
+        ...choices.map((choice) => ({
+          value: choice.id,
+          label: choice.label,
+          color: choice.color ?? undefined,
+          // Archived and unavailable options stay only as the current or saved value.
+          disabled: !choice.assignable && choice !== selectedChoice,
+        })),
+      ];
       control = (
-        <select
+        <ChoicePicker
           id={inputId}
-          className={inputClassName('pr-8')}
-          value={current ?? ''}
+          label={field.name}
+          value={current === null ? '' : (selectedChoice?.id ?? current)}
+          options={options}
           disabled={disabled}
           {...linkage()}
-          onChange={(event) => onChange({ type: 'single_select', value: event.target.value === '' ? null : event.target.value })}
-        >
-          <option value="">{NOT_SET()}</option>
-          {choices.map((choice) => (
-            <option
-              key={choice.id}
-              value={choice.id}
-              disabled={!choice.assignable && !(current !== null && sameId(current, choice.id))}
-            >
-              {choice.label}
-            </option>
-          ))}
-        </select>
+          onValueChange={(value) => onChange({ type: 'single_select', value: value === '' ? null : value })}
+        />
       );
       break;
     }
@@ -208,6 +212,15 @@ export function FieldInput({
                       disabled={disabled || (!checked && !choice.assignable)}
                       onChange={(event) => onChange({ type: kind, value: toggleId(selected, choice.id, event.target.checked) })}
                     />
+                    {kind === 'person' ? (
+                      choice.state === 'active' ? (
+                        <Avatar name={choice.label} seed={choice.id} size="sm" />
+                      ) : (
+                        <UserRound size={14} aria-hidden="true" className="shrink-0" />
+                      )
+                    ) : choice.color !== null ? (
+                      <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: choice.color }} />
+                    ) : null}
                     <span className="truncate">{choice.label}</span>
                   </label>
                 </li>

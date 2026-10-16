@@ -124,6 +124,58 @@ describe('FieldInput', () => {
     expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'person', value: [ANNA] } });
   });
 
+  it('picks a single option by stable ID, offers Not set as a choice and keeps archived options unassignable', async () => {
+    const user = userEvent.setup();
+    const onDraft = vi.fn<(draft: FieldDraft) => void>();
+    const field = makeField('single_select', 'Этап', [option(ALPHA, 'Альфа', 0), option(BETA, 'Бета', 1, true)]);
+    // The stored value differs only in case from the listed option ID.
+    render(<Harness field={field} initial={{ type: 'single_select', value: ALPHA.toUpperCase() }} error="Проверьте значение." onDraft={onDraft} />);
+
+    const picker = screen.getByRole('combobox', { name: 'Этап' });
+    expect(picker).toHaveTextContent('Альфа');
+    expect(picker).toHaveAttribute('aria-invalid', 'true');
+    expect(picker).toHaveAccessibleDescription(/Проверьте значение\./);
+    await user.click(picker);
+    expect(screen.getByRole('option', { name: 'Альфа' })).toHaveAttribute('aria-selected', 'true');
+    // An archived option outside the draft and saved value is never offered.
+    expect(screen.queryByRole('option', { name: /Бета/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('option', { name: 'Not set' }));
+    expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'single_select', value: null } });
+    expect(picker).toHaveFocus();
+    await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
+    expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'single_select', value: ALPHA } });
+  });
+
+  it('keeps a saved archived option selectable again after changing away', async () => {
+    const user = userEvent.setup();
+    const onDraft = vi.fn<(draft: FieldDraft) => void>();
+    const field = makeField('single_select', 'Этап', [option(ALPHA, 'Альфа', 0), option(BETA, 'Бета', 1, true)]);
+    const saved: TaskFieldData = { type: 'single_select', value: BETA };
+    render(<Harness field={field} initial={draftFromFieldValue(field, saved)} originalValue={saved} onDraft={onDraft} />);
+    await user.click(screen.getByRole('combobox', { name: 'Этап' }));
+    await user.click(screen.getByRole('option', { name: 'Альфа' }));
+    await user.click(screen.getByRole('combobox', { name: 'Этап' }));
+    expect(screen.getByRole('option', { name: 'Бета (archived)' })).not.toHaveAttribute('aria-disabled');
+    await user.click(screen.getByRole('option', { name: 'Бета (archived)' }));
+    expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'single_select', value: BETA } });
+  });
+
+  it('tells Not set apart from No for a yes/no field', async () => {
+    const user = userEvent.setup();
+    const onDraft = vi.fn<(draft: FieldDraft) => void>();
+    const field = makeField('boolean', 'Готово');
+    render(<Harness field={field} initial={draftFromFieldValue(field, null)} onDraft={onDraft} />);
+    const picker = screen.getByRole('combobox', { name: 'Готово' });
+    expect(picker).toHaveTextContent('Not set');
+    await user.click(picker);
+    await user.click(screen.getByRole('option', { name: 'No' }));
+    expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'boolean', value: false } });
+    await user.click(picker);
+    await user.click(screen.getByRole('option', { name: 'Not set' }));
+    expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'boolean', value: null } });
+  });
+
   it('edits a duration in hours, links the error and clears to an explicit null', async () => {
     const user = userEvent.setup();
     const onDraft = vi.fn<(draft: FieldDraft) => void>();
