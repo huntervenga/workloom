@@ -3,7 +3,7 @@ import { Button } from '@workloom/ui';
 import { ArrowDown, ArrowUp, Columns3 } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import { useTranslation, type TranslationKey } from '../../i18n';
-import { ApiError } from '../../lib/api';
+import { ApiError, isAccessDenied } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
@@ -16,6 +16,8 @@ const builtinLabels = {
   priority: 'taskTable.taskTable.priority', estimate: 'taskTable.taskTable.teamEstimate',
   weeklyPlan: 'taskTable.personalColumns.weeklyPlan', weeklyActual: 'taskTable.personalColumns.weeklyActual',
 } satisfies Record<TaskTableBuiltinColumn, TranslationKey>;
+/** Mirrors the controller's denial rule so the shown cause is the actual denial, not a stale unrelated error. */
+const unavailable = (error: unknown) => isAccessDenied(error) || error instanceof ApiError && error.kind === 'unauthenticated';
 interface Props {
   controller: PersonalTablePreferenceController; fields: readonly TaskFieldDefinitionDto[];
   projectColumns: ProjectColumnsDto | undefined; timeAvailable: boolean; catalogError: unknown;
@@ -32,6 +34,11 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
   const ownFields = new Map(fields.filter(field => field.projectId === projectColumns?.projectId && field.workspaceId === projectColumns.workspaceId).map(field => [field.id.toLowerCase(), field]));
   const conflict = c.command.error instanceof ApiError && c.command.error.kind === 'conflict';
   const frozen = c.frozen || !c.query.data || !projectColumns || Boolean(catalogError);
+  // A definitive rejection or failed post-save head read must stay visible after close, including views without the trigger.
+  const closedFailure = !c.open && c.held === null && (c.command.error !== null || c.head === 'failed');
+  // Any command error means that command was not saved; a denied head read alone says nothing about an acknowledged save.
+  const closedFailureKey = c.denied ? c.command.error ? 'taskTable.personalColumns.collapsedDenied' : 'taskTable.personalColumns.unavailableView' : conflict ? 'taskTable.personalColumns.collapsedConflict' : c.command.error ? 'taskTable.personalColumns.collapsedFailed' : 'taskTable.personalColumns.collapsedHeadFailed';
+  const deniedError = unavailable(c.query.error) ? c.query.error : c.command.error;
   useLayoutEffect(() => { const key = focusAfterMove.current; if (key) { focusAfterMove.current = null; const primary = refs.current.get(key); const opposite = key.endsWith(':-1') ? `${key.slice(0, -3)}:1` : `${key.slice(0, -2)}:-1`; (primary && !primary.disabled ? primary : refs.current.get(opposite))?.focus(); } });
   const reload = async () => { await onReloadCatalog(); await c.reload(); };
   const move = (index: number, direction: -1 | 1) => {
@@ -44,8 +51,9 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
   return <>
     {showTrigger ? <Button size="sm" aria-haspopup="dialog" aria-expanded={c.open} onClick={() => c.setOpen(true)}><Columns3 size={16} aria-hidden="true" />{t(c.draft ? 'taskTable.personalColumns.columnsDraft' : 'taskTable.personalColumns.columns')}</Button> : null}
     {c.held && !c.open ? <div role="status" className="text-xs text-amber-800">{t(c.command.uncertain ? 'taskTable.personalColumns.collapsedUnknown' : 'taskTable.personalColumns.collapsedPending')}{!showTrigger ? <Button size="sm" variant="ghost" onClick={() => c.setOpen(true)}>{t('taskTable.personalColumns.resumeSave')}</Button> : null}</div> : null}
+    {closedFailure ? <div role="status" className="text-xs text-amber-800">{t(closedFailureKey)}{!showTrigger ? <Button size="sm" variant="ghost" onClick={() => c.setOpen(true)}>{t('taskTable.personalColumns.reviewColumns')}</Button> : null}</div> : null}
     <DialogShell title={t('taskTable.personalColumns.title')} description={t('taskTable.personalColumns.description')} open={c.open} onOpenChange={c.setOpen}>
-      {c.denied ? <QueryErrorState error={c.query.error ?? c.command.error} subject="tablePreference" headingLevel={2} /> : <>
+      {c.denied ? <QueryErrorState error={deniedError} subject="tablePreference" headingLevel={2} /> : <>
         <p className="mt-3 text-xs text-muted">{t(c.query.data?.columns === null ? 'taskTable.personalColumns.followingDefaults' : 'taskTable.personalColumns.personalView')}</p>
         {c.query.isPending ? <p role="status" className="mt-3 text-sm">{t('taskTable.personalColumns.loading')}</p> : null}
         {c.query.isError ? <QueryErrorState error={c.query.error} subject="tablePreference" headingLevel={2} onRetry={() => void reload()} retrying={c.query.isFetching} /> : null}
@@ -70,7 +78,7 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
         </ul>
         <SaveFeedback subject="tablePreferenceSave" error={c.command.error} uncertainError={c.command.uncertain?.error ?? null} />
         {c.saveConfirmed && c.head === 'idle' ? <p role="status" className="mt-3 text-sm text-ink-soft">{t('taskTable.personalColumns.saved')}</p> : null}
-        {c.head === 'loading' ? <p role="status" className="mt-3 text-xs">{t('taskTable.personalColumns.refreshingHead')}</p> : c.head === 'failed' ? <p role="alert" className="mt-3 text-xs text-red-700">{t('taskTable.personalColumns.headFailed')}</p> : null}
+        {c.head === 'loading' ? <p role="status" className="mt-3 text-xs">{t('taskTable.personalColumns.refreshingHead')}</p> : c.head === 'failed' ? <p role="alert" className="mt-3 text-xs text-red-700">{t(c.saveConfirmed ? 'taskTable.personalColumns.headFailed' : 'taskTable.personalColumns.headRefreshFailed')}</p> : null}
         <p className="mt-3 text-xs text-muted">{t(c.draft?.columns === null ? 'taskTable.personalColumns.resetPending' : 'taskTable.personalColumns.saveHint')}</p>
       </>}
       <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">

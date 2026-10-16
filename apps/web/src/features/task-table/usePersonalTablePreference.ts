@@ -43,7 +43,13 @@ export function usePersonalTablePreference(actorId: string, workspaceId: string,
     const next = { expectedRevision: draftRef.current?.expectedRevision ?? query.data.revision, columns };
     draftRef.current = next; setDraftState(next); setSaveConfirmed(false);
   };
-  const discard = () => { if (held) return; setSaveConfirmed(false); draftRef.current = null; setDraftState(null); if (!unavailable(command.error)) command.reset(); };
+  const discard = () => {
+    if (held) return;
+    const conflicted = command.error instanceof ApiError && command.error.kind === 'conflict';
+    setSaveConfirmed(false); draftRef.current = null; setDraftState(null); if (!unavailable(command.error)) command.reset();
+    // A confirmed conflict proves the cached head is stale; stay frozen until the current row arrives.
+    if (conflicted) void refreshHead();
+  };
   const reload = async () => {
     if (held) return;
     const result = await query.refetch();

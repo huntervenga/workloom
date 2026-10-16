@@ -196,3 +196,54 @@ it('keeps original task-command recovery reachable when a saved preference hides
   expect(within(drawer).getByLabelText('Due date')).toBeDisabled();
   expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
 });
+
+it('refreshes the authoritative head after discarding a conflict and blocks stale edits until it arrives', async () => {
+  let current = head(1, [title]); let attempt = 0; let refresh: Promise<Response> | null = null;
+  const ui = example({
+    [`GET ${path}`]: () => refresh ?? ok(current),
+    [`PUT ${path}`]: request => { if (++attempt === 1) { current = head(2, [title]); return failure(409, 'REVISION_CONFLICT', 'private preference internals'); } return ok(current = head(3, (request.body as { columns: ColumnChoice[] }).columns)); },
+  }); await open(ui);
+  await ui.user.click(screen.getByLabelText('Tags')); await ui.user.click(screen.getByRole('button', { name: 'Save columns' }));
+  await waitFor(() => expect(ui.controller().command.error).not.toBeNull());
+  const response = deferred<Response>(); refresh = response.promise;
+  const reads = ui.calls.filter(call => call.method === 'GET').length;
+  await ui.user.click(screen.getByRole('button', { name: 'Discard changes' }));
+  await waitFor(() => expect(ui.calls.filter(call => call.method === 'GET')).toHaveLength(reads + 1));
+  expect(ui.controller().head).toBe('loading');
+  expect(ui.controller().draft).toBeNull(); expect(ui.controller().command.error).toBeNull();
+  expect(screen.getByLabelText('Tags')).toBeDisabled(); expect(screen.getByRole('button', { name: 'Save columns' })).toBeDisabled();
+  act(() => { ui.controller().setDraft([title]); });
+  act(() => { ui.controller().save([title]); });
+  expect(ui.controller().draft).toBeNull(); expect(ui.calls.filter(call => call.method === 'PUT')).toHaveLength(1);
+  refresh = null; await act(async () => response.resolve(ok(current)));
+  await waitFor(() => expect(ui.controller().head).toBe('idle'));
+  expect(ui.controller().query.data?.revision).toBe(2); expect(screen.getByLabelText('Tags')).toBeChecked();
+  await ui.user.click(screen.getByLabelText('Tags'));
+  expect(ui.controller().draft?.expectedRevision).toBe(2);
+  await ui.user.click(screen.getByRole('button', { name: 'Save columns' }));
+  await waitFor(() => expect(ui.controller().query.data?.revision).toBe(3));
+  const writes = ui.calls.filter(call => call.method === 'PUT'); expect(writes).toHaveLength(2);
+  expect((writes[1]?.body as { expectedRevision: number }).expectedRevision).toBe(2);
+});
+
+it('keeps editing blocked with explicit reload when the post-conflict discard refresh fails', async () => {
+  let current = head(1, [title]); let attempt = 0; let failRefresh = false;
+  const ui = example({
+    [`GET ${path}`]: () => failRefresh ? failure(503, 'UNAVAILABLE', 'internal read failure') : ok(current),
+    [`PUT ${path}`]: request => { if (++attempt === 1) { current = head(2, [title]); return failure(409, 'REVISION_CONFLICT', 'private preference internals'); } return ok(current = head(3, (request.body as { columns: ColumnChoice[] }).columns)); },
+  }); await open(ui);
+  await ui.user.click(screen.getByLabelText('Tags')); await ui.user.click(screen.getByRole('button', { name: 'Save columns' }));
+  await waitFor(() => expect(ui.controller().command.error).not.toBeNull());
+  failRefresh = true; await ui.user.click(screen.getByRole('button', { name: 'Discard changes' }));
+  await waitFor(() => expect(ui.controller().head).toBe('failed'));
+  expect(ui.controller().query.data?.revision).toBe(1); expect(ui.controller().denied).toBe(false);
+  expect(screen.getByLabelText('Tags')).toBeDisabled(); expect(screen.getByRole('button', { name: 'Save columns' })).toBeDisabled();
+  act(() => { ui.controller().setDraft([title]); }); expect(ui.controller().draft).toBeNull();
+  failRefresh = false; await ui.user.click(screen.getByRole('button', { name: 'Reload and review' }));
+  await waitFor(() => expect(ui.controller().head).toBe('idle'));
+  expect(ui.controller().query.data?.revision).toBe(2);
+  await ui.user.click(screen.getByLabelText('Tags')); await ui.user.click(screen.getByRole('button', { name: 'Save columns' }));
+  await waitFor(() => expect(ui.controller().query.data?.revision).toBe(3));
+  const writes = ui.calls.filter(call => call.method === 'PUT'); expect(writes).toHaveLength(2);
+  expect((writes[1]?.body as { expectedRevision: number }).expectedRevision).toBe(2);
+});
