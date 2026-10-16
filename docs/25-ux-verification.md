@@ -682,4 +682,50 @@ Claude added a 1024×900 viewport to `tests/e2e/inline-priority.spec.ts` only. I
 
 The first 1024 run used an intermediate spec (SHA256 `987d813639fa143ce6e3e35bb25d945446abda0cac2605c1eec4bcbff3ad0104`) that did not yet have the sticky-cell check. Despite its log name `/private/tmp/workloom-v15-midwidth-red.log`, it **passed** 1/1 in 5.7s. It is not a RED. The final frozen spec then passed 1/1 in 5.1s: log `/private/tmp/workloom-v15-midwidth-final.log`, results in `test-results/v15-midwidth-final`. No product fix was needed. The 1024 case ran separately from the six cases above, so these results do not come from a single seven-case execution. All 14 assets stayed unchanged through 15:11:13.994 UTC (`/private/tmp/workloom-v15-midwidth-final-assets.json`).
 
-**Provenance.** An independent source review is still running, and no review outcome is claimed here. No V13 or V14 archive was created; existing logs and results stay at the paths above, and the V12 archive is unchanged. Physical touch/IME, other widths and column configurations, Auth/private ACL, old-tab behavior and production are not claimed.
+**Provenance.** The independent source review was still running when this section was written. It later finished, reporting no inline-editor finding and three P3 column-recovery scenarios (V16 below). No V13 or V14 archive was created; existing logs and results stay at the paths above, and the V12 archive is unchanged. Physical touch/IME, other widths and column configurations, Auth/private ACL, old-tab behavior and production are not claimed.
+
+### V16 compiled `35ec787`: column reload/denial copy and visible footer — prior RED → GREEN, accepted
+
+**Review.** An independent, read-only Claude review reported no inline-editor finding and three P3 column-recovery scenarios. It made no native claims. Source `5af56a8` addresses them ([64](64-personal-columns-recovery.md)):
+
+- An ordinary 503 or an access-recovery reload keeps the draft's original revision; only a confirmed conflict reload rebases it.
+- Reads are allowed while a save is pending or unconfirmed, and they do not reset the draft, command or key.
+- Denial copy is neutral, because a 403 after a lost ACK cannot prove that the original was not saved.
+
+The shared mutation hook is unchanged. The author saw a real RED on the original source (3 failed, 10 passed), then 34 passing cases across the three personal-columns suites. The author's web types, lint and localization audit also passed. Root reviewed the reload race guard in source; no native race claim is made. The 403/503 paths remain source-only.
+
+**Footer `ef5f5b0`.** The table scroller is now a CSS size container. A sticky `100cqw` block inside the unchanged `tfoot` row keeps the budget, label and counts in the visible table area ([63](63-table-guidance.md)). Root's focused summary/layout tests passed: 13 cases in 2.99s. The author could not run tests.
+
+**Enhanced guidance spec `35ec787`**, SHA256 `0fbbf6ed2d96e61d3a90a8b600e45378c9a2f0b63bf355408a337c294944ec48`. It keeps the original 1440/390 flow and then adds a horizontal stage at desktop 1200 and unchanged mobile 390. A real wheel over a visible non-sticky body cell pans to the scroller's end, and read-only checks follow. Three attempts ran on old compiled `5267fbd`; outputs are in `test-results/v16-table-budget-{red,corrected-red,wheel-red}`.
+
+1. `/private/tmp/workloom-v16-table-budget-red.log` (spec SHA256 `dd4b3d4020fbc5f475267e57566bd5a8ba2fda94badf0a7f289cc16f078c3614`).
+   - **Desktop:** the 1440 fixture had no overflow (maxScroll 0). This was a harness gap, not a product RED.
+   - **Mobile:** actual RED; the budget was not visible.
+2. `/private/tmp/workloom-v16-table-budget-corrected-red.log` (spec SHA256 `37ad69d5355d497aa04e359d385909f8865472607ee7e125b88b540e4ffc05bf`).
+   - **Desktop:** at 1200 the table overflowed by 130px, but the wheel was over the sticky footer and never panned. This was a harness gap.
+   - **Mobile:** actual RED.
+3. `/private/tmp/workloom-v16-table-budget-wheel-red.log` with the frozen spec above: **actual RED at both 1200 and 390**. 4h was not visible after a real native pan.
+
+All 14 old assets stayed unchanged through 15:22:40.507 UTC against the V14 baseline. The entry was the same `/assets/index-DiQv6Hzv.js` with the prior hash; the record is `/private/tmp/workloom-v16-budget-red-final-assets.json`.
+
+**Normal gates on `35ec787`, all pass.** Root ran the web build (including web types), root types, and global lint with the boundary and localization checks. The full web suite passed **959 cases in 128 suites in 288.87s** (maxWorkers 1), log `/private/tmp/workloom-v16-normal-web.log`; the build, root-types and lint logs use the same prefix. The localization audit counted 206 sources, 2,634 calls and 2,590 English messages. There were no backend changes and no backend rerun.
+
+**Seven native cases, 22.7s, all pass.** Log `/private/tmp/workloom-v16-table-final.log`, results in `test-results/v16-table-final`.
+
+| Case | Widths | Time |
+| --- | --- | --- |
+| Priority | 1440 / 390 / 1024 | 3.7 / 3.3 / 3.4s |
+| Guidance: original flow, then real horizontal stage | 1440→1200 / 390 | 3.1 / 2.9s |
+| Title | 1440 / 390 | 2.2 / 2.3s |
+
+The guidance spec is the same SHA256 `0fbbf6ed…294944ec48` as the final RED attempt on old `5267fbd`. That makes this a genuine RED→GREEN. The pan uses a real native wheel over a body cell, with no JavaScript scroll and no forced click. Root viewed the actual `table-guidance-scrolled` desktop and mobile screenshots. The budget and every label are visible at the far right, and mobile wraps without overflow. No writes, and unchanged DTOs, draft and context, are all asserted.
+
+**Four personal-columns cases, 8.9s, all pass.** These are the real-409 cases, at 2.1/2.4/1.4/2.0s. Log `/private/tmp/workloom-v16-columns-final.log`, results in `test-results/v16-columns-final`. The 403/503 paths remain source-only. No race or touch claim is made.
+
+**Runtime.** All 14 served assets stayed byte-identical **15:23:11.235–15:24:45.908 UTC**. Entry `/assets/index-Z8nwgbHh.js`, 793,243 bytes, SHA256 `36ac17970313a5412c24e107425b9b4448695abb313a450bae5d28c805b4648d`. Manifests: `/private/tmp/workloom-v16-green-assets-{before,after}.json`. Readiness reported database/schema ready, doctor reported owned/ready PG/API/Vite, and the worker stayed **OFF**. No restart, migration, seed, old-tab, worker or production action occurred. Only additive QA fixtures were written.
+
+**Re-review.** An independent Claude re-review of `5af56a8` read four source files, without execution or a browser. It found all three P3 findings resolved and no new blocking issue. It confirmed the bounded latest-held/error guard in source. A direct concurrent reload race was not tested, and no broader approval is claimed.
+
+**Outcome.** Compiled `35ec787` is the latest accepted checkpoint, and source is frozen with no further product changes planned. No extra archive copies were made; tests, traces and screenshots stay at their original paths, and the historical V12 archive is unchanged.
+
+**Session.** At the time of writing (about 15:27 UTC), root's work window is still open; it is scheduled to end at 15:36:38 UTC. This record makes no claim about the end of that window.

@@ -17,13 +17,12 @@ While the head is `loading`, the existing `frozen` rule disables checkboxes, reo
 
 | Condition (first match) | Key |
 | --- | --- |
-| Denied access with a command error | `taskTable.personalColumns.collapsedDenied` |
-| Denied access with no command error, such as a 401/403 current-head read after an acknowledged save | `taskTable.personalColumns.unavailableView` |
+| Denied access (401/403), from either the command or a head read | `taskTable.personalColumns.unavailableView` |
 | Revision conflict | `taskTable.personalColumns.collapsedConflict` |
 | Any other definitive command rejection | `taskTable.personalColumns.collapsedFailed` |
 | Head refresh failed after an acknowledged save, or after the conflict-discard refresh | `taskTable.personalColumns.collapsedHeadFailed` |
 
-Any command error means that command was not saved, so `collapsedDenied` ("not saved") is used only when one is present. A denied head read alone uses the existing neutral access copy, "Column settings are unavailable with your current access.", which neither confirms nor denies the earlier acknowledged save.
+A denial always uses the existing neutral access copy, "Column settings are unavailable with your current access.". Access is checked before receipt replay, so a 403 on a retry after a lost ACK cannot prove that the first write was not saved. The copy therefore neither confirms nor denies an earlier save. This table reflects source `5af56a8` (see below). The earlier `collapsedDenied` ("not saved") row is removed, along with the claim that any command error proves the command was not saved.
 
 The head-failed copy is neutral. It does not claim a save was confirmed, because the conflict-discard refresh can also end in `failed`. Inside the dialog, the same rule applies to the head copy. While the head is `loading`, `refreshingHead` now reads "Refreshing the current column settings…" for both the post-save and conflict-discard refreshes, rather than starting with "Saved.". When the head is `failed`, the dialog keeps `headFailed` ("The save was confirmed, …") only when the controller's `saveConfirmed` is set. After Discard, which clears it, the dialog uses the new neutral `headRefreshFailed` copy. Command semantics are unchanged.
 
@@ -63,7 +62,7 @@ It also checks that unconfirmed (network-loss) copy stays distinct and that no n
 Three further cases cover the copy corrections:
 
 - **Denied head after an acknowledged save.** A 403 on the post-save read leaves `command.error` null, `saveConfirmed` set and `denied` true. The closed notice shows the neutral access copy, not `collapsedDenied`, `collapsedHeadFailed` or any "not saved" text. Reopening shows the hidden-project denial without the column list and without another read or write.
-- **Stale query 503 with a current command 403.** A 503 refetch leaves a query error. The next Save is denied with 403. The dialog shows the hidden-project denial, not the load-failure or unavailable-service copy. After closing, the notice shows `collapsedDenied`.
+- **Stale query 503 with a current command 403.** A 503 refetch leaves a query error. The next Save is denied with 403. The dialog shows the hidden-project denial, not the load-failure or unavailable-service copy. After closing, the notice showed `collapsedDenied` at the time; since `5af56a8` it shows the neutral `unavailableView`.
 - **Discard after a 409.** While the refresh is held, the dialog shows "Refreshing the current column settings…" and no status claims a save. A 503 then shows the neutral `headRefreshFailed` alert, not "The save was confirmed". After closing, the notice shows `collapsedHeadFailed`.
 
 ## Browser specification
@@ -114,5 +113,15 @@ The paragraphs above record the source-only state at the time and stay unchanged
 - **Closed failure notice.** A delayed real 409 arrives after Save, Close and Board, and the closed feedback stays visible. An explicit reopen from Graph keeps the draft, with no automatic write.
 
 The 403/503 closed-notice and denial-cause paths were not exercised natively and remain covered only by the fake-API source tests above. No separate archive was created; the logs and browser results stay at their original paths. Exact provenance is in [25](25-ux-verification.md).
+
+## Reload without rebasing and neutral denial — `5af56a8`, accepted on `35ec787`
+
+An independent, read-only Claude review of the column-recovery source reported three P3 column-recovery scenarios and no inline-editor finding. It made no native claims. Source `5af56a8` changes `usePersonalTablePreference.ts`, `PersonalColumnsDialog.tsx` and the English catalog. The shared `useIdempotentMutation` hook is unchanged.
+
+- **Only a confirmed conflict rebases.** `reload` records the command error before its read. After a successful read it moves a retained draft to the fresh revision only when that recorded error was a 409. After an ordinary 503 or an access recovery, the draft keeps its original `expectedRevision`, so a later save still detects an intervening change.
+- **Reads never disturb a held command.** A reload is allowed while a save is pending or unconfirmed. After the read, the hook checks the latest held command and error. If a command is held or the error changed during the read, it keeps the draft, command, body and key, and resets nothing. Root reviewed this guard in source; no native race claim is made.
+- **Denial copy is neutral.** Any denial uses `unavailableView` (table above). The unused `collapsedDenied` key was removed, so the audit's English message count drops from 2,591 to 2,590.
+
+The author observed a real RED on the original source: three cases failed and ten passed. After the fix, the three personal-columns suites passed 34 cases, and the author's web types, lint and localization audit passed. On compiled `35ec787`, root's full web suite passed, and the four real-409 personal-columns cases passed again natively. An independent read-only re-review of four source files found all three P3 findings resolved, with no new blocking issue. It confirmed the bounded guard in source. The change is accepted on that basis: the source tests, the review and the 409 native regression. The non-conflict reload, the 403/503 paths and a direct concurrent reload race remain untested natively, and no touch or broader approval is claimed. Exact results are in [25](25-ux-verification.md).
 
 Related: [personal table columns](32-personal-table-columns.md), [contextual toolbar](59-contextual-project-toolbar.md), [Graph dragging](60-graph-dragging.md).

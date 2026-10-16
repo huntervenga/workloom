@@ -214,4 +214,14 @@ Root's stronger read-only geometry gate measures without scrolling, focusing or 
 
 Source `5267fbd` reveals an explicitly opened editor once inside its own table scrollport ([65](65-inline-editor-layout.md)). Root's normal gates on it passed, including **955 web cases in 128 suites in 331.48s**. Using the same spec hash as the RED, the six stronger cases passed at 1440/390 in **33.2s**. Root inspected the Priority screenshots: the select and the action buttons are visible. Assets were byte-exact 15:03:53.573–15:04:51.583 UTC with the worker OFF.
 
-Test-only `4e63b57` then added a 1024×900 Priority case with a read-only sticky-cell check. It passed 1/1 in 5.1s on the final spec; an earlier intermediate-spec run had also passed, despite its `-red` log name. No product change was needed. Compiled product `5267fbd` is the latest accepted checkpoint. The independent source review is still running. No V13/V14 archive was created. Details are in [25](25-ux-verification.md).
+Test-only `4e63b57` then added a 1024×900 Priority case with a read-only sticky-cell check. It passed 1/1 in 5.1s on the final spec; an earlier intermediate-spec run had also passed, despite its `-red` log name. No product change was needed. Compiled product `5267fbd` is the latest accepted checkpoint. The independent source review was still running at that point. No V13/V14 archive was created. Details are in [25](25-ux-verification.md).
+
+## V16 column recovery and visible footer — RED by 15:22 UTC, GREEN 15:23–15:25 UTC
+
+The independent read-only review finished. It found no inline-editor issue and reported three P3 column-recovery scenarios. Source `5af56a8` keeps a draft's original revision on ordinary or access-recovery reloads, allows reads during a held save without resetting it, and makes denial copy neutral ([64](64-personal-columns-recovery.md)). Its author observed RED, then GREEN on 34 cases.
+
+Footer `ef5f5b0` keeps the loaded budget inside the table's visible width ([63](63-table-guidance.md)). Root's focused tests passed 13 cases. The enhanced guidance spec `35ec787` adds a real-wheel horizontal stage. Its final frozen version failed natively at 1200 and 390 on old compiled `5267fbd`. The two earlier attempts include desktop harness gaps that are not product REDs.
+
+On compiled `35ec787`, the normal gates passed, including **959 web cases in 128 suites**. The seven native table cases passed in **22.7s** with the same guidance spec hash as the RED. Root viewed the scrolled screenshots and saw the budget and labels at the far right. The four real-409 personal-columns cases passed in **8.9s**. All 14 assets were byte-exact 15:23:11.235–15:24:45.908 UTC with the worker OFF.
+
+The read-only re-review found all three P3 findings resolved, with no new blocking issue. `35ec787` is the latest accepted checkpoint, and source is frozen. 403/503 and the direct reload race are untested natively. Root's work window is still open and is scheduled to end at 15:36:38 UTC. Details are in [25](25-ux-verification.md).
