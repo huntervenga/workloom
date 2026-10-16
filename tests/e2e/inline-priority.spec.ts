@@ -35,7 +35,11 @@ function editorGeometry(editor: Locator) {
   });
 }
 
-for (const [name, viewport] of sizes) test.describe(`Inline task priority ${name}`, () => {
+// 1024 is the narrowest width with both pinned cells (lg): sidebar, padding, title 320 and estimate 128
+// leave the least clear editor area. Local to this spec; the shared sizes stay unchanged.
+const viewports = [...sizes, ['medium', { width: 1024, height: 900 }]] as const;
+
+for (const [name, viewport] of viewports) test.describe(`Inline task priority ${name}`, () => {
   test.use({ viewport });
   test('native choices and no-op save do not write; explicit priority, exact hidden retry and clear preserve other fields, an independent rich draft and outside focus', async ({ page, request, baseURL }, info) => {
     test.setTimeout(70_000);
@@ -69,6 +73,8 @@ for (const [name, viewport] of sizes) test.describe(`Inline task priority ${name
       // Unassisted visibility: measured right after the explicit open, before any further scroll, click or Save.
       await action.click(); await expect(priority).toBeFocused(); const openGeometry = await editorGeometry(editor);
       expect(openGeometry.pageScroll).toEqual({ x: 0 }); expect(openGeometry.controls.map(control => control.name)).toEqual(['Priority', 'Save', 'More details', 'Collapse editor']); expect(openGeometry.clear.right - openGeometry.clear.left).toBeGreaterThan(0); expect(openGeometry.controls.filter(control => !control.inside || !control.hit)).toEqual([]);
+      // Medium must measure the pinned (lg) layout, not pass vacuously: the editor row keeps a sticky cell.
+      if (name === 'medium') expect(await editor.evaluate(form => [...(form.closest('tr')?.children ?? [])].filter(cell => getComputedStyle(cell).position === 'sticky').length)).toBeGreaterThan(0);
       await expect(priority).toHaveValue('medium'); expect(await priority.evaluate(element => element.tagName)).toBe('SELECT'); expect(await priority.getByRole('option').evaluateAll(options => options.map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent })))).toEqual([{ value: 'none', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' }]);
       for (const value of ['none', 'low', 'medium', 'high', 'urgent', 'medium']) { await priority.selectOption(value); await priority.press('Tab'); await search.click(); await expect(priority).toHaveValue(value); expect(writes).toEqual([]); }
       expect(await f.task(work.id)).toEqual(work); await editor.getByRole('button', { name: 'Save', exact: true }).click(); await expect(editor).toHaveCount(0); expect(writes).toEqual([]);
