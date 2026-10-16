@@ -1,3 +1,4 @@
+import { DialogReturnFocus } from '../shared/DialogShell';
 import { orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
 import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
 import { TaskCompletionAction } from '../features/tasks/TaskCompletionAction';
@@ -187,6 +188,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const dependencies = useDependencyWorkspace(actorId, workspace.id, project.id);
   const schedule = useScheduleWorkspace(actorId, workspace.id, project.id, workspace.timezone);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const activeViewControl = useRef<HTMLButtonElement | null>(null);
+  const defaultColumnReturn = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const meetingController=useMeetingWorkspace(actorId,workspace.id,project.id);
@@ -248,6 +251,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const graphMode = searchParams.get('view') === 'graph';
   const ganttMode = searchParams.get('view') === 'gantt';
   const importMode = searchParams.get('view') === 'import';
+  const tableMode = !boardMode && !graphMode && !ganttMode && !importMode;
+  const showTaskFilters = tableMode || boardMode || ganttMode;
   const importId = searchParams.get('import') ?? '';
   const selectImport = useCallback((id: string) => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'import'); if (id) next.set('import', id); else next.delete('import'); return next; }), [setSearchParams]);
   const imports = useImportWorkspace(actorId, workspace.id, project.id, isUuid(importId) ? importId : '', selectImport);
@@ -597,11 +602,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       {meetingController.commands.create.pendingCommand||meetingController.commands.create.uncertain?<div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">{t('projects.projectPage.meetingCreationIsUnconfirmed')}<Button size="sm" onClick={()=>meetingController.setCreateOpen(true)}>{t('projects.projectPage.openMeetingCreation')}</Button></div>:null}
       <CreateMeetingDialog accessDenied={[members.error,sections.error,statuses.error,meetingPeriods.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={meetingPeriods.data??[]} statuses={statuses.data??[]} sections={sections.data??[]} ownMembershipId={members.data?.find(m=>m.userId===actorId)?.id??''} timezone={workspace.timezone} onCreated={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab','plan');return next;})}/>
       <nav aria-label={t('projects.projectPage.projectViews')} className="flex min-w-0 flex-nowrap gap-1 overflow-x-auto border-b border-line pb-2">
-        <Button size="sm" variant={boardMode || graphMode || ganttMode || importMode ? 'ghost' : 'primary'} aria-current={!boardMode && !graphMode && !ganttMode && !importMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>{t('projects.projectPage.tasks')}</Button>
-        <Button size="sm" variant={boardMode ? 'primary' : 'ghost'} aria-current={boardMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'board'); return next; })}>{t('projects.projectPage.board')}</Button>
-        <Button size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
-        <Button size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
-        {canManageImports ? <Button size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
+        <Button ref={tableMode || (importMode && !canManageImports) ? activeViewControl : undefined} size="sm" variant={boardMode || graphMode || ganttMode || importMode ? 'ghost' : 'primary'} aria-current={!boardMode && !graphMode && !ganttMode && !importMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>{t('projects.projectPage.tasks')}</Button>
+        <Button ref={boardMode ? activeViewControl : undefined} size="sm" variant={boardMode ? 'primary' : 'ghost'} aria-current={boardMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'board'); return next; })}>{t('projects.projectPage.board')}</Button>
+        <Button ref={graphMode ? activeViewControl : undefined} size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
+        <Button ref={ganttMode ? activeViewControl : undefined} size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
+        {canManageImports ? <Button ref={importMode ? activeViewControl : undefined} size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
         <Link to={weeklyPlanningHref(workspace.id, project.id, { periodId: taskTime.context.periodId, workerId: taskTime.context.workerId, explicitEmptyPeriod: true })} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>
           <CalendarDays size={16} aria-hidden="true" />{t('projects.projectPage.week')}</Link>
       </nav>
@@ -639,9 +644,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                 {t('projects.projectPage.openSubmission')}</Button>
             </div>
           ) : null}
-          {boardMode ? taskTime.notices : taskTime.controls}
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <div className="min-w-0 basis-full sm:basis-0 sm:flex-1"><TaskFilters value={filters} onChange={next => { invalidateInlineSave(); setFilters(next); }} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div>
+          {tableMode ? taskTime.controls : taskTime.notices}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
+            {showTaskFilters ? <div className="min-w-0 basis-full sm:basis-0 sm:flex-1"><TaskFilters value={filters} onChange={next => { invalidateInlineSave(); setFilters(next); }} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
             {!boardMode && !graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
               {t('taskTable.grouping.label')}
               <select aria-label={t('taskTable.grouping.label')} className="min-h-8 rounded border border-line bg-surface px-2 text-xs text-ink" value={grouping} onChange={event => { invalidateInlineSave(); setGrouping(event.target.value === 'assignee' ? 'assignee' : 'section'); }}>
@@ -660,7 +665,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                 <option value="due_asc">{t('taskTable.sort.dueDate')}</option>
               </select>
             </label> : null}
-            <PersonalColumnsDialog showTrigger={!boardMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
+            <DialogReturnFocus targetRef={tableMode ? defaultColumnReturn : activeViewControl}>
+              <PersonalColumnsDialog showTrigger={tableMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
+            </DialogReturnFocus>
           </div>
           {grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode ? <p className="text-xs text-muted">{t('taskTable.grouping.help')}</p> : null}
           {sortMode === 'due_asc' && !graphMode && !ganttMode && !importMode ? <p className="text-xs text-muted">{boardMode ? t('taskTable.sort.boardHelp') : t('taskTable.sort.tableHelp')}</p> : null}
