@@ -152,11 +152,13 @@ function harness() {
             (input.tagId === undefined || (db.state.taskTags.get(row.id) ?? []).includes(input.tagId)),
         )
         .map(project)
-        .sort((left, right) => left.position - right.position || (left.id < right.id ? -1 : 1))
-        .filter(
-          (row) =>
-            after === null || row.position > after.position || (row.position === after.position && row.id > after.id),
-        )
+        .sort((left, right) => (input.sort === 'due_asc'
+          ? left.dueDate === right.dueDate ? 0 : left.dueDate === null ? 1 : right.dueDate === null ? -1 : left.dueDate < right.dueDate ? -1 : 1
+          : left.position - right.position) || (left.id < right.id ? -1 : 1))
+        .filter((row) => after === null || ('dueDate' in after
+          ? after.dueDate === null ? row.dueDate === null && row.id > after.id
+            : row.dueDate === null || row.dueDate > after.dueDate || (row.dueDate === after.dueDate && row.id > after.id)
+          : row.position > after.position || (row.position === after.position && row.id > after.id)))
         .slice(0, take);
     },
     insertTaskCore: async (row) => void db.state.tasks.set(row.id, row),
@@ -655,5 +657,70 @@ describe('exact task tag filter', () => {
     };
     expect(JSON.parse(first.nextCursor as string)).toEqual(legacyPayload);
     expect((await s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, limit: 1, cursor: JSON.stringify(legacyPayload) })).items.map(row => row.id)).toEqual([secondTask.id]);
+  });
+});
+
+
+describe('server task due sorting', () => {
+  it('orders all tasks before paging, including date ties and the dated/null boundary', async () => {
+    const s = await setup();
+    const undated1 = await s.createTask({ title: 'Undated first' });
+    const later = await s.createTask({ title: 'Later', dueDate: '9999-12-31' });
+    const earliest = await s.createTask({ title: 'Earliest after manual first page', dueDate: '0001-01-01' });
+    const tied = await s.createTask({ title: 'Same date', dueDate: '0001-01-01' });
+    const undated2 = await s.createTask({ title: 'Undated last' });
+    const found: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, sort: 'due_asc', limit: 1, ...(cursor ? { cursor } : {}) });
+      found.push(...page.items.map(row => row.id));
+      if (page.nextCursor) {
+        const payload = JSON.parse(page.nextCursor);
+        expect(payload.version).toBe(2);
+        expect(payload).not.toHaveProperty('position');
+        expect(payload.dueDate).toBe(page.items[0]?.dueDate);
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    expect(found).toEqual([earliest.id, tied.id, later.id, undated1.id, undated2.id]);
+    expect(new Set(found).size).toBe(found.length);
+  });
+
+  it('keeps omitted/manual hashes and cursor payloads exactly identical and mutually readable', async () => {
+    const s = await setup();
+    const firstTask = await s.createTask({ title: 'One' });
+    const secondTask = await s.createTask({ title: 'Two' });
+    const base = { projectId: s.project.id, limit: 1 };
+    const omitted = await s.app.listTasks(s.ctx(users.owner), base);
+    const manual = await s.app.listTasks(s.ctx(users.owner), { ...base, sort: 'manual' });
+    const literal = { version: 1, workspaceId: WS, actorUserId: users.owner, permissionEpoch: 'epoch-1', queryHash: `digest:{"limit":1,"projectId":"${s.project.id}"}`, position: firstTask.position, id: firstTask.id };
+    expect(manual).toEqual(omitted);
+    expect(JSON.parse(manual.nextCursor as string)).toEqual(literal);
+    for (const sort of [undefined, 'manual'] as const) {
+      const next = await s.app.listTasks(s.ctx(users.owner), { ...base, ...(sort ? { sort } : {}), cursor: JSON.stringify(literal) });
+      expect(next.items.map(row => row.id)).toEqual([secondTask.id]);
+    }
+  });
+
+  it('rejects cross-sort, cross-filter, limit, actor and permission-epoch cursor reuse', async () => {
+    const s = await setup();
+    for (const title of ['One', 'Two']) await s.createTask({ title });
+    const base = { projectId: s.project.id, limit: 1 };
+    const manual = await s.app.listTasks(s.ctx(users.owner), base);
+    const due = await s.app.listTasks(s.ctx(users.owner), { ...base, sort: 'due_asc' });
+    const cursor = due.nextCursor as string;
+    for (const input of [
+      { ...base, sort: 'due_asc' as const, cursor: manual.nextCursor as string },
+      { ...base, cursor },
+      { ...base, sort: 'manual' as const, cursor },
+      { ...base, sort: 'due_asc' as const, search: 'One', cursor },
+      { ...base, sort: 'due_asc' as const, includeArchived: true, cursor },
+      { ...base, sort: 'due_asc' as const, limit: 2, cursor },
+    ]) expect((await errorOf(s.app.listTasks(s.ctx(users.owner), input))).code).toBe('VALIDATION_FAILED');
+    expect((await errorOf(s.app.listTasks(s.ctx(users.viewer), { ...base, sort: 'due_asc', cursor }))).code).toBe('VALIDATION_FAILED');
+    s.db.epoch = 'epoch-2';
+    expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { ...base, sort: 'due_asc', cursor }))).code).toBe('VALIDATION_FAILED');
+    expect((await errorOf(s.app.listTasks(s.ctx(users.revoked), { ...base, sort: 'due_asc', cursor: 'bad' }))).code).toBe('NOT_FOUND');
+    expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { ...base, projectId: uuid(990), sort: 'due_asc', cursor: 'bad' }))).code).toBe('NOT_FOUND');
   });
 });

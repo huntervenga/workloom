@@ -43,7 +43,7 @@ import type { CommandContext } from '../access/context.js';
 import { DomainError, notFoundError, unauthenticatedError } from '../errors.js';
 import type { RecordedChange } from '../transactions/ports.js';
 import type { TaskApplication, TaskPage } from './application.js';
-import type { TaskApplicationDependencies, TaskRepository, TaskWriteScope, WorkPackageRecord } from './ports.js';
+import type { TaskApplicationDependencies, TaskCursorAnchor, TaskRepository, TaskWriteScope, WorkPackageRecord } from './ports.js';
 
 const MAX_POSITION = 2_147_483_647;
 /** Same rule as the HTTP adapter: visible ASCII, 1–128 characters. */
@@ -322,22 +322,27 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         requireFound(await reader.findTag(ws, query.tagId));
       }
 
-      const { cursor, ...filters } = query;
+      const { cursor, sort, ...legacyFilters } = query;
+      // No default/null/manual key enters the old canonical hash or v1 cursor bytes.
+      const filters = sort === 'due_asc' ? { ...legacyFilters, sort } : legacyFilters;
       const permissionEpoch = await reader.permissionEpoch(ws);
       const queryHash = hash(filters);
-      const binding = { version: 1, workspaceId: ws, actorUserId: ctx.actor.userId, permissionEpoch, queryHash } as const;
+      const binding = { workspaceId: ws, actorUserId: ctx.actor.userId, permissionEpoch, queryHash };
+      const version = sort === 'due_asc' ? 2 : 1;
 
-      let after: { position: number; id: string } | null = null;
+      let after: TaskCursorAnchor | null = null;
       if (cursor !== undefined) {
         const payload = tools.decodeCursor(cursor);
         const bound =
-          payload.version === binding.version &&
+          payload.version === version &&
           payload.workspaceId === binding.workspaceId &&
           payload.actorUserId === binding.actorUserId &&
           payload.permissionEpoch === binding.permissionEpoch &&
           payload.queryHash === binding.queryHash;
         if (!bound) throw validationError(['cursor'], 'The cursor is no longer valid. Reload the list.');
-        after = { position: payload.position, id: payload.id };
+        after = payload.version === 2
+          ? { dueDate: payload.dueDate, id: payload.id }
+          : { position: payload.position, id: payload.id };
       }
 
       const rows = await reader.listTasks(ws, filters, after, query.limit + 1);
@@ -345,7 +350,9 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
       const last = items.at(-1);
       const nextCursor =
         rows.length > query.limit && last !== undefined
-          ? tools.encodeCursor({ ...binding, position: last.position, id: last.id })
+          ? tools.encodeCursor(version === 2
+              ? { version: 2, ...binding, dueDate: last.dueDate, id: last.id }
+              : { version: 1, ...binding, position: last.position, id: last.id })
           : null;
       return { items, nextCursor };
     },

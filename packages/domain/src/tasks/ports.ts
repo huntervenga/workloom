@@ -15,24 +15,24 @@ import type { CommandContext } from '../access/context.js';
 import type { AccessRepository } from '../access/ports.js';
 import type { WorkspaceWriteScope } from '../transactions/ports.js';
 
-/** Keyset position of the last task on a page; tasks are ordered by `(position, id)`. */
-export interface TaskCursorAnchor {
-  readonly position: number;
-  readonly id: string;
-}
+/** Stable keyset anchors; due dates are ordered ascending with nulls last. */
+export type TaskCursorAnchor =
+  | { readonly position: number; readonly id: string }
+  | { readonly dueDate: string | null; readonly id: string };
 
-/**
- * Signed cursor contents. The domain checks that the actor, workspace, query hash and
- * permission epoch still match the request; a mismatch is rejected so the client resets
- * to the first page and refetches.
- */
-export interface TaskCursorPayload extends TaskCursorAnchor {
-  readonly version: 1;
+/** Current authorization and the complete normalized query bind every page. */
+interface TaskCursorBinding {
   readonly workspaceId: string;
   readonly actorUserId: string;
   readonly permissionEpoch: string;
   readonly queryHash: string;
 }
+
+/** Version 1 remains byte-compatible; version 2 is exclusively due-date ordering. */
+export type TaskCursorPayload = TaskCursorBinding & (
+  | { readonly version: 1; readonly position: number; readonly id: string }
+  | { readonly version: 2; readonly dueDate: string | null; readonly id: string }
+);
 
 export interface WorkPackageRecord {
   readonly id: string;
@@ -105,7 +105,7 @@ export interface TaskRepository {
   findTask(workspaceId: string, taskId: string): Promise<TaskDto | null>;
   findTasksByIds(workspaceId:string,taskIds:readonly string[]):Promise<TaskDto[]>;
   /**
-   * Tasks matching `input`, in stable `(position, id)` order strictly after `after`.
+   * Tasks matching `input`, in manual `(position,id)` or due `(dueDate NULLS LAST,id)` order after `after`.
    * Returns at most `take` rows; the domain passes page size + 1 to detect a next page.
    */
   listTasks(

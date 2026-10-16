@@ -638,15 +638,19 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
       if (input.includeArchived !== true) {
         conditions.push(isNull(tasks.archivedAt));
       }
+      const dueOrder = input.sort === 'due_asc';
       if (after !== null) {
-        conditions.push(
-          or(gt(tasks.position, after.position), and(eq(tasks.position, after.position), gt(tasks.id, after.id))),
-        );
+        if (dueOrder !== ('dueDate' in after)) throw new TypeError('Task cursor anchor does not match its ordering.');
+        conditions.push('dueDate' in after
+          ? after.dueDate === null
+            ? and(isNull(tasks.dueDate), gt(tasks.id, after.id))
+            : or(gt(tasks.dueDate, after.dueDate), isNull(tasks.dueDate), and(eq(tasks.dueDate, after.dueDate), gt(tasks.id, after.id)))
+          : or(gt(tasks.position, after.position), and(eq(tasks.position, after.position), gt(tasks.id, after.id))));
       }
 
       const rows = await selectTasks()
         .where(and(...conditions))
-        .orderBy(asc(tasks.position), asc(tasks.id))
+        .orderBy(...(dueOrder ? [sql`${tasks.dueDate} asc nulls last`, asc(tasks.id)] : [asc(tasks.position), asc(tasks.id)]))
         .limit(take);
       return projectTasks(workspaceId, rows);
     },

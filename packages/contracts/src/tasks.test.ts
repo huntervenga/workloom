@@ -346,3 +346,18 @@ describe('taskSchema', () => {
     expect(taskSchema.safeParse({ ...task, tags: ['Design'] }).success).toBe(false);
   });
 });
+
+
+describe('bounded task due sort query', () => {
+  it('adds no default sort to legacy query output', () => {
+    expect(taskListQuerySchema.parse({ projectId: ids.project })).toEqual({ projectId: ids.project, limit: 50 });
+    for (const sort of ['manual', 'due_asc']) expect(taskListQuerySchema.parse({ projectId: ids.project, sort })).toMatchObject({ sort });
+  });
+  it('accepts only one bounded scalar mode and keeps page limits independent', () => {
+    for (const sort of ['due_desc', 'title', '', null, ['due_asc'], { dueDate: 'asc' }]) {
+      expect(taskListQuerySchema.safeParse({ projectId: ids.project, sort }).success).toBe(false);
+    }
+    for (const limit of [0, 201]) expect(taskListQuerySchema.safeParse({ projectId: ids.project, sort: 'due_asc', limit }).success).toBe(false);
+    expect(taskListQuerySchema.safeParse({ projectId: ids.project, sort: 'due_asc', direction: 'asc' }).success).toBe(false);
+  });
+});

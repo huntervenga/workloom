@@ -424,6 +424,15 @@ describe('P1a task routes (HTTP adapter)', () => {
     expect(last).toMatchObject({ data: [], meta: { nextCursor: null } });
   });
 
+  it('forwards the bounded scalar due sort and rejects unsupported or repeated modes', async () => {
+    const response = await send(app, routeFor('listTasks'), { query: `projectId=${IDS.project}&sort=due_asc&limit=2&cursor=due-token` });
+    expect(response.statusCode).toBe(200);
+    expect(calls[0]?.args).toEqual([{ projectId: IDS.project, sort: 'due_asc', limit: 2, cursor: 'due-token' }]);
+    for (const suffix of ['sort=due_desc', 'sort=due_asc&sort=manual', 'sort=']) {
+      expect((await send(app, routeFor('listTasks'), { query: `projectId=${IDS.project}&${suffix}` })).statusCode).toBe(400);
+    }
+  });
+
   it('forwards a canonical scalar tag filter without changing other filters', async () => {
     const query = `projectId=${IDS.project}&tagId=${IDS.tag.toUpperCase()}&sectionId=${IDS.section}&statusId=${IDS.status}&participantMembershipId=${IDS.membership}&search=spec&limit=2`;
     const response = await send(app, routeFor('listTasks'), { query });

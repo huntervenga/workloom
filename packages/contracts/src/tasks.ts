@@ -356,6 +356,8 @@ const queryBooleanSchema = z.union([
 ]);
 
 export const taskListQuerySchema = z.strictObject({
+  /** Absent/manual preserves legacy ordering and cursor bindings; due dates sort nulls last. */
+  sort: z.enum(['manual', 'due_asc']).optional(),
   projectId: idSchema,
   sectionId: idSchema.optional(),
   statusId: idSchema.optional(),

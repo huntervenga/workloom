@@ -25,6 +25,18 @@ describe('actual SDK guarded tool handlers',()=>{
   }
   expect(callTool).not.toHaveBeenCalled();
  });
+ it('advertises and forwards bounded due sorting through the shared search query', async () => {
+  const callTool = vi.fn().mockResolvedValue({data:{tool:'search_tasks',data:[],nextCursor:'due-next'},meta:{requestId}});
+  const c = await connect({listTools:async()=>({data:{tools:['search_tasks']},meta:{requestId}}),callTool});
+  const catalog = await c.listTools();
+  expect(JSON.stringify(catalog.tools[0]?.inputSchema)).toContain('due_asc');
+  const query = {projectId:requestId,sort:'due_asc',limit:2,cursor:'due-cursor'};
+  expect((await c.callTool({name:'search_tasks',arguments:{query}})).structuredContent).toEqual({tool:'search_tasks',data:[],nextCursor:'due-next'});
+  expect(callTool).toHaveBeenCalledWith('search_tasks',{query});
+  callTool.mockClear();
+  for (const sort of ['due_desc',['due_asc'],{dueDate:'asc'}]) expect((await c.callTool({name:'search_tasks',arguments:{query:{projectId:requestId,sort}}})).isError).toBe(true);
+  expect(callTool).not.toHaveBeenCalled();
+ });
  it('never dispatches actor injection or malformed write inputs',async()=>{const bridge={listTools:vi.fn().mockResolvedValue({data:{tools:[]},meta:{requestId}}),callTool:vi.fn()};const c=await connect(bridge);expect((await c.callTool({name:'list_projects',arguments:{actorId:requestId}})).isError).toBe(true);expect((await c.callTool({name:'create_task',arguments:{}})).isError).toBe(true);expect(bridge.callTool).not.toHaveBeenCalled();});
 });
 

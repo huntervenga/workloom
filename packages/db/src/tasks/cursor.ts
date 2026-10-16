@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { idSchema } from '@workloom/contracts';
+import { idSchema, sqlCalendarDateSchema } from '@workloom/contracts';
 import { DomainError, type TaskCursorPayload } from '@workloom/domain';
 
 /**
@@ -36,20 +36,17 @@ const MAX_INT32 = 2_147_483_647;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const EPOCH_PATTERN = /^(0|[1-9][0-9]{0,18})$/;
 const QUERY_HASH_PATTERN = /^[0-9a-f]{64}$/;
-const PAYLOAD_KEYS = [
+const COMMON_KEYS = [
   'version',
   'workspaceId',
   'actorUserId',
   'permissionEpoch',
   'queryHash',
-  'position',
   'id',
   'expiresAt',
 ] as const;
 
-interface SignedPayload extends TaskCursorPayload {
-  readonly expiresAt: number;
-}
+type SignedPayload = TaskCursorPayload & { readonly expiresAt: number };
 
 function invalidCursor(): DomainError {
   return new DomainError('VALIDATION_FAILED', INVALID_CURSOR_MESSAGE, { details: { fields: ['cursor'] } });
@@ -64,23 +61,24 @@ function isCanonicalId(value: unknown): value is string {
 
 function isPayload(value: Record<string, unknown>): boolean {
   return (
-    value.version === 1 &&
+    (value.version === 1 || value.version === 2) &&
     isCanonicalId(value.workspaceId) &&
     isCanonicalId(value.actorUserId) &&
     typeof value.permissionEpoch === 'string' &&
     EPOCH_PATTERN.test(value.permissionEpoch) &&
     typeof value.queryHash === 'string' &&
     QUERY_HASH_PATTERN.test(value.queryHash) &&
-    Number.isInteger(value.position) &&
-    (value.position as number) >= 0 &&
-    (value.position as number) <= MAX_INT32 &&
+    (value.version === 1
+      ? Number.isInteger(value.position) && (value.position as number) >= 0 && (value.position as number) <= MAX_INT32
+      : value.dueDate === null || sqlCalendarDateSchema.safeParse(value.dueDate).success) &&
     isCanonicalId(value.id)
   );
 }
 
 function hasExactKeys(value: object): boolean {
   const keys = Object.keys(value);
-  return keys.length === PAYLOAD_KEYS.length && PAYLOAD_KEYS.every((key) => Object.hasOwn(value, key));
+  const anchor = (value as Record<string, unknown>).version === 1 ? 'position' : 'dueDate';
+  return keys.length === COMMON_KEYS.length + 1 && COMMON_KEYS.every((key) => Object.hasOwn(value, key)) && Object.hasOwn(value, anchor);
 }
 
 export function createTaskCursorCodec(options: TaskCursorCodecOptions = {}): TaskCursorCodec {
@@ -104,16 +102,16 @@ export function createTaskCursorCodec(options: TaskCursorCodecOptions = {}): Tas
       if (!isPayload(record)) {
         throw new TypeError('Refusing to sign a malformed task cursor payload.');
       }
-      const signed: SignedPayload = {
-        version: 1,
+      const binding = {
         workspaceId: payload.workspaceId,
         actorUserId: payload.actorUserId,
         permissionEpoch: payload.permissionEpoch,
         queryHash: payload.queryHash,
-        position: payload.position,
-        id: payload.id,
-        expiresAt: now() + ttlMs,
       };
+      // Keep the original v1 key insertion order, including expiresAt, exactly unchanged.
+      const signed: SignedPayload = payload.version === 1
+        ? { version: 1, ...binding, position: payload.position, id: payload.id, expiresAt: now() + ttlMs }
+        : { version: 2, ...binding, dueDate: payload.dueDate, id: payload.id, expiresAt: now() + ttlMs };
       const body = Buffer.from(JSON.stringify(signed), 'utf8').toString('base64url');
       const token = `${body}.${sign(body).toString('base64url')}`;
       if (token.length > TASK_CURSOR_MAX_LENGTH) {
@@ -163,15 +161,15 @@ export function createTaskCursorCodec(options: TaskCursorCodecOptions = {}): Tas
         throw invalidCursor();
       }
       const payload = record as unknown as SignedPayload;
-      return {
-        version: 1,
+      const binding = {
         workspaceId: payload.workspaceId,
         actorUserId: payload.actorUserId,
         permissionEpoch: payload.permissionEpoch,
         queryHash: payload.queryHash,
-        position: payload.position,
-        id: payload.id,
       };
+      return payload.version === 1
+        ? { version: 1, ...binding, position: payload.position, id: payload.id }
+        : { version: 2, ...binding, dueDate: payload.dueDate, id: payload.id };
     },
   };
 }
