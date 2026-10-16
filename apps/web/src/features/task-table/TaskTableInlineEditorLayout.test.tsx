@@ -101,3 +101,65 @@ describe('native inline editor inside its budget', () => {
     expect(colWidths()[priorityIndex]).toBe(`${widths.priority}px`);
   });
 });
+
+describe('one-shot local reveal of an explicitly opened editor', () => {
+  it('pans only the table scroller once per explicit open; lost ACK, remounts and a consumed claim never pan or steal focus', async () => {
+    const first = lostResponse();
+    installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => first.promise });
+    // Stubbed boxes only exercise the guard; real occlusion/hit-testing is the browser gate's job.
+    let scrollLeft = 0;
+    const pans: number[] = [];
+    const box = (left: number, width: number) => ({ left, right: left + width, top: 0, bottom: 40, width, height: 40, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
+    const geometry = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      if (this.matches('[data-task-table-scroll]')) return box(0, 600);
+      return this.tagName === 'FORM' ? box(700 - scrollLeft, 264) : box(0, 0);
+    });
+    Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, get: () => 1000 });
+    function Example() {
+      const commands = useTaskCommands(anna.id, alpha.id);
+      const [active, setActive] = useState<{ claim: { current: boolean }; mount: number } | null>(null);
+      return <>
+        <button onClick={() => setActive({ claim: { current: false }, mount: 0 })}>Open Priority explicitly</button>
+        <button onClick={() => setActive(before => before && { ...before, mount: before.mount + 1 })}>Remount editor</button>
+        <TaskTable tasks={[task]} sections={[]} members={alphaMembers} statuses={statuses} {...handlers()} writable columnIds={columnIds}
+          activeFieldEditor={active ? { taskId: task.id, field: 'priority' } : undefined}
+          renderTaskFieldEditor={(row: TaskDto, field) => active && row.id === task.id && field === 'priority' ? <InlineTaskEdit key={active.mount} focusClaim={active.claim} task={row} field={field} statuses={statuses} members={alphaMembers} commands={commands} writable onClose={() => setActive(null)} onMoreDetails={() => undefined} onSaved={() => undefined} /> : null} />
+      </>;
+    }
+    try {
+      const ui = renderFieldUi(<Example />);
+      const scroller = document.querySelector<HTMLElement>('[data-task-table-scroll]');
+      if (!scroller) throw Error('Task table scroller required.');
+      Object.defineProperty(scroller, 'clientWidth', { configurable: true, get: () => 600 });
+      Object.defineProperty(scroller, 'scrollLeft', { configurable: true, get: () => scrollLeft, set: (value: number) => { scrollLeft = value; pans.push(value); } });
+      const pageScroll = vi.spyOn(window, 'scrollTo');
+
+      await ui.user.click(screen.getByRole('button', { name: 'Open Priority explicitly' }));
+      expect(pans).toEqual([364]);
+      expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveFocus();
+
+      await ui.user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), 'urgent');
+      await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+      await act(async () => first.lose());
+      await screen.findByRole('button', { name: 'Retry' });
+      expect(pans).toEqual([364]);
+
+      // The consumed claim survives a remount: no focus steal and no second pan.
+      scrollLeft = 0;
+      const remount = screen.getByRole('button', { name: 'Remount editor' });
+      await ui.user.click(remount);
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+      expect(remount).toHaveFocus();
+      expect(pans).toEqual([364]);
+
+      await ui.user.click(screen.getByRole('button', { name: 'Collapse editor' }));
+      await waitFor(() => expect(screen.queryByRole('form')).not.toBeInTheDocument());
+      await ui.user.click(screen.getByRole('button', { name: 'Open Priority explicitly' }));
+      expect(pans).toEqual([364, 364]);
+      expect(pageScroll).not.toHaveBeenCalled();
+    } finally {
+      geometry.mockRestore();
+      Reflect.deleteProperty(document.documentElement, 'clientWidth');
+    }
+  });
+});

@@ -93,6 +93,32 @@ const noCustomColumns: readonly TaskTableCustomColumn[] = [];
 /** Shared inline editor budget: input, wrapped save/recovery feedback and the action row. */
 export const INLINE_EDITOR_COLUMN_WIDTH = 288;
 
+/**
+ * One explicit inline open pans only this table's own horizontal scroll so the editor sits between
+ * the sticky title/estimate cells and inside the window. It never scrolls the page, moves focus or
+ * paints over neighbouring cells; outside a task table (Board, standalone) it does nothing.
+ */
+export function revealInlineEditor(editor: HTMLElement): void {
+  const scroller = editor.closest<HTMLElement>('[data-task-table-scroll]');
+  const cell = editor.closest('td');
+  const row = cell?.parentElement;
+  if (!scroller || !cell || !row || getComputedStyle(cell).position === 'sticky') return;
+  const frame = scroller.getBoundingClientRect();
+  let left = Math.max(frame.left + scroller.clientLeft, 0);
+  let right = Math.min(frame.left + scroller.clientLeft + scroller.clientWidth, document.documentElement.clientWidth);
+  let before = true;
+  for (const sibling of row.children) {
+    if (sibling === cell) { before = false; continue; }
+    if (getComputedStyle(sibling).position !== 'sticky') continue;
+    const rect = sibling.getBoundingClientRect();
+    if (before) left = Math.max(left, rect.right); else right = Math.min(right, rect.left);
+  }
+  const target = editor.getBoundingClientRect();
+  // A target wider than the clear area keeps its start (input and Save) in view.
+  const delta = target.left < left || target.width > right - left ? target.left - left : target.right > right ? target.right - right : 0;
+  if (delta !== 0) scroller.scrollLeft += delta;
+}
+
 /** Icon-only control; callers add its size and text color. */
 const iconButtonClassName =
   'inline-flex shrink-0 items-center justify-center rounded-md transition-colors hover:bg-slate-100 hover:text-ink';
@@ -691,7 +717,7 @@ export function TaskTable({
   };
 
   return (
-    <div className={cn('relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
+    <div data-task-table-scroll="" className={cn('relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} data-inline-editor={column.id === editorColumnId || undefined} style={column.id === 'title' ? undefined : { width: columnWidth(column) }} />)}</colgroup>

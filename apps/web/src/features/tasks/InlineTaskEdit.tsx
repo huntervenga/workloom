@@ -1,7 +1,7 @@
 import { taskPrioritySchema, type MembershipDto, type TaskDto, type TaskStatusDto } from '@workloom/contracts';
 import { Button, TextInput, inputClassName } from '@workloom/ui';
 import { Expand, X } from 'lucide-react';
-import { useEffect, useLayoutEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { useTranslation } from '../../i18n';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
@@ -9,6 +9,7 @@ import { SaveFeedback } from '../../shared/SaveFeedback';
 import { priorityLabels } from './TaskFields';
 import { submitTaskFormShortcut } from './TaskDrawer';
 import { buildUpdateInput, changedKeys, draftFromTask, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors } from './taskDraft';
+import { revealInlineEditor } from '../task-table/TaskTable';
 import type { WorkPackageEntry } from '../task-table/workPackages';
 import { canEditTaskInline, canResumeInlineSession, isCurrentEstimateProjection, type TaskInlineField } from './tableEditing';
 import { unresolvedTaskCommand, type EditSession, type TaskCommands } from './useTaskCommands';
@@ -35,6 +36,13 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
+  // The same one-shot claim reveals the explicitly opened editor once; late ACKs, refreshes and remounts never pan.
+  const revealOnMount = useRef(shouldFocus);
+  const reveal = useCallback((node: HTMLElement | null) => {
+    if (!node || !revealOnMount.current) return;
+    revealOnMount.current = false;
+    revealInlineEditor(node);
+  }, []);
   const [foreignDraft] = useState(() => {
     const kept = commands.editSessions.current.get(task.id);
     return kept !== undefined && !canResumeInlineSession(kept, field);
@@ -73,8 +81,8 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   }, [confirmed, dirty, editSessions, foreignDraft, pending, session, task.id, uncertain]);
 
   // Layout stays inside the cell budget: text wraps and actions wrap instead of spilling under sticky cells.
-  if (foreignDraft) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="min-w-0 space-y-2 py-2 text-xs [overflow-wrap:anywhere]"><p>{t('tasks.inlineEdit.existingDraft')}</p><div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1"><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.resumeDraft')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div></div>;
-  if (!editable && !uncertain) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="min-w-0 space-y-2 py-2 text-xs [overflow-wrap:anywhere]"><p>{t('tasks.inlineEdit.notEditable')}</p><div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1"><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.moreDetails')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div></div>;
+  if (foreignDraft) return <div ref={reveal} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="min-w-0 space-y-2 py-2 text-xs [overflow-wrap:anywhere]"><p>{t('tasks.inlineEdit.existingDraft')}</p><div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1"><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.resumeDraft')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div></div>;
+  if (!editable && !uncertain) return <div ref={reveal} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="min-w-0 space-y-2 py-2 text-xs [overflow-wrap:anywhere]"><p>{t('tasks.inlineEdit.notEditable')}</p><div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1"><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.moreDetails')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div></div>;
   const change = (patch: Partial<TaskDraft>) => {
     setSession(before => ({ ...before, draft: { ...before.draft, ...patch } }));
     setErrors({});
@@ -107,7 +115,7 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     update.mutate({ taskId: task.id, input: result.input }, { onSuccess: result => saved(result, bridge), onSettled: () => bridge?.onSettled() });
   };
   const currentError = errors.dueDate ?? errors.form ?? errors.title ?? errors.description ?? errors.startDate ?? errors.estimate;
-  return <form noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} onSubmit={submit} onKeyDown={event => {
+  return <form ref={reveal} noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} onSubmit={submit} onKeyDown={event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
     if ((field === 'title' || field === 'estimate') && event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.closest('form') === event.currentTarget) {
       if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;

@@ -1,10 +1,39 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 import { personalTablePreferenceResponseSchema, taskResponseSchema, type ColumnChoice } from '@workloom/contracts';
 import { apiCall, dailyFixture, gate, taskResult } from './support/daily-fixture.js';
 import { revealTaskDetails } from './support/disclosures.js';
 import { evidenceJson } from './support/evidence.js';
 import { sizes } from './support/next-ux.js';
+
+/**
+ * Read-only geometry of an open table editor: the clear area is the table's own scrollport inside the
+ * window minus sticky row cells and sticky header/footer. Every enabled control must lie inside it and
+ * own the hit at its center. It never scrolls, focuses or clicks.
+ */
+function editorGeometry(editor: Locator) {
+  return editor.evaluate(form => {
+    const cell = form.closest('td'), row = cell?.parentElement, table = form.closest('table');
+    let scroller = form.parentElement;
+    while (scroller && !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowX)) scroller = scroller.parentElement;
+    if (!cell || !row || !table || !scroller) throw Error('A table editor cell inside a local scroller is required.');
+    const frame = scroller.getBoundingClientRect();
+    const clear = { left: Math.max(0, frame.left + scroller.clientLeft), right: Math.min(innerWidth, frame.left + scroller.clientLeft + scroller.clientWidth), top: Math.max(0, frame.top + scroller.clientTop), bottom: Math.min(innerHeight, frame.top + scroller.clientTop + scroller.clientHeight) };
+    const cells = [...row.children], index = cells.indexOf(cell);
+    cells.forEach((sibling, position) => {
+      if (sibling === cell || getComputedStyle(sibling).position !== 'sticky') return;
+      const rect = sibling.getBoundingClientRect();
+      if (position < index) clear.left = Math.max(clear.left, rect.right); else clear.right = Math.min(clear.right, rect.left);
+    });
+    if (table.tHead && getComputedStyle(table.tHead).position === 'sticky') clear.top = Math.max(clear.top, table.tHead.getBoundingClientRect().bottom);
+    if (table.tFoot && getComputedStyle(table.tFoot).position === 'sticky') clear.bottom = Math.min(clear.bottom, table.tFoot.getBoundingClientRect().top);
+    const controls = [...form.querySelectorAll<HTMLButtonElement | HTMLSelectElement | HTMLInputElement>('select, input, button')].filter(control => !control.disabled).map(control => {
+      const rect = control.getBoundingClientRect(), hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return { name: control.getAttribute('aria-label') ?? control.textContent?.trim() ?? '', rect: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }, inside: rect.width > 0 && rect.height > 0 && rect.left >= clear.left - 0.5 && rect.right <= clear.right + 0.5 && rect.top >= clear.top - 0.5 && rect.bottom <= clear.bottom + 0.5, hit: hit !== null && (hit === control || control.contains(hit)), hitTag: hit?.tagName ?? null };
+    });
+    return { pageScroll: { x: scrollX }, tableScrollLeft: scroller.scrollLeft, clear, controls };
+  });
+}
 
 for (const [name, viewport] of sizes) test.describe(`Inline task priority ${name}`, () => {
   test.use({ viewport });
@@ -37,12 +66,15 @@ for (const [name, viewport] of sizes) test.describe(`Inline task priority ${name
       await page.goto(`${f.path}#priority-context`);
       await page.getByRole('button', { name: rich.title, exact: true }).click(); const richDrawer = page.getByRole('dialog', { name: rich.title, exact: true }); const rawDescription = 'Unsubmitted independent description survives priority commands'; await richDrawer.getByLabel('Description', { exact: true }).fill(rawDescription); await richDrawer.getByRole('button', { name: 'Close', exact: true }).first().click(); await expect(richDrawer).toHaveCount(0);
       const action = page.getByRole('button', { name: `Edit priority for ${work.title}`, exact: true }); const editor = page.getByRole('form', { name: `Edit ${work.title} in the task table`, exact: true }); const priority = editor.getByRole('combobox', { name: 'Priority', exact: true }); const search = page.getByLabel('Search tasks', { exact: true });
-      await action.click(); await expect(priority).toBeFocused(); await expect(priority).toHaveValue('medium'); expect(await priority.evaluate(element => element.tagName)).toBe('SELECT'); expect(await priority.getByRole('option').evaluateAll(options => options.map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent })))).toEqual([{ value: 'none', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' }]);
+      // Unassisted visibility: measured right after the explicit open, before any further scroll, click or Save.
+      await action.click(); await expect(priority).toBeFocused(); const openGeometry = await editorGeometry(editor);
+      expect(openGeometry.pageScroll).toEqual({ x: 0 }); expect(openGeometry.controls.map(control => control.name)).toEqual(['Priority', 'Save', 'More details', 'Collapse editor']); expect(openGeometry.clear.right - openGeometry.clear.left).toBeGreaterThan(0); expect(openGeometry.controls.filter(control => !control.inside || !control.hit)).toEqual([]);
+      await expect(priority).toHaveValue('medium'); expect(await priority.evaluate(element => element.tagName)).toBe('SELECT'); expect(await priority.getByRole('option').evaluateAll(options => options.map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent })))).toEqual([{ value: 'none', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' }]);
       for (const value of ['none', 'low', 'medium', 'high', 'urgent', 'medium']) { await priority.selectOption(value); await priority.press('Tab'); await search.click(); await expect(priority).toHaveValue(value); expect(writes).toEqual([]); }
       expect(await f.task(work.id)).toEqual(work); await editor.getByRole('button', { name: 'Save', exact: true }).click(); await expect(editor).toHaveCount(0); expect(writes).toEqual([]);
       await action.click(); await priority.selectOption('high'); await priority.press('Escape'); await expect(editor).toHaveCount(0); expect(writes).toEqual([]); await action.click(); await expect(priority).toHaveValue('high');
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0); await page.screenshot({ path: info.outputPath(`priority-editing-${name}.png`), fullPage: true });
-      await evidenceJson(info, 'priority-local-stage.json', { projectId: f.project.id, configuredColumns, work, rich, explicitFixturePriority: 'medium', productDefaultChanged: false, nativeChoices: ['none', 'low', 'medium', 'high', 'urgent'], noWriteSelectionAndBlur: true, noOpSaveWrites: 0, keptAfterEscape: 'high', writes: [...writes] });
+      await evidenceJson(info, 'priority-local-stage.json', { projectId: f.project.id, configuredColumns, work, rich, openGeometry, explicitFixturePriority: 'medium', productDefaultChanged: false, nativeChoices: ['none', 'low', 'medium', 'high', 'urgent'], noWriteSelectionAndBlur: true, noOpSaveWrites: 0, keptAfterEscape: 'high', writes: [...writes] });
       const highResponse = page.waitForResponse(r => apiCall(r, 'PATCH', taskPath)); await editor.getByRole('button', { name: 'Save', exact: true }).click(); const high = await taskResult(await highResponse, 200); expect(JSON.parse(attempts[0]?.body ?? '{}')).toEqual({ expectedRevision: work.revision, priority: 'high' }); expect(high).toEqual({ ...work, priority: 'high', revision: work.revision + 1, updatedAt: high.updatedAt }); await expect(editor).toHaveCount(0); await expect(action).toBeFocused(); await expect(action.getByText('High', { exact: true })).toBeVisible();
       await action.click(); await expect(priority).toHaveValue('high'); await priority.selectOption('urgent'); await editor.getByRole('button', { name: 'Save', exact: true }).click(); await expect(editor.getByRole('button', { name: 'Retry', exact: true })).toBeVisible(); await expect(priority).toBeDisabled(); await expect(priority).toHaveValue('urgent'); const committed = await f.task(work.id); expect(committed).toEqual({ ...work, priority: 'urgent', revision: work.revision + 2, updatedAt: committed.updatedAt });
       await editor.getByRole('button', { name: 'Collapse editor', exact: true }).click(); await page.getByRole('button', { name: 'Board', exact: true }).click(); await expect(action).toHaveCount(0); await expect(page.getByText('A task command is unconfirmed. Its original values and key are kept.', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Resume original editor', exact: true }).click();
