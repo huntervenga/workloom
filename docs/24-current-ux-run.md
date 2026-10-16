@@ -16,7 +16,7 @@ Initial model policy: **Codex gpt-6.1-sol, high**, with no Claude calls or probe
 | Weekly planning, meetings, imports and MCP surfaces | v2_feature_ux |
 | Browser acceptance, verification ledger, runtime helper and local operations guide | v2_quality_ops |
 
-Contributors share one working tree. Preserve other edits. Builds, API restarts, migrations, seed/demo writes and mutating browser tests wait for an explicit coordinated window. The initial audit is read-only. No migration is currently expected. Existing demo and historical fixtures must survive; do not initialize or restore over the recovered cluster.
+Contributors share one working tree. Preserve other edits. Builds, API restarts, migrations, seed/demo writes and mutating browser tests wait for an explicit coordinated window. The initial audit was read-only; no migration was initially expected. Later additive migrations have separate explicit gates in the ledger. Existing demo and historical fixtures must survive; do not initialize or restore over the recovered cluster.
 
 ## Starting runtime and database
 
@@ -76,6 +76,12 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 11:08:27.398–11:10:00.915 | Real worker deadline/browser observation | Lastenable thenGET-onlydualviewport; deadline11:09:57.204, jobfrozen11:09:59.005,90planned/180estimated,1testPASS |
 | 11:10:20.465–11:10:20.671 | Normal worker SIGTERM/drain/stop | Clean15msruntime drain, exactownedprocessabsent;6futurejobs preserved, workerOFF |
 | 11:12:07.164 | Final PhaseB asset/readiness comparison | All14assets unchanged, APIready/ownedserviceshealthy; oldtablimitation separate |
+| 11:23:25.977–11:26:39.110 | Managed worker-only lifecycle | Start/doctor/plain-start reuse/clean stop/OFF passed;59of60publictables exact, only discovery checkpoint changed;42jobs/sixfuturejobs and14assets unchanged |
+| 11:27:41.318–11:29:02.910 | Genuine old-tab transition and explicit refresh | Retained oldWeekchunk404/genericfailure; visibleRefreshloadsnewentry/samefullURL, noautoreload orwrites; upgraded-copy separate |
+| 11:30:11.376–11:30:15.686 | New compact Board Studio geometry | Desktopfirstcard342px/mobile334px; noWeek/Personbox,12actualtasks/fourlanes,0globaloverflow, allGETonly |
+| 11:38:03–11:38:29 | Complete title/hierarchy/Board-context gate |6/6PASS25.6s after documented harness corrections; exact lostACK/draft/focus and actualnativeguard covered |
+| 11:39:05–11:39:23 | Native guard page-error accounting |2/2PASS17.7s, realbeforeunload+dismiss/sameDoc/unsentdraft, expectedcanceledreloadtimeoutrecorded,0pageerrors |
+| 11:39:59.768 | Seventh compiled window released | All14newassets unchanged, readybodies/ownedserviceshealthy, workerOFF; updated-entry detection needslatergenuinebuild |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 
@@ -87,4 +93,4 @@ The existing reference project is `f477730b-57dc-418f-a46b-0eeab30f8212` in work
 
 ## Worker observation acceptance and current limits
 
-The compiled completion/cutoff-control/My tasks eight-case gate passed. A separately authorized real worker run drained the known metadata-only backlog, then froze one explicitly armed new QA period after its actual deadline. One browser test retained desktop/mobile views, unsent second-person plan and independent personal-baseline report choices, refreshing only GET projections. Immutable request receipt, baseline/audit `source: job`, real queue start-after/acknowledgement and clean normal stop are recorded in [25](25-ux-verification.md). The worker is now OFF; automatic processing is not currently operating. Six future stale jobs remain stored. The genuine old-tab build transition failed separately; later explicit-refresh/new-entry recovery needs a later coordinated build. No continuous-worker or OS-reboot claim follows from this bounded run.
+The compiled completion/cutoff-control/My tasks eight-case gate passed. A separately authorized real worker run drained the known metadata-only backlog, then froze one explicitly armed new QA period after its actual deadline. One browser test retained desktop/mobile views, unsent second-person plan and independent personal-baseline report choices, refreshing only GET projections. Immutable request receipt, baseline/audit `source: job`, real queue start-after/acknowledgement and clean normal stop are recorded in [25](25-ux-verification.md). The worker is now OFF; automatic processing is not currently operating. Six future stale jobs remain stored. The original retained old tab still failed to load its missing lazy chunk; an explicit Refresh tab action now recovered the same URL on the new build. Updated-entry detection/copy needs another genuine later build. No continuous-worker or OS-reboot claim follows from this bounded run.
