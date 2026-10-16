@@ -1,6 +1,6 @@
 # План реализации Workloom
 
-Версия от 16 октября 2026 года. Состояние: локально проверены и приняты P0 и ограниченные P1a/P1b/P2a с локальными source checkpoints; P2b (категории работы и быстрый ввод) также принят локально; ограниченный P3a (разовые shared meetings, explicit personal plan и attendance) принят координатором после функциональных и визуальных gates, source checkpoint ожидается; точные раздельные результаты в [11](11-implementation-progress.md). Полный P1/P2 и P3–P6 не завершены. Полный MVP и пилот не достигнуты. Фактические доказательства — в [11](11-implementation-progress.md). Стек и границы — [02](02-architecture.md), доменные правила — [03](03-domain-and-data.md), API — [04](04-api-and-integrations.md), клиент — [05](05-client-and-ux.md).
+Версия от 16 октября 2026 года. Состояние: локально проверены и приняты P0 и ограниченные P1a/P1b/P2a с локальными source checkpoints; P2b (категории работы и быстрый ввод) также принят локально; ограниченный P3a (разовые shared meetings, explicit personal plan и attendance) принят координатором после функциональных и визуальных gates, source checkpoint `9443e063aba5b15eedb41b4ed6f4f43c68cf4baf` создан; точные раздельные результаты в [11](11-implementation-progress.md). Полный P1/P2 и P3–P6 не завершены. Полный MVP и пилот не достигнуты. Фактические доказательства — в [11](11-implementation-progress.md). Стек и границы — [02](02-architecture.md), доменные правила — [03](03-domain-and-data.md), API — [04](04-api-and-integrations.md), клиент — [05](05-client-and-ux.md).
 
 ## Порядок работы
 
