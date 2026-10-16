@@ -1,0 +1,12 @@
+{
+  "edit": "Edit {{field}} for {{title}}",
+  "saving": "Saving {{field}} for {{title}}…",
+  "draft": "Draft",
+  "draftLabel": "{{field}} for {{title}} has an unsaved draft. Review it in task details.",
+  "locked": "{{field}} is locked",
+  "otherCommand": "Another value is still being saved. Wait for it or retry it first.",
+  "showProblem": "Show the save problem for {{field}}",
+  "review": "Review in details",
+  "retry": "Retry original",
+  "hide": "Hide"
+}
