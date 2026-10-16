@@ -319,7 +319,7 @@ Web Claude passes: data `163997aa-7d33-4fb8-8045-d03299cd0cec`, editors `4a4b6ae
 
 ## P2a — текущий gate, 16 октября 2026
 
-Кандидат после принятого P1b source `dee59bae06be4505b4a60e0bf469d31c8816aeda` и docs-only `67ca7d47ca8ca456300c5d85550d2b5a01efa47d`; нового checkpoint пока нет. Точный ограниченный каталог — [13](13-p2a-contract.md). Реализованы недельные периоды, личные commitments/allocations, source-fresh self/project freeze, identity locks, ревизии ручного недельного факта и закреплённые отчёты. Ограниченный P2a принят координатором после targeted timezone correction и просмотра4 текущих кадров ниже. Полный P2 и P2b не приняты.
+Кандидат после принятого P1b source `dee59bae06be4505b4a60e0bf469d31c8816aeda` и docs-only `67ca7d47ca8ca456300c5d85550d2b5a01efa47d`; последующий принятый source checkpoint P2a — `fd69f3748a8538ad45e9480c0cfecd70ad7e2c9c`. Точный ограниченный каталог — [13](13-p2a-contract.md). Реализованы недельные периоды, личные commitments/allocations, source-fresh self/project freeze, identity locks, ревизии ручного недельного факта и закреплённые отчёты. Ограниченный P2a принят координатором после targeted timezone correction и просмотра4 текущих кадров ниже. Полный P2 и P2b не приняты.
 
 **Авторство.** Весь новый P2a код core/API/web, acceptance и документация написаны разрешённым Codex `gpt-6.1-sol` high fallback после фактического Claude quota rejection. Новых Claude-сессий или проб не было. SQL/snapshot0003 создал установленный Drizzle generator; immutable/identity guards добавлены в SQL под тем же fallback. Команды запускали владельцы и QA, происхождение P0/P1a/P1b не переатрибутируется.
 
@@ -364,7 +364,7 @@ Preview: `http://127.0.0.1:4311/w/5eed0000-0000-4000-8000-000000000201/projects/
 - [p2a-mobile-week-plan.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-before-zone-fix/p2a-mobile-week-plan.png)
 - [p2a-mobile-week-report.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-before-zone-fix/p2a-mobile-week-report.png)
 
-P2b split/replace/transfer/carryover/close, full-package completion accuracy, explicit late estimate acceptance и daily sources не исполнялись и не заявляются как pass. Общий Auth, worker, календари, production и старые вкладки остаются вне текущей проверки.
+Поздний P2: split/replace/transfer/carryover/close, full-package completion accuracy, explicit late estimate acceptance и daily sources не исполнялись и не заявляются как pass. Общий Auth, worker, календари, production и старые вкладки остаются вне текущей проверки.
 
 
 ### P2a — targeted gate после timezone finding
@@ -392,4 +392,4 @@ Frontend изменил только formatter/его тест, WeeklyPage и ro
 - [p2a-mobile-week-report-chart.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-mobile-week-report-chart.png)
 
 
-**Приёмка P2a.** Координатор принял ограниченный срез после просмотра ровно `p2a-desktop-week-plan.png`, `p2a-desktop-week-report.png`, `p2a-mobile-week-report.png`, `p2a-mobile-week-report-chart.png`. Текущие freeze-preview/fact-dialog/mobile-plan сняты, но root повторно не просмотрены. Исторические6 до timezone correction были просмотрены и сохранены отдельно. Это модельный визуальный просмотр координатором, не человеком. Source checkpoint ожидается; ради hash новых прогонов не требуется. Полный P2, P2b, MVP и пилот не достигнуты.
+**Приёмка P2a.** Координатор принял ограниченный срез после просмотра ровно `p2a-desktop-week-plan.png`, `p2a-desktop-week-report.png`, `p2a-mobile-week-report.png`, `p2a-mobile-week-report-chart.png`. Текущие freeze-preview/fact-dialog/mobile-plan сняты, но root повторно не просмотрены. Исторические6 до timezone correction были просмотрены и сохранены отдельно. Это модельный визуальный просмотр координатором, не человеком. После приёмки root создал source checkpoint `fd69f3748a8538ad45e9480c0cfecd70ad7e2c9c` (64 файла); дерево сразу после commit чистое. Проверки относятся к замороженному рабочему дереву перед commit, ради hash не повторялись. Эта последующая правка записывает только provenance, без source/runtime/data изменений. Полный P2, P2b, MVP и пилот не достигнуты.
