@@ -6,20 +6,22 @@ import { fetchTask } from '../tasks/api';
 import { RecordedWorkLabel } from '../../shared/RecordedWorkLabel';
 import type { CategorizedManualWorkLogDto, RecordedWorkLogDto, MembershipDto, PackageTimeRowDto, PlanningPeriodDto, ProjectDto, TaskDto, WorkspaceDto } from '@workloom/contracts';
 import { Button, inputClassName } from '@workloom/ui';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useCurrentSearchParams } from '../../lib/useCurrentSearchParams';
 import { ApiError, isAccessDenied } from '../../lib/api';
-import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
+import { protectedDraftsFor } from '../../lib/protectedDrafts';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
-import { CommitmentDialog, FactDialog, commitmentSession, factSession, fetchPlanningPeriod, fetchPeriodCommitments,  sortPlanningPeriods, usePlanningCommands, usePlanningPackagesQuery, usePlanningPeriodQuery, usePlanningPeriodsQuery, type CommitmentSession, type FactSession } from '../planning';
+import { CommitmentDialog, FactDialog, commitmentSession, factSession, fetchPlanningPeriod, fetchPeriodCommitments,  sortPlanningPeriods, usePlanningCommands, usePlanningPackagesQuery, usePlanningPeriodQuery, usePlanningPeriodsQuery, type FactSession } from '../planning';
 import { useTaskFieldsQuery } from '../fields';
 import { formatEstimate, type TaskTableCustomColumn } from '../task-table';
 import { fetchTaskTimeSummary, fetchWorkCategoryBinding } from './api';
 import { CategoryBadge } from './CategoryBadge';
-import { RecategorizeDialog, recategorizeSession, type RecategorizeSession } from './RecategorizeDialog';
+import { RecategorizeDialog, recategorizeSession } from './RecategorizeDialog';
 import { useTaskTimeSummaryQuery, useWorkCategoryCommands } from './queries';
+import { createRetainedHoursDrafts } from './retainedHoursDrafts';
 
 interface Props { actorId: string; workspace: WorkspaceDto; project: ProjectDto; members: readonly MembershipDto[]; tasks: readonly TaskDto[]; hasMoreTasks: boolean; loadingMoreTasks: boolean; onLoadTasks: () => void; accessDenied: boolean; onOpenMeeting?:(taskId:string,tab:MeetingTab,selection?:MeetingSelection)=>void }
 interface Breakdown { period: PlanningPeriodDto; task: TaskDto; workerId: string; packageRow: PackageTimeRowDto; logs: RecordedWorkLogDto[] }
@@ -40,9 +42,22 @@ export function useTaskTimeTable(props: Props) {
   const projection = useTaskTimeSummaryQuery(actorId, workspace.id, project.id, periodId, workerId, props.tasks.map((task) => task.id));
   const commands = usePlanningCommands(actorId, workspace.id, project.id);
   const categoryCommands = useWorkCategoryCommands(actorId, workspace.id, project.id);
-  const [planDrafts, setPlanDrafts] = useState<Record<string, CommitmentSession>>({});
-  const [factDrafts, setFactDrafts] = useState<Record<string, FactSession>>({});
-  const [categoryDrafts, setCategoryDrafts] = useState<Record<string, RecategorizeSession>>({});
+  const owner = useMemo(() => ({ actorId, workspaceId: workspace.id, projectId: project.id, ...createRetainedHoursDrafts() }), [actorId, workspace.id, project.id]);
+  const { plans: planDrafts, facts: factDrafts, categories: categoryDrafts } = useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot);
+  const { setPlanDrafts, setFactDrafts, setCategoryDrafts } = owner;
+  const drafts = protectedDraftsFor(useQueryClient());
+  useEffect(() => {
+    const entry = drafts.register();
+    const sync = () => entry.set(owner.isDirty());
+    const unsubscribe = owner.subscribe(sync);
+    sync();
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!owner.isDirty()) return;
+      event.preventDefault(); event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => { unsubscribe(); entry.dispose(); window.removeEventListener('beforeunload', warn); };
+  }, [drafts, owner]);
   const [planKey, setPlanKey] = useState<string | null>(null);
   const [factKey, setFactKey] = useState<string | null>(null);
   const [categoryKey, setCategoryKey] = useState<string | null>(null);
@@ -65,7 +80,6 @@ export function useTaskTimeTable(props: Props) {
   const currentCategory = categoryKey ? categoryDrafts[categoryKey] ?? null : null;
   const accessError = [period.error, projection.error, periods.error, definitions.error, openingError, commands.createCommitment.error, commands.updateCommitment.error, commands.setFact.error, categoryCommands.recategorize.error].find(isAccessDenied) ?? null;
   const denied = props.accessDenied || accessError !== null;
-  useUnsavedChangesWarning(Object.keys(planDrafts).length > 0 || Object.keys(factDrafts).length > 0 || Object.keys(categoryDrafts).length > 0);
 
   const lens = (intent: { periodId?: string; workerId?: string }) => {
     const updated = setParams(before => {
@@ -195,9 +209,9 @@ export function useTaskTimeTable(props: Props) {
   </section>;
   const contextNote = currentFact ? <div className="space-y-2 rounded-lg bg-canvas p-3 text-xs text-muted">{currentFact.base ? <CategoryBadge category={currentFact.base.category} /> : null}<p>{currentFact.base ? t('work-categories.correctingHoursPreservesThisEntrysHistoricalWorkType') : t('work-categories.newEntriesUseTheTasksCurrentWorkTypeA')}</p>{currentFact.base?.state === 'active' && writable && (canWriteOthers || currentFact.membershipId === ownMembershipId) ? <Button size="sm" disabled={commands.setFact.pendingCommand !== null || commands.setFact.uncertain !== null || opening} onClick={() => openCategory(currentFact)}>{t('work-categories.changeRecordedWorkType')}</Button> : null}</div> : null;
   const dialogs = <>
-    <CommitmentDialog session={currentPlan} open={planOpen && !denied} packages={packages.data ?? []} tasks={props.tasks} members={props.members} ownMembershipId={ownMembershipId} canWriteOthers={canWriteOthers} writable={writable} fixedContext commands={commands} loadingMoreTasks={props.loadingMoreTasks} hasMoreTasks={props.hasMoreTasks} onLoadTasks={props.onLoadTasks} onChange={(session) => setPlanDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setPlanOpen(false)} onSaved={(key) => { setPlanDrafts((before) => Object.fromEntries(Object.entries(before).filter(([item]) => item !== key))); if (currentKeys.current.planKey === key) setPlanOpen(false); }} onReload={async (session) => { const fresh = await fetchPeriodCommitments(workspace.id, session.period.id); return fresh.find((item) => item.workPackageId === session.packageId && item.membershipId === session.membershipId) ?? null; }} />
-    <FactDialog session={currentFact} open={factOpen && !denied} tasks={props.tasks} members={props.members} ownMembershipId={ownMembershipId} canWriteOthers={canWriteOthers} writable={writable} fixedContext contextNote={contextNote} mutation={commands.setFact} hasMoreTasks={false} loadingMoreTasks={false} onLoadTasks={() => undefined} onChange={(session) => setFactDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setFactOpen(false)} onSaved={(key) => { setFactDrafts((before) => Object.fromEntries(Object.entries(before).filter(([item]) => item !== key))); if (currentKeys.current.factKey === key) setFactOpen(false); }} onReload={async (session) => { const fresh = await loadRow(session.taskId, session.period.id, session.membershipId); return fresh.taskRow.ownManualWork; }} />
-    <RecategorizeDialog session={currentCategory} open={categoryOpen && !denied} field={definitions.data?.find((field) => field.id === currentCategory?.binding.fieldId) ?? null} writable={writable && (canWriteOthers || currentCategory?.log.membershipId === ownMembershipId)} mutation={categoryCommands.recategorize} onChange={(session) => setCategoryDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setCategoryOpen(false)} onSaved={(key) => { setCategoryDrafts((before) => Object.fromEntries(Object.entries(before).filter(([item]) => item !== key))); if (currentKeys.current.categoryKey === key) setCategoryOpen(false); }} onReload={async (session) => { const [fresh, binding] = await Promise.all([loadRow(session.log.taskId, session.log.periodId, session.log.membershipId), fetchWorkCategoryBinding(workspace.id, project.id)]); if (!fresh.taskRow.ownManualWork) throw new Error('Work record unavailable'); return { log: fresh.taskRow.ownManualWork, binding }; }} />
+    <CommitmentDialog session={currentPlan} open={planOpen && !denied} packages={packages.data ?? []} tasks={props.tasks} members={props.members} ownMembershipId={ownMembershipId} canWriteOthers={canWriteOthers} writable={writable} fixedContext commands={commands} loadingMoreTasks={props.loadingMoreTasks} hasMoreTasks={props.hasMoreTasks} onLoadTasks={props.onLoadTasks} onChange={(session) => setPlanDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setPlanOpen(false)} onSaved={(key) => { if (!owner.confirm('plans', key, currentPlan)) return; if (currentKeys.current.planKey === key) setPlanOpen(false); }} onReload={async (session) => { const fresh = await fetchPeriodCommitments(workspace.id, session.period.id); return fresh.find((item) => item.workPackageId === session.packageId && item.membershipId === session.membershipId) ?? null; }} />
+    <FactDialog session={currentFact} open={factOpen && !denied} tasks={props.tasks} members={props.members} ownMembershipId={ownMembershipId} canWriteOthers={canWriteOthers} writable={writable} fixedContext contextNote={contextNote} mutation={commands.setFact} hasMoreTasks={false} loadingMoreTasks={false} onLoadTasks={() => undefined} onChange={(session) => setFactDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setFactOpen(false)} onSaved={(key) => { if (!owner.confirm('facts', key, currentFact)) return; if (currentKeys.current.factKey === key) setFactOpen(false); }} onReload={async (session) => { const fresh = await loadRow(session.taskId, session.period.id, session.membershipId); return fresh.taskRow.ownManualWork; }} />
+    <RecategorizeDialog session={currentCategory} open={categoryOpen && !denied} field={definitions.data?.find((field) => field.id === currentCategory?.binding.fieldId) ?? null} writable={writable && (canWriteOthers || currentCategory?.log.membershipId === ownMembershipId)} mutation={categoryCommands.recategorize} onChange={(session) => setCategoryDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setCategoryOpen(false)} onSaved={(key) => { if (!owner.confirm('categories', key, currentCategory)) return; if (currentKeys.current.categoryKey === key) setCategoryOpen(false); }} onReload={async (session) => { const [fresh, binding] = await Promise.all([loadRow(session.log.taskId, session.log.periodId, session.log.membershipId), fetchWorkCategoryBinding(workspace.id, project.id)]); if (!fresh.taskRow.ownManualWork) throw new Error('Work record unavailable'); return { log: fresh.taskRow.ownManualWork, binding }; }} />
     <DialogShell title={t('work-categories.timeEntrySources')} description={breakdown ? t('work-categories.totalsCoverAllAvailableWorkIncludingUnloadedSubtasks', { taskTitle: breakdown.task.title, periodName: breakdown.period.name }) : t('work-categories.weeklyTimeEntrySources')} open={breakdown !== null && !denied} onOpenChange={(next) => { if (!next) setBreakdown(null); }}>
       {breakdown ? <div className="mt-5 space-y-4"><dl className="space-y-2 text-sm"><div><dt className="text-muted">{t('work-categories.selectedPersonWholeWorkPackage')}</dt><dd className="font-semibold">{breakdown.packageRow.subjectActiveSourceCount ? formatEstimate(breakdown.packageRow.subjectActualMinutes) : t('work-categories.notRecorded')}</dd></div><div><dt className="text-muted">{t('work-categories.everyoneWholeWorkPackage')}</dt><dd className="font-semibold">{breakdown.packageRow.totalActiveSourceCount ? formatEstimate(breakdown.packageRow.totalActualMinutes) : t('work-categories.notRecorded')}</dd></div></dl><p className="text-xs text-muted">{t('work-categories.theseTotalsCombineSeparateEntriesChooseASpecificSource')}</p>{breakdown.logs.map((log) => <div key={log.id} className="space-y-2 rounded-lg border border-line p-3 text-sm"><p className="font-medium">{props.tasks.find((task) => task.id === log.taskId)?.title ?? t('work-categories.taskForThisEntry')}</p><p className="text-xs text-muted">{props.members.find((member) => member.id === log.membershipId)?.displayName ?? t('work-categories.savedPerson')} · {formatEstimate(log.minutes)} · {log.state === 'void' ? t('work-categories.voided') : <RecordedWorkLabel log={log}/>}</p><CategoryBadge category={log.category} />{writable && (canWriteOthers || log.membershipId === ownMembershipId) ? <Button size="sm" disabled={opening} onClick={() => editExistingLog(log, breakdown.period)}>{t('work-categories.editThisTimeEntry')}</Button> : null}</div>)}<Link to={weeklyPlanningHref(workspace.id, project.id, { periodId: breakdown.period.id, workerId: breakdown.workerId })} className="block rounded text-sm font-medium text-accent-ink">{t('work-categories.openWeeklyPlanAndReports')}</Link></div> : null}
     </DialogShell>
