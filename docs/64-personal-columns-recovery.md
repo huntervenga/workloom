@@ -106,4 +106,13 @@ The hook and its tests were not changed. No build, full test run, browser, API, 
 
 These are fake-API source tests only. Native browser acceptance of both fixes is pending a separate compiled gate; the compiled `0fc9feb` browser gate remains frozen. E2E preparation is separate. No build, API, runtime, PostgreSQL, migration, seed, authenticated-flow, private-ACL or production claim follows from this slice.
 
+## Compiled browser acceptance at `54005e1`
+
+The paragraphs above record the source-only state at the time and stay unchanged. Later, root ran the normal gates on compiled HEAD `54005e1`: web build, all types and global lint passed, with 954 web cases in 128 suites (maxWorkers 1). Root then ran the four cases in `tests/e2e/personal-columns-recovery.spec.ts` (two flows at 1440/390) against the real API and PostgreSQL. All four passed in 9.5s within the 14:49:57.057–14:50:53.111 UTC window, with all served assets byte-identical.
+
+- **Discard after conflict.** An actual concurrent server 409 is followed by Discard. The held current-head refresh blocks stale edits, and the next Save uses the fresh revision.
+- **Closed failure notice.** A delayed real 409 arrives after Save, Close and Board, and the closed feedback stays visible. An explicit reopen from Graph keeps the draft, with no automatic write.
+
+The 403/503 closed-notice and denial-cause paths were not exercised natively and remain covered only by the fake-API source tests above. No separate archive was created; the logs and browser results stay at their original paths. Exact provenance is in [25](25-ux-verification.md).
+
 Related: [personal table columns](32-personal-table-columns.md), [contextual toolbar](59-contextual-project-toolbar.md), [Graph dragging](60-graph-dragging.md).
