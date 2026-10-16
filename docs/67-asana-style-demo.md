@@ -2,7 +2,16 @@
 
 `scripts/bootstrap-asana-demo.mjs` sets up a separate synthetic workspace, **Team planning demo**, with one project, **Weekly team planning**. It is loosely modelled on a team board: five people, about four tasks each, mixed statuses and priorities, tags, one Work type category per task, a shared one-hour call, and a pinned weekly plan/fact report.
 
-**Status:** accepted on aggregate checks. The root operator ran `--execute` locally and reported 270 oracle checks passed, 0 failed, original-row preservation passed, and 10 offline tests passed. Only those aggregates were shared; no runtime rows or database content were. The tables below come from the fixture literals, and the run's checks matched them. Browser and visual acceptance of this workspace has not been recorded.
+**Status:** accepted on aggregate checks. The root operator ran `--execute` locally and reported 270 oracle checks passed, 0 failed, original-row preservation passed, and 10 offline tests passed. Only those aggregates were shared; no runtime rows or database content were. The tables below come from the fixture literals, and the run's checks matched them. Browser and visual acceptance of this workspace had not been recorded when this status was written; it was added later (below).
+
+**Compiled browser check, `5ca0487` (root, read-only).** The offline tests passed 12/12, and setup passed 270 checks with 0 failed and original-row preservation, as before. The five synthetic identities were not renamed, and the fixture facts below remain exact. At 1440 and 390, the actual demo table had these properties:
+
+- 23 task rows, each 41px including the border;
+- the title column about 456px on desktop and 280px on mobile;
+- no page overflow, no page errors and no HTTP mutations;
+- a footer showing the current 123h.
+
+The actual pinned report UI showed a 94h plan, 84h 45m of original fact and 88h of total fact, marked Incomplete. With an explicitly selected week, root opened and closed the weekly plan and actual dialogs at both widths. In all four states, the rows stayed 41px and the table width was unchanged, with no overflow, errors or mutations. Root also confirmed that a visible Priority value persists after reload. The interaction contract is in [68](68-asana-table-editing.md), and the exact gates and paths are in [25](25-ux-verification.md).
 
 ```sh
 node scripts/bootstrap-asana-demo.mjs            # dry-run (default): no network, database or .env access

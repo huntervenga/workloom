@@ -746,3 +746,48 @@ The author ran the recovery suite: 14/14 passed. Their first attempt had a wrong
 Root ran the three personal-columns suites: 35/35 passed in 7.61s. Web types and targeted lint also passed. Logs: `/private/tmp/workloom-v17-column-race-focused.log`, `/private/tmp/workloom-v17-web-types.log`, `/private/tmp/workloom-v17-lint.log`.
 
 There was no build, browser run, backend rerun or full-suite rerun for `6099cea`. The 959-case full web count and the 11 native passes belong to compiled `35ec787` and are not restated as a 960-case suite. The race now has jsdom coverage only; it is still untested natively. A lost ACK arriving before the reload reply is not covered separately.
+
+### V18 compiled `5ca0487`: Asana-like table editing — prior REDs → GREEN, accepted
+
+**Scope.** Root committed code commit `5ca0487` (38 files) after all agent fixes, on top of `c3ca2ce`. The contract is in [68](68-asana-table-editing.md). It uses English JSON catalogs and makes no Auth or production claim. Only aggregates were shared with the docs author; no runtime rows, artifacts or logs were read.
+
+**Preserved failures, in order.**
+
+1. **Initial source fluent-entry RED.** `/private/tmp/workloom-ux2-fluent-source-red.log`. There were zero PATCHes, and the next row was read-only (root's summary).
+2. **First compiled run of 30 cases.** `/private/tmp/workloom-ux2-native-compiled-run1.log`. **22 passed, 3 failed, 5 did not run, in 49.3s.** All three failures were dirty title → status cases that hit 409 stale `expectedRevision`. Artifacts are under the older `test-results` path for that run.
+3. **Direct-after-ACK root RED.** `/private/tmp/workloom-ux2-native-direct-head-red.log`. **3 failed**, because the picker opened before the refreshed head. Artifacts are in `test-results/asana-direct-head-compiled-red`, with old spec SHA256 `ac576529d40c9dc16715e209eee5c060f3afadde4436200c41d62ed921ca6e3a`.
+4. **Compiled 39 cases before `5ca0487`.** `/private/tmp/workloom-ux2-native-acceptance.log`. **37 passed, 2 failed, in 4.3 min.** At desktop and medium width, the error popover occluded Open for the submission; mobile passed. The fix added **Review in details** inside the popover and a below-cell preference. It is not a forced click. Artifacts are in `test-results/asana-table-compiled-acceptance-20261017`.
+5. **Initial full web run.** `/private/tmp/workloom-ux2-web-full.log`. **1,025 passed and 1 failed, in 131 suites, 321.05s.** The failure was the old Board test's blur expectation. That test was rewritten with a real outside click while an ACK is held, plus a separate Escape case. It was not weakened.
+6. **Intermediate full web run, not accepted.** `/private/tmp/workloom-ux2-web-acceptance.log`. **1,049 passed and 1 failed, in 137 suites, 352.08s.** The failure was a new field test. The run happened while that test and its product fix were still changing. The final frozen run below governs.
+
+**Final gates on `5ca0487`, Node 24, all pass.**
+
+| Gate | Result | Log / artifacts |
+| --- | --- | --- |
+| Web build | Pass; only the existing chunk-size warning | `/private/tmp/workloom-ux2-web-build-5ca0487.log` |
+| Global lint, boundaries, localization | Pass. Boundaries checked 397 browser files. Localization counted 209 sources, 2,659 translation calls, 2,612 English messages and 1 locale | `/private/tmp/workloom-ux2-lint-5ca0487.log` |
+| Root/E2E types | Pass | `/private/tmp/workloom-ux2-root-types-5ca0487.log` |
+| Full web | **1,050 passed in 137 suites, 344.77s.** Started 02:31:41 Cyprus on 17 Oct (23:31:41 UTC on 16 Oct) | `/private/tmp/workloom-ux2-web-5ca0487.log` |
+| Compiled native, port 4310, installed Chrome | **39/39 in 1.3 min**: 13 journeys × 1440/1024/390 | `/private/tmp/workloom-ux2-native-5ca0487.log`; `test-results/asana-table-compiled-5ca0487` |
+| Focused native recovery | **3/3 in 9.5s** at 1440/1024/390. A custom-field value was committed but its ACK was lost. **Review in details**, inside the cell popover, then led through the task and value dialogs to the same original retry | `test-results/asana-field-recovery-5ca0487` |
+
+The native spec is [`asana-table-interactions.spec.ts`](../tests/e2e/asana-table-interactions.spec.ts), SHA256 `47164f17f3e1375bf5961e97bf24de68dd571fc471621aecbed112b7177724ec`.
+
+- **Geometry.** The geometry checks enforce no more than 0.5px drift in widths, header cells and sampled pre-existing row heights, plus the document position of the table. The page banner for an ordinary pending title continuation is suppressed, so it no longer shifts the table. A rejection or unknown outcome still shows explicit recovery.
+- **Single explicit exception.** The table-position assertion is skipped only at the real unknown custom-field page-notice stage. Widths and row heights are still asserted there.
+- **Review scope.** No general second independent review is claimed for this checkpoint.
+
+**Actual demo, read-only, compiled, at 1440 and 390.** Screenshots and evidence are in `test-results/ux2-demo-5ca0487`.
+
+- **Table.** 23 task rows, each **41px including the border** (40px inner CSS height). The title is about 456px on desktop and 280px on mobile. There was no page overflow, no page errors and no HTTP mutations. The footer shows the current 123h.
+- **Pinned report UI.** It shows a 94h plan, 84h 45m of original fact and 88h of total fact, marked Incomplete.
+- **Earlier results.** The runtime 270-check oracle from [67](67-asana-style-demo.md) remains accepted. The offline demo passed 12/12, and setup passed 270 with 0 failed plus original-row preservation. The five synthetic identities were not renamed.
+- **Priority.** A visible Priority value persists after reload.
+
+**Explicit week, actual demo, at 1440 and 390.** Root selected a week explicitly, then opened and closed the weekly plan and actual dialogs. Across those four states, all 23 rows stayed 41px and the table width was unchanged. There was no overflow, no errors and no HTTP mutations. The record is `weekly-geometry.json` in the same folder.
+
+The first manual probe used ARIA roles. The open modal hides the background from the accessibility tree, so the probe timed out. Root corrected it to a read-only CSS selector (`data-task-table-scroll>table`), and then every assertion passed. This was a harness correction; the product did not change.
+
+**Runtime.** The helper doctor reported PostgreSQL, API and web ready. The worker stays **OFF**; it is optional. There was no runtime restart and no new migration. Auth and the old-tab upgrade were not rerun. Backend `6ff13df` (1,307 + 45) was not rerun, because no backend files changed.
+
+**Outcome.** Compiled `5ca0487` is the current accepted bounded local UX. The `35ec787` V16 gates above remain as the previous checkpoint. Not claimed: physical touch/IME, Safari, native 403/503, authenticated flows and production.

@@ -236,3 +236,32 @@ Test-only `6099cea` then added a jsdom flow for the reload/pending-save race. Ro
 - **Rules.** The working rules in `AGENTS.md` are unchanged. No extra evidence archives were made, and secrets, `.env`, `.local` and database contents stay excluded.
 - **Not done.** Real Auth, private ACL, a full Asana migration, external calendars, physical touch/IME and production are outside accepted scope. Native 403/503 and the reload race remain untested natively.
 - **Window.** The requested window is 07:36:38–15:36:38 UTC. Root records the final git, link and runtime checks and the actual completion separately.
+
+## V18 Asana-like table editing — accepted on compiled `5ca0487` (17 October 2026)
+
+The run after `35ec787` added the stable grid and direct cell editing (`c3ca2ce`). Root then committed every agent fix as code commit **`5ca0487`** (38 files). The contract is in [68](68-asana-table-editing.md), and the demo is in [67](67-asana-style-demo.md).
+
+The path to GREEN went through these REDs and rejected runs, all preserved in [25](25-ux-verification.md):
+
+- an initial source RED for fluent entry;
+- the first 30-case compiled run: 22 passed, 3 stale-head 409s, 5 did not run;
+- a direct-after-ACK RED (3 failed);
+- a 39-case pre-`5ca0487` run with 37 passed and 2 failed, where an error popover occluded Open;
+- an initial full web run with 1,025 passed and 1 failed;
+- an intermediate full web run with 1,049 passed and 1 failed, not accepted.
+
+On `5ca0487`, every root gate passed:
+
+- build, lint/boundaries/localization and types;
+- **1,050 web cases in 137 suites**;
+- **39/39** native cases in 1.3 minutes;
+- focused recovery, 3/3;
+- the read-only demo and explicit-week geometry checks.
+
+The doctor check passed for PostgreSQL, API and web. The worker stays **OFF** as an optional component. There was no runtime restart or new migration. Auth, old-tab upgrade and the backend (1,307 + 45) were not rerun, since no backend files changed.
+
+## Handoff — 17 October 2026
+
+- **Code.** The current accepted bounded local UX is compiled code commit `5ca0487`. `35ec787` is now the previous checkpoint, and its gates stand as recorded above.
+- **Not done.** Physical touch/IME, Safari, native 403/503, real Auth/private ACL, full Asana migration and production are outside accepted scope.
+- **Links.** Runtime links contain no IDs in these docs. Root provides them to the user directly.
