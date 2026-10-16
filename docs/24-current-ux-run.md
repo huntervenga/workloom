@@ -82,6 +82,10 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 11:38:03–11:38:29 | Complete title/hierarchy/Board-context gate |6/6PASS25.6s after documented harness corrections; exact lostACK/draft/focus and actualnativeguard covered |
 | 11:39:05–11:39:23 | Native guard page-error accounting |2/2PASS17.7s, realbeforeunload+dismiss/sameDoc/unsentdraft, expectedcanceledreloadtimeoutrecorded,0pageerrors |
 | 11:39:59.768 | Seventh compiled window released | All14newassets unchanged, readybodies/ownedserviceshealthy, workerOFF; updated-entry detection needslatergenuinebuild |
+| 11:58:27.999–11:59:46.885 | Genuine upgraded-entry transition | Retained634entry showsactualupdated-appheadingafteroldWeekchunk404; explicitRefreshloadsnewentry/sameURL, noautoreload/writes |
+| 12:01:38–12:04:50 | Eighth compiled browser gate, partial |6of8acceptedacrossfocusedruns; compactstatus/completionlane-movefocusactualRED, nofull8passclaim |
+| 12:03:20.376–12:03:23.706 | Studio Board320/390/1440 |12tasks/fullDue labels/localhorizontalscrolling,0globaloverflow; firstcard334/334/342px |
+| 12:07:07.262 | Eighth window released |14assets unchanged/strictreadiness/ownedserviceshealthy, workerOFF; focusfixrequiresnextcompiledverification |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 
@@ -93,7 +97,7 @@ The existing reference project is `f477730b-57dc-418f-a46b-0eeab30f8212` in work
 
 ## Worker observation acceptance and current limits
 
-The compiled completion/cutoff-control/My tasks eight-case gate passed. A separately authorized real worker run drained the known metadata-only backlog, then froze one explicitly armed new QA period after its actual deadline. One browser test retained desktop/mobile views, unsent second-person plan and independent personal-baseline report choices, refreshing only GET projections. Immutable request receipt, baseline/audit `source: job`, real queue start-after/acknowledgement and clean normal stop are recorded in [25](25-ux-verification.md). The worker is now OFF; automatic processing is not currently operating. Six future stale jobs remain stored. The original retained old tab still failed to load its missing lazy chunk; an explicit Refresh tab action now recovered the same URL on the new build. Updated-entry detection/copy needs another genuine later build. No continuous-worker or OS-reboot claim follows from this bounded run.
+The compiled completion/cutoff-control/My tasks eight-case gate passed. A separately authorized real worker run drained the known metadata-only backlog, then froze one explicitly armed new QA period after its actual deadline. One browser test retained desktop/mobile views, unsent second-person plan and independent personal-baseline report choices, refreshing only GET projections. Immutable request receipt, baseline/audit `source: job`, real queue start-after/acknowledgement and clean normal stop are recorded in [25](25-ux-verification.md). The worker is now OFF; automatic processing is not currently operating. Six future stale jobs remain stored. The original retained old tab still failed to load its missing lazy chunk; an explicit Refresh tab action now recovered the same URL on the new build. A subsequent genuine build transition now also proves the updated-app detection/copy and explicit refresh recovery; the old missing chunk remains an explicit failure before refresh. No continuous-worker or OS-reboot claim follows from this bounded run.
 
 
 ## Next bounded gate preparation — 2026-10-16T11:52:50.178Z
