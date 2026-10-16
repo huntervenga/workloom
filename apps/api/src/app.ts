@@ -14,6 +14,7 @@ import {
   createReadinessProbe,
   createRecurrenceApplication,
   createTaskApplication,
+  createTaskCommentsApplication,
   createTaskFieldApplication,
   createTaskScheduleApplication,
   createWorkCategoryApplication,
@@ -22,7 +23,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { MyTasksApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { TaskCommentsApplication, MyTasksApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
@@ -42,6 +43,7 @@ import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from
 import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './http/routes.js';
 import { registerTaskRoutes } from './http/task-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
+import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, resolveWebDist, sendSpaIndex, shouldServeSpa } from './http/static-web.js';
 
 export interface AppDependencies {
@@ -58,6 +60,7 @@ export interface AppDependencies {
   readonly taskApplication?: TaskApplication;
   /** Self-only workspace task inbox; reads share one read-only snapshot. */
   readonly myTasksApplication?: MyTasksApplication;
+  readonly taskCommentsApplication?: TaskCommentsApplication;
   /**
    * Overrides the custom field service built from the database (HTTP tests). Without it and
    * without a database (P0/P1a HTTP tests), the P1b field routes are not registered.
@@ -109,6 +112,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   // Reuses the same pool; no additional connection is opened.
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
   const myTasksApplication = dependencies.myTasksApplication ?? (database === undefined ? undefined : createMyTasksApplication(database));
+  const taskCommentsApplication = dependencies.taskCommentsApplication ?? (database === undefined ? undefined : createTaskCommentsApplication(database));
   const taskFieldApplication =
     dependencies.taskFieldApplication ?? (database === undefined ? undefined : createTaskFieldApplication(database));
   const planningApplication =
@@ -213,6 +217,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (myTasksApplication !== undefined) {
     registerMyTasksRoutes(app, { identity, myTasks: myTasksApplication });
   }
+  if (taskCommentsApplication !== undefined) registerTaskCommentsRoutes(app, { identity, comments: taskCommentsApplication });
   if (taskFieldApplication !== undefined) {
     registerFieldRoutes(app, { identity, fields: taskFieldApplication });
   }

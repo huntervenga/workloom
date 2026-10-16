@@ -45,3 +45,17 @@ Each ordinary task link visibly says it opens in a new tab and uses `target="_bl
 The destination uses the currently authorized task's project and ID. Its hours context uses the saved row's person (`row.membershipId` for a weekly comparison or `row.workLog.membershipId` for a work-type source), independently of the source page's time-entry selector. The period crosses only when the current task is still in the report's project; an old project's period is never attached to a moved task. Membership context crosses only within the same workspace. The source URL and its selected person do not change.
 
 Fake-API regression coverage includes a 23-task row revealed in batches of ten, an empty row, fresh-cache revalidation, access loss after an authorized read, partial task-read failures, moved-project and wrong-workspace responses, saved-row person versus ambient person, and unchanged pinned weekly and work-type summaries while current titles and later source pages load. Browser new-tab behavior is verified separately by the run owner.
+
+
+## Results-first report setup
+
+An explicitly selected saved comparison or work-type breakdown now shows its results below a compact heading and saved-report selector. Clean creation settings stay behind **Set up new report**. With no selected result, setup remains visible. Opening setup, changing the selected saved result, or loading a period never calculates a report.
+
+**New report settings** are separate from the already-saved result. Editing a baseline, known-plan option, or report people keeps setup open with an unsaved-settings status. Pending, uncertain, and failed calculations also keep their configuration visible and recoverable. The existing original-period recovery actions and exact-request retries remain in place. The source report's totals and history do not become live projections of the setup inputs.
+
+WeeklyContent owns each period's selection and disclosure state together. This state survives report components unmounting while period queries load, not only hidden tabs. Confirmation compares the submitted period and a stable identity of its actual inputs before clearing dirty/open state. A late acknowledgement for an older configuration cannot clear a newer configuration or another period's draft. Membership order does not change that identity; baseline, known-plan choice, and membership selection do.
+
+Fake-API checks cover clean open/close without writes, selected results with initially collapsed setup, both report types' unsent drafts across an actual period-loading unmount, and pending/unknown calculations retried with their original path, body, and idempotency key. A pure state regression verifies late acknowledgement handling and period isolation. Browser viewport measurements remain a separate acceptance check.
+
+
+A confirmed calculation refreshes its original period without replacing navigation chosen while it was pending. Its result is selected automatically only if the latest URL still shows the submitted period, corresponding report view, and same saved-run selection as at submission. Explicit saved-report selection and original-command Resume remain navigation actions. Page-level regressions cover a late acknowledgement after choosing another period, another view, or another saved result; exact Resume/retry still opens the confirmed result when the resumed context remains selected.

@@ -154,7 +154,8 @@ describe('weekly planning lifecycle', () => {
     run.byPerson.push({ membershipId: 'c0000000-0000-4000-8000-000000000002', memberName: 'Без исходного плана', summary: { ...run.summary, baselineCompleteness: { knownItemCount: 0, totalItemCount: 0, ratio: null, complete: false } } });
     installFakeApi({ ...routes(), [`GET ${rootPath}/periods/${PERIOD_A}/baselines`]: () => ok([baseline()]), [`GET ${rootPath}/report-runs/${RUN_ID}`]: () => ok(run), [`GET ${rootPath}/report-runs/${RUN_ID}/rows`]: () => ok([]) });
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&view=report&run=${RUN_ID}`);
-    await user.click(await screen.findByRole('checkbox', { name: /Compare only known personal plans/ }));
+    await user.click(await screen.findByRole('button', { name: 'Set up new report' }));
+    await user.click(screen.getByRole('checkbox', { name: /Compare only known personal plans/ }));
     expect(await screen.findByRole('img', { name: 'Анна Тестова, plan: 6h' })).toBeInTheDocument();
     expect(screen.queryByRole('img', { name: /No baseline/ })).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Period", { exact: true }), PERIOD_B);

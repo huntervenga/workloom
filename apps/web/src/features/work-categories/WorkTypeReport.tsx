@@ -1,6 +1,8 @@
 import { t, useTranslation, formatNumber } from '../../i18n';
 import { RecordedWorkLabel } from '../../shared/RecordedWorkLabel';
 import { ReportTaskLinks } from '../planning/ReportTaskLinks';
+import { ReportSetupDisclosure } from '../planning/ReportSetupDisclosure';
+import { workTypeReportConfigurationKey, type ReportDraft, type ReportDraftAction } from '../planning/reportSetupState';
 import type { MembershipDto, PlanningPeriodDto, WorkTypeBucketDto } from '@workloom/contracts';
 import { Badge, Button, StateCard, inputClassName } from '@workloom/ui';
 import { useId, type FormEvent } from 'react';
@@ -19,10 +21,11 @@ interface Props {
   period: PlanningPeriodDto;
   members: readonly MembershipDto[];
   runId: string;
-  selection: WorkTypeReportSelection | undefined;
-  onSelectionChange: (selection: WorkTypeReportSelection) => void;
+  draft: ReportDraft<WorkTypeReportSelection> | undefined;
+  onDraftAction: (action: ReportDraftAction<WorkTypeReportSelection>) => void;
   mutation: WorkCategoryCommands['createReport'];
   onSelectRun: (runId: string, periodId: string) => void;
+  onCalculated: (runId: string, periodId: string, sourceRunId: string) => void;
 }
 
 /** Works before freeze. Its denominator is recorded work, including explicitly uncategorized sources. */
@@ -32,27 +35,33 @@ export function WorkTypeReport(props: Props) {
   const runs = useWorkTypeReportRunsQuery(props.actorId, props.workspaceId, props.period.id);
   const { mutation } = props;
   const held = mutation.pendingCommand?.variables ?? mutation.uncertain?.variables ?? null;
-  const chosen = props.selection ?? { membershipIds: [] };
+  const chosen = props.draft?.selection ?? { membershipIds: [] };
   const shown = held?.input.membershipIds ?? chosen.membershipIds;
+  const setupError = mutation.error !== null && mutation.variables?.input.periodId === props.period.id ? mutation.error : null;
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (mutation.pendingCommand) return;
-    const saved = (run: { id: string; periodId: string }) => props.onSelectRun(run.id, run.periodId);
+    const input = held?.input ?? { periodId: props.period.id, membershipIds: chosen.membershipIds };
+    const configurationKey = workTypeReportConfigurationKey(input);
+    props.onDraftAction({ type: 'submitted', periodId: input.periodId, configurationKey });
+    const saved = (run: { id: string; periodId: string }) => {
+      props.onDraftAction({ type: 'confirmed', periodId: input.periodId, configurationKey });
+      props.onCalculated(run.id, run.periodId, props.runId);
+    };
     if (mutation.uncertain) { mutation.retryUncertain({ onSuccess: saved }); return; }
-    mutation.mutate({ input: { periodId: props.period.id, membershipIds: chosen.membershipIds } }, { onSuccess: saved });
+    mutation.mutate({ input }, { onSuccess: saved });
   };
   if (isAccessDenied(runs.error)) return <QueryErrorState error={runs.error} subject="workTypeReport" headingLevel={2} retrying={runs.isFetching} onRetry={() => void runs.refetch()} />;
   return <section aria-label={t('work-categories.recordedHoursBreakdown')} className="space-y-5">
-    <div className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
-      <div><h2 className="text-lg font-semibold">{t('work-categories.hoursByWorkType')}</h2><p className="mt-1 text-sm leading-relaxed text-muted">{t('work-categories.sharesOfRecordedHoursForTheSelectedWeekUncategorized')}</p></div>
+    <ReportSetupDisclosure title={t('work-categories.hoursByWorkType')} hasSavedReport={!!props.runId} setup={props.draft?.setup} held={held !== null} failed={setupError !== null} onExpandedChange={expanded => props.onDraftAction({ type: 'expand', periodId: props.period.id, expanded })} selector={runs.isError ? <QueryErrorState error={runs.error} subject="workTypeReport" headingLevel={3} retrying={runs.isFetching} onRetry={() => void runs.refetch()} /> : runs.isPending ? <p role="status" className="text-xs text-muted">{t('work-categories.loadingSavedBreakdowns')}</p> : runs.data.length > 0 ? <div className="flex items-center gap-3"><label htmlFor={`${id}-run`} className="shrink-0 text-xs font-medium">{t('work-categories.savedBreakdown')}</label><select id={`${id}-run`} className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={props.runId} onChange={event => props.onSelectRun(event.target.value, props.period.id)}><option value="">{t('work-categories.chooseAReport')}</option>{runs.data.map(run => <option key={run.id} value={run.id}>{formatPeriodCutoff(run.createdAt, props.period.timezone)} · {formatEstimate(run.totalActualMinutes)}</option>)}</select></div> : null}>
+      <p className="text-xs leading-relaxed text-muted">{t('work-categories.sharesOfRecordedHoursForTheSelectedWeekUncategorized')}</p>
       <form className="space-y-4" onSubmit={submit}>
-        <fieldset disabled={held !== null} className="flex flex-wrap gap-x-4 gap-y-2"><legend className="mb-2 text-sm font-medium">{t('work-categories.peopleInBreakdownLeaveEmptyToIncludeEveryoneAvailable')}</legend>{props.members.map((member) => <label key={member.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={shown.includes(member.id)} onChange={(event) => props.onSelectionChange({ membershipIds: event.target.checked ? [...chosen.membershipIds, member.id] : chosen.membershipIds.filter((value) => value !== member.id) })} />{member.displayName}</label>)}</fieldset>
+        <fieldset disabled={held !== null} className="flex flex-wrap gap-x-4 gap-y-2"><legend className="mb-2 text-sm font-medium">{t('work-categories.peopleInBreakdownLeaveEmptyToIncludeEveryoneAvailable')}</legend>{props.members.map((member) => <label key={member.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={shown.includes(member.id)} onChange={event => { const selection = { membershipIds: event.target.checked ? [...chosen.membershipIds, member.id] : chosen.membershipIds.filter(value => value !== member.id) }; props.onDraftAction({ type: 'edit', periodId: props.period.id, selection, configurationKey: workTypeReportConfigurationKey(selection) }); }} />{member.displayName}</label>)}</fieldset>
         {held && held.input.periodId !== props.period.id ? <p role="status" className="text-sm text-amber-800">{t('work-categories.showingASubmittedReportForAnotherWeekRetryingPreserves')}</p> : null}
-        <SaveFeedback subject="workTypeReport" error={mutation.error} uncertainError={mutation.uncertain?.error ?? null} />
+        <SaveFeedback subject="workTypeReport" error={setupError} uncertainError={mutation.uncertain?.error ?? null} />
         <Button type="submit" variant="primary" disabled={mutation.pendingCommand !== null}>{mutation.pendingCommand ? t('work-categories.calculating') : mutation.uncertain ? t('work-categories.retryOriginalSave') : t('work-categories.calculateHoursBreakdown')}</Button>
       </form>
-      {runs.isError ? <QueryErrorState error={runs.error} subject="workTypeReport" headingLevel={3} retrying={runs.isFetching} onRetry={() => void runs.refetch()} /> : runs.isPending ? <p role="status" className="text-sm text-muted">{t('work-categories.loadingSavedBreakdowns')}</p> : runs.data.length > 0 ? <div className="space-y-1.5 border-t border-line pt-4"><label htmlFor={`${id}-run`} className="text-sm font-medium">{t('work-categories.savedBreakdown')}</label><select id={`${id}-run`} className={inputClassName()} value={props.runId} onChange={(event) => props.onSelectRun(event.target.value, props.period.id)}><option value="">{t('work-categories.chooseAReport')}</option>{runs.data.map((run) => <option key={run.id} value={run.id}>{formatPeriodCutoff(run.createdAt, props.period.timezone)} · {formatEstimate(run.totalActualMinutes)}</option>)}</select></div> : null}
-    </div>
+    </ReportSetupDisclosure>
     {props.runId ? <PinnedWorkTypeReport actorId={props.actorId} workspaceId={props.workspaceId} period={props.period} runId={props.runId} /> : null}
   </section>;
 }

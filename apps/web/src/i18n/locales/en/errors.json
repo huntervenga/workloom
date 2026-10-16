@@ -60,5 +60,8 @@
   "dependencyCycleDescription": "This dependency would create a task cycle. Choose a different direction or task.",
   "previewStale": "The plan changed after your preview. Load a fresh preview and confirm the freeze again.",
   "fieldLocked": "This field is locked. Its values cannot be changed right now.",
-  "planLocked": "The original plan is already frozen and cannot be overwritten. Add new work as a separate entry."
+  "planLocked": "The original plan is already frozen and cannot be overwritten. Add new work as a separate entry.",
+  "subject.comments": "Unable to load comments",
+  "subject.commentSave": "Unable to add the comment",
+  "subject.activity": "Unable to load activity"
 }

@@ -265,5 +265,12 @@
     "retry": "Check task again",
     "loading": "Checking current task access…",
     "openNewTab": "Open current task in a new tab"
+  },
+  "reportSetup": {
+    "title": "New report settings",
+    "show": "Set up new report",
+    "hide": "Hide report setup",
+    "dirty": "Report settings have unsaved changes.",
+    "unconfirmed": "These settings stay visible until the calculation is confirmed."
   }
 }

@@ -18,6 +18,9 @@ export type ErrorSubject =
   | 'tasks'
   | 'task'
   | 'taskSave'
+  | 'comments'
+  | 'commentSave'
+  | 'activity'
   | 'fields'
   | 'fieldSave'
   | 'columns'
@@ -62,6 +65,9 @@ const subjectTitles: Record<ErrorSubject, string> = {
   get tasks() { return t('errors.subject.tasks'); },
   get task() { return t('errors.subject.task'); },
   get taskSave() { return t('errors.subject.taskSave'); },
+  get comments() { return t('errors.subject.comments'); },
+  get commentSave() { return t('errors.subject.commentSave'); },
+  get activity() { return t('errors.subject.activity'); },
   get fields() { return t('errors.subject.fields'); },
   get fieldSave() { return t('errors.subject.fieldSave'); },
   get columns() { return t('errors.subject.columns'); },
@@ -106,7 +112,14 @@ const retryableKinds: ReadonlySet<ApiErrorKind> = new Set([
 ]);
 
 /** Objects whose denial and absence look the same, so their existence is not revealed. */
+const taskUnavailableCopy = {
+  get title() { return t('errors.hidden.task.title'); },
+  get description() { return t('errors.hidden.task.description'); },
+};
 const unavailableCopy: Partial<Record<ErrorSubject, { title: string; description: string }>> = {
+  comments: taskUnavailableCopy,
+  activity: taskUnavailableCopy,
+  commentSave: taskUnavailableCopy,
   workspace: {
     get title() { return t('errors.hidden.workspace.title'); },
     get description() { return t('errors.hidden.workspace.description'); },
@@ -130,6 +143,7 @@ const saveSubjects: ReadonlySet<ErrorSubject> = new Set([
   'sectionSave',
   'tagSave',
   'taskSave',
+  'commentSave',
   'fieldSave',
   'columnsSave',
   'fieldValueSave',

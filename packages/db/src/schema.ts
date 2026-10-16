@@ -90,6 +90,7 @@ export const memberships = pgTable(
     foreignKey({ name: 'memberships_user_fk', columns: [table.userId], foreignColumns: [users.id] }),
     unique('memberships_workspace_user_unique').on(table.workspaceId, table.userId),
     unique('memberships_workspace_id_id_unique').on(table.workspaceId, table.id),
+    unique('memberships_workspace_id_user_unique').on(table.workspaceId, table.id, table.userId),
     index('memberships_user_active_idx').on(table.userId).where(sql`state = 'active'`),
     check('memberships_revision_positive', sql`revision >= 1`),
     check('memberships_revoked_at_matches_state', sql`(state = 'revoked') = (revoked_at is not null)`),
@@ -827,6 +828,7 @@ export const REQUIRED_TABLES = [
   'task_participants',
   'task_tags',
   'command_idempotency',
+  'task_comments',
   'task_field_definitions',
   'task_field_definition_versions',
   'task_field_options',
@@ -1334,4 +1336,19 @@ export const localMcpCredentials=pgTable('local_mcp_credentials',{
  foreignKey({name:'local_mcp_credentials_owner_fk',columns:[t.workspaceId,t.ownerUserId],foreignColumns:[memberships.workspaceId,memberships.userId]}),
  check('local_mcp_credentials_shape_check',sql`char_length(${t.name}) between 1 and 100 and ${t.secretHash} ~ '^[a-f0-9]{64}$' and ${t.hashVersion}=1 and ${t.expiresAt} >= ${t.createdAt}+interval '60 seconds' and ${t.expiresAt} <= ${t.createdAt}+interval '86400 seconds' and ((${t.revision}=1 and ${t.revokedAt} is null) or (${t.revision}=2 and ${t.revokedAt} is not null)) and case when jsonb_typeof(${t.scopes})='array' then jsonb_array_length(${t.scopes}) between 1 and 6 and ${t.scopes} <@ '["projects.read","tasks.read","members.read","fields.read","tasks.create","tasks.update"]'::jsonb else false end`),
  index('local_mcp_credentials_owner_idx').on(t.workspaceId,t.ownerUserId),
+]);
+
+/** Create-only plaintext discussion. The SQL migration rejects UPDATE/DELETE/TRUNCATE. */
+export const taskComments = pgTable('task_comments', {
+  id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull(), taskId: uuid('task_id').notNull(),
+  authorUserId: uuid('author_user_id').notNull(), authorMembershipId: uuid('author_membership_id').notNull(),
+  authorDisplayNameSnapshot: text('author_display_name_snapshot').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), body: text('body').notNull(),
+}, table => [
+  foreignKey({ name: 'task_comments_task_fk', columns: [table.workspaceId, table.taskId], foreignColumns: [tasks.workspaceId, tasks.id] }),
+  foreignKey({ name: 'task_comments_author_fk', columns: [table.workspaceId, table.authorMembershipId, table.authorUserId], foreignColumns: [memberships.workspaceId, memberships.id, memberships.userId] }),
+  index('task_comments_timeline_idx').on(table.workspaceId, table.taskId, table.createdAt, table.id),
+  check('task_comments_body_length', sql`char_length(body) between 1 and 4000 and body ~ '[^[:space:]]'`),
+  check('task_comments_author_label_length', sql`char_length(btrim(author_display_name_snapshot)) between 1 and 200`),
+  check('task_comments_created_at_finite', sql`isfinite(created_at)`),
 ]);

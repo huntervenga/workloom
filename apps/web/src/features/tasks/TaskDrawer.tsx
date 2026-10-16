@@ -1,3 +1,4 @@
+import { TaskDiscussionPanels, type TaskCommentsWorkspace } from '../task-comments';
 import { message, type TranslationMessage } from '../../i18n';
 import { useTranslation } from '../../i18n';
 import { DependencyPanel } from '../dependencies/DependencyPanel';
@@ -52,6 +53,7 @@ import {
 } from './useTaskCommands';
 
 export interface TaskDrawerProps {
+  commentsController?: TaskCommentsWorkspace;
   dependencyController?: DependencyWorkspace;
   meetingController?: MeetingWorkspace;
   meetingTab?: MeetingTab;
@@ -242,7 +244,7 @@ function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnTyp
         </div>
       ) : null}
       {/* Keyed by ID only: a refetch never remounts the inputs. */}
-      <TaskEditForm key={taskId} {...props} latest={task} />
+      {props.commentsController && task.meetingId === null ? <TaskDiscussionPanels key={taskId} task={task} controller={props.commentsController} writable={props.writable} canRetry={workspace.role !== 'viewer'} timezone={workspace.timezone} onOpenTask={props.onOpenTask}><TaskEditForm key={taskId} {...props} latest={task} /></TaskDiscussionPanels> : <TaskEditForm key={taskId} {...props} latest={task} />}
     </>
   );
 }

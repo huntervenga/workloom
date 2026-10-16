@@ -24,6 +24,7 @@ import { FactDialog, factSession, type FactSession } from '../features/planning/
 import { FreezeDialog, type FreezeRequest } from '../features/planning/FreezeDialog';
 import { PeriodDialog } from '../features/planning/PeriodDialog';
 import { WeeklyReport, type ReportSelection } from '../features/planning/WeeklyReport';
+import { updateReportDraft, type ReportDraft } from '../features/planning/reportSetupState';
 import {
   usePlanningCommands, usePlanningPeriodsQuery, usePlanningPackagesQuery, usePlanningPeriodQuery,
   usePeriodCommitmentsQuery, usePlanBaselinesQuery, useReportRunsQuery,
@@ -61,6 +62,8 @@ export function WeeklyPage() {
 function WeeklyContent({ actorId, workspace, project }: { actorId: string; workspace: WorkspaceDto; project: ProjectDto }) {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
+  const latestParams = useRef(params);
+  latestParams.current = params;
   const periods = usePlanningPeriodsQuery(actorId, workspace.id, project.id);
   const packages = usePlanningPackagesQuery(actorId, workspace.id, project.id);
   const members = useMembershipsQuery(actorId, workspace.id);
@@ -88,8 +91,8 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   const [freezeOpen, setFreezeOpen] = useState(false);
   const freezeNonce = useRef(0);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
-  const [reportSelections, setReportSelections] = useState<Record<string, ReportSelection>>({});
-  const [typeSelections, setTypeSelections] = useState<Record<string, WorkTypeReportSelection>>({});
+  const [reportSelections, setReportSelections] = useState<Record<string, ReportDraft<ReportSelection>>>({});
+  const [typeSelections, setTypeSelections] = useState<Record<string, ReportDraft<WorkTypeReportSelection>>>({});
   const orderedPeriods = sortPlanningPeriods(periods.data ?? []);
   const periodId = selectPlanningPeriodId(orderedPeriods, params.get('period')) ?? '';
   const period = usePlanningPeriodQuery(actorId, workspace.id, periodId);
@@ -192,6 +195,17 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   const validProject = period.data === undefined || period.data.projectId === project.id;
   const savePlan = (key: string) => { setPlanDrafts((before) => Object.fromEntries(Object.entries(before).filter(([itemKey]) => itemKey !== key))); if (planKeyRef.current === key) setPlanOpen(false); setAnnouncement(message('planning.personalPlanSaved')); };
   const saveFact = (key: string) => { setFactDrafts((before) => Object.fromEntries(Object.entries(before).filter(([itemKey]) => itemKey !== key))); if (factKeyRef.current === key) setFactOpen(false); setAnnouncement(message('planning.weeklyActualHoursSaved')); };
+  // A completed calculation never replaces a period, view, or saved run chosen while it was pending.
+  const calculatedReport = (id: string, targetPeriodId: string, sourceRunId: string) => {
+    const current = latestParams.current;
+    if (current.get('period')?.toLowerCase() !== targetPeriodId.toLowerCase() || current.get('view') !== 'report' || (current.get('run') ?? '') !== sourceRunId) return;
+    const next = new URLSearchParams(current); next.set('run', id); setParams(next);
+  };
+  const calculatedTypeReport = (id: string, targetPeriodId: string, sourceRunId: string) => {
+    const current = latestParams.current;
+    if (current.get('period')?.toLowerCase() !== targetPeriodId.toLowerCase() || current.get('view') !== 'work-types' || (current.get('typeRun') ?? '') !== sourceRunId) return;
+    const next = new URLSearchParams(current); next.set('typeRun', id); setParams(next);
+  };
   const selectedReport = (id: string, targetPeriodId: string) => setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'report'); if (id) next.set('run', id); else next.delete('run'); return next; });
   const selectedTypeReport = (id: string, targetPeriodId: string) => setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'work-types'); if (id) next.set('typeRun', id); else next.delete('typeRun'); return next; });
   const heldTypeReport = categoryCommands.createReport.pendingCommand?.variables ?? categoryCommands.createReport.uncertain?.variables ?? null;
@@ -240,8 +254,8 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
             <section aria-label={t('planning.weeklyActualHours')} className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{t('planning.weeklyActualHours')}</h2>{canWrite ? <Button disabled={!canEnterForMember} onClick={() => openFact(null)}><Plus size={16} aria-hidden="true" />{t('planning.recordActualHours')}</Button> : null}</div><p className="text-xs text-muted">{t('planning.aMissingEntryIsShownAsNotRecordedA')}</p>{worklogs.data.length === 0 ? <p className="rounded-xl border border-dashed border-line p-5 text-sm text-muted">{t('planning.noActualHoursRecordedForThisWeekYet')}</p> : <div className="space-y-2">{worklogs.data.map((log) => <div key={log.id} className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="font-medium [overflow-wrap:anywhere]">{taskItems.find((task) => task.id === log.taskId)?.title ?? (packages.data ?? []).find((work) => work.id === log.workPackageId)?.title ?? t('planning.savedTask')}</p><p className="mt-1 text-sm text-muted">{(members.data ?? []).find((member) => member.id === log.membershipId)?.displayName ?? t('planning.savedPerson')} · {formatEstimate(log.minutes)} · {log.state === 'void' ? t('planning.entryVoided') : <RecordedWorkLabel log={log}/>}</p><p className="mt-1 text-xs text-muted">{t('planning.revision2', { source: log.sourceKind==='manual_period'?t('planning.manualEntry'):t('planning.meetingAttendance'), revision: log.revision })}</p></div>{canWrite && (canManage || ownMembershipId === log.membershipId) ? <Button size="sm" onClick={() => openFact(log.id)}>{t('planning.editActualHours')}</Button> : null}</div>)}</div>}</section>
             <section aria-label={t('planning.meetingsThisWeek')} className="space-y-3"><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{t('planning.meetingsThisWeek')}</h2>{canWrite&&meetingStatuses.isSuccess?<Button onClick={()=>meetingController.setCreateOpen(true)}>{t('planning.newMeeting')}</Button>:null}</div>{meetings.isError?<QueryErrorState error={meetings.error} subject="task" headingLevel={2} retrying={meetings.isFetching} onRetry={()=>void meetings.refetch()}/>:meetings.isPending?<p role="status" className="text-sm text-muted">{t('planning.loadingMeetings')}</p>:meetings.data.length===0?<p className="text-sm text-muted">{t('planning.noMeetingsInThisPeriodAttendanceAndPersonalPlans')}</p>:<div className="space-y-2">{meetings.data.map(item=><div key={item.meeting.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-4"><div className="min-w-0 flex-1"><p className="font-medium [overflow-wrap:anywhere]">{item.task.title}</p><p className="mt-1 text-xs text-muted">{meetingTime(item.meeting.plannedStartAt,item.meeting.timezone)} · {formatEstimate(item.meeting.plannedDurationMinutes)}{item.meeting.state==='cancelled'?t('planning.voided'):''}</p></div><Button size="sm" onClick={()=>meetingController.setTarget({taskId:item.task.id,tab:'meeting'})}>{t('planning.openMeeting')}</Button><Button size="sm" onClick={()=>meetingController.setTarget({taskId:item.task.id,tab:'attendance'})}>{t('planning.attendance')}</Button></div>)}</div>}</section>
           </div>
-          <div hidden={view !== 'report'}><WeeklyReport actorId={actorId} workspaceId={workspace.id} period={period.data} baselines={baselines.data} runs={runs.data} members={members.data ?? []} runId={runId} selection={reportSelections[periodId]} onSelectionChange={(selection) => setReportSelections((before) => ({ ...before, [periodId]: selection }))} mutation={commands.createReport} onSelectRun={selectedReport} /></div>
-          <div hidden={view !== 'work-types'}><WorkTypeReport actorId={actorId} workspaceId={workspace.id} period={period.data} members={members.data ?? []} runId={params.get('typeRun') ?? ''} selection={typeSelections[periodId]} onSelectionChange={(selection) => setTypeSelections((before) => ({ ...before, [periodId]: selection }))} mutation={categoryCommands.createReport} onSelectRun={selectedTypeReport} /></div>
+          <div hidden={view !== 'report'}><WeeklyReport actorId={actorId} workspaceId={workspace.id} period={period.data} baselines={baselines.data} runs={runs.data} members={members.data ?? []} runId={runId} draft={reportSelections[periodId]} onDraftAction={action => setReportSelections(before => updateReportDraft(before, action))} mutation={commands.createReport} onSelectRun={selectedReport} onCalculated={calculatedReport} /></div>
+          <div hidden={view !== 'work-types'}><WorkTypeReport actorId={actorId} workspaceId={workspace.id} period={period.data} members={members.data ?? []} runId={params.get('typeRun') ?? ''} draft={typeSelections[periodId]} onDraftAction={action => setTypeSelections(before => updateReportDraft(before, action))} mutation={categoryCommands.createReport} onSelectRun={selectedTypeReport} onCalculated={calculatedTypeReport} /></div>
         </>}
       </>}
       {/* Stays mounted across views, periods and dialogs so held recurrence commands remain reachable. */}

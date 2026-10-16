@@ -1,3 +1,4 @@
+import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/task-comments';
 import { ProjectActions } from '../features/projects/ProjectActions';
 import { weeklyPlanningHref } from '../features/planning/navigation';
 import { QuickTaskAdd } from '../features/tasks/QuickTaskAdd';
@@ -185,6 +186,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const tags = useTagsQuery(actorId, workspace.id);
   // Owned here so that closing the drawer keeps uncertain commands and drafts.
   const commands = useTaskCommands(actorId, workspace.id);
+  const commentsController = useTaskCommentsWorkspace(actorId, workspace.id);
   const dependencies = useDependencyWorkspace(actorId, workspace.id, project.id);
   const schedule = useScheduleWorkspace(actorId, workspace.id, project.id, workspace.timezone);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
@@ -416,6 +418,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </ProjectActions>
       </header>
 
+      <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
       {taskId === null && creating === null && (quickAddSection === undefined || graphMode || ganttMode || importMode) && (!activeInline || !shownTasks.some(task => task.id === activeInline.taskId)) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
@@ -512,6 +515,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onRenameSection={writable ? renameSection : undefined}
           />}
           <TaskDrawer
+            commentsController={commentsController}
             dependencyController={dependencies}
             meetingRequestedPeriodId={searchParams.get('meetingPeriod')??undefined}
             onAcceptMeetingPeriod={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('week',id);next.set('meetingPeriod',id);return next;})}

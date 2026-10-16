@@ -1,0 +1,45 @@
+{
+  "tabs": "Task details and discussion",
+  "details": "Details",
+  "discussion": "Discussion",
+  "draftTab": "Discussion · draft",
+  "heading": "Comments",
+  "body": "Comment",
+  "placeholder": "Write a comment…",
+  "add": "Add comment",
+  "posting": "Posting…",
+  "retry": "Retry original comment",
+  "posted": "Comment posted.",
+  "hint": "Plain text · Cmd/Ctrl+Enter to post",
+  "readOnly": "You can read this discussion. Commenting is unavailable with your current access.",
+  "archived": "This task is archived. Existing discussion is read-only.",
+  "loading": "Loading comments…",
+  "empty": "No comments yet.",
+  "more": "Load older comments",
+  "loadingMore": "Loading older comments…",
+  "refresh": "Refresh discussion",
+  "otherPending": "Another comment is pending or unconfirmed. Open its discussion to resolve it.",
+  "problem": {
+    "blank": "Write a comment before posting.",
+    "tooLong": "Keep the comment within 4000 characters.",
+    "nul": "Remove the unsupported NUL character before posting."
+  },
+  "recovery": {
+    "unknown": "A comment is unconfirmed. Its original text is retained.",
+    "pending": "A comment is still being posted. Its original text is retained.",
+    "draft": "An unsent comment draft is kept on this page.",
+    "open": "Open discussion"
+  },
+  "activity": {
+    "heading": "Activity",
+    "loading": "Loading activity…",
+    "empty": "No recorded task activity.",
+    "more": "Load older activity",
+    "currentNames": "Activity uses current member names. Comment authors use their name recorded when posted.",
+    "created": "{{name}} created this task.",
+    "updated": "{{name}} updated this task.",
+    "archived": "{{name}} archived this task.",
+    "restored": "{{name}} restored this task.",
+    "schedule_updated": "{{name}} updated this task’s schedule."
+  }
+}

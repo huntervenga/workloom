@@ -133,3 +133,6 @@ export {createLocalCredentialService,type StoredLocalCredential,type LocalCreden
 export * from './my-tasks/application.js';
 export * from './my-tasks/ports.js';
 export { createMyTasksApplication } from './my-tasks/service.js';
+export { createTaskCommentsApplication } from './task-comments/service.js';
+export type { TaskCommentsApplication } from './task-comments/application.js';
+export type { TaskCommentAnchor, TaskActivityAnchor, TaskTimelineCursor, CommentTarget, TaskCommentsRepository, TaskCommentsWriteScope, TaskCommentsUnitOfWork, TaskCommentsTools } from './task-comments/ports.js';

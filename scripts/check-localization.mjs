@@ -47,6 +47,10 @@ const literalExemptions = new Map([
 ]);
 const readSource = path => readFileSync(join(root, path), 'utf8');
 const dynamicKeys = new Map([
+  ['apps/web/src/features/task-comments/TaskDiscussion.tsx', new Map([
+    ['activityKeys[event.kind]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-comments/TaskDiscussion.tsx'), 'activityKeys'), reason: 'Exhaustive finite public activity kind dictionary; all values are literal localization keys.' }],
+    ['problemKeys[problem]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-comments/TaskDiscussion.tsx'), 'problemKeys'), reason: 'Finite local comment validation enum mapped to literal message keys; server text is never rendered.' }],
+  ])],
   ['apps/web/src/features/recurrence/useRecurrenceManagement.ts', new Map([["problemCopy.find(([prefix]) => path === prefix || path.startsWith(`${prefix}.`))?.[1] ?? 'recurrence.checkTheChangeFields'", { keys: [...tableTranslationKeys(readSource('apps/web/src/features/recurrence/useRecurrenceManagement.ts'), 'problemCopy', 1), 'recurrence.checkTheChangeFields'], reason: 'Fixed schema-path to safe message-key tuples with a fixed localized fallback; no schema message is rendered.' }]])],
   ['apps/web/src/features/recurrence/useRecurrenceWorkspace.ts', new Map([["problemCopy.find(([prefix]) => path === prefix || path.startsWith(`${prefix}.`))?.[1] ?? 'recurrence.checkTheSeriesFields'", { keys: [...tableTranslationKeys(readSource('apps/web/src/features/recurrence/useRecurrenceWorkspace.ts'), 'problemCopy', 1), 'recurrence.checkTheSeriesFields'], reason: 'Fixed schema-path to safe message-key tuples with a fixed localized fallback; no schema message is rendered.' }]])],
 

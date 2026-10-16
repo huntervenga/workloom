@@ -1,6 +1,6 @@
 # Bounded task comments and safe activity
 
-This document fixes the proposed first comments/activity contract and implementation plan. Source, migration application and browser acceptance are separate gates. The initial design is approved in principle; implementation waits for the coordinator's checkpoint release. No migration is applied to the running database by writing this plan.
+This document fixes the first comments/activity contract and implementation boundaries. Source implementation and focused tests are complete. Migration application, compiled runtime and browser acceptance are separate coordinator-owned gates; source completion does not imply that the running database or API has changed.
 
 ## Scope and permissions
 
@@ -106,7 +106,7 @@ The typed planning intent is a separate `family: 'comment'`, `command: 'task.com
 
 The backend owner owns the additive contract/domain/db/API modules and their tests, plus the exact shared intent/footprint changes, schema addition and one reviewed `0011_task_comments.sql` migration/journal entry. The frontend owner owns TaskDrawer integration, hooks, draft/unknown-outcome behavior and `comments.json`. Neither owner reverts or rewrites another owner's files.
 
-The migration adds `task_comments`, a task timeline index on workspace/task/time/ID, composite same-workspace task FK, and author membership/user FK. A supporting unique constraint on `memberships(workspace_id, id, user_id)` enforces that the immutable author user and membership are the same identity. The comment table has length/time constraints and UPDATE/DELETE/TRUNCATE rejection triggers. `REQUIRED_TABLES` includes the new table so an unmigrated database fails readiness clearly. There is no task revision column change, data backfill or rewrite.
+The reviewed migration source adds `task_comments`, a task timeline index on workspace/task/time/ID, composite same-workspace task FK, and author membership/user FK. A supporting unique constraint on `memberships(workspace_id, id, user_id)` enforces that the immutable author user and membership are the same identity. The comment table has length/time constraints and UPDATE/DELETE/TRUNCATE rejection triggers. `REQUIRED_TABLES` includes the new table so an unmigrated database fails readiness clearly. There is no task revision column change, data backfill or rewrite.
 
 The SQL, journal, schema and migration tests are reviewed together before application. Disposable database migration tests are a separate authorized action. Applying this migration to the existing local database, rebuilding compiled runtime or restarting API is coordinator-owned and requires the checkpoint window; it is not implied by source approval.
 
@@ -125,3 +125,20 @@ Meaningful tests must cover:
 - UI shows markup as literal text, retains the draft through locale switching/close/reopen where required, uses localized feedback keys and safe generic server errors, and preserves exact pending/unknown retry semantics.
 
 Build, database, API, browser and visual evidence must be reported separately. This contract is a plan, not evidence that an endpoint or migrated table is already running.
+
+
+## Source verification — 2026-10-16
+
+The backend, additive contracts, explicit inert guard classification, schema/SQL/snapshot/journal, readiness table registration and HTTP routes are implemented. Source-alias checks avoided all package `dist` writes while the previous compiled API remained frozen.
+
+- Thirty pure server cases pass: contract validation (3), comment/activity domain rules (7), signed cursor boundaries (3), HTTP transport (4), and migration journal/static checks (13).
+- Fourteen actual PostgreSQL integration cases pass. This includes a populated pre-0011 upgrade: all old 54 table row hashes and existing migration history stayed unchanged, readiness refused the pending schema, only `0011_task_comments` applied, and readiness then passed. The remaining cases cover the atomicity, authorization, pagination, current/snapshot labels, safe activity and planning-isolation gates listed above.
+- Four rollback cases inject an AFTER INSERT database failure at the comment, audit, outbox and receipt stages and compare every public table hash, including workspace sequence. A separate failure is injected after a real PostgreSQL transaction commits; retry returns the sole confirmed row without changing any table. This is a simulated lost application return after actual commit, not a claim of a physical network disconnect test.
+- The overdue recurrence fixture has an incomplete census and a revoked stored authorizer. Comment creation leaves all task/package/participant/worklog/planning/recurrence source tables unchanged; readiness remains blocked.
+- Frontend source/component acceptance from its owner: 169 focused cases pass, including 16 new discussion cases. Ordinary saved tasks use mounted sibling Details/Discussion panes, exact plain-text bodies, viewer/current-denial handling, lazy separate Activity, per-task draft identity and exact pending/unknown retry (including authorized archived receipt replay). Meeting discussion UI remains deferred.
+
+The final disposable run used `/tmp/run-workloom-comments-postgres.mjs` with Node 24 and source aliases; its captured log is `/tmp/workloom-comments-postgres.log`. The owned base `workloom_test_comments_base_5dcfd1fc4e` and child `wl_db_comments_1da12755_test` were removed. The earlier passing 13-case run used child `wl_db_comments_55a3891b_test`, also removed. No main-workspace rows, runtime process, compiled package or application database migration was changed by these checks.
+
+The repository test file is `packages/db/integration/task-comments.test.ts`. After the coordinator's normal library build, run `npm run test:integration --workspace @workloom/db -- integration/task-comments.test.ts` against an explicitly configured synthetic `TEST_DATABASE_URL`; tests create/drop their own database through the existing helper and never fall back to `DATABASE_URL`. Unit tests live beside the new source modules. Browser and compiled API evidence remains pending and belongs in the UX verification record.
+
+Final source checks also passed server/web TypeScript, scoped ESLint, localization audit and whitespace checks. Drizzle regeneration reported no schema changes (`/tmp/workloom-comments-schema-check.log`). Normal web verification passed four dedicated discussion-error privacy/recovery cases, the existing ten API cases and production catalog discovery (15 cases together).

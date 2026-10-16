@@ -10,6 +10,8 @@ import { SaveFeedback } from '../../shared/SaveFeedback';
 import { formatEstimate } from '../task-table';
 import { PlanFactChart } from './PlanFactChart';
 import { ReportTaskLinks } from './ReportTaskLinks';
+import { ReportSetupDisclosure } from './ReportSetupDisclosure';
+import { weeklyReportConfigurationKey, type ReportDraft, type ReportDraftAction } from './reportSetupState';
 import { useReportRowsQuery, useReportRunQuery, type PlanningCommands } from './queries';
 
 export interface ReportSelection { baselineId: string; knownOnly: boolean; membershipIds: string[] }
@@ -22,10 +24,11 @@ interface Props {
   runs: readonly WeeklyPlanFactReportRunDto[];
   members: readonly MembershipDto[];
   runId: string;
-  selection: ReportSelection | undefined;
-  onSelectionChange: (selection: ReportSelection) => void;
+  draft: ReportDraft<ReportSelection> | undefined;
+  onDraftAction: (action: ReportDraftAction<ReportSelection>) => void;
   mutation: PlanningCommands['createReport'];
   onSelectRun: (runId: string, periodId: string) => void;
+  onCalculated: (runId: string, periodId: string, sourceRunId: string) => void;
 }
 
 export function WeeklyReport(props: Props) {
@@ -33,34 +36,45 @@ export function WeeklyReport(props: Props) {
   const id = useId();
   const { period, mutation } = props;
   const fallback = period.projectBaselineId ?? props.baselines.find((baseline) => baseline.scope === 'project')?.id ?? props.baselines[0]?.id ?? '';
-  const chosen = props.selection ?? { baselineId: fallback, knownOnly: false, membershipIds: [] };
+  const chosen = props.draft?.selection ?? { baselineId: fallback, knownOnly: false, membershipIds: [] };
   const held = mutation.pendingCommand?.variables ?? mutation.uncertain?.variables ?? null;
   const shown = held?.input ?? { baselineId: chosen.baselineId, knownEstimatesOnly: chosen.knownOnly, membershipIds: chosen.membershipIds };
   const selectedBaseline = props.baselines.find((baseline) => baseline.id === shown.baselineId);
   const personalMember = selectedBaseline?.scope === 'self' ? selectedBaseline.membershipId : null;
-  const setChosen = (update: Partial<ReportSelection>) => props.onSelectionChange({ ...chosen, ...update });
+  const setChosen = (update: Partial<ReportSelection>) => {
+    const selection = { ...chosen, ...update };
+    props.onDraftAction({ type: 'edit', periodId: period.id, selection, configurationKey: weeklyReportConfigurationKey({ baselineId: selection.baselineId, knownEstimatesOnly: selection.knownOnly, membershipIds: selection.membershipIds }) });
+  };
+  const setupError = mutation.error !== null && mutation.variables?.periodId === period.id ? mutation.error : null;
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (mutation.pendingCommand) return;
-    if (mutation.uncertain) { mutation.retryUncertain({ onSuccess: (run) => props.onSelectRun(run.id, run.periodId) }); return; }
-    if (!chosen.baselineId) return;
-    mutation.mutate({ periodId: period.id, input: { baselineId: chosen.baselineId, knownEstimatesOnly: chosen.knownOnly, membershipIds: chosen.membershipIds } }, { onSuccess: (run) => props.onSelectRun(run.id, run.periodId) });
+    const submittedPeriodId = held?.periodId ?? period.id;
+    const input = held?.input ?? { baselineId: chosen.baselineId, knownEstimatesOnly: chosen.knownOnly, membershipIds: chosen.membershipIds };
+    if (!input.baselineId) return;
+    const configurationKey = weeklyReportConfigurationKey(input);
+    props.onDraftAction({ type: 'submitted', periodId: submittedPeriodId, configurationKey });
+    const saved = (run: WeeklyPlanFactReportRunDto) => {
+      props.onDraftAction({ type: 'confirmed', periodId: submittedPeriodId, configurationKey });
+      props.onCalculated(run.id, run.periodId, props.runId);
+    };
+    if (mutation.uncertain) { mutation.retryUncertain({ onSuccess: saved }); return; }
+    mutation.mutate({ periodId: submittedPeriodId, input }, { onSuccess: saved });
   };
   return (
     <section aria-label={t('planning.weeklyReport')} className="space-y-5">
-      <div className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
-        <div><h2 className="text-lg font-semibold">{t('planning.planVsActual')}</h2><p className="mt-1 text-sm leading-relaxed text-muted">{t('planning.eachReportPreservesTheBaselineAndActualHourRevisions')}</p></div>
+      <ReportSetupDisclosure title={t('planning.planVsActual')} hasSavedReport={!!props.runId} setup={props.draft?.setup} held={held !== null} failed={setupError !== null} onExpandedChange={expanded => props.onDraftAction({ type: 'expand', periodId: period.id, expanded })} selector={props.runs.length > 0 ? <div className="flex items-center gap-3"><label htmlFor={`${id}-run`} className="shrink-0 text-xs font-medium">{t('planning.savedReport')}</label><select id={`${id}-run`} className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={props.runId} onChange={event => props.onSelectRun(event.target.value, period.id)}><option value="">{t('planning.chooseAReport')}</option>{props.runs.map(run => <option key={run.id} value={run.id}>{dateTime(run.createdAt)} · {run.knownEstimatesOnly ? t('planning.knownPlansOnly') : t('planning.allSelectedPeople')}</option>)}</select></div> : null}>
+        <p className="text-xs leading-relaxed text-muted">{t('planning.eachReportPreservesTheBaselineAndActualHourRevisions')}</p>
         {props.baselines.length === 0 && held === null ? <p className="text-sm text-muted">{t('planning.saveAPersonalOrProjectBaselineBeforeCalculatingA')}</p> : <form className="space-y-4" onSubmit={submit}>
           <fieldset disabled={held !== null} className="min-w-0 space-y-4">
             <div className="space-y-1.5"><label htmlFor={`${id}-baseline`} className="text-sm font-medium">{t('planning.savedBaseline')}</label><select id={`${id}-baseline`} className={inputClassName()} value={shown.baselineId} onChange={(event) => { const baseline = props.baselines.find((item) => item.id === event.target.value); setChosen({ baselineId: event.target.value, membershipIds: baseline?.scope === 'self' ? [] : chosen.membershipIds }); }}><option value="">{t('planning.chooseABaseline')}</option>{props.baselines.map((baseline) => <option key={baseline.id} value={baseline.id}>{baseline.scope === 'project' ? t('planning.projectPlan') : t('planning.personalPlan', { person: props.members.find((member) => member.id === baseline.membershipId)?.displayName ?? t('planning.person2') })} · {dateTime(baseline.frozenAt)}</option>)}{shown.baselineId && !props.baselines.some((baseline) => baseline.id === shown.baselineId) ? <option value={shown.baselineId}>{t('planning.submittedBaselineFromAnotherPeriod')}</option> : null}</select></div>
             <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5" checked={shown.knownEstimatesOnly} onChange={(event) => setChosen({ knownOnly: event.target.checked })} /><span>{t('planning.compareOnlyKnownPersonalPlans')}<span className="mt-1 block text-xs text-muted">{t('planning.thisFiltersTheComparisonItDoesNotMeasureCompleteness')}</span></span></label>
             <fieldset className="flex flex-wrap gap-x-4 gap-y-2"><legend className="mb-2 text-sm font-medium">{personalMember ? t('planning.peopleInThePersonalBaseline') : t('planning.peopleInReportLeaveEmptyToIncludeEveryoneAvailable')}</legend>{personalMember ? <p className="text-sm text-muted">{t('planning.onlyAPersonalBaselineDoesNotIncludeOtherPeoples', { person: props.members.find((member) => member.id === personalMember)?.displayName ?? t('planning.thePersonInThisPersonalBaseline') })}</p> : props.members.map((member) => <label key={member.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={shown.membershipIds.includes(member.id)} onChange={(event) => setChosen({ membershipIds: event.target.checked ? [...chosen.membershipIds, member.id] : chosen.membershipIds.filter((value) => value !== member.id) })} />{member.displayName}</label>)}</fieldset>
           </fieldset>
-          <SaveFeedback subject="report" error={mutation.error} uncertainError={mutation.uncertain?.error ?? null} />
+          <SaveFeedback subject="report" error={setupError} uncertainError={mutation.uncertain?.error ?? null} />
           <Button type="submit" variant="primary" disabled={mutation.pendingCommand !== null || !shown.baselineId}>{mutation.pendingCommand ? t('planning.calculating') : mutation.uncertain ? t('planning.retryOriginalSave') : t('planning.calculateNewReport')}</Button>
         </form>}
-        {props.runs.length > 0 ? <div className="space-y-1.5 border-t border-line pt-4"><label htmlFor={`${id}-run`} className="text-sm font-medium">{t('planning.savedReport')}</label><select id={`${id}-run`} className={inputClassName()} value={props.runId} onChange={(event) => props.onSelectRun(event.target.value, period.id)}><option value="">{t('planning.chooseAReport')}</option>{props.runs.map((run) => <option key={run.id} value={run.id}>{dateTime(run.createdAt)} · {run.knownEstimatesOnly ? t('planning.knownPlansOnly') : t('planning.allSelectedPeople')}</option>)}</select></div> : null}
-      </div>
+      </ReportSetupDisclosure>
       {props.runId ? <PinnedReport actorId={props.actorId} workspaceId={props.workspaceId} projectId={period.projectId} periodId={period.id} runId={props.runId} /> : null}
     </section>
   );

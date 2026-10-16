@@ -78,6 +78,13 @@
       "when": 1792131350724,
       "tag": "0010_local_mcp_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792140979243,
+      "tag": "0011_task_comments",
+      "breakpoints": true
     }
   ]
 }

@@ -18,3 +18,5 @@ export * from './imports.js';
 export * from './local-mcp.js';
 
 export * from './my-tasks.js';
+export { createTaskCommentInputSchema, taskCommentSchema, taskCommentsQuerySchema, taskActivityQuerySchema, taskCommentResponseSchema, taskCommentsResponseSchema, taskActivityKindSchema, taskActivitySchema, taskActivityResponseSchema } from './task-comments.js';
+export type { CreateTaskCommentInput, TaskCommentDto, TaskCommentsQueryInput, TaskActivityQueryInput, TaskTimelineQuery, TaskActivityDto } from './task-comments.js';
