@@ -80,7 +80,9 @@
     "unestimatedCount": {
       "one": "· Not estimated: {{count}} task",
       "other": "· Not estimated: {{count}} tasks"
-    }
+    },
+    "hierarchyDepth": "Loaded hierarchy depth {{depth}}.",
+    "parentContext": "Parent: {{title}}"
   },
   "estimate": {
     "estimateIsTooLarge": "Estimate is too large.",

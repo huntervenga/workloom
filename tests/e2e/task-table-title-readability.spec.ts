@@ -93,7 +93,7 @@ for (const [size, viewport] of sizes) test.describe(`Readable table titles ${siz
         writes.push({ method: request.method(), path: url.pathname });
     });
     await page.goto(`/w/${f.workspaceId}/projects/${f.project.id}`);
-    const table = page.getByRole('table', { name: 'Project tasks', exact: true });
+    const table = page.getByRole('table', { name: `Tasks in “${f.project.name}”`, exact: true });
     await expect(table.getByRole('checkbox')).toHaveCount(tasks.length);
     const button = (title: string) => table.getByRole('button', { name: title, exact: true });
     await button(leaf.title).focus();
@@ -102,7 +102,7 @@ for (const [size, viewport] of sizes) test.describe(`Readable table titles ${siz
     await drawer.getByLabel('Description', { exact: true }).fill('Unsent deep task draft');
     await drawer.getByRole('button', { name: 'Close', exact: true }).first().click();
     await expect(drawer).toHaveCount(0);
-    const leafRow = table.getByRole('row').filter({ has: button(leaf.title) });
+    const leafRow = button(leaf.title).locator('xpath=ancestor::tr');
     await expect(leafRow.getByText('Draft', { exact: true })).toBeVisible();
     await expect(leafRow.getByText('Section: Release follow-up', { exact: true })).toBeVisible();
     await table.getByRole('checkbox', { name: `Select for graph: ${leaf.title}`, exact: true }).check();
@@ -134,6 +134,7 @@ for (const [size, viewport] of sizes) test.describe(`Readable table titles ${siz
       }));
     }
     await leafRow.scrollIntoViewIfNeeded();
+    await page.evaluate(() => window.scrollTo({ top: 0, left: 0 }));
     await page.screenshot({ path: info.outputPath(`task-titles-${size}.png`), fullPage: true });
     await evidenceJson(info, 'title-geometry.json', { fixtureProjectId: f.project.id,
       depths: f.chain.map((task, depth) => ({ id: task.id, depth, title: task.title })), geometry, writes,

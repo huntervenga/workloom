@@ -11,7 +11,7 @@ import type {
 } from '@workloom/contracts';
 import { Avatar, Badge, Button, cn } from '@workloom/ui';
 import { ChevronDown, ChevronRight, Flag, Link2, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
-import { useCallback, useMemo, useState, Fragment, type ReactNode } from 'react';
+import { useCallback, useId, useMemo, useState, Fragment, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import { visibleTaskRows, type TaskTreeNode } from './taskTree';
 import { buildTableGroups, type TableTaskGroup, type TaskGroupingMode } from './taskGrouping';
@@ -359,6 +359,7 @@ function sectionLabel(sectionId: string | null, sectionById: ReadonlyMap<string,
 function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGroup; ctx: RowContext }) {
   const { t } = useTranslation();
   const { task } = node;
+  const hierarchyDescriptionId = useId();
   const status = ctx.statusById.get(task.statusId);
   const childCount = node.children.length;
   const expanded = !ctx.collapsedIds.has(task.id);
@@ -389,64 +390,62 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     title: (      <td
         className="py-1 pr-3 lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]"
         style={{ paddingLeft: 12 }}>
-        <div className="flex min-w-0 items-center gap-1.5">
-          {ctx.onSelectTask ? <span className="mr-1 flex w-8 shrink-0 justify-center border-r border-line pr-2"><input type="checkbox" aria-label={t('taskTable.taskTable.selectForGraphValue', { p0: task.title })} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /></span> : null}
-          <div className="flex min-w-0 flex-1 items-center gap-1.5" style={{ paddingLeft: node.depth * 20 }}>
-          {childCount > 0 ? (
-            <button
-              type="button"
-              aria-expanded={expanded}
-              aria-label={t('taskTable.taskTable.valueSubtasksOfValue', { p0: expanded ? t('taskTable.taskTable.collapse') : t('taskTable.taskTable.expand'), p1: task.title })}
-              onClick={() => ctx.onToggle(task.id)}
-              className={cn(iconButtonClassName, 'size-6 text-muted')}
-            >
-              {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-            </button>
-          ) : (
-            <span aria-hidden="true" className="size-6 shrink-0" />
-          )}
-          {ctx.renderCompletionAction?.(task)}
-          {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
-          <div className="min-w-0 flex-1">
-            {editingTitle ? titleEditor : <div className="flex min-w-0 items-center gap-1">
-              <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title} className={cn('min-w-0 flex-1 truncate rounded-sm text-left text-sm font-medium hover:text-accent-ink hover:underline', finished ? 'text-muted' : 'text-ink')}>{task.title}</button>
-              {ctx.onEditTaskField && canEditTaskInline(task) ? <button type="button" data-task-cell={`${task.id}:title`} aria-label={renameLabel} title={renameLabel} onClick={event => { event.stopPropagation(); ctx.onEditTaskField?.(task, 'title'); }} className={cn(iconButtonClassName, 'size-7 text-subtle')}><Pencil size={14} aria-hidden="true" /></button> : null}
-            </div>}
-            {context ? <p className="truncate text-xs text-muted" title={context}>{context}</p> : null}
-          </div>
-          {childCount > 0 ? (
-            <span className="shrink-0 text-xs text-muted tabular-nums" title={childCountText}>
-              <span aria-hidden="true">{childCount}</span>
-              <span className="sr-only">{childCountText}</span>
-            </span>
-          ) : null}
-          {node.detachedReason === 'parent_not_loaded' ? (
-            <Badge tone="muted" title={t('taskTable.taskTable.parentTaskIsOutsideTheLoadedSet')}>
-              {t('taskTable.taskTable.subtask3')}<span className="sr-only">{t('taskTable.taskTable.parentTaskNotLoaded')}</span>
-            </Badge>
-          ) : null}
-          {node.detachedReason === 'cycle' ? (
-            <Badge tone="warning" title={t('taskTable.taskTable.parentRelationshipsFormACycleRefreshData')}>
-              {t('taskTable.taskTable.hierarchyCycle')}</Badge>
-          ) : null}
-          {showSection ? (
-            <Badge tone="muted" className="min-w-0 max-w-40">
-              <span className="min-w-0 truncate">{t('taskTable.taskTable.sectionName', { name: sectionLabel(task.sectionId, ctx.sectionById) })}</span>
-            </Badge>
-          ) : null}
-          {ctx.draftTaskIds.has(task.id) ? <Badge tone="warning" title={t('tasks.inlineEdit.draftHint')}>{t('tasks.inlineEdit.draft')}</Badge> : null}
-          {task.meetingId ? <Badge tone="muted">{t('taskTable.taskTable.meeting')}</Badge> : null}
-          {task.archivedAt !== null ? <Badge tone="muted">{t('taskTable.taskTable.archived2')}</Badge> : null}
-          {ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null ? (
-            <button
-              type="button"
-              aria-label={t('taskTable.taskTable.addSubtaskToValue', { p0: task.title })}
-              onClick={() => ctx.onCreateChild?.(task)}
-              className={cn(iconButtonClassName, 'ml-auto size-7 text-subtle group-hover:text-muted')}
-            >
-              <Plus size={16} aria-hidden="true" />
-            </button>
-          ) : null}
+        <div className="flex min-w-0 items-start gap-1.5">
+          {ctx.onSelectTask ? <span className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center border-r border-line pr-2"><input type="checkbox" aria-label={t('taskTable.taskTable.selectForGraphValue', { p0: task.title })} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /></span> : null}
+          <div className="min-w-0 flex-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
+            <div className="flex min-w-0 items-start gap-1.5">
+              {childCount > 0 ? (
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-label={t('taskTable.taskTable.valueSubtasksOfValue', { p0: expanded ? t('taskTable.taskTable.collapse') : t('taskTable.taskTable.expand'), p1: task.title })}
+                  onClick={() => ctx.onToggle(task.id)}
+                  className={cn(iconButtonClassName, 'size-6 text-muted')}
+                >
+                  {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+                </button>
+              ) : <span aria-hidden="true" className="size-6 shrink-0" />}
+              {ctx.renderCompletionAction?.(task)}
+              {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
+              <div className="min-w-0 flex-1">
+                {editingTitle ? titleEditor : (
+                  <div className="flex min-w-0 items-start gap-1">
+                    <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title}
+                      aria-describedby={node.depth > 0 ? hierarchyDescriptionId : undefined}
+                      className={cn('min-w-0 flex-1 whitespace-normal rounded-sm py-1 text-left text-sm font-medium leading-5 [overflow-wrap:anywhere] hover:text-accent-ink hover:underline', finished ? 'text-muted' : 'text-ink')}>{task.title}</button>
+                    {ctx.onEditTaskField && canEditTaskInline(task) ? <button type="button" data-task-cell={`${task.id}:title`} aria-label={renameLabel} title={renameLabel} onClick={event => { event.stopPropagation(); ctx.onEditTaskField?.(task, 'title'); }} className={cn(iconButtonClassName, 'size-7 text-subtle')}><Pencil size={14} aria-hidden="true" /></button> : null}
+                  </div>
+                )}
+                {node.depth > 0 ? <span id={hierarchyDescriptionId} className="sr-only">
+                  {t('taskTable.taskTable.hierarchyDepth', { depth: node.depth })}
+                  {parent ? ` ${t('taskTable.taskTable.parentContext', { title: parent.title })}` : null}
+                </span> : null}
+                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 empty:hidden">
+                  {context ? <p className="min-w-0 basis-full text-xs text-muted [overflow-wrap:anywhere]" title={context}>{context}</p> : null}
+                  {childCount > 0 ? <span className="text-xs text-muted tabular-nums" title={childCountText}>
+                    {childCountText}
+                  </span> : null}
+                  {node.detachedReason === 'parent_not_loaded' ? <Badge tone="muted" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }} title={t('taskTable.taskTable.parentTaskIsOutsideTheLoadedSet')}>
+                    {t('taskTable.taskTable.subtask3')}<span className="sr-only">{t('taskTable.taskTable.parentTaskNotLoaded')}</span>
+                  </Badge> : null}
+                  {node.detachedReason === 'cycle' ? <Badge tone="warning" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }} title={t('taskTable.taskTable.parentRelationshipsFormACycleRefreshData')}>
+                    {t('taskTable.taskTable.hierarchyCycle')}
+                  </Badge> : null}
+                  {showSection ? <Badge tone="muted" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                    {t('taskTable.taskTable.sectionName', { name: sectionLabel(task.sectionId, ctx.sectionById) })}
+                  </Badge> : null}
+                  {ctx.draftTaskIds.has(task.id) ? <Badge tone="warning" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }} title={t('tasks.inlineEdit.draftHint')}>{t('tasks.inlineEdit.draft')}</Badge> : null}
+                  {task.meetingId ? <Badge tone="muted" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{t('taskTable.taskTable.meeting')}</Badge> : null}
+                  {task.archivedAt !== null ? <Badge tone="muted" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{t('taskTable.taskTable.archived2')}</Badge> : null}
+                </div>
+              </div>
+              {ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null ? (
+                <button type="button" aria-label={t('taskTable.taskTable.addSubtaskToValue', { p0: task.title })}
+                  onClick={() => ctx.onCreateChild?.(task)} className={cn(iconButtonClassName, 'size-7 text-subtle group-hover:text-muted')}>
+                  <Plus size={16} aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
       </td>),
