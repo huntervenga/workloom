@@ -33,6 +33,9 @@ for (const [name, viewport] of sizes) test.describe(`Graph blocker inspector ${n
     await page.getByRole('checkbox', { name: `Select for graph: ${root.title}`, exact: true }).check();
     await page.getByRole('button', { name: 'Selected graph (1)', exact: true }).click();
     const graph = page.getByRole('region', { name: 'Project dependencies', exact: true });
+    // Desktop defaults to Diagram; mobile defaults to List. Select the intended action context explicitly.
+    const initialCanvasMounted = await graph.getByRole('region', { name: 'Dependency graph', exact: true }).count() > 0;
+    await graph.getByRole('button', { name: 'Dependency list', exact: true }).click();
     const depth = graph.getByLabel('Neighbor depth', { exact: true });
     await depth.selectOption('0');
     const list = graph.getByRole('list', { name: 'Graph tasks and dependencies', exact: true });
@@ -90,7 +93,7 @@ for (const [name, viewport] of sizes) test.describe(`Graph blocker inspector ${n
     }));
     await expect.poll(async () => (await measure()).every(n => n.width > 0 && n.height > 0)).toBe(true);
     const geometry = await measure();
-    await evidenceJson(info, 'graph-node-geometry.json', { geometry, initialSavedSpacing: { nodeHeight: 128, gap: 36 }, layoutAction: 'Apply automatic layout in list-first state using measured content', arbitrarySavedLayoutsCovered: false });
+    await evidenceJson(info, 'graph-node-geometry.json', { geometry, initialSavedSpacing: { nodeHeight: 128, gap: 36 }, layoutAction: 'Apply automatic layout from selected Dependency list using measured content', initialCanvasMounted, initialCanvasPositionRenderingCovered: false, arbitrarySavedLayoutsCovered: false });
     await page.screenshot({ path: info.outputPath(`graph-nodes-${name}.png`), fullPage: true });
     // Inspect full content and actual fit-scaled rectangles after real measured automatic placement.
     // CSS min-height is not a claim of 24 screen pixels; arbitrary saved positions may overlap.
@@ -134,6 +137,6 @@ for (const [name, viewport] of sizes) test.describe(`Graph blocker inspector ${n
     expect(projectDependencyPolicyResponseSchema.parse(await (await request.get(f.prefix + policyPath)).json()).data).toEqual(policy);
     expect(await f.task(root.id)).toEqual(root); expect(await f.task(local.id)).toEqual(local); expect(await external.task(outside.id)).toEqual(outside); expect(await external.task(deeper.id)).toEqual(deeper);
     expect(writes).toEqual([]); expect(errors).toEqual([]); expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
-    await evidenceJson(info, 'graph-inspector-proof.json', { geometry, reads, blockingRequests, writes, errors, edges, layout, initialSavedSpacing: { nodeHeight: 128, gap: 36 }, layoutAction: 'Apply automatic layout in list-first state using measured content', arbitrarySavedLayoutsCovered: false, browserActorSwitchCovered: false });
+    await evidenceJson(info, 'graph-inspector-proof.json', { geometry, reads, blockingRequests, writes, errors, edges, layout, initialSavedSpacing: { nodeHeight: 128, gap: 36 }, layoutAction: 'Apply automatic layout from selected Dependency list using measured content', initialCanvasMounted, initialCanvasPositionRenderingCovered: false, arbitrarySavedLayoutsCovered: false, browserActorSwitchCovered: false });
   });
 });

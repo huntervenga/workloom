@@ -66,7 +66,7 @@ for (const [name, viewport] of sizes) test.describe(`Inline team estimate ${name
       expect((await f.task(retryTask.id)).estimateMinutes).toBe(90);
       await retryForm.getByRole('button', { name: 'Collapse editor', exact: true }).click(); await page.getByRole('button', { name: 'Board', exact: true }).click(); await page.getByRole('button', { name: 'Resume original editor', exact: true }).click();
       const drawer = page.getByRole('dialog', { name: retryTask.title, exact: true }); await expect(drawer).toBeVisible();
-      const details = drawer.locator('summary').filter({ hasText: /^More details$/ }); if (!(await drawer.getByRole('textbox', { name: 'Team estimate, hours', exact: true }).isVisible())) await details.click();
+      const details = drawer.locator('summary').filter({ hasText: /^More details/ }); if (!(await drawer.getByRole('textbox', { name: 'Team estimate, hours', exact: true }).isVisible())) await details.click();
       await expect(drawer.getByRole('textbox', { name: 'Team estimate, hours', exact: true })).toHaveValue('1,5');
       const retried = page.waitForResponse(r => apiCall(r, 'PATCH', `${f.prefix}/tasks/${retryTask.id}`)); await drawer.getByRole('button', { name: 'Retry submission', exact: true }).click(); await retryCommitted.wait;
       await drawer.getByRole('button', { name: 'Close', exact: true }).first().click(); await expect(drawer).toHaveCount(0); const search = page.getByLabel('Search tasks', { exact: true }); await search.click(); await expect(search).toBeFocused(); retryAck.release(); const retryResult = await taskResult(await retried, 200); await expect(search).toBeFocused();
@@ -82,6 +82,6 @@ for (const [name, viewport] of sizes) test.describe(`Inline team estimate ${name
       await lockedForm.getByRole('button', { name: 'Collapse editor', exact: true }).click(); await edit(lockedTask.title).click(); await expect(form(lockedTask.title).getByRole('textbox', { name: 'Team estimate (hours)', exact: true })).toHaveValue('4,5');
       expect(errors).toEqual([]); expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0); await page.screenshot({ path: info.outputPath(`inline-estimate-lock-${name}.png`), fullPage: true });
       await evidenceJson(info, 'inline-estimate-proof.json', { root, child, zero, detail, retryResult, attempts, lockedTask, lockedBase, period, baseline, rejected, errors, physicalImeTested: false, lateRefetchedCommittedValuesAllowed: true });
-    } finally { zeroSend.release(); retryAck.release(); await page.unroute('**/api/**'); }
+    } finally { zeroSend.release(); retryAck.release(); if (!page.isClosed()) await page.unroute('**/api/**'); }
   });
 });
