@@ -2,6 +2,7 @@ import { useQueryClient, type Query, type QueryClient } from '@tanstack/react-qu
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router';
+import { protectedDraftsFor } from '../lib/protectedDrafts';
 import { protectedCommandsFor } from '../lib/protectedCommands';
 
 export interface SessionContextValue {
@@ -40,16 +41,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       inFlight.current = true;
       // Switching discards writes still being sent or with an unknown outcome; the user decides first.
       const commands = protectedCommandsFor(queryClient);
-      if (commands.protecting) {
+      const drafts=protectedDraftsFor(queryClient);
+      if (commands.protecting || drafts.protecting) {
         let leave = false;
         try {
-          leave = await commands.confirmDeparture();
+          leave = await (commands.protecting ? commands.confirmDeparture() : drafts.confirmDeparture());
         } finally {
           if (!leave) inFlight.current = false;
         }
         if (!leave) return;
       }
       commands.clear();
+      drafts.clear();
       // Unmount every screen showing the previous actor before any network work.
       flushSync(() => {
         setSwitchError(null);

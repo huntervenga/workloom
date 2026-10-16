@@ -40,6 +40,7 @@ function mergeCopies(copies: readonly TaskDto[]): TaskDto | undefined {
   const people = newest(copies, (task) => task.participantsRevision) ?? fields;
   return {
     ...fields,
+    meetingId: fields.meetingId===undefined?copies.find(copy=>copy.meetingId!==undefined)?.meetingId:fields.meetingId,
     workPackageRevision: estimate.workPackageRevision,
     estimateMinutes: estimate.estimateMinutes,
     participants: people.participants,

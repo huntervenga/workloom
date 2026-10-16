@@ -69,7 +69,7 @@ describe('weekly planning lifecycle', () => {
   it('submits explicit zero without a first-entry reason and requires a reason for a real correction', async () => {
     let saved = false;
     let current = log();
-    const { calls } = installFakeApi({ ...routes(), [`GET ${rootPath}/worklogs`]: () => ok(saved ? [current] : []), [`PUT ${rootPath}/tasks/${TASK_ID}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`]: () => { current = saved ? log(60, 2) : log(); saved = true; return ok(current); } });
+    const { calls } = installFakeApi({ ...routes(), [`GET ${rootPath}/recorded-work`]: () => ok(saved ? [current] : []), [`PUT ${rootPath}/tasks/${TASK_ID}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`]: () => { current = saved ? log(60, 2) : log(); saved = true; return ok(current); } });
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}`);
     await user.click(await screen.findByRole('button', { name: 'Внести факт' }));
     let dialog = await screen.findByRole('dialog', { name: 'Внести факт за неделю' });

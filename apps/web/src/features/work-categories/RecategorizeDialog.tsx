@@ -67,7 +67,7 @@ export function RecategorizeDialog(props: Props) {
     catch { setNotice('Не удалось обновить запись. Введённые данные сохранены.'); }
     finally { setReloading(false); }
   };
-  return <DialogShell title="Изменить тип записанной работы" description={`${session.taskTitle} · ${session.memberName}. Меняется категория всей этой недельной записи, часы сохраняются.`} open={props.open} onOpenChange={(next) => { if (!next) props.onClose(); }}>
+  return <DialogShell title="Изменить тип записанной работы" description={`${session.taskTitle} · ${session.memberName}. Меняется категория этой записи ${session.log.sourceKind==='manual_period'?'за неделю':'присутствия'}, часы сохраняются.`} open={props.open} onOpenChange={(next) => { if (!next) props.onClose(); }}>
     <form className="mt-5 space-y-4" onSubmit={submit}>
       <div className="space-y-1"><p className="text-xs text-muted">Сохранённый тип этой записи</p><CategoryBadge category={session.log.category} /></div>
       {session.log.state === 'void' ? <p className="text-sm text-muted">Запись отменена. Сначала явно восстановите её через изменение факта.</p> : null}

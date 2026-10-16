@@ -198,7 +198,7 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
       return mutate(ctx,'reports.read','report.create',{baselineId:p.baselineId},p,weeklyPlanFactReportRunSchema,async(scope,now)=>{
         const repo=scope.repository,ws=scope.context.workspaceId,baseline=found(await repo.findBaseline(ws,p.baselineId)),snapshot=baseline.snapshot;
         if(baseline.scope==='self'&&p.membershipIds.some(id=>id!==baseline.membershipId))throw rule('A personal report can include only the baseline member.');
-        const sources=await repo.captureProject(ws,baseline.projectId),allLogs=await repo.listWorkLogs(ws,baseline.periodId),current=await repo.listCommitments(ws,baseline.periodId);
+        const sources=await repo.captureProject(ws,baseline.projectId),allLogs=await repo.listRecordedWork(ws,baseline.periodId),current=await repo.listCommitments(ws,baseline.periodId);
         const memberIds=p.membershipIds.length?p.membershipIds:baseline.scope==='self'?[found(baseline.membershipId)]:[...new Set([...snapshot.memberships.map(m=>m.id),...allLogs.map(w=>w.membershipId)])].sort();
         for(const id of memberIds)if(!sources.memberships.some(m=>m.id===id)&&!snapshot.memberships.some(m=>m.id===id))throw notFoundError();
         if(memberIds.length>1000)throw rule('A report supports at most 1000 people. Narrow the selected membership filter.');

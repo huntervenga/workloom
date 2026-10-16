@@ -1,3 +1,7 @@
+import { CreateMeetingDialog } from '../features/meetings/CreateMeetingDialog';
+import { MeetingCommandNotices } from '../features/meetings/MeetingDrawer';
+import { useMeetingWorkspace } from '../features/meetings/useMeetingWorkspace';
+import { usePlanningPeriodsQuery } from '../features/planning/queries';
 import type {
   MembershipDto,
   ProjectColumnsDto,
@@ -160,6 +164,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const tags = useTagsQuery(actorId, workspace.id);
   // Owned here so that closing the drawer keeps uncertain commands and drafts.
   const commands = useTaskCommands(actorId, workspace.id);
+  const meetingController=useMeetingWorkspace(actorId,workspace.id,project.id);
+  const meetingPeriods=usePlanningPeriodsQuery(actorId,workspace.id,project.id);
   // Same for custom field values: a hidden drawer keeps a value write that is pending or unconfirmed.
   const fieldValueMutation = useSetTaskFieldValueMutation(actorId, workspace.id);
   const fieldValueDrafts = useRef<FieldValueDraftStore>(new Map());
@@ -212,6 +218,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const taskTime = useTaskTimeTable({
     actorId, workspace, project, members: members.isSuccess ? members.data : [], tasks: dedupeTasks(shownTasks),
     hasMoreTasks: tasks.hasNextPage, loadingMoreTasks: tasks.isFetchingNextPage,
+    onOpenMeeting:(id,tab,selection)=>{setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;});},
     onLoadTasks: () => void tasks.fetchNextPage(), accessDenied: isAccessDenied(members.error) || isAccessDenied(tasks.error),
   });
   const fieldValues = useProjectFieldValuesQuery(
@@ -274,7 +281,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 
   const openTask = (id: string) => {
     setCreating(null);
-    setTaskParam(id);
+    setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);for(const key of ['meetingTab','meetingMember','meetingAttendance','meetingPeriod'])next.delete(key);return next;});
   };
   const startCreate = (request: CreateRequest) => {
     if (!writable || request.parent?.archivedAt) return;
@@ -305,6 +312,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           <p className="text-[15px] text-muted">Проект пространства «{workspace.name}».</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {writable&&metadataReady?<Button onClick={()=>meetingController.setCreateOpen(true)}>Новая встреча</Button>:null}
           {canEdit ? (
             <RenameProjectDialog
               actorId={actorId}
@@ -344,6 +352,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </div>
       </header>
 
+      <MeetingCommandNotices controller={meetingController} onOpen={(id,tab,selection)=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;})}/>
+      {meetingController.commands.create.pendingCommand||meetingController.commands.create.uncertain?<div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">Создание встречи ещё не подтверждено. <Button size="sm" onClick={()=>meetingController.setCreateOpen(true)}>Открыть создание встречи</Button></div>:null}
+      <CreateMeetingDialog accessDenied={[members.error,sections.error,statuses.error,meetingPeriods.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={meetingPeriods.data??[]} statuses={statuses.data??[]} sections={sections.data??[]} ownMembershipId={members.data?.find(m=>m.userId===actorId)?.id??''} timezone={workspace.timezone} onCreated={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab','plan');return next;})}/>
       <nav aria-label="Представления проекта" className="flex flex-wrap gap-2">
         <span className="inline-flex items-center rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent-ink" aria-current="page">Задачи</span>
         <Link to={`/w/${workspace.id}/projects/${project.id}/week`} className={buttonClassName({ variant: 'ghost' })}>
@@ -413,6 +424,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onRenameSection={writable ? renameSection : undefined}
           />
           <TaskDrawer
+            meetingRequestedPeriodId={searchParams.get('meetingPeriod')??undefined}
+            onAcceptMeetingPeriod={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('week',id);next.set('meetingPeriod',id);return next;})}
+            meetingMembershipId={searchParams.get('meetingMember')??undefined}
+            meetingAttendanceId={searchParams.get('meetingAttendance')??undefined}
+            meetingController={meetingController}
+            meetingTab={searchParams.get('meetingTab')==='attendance'?'attendance':searchParams.get('meetingTab')==='plan'?'plan':'meeting'}
             actorId={actorId}
             workspace={workspace}
             project={project}

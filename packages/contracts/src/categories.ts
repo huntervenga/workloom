@@ -2,7 +2,8 @@ import {z} from 'zod';
 import {envelopeSchema} from './common/envelope.js';
 import {idSchema} from './common/ids.js';
 import {workCategorySnapshotSchema} from './common/work-category.js';
-import {manualPeriodWorkLogSchema,periodCommitmentSchema,planningPageQuerySchema} from './planning.js';
+import {periodCommitmentSchema,planningPageQuerySchema} from './planning.js';
+import {manualPeriodWorkLogSchema,attendanceWorkLogSchema} from './common/recorded-work.js';
 import {revisionSchema,utcTimestampSchema} from './tasks.js';
 
 /** Exact P2b catalog: docs/14-p2b-contract.md. All writes keyed, trusted context first. */
@@ -10,7 +11,8 @@ const uniqueIds=z.array(idSchema).max(100).refine(ids=>new Set(ids).size===ids.l
 const amount=z.number().int().nonnegative();
 export const projectWorkCategoryBindingSchema=z.object({workspaceId:idSchema,projectId:idSchema,revision:revisionSchema,versionId:idSchema.nullable(),fieldId:idSchema.nullable(),availability:z.enum(['unbound','active','field_archived'])});
 export const updateProjectWorkCategoryBindingInputSchema=z.strictObject({expectedRevision:revisionSchema,fieldId:idSchema.nullable()});
-export const categorizedWorkLogSchema=manualPeriodWorkLogSchema.extend({category:workCategorySnapshotSchema});
+export const categorizedManualWorkLogSchema=manualPeriodWorkLogSchema.extend({category:workCategorySnapshotSchema});
+export const categorizedWorkLogSchema=z.discriminatedUnion('sourceKind',[categorizedManualWorkLogSchema,attendanceWorkLogSchema.extend({category:workCategorySnapshotSchema})]);
 export const recategorizeWorkLogInputSchema=z.strictObject({expectedWorkLogRevision:revisionSchema,expectedBindingRevision:revisionSchema,optionId:idSchema.nullable(),reason:z.string().trim().min(1).max(1000)});
 export const createWorkTypeReportRunInputSchema=z.strictObject({periodId:idSchema,membershipIds:uniqueIds.default([])});
 export const workTypeReportRunListQuerySchema=planningPageQuerySchema.extend({periodId:idSchema});
@@ -35,7 +37,7 @@ export const taskTimeSummaryQuerySchema=z.strictObject({
  }),membershipId:idSchema.optional(),
 });
 export const taskTimeSummaryInputSchema=z.strictObject({taskIds:z.array(idSchema).min(1).max(100).refine(ids=>new Set(ids).size===ids.length,'Duplicate task IDs.').transform(ids=>[...ids].sort()),membershipId:idSchema.optional()});
-export const taskTimeRowSchema=z.object({taskId:idSchema,workPackageId:idSchema,currentAllocationMinutes:amount.nullable(),ownManualWork:categorizedWorkLogSchema.nullable(),subjectActualMinutes:amount,taskActualMinutes:amount,subjectActiveSourceCount:amount,taskActiveSourceCount:amount,hasOtherSources:z.boolean()});
+export const taskTimeRowSchema=z.object({taskId:idSchema,workPackageId:idSchema,meetingId:idSchema.nullable().optional(),currentAllocationMinutes:amount.nullable(),ownManualWork:categorizedManualWorkLogSchema.nullable(),subjectActualMinutes:amount,taskActualMinutes:amount,subjectActiveSourceCount:amount,taskActiveSourceCount:amount,hasOtherSources:z.boolean()});
 export const packageTimeRowSchema=z.object({workPackageId:idSchema,commitment:periodCommitmentSchema.nullable(),subjectActualMinutes:amount,totalActualMinutes:amount,subjectActiveSourceCount:amount,totalActiveSourceCount:amount});
 export const taskTimeSummarySchema=z.object({workspaceId:idSchema,projectId:idSchema,periodId:idSchema,subjectMembershipId:idSchema,asOfChangeSeq:z.string().regex(/^(0|[1-9][0-9]*)$/),tasks:z.array(taskTimeRowSchema).max(100),packages:z.array(packageTimeRowSchema).max(100)});
 
@@ -47,6 +49,7 @@ export const workTypeReportRowListResponseSchema=envelopeSchema(z.array(workType
 export const taskTimeSummaryResponseSchema=envelopeSchema(taskTimeSummarySchema);
 export type ProjectWorkCategoryBindingDto=z.infer<typeof projectWorkCategoryBindingSchema>;
 export type UpdateProjectWorkCategoryBindingInput=z.infer<typeof updateProjectWorkCategoryBindingInputSchema>;
+export type CategorizedManualWorkLogDto=z.infer<typeof categorizedManualWorkLogSchema>;
 export type CategorizedWorkLogDto=z.infer<typeof categorizedWorkLogSchema>;
 export type RecategorizeWorkLogInput=z.infer<typeof recategorizeWorkLogInputSchema>;
 export type CreateWorkTypeReportRunInput=z.infer<typeof createWorkTypeReportRunInputSchema>;

@@ -1,4 +1,8 @@
-import type { CategorizedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageTimeRowDto, PlanningPeriodDto, ProjectDto, TaskDto, WorkspaceDto } from '@workloom/contracts';
+import { fetchRecordedWork } from '../meetings/api';
+import type { MeetingSelection, MeetingTab } from '../meetings/useMeetingWorkspace';
+import { fetchTask } from '../tasks/api';
+import { RecordedWorkLabel } from '../../shared/RecordedWorkLabel';
+import type { CategorizedManualWorkLogDto, RecordedWorkLogDto, MembershipDto, PackageTimeRowDto, PlanningPeriodDto, ProjectDto, TaskDto, WorkspaceDto } from '@workloom/contracts';
 import { Button, inputClassName } from '@workloom/ui';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
@@ -6,7 +10,7 @@ import { isAccessDenied } from '../../lib/api';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
-import { CommitmentDialog, FactDialog, commitmentSession, factSession, fetchPlanningPeriod, fetchPeriodCommitments, fetchPeriodWorkLogs, sortPlanningPeriods, usePlanningCommands, usePlanningPackagesQuery, usePlanningPeriodQuery, usePlanningPeriodsQuery, type CommitmentSession, type FactSession } from '../planning';
+import { CommitmentDialog, FactDialog, commitmentSession, factSession, fetchPlanningPeriod, fetchPeriodCommitments,  sortPlanningPeriods, usePlanningCommands, usePlanningPackagesQuery, usePlanningPeriodQuery, usePlanningPeriodsQuery, type CommitmentSession, type FactSession } from '../planning';
 import { useTaskFieldsQuery } from '../fields';
 import { formatEstimate, type TaskTableCustomColumn } from '../task-table';
 import { fetchTaskTimeSummary, fetchWorkCategoryBinding } from './api';
@@ -14,8 +18,8 @@ import { CategoryBadge } from './CategoryBadge';
 import { RecategorizeDialog, recategorizeSession, type RecategorizeSession } from './RecategorizeDialog';
 import { useTaskTimeSummaryQuery, useWorkCategoryCommands } from './queries';
 
-interface Props { actorId: string; workspace: WorkspaceDto; project: ProjectDto; members: readonly MembershipDto[]; tasks: readonly TaskDto[]; hasMoreTasks: boolean; loadingMoreTasks: boolean; onLoadTasks: () => void; accessDenied: boolean }
-interface Breakdown { period: PlanningPeriodDto; task: TaskDto; workerId: string; packageRow: PackageTimeRowDto; logs: ManualPeriodWorkLogDto[] }
+interface Props { actorId: string; workspace: WorkspaceDto; project: ProjectDto; members: readonly MembershipDto[]; tasks: readonly TaskDto[]; hasMoreTasks: boolean; loadingMoreTasks: boolean; onLoadTasks: () => void; accessDenied: boolean; onOpenMeeting?:(taskId:string,tab:MeetingTab,selection?:MeetingSelection)=>void }
+interface Breakdown { period: PlanningPeriodDto; task: TaskDto; workerId: string; packageRow: PackageTimeRowDto; logs: RecordedWorkLogDto[] }
 
 /** Mounted once by ProjectContent, above row/filter/period lifetimes. No time mutation reads an ambient lens. */
 export function useTaskTimeTable(props: Props) {
@@ -78,12 +82,15 @@ export function useTaskTimeTable(props: Props) {
   const openPlan = (task: TaskDto) => void read(async () => {
     const fresh = await loadRow(task.id);
     if (!alive.current) return;
+    const marker=fresh.taskRow.meetingId===undefined?(await fetchTask(workspace.id,task.id)).meetingId:fresh.taskRow.meetingId;
+    if(marker===undefined)throw new Error('Task type unavailable');
+    if(marker){props.onOpenMeeting?.(task.id,'plan',{membershipId:workerId,requestedPeriodId:fresh.period.id});return;}
     const session = commitmentSession(fresh.period, fresh.packageRow.commitment, workerId);
     session.packageId = task.workPackageId;
     session.key = `plan:${fresh.period.id}:${task.workPackageId}:${workerId}`;
     setPlanDrafts((before) => ({ ...before, [session.key]: before[session.key] ?? session })); setPlanKey(session.key); setPlanOpen(true);
   });
-  const editFact = (freshPeriod: PlanningPeriodDto, log: CategorizedWorkLogDto | null, taskId: string, targetWorker: string) => {
+  const editFact = (freshPeriod: PlanningPeriodDto, log: CategorizedManualWorkLogDto | null, taskId: string, targetWorker: string) => {
     const session = factSession(freshPeriod, log, targetWorker, taskId);
     session.key = `fact:${freshPeriod.id}:${taskId}:${targetWorker}`;
     setFactDrafts((before) => ({ ...before, [session.key]: before[session.key] ?? session })); setFactKey(session.key); setFactOpen(true); setBreakdown(null);
@@ -91,17 +98,21 @@ export function useTaskTimeTable(props: Props) {
   const openFact = (task: TaskDto) => void read(async () => {
     const fresh = await loadRow(task.id);
     if (!alive.current) return;
+    const marker=fresh.taskRow.meetingId===undefined?(await fetchTask(workspace.id,task.id)).meetingId:fresh.taskRow.meetingId;
+    if(marker===undefined)throw new Error('Task type unavailable');
+    if(marker){props.onOpenMeeting?.(task.id,'attendance',{membershipId:workerId,requestedPeriodId:fresh.period.id});return;}
     if (fresh.taskRow.hasOtherSources) {
-      const logs = await fetchPeriodWorkLogs(workspace.id, fresh.period.id);
+      const logs = await fetchRecordedWork(workspace.id, fresh.period.id);
       if (alive.current) setBreakdown({ period: fresh.period, task, workerId, packageRow: fresh.packageRow, logs: logs.filter((log) => log.workPackageId === task.workPackageId) });
     } else editFact(fresh.period, fresh.taskRow.ownManualWork, task.id, workerId);
   });
   const openBreakdown = (task: TaskDto) => void read(async () => {
     const fresh = await loadRow(task.id);
-    const logs = await fetchPeriodWorkLogs(workspace.id, fresh.period.id);
+    const logs = await fetchRecordedWork(workspace.id, fresh.period.id);
     if (alive.current) setBreakdown({ period: fresh.period, task, workerId, packageRow: fresh.packageRow, logs: logs.filter((log) => log.workPackageId === task.workPackageId) });
   });
-  const editExistingLog = (log: ManualPeriodWorkLogDto, targetPeriod: PlanningPeriodDto) => void read(async () => {
+  const editExistingLog = (log: RecordedWorkLogDto, targetPeriod: PlanningPeriodDto) => void read(async () => {
+    if(log.sourceKind==='meeting_attendance'){setBreakdown(null);props.onOpenMeeting?.(log.taskId,'attendance',{membershipId:log.membershipId,attendanceId:log.attendanceId,requestedPeriodId:log.periodId});return;}
     const fresh = await loadRow(log.taskId, targetPeriod.id, log.membershipId);
     if (alive.current) editFact(fresh.period, fresh.taskRow.ownManualWork, log.taskId, log.membershipId);
   });
@@ -163,7 +174,7 @@ export function useTaskTimeTable(props: Props) {
     <FactDialog session={currentFact} open={factOpen && !denied} tasks={props.tasks} members={props.members} ownMembershipId={ownMembershipId} canWriteOthers={canWriteOthers} writable={writable} fixedContext contextNote={contextNote} mutation={commands.setFact} hasMoreTasks={false} loadingMoreTasks={false} onLoadTasks={() => undefined} onChange={(session) => setFactDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setFactOpen(false)} onSaved={(key) => { setFactDrafts((before) => Object.fromEntries(Object.entries(before).filter(([item]) => item !== key))); if (currentKeys.current.factKey === key) setFactOpen(false); }} onReload={async (session) => { const fresh = await loadRow(session.taskId, session.period.id, session.membershipId); return fresh.taskRow.ownManualWork; }} />
     <RecategorizeDialog session={currentCategory} open={categoryOpen && !denied} field={definitions.data?.find((field) => field.id === currentCategory?.binding.fieldId) ?? null} writable={writable && (canWriteOthers || currentCategory?.log.membershipId === ownMembershipId)} mutation={categoryCommands.recategorize} onChange={(session) => setCategoryDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setCategoryOpen(false)} onSaved={(key) => { setCategoryDrafts((before) => Object.fromEntries(Object.entries(before).filter(([item]) => item !== key))); if (currentKeys.current.categoryKey === key) setCategoryOpen(false); }} onReload={async (session) => { const [fresh, binding] = await Promise.all([loadRow(session.log.taskId, session.log.periodId, session.log.membershipId), fetchWorkCategoryBinding(workspace.id, project.id)]); if (!fresh.taskRow.ownManualWork) throw new Error('Work record unavailable'); return { log: fresh.taskRow.ownManualWork, binding }; }} />
     <DialogShell title="Из чего сложились часы" description={breakdown ? `${breakdown.task.title} · ${breakdown.period.name}. Итоги рассчитаны по всей доступной работе, включая незагруженные дочерние задачи.` : 'Состав недельных часов.'} open={breakdown !== null && !denied} onOpenChange={(next) => { if (!next) setBreakdown(null); }}>
-      {breakdown ? <div className="mt-5 space-y-4"><dl className="space-y-2 text-sm"><div><dt className="text-muted">Выбранный человек, вся работа</dt><dd className="font-semibold">{breakdown.packageRow.subjectActiveSourceCount ? formatEstimate(breakdown.packageRow.subjectActualMinutes) : 'Не внесено'}</dd></div><div><dt className="text-muted">Все люди, вся работа</dt><dd className="font-semibold">{breakdown.packageRow.totalActiveSourceCount ? formatEstimate(breakdown.packageRow.totalActualMinutes) : 'Не внесено'}</dd></div></dl><p className="text-xs text-muted">Эти суммы нельзя заменить одной ручной записью. Выберите конкретный источник ниже.</p>{breakdown.logs.map((log) => <div key={log.id} className="space-y-2 rounded-lg border border-line p-3 text-sm"><p className="font-medium">{props.tasks.find((task) => task.id === log.taskId)?.title ?? 'Задача этой записи'}</p><p className="text-xs text-muted">{props.members.find((member) => member.id === log.membershipId)?.displayName ?? 'Сохранённый участник'} · {formatEstimate(log.minutes)} · {log.state === 'void' ? 'отменено' : 'за неделю'}</p><CategoryBadge category={log.category} />{writable && (canWriteOthers || log.membershipId === ownMembershipId) ? <Button size="sm" disabled={opening} onClick={() => editExistingLog(log, breakdown.period)}>Изменить эту запись факта</Button> : null}</div>)}<Link to={`/w/${workspace.id}/projects/${project.id}/week?period=${breakdown.period.id}`} className="block rounded text-sm font-medium text-accent-ink">Открыть недельный план и отчёты</Link></div> : null}
+      {breakdown ? <div className="mt-5 space-y-4"><dl className="space-y-2 text-sm"><div><dt className="text-muted">Выбранный человек, вся работа</dt><dd className="font-semibold">{breakdown.packageRow.subjectActiveSourceCount ? formatEstimate(breakdown.packageRow.subjectActualMinutes) : 'Не внесено'}</dd></div><div><dt className="text-muted">Все люди, вся работа</dt><dd className="font-semibold">{breakdown.packageRow.totalActiveSourceCount ? formatEstimate(breakdown.packageRow.totalActualMinutes) : 'Не внесено'}</dd></div></dl><p className="text-xs text-muted">Эти суммы нельзя заменить одной ручной записью. Выберите конкретный источник ниже.</p>{breakdown.logs.map((log) => <div key={log.id} className="space-y-2 rounded-lg border border-line p-3 text-sm"><p className="font-medium">{props.tasks.find((task) => task.id === log.taskId)?.title ?? 'Задача этой записи'}</p><p className="text-xs text-muted">{props.members.find((member) => member.id === log.membershipId)?.displayName ?? 'Сохранённый участник'} · {formatEstimate(log.minutes)} · {log.state === 'void' ? 'отменено' : <RecordedWorkLabel log={log}/>}</p><CategoryBadge category={log.category} />{writable && (canWriteOthers || log.membershipId === ownMembershipId) ? <Button size="sm" disabled={opening} onClick={() => editExistingLog(log, breakdown.period)}>Изменить эту запись факта</Button> : null}</div>)}<Link to={`/w/${workspace.id}/projects/${project.id}/week?period=${breakdown.period.id}`} className="block rounded text-sm font-medium text-accent-ink">Открыть недельный план и отчёты</Link></div> : null}
     </DialogShell>
   </>;
   return { controls, columns, dialogs };

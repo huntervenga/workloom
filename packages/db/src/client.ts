@@ -4,6 +4,7 @@ import postgres from 'postgres';
 
 import { parseDatabaseUrl, type DatabaseUrlInfo } from './database-url.js';
 import {
+  meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
   auditEvents,
   planningPeriods,
   projectWorkCategoryBindings,
@@ -42,6 +43,7 @@ import {
 } from './schema.js';
 
 export const tables = {
+  meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
   planningPeriods,
   projectWorkCategoryBindings,
   projectWorkCategoryBindingVersions,

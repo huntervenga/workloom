@@ -19,7 +19,7 @@ describe('quick weekly table entry', () => {
     const { calls } = installFakeApi({ ...tableRoutes(), [`GET ${rootPath}/tasks`]: () => ok([task, otherTask]), [`GET ${rootPath}/planning-packages`]: () => ok([work, { ...work, id: otherTask.workPackageId, title: otherTask.title }]), [`GET ${rootPath}/projects/${PROJECT_ID}/periods/${PERIOD_A}/task-time-summary`]: (request) => {
       const result = projection(request.searchParams.get('membershipId') ?? MEMBER_ID);
       const ids = request.searchParams.get('taskIds')?.split(',') ?? [];
-      result.tasks = [task, otherTask].filter((item) => ids.includes(item.id)).map((item) => ({ taskId: item.id, workPackageId: item.workPackageId, currentAllocationMinutes: null, ownManualWork: null, subjectActualMinutes: 0, taskActualMinutes: 0, subjectActiveSourceCount: 0, taskActiveSourceCount: 0, hasOtherSources: false }));
+      result.tasks = [task, otherTask].filter((item) => ids.includes(item.id)).map((item) => ({ meetingId:null,taskId: item.id, workPackageId: item.workPackageId, currentAllocationMinutes: null, ownManualWork: null, subjectActualMinutes: 0, taskActualMinutes: 0, subjectActiveSourceCount: 0, taskActiveSourceCount: 0, hasOtherSources: false }));
       result.packages = result.tasks.map((item) => ({ workPackageId: item.workPackageId, commitment: null, subjectActualMinutes: 0, totalActualMinutes: 0, subjectActiveSourceCount: 0, totalActiveSourceCount: 0 }));
       return ok(result);
     }, [`POST ${rootPath}/periods/${PERIOD_A}/commitments`]: () => ++attempts === 1 ? gate.promise : created(commitment(180)) });

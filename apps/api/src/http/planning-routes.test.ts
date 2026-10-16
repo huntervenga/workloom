@@ -337,6 +337,29 @@ describe('P2a planning HTTP adapter', () => {
     expect(rows.json().data[0].workLogs[0].precision).toBe('period');
   });
 
+  it('accepts attendance-source weekly report rows while legacy manual reads stay manual', async () => {
+    const attendance = contracts.attendanceWorkLogSchema.parse({ ...workLog, sourceKind: 'meeting_attendance', precision: 'occurrence', sourceKey: '5eed0000-0000-4000-8000-000000000802',
+      meetingId: '5eed0000-0000-4000-8000-000000000801', attendanceId: '5eed0000-0000-4000-8000-000000000802', confirmedMeetingRevision: 3,
+      attribution: { basis: 'actual_meeting', plannedStartAt: TS, actualStartAt: TS } });
+    overrides.set('listReportRows', () => ({ items: [{ ...reportRow, workLogs: [attendance] }], nextCursor: null }));
+    const rows = await app.inject({ url: `${BASE}/report-runs/${ids.run}/rows`, headers: headers() });
+    expect(rows.statusCode).toBe(200);
+    expect(rows.json().data[0].workLogs[0]).toEqual(attendance);
+    const manual = await app.inject({ url: `${BASE}/worklogs?periodId=${ids.period}`, headers: headers() });
+    expect(manual.statusCode).toBe(200);
+    expect(manual.json().data).toEqual([workLog]);
+  });
+
+  it('propagates the shared meeting manual-write guard without redirecting or changing old inputs', async () => {
+    overrides.set('setManualPeriodWork', () => { throw new DomainError('DOMAIN_VALIDATION_FAILED', 'Use the attendance source for this meeting.'); });
+    const response = await app.inject({ method: 'PUT', url: BASE + manualPath, headers: headers(), payload: { expectedRevision: null, minutes: 0 } });
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).not.toHaveProperty('data');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args).toEqual([ids.task, ids.period, ids.membership, { expectedRevision: null, minutes: 0, state: 'active', reason: null }]);
+    expect(calls[0]?.ctx.idempotencyKey).toBe(KEY);
+  });
+
   it('redacts unexpected failures and rejects invalid service output', async () => {
     overrides.set('getPeriod', () => { throw new Error('select secret sql password=never-return'); });
     const failed = await app.inject({ url: `${BASE}/periods/${ids.period}`, headers: headers() });

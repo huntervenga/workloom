@@ -102,6 +102,7 @@ export interface TaskRepository {
    * (active and inactive) and tag DTOs.
    */
   findTask(workspaceId: string, taskId: string): Promise<TaskDto | null>;
+  findTasksByIds(workspaceId:string,taskIds:readonly string[]):Promise<TaskDto[]>;
   /**
    * Tasks matching `input`, in stable `(position, id)` order strictly after `after`.
    * Returns at most `take` rows; the domain passes page size + 1 to detect a next page.

@@ -88,3 +88,7 @@ export type { WorkCategoryRepository, WorkCategoryBindingRecord, WorkCategoryBin
 export { legacyWorkCategory, canonicalWorkCategory, readWorkCategoryBinding, createWorkCategoryResolver } from './categories/resolver.js';
 export type { PlanningApplicationWriteScope } from './planning/ports.js';
 export { createWorkCategoryApplication, workTypeBuckets } from './categories/service.js';
+
+export * from './meetings/application.js';
+export * from './meetings/ports.js';
+export {createMeetingApplication,meetingLocalDate,requireMeetingPeriod} from './meetings/service.js';

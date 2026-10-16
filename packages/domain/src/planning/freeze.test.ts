@@ -21,7 +21,7 @@ const tools:PlanningTools={newId:()=>id(99),digest:value=>value,encodeCursor:()=
 
 // These doubles exercise pure source-selection/guard decisions; real PG tests own atomicity/races.
 function repository(overrides:Partial<PlanningRepository>={}):PlanningRepository {
-  return {captureProject:async()=>clone(sources),listCommitments:async()=>[first,second],listBaselines:async()=>[],listPeriods:async()=>[],listLocks:async()=>[],tasks:{permissionEpoch:async()=>'0',findTask:async()=>task},...overrides} as unknown as PlanningRepository;
+  return {listMeetings:async()=>[],listAttendance:async()=>[],listMeetingLocks:async()=>[],findMeetingByTask:async()=>null,captureProject:async()=>clone(sources),listCommitments:async()=>[first,second],listBaselines:async()=>[],listPeriods:async()=>[],listLocks:async()=>[],tasks:{permissionEpoch:async()=>'0',findTask:async()=>task},...overrides} as unknown as PlanningRepository;
 }
 
 describe('planning immutable source selection',()=>{

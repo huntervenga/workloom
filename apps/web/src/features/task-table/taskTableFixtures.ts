@@ -26,6 +26,7 @@ export function makeTask(overrides: Partial<TaskDto> & Pick<TaskDto, 'id'>): Tas
     estimateMinutes: null,
     revision: 1,
     position: 0,
+    meetingId: null,
     visibility: 'workspace',
     archivedAt: null,
     createdAt: CREATED,

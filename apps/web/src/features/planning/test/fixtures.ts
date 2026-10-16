@@ -14,7 +14,7 @@ export const MEMBER_ID = 'c0000000-0000-4000-8000-000000000001';
 export const STAMP = '2026-10-19T09:00:00.000Z';
 export const rootPath = `/api/v1/workspaces/${alpha.id}`;
 export const weekPath = `/w/${alpha.id}/projects/${PROJECT_ID}/week`;
-export const task: TaskDto = { id: TASK_ID, workspaceId: alpha.id, projectId: PROJECT_ID, sectionId: null, parentTaskId: null, workPackageId: PACKAGE_ID, workPackageRevision: 1, title: 'Исследовать недельный сценарий', description: '', statusId: 'f6000000-0000-4000-8000-000000000001', responsibleMembershipId: MEMBER_ID, participants: [], participantsRevision: 1, dueDate: null, priority: 'none', tags: [], estimateMinutes: 1200, revision: 1, position: 0, visibility: 'workspace', archivedAt: null, createdAt: STAMP, updatedAt: STAMP };
+export const task: TaskDto = { meetingId:null, id: TASK_ID, workspaceId: alpha.id, projectId: PROJECT_ID, sectionId: null, parentTaskId: null, workPackageId: PACKAGE_ID, workPackageRevision: 1, title: 'Исследовать недельный сценарий', description: '', statusId: 'f6000000-0000-4000-8000-000000000001', responsibleMembershipId: MEMBER_ID, participants: [], participantsRevision: 1, dueDate: null, priority: 'none', tags: [], estimateMinutes: 1200, revision: 1, position: 0, visibility: 'workspace', archivedAt: null, createdAt: STAMP, updatedAt: STAMP };
 export const work: PlanningPackageDto = { id: PACKAGE_ID, projectId: PROJECT_ID, revision: 1, estimateMinutes: 1200, createdAt: STAMP, packageBaselineId: null, title: task.title };
 export function period(id = PERIOD_A): PlanningPeriodDto { return { id, workspaceId: alpha.id, projectId: PROJECT_ID, name: id === PERIOD_A ? 'Неделя А' : 'Неделя Б', localStart: id === PERIOD_A ? '2026-10-19' : '2026-10-26', localEndExclusive: id === PERIOD_A ? '2026-10-26' : '2026-11-02', timezone: alpha.timezone, cutoffAt: '2026-10-19T12:00:00.000Z', state: 'planning', revision: 1, protectedFieldIds: [], protectEstimate: true, projectBaselineId: null, createdAt: STAMP, updatedAt: STAMP }; }
 export function commitment(plannedMinutes = 360): PeriodCommitmentDto { return { id: COMMITMENT_ID, workspaceId: alpha.id, projectId: PROJECT_ID, periodId: PERIOD_A, workPackageId: PACKAGE_ID, membershipId: MEMBER_ID, plannedMinutes, allocations: [], unallocatedMinutes: plannedMinutes, state: 'active', revision: 1, classification: 'planned', baselineIds: [], createdAt: STAMP, updatedAt: STAMP }; }
@@ -36,6 +36,8 @@ export function routes(): RouteTable {
     for (const suffix of ['commitments', 'baselines']) result[`GET ${rootPath}/periods/${id}/${suffix}`] = () => ok([]);
   }
   result[`GET ${rootPath}/worklogs`] = () => ok([]);
+  result[`GET ${rootPath}/recorded-work`] = () => ok([]);
+  result[`GET ${rootPath}/projects/${PROJECT_ID}/meetings`] = () => ok([]);
   result[`GET ${rootPath}/report-runs`] = () => ok([]);
   return result;
 }

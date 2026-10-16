@@ -3,7 +3,7 @@
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
  * produce no diff). Immutability triggers live only in SQL.
  */
-import type { TaskFieldData, TaskFieldDefinitionDto, PlanningSnapshotDto, PeriodCommitmentDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto, WorkCategorySnapshot, WorkTypeReportRunDto, WorkTypeReportRowDto } from '@workloom/contracts';
+import type { MeetingDto, AttendanceDto, AttendanceHistoryDto, AttendanceAttribution, TaskFieldData, TaskFieldDefinitionDto, PlanningSnapshotDto, PeriodCommitmentDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto, WorkCategorySnapshot, WorkTypeReportRunDto, WorkTypeReportRowDto } from '@workloom/contracts';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
@@ -803,6 +803,7 @@ export const taskFieldValueHistory = pgTable(
 
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
   'users',
   'workspaces',
   'memberships',
@@ -943,25 +944,52 @@ export const planningLocks = pgTable('planning_locks',{
   uniqueIndex('planning_locks_commitment_unique').on(t.workspaceId,t.baselineId,t.commitmentId).where(sql`kind = 'commitment'`),
   check('planning_locks_shape',sql`(kind = 'estimate' and work_package_id is not null and task_id is null and field_id is null and commitment_id is null) or (kind = 'custom_value' and task_id is not null and field_id is not null and work_package_id is null and commitment_id is null) or (kind = 'commitment' and commitment_id is not null and work_package_id is null and task_id is null and field_id is null)`),
 ]);
+export const meetings=pgTable('meetings',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),taskId:uuid('task_id').notNull(),workPackageId:uuid('work_package_id').notNull(),plannedPeriodId:uuid('planned_period_id').notNull(),revision:integer('revision').notNull(),document:jsonb('document').$type<MeetingDto>().notNull(),
+},t=>[
+ unique('meetings_workspace_id_unique').on(t.workspaceId,t.id),unique('meetings_project_id_unique').on(t.workspaceId,t.projectId,t.id),unique('meetings_task_unique').on(t.workspaceId,t.taskId),unique('meetings_package_unique').on(t.workspaceId,t.workPackageId),unique('meetings_source_unique').on(t.workspaceId,t.id,t.taskId,t.plannedPeriodId),
+ foreignKey({name:'meetings_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+ foreignKey({name:'meetings_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
+ foreignKey({name:'meetings_period_fk',columns:[t.workspaceId,t.projectId,t.plannedPeriodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
+ check('meetings_document_identity',sql`(document ?& array['id','workspaceId','projectId','taskId','workPackageId','plannedPeriodId','revision'] and document->>'id'=id::text and document->>'workspaceId'=workspace_id::text and document->>'projectId'=project_id::text and document->>'taskId'=task_id::text and document->>'workPackageId'=work_package_id::text and document->>'plannedPeriodId'=planned_period_id::text and (document->>'revision')::integer=revision and revision>=1) is true`),
+]);
+export const meetingRevisions=pgTable('meeting_revisions',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),meetingId:uuid('meeting_id').notNull(),revision:integer('revision').notNull(),document:jsonb('document').$type<MeetingDto>().notNull(),actorUserId:uuid('actor_user_id').notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+},t=>[unique('meeting_revisions_source_unique').on(t.workspaceId,t.meetingId,t.revision),foreignKey({name:'meeting_revisions_meeting_fk',columns:[t.workspaceId,t.meetingId],foreignColumns:[meetings.workspaceId,meetings.id]}),foreignKey({name:'meeting_revisions_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),check('meeting_revisions_document_identity',sql`(document->>'id'=meeting_id::text and document->>'workspaceId'=workspace_id::text and (document->>'revision')::integer=revision and revision>=1 and change_seq>=1) is true`)]);
+export const meetingAttendances=pgTable('meeting_attendances',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),meetingId:uuid('meeting_id').notNull(),taskId:uuid('task_id').notNull(),membershipId:uuid('membership_id').notNull(),revision:integer('revision').notNull(),document:jsonb('document').$type<AttendanceDto>().notNull(),
+},t=>[unique('meeting_attendances_workspace_id_unique').on(t.workspaceId,t.id),unique('meeting_attendances_member_unique').on(t.workspaceId,t.meetingId,t.membershipId),unique('meeting_attendances_source_unique').on(t.workspaceId,t.meetingId,t.taskId,t.membershipId,t.id),
+ foreignKey({name:'meeting_attendances_meeting_fk',columns:[t.workspaceId,t.projectId,t.meetingId],foreignColumns:[meetings.workspaceId,meetings.projectId,meetings.id]}),foreignKey({name:'meeting_attendances_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),foreignKey({name:'meeting_attendances_member_fk',columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),
+ check('meeting_attendances_document_identity',sql`(document ?& array['id','workspaceId','meetingId','taskId','membershipId','revision','rosterActive','status','postingState'] and document->>'id'=id::text and document->>'workspaceId'=workspace_id::text and document->>'meetingId'=meeting_id::text and document->>'taskId'=task_id::text and document->>'membershipId'=membership_id::text and (document->>'revision')::integer=revision and revision>=1 and jsonb_typeof(document->'rosterActive')='boolean' and document->>'status' in ('unknown','present','partial','absent') and document->>'postingState' in ('unconfirmed','active','void')) is true`),
+]);
+export const meetingAttendanceRevisions=pgTable('meeting_attendance_revisions',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),attendanceId:uuid('attendance_id').notNull(),revision:integer('revision').notNull(),document:jsonb('document').$type<AttendanceHistoryDto>().notNull(),
+},t=>[unique('meeting_attendance_revisions_source_unique').on(t.workspaceId,t.attendanceId,t.revision),foreignKey({name:'meeting_attendance_revisions_attendance_fk',columns:[t.workspaceId,t.attendanceId],foreignColumns:[meetingAttendances.workspaceId,meetingAttendances.id]}),check('meeting_attendance_revisions_document_identity',sql`(document->>'id'=id::text and document->>'attendanceId'=attendance_id::text and (document->>'revision')::integer=revision and revision>=1) is true`)]);
+export const meetingScheduleLocks=pgTable('meeting_schedule_locks',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),meetingId:uuid('meeting_id').notNull(),baselineId:uuid('baseline_id').notNull(),
+},t=>[unique('meeting_schedule_locks_baseline_unique').on(t.workspaceId,t.meetingId,t.baselineId),foreignKey({name:'meeting_schedule_locks_meeting_fk',columns:[t.workspaceId,t.meetingId],foreignColumns:[meetings.workspaceId,meetings.id]}),foreignKey({name:'meeting_schedule_locks_baseline_fk',columns:[t.workspaceId,t.baselineId],foreignColumns:[planBaselines.workspaceId,planBaselines.id]})]);
 export const workLogs = pgTable('work_logs',{
   id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),taskId:uuid('task_id').notNull(),workPackageId:uuid('work_package_id').notNull(),
   membershipId:uuid('membership_id').notNull(),periodId:uuid('period_id').notNull(),sourceKind:text('source_kind').notNull().default('manual_period'),sourceKey:text('source_key').notNull(),
-  revision:integer('revision').notNull(),revisionId:uuid('revision_id').notNull(),
+  revision:integer('revision').notNull(),revisionId:uuid('revision_id').notNull(),meetingId:uuid('meeting_id'),attendanceId:uuid('attendance_id'),
 },t=>[
   unique('work_logs_project_id_unique').on(t.workspaceId,t.id,t.projectId),
-  unique('work_logs_workspace_id_unique').on(t.workspaceId,t.id),unique('work_logs_manual_source_unique').on(t.workspaceId,t.taskId,t.membershipId,t.periodId),
+  unique('work_logs_workspace_id_unique').on(t.workspaceId,t.id),uniqueIndex('work_logs_manual_source_unique').on(t.workspaceId,t.taskId,t.membershipId,t.periodId).where(sql`source_kind = 'manual_period'`),
   unique('work_logs_source_key_unique').on(t.workspaceId,t.sourceKind,t.sourceKey),
   foreignKey({name:'work_logs_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
   foreignKey({name:'work_logs_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
   foreignKey({name:'work_logs_period_fk',columns:[t.workspaceId,t.projectId,t.periodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
   foreignKey({name:'work_logs_member_fk',columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),
-  check('work_logs_source_identity',sql`source_kind = 'manual_period' and source_key = task_id::text || ':' || membership_id::text || ':' || period_id::text`),
+  foreignKey({name:'work_logs_meeting_fk',columns:[t.workspaceId,t.meetingId,t.taskId,t.periodId],foreignColumns:[meetings.workspaceId,meetings.id,meetings.taskId,meetings.plannedPeriodId]}),
+  foreignKey({name:'work_logs_attendance_fk',columns:[t.workspaceId,t.meetingId,t.taskId,t.membershipId,t.attendanceId],foreignColumns:[meetingAttendances.workspaceId,meetingAttendances.meetingId,meetingAttendances.taskId,meetingAttendances.membershipId,meetingAttendances.id]}),
+  check('work_logs_source_identity',sql`((source_kind = 'manual_period' and meeting_id is null and attendance_id is null and source_key = task_id::text || ':' || membership_id::text || ':' || period_id::text) or (source_kind='meeting_attendance' and meeting_id is not null and attendance_id is not null and source_key=attendance_id::text)) is true`),
   check('work_logs_revision',sql`revision >= 1`),
 ]);
 export const workLogRevisions = pgTable('work_log_revisions',{
   id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),workLogId:uuid('work_log_id').notNull(),revision:integer('revision').notNull(),
   minutes:integer('minutes').notNull(),state:workLogStateEnum('state').notNull(),reason:text('reason'),actorUserId:uuid('actor_user_id').notNull(),
   recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+  meetingId:uuid('meeting_id'),attendanceId:uuid('attendance_id'),confirmedMeetingRevision:integer('confirmed_meeting_revision'),attribution:jsonb('attribution').$type<AttendanceAttribution>(),
   category:jsonb('category').$type<WorkCategorySnapshot>(),categoryProjectId:uuid('category_project_id'),categoryBindingVersionId:uuid('category_binding_version_id'),categoryBindingRevision:integer('category_binding_revision'),categoryFieldId:uuid('category_field_id'),categoryDefinitionVersionId:uuid('category_definition_version_id'),categoryOptionId:uuid('category_option_id'),categoryOptionRevision:integer('category_option_revision'),
 },t=>[
   unique('work_log_revisions_workspace_id_unique').on(t.workspaceId,t.id),unique('work_log_revisions_source_unique').on(t.workspaceId,t.workLogId,t.revision),
@@ -983,6 +1011,8 @@ export const workLogRevisions = pgTable('work_log_revisions',{
        and (category->>'bindingVersionId') is not distinct from category_binding_version_id::text and (category->>'bindingRevision') is not distinct from category_binding_revision::text and (category->>'fieldId') is not distinct from category_field_id::text
        and category_definition_version_id is null and category_option_id is null and category_option_revision is null)
     ))) is true`),
+  foreignKey({name:'work_log_revisions_meeting_version_fk',columns:[t.workspaceId,t.meetingId,t.confirmedMeetingRevision],foreignColumns:[meetingRevisions.workspaceId,meetingRevisions.meetingId,meetingRevisions.revision]}),
+  check('work_log_revisions_occurrence_shape',sql`((meeting_id is null and attendance_id is null and confirmed_meeting_revision is null and attribution is null) or (meeting_id is not null and attendance_id is not null and confirmed_meeting_revision>=1 and attribution ?& array['basis','plannedStartAt','actualStartAt'] and jsonb_typeof(attribution->'plannedStartAt')='string' and ((attribution->>'basis'='actual_meeting' and jsonb_typeof(attribution->'actualStartAt')='string') or (attribution->>'basis'='planned_absence' and attribution->'actualStartAt'='null'::jsonb and minutes=0)))) is true`),
   check('work_log_revisions_values',sql`minutes >= 0 and revision >= 1 and change_seq >= 1`),
   check('work_log_revisions_reason',sql`((revision = 1 and state = 'active') or char_length(btrim(reason)) between 1 and 1000) is true`),
 ]);

@@ -36,6 +36,13 @@
       "when": 1792111838483,
       "tag": "0004_p2b_work_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792116122651,
+      "tag": "0005_p3a_meetings",
+      "breakpoints": true
     }
   ]
 }

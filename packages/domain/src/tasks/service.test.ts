@@ -135,6 +135,7 @@ function harness() {
     findWorkPackage: async (ws, id) => scoped(db.state.packages.get(id), ws),
     insertWorkPackage: async (row) => void db.state.packages.set(row.id, row),
     saveWorkPackage: async (row) => void db.state.packages.set(row.id, row),
+    async findTasksByIds(ws,ids) {return [...db.state.tasks.values()].filter(t=>t.workspaceId===ws&&ids.includes(t.id)).map(project);},
     async findTask(ws, id) {
       const row = scoped(db.state.tasks.get(id), ws);
       return row === null ? null : project(row);

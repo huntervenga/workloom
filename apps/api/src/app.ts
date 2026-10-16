@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import {
   createAccessRepository,
   createDatabase,
+  createMeetingApplication,
   createPlanningApplication,
   createReadinessProbe,
   createTaskApplication,
@@ -14,7 +15,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { AccessRepository, PlanningApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { AccessRepository, MeetingApplication, PlanningApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
@@ -23,6 +24,7 @@ import { createDevIdentityAdapter, type IdentityAdapter } from './identity/ident
 import { mapError } from './http/errors.js';
 import { registerCategoryRoutes } from './http/category-routes.js';
 import { registerFieldRoutes } from './http/field-routes.js';
+import { registerMeetingRoutes } from './http/meeting-routes.js';
 import { registerPlanningRoutes } from './http/planning-routes.js';
 import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from './http/request-guards.js';
 import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './http/routes.js';
@@ -50,6 +52,8 @@ export interface AppDependencies {
   readonly planningApplication?: PlanningApplication;
   /** Category binding, reasoned recategorization and work-type reporting; same existing pool. */
   readonly workCategoryApplication?: WorkCategoryApplication;
+  /** Shared dated-meeting service; current ACL and attendance guards stay in domain. */
+  readonly meetingApplication?: MeetingApplication;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
   /** Web dist directory; null disables static serving. Default: apps/web/dist when config.serveWeb. */
@@ -84,6 +88,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.planningApplication ?? (database === undefined ? undefined : createPlanningApplication(database));
   const workCategoryApplication =
     dependencies.workCategoryApplication ?? (database === undefined ? undefined : createWorkCategoryApplication(database));
+  const meetingApplication =
+    dependencies.meetingApplication ?? (database === undefined ? undefined : createMeetingApplication(database));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
   const identity =
     dependencies.identityAdapter ??
@@ -175,6 +181,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   if (workCategoryApplication !== undefined) {
     registerCategoryRoutes(app, { identity, categories: workCategoryApplication });
+  }
+  if (meetingApplication !== undefined) {
+    registerMeetingRoutes(app, { identity, meetings: meetingApplication });
   }
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);

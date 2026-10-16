@@ -4,6 +4,7 @@ import { ApiError } from '../../lib/api';
 import { isUuid } from '../../lib/format';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
+import { meetingKeys } from '../meetings/queries';
 import { planningKeys } from '../planning';
 import { createWorkTypeReportRequest, fetchTaskTimeSummary, fetchWorkCategoryBinding, fetchWorkTypeReport, fetchWorkTypeReportRows, fetchWorkTypeReportRuns, recategorizeWorkLogRequest, taskTimeChunks, updateWorkCategoryBindingRequest } from './api';
 
@@ -45,7 +46,7 @@ export function mergeTaskTimeSummaries(summaries: readonly TaskTimeSummaryDto[])
     const sequence = BigInt(summary.asOfChangeSeq);
     for (const row of summary.tasks) {
       const cached = tasks.get(row.taskId);
-      if (!cached || cached.sequence < sequence) tasks.set(row.taskId, { sequence, row });
+      if (!cached || cached.sequence < sequence) tasks.set(row.taskId, { sequence, row:row.meetingId===undefined&&cached?.row.meetingId!==undefined?{...row,meetingId:cached.row.meetingId}:row });
       else if (cached.sequence === sequence && JSON.stringify(cached.row) !== JSON.stringify(row)) throw new ApiError({ kind: 'invalid_response', status: 200 });
     }
     for (const row of summary.packages) {
@@ -93,6 +94,8 @@ export function useWorkCategoryCommands(actorId: string, workspaceId: string, pr
   const recategorize = useIdempotentMutation({
     prepare: ({ workLogId, input }: RecategorizeVariables) => recategorizeWorkLogRequest(workspaceId, workLogId, input),
     onSuccess: (log) => {
+      void client.invalidateQueries({queryKey:meetingKeys.recorded(actorId,workspaceId,log.periodId),exact:true});
+      if(log.sourceKind==='meeting_attendance')void client.invalidateQueries({queryKey:meetingKeys.attendance(actorId,workspaceId,log.taskId)});
       void client.invalidateQueries({ queryKey: planningKeys.worklogs(actorId, workspaceId, log.periodId), exact: true });
       void client.invalidateQueries({ queryKey: queryKeys.timeSummaries(actorId, workspaceId) });
     },

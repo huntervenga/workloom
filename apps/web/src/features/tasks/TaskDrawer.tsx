@@ -1,3 +1,5 @@
+import { MeetingDrawer } from '../meetings/MeetingDrawer';
+import type { MeetingTab, MeetingWorkspace } from '../meetings/useMeetingWorkspace';
 import type {
   MembershipDto,
   ProjectDto,
@@ -46,6 +48,12 @@ import {
 } from './useTaskCommands';
 
 export interface TaskDrawerProps {
+  meetingController?: MeetingWorkspace;
+  meetingTab?: MeetingTab;
+  meetingRequestedPeriodId?:string|undefined;
+  onAcceptMeetingPeriod?:((id:string)=>void)|undefined;
+  meetingMembershipId?: string|undefined;
+  meetingAttendanceId?: string|undefined;
   actorId: string;
   workspace: WorkspaceDto;
   project: ProjectDto;
@@ -118,6 +126,8 @@ export function TaskDrawer(props: TaskDrawerProps) {
       ? `Проект «${project.name}». Задачу видят все участники пространства.`
       : `Проект «${project.name}». Новую задачу увидят все участники пространства.`;
 
+  if(shown?.meetingId && props.meetingController) return <MeetingDrawer controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab??'meeting'} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
+  if(shown && shown.meetingId===undefined) return <DialogShell variant="drawer" title="Тип задачи уточняется" description="Для безопасного редактирования нужна актуальная информация сервера." open={open} onOpenChange={next=>{if(!next)onClose();}}><div className="mt-4 space-y-3"><p className="text-sm text-muted">Сохранённый ответ не содержит тип задачи. Обновите её перед изменением.</p><Button onClick={()=>void detail.refetch()}>Обновить тип задачи</Button></div></DialogShell>;
   return (
     <DialogShell
       variant="drawer"

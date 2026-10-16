@@ -2,7 +2,9 @@ import { z } from 'zod';
 
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
-import { workCategorySnapshotSchema } from './common/work-category.js';
+import {manualPeriodWorkLogSchema,recordedWorkLogSchema} from './common/recorded-work.js';
+import {meetingSnapshotSchema} from './common/meeting.js';
+export {manualPeriodWorkLogSchema} from './common/recorded-work.js';
 import { taskFieldDefinitionSchema, taskFieldValueSchema } from './fields.js';
 import { calendarDateSchema, minutesSchema, revisionSchema, taskSchema, utcTimestampSchema } from './tasks.js';
 import { membershipSchema } from './workspaces.js';
@@ -93,6 +95,8 @@ export const planningSnapshotSchema = z.object({
   tasks: z.array(taskSchema), memberships: z.array(membershipSchema),
   fieldDefinitions: z.array(taskFieldDefinitionSchema), fieldValues: z.array(snapshotFieldValueSchema),
   sourcePersonalBaselineIds: z.array(idSchema),
+  /** Optional without default: historical pinned JSON remains unchanged. */
+  meetings:z.array(meetingSnapshotSchema).optional(),
 });
 export const freezeScopeSchema = z.enum(['self', 'project']);
 export const freezePreviewInputSchema = z.strictObject({ scope: freezeScopeSchema });
@@ -112,17 +116,6 @@ export const planBaselineSchema = z.object({
   changeSeq: z.string().regex(/^[1-9][0-9]*$/), snapshot: planningSnapshotSchema,
 });
 
-export const manualPeriodWorkLogSchema = z.object({
-  id: idSchema, workspaceId: idSchema, projectId: idSchema,
-  taskId: idSchema, workPackageId: idSchema, membershipId: idSchema, periodId: idSchema,
-  sourceKind: z.literal('manual_period'), sourceKey: z.string(),
-  precision: z.literal('period'), revision: revisionSchema, revisionId: idSchema,
-  minutes: minutesSchema, state: z.enum(['active', 'void']), reason: reasonSchema.nullable(),
-  actorUserId: idSchema, recordedAt: utcTimestampSchema,
-  changeSeq: z.string().regex(/^[1-9][0-9]*$/),
-  /** Optional without a default: historical stored responses must replay unchanged. */
-  category: workCategorySnapshotSchema.optional(),
-});
 export const setManualPeriodWorkInputSchema = z.strictObject({
   expectedRevision: revisionSchema.nullable(), minutes: minutesSchema,
   state: z.enum(['active', 'void']).default('active'), reason: reasonSchema.nullable().optional().default(null),
@@ -152,7 +145,7 @@ export const weeklyPlanFactRowSchema = z.object({
   factRecorded: z.boolean(), varianceMinutes: z.number().int().nullable(),
   /** Immutable original package-baseline estimate, never the current mutable estimate. */
   packageEstimateMinutes: minutesSchema.nullable(), packageBaselineId: idSchema.nullable(),
-  taskIds: z.array(idSchema), workLogs: z.array(manualPeriodWorkLogSchema),
+  taskIds: z.array(idSchema), workLogs: z.array(recordedWorkLogSchema),
 });
 export const weeklyPlanFactReportRunSchema = z.object({
   id: idSchema, workspaceId: idSchema, projectId: idSchema, periodId: idSchema,

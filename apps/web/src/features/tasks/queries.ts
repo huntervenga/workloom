@@ -145,6 +145,7 @@ export function invalidateTask(queryClient: QueryClient, actorId: string, worksp
  * revision while a colleague has since changed the shared package or the participants.
  */
 export function taskWouldRegress(cached: TaskDto, next: TaskDto): boolean {
+  if (cached.meetingId !== undefined && next.meetingId === undefined) return true;
   if (next.revision < cached.revision) return true;
   if (next.participantsRevision < cached.participantsRevision) return true;
   return next.workPackageId === cached.workPackageId && next.workPackageRevision < cached.workPackageRevision;

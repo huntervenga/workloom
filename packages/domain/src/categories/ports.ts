@@ -1,4 +1,4 @@
-import type {CategorizedWorkLogDto,ManualPeriodWorkLogDto,ProjectWorkCategoryBindingDto,WorkCategorySnapshot,WorkTypeReportRunDto,WorkTypeReportRowDto} from '@workloom/contracts';
+import type {CategorizedWorkLogDto,RecordedWorkLogDto,ProjectWorkCategoryBindingDto,WorkCategorySnapshot,WorkTypeReportRunDto,WorkTypeReportRowDto} from '@workloom/contracts';
 import type {Capability} from '../access/capabilities.js';
 import type {CommandContext} from '../access/context.js';
 import type {PlanningCursor,PlanningRepository,PlanningTools,PlanningWriteScope} from '../planning/ports.js';
@@ -10,7 +10,7 @@ export interface WorkCategoryRepository {
  findBinding(workspaceId:string,projectId:string):Promise<WorkCategoryBindingRecord|null>;
  saveBinding(row:WorkCategoryBindingRecord,exists:boolean):Promise<void>;
  insertBindingVersion(row:WorkCategoryBindingVersion):Promise<void>;
- findWorkLog(workspaceId:string,id:string):Promise<ManualPeriodWorkLogDto|null>;
+ findWorkLog(workspaceId:string,id:string):Promise<RecordedWorkLogDto|null>;
  listReportRuns(workspaceId:string,periodId:string):Promise<WorkTypeReportRunDto[]>;
  findReportRun(workspaceId:string,id:string):Promise<{run:WorkTypeReportRunDto;rows:WorkTypeReportRowDto[]}|null>;
  insertReportRun(run:WorkTypeReportRunDto,rows:WorkTypeReportRowDto[]):Promise<void>;

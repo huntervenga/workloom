@@ -7,3 +7,5 @@ export * from './workspaces.js';
 export * from './planning.js';
 export * from './common/work-category.js';
 export * from './categories.js';
+export * from './common/recorded-work.js';
+export * from './meetings.js';

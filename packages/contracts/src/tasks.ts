@@ -155,6 +155,8 @@ export const taskParticipantSchema = z.object({
 
 export const taskSchema = z.object({
   id: idSchema,
+  /** Optional without default on old cached responses; fresh reads return canonical identity. */
+  meetingId: idSchema.nullable().optional(),
   workspaceId: idSchema,
   projectId: idSchema,
   sectionId: idSchema.nullable(),

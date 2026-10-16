@@ -1,9 +1,9 @@
-import type {ManualPeriodWorkLogDto,ProjectWorkCategoryBindingDto,WorkCategorySnapshot} from '@workloom/contracts';
+import type {RecordedWorkLogDto,ProjectWorkCategoryBindingDto,WorkCategorySnapshot} from '@workloom/contracts';
 import {DomainError,notFoundError} from '../errors.js';
 import type {WorkCategoryBindingRecord,WorkCategoryRepository,WorkCategoryResolver} from './ports.js';
 
 export const legacyWorkCategory=():WorkCategorySnapshot=>({kind:'uncategorized',reason:'legacy',bindingVersionId:null,bindingRevision:null,fieldId:null});
-export function canonicalWorkCategory(row:ManualPeriodWorkLogDto):WorkCategorySnapshot {return row.category??legacyWorkCategory();}
+export function canonicalWorkCategory(row:RecordedWorkLogDto):WorkCategorySnapshot {return row.category??legacyWorkCategory();}
 export async function readWorkCategoryBinding(repo:WorkCategoryRepository,workspaceId:string,projectId:string):Promise<ProjectWorkCategoryBindingDto> {
  const row=await repo.findBinding(workspaceId,projectId);
  if(row===null)return {workspaceId,projectId,revision:1,versionId:null,fieldId:null,availability:'unbound'};

@@ -273,6 +273,21 @@ describe('P2b category HTTP adapter', () => {
     expect(rows.json().data[0].workLog.category.optionLabel).toBe('Observed historical label');
   });
 
+  it('accepts attendance-source recategorization and pinned category rows without changing request shape', async () => {
+    const attendance = contracts.categorizedWorkLogSchema.parse({ ...workLog, sourceKind: 'meeting_attendance', precision: 'occurrence', sourceKey: '5eed0000-0000-4000-8000-000000000802',
+      meetingId: '5eed0000-0000-4000-8000-000000000801', attendanceId: '5eed0000-0000-4000-8000-000000000802', confirmedMeetingRevision: 3,
+      attribution: { basis: 'planned_absence', plannedStartAt: TS, actualStartAt: null } });
+    overrides.set('recategorizeWorkLog', () => attendance);
+    const changed = await app.inject({ method: 'POST', url: BASE + recategorizePath, headers: headers(), payload: recategorizeInput });
+    expect(changed.statusCode).toBe(200);
+    expect(changed.json().data).toEqual(attendance);
+    expect(calls[0]?.args).toEqual([ids.log, { ...recategorizeInput, reason: recategorizeInput.reason.trim() }]);
+    overrides.set('listReportRows', () => ({ items: [{ ...reportRow, workLog: attendance }], nextCursor: null }));
+    const rows = await app.inject({ url: `${BASE}/work-type-report-runs/${ids.run}/rows`, headers: headers() });
+    expect(rows.statusCode).toBe(200);
+    expect(rows.json().data[0].workLog).toEqual(attendance);
+  });
+
   it('keeps old work.set input defaults and legacy DTOs without an implicit category', () => {
     expect(contracts.setManualPeriodWorkInputSchema.parse({ expectedRevision: null, minutes: 0 })).toEqual({ expectedRevision: null, minutes: 0, state: 'active', reason: null });
     expect(contracts.manualPeriodWorkLogSchema.parse(legacyWorkLog)).not.toHaveProperty('category');

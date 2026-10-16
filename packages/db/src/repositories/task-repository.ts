@@ -10,6 +10,7 @@ import {
 
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
 import {
+  meetings,
   commandIdempotency,
   projects,
   sections,
@@ -233,8 +234,11 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
   async function projectTasks(workspaceId: string, rows: readonly TaskRow[]): Promise<TaskDto[]> {
     const participantsByTask = new Map<string, TaskParticipantDto[]>();
     const tagsByTask = new Map<string, TagDto[]>();
+    const meetingsByTask=new Map<string,string>();
 
     for (const ids of chunks(rows.map((row) => row.id))) {
+      const meetingRows=await db.select({id:meetings.id,taskId:meetings.taskId}).from(meetings).where(and(eq(meetings.workspaceId,workspaceId),inArray(meetings.taskId,ids)));
+      for(const m of meetingRows)meetingsByTask.set(m.taskId,m.id);
       const participantRows = await db
         .select({
           taskId: taskParticipants.taskId,
@@ -270,6 +274,7 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
 
     return rows.map((row) => ({
       id: row.id,
+      meetingId:meetingsByTask.get(row.id)??null,
       workspaceId: row.workspaceId,
       projectId: row.projectId,
       sectionId: row.sectionId,
@@ -553,6 +558,11 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
       assertUpdated(updated);
     },
 
+    async findTasksByIds(ws,ids) {
+      const result:TaskDto[]=[];
+      for(const batch of chunks(ids)){const rows=await selectTasks().where(and(eq(tasks.workspaceId,ws),inArray(tasks.id,batch)));result.push(...await projectTasks(ws,rows));}
+      return result;
+    },
     async findTask(workspaceId, taskId) {
       if (!isUuid(workspaceId) || !isUuid(taskId)) {
         return null;

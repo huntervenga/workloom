@@ -290,16 +290,17 @@ Web Claude passes: data `163997aa-7d33-4fb8-8045-d03299cd0cec`, editors `4a4b6ae
 
 | Область | Статус | Примечание |
 | --- | --- | --- |
-| P0: workspace, участники, health, dev identity | pass (локально, синтетическая identity) | Исторический checkpoint; текущие регрессии в integration105 и первоначальном browser14 (13 pass,1 QA fixture fail; corrected P2b targeted2 pass) |
-| P1a: API и PostgreSQL | pass (локально, dev identity) | Исторический gate P1a; текущие регрессии integration105 и core/API unit566 |
-| P1a: web и browser UI | pass (локально, синтетическая identity) | Исторический gate; текущие прежние12 browser случаев прошли в исходном14; corrected P2b targeted2 отдельно; web126 отдельно от PostgreSQL-интеграции |
-| Оптимизированный dist и runtime | pass (локально) | Definitive P2b HTML/JS/CSS byte-identical dist, ready database/schemaOK; `4310` session82234 / PID52278. `NODE_ENV=production` при `APP_ENV=local`, `AUTH_MODE=dev` |
+| P0: workspace, участники, health, dev identity | pass (локально, синтетическая identity) | Исторический checkpoint; текущие регрессии integration120; prior14 cases passed в initial P3a browser16, новые2 прошли targeted после QA corrections |
+| P1a: API и PostgreSQL | pass (локально, dev identity) | Исторический gate P1a; текущие регрессии integration120 и core/API unit643 |
+| P1a: web и browser UI | pass (локально, синтетическая identity) | Исторический gate; прежние14 browser cases прошли initial P3a16; P3a targeted2 отдельно. Web161 до final plan-only cleanup, affected components30 после него; отдельно от PostgreSQL |
+| Оптимизированный dist и runtime | pass (локально) | Current compiled P3a `4310` session32694 / PID65721, ready database/schemaOK; definitive current HTML/JS/CSS parity ниже. `NODE_ENV=production` при `APP_ENV=local`, `AUTH_MODE=dev` |
 | Docker Compose PostgreSQL | не исполнялся | Docker недоступен на хосте |
 | P1b: typed custom columns, значения, выборочная история, custom lock | pass, локально принят координатором | Integration 83 и core/API 423 до 3 visual files; current owner web 102, browser 10, root visual 4. Полный P1 не заявляется |
 | P2a: недельный план, freeze, manual fact, pinned report | pass, локально принят координатором | Core/API509, realPG96, current web119/browser12; подробности ниже. Полный P2 не заявляется |
 | P2b: категории работы, all-fact report, table quick entry | pass, локально принят координатором | Integration105, core/API566, web126; initial browser14=13pass/1fixturefail, corrected targeted2 pass; root visual7. Полный P2 не заявляется |
+| P3a: разовые shared meetings, explicit plan и attendance | pass, bounded scope принят координатором | Core/API643, realPG120, populated0005/raw3replay; web161 и affected30 после final plan cleanup; initial16=14pass/2QA locatorfail, финальный targeted2 pass9,3с. Root просмотрел8 pre-cleanup и4 current surfaces. Source checkpoint ожидается |
 | Полный P1: приватные ACL, сохранённые представления, массовые правки | не реализовано | Будущее, приёмка P1 в [06](06-implementation-plan.md) не изменена |
-| Полный P2, P3–P6, полный MVP, пилот | не завершено | Ограниченный P2a проходит отдельный gate ниже; split/transfer/carryover/close и daily work logs остаются будущими |
+| Полный P2, P3–P6, полный MVP, пилот | не завершено | Ограниченные P2a/P2b/P3a описаны ниже; split/transfer/carryover/close, daily work logs, recurrence/worker остаются будущими |
 | Общий Auth, приватные встречи | не реализовано | — |
 | Старая вкладка / обновление | не реализовано | — |
 | Worker и фоновые jobs | не реализовано | — |
@@ -451,3 +452,104 @@ Preview: `http://127.0.0.1:4311/w/5eed0000-0000-4000-8000-000000000201/projects/
 - [p2b-mobile-category-chart.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2b-mobile-category-chart.png)
 
 **Приёмка P2b.** Root принял ограниченный срез после просмотра всех7 текущих кадров. После приёмки root создал source checkpoint `5e46a8e4a50d747bd01a810dcc37a0506bc95e7c`; QA подтвердил чистое дерево перед этой узкой provenance-правкой. Проверки относятся к замороженному рабочему дереву перед commit, ради hash не повторялись. Эта правка только записывает provenance, source/runtime/данные не меняет. Формулировка browser evidence сохраняет первоначальный13/14 pass с QA fixture failure и отдельный corrected targeted2 pass, без заявления одного полного зелёного14. P3a — только проект [15](15-p3a-contract.md), полный P2/MVP и командный пилот не достигнуты.
+
+
+## P3a — частичный focused gate (исторический)
+
+Рабочее дерево после принятого P2b source `5e46a8e4a50d747bd01a810dcc37a0506bc95e7c` и docs-only provenance `4777aefc98eaa233b75a3a42f6588a62d6f50aef`. Точный публичный каталог зафиксирован в [15](15-p3a-contract.md): разовые workspace-visible встречи, plan preview/apply, attendance и общий recorded-work union. Recurrence/worker/private ACL/внешние календари не входят. Код product и QA пока пишет Codex `gpt-6.1-sol` high fallback; Claude до root reset-подтверждения не запускался. Runtime/dev-БД сохраняют принятый P2b;0005 исполняется только в одноразовой test БД.
+
+| Проверка | Кто / команда | Фактический результат |
+| --- | --- | --- |
+| Public contract и core candidate | foundation | Реальные exports/factory и40-table0005 candidate готовы;218 units/21 файл, strict core types/lint pass; dev migration не применялась |
+| Focused libs/API build | QA: `npm run build:libs`, API build | pass; `/tmp/workloom-p3a-focused-libs.log`, `/tmp/workloom-p3a-focused-api.log`. Web не собирался; свой exclusive dist window |
+| QA static | QA: ESLint новых helper/test и корневой QA TypeScript | pass после исправления узкого literal parameter type и неверного QA helper-call; `/tmp/workloom-p3a-qa-types.log` |
+| Первый реальный HTTP/PG | QA: `vitest run --project integration tests/integration/p3a-meetings.test.ts` | fail:13 pass/2 fail из15,7,32 с, local05:09:24; `/tmp/workloom-p3a-focused.log`. Пять реальных API процессов/пулов и disposable PG |
+
+Первое настоящее product failure: same-roster PATCH после ever-posted source вернул409 `FIELD_LOCKED`, details `{committed:true,baselineIds:[]}`, вместо семантического no-op200. Guard классифицировал наличие защищённых ключей до сравнения предлагаемых значений. Foundation исправляет сравнение под тем же barrier; новый pass ещё не заявлен. Второе падение — QA fixture: две недели с одинаковыми project/localStart правильно получили409 `REVISION_CONFLICT`; B сдвинут на следующий день, сохранив реальное перекрытие, domain uniqueness не меняется.
+
+Зелёные13 включают one task/package/nominal budget300 при5×60 без автоматических commitments/facts; scoped plan rights/atomic preview freshness; три60+partial30+absent0=210 и оба pinned report readers/projection по source union; unknown/absent/void, planned_absence без выдуманного actual; same-source corrections и независимую recategorization/head/history; current ACL/tenant; generic bypass; earliest personal schedule + all project commitment IDs; два реальных cutoff outcomes (`FIELD_LOCKED` с прежними rows и committed `PREVIEW_STALE` без прежних commitments, fresh preview/newkey → added); поздний SQL rollback, concurrent exact key и immutable SQL history; void после metadata A60→B30 сохраняет старые attribution/minutes/confirmed revision, явный restore принимает новые детали. Это фокусные checks, не окончательный полный P3 gate.
+
+Genuine pre0005 fixture подготовлена через старый P2b runtime: `/tmp/workloom-p2b-compat-fixture.json` mode0600 без credentials. Содержит raw task.create response без будущего meeting marker, work.set/categoryA/revision1 и work.recategorize/categoryB/revision2 keys/body/result/hash, оба pinned report types и прежние SQL revision rows. Будущий old-column migration/replay proof ещё не выполнялся; существование файла не считается pass upgrade.
+
+
+**Focused retry P3a.** Foundation исправил mandatory guard: под тем же barrier сравниваются предлагаемые planned instant/timezone/duration/organizer и sorted active roster; присутствие ключа само не означает изменение. Настоящие изменения после ever-posted остаются locked, same-roster проходит revision checks и handler no-op. Domain/DB builds и affected guard units8 pass, migration0005 не менялась. QA исправил только overlap fixture date и повторил API build + тот же focused файл: **15/15 pass,7,42 с, local05:11:46**, `/tmp/workloom-p3a-focused-fixed.log`. ESLint/QA TypeScript pass; no-op меняет только idempotency cache, весь change_seq/history/source неизменен. Предыдущее13/15 падение сохранено исторически. Полный root/integration/web/browser/upgrade gate ещё не выполнен, dev/runtime прежний P2b.
+
+
+### P3a — stable core/API regression перед UI и upgrade
+
+После semantic guard correction root запросил отдельный настоящий HTTP no-op для planned и actual UTC `Z` против `.000Z`. Аffected case `keeps posted attribution snapshots` прошёл:1 selected pass/14 намеренно skipped,3,34 с, local05:13:25; `/tmp/workloom-p3a-equivalent-instant.log`. PATCH вернул прежний DTO, revisions/history/events/change_seq неизменны, добавлен только idempotency result; последующее reasonless reconfirm тоже no-op. Source fix уже входил в тот же candidate, новых product edits не было.
+
+| Проверка | Фактический результат |
+| --- | --- |
+| Полный stable core/API unit: `vitest run --project unit` | pass:643 теста/30 файлов,1,78 с, local05:13:28; `/tmp/workloom-p3a-core-unit.log` |
+| Полный real HTTP/PostgreSQL regression: `vitest run --project integration` | pass:120 тестов/12 файлов,42,05 с, local05:13:31; `/tmp/workloom-p3a-integration.log`. Включает focused P3a15 и прежние105; counts не суммировать |
+
+Это gates core/API и throwaway PostgreSQL. UI ещё проходит отдельную review correction для colleague lens: переход к attendance обязан сохранять выбранного worker. Accepted P2b API82234/PID52278 и dev DB0004 не менялись. Populated0005 migration, genuine raw replay, полный текущий web/browser и визуальная приёмка ещё не выполнены; P3a не принят.
+
+
+### P3a — populated0005 upgrade и genuine compatibility
+
+По отдельному разрешению root QA остановил только прежний accepted P2b API82234/PID52278, SIGTERM/exit0, и передал foundation quiet dev window. Foundation proof `/tmp/workloom-p3a-upgrade-preservation.json`: все35 прежних таблиц по исходным колонкам сохранили counts/digests;3 cached command full rows/hashes/results,2 work revisions и pinned plan-fact/type SQL JSON неизменны. Все27 прежних work revisions сохранили SQL NULL occurrence columns; backfill не делался. Применена только0005, current6, повтор[];10 старых SQL/snapshot файлов0000–0004 и прежние journal entries неизменны. Старые demo сохранены.
+
+После quiet release QA запустил compiled P3a API session32694/PID65721 на4310, Node24.19.0, прежняя local synthetic identity; actual `/healthz/ready`200, database/schemaok. Static web ещё исторический P2b до отдельной текущей web сборки.
+
+Настоящий HTTP upgrade replay выполнен в02:19:24UTC, `/tmp/workloom-p3a-compat-proof.json`: exact raw `task.create`, `work.set`, `work.recategorize` вернули прежние DTO и hashes/cache без изменения. Cached task create по-прежнему не содержит meetingId; свежий GET task имеет канонический meetingId:null. Старые revisions и оба pinned report types HTTP/SQL JSON неизменны. Unified recorded-work прочитал ровно1 manual source90/categoryB/currentrevision2; новые plan-fact и type reports тоже90, всего2 work revisions. Источник fixture действительно accepted P2b `5e46a8e4a50d747bd01a810dcc37a0506bc95e7c`; новые nullable marker/occurrence поля не обогащают старые cached responses. Это upgrade/replay gate, не browser и не приёмка P3a.
+
+
+### P3a — frozen web candidate gate
+
+После colleague-lens, explicit original-period interlock, safe task-fields и controlled team attendance review fixes frontend заморозил source. Batch component держит drafts/selected IDs и protected command выше drawer; team mode не входит в HTTP body/hash. Backend focused component13 и frontend own18 checks — отдельные subsets, не суммируются с полным web ниже. Все P3a изменения этого среза авторства authorized Codex `gpt-6.1-sol` high fallback; Claude probes до root reset-сигнала не запускались.
+
+| Проверка | Фактический результат |
+| --- | --- |
+| `npm run build` | pass:6 workspaces и текущий P3a SPA; `/tmp/workloom-p3a-final-build.log`. Nonfatal chunk warning; performance budget не проверялся |
+| `npm run lint` | pass:165 browser source boundaries; `/tmp/workloom-p3a-final-lint.log` |
+| `npm run typecheck` | pass:все workspace + root QA/config types; `/tmp/workloom-p3a-final-typecheck.log` |
+| `npm run test --workspace @workloom/web` | pass:157 тестов/29 файлов,8,30 с, local05:30:42; `/tmp/workloom-p3a-final-web.log` |
+
+Browser16 выполняется отдельным gate, результата ещё нет. Статус P3a pending до реального browser и координаторского визуального просмотра. Core/API643, PG120 и upgrade/replay выше не повторялись из-за только UI изменений.
+
+
+**Первый browser P3a.** Полный16 дал14 pass/2 QA locator failures: новые desktop/mobile остановились до meeting POST на wrapped-label exact `getByLabel` для видимого period select. Semantic combobox role исправлен только в tests. Второй targeted2 дошёл до настоящего batch210 и personal correction15, но упал на QA assumptions: response содержит весь состав5, а не только changed1; reload возвращает URL tab Plan, локальное переключение не обещано сохранять в URL. Test теперь проверяет1 submitted row и нужный DTO во всём response и явно открывает Attendance после reload. Третий targeted2 **pass2/2,10,3 с**, `/tmp/workloom-p3a-browser-assumption-fix.log`; initial `/tmp/workloom-p3a-final-e2e.log`, locator retry `/tmp/workloom-p3a-browser-locator-fix.log`, traces сохранены в `/tmp/workloom-p3a-initial-browser-results` и `/tmp/workloom-p3a-locator-browser-results`. Одного полного зелёного16 не заявляется.
+
+Root затем выявил реальный UI blocker из наблюдения full5 response: callbacks удаляли drafts всех возвращённых attendance, включая неотправленных людей. Visual/source acceptance приостановлена; frontend/backend исправляют очистку по исходным submitted IDs. QA добавил реальный browser regression: owner unsent partial45/reason draft должен пережить colleague single30→15; другие stored sources неизменны. Новый regression и fix ещё не прошли финальный gate. Предыдущий targeted2 не считается доказательством этого случая. Core/API/PG/upgrade не менялись.
+
+**Оптимизированные тела до cleanup fix.** Backend GET-only ready200 JSON database/schemaok; HTML551bytes SHA256 `f535a96488fc663d3a5ffdc396964ab669ea198bf11932292446b81de4762155`; JS `index-D_J_PC5L.js`1036125bytes application/javascript и CSS `index-ChcSxkh8.css`51634bytes text/css, все200/exact current dist. Следующий UI build потребует новую asset parity; это исторический pre-fix smoke.
+
+
+### P3a — attendance cleanup и visual targeted gate
+
+Page-owned attendance success получает immutable original variables и удаляет drafts/selection только `variables.input.rows` IDs; callback действует также для global notice retry при закрытом drawer. Batch callback использует те же submitted IDs, full response cache может по-прежнему содержать всех людей. Полная history копируется и сортируется revision DESC; отдельное sticky действие теперь «Подтвердить выбранного участника», batch сохраняет собственное имя.
+
+После этого UI-only correction QA: fresh webbuild/types, QA lint/types pass; полный web **161 тест/29 файлов,7,18 с**, local05:39:26 (`/tmp/workloom-p3a-cleanup-web.log`); targeted browser **2/2,8,7 с**, `/tmp/workloom-p3a-cleanup-browser.log`. Desktop реально сохранил owner unsent partial45/reason при colleague single30→15, все другие stored DTOs неизменны; затем explicit reset. Полный batch — ровно1 POST rows5 с60/60/60/30/0 и response5, pinned300→210/−90/−30%, colleague correction даёт195 и не переписывает прежний run. Source breakdown edit сохраняет colleague target. Mobile реальный zero commit с потерянным ответом и exact body/key retry даёт1 occurrence source/revision1 без actual timing; DST gap не посылает POST, autumn overlap требует explicit later01:30Z. Newest-first history проверена browser обоих размеров.
+
+Root просмотрел все8 pre-cleanup frames в `workloom-evidence/p3a-before-cleanup/`, затем ровно4 текущие изменённые surfaces: desktop batch-review/attendance-history и mobile planned-absence/attendance-history. Визуально pass: single label помещается390px в2-row footer, latest revision первая, material overflow нет. Это модельный просмотр координатором, не человеком. Остальные4 refreshed frames сняты, но повторный просмотр им не приписывается.
+
+После этого root обнаружил соседний plan cleanup: person-scoped submit очищал весь plan map. Frontend перенёс cleanup в page-owned callback по исходным submitted membership IDs, включая global closed-drawer retry; source refrozen после focused MeetingFlow16 и scoped lint pass. QA добавил реальный unsent owner2h→single colleague60→owner2h retained case; final relevant build/types/components/targeted2 выполняется. До его результата P3a всё ещё pending. Server/core/PG не менялись.
+
+
+### P3a — final plan cleanup targeted gate
+
+Page-owned plan callback очищает только immutable sent membership IDs; actor/colleague drafts вне отправки сохраняются при initial success и closed-drawer global retry. QA fresh web build/types, root QA/config types и test ESLint pass; affected MeetingFlow+Batch **30/2 pass,5,75 с**, local05:41:58, `/tmp/workloom-p3a-plan-cleanup-components.log`. Полный web161 выше относится к предыдущему attendance/history candidate; после state-only plan fix он целиком не повторялся.
+
+Первый новый plan browser run: mobile pass, desktop QA race до plan POST — test изменял underlying native selects сразу после Close, до router/modal transition. Добавлено явное `drawer count0` перед следующими действиями; product не менялся. Финальный targeted P3a browser **2/2 pass,9,3 с**, `/tmp/workloom-p3a-plan-browser-close-sync.log`; prior run `/tmp/workloom-p3a-plan-cleanup-browser.log`. Desktop доказал owner unsent2h → colleague-only60 preview/apply → owner2h retained, затем explicit1h и все5 plans300. Дополнительная attendance draft45 защита, one-submit rows5/210, correct colleague/source lens, exact recovery, report pin и newest-first history остаются в том же pass. Initial full16 и subsequent subsets не складываются и не выдаются за один pristine16 pass. Core/API643/PG120/upgrade не повторялись, server source неизменен.
+
+Root visual pass для4 current attendance/history surfaces сохраняется: последняя plan cleanup только state, layout не менялся. Все8 refreshed frames сняты после attendance/history build; root повторно просмотрел ровно4, указанные выше. После последней state-only plan cleanup они не переснимались, visual pass root сохранил явно. Полный P3, recurrence/worker, Auth/private ACL, внешние календари, production и old-tab upgrade остаются будущими.
+
+
+**Окончательный optimized smoke P3a после plan fix.** Backend GET-only: actual ready200 JSON database/schemaok; HTML551bytes text/html SHA256 `14c9704d1cb79381dee19f25d9e3782d02217303479f9081e34b0b618511903d`; JS `index-B95BHm_Q.js`1036078bytes application/javascript и CSS `index-ChcSxkh8.css`51634bytes text/css, все200/exact current dist bytes. Runtime32694/PID65721 не перезапускался ради UI-only сборок; API читает текущий index/assets. Smoke не писал source/data.
+
+**Приёмка P3a.** Root принял bounded functional и visual gates. Source checkpoint ещё не создан; все фактические результаты относятся к замороженному рабочему дереву до checkpoint, tests ради будущего hash не повторяются. Root отдельно просмотрел все8 pre-cleanup кадров и ровно4 refreshed attendance/history surfaces; layout сохраняется после последней state-only plan правки. Это модельная проверка, не человек. Текущий readable synthetic preview: `http://127.0.0.1:4311/w/5eed0000-0000-4000-8000-000000000201/projects/c479c464-7096-4ab4-a37d-059e1eec7d38/week?period=9df582b1-b4aa-4565-9670-2b8a3cfcc9af&view=report&run=66c528a7-2d36-4ff8-ad3a-4455b2c1b0a3`. Browser fixture после correction имеет текущий195, прежний pinned run210 намеренно не меняется; прежние unrelated demo сохранены.
+
+Durable frames после attendance/history correction, до последней state-only plan cleanup (root повторно просмотрел отмеченные4; остальные4 только сняты). Root сохранил этот visual pass после финальной правки состояния, layout не менялся:
+
+- [desktop plan preview](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-desktop-plan-preview.png) — refreshed, повторно не просмотрен
+- [desktop batch review](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-desktop-batch-review.png) — root reviewed
+- [desktop attendance](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-desktop-attendance.png) — refreshed, повторно не просмотрен
+- [desktop pinned report](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-desktop-week-report.png) — refreshed, повторно не просмотрен
+- [desktop attendance history](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-desktop-attendance-history.png) — root reviewed
+- [mobile DST choice](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-mobile-dst-choice.png) — refreshed, повторно не просмотрен
+- [mobile planned absence](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-mobile-planned-absence.png) — root reviewed
+- [mobile attendance history](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p3a-mobile-attendance-history.png) — root reviewed
+
+Финальные documentation-only checks:20 Markdown файлов (root README/AGENTS и docs01–17),246 локальных file links,0 broken; `git diff --check` pass. Product tests ради этих prose изменений не повторялись.

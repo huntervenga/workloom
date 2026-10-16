@@ -186,6 +186,7 @@ function harness() {
     findWorkPackage: unused,
     insertWorkPackage: unused,
     saveWorkPackage: unused,
+    findTasksByIds:unused,
     findTask: async (ws, id) => scoped(db.state.tasks.get(id), ws),
     listTasks: unused,
     insertTaskCore: unused,

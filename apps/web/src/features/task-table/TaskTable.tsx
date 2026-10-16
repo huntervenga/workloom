@@ -379,8 +379,9 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
               <span className="min-w-0 truncate">Раздел: {sectionLabel(task.sectionId, ctx.sectionById)}</span>
             </Badge>
           ) : null}
+          {task.meetingId ? <Badge tone="muted">Встреча</Badge> : null}
           {task.archivedAt !== null ? <Badge tone="muted">В архиве</Badge> : null}
-          {ctx.onCreateChild !== null && task.archivedAt === null ? (
+          {ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null ? (
             <button
               type="button"
               aria-label={`Добавить подзадачу к «${task.title}»`}

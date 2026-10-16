@@ -442,6 +442,23 @@ describe('P1a task routes (HTTP adapter)', () => {
     expect(body.meta.requestId).toBe(response.headers['x-request-id']);
   });
 
+  it('preserves canonical meeting identity in current task reads without filling old stored responses', async () => {
+    const meetingId = '5eed0000-0000-4000-8000-000000000801';
+    overrides.set('getTask', () => ({ ...task, meetingId }));
+    expect((await send(app, routeFor('getTask'))).json().data.meetingId).toBe(meetingId);
+    overrides.delete('getTask');
+    expect((await send(app, routeFor('getTask'))).json().data).not.toHaveProperty('meetingId');
+  });
+
+  it('rejects client-written meeting markers through generic task create and update', async () => {
+    for (const call of ['createTask', 'updateTask'] as const) {
+      const route = routeFor(call);
+      const response = await send(app, { ...route, body: { ...route.body, meetingId: '5eed0000-0000-4000-8000-000000000801' } });
+      expectRejected(response, 400, 'VALIDATION_FAILED');
+    }
+    expect(calls).toHaveLength(0);
+  });
+
   it('refuses to send a service result that breaks the response contract', async () => {
     overrides.set('getTask', () => ({ ...task, visibility: 'private' }));
     expectRejected(await send(app, routeFor('getTask')), 500, 'INTERNAL_ERROR');

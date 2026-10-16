@@ -16,7 +16,7 @@ export function createWorkCategoryRepository(source:Database|WorkloomExecutor):W
    if(!saved.length)throw notFoundError();
   },
   async insertBindingVersion(row){await db.insert(projectWorkCategoryBindingVersions).values({id:row.versionId,workspaceId:row.workspaceId,projectId:row.projectId,revision:row.revision,fieldId:row.fieldId,actorUserId:row.actorUserId,recordedAt:new Date(row.recordedAt),changeSeq:BigInt(row.changeSeq)});},
-  async findWorkLog(ws,id){const [r]=await db.select({periodId:workLogs.periodId}).from(workLogs).where(and(eq(workLogs.workspaceId,ws),eq(workLogs.id,id)));return r?(await planning.listWorkLogs(ws,r.periodId)).find(w=>w.id===id)??null:null;},
+  async findWorkLog(ws,id){const [r]=await db.select({periodId:workLogs.periodId}).from(workLogs).where(and(eq(workLogs.workspaceId,ws),eq(workLogs.id,id)));return r?(await planning.listRecordedWork(ws,r.periodId)).find(w=>w.id===id)??null:null;},
   async listReportRuns(ws,periodId){return (await db.select({document:workTypeReportRuns.document}).from(workTypeReportRuns).where(and(eq(workTypeReportRuns.workspaceId,ws),eq(workTypeReportRuns.periodId,periodId))).orderBy(asc(workTypeReportRuns.id))).map(r=>r.document);},
   async findReportRun(ws,id){const [r]=await db.select().from(workTypeReportRuns).where(and(eq(workTypeReportRuns.workspaceId,ws),eq(workTypeReportRuns.id,id)));return r?{run:r.document,rows:r.rows}:null;},
   async insertReportRun(run,rows){await db.insert(workTypeReportRuns).values({id:run.id,workspaceId:run.workspaceId,projectId:run.projectId,periodId:run.periodId,document:run,rows,createdAt:new Date(run.createdAt)});},

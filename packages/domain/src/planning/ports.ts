@@ -1,6 +1,7 @@
+import type {MeetingMutationCommand} from '../meetings/ports.js';
 import type { WorkCategoryResolver, WorkCategoryMutationCommand } from '../categories/ports.js';
 import type {
-  ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
+  MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
   PlanningPackageDto, PlanningPeriodDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto,
   WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto,
 } from '@workloom/contracts';
@@ -51,10 +52,17 @@ export interface PlanningRepository {
   insertPackageObservation(row:PackageFreezeObservation):Promise<void>;
   listLocks(workspaceId:string):Promise<PlanningLock[]>;
   insertLocks(rows:PlanningLock[]):Promise<void>;
+  listMeetings(workspaceId:string,projectId:string):Promise<MeetingDto[]>;
+  findMeetingByTask(workspaceId:string,taskId:string):Promise<MeetingDto|null>;
+  listAttendance(workspaceId:string,meetingId:string):Promise<AttendanceDto[]>;
+  listMeetingLocks(workspaceId:string,meetingId:string):Promise<{baselineId:string}[]>;
+  insertMeetingLock(workspaceId:string,meetingId:string,baselineId:string,id:string):Promise<void>;
+  listRecordedWork(workspaceId:string,periodId:string):Promise<RecordedWorkLogDto[]>;
+  saveRecordedWork(row:RecordedWorkLogDto):Promise<void>;
   listWorkLogs(workspaceId:string,periodId:string):Promise<ManualPeriodWorkLogDto[]>;
   findManualWork(workspaceId:string,taskId:string,periodId:string,memberId:string):Promise<ManualPeriodWorkLogDto|null>;
   saveManualWork(row:ManualPeriodWorkLogDto):Promise<void>;
-  insertWorkRevision(row:ManualPeriodWorkLogDto):Promise<void>;
+  insertWorkRevision(row:RecordedWorkLogDto):Promise<void>;
   listReportRuns(workspaceId:string,periodId:string):Promise<WeeklyPlanFactReportRunDto[]>;
   findReportRun(workspaceId:string,id:string):Promise<{run:WeeklyPlanFactReportRunDto;rows:WeeklyPlanFactRowDto[]}|null>;
   insertReportRun(run:WeeklyPlanFactReportRunDto,rows:WeeklyPlanFactRowDto[]):Promise<void>;
@@ -87,9 +95,10 @@ export type PlanningMutationIntent =
  | {readonly family:'task';readonly command:TaskMutationCommand;readonly target:string|null;readonly input:unknown}
  | {readonly family:'field';readonly command:FieldMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'planning';readonly command:PlanningMutationCommand;readonly target:unknown;readonly input:unknown}
+ | {readonly family:'meeting';readonly command:MeetingMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'category';readonly command:WorkCategoryMutationCommand;readonly target:unknown;readonly input:unknown};
 export interface CommittedPlanningRejection {
-  readonly __workloomPlanningOutcome:'rejected';readonly code:'FIELD_LOCKED';
+  readonly __workloomPlanningOutcome:'rejected';readonly code:'FIELD_LOCKED'|'PREVIEW_STALE';
   readonly details:{readonly committed:true;readonly baselineIds:string[]};
 }
 export interface PlanningMutationGuard {
