@@ -443,78 +443,7 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
       const fid = parsePathId(fieldId);
       const parsed = parseInput<SetTaskFieldValueInput>(setTaskFieldValueInputSchema, input);
       const target = { taskId: tid, fieldId: fid };
-      return mutate(context, 'task.edit', 'field.value.set', target, parsed, taskFieldValueSchema, async (scope, ws, now) => {
-        const repo = scope.repository;
-        const task = requireFound(await repo.tasks.findTask(ws, tid));
-        const field = requireFound(await repo.findField(ws, fid));
-        if (!sameId(field.projectId, task.projectId)) throw ruleError('The field belongs to another project.', 'fieldId');
-        // A lock blocks every new value command, even an identical value; only a replay passes.
-        if (field.locked) {
-          throw new DomainError('FIELD_LOCKED', 'The field is locked. Unlock it before changing values.', {
-            details: { fields: ['fieldId'] },
-          });
-        }
-        expectRevision(field.revision, parsed.expectedDefinitionRevision, 'expectedDefinitionRevision');
-        const current = await repo.findValue(ws, tid, fid);
-        expectRevision(current?.revision ?? 0, parsed.expectedRevision);
-
-        await requireOpenProject(repo.tasks, ws, task.projectId);
-        if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before editing.', 'taskId');
-        if (field.archivedAt !== null) throw ruleError('The field is archived.', 'fieldId');
-        if (parsed.value.type !== field.type) throw ruleError('The value type does not match the field type.', 'value.type');
-        await requireAssignableReferences(repo, ws, field, parsed.value, current?.value ?? null);
-
-        if (current !== null && canonicalJson(current.value) === canonicalJson(parsed.value)) return current;
-
-        const next: TaskFieldValueDto = {
-          workspaceId: ws,
-          projectId: task.projectId,
-          taskId: tid,
-          fieldId: fid,
-          definitionVersionId: field.definitionVersionId,
-          revision: (current?.revision ?? 0) + 1,
-          value: parsed.value,
-          updatedAt: now,
-        };
-        await repo.saveValue(next);
-
-        // Audit and outbox carry metadata only; complete values live solely in value history.
-        const metadata = {
-          taskId: tid,
-          fieldId: fid,
-          type: field.type,
-          valueRevision: next.revision,
-          definitionRevision: field.revision,
-        };
-        const recorded = await record(
-          scope,
-          'task_field_value',
-          tid,
-          current === null ? 'created' : 'updated',
-          next.revision,
-          metadata,
-          { projectId: task.projectId, ...metadata },
-        );
-        if (field.historyEnabled) {
-          await repo.insertValueHistory({
-            id: newId(),
-            workspaceId: ws,
-            projectId: task.projectId,
-            taskId: tid,
-            fieldId: fid,
-            valueRevision: next.revision,
-            definition: field,
-            before: current?.value ?? null,
-            after: parsed.value,
-            actor: { id: scope.context.actor.userId, displayName: scope.access.membership.displayName },
-            source: scope.context.source,
-            recordedAt: now,
-            changeSeq: recorded.changeSeq.toString(),
-            eventOrdinal: recorded.eventOrdinal,
-          });
-        }
-        return next;
-      });
+      return mutate(context, 'task.edit', 'field.value.set', target, parsed, taskFieldValueSchema, scope => setTaskFieldValueInScope(scope,tid,fid,parsed,tools));
     },
 
     async listValueHistory(
@@ -805,4 +734,80 @@ function record(
     diff,
     outbox: { type: `${entityType}.${action}`, payload: { workspaceId: scope.context.workspaceId, ...payload } },
   });
+}
+
+/** Shared validated value primitive, preserving current field policy/history in the caller's open transaction. */
+export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:string,fieldId:string,input:SetTaskFieldValueInput,tools:Pick<TaskFieldApplicationDependencies['tools'],'newId'>):Promise<TaskFieldValueDto> {
+ const tid=parsePathId(taskId),fid=parsePathId(fieldId),parsed=parseInput<SetTaskFieldValueInput>(setTaskFieldValueInputSchema,input),ws=scope.context.workspaceId,now=scope.barrierAt.toISOString();
+ const newId=()=>idSchema.parse(tools.newId());
+        const repo = scope.repository;
+        const task = requireFound(await repo.tasks.findTask(ws, tid));
+        const field = requireFound(await repo.findField(ws, fid));
+        if (!sameId(field.projectId, task.projectId)) throw ruleError('The field belongs to another project.', 'fieldId');
+        // A lock blocks every new value command, even an identical value; only a replay passes.
+        if (field.locked) {
+          throw new DomainError('FIELD_LOCKED', 'The field is locked. Unlock it before changing values.', {
+            details: { fields: ['fieldId'] },
+          });
+        }
+        expectRevision(field.revision, parsed.expectedDefinitionRevision, 'expectedDefinitionRevision');
+        const current = await repo.findValue(ws, tid, fid);
+        expectRevision(current?.revision ?? 0, parsed.expectedRevision);
+
+        await requireOpenProject(repo.tasks, ws, task.projectId);
+        if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before editing.', 'taskId');
+        if (field.archivedAt !== null) throw ruleError('The field is archived.', 'fieldId');
+        if (parsed.value.type !== field.type) throw ruleError('The value type does not match the field type.', 'value.type');
+        await requireAssignableReferences(repo, ws, field, parsed.value, current?.value ?? null);
+
+        if (current !== null && canonicalJson(current.value) === canonicalJson(parsed.value)) return current;
+
+        const next: TaskFieldValueDto = {
+          workspaceId: ws,
+          projectId: task.projectId,
+          taskId: tid,
+          fieldId: fid,
+          definitionVersionId: field.definitionVersionId,
+          revision: (current?.revision ?? 0) + 1,
+          value: parsed.value,
+          updatedAt: now,
+        };
+        await repo.saveValue(next);
+
+        // Audit and outbox carry metadata only; complete values live solely in value history.
+        const metadata = {
+          taskId: tid,
+          fieldId: fid,
+          type: field.type,
+          valueRevision: next.revision,
+          definitionRevision: field.revision,
+        };
+        const recorded = await record(
+          scope,
+          'task_field_value',
+          tid,
+          current === null ? 'created' : 'updated',
+          next.revision,
+          metadata,
+          { projectId: task.projectId, ...metadata },
+        );
+        if (field.historyEnabled) {
+          await repo.insertValueHistory({
+            id: newId(),
+            workspaceId: ws,
+            projectId: task.projectId,
+            taskId: tid,
+            fieldId: fid,
+            valueRevision: next.revision,
+            definition: field,
+            before: current?.value ?? null,
+            after: parsed.value,
+            actor: { id: scope.context.actor.userId, displayName: scope.access.membership.displayName },
+            source: scope.context.source,
+            recordedAt: now,
+            changeSeq: recorded.changeSeq.toString(),
+            eventOrdinal: recorded.eventOrdinal,
+          });
+        }
+        return next;
 }

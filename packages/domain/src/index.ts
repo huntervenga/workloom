@@ -117,3 +117,11 @@ export type {TaskScheduleApplication} from './schedule/application.js';
 export * from './schedule/ports.js';
 export {createTaskScheduleApplication} from './schedule/service.js';
 export {assertTaskDateRange,assertOrdinaryTaskDates} from './tasks/dates.js';
+
+export type {ProjectImportApplication} from './imports/application.js';
+
+export {createTaskInScope} from './tasks/service.js';
+export {setTaskFieldValueInScope} from './fields/service.js';
+
+export * from './imports/ports.js';
+export {createProjectImportApplication} from './imports/service.js';

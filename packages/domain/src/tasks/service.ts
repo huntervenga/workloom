@@ -351,103 +351,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
 
     async createTask(context: CommandContext, input: CreateTaskInput): Promise<TaskDto> {
       const parsed = parseInput<CreateTaskInput>(createTaskInputSchema, input);
-      return mutate(context, 'task.edit', 'task.create', null, parsed, taskSchema, async (scope, ws, now) => {
-        const repo = scope.repository;
-        const projectId = parsed.projectId;
-        assertTaskDateRange(parsed.startDate,parsed.dueDate);
-        await requireOpenProject(repo, ws, projectId);
-        if (isSet(parsed.sectionId)) await requireAssignableSection(repo, ws, projectId, parsed.sectionId);
-        requireSameProject(requireFound(await repo.findStatus(ws, parsed.statusId)), projectId, 'statusId');
-        const parent = isSet(parsed.parentTaskId) ? await requireParent(repo, ws, projectId, parsed.parentTaskId) : null;
-        const participantIds = parsed.participantMembershipIds ?? [];
-        await requireActiveMembers(repo, ws, parsed.responsibleMembershipId ?? null, participantIds);
-        const tagIds = parsed.tagIds ?? [];
-        await requireAssignableTags(repo, ws, tagIds, []);
-
-        // Root tasks and added scope get a new package; a detail subtask shares its parent's.
-        let workPackage: WorkPackageRecord | null = null;
-        if (parent === null || parsed.workScope === 'added_scope') {
-          workPackage = {
-            id: newId(),
-            workspaceId: ws,
-            projectId,
-            origin: parent === null ? 'new_task' : 'added_scope',
-            sourcePackageId: parent === null ? null : parent.workPackageId,
-            estimateMinutes: parsed.estimateMinutes ?? null,
-            revision: 1,
-            createdAt: now,
-            updatedAt: now,
-          };
-          await repo.insertWorkPackage(workPackage);
-        }
-        const workPackageId = workPackage?.id ?? requireParentPackage(parent);
-        const position =
-          parsed.position ??
-          nextPosition(
-            (await repo.listTasks(ws, { projectId, includeArchived: true, limit: 200 }, null, MAX_POSITION)).map(
-              (task) => task.position,
-            ),
-          );
-
-        const id = newId();
-        await repo.insertTaskCore({
-          id,
-          workspaceId: ws,
-          projectId,
-          sectionId: parsed.sectionId ?? null,
-          parentTaskId: parent?.id ?? null,
-          workPackageId,
-          workPackageRevision: workPackage?.revision ?? parent?.workPackageRevision ?? 1,
-          title: parsed.title,
-          description: parsed.description ?? '',
-          statusId: parsed.statusId,
-          responsibleMembershipId: parsed.responsibleMembershipId ?? null,
-          participants: [],
-          participantsRevision: 1,
-          startDate: parsed.startDate ?? null,
-          dueDate: parsed.dueDate ?? null,
-          priority: parsed.priority ?? 'none',
-          tags: [],
-          estimateMinutes: workPackage?.estimateMinutes ?? parent?.estimateMinutes ?? null,
-          revision: 1,
-          position,
-          visibility: 'workspace',
-          archivedAt: null,
-          createdAt: now,
-          updatedAt: now,
-        });
-        if (participantIds.length > 0) {
-          const rows = participantIds.map((membershipId) => newParticipant(membershipId));
-          await repo.saveParticipants(ws, id, rows, now);
-        }
-        if (tagIds.length > 0) await repo.setTaskTagIds(ws, id, tagIds);
-
-        const task = await reloadTask(repo, ws, id);
-        await record(
-          scope,
-          'task',
-          id,
-          'created',
-          task.revision,
-          {
-            title: task.title,
-            parentTaskId: task.parentTaskId,
-            statusId: task.statusId,
-            sectionId: task.sectionId,
-            responsibleMembershipId: task.responsibleMembershipId,
-            participantMembershipIds: participantIds,
-            tagIds,
-            workPackage: {
-              id: workPackageId,
-              created: workPackage !== null,
-              revision: task.workPackageRevision,
-              estimateMinutes: task.estimateMinutes,
-            },
-          },
-          taskEventIds(task),
-        );
-        return task;
-      });
+      return mutate(context, 'task.edit', 'task.create', null, parsed, taskSchema, scope => createTaskInScope(scope,parsed,tools));
     },
 
     async updateTask(context: CommandContext, taskId: string, input: UpdateTaskInput): Promise<TaskDto> {
@@ -853,4 +757,105 @@ function record(
       payload: { workspaceId: scope.context.workspaceId, [`${entityType}Id`]: entityId, revision: entityRevision, ...ids },
     },
   });
+}
+
+/** Shared validated in-transaction primitive. Caller owns current authorization, barrier, guard and receipt. */
+export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInput,tools:Pick<TaskApplicationDependencies['tools'],'newId'>):Promise<TaskDto> {
+ const parsed=parseInput<CreateTaskInput>(createTaskInputSchema,input),ws=scope.context.workspaceId,now=scope.barrierAt.toISOString();
+ const newId=()=>idSchema.parse(tools.newId());
+        const repo = scope.repository;
+        const projectId = parsed.projectId;
+        assertTaskDateRange(parsed.startDate,parsed.dueDate);
+        await requireOpenProject(repo, ws, projectId);
+        if (isSet(parsed.sectionId)) await requireAssignableSection(repo, ws, projectId, parsed.sectionId);
+        requireSameProject(requireFound(await repo.findStatus(ws, parsed.statusId)), projectId, 'statusId');
+        const parent = isSet(parsed.parentTaskId) ? await requireParent(repo, ws, projectId, parsed.parentTaskId) : null;
+        const participantIds = parsed.participantMembershipIds ?? [];
+        await requireActiveMembers(repo, ws, parsed.responsibleMembershipId ?? null, participantIds);
+        const tagIds = parsed.tagIds ?? [];
+        await requireAssignableTags(repo, ws, tagIds, []);
+
+        // Root tasks and added scope get a new package; a detail subtask shares its parent's.
+        let workPackage: WorkPackageRecord | null = null;
+        if (parent === null || parsed.workScope === 'added_scope') {
+          workPackage = {
+            id: newId(),
+            workspaceId: ws,
+            projectId,
+            origin: parent === null ? 'new_task' : 'added_scope',
+            sourcePackageId: parent === null ? null : parent.workPackageId,
+            estimateMinutes: parsed.estimateMinutes ?? null,
+            revision: 1,
+            createdAt: now,
+            updatedAt: now,
+          };
+          await repo.insertWorkPackage(workPackage);
+        }
+        const workPackageId = workPackage?.id ?? requireParentPackage(parent);
+        const position =
+          parsed.position ??
+          nextPosition(
+            (await repo.listTasks(ws, { projectId, includeArchived: true, limit: 200 }, null, MAX_POSITION)).map(
+              (task) => task.position,
+            ),
+          );
+
+        const id = newId();
+        await repo.insertTaskCore({
+          id,
+          workspaceId: ws,
+          projectId,
+          sectionId: parsed.sectionId ?? null,
+          parentTaskId: parent?.id ?? null,
+          workPackageId,
+          workPackageRevision: workPackage?.revision ?? parent?.workPackageRevision ?? 1,
+          title: parsed.title,
+          description: parsed.description ?? '',
+          statusId: parsed.statusId,
+          responsibleMembershipId: parsed.responsibleMembershipId ?? null,
+          participants: [],
+          participantsRevision: 1,
+          startDate: parsed.startDate ?? null,
+          dueDate: parsed.dueDate ?? null,
+          priority: parsed.priority ?? 'none',
+          tags: [],
+          estimateMinutes: workPackage?.estimateMinutes ?? parent?.estimateMinutes ?? null,
+          revision: 1,
+          position,
+          visibility: 'workspace',
+          archivedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+        if (participantIds.length > 0) {
+          const rows = participantIds.map((membershipId) => newParticipant(membershipId));
+          await repo.saveParticipants(ws, id, rows, now);
+        }
+        if (tagIds.length > 0) await repo.setTaskTagIds(ws, id, tagIds);
+
+        const task = await reloadTask(repo, ws, id);
+        await record(
+          scope,
+          'task',
+          id,
+          'created',
+          task.revision,
+          {
+            title: task.title,
+            parentTaskId: task.parentTaskId,
+            statusId: task.statusId,
+            sectionId: task.sectionId,
+            responsibleMembershipId: task.responsibleMembershipId,
+            participantMembershipIds: participantIds,
+            tagIds,
+            workPackage: {
+              id: workPackageId,
+              created: workPackage !== null,
+              revision: task.workPackageRevision,
+              estimateMinutes: task.estimateMinutes,
+            },
+          },
+          taskEventIds(task),
+        );
+        return task;
 }

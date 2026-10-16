@@ -1,6 +1,6 @@
 # API, команды и интеграции
 
-Статус: проект полного контракта, 16 октября 2026 года. Из него локально реализованы и проверены только маршруты P0 и ограниченного P1a.
+Статус: **первоначальный целевой каталог полного контракта**,16октября2026года. Примеры/маршруты ниже не заменяют более новые фактические bounded contracts: [P2a13](13-p2a-contract.md), [P2b14](14-p2b-contract.md), [P3a15](15-p3a-contract.md), [P3b16](16-p3b-contract.md), [P4a17](17-p4-contract.md), [P4b18](18-p4b-contract.md), [P5a19](19-p5-import-contract.md) и actual Zod/application exports в packages/contracts/domain. Локально приняты P0–boundedP5a; CSV-only create/skip import имеет отдельный accepted bounded контракт19. Это не полная реализация всех операций P1–P6 или external MCP. Исторический P0/P1a subset перечислен ниже для контекста.
 
 P0:
 
@@ -15,7 +15,7 @@ P1a, относительно `/api/v1/workspaces/:workspaceId`:
 - `GET` и `POST /tags`, `PATCH /tags/:tagId`;
 - `GET` и `POST /tasks`, `GET` и `PATCH /tasks/:taskId`, `POST /tasks/:taskId/archive`, `POST /tasks/:taskId/restore`.
 
-Для них обязательны `APP_ENV=local` и `AUTH_MODE=dev`. `NODE_ENV=production` означает лишь оптимизированную локальную сборку, а не настоящую аутентификацию или deployment: в этом режиме backend намеренно оставляет dev-маршруты зарегистрированными, а селектор actor исключён из оптимизированного бандла клиента. Запуск в hosted/нелокальном окружении отклоняется. Остальные эндпоинты, команды и примеры ниже, включая полный P1 (приватные ACL, typed custom fields, история, сохранённые представления, массовые правки), не реализованы; DTO P1a реализуют только ограниченный объём и не означают реализацию полного каталога. Доказательства — в [11](11-implementation-progress.md).
+Для них обязательны `APP_ENV=local` и `AUTH_MODE=dev`. `NODE_ENV=production` означает лишь оптимизированную локальную сборку, а не настоящую аутентификацию или deployment: в этом режиме backend намеренно оставляет dev-маршруты зарегистрированными, а селектор actor исключён из оптимизированного бандла клиента. Запуск в hosted/нелокальном окружении отклоняется. Новые bounded каталоги выше добавили typed custom fields/history/locks, weekly accounting/reports, meetings/recurrence/local worker, dependencies и schedule preview/apply. Полный P1 (private ACL, saved views, bulk edits и полная built-in history), shared Auth, остальные незафиксированные planned endpoints и production не заявляются; исторические DTO/примеры ниже не означают реализацию полного каталога. Доказательства — в [11](11-implementation-progress.md).
 
 Основа: [продуктовая спецификация](01-product-spec.md), [архитектура](02-architecture.md), [модель данных](03-domain-and-data.md). Сценарии интерфейса — в [05](05-client-and-ux.md), последовательность P0–P6 — в [06](06-implementation-plan.md), проверки — в [07](07-verification-and-pilot.md), эксплуатация — в [08](08-railway-and-operations.md). Павел подтвердил PostgreSQL; persistence реализуется через Drizzle и версионированные миграции. Публичный контракт остаётся независимым от схемы хранения.
 

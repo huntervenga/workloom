@@ -3,6 +3,7 @@
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
  * produce no diff). Immutability triggers live only in SQL.
  */
+import type { ProjectImportDto,ProjectImportReconciliationDto,ImportOwnedRevisions } from '@workloom/contracts';
 import type { RecurrenceResolutionDto, RecurrenceScheduleInput, RecurrenceTemplateInput } from '@workloom/contracts';
 import type { MeetingDto, AttendanceDto, AttendanceHistoryDto, AttendanceAttribution, TaskFieldData, TaskFieldDefinitionDto, PlanningSnapshotDto, PeriodCommitmentDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto, WorkCategorySnapshot, WorkTypeReportRunDto, WorkTypeReportRowDto } from '@workloom/contracts';
 import { sql } from 'drizzle-orm';
@@ -847,6 +848,7 @@ export const REQUIRED_TABLES = [
   'recurrence_series','recurrence_series_versions','recurrence_generation_authorizations','recurrence_period_bindings',
   'recurrence_instances','recurrence_exception_versions','recurrence_calendar_locks',
   'task_dependencies','project_dependency_policies','graph_layouts','graph_layout_positions',
+  'project_imports','external_import_references',
 ] as const;
 
 
@@ -1290,3 +1292,30 @@ export const graphLayouts=pgTable('graph_layouts',{
 export const graphLayoutPositions=pgTable('graph_layout_positions',{
  workspaceId:uuid('workspace_id').notNull(),layoutId:uuid('layout_id').notNull(),taskId:uuid('task_id').notNull(),x:doublePrecision('x').notNull(),y:doublePrecision('y').notNull(),
 },t=>[primaryKey({columns:[t.workspaceId,t.layoutId,t.taskId]}),foreignKey({name:'graph_layout_positions_layout_fk',columns:[t.workspaceId,t.layoutId],foreignColumns:[graphLayouts.workspaceId,graphLayouts.id]}),foreignKey({name:'graph_layout_positions_task_fk',columns:[t.workspaceId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.id]}),check('graph_layout_positions_finite_check',sql`${t.x} between -100000 and 100000 and ${t.y} between -100000 and 100000`)]);
+
+/** P5a inert source artifact; sourceCSV retained exactly, applied reconciliation is immutable. */
+export const projectImports=pgTable('project_imports',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),
+ sourceNamespace:text('source_namespace').notNull(),fileName:text('file_name').notNull(),fileDigest:text('file_digest').notNull(),rawCsv:text('raw_csv').notNull(),
+ revision:integer('revision').notNull(),status:text('status').$type<'staged'|'applied'>().notNull(),
+ headers:jsonb('headers').$type<string[]>().notNull(),sourceRows:jsonb('source_rows').$type<ProjectImportDto['sourceRows']>().notNull(),
+ reconciliation:jsonb('reconciliation').$type<ProjectImportReconciliationDto>(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull(),appliedAt:timestamp('applied_at',{withTimezone:true}),
+},t=>[
+ unique('project_imports_scope_unique').on(t.workspaceId,t.projectId,t.id),
+ unique('project_imports_namespace_scope_unique').on(t.workspaceId,t.projectId,t.id,t.sourceNamespace),
+ foreignKey({name:'project_imports_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
+ check('project_imports_limits_check',sql`char_length(${t.sourceNamespace}) BETWEEN 1 AND 160 AND char_length(${t.fileName}) BETWEEN 1 AND 255 AND ${t.fileDigest} ~ '^[a-f0-9]{64}$' AND octet_length(${t.rawCsv}) <= 1048576 AND CASE WHEN jsonb_typeof(${t.headers})='array' THEN jsonb_array_length(${t.headers}) BETWEEN 1 AND 100 ELSE false END AND CASE WHEN jsonb_typeof(${t.sourceRows})='array' THEN jsonb_array_length(${t.sourceRows}) BETWEEN 1 AND 50 ELSE false END`),
+ check('project_imports_state_check',sql`((${t.status}='staged' AND ${t.revision}=1 AND ${t.appliedAt} IS NULL AND ${t.reconciliation} IS NULL) OR (${t.status}='applied' AND ${t.revision}=2 AND ${t.appliedAt} IS NOT NULL AND (${t.reconciliation}->>'status'='applied') IS TRUE))`),
+]);
+/** Stable source mapping is insert-only: reimport never overwrites a local target or first-source vector. */
+export const externalImportReferences=pgTable('external_import_references',{
+ workspaceId:uuid('workspace_id').notNull(),sourceNamespace:text('source_namespace').notNull(),externalId:text('external_id').notNull(),
+ projectId:uuid('project_id').notNull(),taskId:uuid('task_id').notNull(),importId:uuid('import_id').notNull(),sourceDigest:text('source_digest').notNull(),
+ ownedRevisions:jsonb('owned_revisions').$type<ImportOwnedRevisions>().notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
+},t=>[
+ primaryKey({columns:[t.workspaceId,t.sourceNamespace,t.externalId]}),
+ foreignKey({name:'external_import_references_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+ foreignKey({name:'external_import_references_import_fk',columns:[t.workspaceId,t.projectId,t.importId,t.sourceNamespace],foreignColumns:[projectImports.workspaceId,projectImports.projectId,projectImports.id,projectImports.sourceNamespace]}),
+ check('external_import_references_shape_check',sql`char_length(${t.sourceNamespace}) BETWEEN 1 AND 160 AND char_length(${t.externalId}) BETWEEN 1 AND 254 AND ${t.sourceDigest} ~ '^[a-f0-9]{64}$' AND jsonb_typeof(${t.ownedRevisions})='object' AND (${t.ownedRevisions} ?& ARRAY['taskRevision','participantsRevision','workPackageRevision','fields']) IS TRUE`),
+]);

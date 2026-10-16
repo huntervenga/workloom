@@ -1,6 +1,6 @@
 # Журнал доказательств реализации
 
-Снимок от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b. Последний P4b добавил ordinary date-only start/due, typed/day-shift review/apply и bounded Gantt с immutable baseline overlay; source checkpoint `2d885a9f3c6834dff796779a74b739d31d73cd38` создан root, дерево сразу после commit чистое. Полный P1/P2/P3/P4, MVP и пилот не завершены; pointer drag, private ACL/Auth, внешние календари, P5–P6, production и обновление старых вкладок не проверены. Исторические failures и targeted reruns ниже сохраняются отдельно. Этапы — [06](06-implementation-plan.md), проверки — [07](07-verification-and-pilot.md), quickstart — [README](../README.md).
+Снимок от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b/P5a. Последний P5a добавил CSV stage/mapping/preview/atomic create-or-skip/reconciliation для выбранного shareable пилота до50 строк; source checkpoint ожидается после этой приёмки. Полный P1/P2/P3/P4/P5, MVP и пилот не завершены; pointer drag, private ACL/Auth, полноценный Asana import, MCP, внешние календари, production и old-tab upgrade не заявлены. Исторические failures и targeted reruns ниже сохраняются отдельно. Этапы — [06](06-implementation-plan.md), проверки — [07](07-verification-and-pilot.md), quickstart — [README](../README.md).
 
 ## Происхождение
 
@@ -710,3 +710,57 @@ Counts разных suites не складываются. Широкий PG gate
 **Итог P4b:** root functional/visual acceptance после всех текущих gates; source checkpoint `2d885a9f3c6834dff796779a74b739d31d73cd38` создан root, дерево сразу после commit чистое; узкая provenance-правка не меняет source и не запускает tests. Все product/QA source и документы P4b authored Codex gpt-6.1-sol high,0 Claude calls/probes; текущее явное указание пользователя — только Codex, исторические Opus attribution не меняются. Foundation provenance `/tmp/workloom-p4b-foundation-provenance.json`. Runtime23140/session40855 и исходные demo сохранены, nativePG17.5 current9, workerOFF. FullP4/MVP/Auth/privateACL/import/MCP/production/old-tab не заявлены.
 
 Documentation freeze:23 Markdown files/root README+AGENTS+workerREADME/docs01–19,289 local file links checked,0 broken; `git diff --check` pass. Новых product tests ради prose/hash нет.
+
+## P5a — подготовка actual CSV acceptance (исторический кандидат)
+
+Root дал source GO05:34UTC после source `2d885a9f3c6834dff796779a74b739d31d73cd38` и docs-only `0fcb7bd`. Actual public imports schemas/five-method port compiled; на исходном этапе core/factory ещё не были released,12 новых HTTP/PG scenarios написаны и проходят QA types/lint, но PASS реализации пока не заявляется. Root сообщил shared safe primitives05:37UTC и31 прежнюю public task/field regression; это отдельный gate, не import transaction proof. Авторство — только Codex gpt-6.1-sol high по текущему указанию пользователя.
+
+**Genuine pre0009:** `/tmp/workloom-p4b-compat-fixture.json`0600, SHA256 `9f09d7b3f741054b780096a91d0eb6f2decf11f11a5bb787b21afba490a5bd0d`, source2d885a9, снята через принятый P4b API23140/session40855 до build/runtime swap.9 новых raw/cache commands (Task.create startnull,Task.update setdates, personal/project freeze,task.schedule.apply после baseline,weeklyplan/fact/reports) +21 exact nested старых replays =30cachedfullrows;34 project-scoped old-column sets. Оба baseline сохраняют2027-01-11→16, текущая Task2027-01-12→18.1200whole/360plan/300fact/−60; оба pinned report types сохранены. Версия startDate/null и точный schedule receipt входят в будущий post0009 verifier. Никаких SQL writes/runtime restart/worker включения при capture; исходные demo/fixtures сохранены. На момент исходного capture post0009 proof ещё не выполнялся; последующий результат ниже.
+
+### P5a — focused actual PostgreSQL gate
+
+Core/factory/0009 candidate released05:48UTC, actual API-only build pass. Первый implementation run `tests/integration/p5a-import.test.ts` — **15/15 pass**,32,01с (`/tmp/workloom-p5a-focused.log`), disposable real PostgreSQL и actual HTTP; QA types/exact lint pass. Это ещё не полный broad/web acceptance.
+
+- BOM/quoted commas/newlines/leading-zero и >2^53 string IDs сохраняются; readonly preview/reconciliation не создают задач. Duplicate headers и пробелы externalID остаются исходными; required relationships нельзя скрыть preserve-only acknowledgment.
+- Фактическое apply50 задач и отказ51DATArows; structural malformed/NUL/surrogates/cell/column/реальный UTF8 byte bound без partial stage. Legal1MiB source с JSON escaping >5MiB проходит approved scoped8MiB route. Это лимиты Workloom, не объявленный лимит Asana.
+- Parent DAG/отдельные null-estimate packages, current members/status/section/tags и6 scalar fields всех5 поддерживаемых типов.1,5 исходных часа→90мин без округления,0/false сохраняются. History `source:'import'` с настоящим actor owner; sourceMeaning/sourceUnit сохраняются в reconciliation. WorkLogs/Commitments/PackageBaselines/report runs не создаются.
+- Новый файл с перестановкой **строк и headers** и remapped column indices делает skip по тем же stable IDs, без новых tasks/packages/values/history. Source change, локальная независимая value revision и missing-value ownershipF1→F2 дают конфликт, а не overwrite/ложный skip.
+- Два разных staged artifacts с одним namespace/IDs и отдельными keys/preview одновременно: ровно один created success, второй PREVIEW_STALE; refreshed loser skip-only apply сохраняет те же IDs и нулевое приращение task/package/value/history.
+- Privacy: известный Private=true блокирует, даже если колонка preserve-only или mapping выбрал другой false flag; без shareable scope confirmation apply недоступен. Owner/admin-only raw artifacts; foreign refs404/no disclosure/current access до replay. Archived/locked/stale fields, invalid dates, title/typed value bounds и parent depth>20 отвергаются до proposed writes.
+- Поздний final receipt SQL fault откатывает весь import/task/package/value/history/mapping/audit/outbox; exact same-key retry применяет один набор, новый повтор не меняет state. Inert stage и readonly preview не подготавливают missing overdue census; apply сначала commits preparation/freeze и taggedPREVIEW_STALE, imported rows остаются staged до нового review.
+
+Раннее read-only review обнаружило scalar bound mismatch (>1e12 number/10001 text), privacy mapping bypass и missing-field semantic ownership. Владелец исправил до этого первого PG run, поэтому PG red→green для них не заявляется. Own type/lint authoring corrections также сделаны до runtime gate. Пользовательский Asana export не предоставлен и не импортировался; OAuth/URL fetch/live sync/permissions migration не проверялись.
+
+**Quiet0009 и raw30:** по отдельному root GO принятого API23140/session40855 остановили SIGTERMexit0;4310closed/workerOFF. Foundation `/tmp/workloom-p5a-upgrade-preservation.json`:51 прежняя таблица по всем old columns exact,30 cached full rows/hash/outcomes,12 baseline SQL JSON и8 pinned report SQL rows exact; только0009_project_imports/current10/repeat[].18 старых SQL/snapshot artifacts и journal prefix неизменны. Новых seed/queue/worker операций не было.
+
+Свежий compiled API session36256/PID30886 на4310, readiness200 DB/schemaok. `/tmp/workloom-p5a-compat-proof.json` verified05:52:16.242UTC:30 exact raw HTTP/cache replays,34 project old-column sets и4 pinned HTTP documents exact. Старые Task.create startnull, update setdates и P4b scheduleapply receipt сохранены; baseline2027-01-11→16 против текущих12→18 без подстановки. Verifier новых commands/reports не создавал. Static SPA в этот момент ещё P4b, P5a web/browser и финальный parity не заявляются.
+
+### P5a — широкий gate и визуальная правка
+
+После source freeze05:57UTC QA выполнил один широкий gate на стабильном кандидате. Counts разных suites не суммируются:
+
+| Проверка | Фактический результат | Лог |
+| --- | --- | --- |
+| Build + actualHTTP/PostgreSQL | все7 workspaces;190 тестов /17 файлов pass,194,65с | `/tmp/workloom-p5a-full-integration.log` |
+| Корневой lint | pass,239 browser boundaries | `/tmp/workloom-p5a-root-lint.log` |
+| Корневой typecheck | pass, все workspaces и QA | `/tmp/workloom-p5a-root-types.log` |
+| Core/API/worker unit |1119 /56 файлов pass,5,08с | `/tmp/workloom-p5a-root-unit.log` |
+| Web components |265 /51 файлов pass,12,63с | `/tmp/workloom-p5a-web.log` |
+| Полный browser |24/24 pass,1,0мин | `/tmp/workloom-p5a-browser.log` |
+
+Новые2 browser cases выполняют реальную загрузку BOM CSV, явное сопоставление stringIDs/parent/существующего duration поля/current_estimate/hours, preview90мин, apply, API-проверку двух различных null-estimate packages и reload сохранённого mapping/units. Mobile реально теряет ответ уже committed apply, затем сохраняет другой несохранённый upload при exact original key/body retry; дублей нет. URL и literal HTML/formula не исполняются. Прежние P0 error-state mocks явно названы и не считаются PG proof.
+
+Первый визуальный просмотр root всех6 кадров выявил сжатый текст строки mobile reconciliation рядом с длинной кнопкой; остальные5 кадров приняты. Исправление только responsive classes `ImportResults.tsx`: на узком экране кнопка ниже текста. Первые6 кадров сохраняются отдельно; server/PG suite для CSS не повторяется. Финальные фактические результаты ниже.
+
+Финальный responsive gate: owner strict full-web noEmit/scoped lint pass; QA fresh web build pass (`/tmp/workloom-p5a-visual-build.log`), targeted2/2 browser pass6,4с (`/tmp/workloom-p5a-visual-browser.log`). Это отдельный rerun после24/24, а не новый полный26-suite. Содержание/API/core не менялись.
+
+Durable screenshots: `/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/`:
+
+- `p5a-desktop-mapping.png`, `p5a-desktop-preview.png`, `p5a-desktop-reconciliation.png`;
+- `p5a-mobile-mapping.png`, `p5a-mobile-preview.png`, `p5a-mobile-reconciliation.png`.
+
+Первые6 сохранены в `p5a-previsual/`. Root просмотрел все6 исходных кадров, затем ровно2 replacement reconciliation и принял исправление06:09UTC;4 остальных исходных состояния уже прошли просмотр. Это модельное визуальное ревью координатором, не человеком. Новый desktop preview: `http://127.0.0.1:4310/w/5eed0000-0000-4000-8000-000000000201/projects/96a70fdf-0e0c-43fb-9e28-d7670a96ab90?view=import&import=86d4ba59-63ce-4cff-8078-9c6396763fbd`.
+
+Final optimized parity06:09:03UTC: `/tmp/workloom-p5a-final-asset-parity.json` pass. Ready200 actualbody database/schemaok; HTML551B SHA256 `5ba468cbd73510939ec16a1d68a44a82eddd047152c676c61a7aa2dbd465f920`; JS `index-CBqS6ivt.js`1289315B SHA256 `e8263264e2250f3c4e5190922a3c3feb0ef1fdf7c838114046143e191eaf4862`; CSS `index-D8ogH813.css`54199B SHA256 `37b9b1815f3944bcccd407a5c9d61c98b856a5f2b6dd6211aacd49b280415739`. Все6 HTML/JS/CSS/lazy assets200/correctMIME/byte-equal текущему dist, Vite ImportView200 actualsource. GET-only, без restart/source/data writes. Runtime36256/PID30886, Node24.19.0/nativePG17.5/current10, workerOFF.
+
+**Итог P5a:** root принял bounded functional/visual slice; source checkpoint пока ожидается. Авторство всех новых product/QA/docs P5a — Codex gpt-6.1-sol high,0 Claude calls/probes. Импорт настоящего user export, Asana OAuth/API/live sync, source relationships/attachments/private ACL, fullMVP/Auth/deploy и MCP этим gate не доказаны. Planned docs20 не входят в P5a source checkpoint. Проверки ради будущего hash не повторять.

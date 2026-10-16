@@ -1,3 +1,5 @@
+import { ImportView, ImportNotices } from '../features/imports/ImportView';
+import { useImportWorkspace } from '../features/imports/useImportWorkspace';
 import { GanttView } from '../features/schedule/GanttView';
 import { ScheduleDialog, ScheduleNotices } from '../features/schedule/ScheduleDialog';
 import { useScheduleWorkspace } from '../features/schedule/useScheduleWorkspace';
@@ -22,7 +24,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   FieldManagerDialog,
@@ -206,6 +208,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const taskId = searchParams.get('task');
   const graphMode = searchParams.get('view') === 'graph';
   const ganttMode = searchParams.get('view') === 'gantt';
+  const importMode = searchParams.get('view') === 'import';
+  const importId = searchParams.get('import') ?? '';
+  const selectImport = useCallback((id: string) => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'import'); if (id) next.set('import', id); else next.delete('import'); return next; }), [setSearchParams]);
+  const imports = useImportWorkspace(actorId, workspace.id, project.id, isUuid(importId) ? importId : '', selectImport);
 
   const tasks = useTaskListQuery(actorId, workspace.id, {
     projectId: project.id,
@@ -219,6 +225,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const writable = canEdit && project.archivedAt === null;
   // The server enforces the role; this only hides controls that would be refused.
   const canManageFields = (workspace.role === 'owner' || workspace.role === 'admin') && project.archivedAt === null;
+  const canManageImports = workspace.role === 'owner' || workspace.role === 'admin';
 
   // Errors win over loaded data, so a denied refetch hides the custom columns.
   const fieldColumns =
@@ -290,6 +297,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     { query: tags, subject: 'tags' },
   ] as const;
   const metadataError = metadata.find((item) => item.query.isError);
+  const importCatalogDenied = [members.error, sections.error, statuses.error, tags.error, fieldDefinitions.error].some(isAccessDenied);
+  const noteImportDenied = imports.noteDenied;
+  useLayoutEffect(() => { if (importCatalogDenied) noteImportDenied(); }, [importCatalogDenied, noteImportDenied]);
+  const refreshImportCatalog = async () => (await Promise.all([members.refetch(), sections.refetch(), statuses.refetch(), tags.refetch(), fieldDefinitions.refetch()])).every(result => result.isSuccess);
   // The editor waits for real sections, statuses, members and tags.
   const metadataReady = metadataError === undefined && metadata.every((item) => item.query.isSuccess);
 
@@ -387,6 +398,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </div>
       </header>
 
+      <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
       <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable} />
       <DependencyNotices controller={dependencies} />
@@ -395,9 +407,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       {meetingController.commands.create.pendingCommand||meetingController.commands.create.uncertain?<div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">Создание встречи ещё не подтверждено. <Button size="sm" onClick={()=>meetingController.setCreateOpen(true)}>Открыть создание встречи</Button></div>:null}
       <CreateMeetingDialog accessDenied={[members.error,sections.error,statuses.error,meetingPeriods.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={meetingPeriods.data??[]} statuses={statuses.data??[]} sections={sections.data??[]} ownMembershipId={members.data?.find(m=>m.userId===actorId)?.id??''} timezone={workspace.timezone} onCreated={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab','plan');return next;})}/>
       <nav aria-label="Представления проекта" className="flex flex-wrap gap-2">
-        <Button variant={graphMode || ganttMode ? 'ghost' : 'primary'} aria-current={!graphMode && !ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>Задачи</Button>
+        <Button variant={graphMode || ganttMode || importMode ? 'ghost' : 'primary'} aria-current={!graphMode && !ganttMode && !importMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>Задачи</Button>
         <Button variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? `Граф выбранных (${selectedTaskIds.length})` : 'Граф'}</Button>
         <Button variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>Сроки</Button>
+        {canManageImports ? <Button variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>Импорт CSV</Button> : null}
         <Link to={`/w/${workspace.id}/projects/${project.id}/week`} className={buttonClassName({ variant: 'ghost' })}>
           <CalendarDays size={16} aria-hidden="true" />Неделя
         </Link>
@@ -449,7 +462,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               onRetry={() => void fieldsError.query.refetch()}
             />
           ) : null}
-          {graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Загружено больше 100 задач. Выберите до 100 исходных задач в списке ниже; граф не сокращает набор автоматически.</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : <TaskList
+          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Загружено больше 100 задач. Выберите до 100 исходных задач в списке ниже; граф не сокращает набор автоматически.</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : <TaskList
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
             query={tasks}

@@ -142,6 +142,7 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
     // materializePeriod and authorizeGeneration bypass every due-freeze loop; their handlers create only approved
     // target-period census or replace grant metadata, and never depend on a revoked old grant.
     if(intent.family==='dependency'&&intent.command==='graph.layout.set')return null;
+    if(intent.family==='import'&&intent.command==='import.csv.stage')return null;
     if(intent.family==='recurrence'&&RECURRENCE_PREREQUISITE_BY_COMMAND[intent.command]!=='full_due_freeze')return null;
     const footprint=await census.resolveAffectedProjects(intent);
     const affected=new Set(footprint.kind==='projects'?footprint.projectIds:[]);
@@ -157,6 +158,9 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
     const input=record(intent.input),target=record(intent.target);
     let blocked:string[]=[];
     switch(intent.family) {
+      case 'import':
+        if(intent.command==='import.project.apply'&&!await intent.previewMatches())return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
+        break;
       case 'schedule':
         if(!await intent.previewMatches())return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
         break;

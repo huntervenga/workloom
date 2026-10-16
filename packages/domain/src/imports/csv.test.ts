@@ -1,0 +1,12 @@
+import {describe,it,expect} from 'vitest';
+import {parseImportCsv,importUtf8Bytes} from './csv.js';
+import {importScalar} from './scalars.js';
+import type {TaskFieldDefinitionDto,ProjectImportMapping} from '@workloom/contracts';
+const map={column:2,fieldId:'field',expectedDefinitionRevision:1,empty:'missing',sourceMeaning:'ordinary',sourceUnit:'hours'} as ProjectImportMapping['customFields'][number];
+describe('bounded lossless CSV parser and scalar conversion',()=>{
+ it('preserves quoted delimiters/newlines/escapedquotes and string IDs while parsing BOM separately',()=>{const raw='\ufeffID,Name,Note\r\n00001234567890123456789,"A,B","line1\r\nline2 ""quoted"""\r\n';const parsed=parseImportCsv(raw);expect(parsed.headers).toEqual(['ID','Name','Note']);expect(parsed.sourceRows).toEqual([{rowNumber:1,cells:['00001234567890123456789','A,B','line1\r\nline2 "quoted"']}]);expect(importUtf8Bytes('\ufeff😀')).toBe(7);});
+ it('rejects malformed quotes, shape, NUL and unpaired Unicode without replacement',()=>{for(const raw of ['ID,Name\n1,"unclosed','ID,Name\n1,a"b','ID,Name\n1,"a"x','ID,Name\n1','ID,Name\n1,a\0','ID,Name\n1,\ud800'])expect(()=>parseImportCsv(raw)).toThrow();});
+ it('enforces50 DATA ROWS rather than unique IDs and preserves duplicate headers',()=>{expect(parseImportCsv('ID,Name,Name\n1,A,B').headers).toEqual(['ID','Name','Name']);const csv='ID,Name\n'+Array.from({length:51},()=> '1,Same').join('\n');expect(()=>parseImportCsv(csv)).toThrow('50 DATA ROWS');});
+ it('uses exact decimal minutes:1.1hours66, rejects fractionalminute instead of rounding',()=>{const field={type:'duration'} as TaskFieldDefinitionDto;expect(importScalar('1.1',field,map,'iso')).toEqual({type:'duration',value:66});expect(importScalar('0.05',field,map,'iso')).toEqual({type:'duration',value:3});expect(()=>importScalar('0.01',field,map,'iso')).toThrow('fractional minutes');expect(()=>importScalar('35791394.13',field,map,'iso')).toThrow();});
+ it('keeps zero,false,missing and typed null distinct',()=>{expect(importScalar('',{type:'number'} as TaskFieldDefinitionDto,map,'iso')).toBeUndefined();expect(importScalar('',{type:'number'} as TaskFieldDefinitionDto,{...map,empty:'null'},'iso')).toEqual({type:'number',value:null});expect(importScalar('0',{type:'number'} as TaskFieldDefinitionDto,map,'iso')).toEqual({type:'number',value:0});expect(importScalar('false',{type:'boolean'} as TaskFieldDefinitionDto,map,'iso')).toEqual({type:'boolean',value:false});});
+});

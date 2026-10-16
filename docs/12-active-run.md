@@ -85,11 +85,19 @@ P4a dependencies/blocking/personal graph layout по [17](17-p4-contract.md) п�
 
 Quiet0007 proof:47 oldtables/cache13/4reportSQL preserved,current8/repeat[]. Genuine pre0007 fixture0600/source744125 и exact13raw replay/32scoped projections/5HTTP pinned docs unchanged. Runtime89940/PID15941 на4310 готов DB/schemaok; workerOFF, demo сохранены. Vite4311 transformedGraphView содержит новый arranging Save guard. Новых Claude calls нет: fallback Codex high до конца, reset07:50 позже deadline07:18:10. Последние15 минут — стабильный checkpoint.
 
-## Активный P4b
+## Последний checkpoint P4b
 
 Root дал GO после source12f5dbd и docs-only48b138. Точный контракт — [18](18-p4b-contract.md): ordinary start/due dates, read-only bounded schedule review, atomic keyed apply и baseline overlay без подстановки текущих дат. Functional candidate прошёл build7/lint/types, core1059/53, web252/46, actualHTTP/PG175/16 и полныйbrowser22/22. Root просмотрел все6 текущих кадров и принял boundedP4b; source checkpoint `2d885a9f3c6834dff796779a74b739d31d73cd38` создан root, дерево сразу после commit чистое. Quiet0008 уже выполнен:51oldtables/21cache/6baselineSQL+6reportSQL preserved,current9/repeat[]. Fresh API40855/PID23140 на4310 и финальнаяP4bSPA совпадают с dist; workerOFF. Работает только Codex gpt-6.1-sol high по текущему указанию пользователя; Claude не вызывать автоматически.
 
 Genuine pre0008 fixture `/tmp/workloom-p4a-compat-fixture.json` (0600/source12f5dbd) снята через принятый API: ordinary TaskDto/create/update и personal/project baseline без startDate, dueDate2027-01-16 captured;1200whole/360weekly/300fact/−60, оба report types pinned.8 новых raw/cache commands +13 nested старых =21;34 old-column scoped projections сохранены. Начальная setup-попытка manual expectedRevision0 получила400; исправлена на контрактныйnull, отдельная fixture успешна. Это QA предположение, не product failure. Post0008 exact21raw/cache replay,34scoped old-column sets и4HTTP pinned docs pass; обе genuineстарые baseline показывают startDate not_captured и dueDate set2027-01-16. FreshTask startDate:null, oldcachedTask propertyabsent. Capture framing исправлен GET/UI-scroll-only без source change; initialframes сохранены. Полный P4/MVP/Auth/privateACL/production не достигнуты.
+
+## Последний принятый P5a
+
+Root дал source GO05:34UTC после P4b source2d885a9/docs0fcb7bd. Ограниченный CSV-only50 DATA ROWS/five-operation catalog — [19](19-p5-import-contract.md). Shared in-scope primitives прошли ранний31-case stop gate; первый realHTTP/PG15/15 pass32,01с. После web source freeze05:57UTC QA broad gate: build7/lint239/types pass, core/API/worker1119/56, web265/51, PostgreSQL190/17, fullbrowser24/24. Counts отдельно, не сумма.
+
+Root visual первых6 кадров нашёл только mobile reconciliation сжатие текста; one-file CSS fix, owner types/lint pass, QA webbuild+targeted2/2 pass6,4с. Root просмотрел ровно2 replacement reconciliation06:09UTC и принял boundedP5a, остальные4 исходных состояния уже приняты. Финальная optimizedSPA и6assets200/MIME/exactdist06:09:03UTC; `/tmp/workloom-p5a-final-asset-parity.json`. Source checkpoint ожидается; точные evidence/logs/images в [11](11-implementation-progress.md#p5a--широкий-gate-и-визуальная-правка).
+
+Genuine pre0009 `/tmp/workloom-p4b-compat-fixture.json`0600/source2d885a9:9raw+21nested=30cache,34scopedoldcolumns; baseline11→16January2027/current12→18,1200whole/360plan/300fact/−60. Quiet0009 только additive migration:51oldtables/30cache/12baselines+8reportSQL/18oldfiles preserved,current10/repeat[]. FreshAPI36256/PID30886 readinessDB/schema, raw30/34sets/4HTTPpinneddocs exact; workerOFF. Static web теперь текущий compiledP5a, Vite4311 source соответствует. Только Codex gpt-6.1-sol high; Claude calls/probes нет. Настоящий user export/Asana OAuth/live sync/fullMVP/Auth/privateACL/deploy не разрешены этим срезом. MCP docs20 остаются draft и исключаются из P5a checkpoint до отдельного GO. Deadline07:18:10UTC неизменен, последние20минут — стабильный checkpoint.
 
 ## Матрица P2a и оставшиеся границы
 
@@ -106,3 +114,5 @@ Genuine pre0008 fixture `/tmp/workloom-p4a-compat-fixture.json` (0600/source12f5
 | после root functional/visual/operator acceptance | bounded P3b | принят локально; source `7441251470e32b47272a2031cdcf76e70c668a31`, дерево сразу после commit чистое; узкая docs-only provenance без reruns | [11](11-implementation-progress.md#p3b--итоговые-core-postgresql-upgrade-и-browser-gates) |
 | root acceptance05:05UTC/source05:06UTC | bounded P4a | source `12f5dbd8c9d5af8c01070e0278ec1ec8fe499fe2`, дерево сразу после commit чистое; narrow docs-only provenance без reruns | [11](11-implementation-progress.md#p4a--широкая-проверка-ui-redgreen-и-итоговая-приёмка) |
 | root functional/visual acceptance | bounded P4b | принят локально; source `2d885a9f3c6834dff796779a74b739d31d73cd38`, дерево после commit чистое; narrow docs-only provenance без reruns | [11](11-implementation-progress.md#p4b--широкий-gate-и-браузерный-кандидат) |
+
+| root acceptance06:09UTC | bounded P5a | functional/visual accepted; source checkpoint pending | [11](11-implementation-progress.md#p5a--широкий-gate-и-визуальная-правка) |

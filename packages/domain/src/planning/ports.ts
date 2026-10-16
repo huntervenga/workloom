@@ -103,6 +103,8 @@ export type TaskMutationCommand = 'project.create'|'project.update'|'section.cre
 export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set';
 export type PlanningMutationCommand = 'period.create'|'period.update'|'commitment.create'|'commitment.update'|'plan.freeze'|'work.set'|'report.create';
 export type PlanningMutationIntent =
+ | {readonly family:'import';readonly command:'import.csv.stage';readonly target:{readonly projectId:string};readonly input:unknown}
+ | {readonly family:'import';readonly command:'import.project.apply';readonly target:{readonly projectId:string};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>}
  | {readonly family:'schedule';readonly command:'task.schedule.apply';readonly target:{readonly projectId:string;readonly affectedProjectIds:readonly string[]};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>}
  | {readonly family:'task';readonly command:TaskMutationCommand;readonly target:string|null;readonly input:unknown}
  | {readonly family:'field';readonly command:FieldMutationCommand;readonly target:unknown;readonly input:unknown}
