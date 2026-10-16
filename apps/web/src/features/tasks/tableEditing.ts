@@ -3,7 +3,7 @@ import { changedKeys, draftFromTask, emptyDraft, type TaskDraft } from './taskDr
 import type { WorkPackageEntry } from '../task-table/workPackages';
 import type { CreateSession, EditSession } from './useTaskCommands';
 
-export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate' | 'estimate';
+export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate' | 'priority' | 'estimate';
 
 /** View/recovery mapping must follow the edited field rather than assume a date fallback. */
 export function taskInlineColumn(field: TaskInlineField) {
@@ -12,6 +12,7 @@ export function taskInlineColumn(field: TaskInlineField) {
     case 'statusId': return 'status';
     case 'responsibleMembershipId': return 'responsible';
     case 'dueDate': return field;
+    case 'priority': return field;
     case 'estimate': return field;
   }
 }
@@ -60,6 +61,7 @@ export function matchesInlineTaskReceipt(current: TaskDto, receipt: TaskDto, fie
     case 'statusId':
     case 'responsibleMembershipId':
     case 'dueDate':
+    case 'priority':
       return current[field] === receipt[field];
   }
 }

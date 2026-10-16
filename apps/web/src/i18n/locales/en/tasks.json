@@ -214,6 +214,7 @@
     "editStatus": "Edit status for {{title}}",
     "editAssignee": "Edit assignee for {{title}}",
     "editDueDate": "Edit due date for {{title}}",
+    "editPriority": "Edit priority for {{title}}",
     "draft": "Draft",
     "draftHint": "This task has unsaved changes. Open its details to resume.",
     "editTitle": "Rename {{title}}"

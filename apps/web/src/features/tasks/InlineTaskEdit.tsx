@@ -1,4 +1,4 @@
-import type { MembershipDto, TaskDto, TaskStatusDto } from '@workloom/contracts';
+import { taskPrioritySchema, type MembershipDto, type TaskDto, type TaskStatusDto } from '@workloom/contracts';
 import { Button, TextInput, inputClassName } from '@workloom/ui';
 import { Expand, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react';
@@ -6,6 +6,7 @@ import { useTranslation } from '../../i18n';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { SaveFeedback } from '../../shared/SaveFeedback';
+import { priorityLabels } from './TaskFields';
 import { submitTaskFormShortcut } from './TaskDrawer';
 import { buildUpdateInput, changedKeys, draftFromTask, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors } from './taskDraft';
 import type { WorkPackageEntry } from '../task-table/workPackages';
@@ -120,6 +121,11 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
       {field === 'estimate' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.inlineEstimate.label')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={`${id}-estimate-help${currentError ? ` ${id}-error` : ''}${staleEstimate ? ` ${id}-estimate-source` : ''}`} type="text" autoComplete="off" className="px-2 text-xs" value={session.draft.estimate} onChange={event => change({ estimate: event.target.value })} /> : field === 'title' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.taskName')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="text" maxLength={TASK_TITLE_MAX} autoComplete="off" className="px-2 text-xs" value={session.draft.title} onChange={event => change({ title: event.target.value })} /> : field === 'statusId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
         {!statuses.some(status => status.id === session.draft.statusId) ? <option value={session.draft.statusId}>{t('tasks.taskFields.statusUnavailable')}</option> : null}
         {[...statuses].sort((a, b) => a.position - b.position).map(status => <option key={status.id} value={status.id}>{status.name}</option>)}
+      </select> : field === 'priority' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.priority')} className={inputClassName('px-2 text-xs')} value={session.draft.priority} onChange={event => {
+        const priority = taskPrioritySchema.safeParse(event.target.value);
+        if (priority.success) change({ priority: priority.data });
+      }}>
+        {taskPrioritySchema.options.map(priority => <option key={priority} value={priority}>{priorityLabels[priority]}</option>)}
       </select> : field === 'responsibleMembershipId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.assignee')} className={inputClassName('px-2 text-xs')} value={session.draft.responsibleMembershipId ?? ''} onChange={event => change({ responsibleMembershipId: event.target.value || null })}>
         <option value="">{t('tasks.taskFields.unassigned')}</option>
         {session.draft.responsibleMembershipId && !members.some(member => member.id === session.draft.responsibleMembershipId) ? <option value={session.draft.responsibleMembershipId}>{t('tasks.taskFields.memberUnavailable')}</option> : null}

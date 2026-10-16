@@ -383,7 +383,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     if (editor !== undefined && editor !== null) return editor;
     if (!ctx.onEditTaskField || !canEditTaskInline(task)) return content;
     if (field === 'estimate' && !isCurrentEstimateProjection(task, ctx.summary.packages)) return <span title={t('tasks.inlineEstimate.refreshRequired')}>{content}<span className="sr-only">{t('tasks.inlineEstimate.refreshRequired')}</span></span>;
-    const label = field === 'estimate' ? t('tasks.inlineEstimate.edit', { title: task.title }) : field === 'title' ? renameLabel : field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
+    const label = field === 'estimate' ? t('tasks.inlineEstimate.edit', { title: task.title }) : field === 'title' ? renameLabel : field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : field === 'priority' ? t('tasks.inlineEdit.editPriority', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
     return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className={cn('flex min-h-8 w-full min-w-0 items-center rounded px-1 hover:bg-slate-100', field === 'estimate' ? 'justify-end text-right' : 'text-left')}>{content}</button>;
   };
   const builtinCells: Record<string, ReactNode> = {
@@ -454,7 +454,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     participants: <td className="px-3 py-1"><ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} /></td>,
     dueDate: <td className="px-3 py-1">{cell('dueDate', <DueDateCell dueDate={task.dueDate} today={ctx.today} finished={finished} />)}</td>,
     tags: <td className="px-3 py-1"><TagsCell tags={task.tags} /></td>,
-    priority: <td className="px-3 py-1"><PriorityCell priority={task.priority} /></td>,
+    priority: <td className="px-3 py-1">{cell('priority', <PriorityCell priority={task.priority} />)}</td>,
     estimate: <td className={cn('px-3 py-1 text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && stickyEstimateClassName)}>{cell('estimate', <EstimateCell task={task} summary={ctx.summary} />)}</td>,
   };
   return <tr className="group h-11 border-t border-line hover:bg-canvas/70">{ctx.columnIds.map(id => {
