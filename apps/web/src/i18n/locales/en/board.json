@@ -1,0 +1,31 @@
+{
+  "title": "Task board",
+  "loadedCount": {
+    "one": "{{count}} loaded task in this view.",
+    "other": "{{count}} loaded tasks in this view."
+  },
+  "partial": "More matching tasks may be available. Counts cover only the loaded tasks in this view.",
+  "navigationHelp": "Scroll this board horizontally to reach every status. Use Tab to reach task and parent buttons, then Enter or Space to open them.",
+  "lanes": "Task status lanes",
+  "missingStatus": "Status unavailable ({{number}})",
+  "laneCount": {
+    "one": "{{count}} loaded task",
+    "other": "{{count}} loaded tasks"
+  },
+  "emptyLane": "No loaded tasks in this status.",
+  "empty": "No loaded tasks match this view.",
+  "parent": "Parent task",
+  "parentNotLoaded": "Parent task not loaded",
+  "assignee": "Assignee",
+  "unassigned": "Unassigned",
+  "memberUnavailable": "Assigned person unavailable",
+  "due": "Due date",
+  "noDueDate": "No due date",
+  "dueDate": "Due {{date}}",
+  "overdue": "Overdue",
+  "archived": "Archived",
+  "refreshTaskType": "Refresh task details",
+  "meeting": "Meeting",
+  "draftKept": "Draft kept",
+  "changeStatus": "Change status"
+}
