@@ -669,8 +669,16 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               <PersonalColumnsDialog showTrigger={tableMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
             </DialogReturnFocus>
           </div>
-          {grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode ? <p className="text-xs text-muted">{t('taskTable.grouping.help')}</p> : null}
-          {sortMode === 'due_asc' && !graphMode && !ganttMode && !importMode ? <p className="text-xs text-muted">{boardMode ? t('taskTable.sort.boardHelp') : t('taskTable.sort.tableHelp')}</p> : null}
+          {tableMode && (grouping === 'assignee' || sortMode === 'due_asc') ? (
+            <details className="text-xs text-muted">
+              <summary className="w-fit cursor-pointer rounded py-1">{t('taskTable.guidance.aboutTable')}</summary>
+              <div className="space-y-1 pb-1 pt-1">
+                {grouping === 'assignee' ? <p>{t('taskTable.grouping.help')}</p> : null}
+                {sortMode === 'due_asc' ? <p>{t('taskTable.sort.tableHelp')}</p> : null}
+              </div>
+            </details>
+          ) : null}
+          {boardMode && sortMode === 'due_asc' ? <p className="text-xs text-muted">{t('taskTable.sort.boardHelp')}</p> : null}
           {personalColumns.query.isError && !personalColumns.denied ? <p role="status" className="text-xs text-amber-800">{t('taskTable.personalColumns.loadFailed')}</p> : null}
           {/* A custom field failure never hides the built-in table. */}
           {fieldsError ? (

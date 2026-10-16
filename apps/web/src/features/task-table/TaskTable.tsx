@@ -563,9 +563,9 @@ function SummaryRow({ summary, partial, columnCount }: { summary: WorkPackageSum
       <td colSpan={columnCount} className="px-3 py-1.5 text-xs text-muted">
         <span className="mr-3 inline-flex font-semibold text-ink tabular-nums">{total.status === 'ok' ? formatEstimate(total.minutes) : <Empty label={t('taskTable.taskTable.totalUnavailable')} />}</span>
         <span className="font-medium text-ink-soft">{t('taskTable.taskTable.loadedTeamBudget')}</span>
-        <span> {t('taskTable.taskTable.sharedWorkBudgetForTheWholeTeam')}</span>
         <span> {t('taskTable.taskTable.loadedCount', { count: summary.taskCount })}</span>
         <span> {t('taskTable.taskTable.unestimatedCount', { count: summary.unestimatedTaskCount })}</span>
+        <span> {t('taskTable.taskTable.sharedWorkBudgetForTheWholeTeam')}</span>
         {partial ? <span> {t('taskTable.taskTable.partialProjectTotalCoversLoadedTasksOnly')}</span> : null}
         {total.status === 'needs_refresh' ? (
           <span className="text-amber-800"> {t('taskTable.taskTable.sharedEstimatesDisagreeRefreshDataToCalculateThe')}</span>

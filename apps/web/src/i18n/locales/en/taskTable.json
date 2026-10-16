@@ -46,10 +46,10 @@
     "addTaskToValue": "Add task to “{{p0}}”",
     "task2": "Task",
     "loadedTeamBudget": "Loaded team budget",
-    "sharedWorkBudgetForTheWholeTeam": "· Shared work budget for the whole team.",
+    "sharedWorkBudgetForTheWholeTeam": "· Shared estimates counted once.",
     "loaded": "· Loaded:",
     "notEstimated2": "· Not estimated:",
-    "partialProjectTotalCoversLoadedTasksOnly": "· Partial project; total covers loaded tasks only",
+    "partialProjectTotalCoversLoadedTasksOnly": "· Budget covers loaded tasks only.",
     "sharedEstimatesDisagreeRefreshDataToCalculateThe": "· Shared estimates disagree. Refresh data to calculate the total.",
     "totalUnavailable": "Total unavailable",
     "projectTasks": "Project tasks",
@@ -159,6 +159,9 @@
     "open": "Open task",
     "expandNumbered": "Expand assignee group {{position}} “{{name}}”",
     "collapseNumbered": "Collapse assignee group {{position}} “{{name}}”"
+  },
+  "guidance": {
+    "aboutTable": "About this table"
   },
   "sort": {
     "label": "Sort",

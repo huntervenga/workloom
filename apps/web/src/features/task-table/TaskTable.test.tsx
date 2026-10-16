@@ -129,7 +129,7 @@ describe('TaskTable hierarchy', () => {
 
     expect(within(rowOf('Проверить формы')).getByText("Subtask")).toBeInTheDocument();
     expect(within(summaryRow()).getByText("45m")).toBeInTheDocument();
-    expect(within(summaryRow()).getByText(/Partial project/)).toBeInTheDocument();
+    expect(within(summaryRow()).getByText(/Budget covers loaded tasks only/)).toBeInTheDocument();
   });
 
   it('renders every task of a parent cycle once without looping', () => {
