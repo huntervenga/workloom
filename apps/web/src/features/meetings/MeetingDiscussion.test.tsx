@@ -1,0 +1,90 @@
+import type { AttendanceDto, MeetingDto, TaskCommentDto, TaskDto } from '@workloom/contracts';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
+import { MemoryRouter, useNavigate } from 'react-router';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AppRoutes } from '../../app/AppRoutes';
+import { SessionProvider } from '../../app/session';
+import { localization } from '../../i18n';
+import type * as LocalizationExports from '../../i18n';
+import { alpha, alphaMembers, anna, created, deferred, failure, installFakeApi, json, ok, project, renderApp, type RouteTable } from '../../test/fakeApi';
+import { renderFieldUi } from '../fields/test/fixtures';
+import { MEMBER_ID, PERIOD_A, PERIOD_B, PROJECT_ID, TASK_ID, STAMP, lostResponse, rootPath, task, weekPath } from '../planning/test/fixtures';
+import { tablePath, tableRoutes } from '../work-categories/test/fixtures';
+import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../task-comments';
+import { MeetingDrawer } from './MeetingDrawer';
+import { useMeetingWorkspace, type MeetingTab } from './useMeetingWorkspace';
+
+vi.mock('../../i18n', async importOriginal => {
+ const actual=await importOriginal<typeof LocalizationExports>();const {catalogsFromModules}=await import('../../i18n/LocalizationManager');
+ const english=import.meta.glob('../../i18n/locales/en/*.json',{eager:true,import:'default'});
+ const manager=new actual.LocalizationManager(catalogsFromModules({...english,'../../i18n/locales/de/comments.json':{discussion:'Diskussion',draftTab:'Diskussion (Entwurf)'}}));
+ return {...actual,localization:manager,t:manager.t,useTranslation:()=>actual.useTranslation(manager)};
+});
+afterEach(()=>{act(()=>localization.setLocale('en'));});
+const MEETING='ab000000-0000-4000-8000-000000000001';const ATTENDANCE='ac000000-0000-4000-8000-000000000001';
+const meetingTask:TaskDto={...task,meetingId:MEETING,title:'Saved meeting',participants:[{membershipId:MEMBER_ID,role:'assignee',active:true,revision:1}]};
+const currentMeeting:MeetingDto={id:MEETING,workspaceId:alpha.id,projectId:PROJECT_ID,taskId:TASK_ID,workPackageId:task.workPackageId,revision:1,participantsRevision:1,plannedPeriodId:PERIOD_A,plannedStartAt:STAMP,timezone:'UTC',plannedDurationMinutes:60,organizerMembershipId:MEMBER_ID,state:'scheduled',actualStartAt:STAMP,actualDurationMinutes:60,joinUrl:null,recordingUrl:null,summaryUrl:null,summaryText:null,scheduleFrozen:false,hasPostedAttendance:false,createdAt:STAMP,updatedAt:STAMP};
+const row:AttendanceDto={id:ATTENDANCE,workspaceId:alpha.id,meetingId:MEETING,taskId:TASK_ID,membershipId:MEMBER_ID,revision:1,rosterActive:true,status:'unknown',postingState:'unconfirmed',minutes:null,confirmedMeetingRevision:null,workLog:null};
+const path=`${rootPath}/tasks/${TASK_ID}`;
+const comment:TaskCommentDto={id:'f9000000-0000-4000-8000-000000000001',workspaceId:alpha.id,taskId:TASK_ID,authorUserId:anna.id,authorMembershipId:MEMBER_ID,authorDisplayNameSnapshot:'Saved author',createdAt:STAMP,body:'Saved comment'};
+const page=(rows:unknown[])=>json(200,{data:rows,meta:{requestId:'meeting-discussion',nextCursor:null}});
+function routes(extra:RouteTable={}):RouteTable{return {...tableRoutes(),[`GET ${rootPath}/tasks`]:()=>ok([meetingTask]),[`GET ${path}`]:()=>ok(meetingTask),[`GET ${path}/meeting`]:()=>ok(currentMeeting),[`GET ${path}/attendance`]:()=>ok([row]),[`GET ${path}/comments`]:()=>page([]),[`GET ${path}/activity`]:()=>page([]),[`GET ${rootPath}/projects/${PROJECT_ID}/meetings`]:()=>ok([{meeting:currentMeeting,task:meetingTask}]),...extra};}
+async function close(user:ReturnType<typeof renderApp>['user']){const drawer=screen.getByRole('dialog',{name:meetingTask.title});const button=within(drawer).getAllByRole('button',{name:'Close'}).find(node=>node.hasAttribute('aria-label'));if(!button)throw new Error('Missing drawer close');await user.click(button);}
+function isolated({viewer=false,archived=false}:{viewer?:boolean;archived?:boolean}={}){
+ let select:(tab:MeetingTab)=>void=()=>undefined;
+ function Example(){
+  const meetings=useMeetingWorkspace(anna.id,alpha.id,PROJECT_ID);const comments=useTaskCommentsWorkspace(anna.id,alpha.id);const [target,setTarget]=useState<{taskId:string;tab?:MeetingTab}>({taskId:TASK_ID,tab:'attendance'});const [open,setOpen]=useState(true);
+  select=tab=>setTarget({taskId:TASK_ID,tab});
+  return <><CommentCommandRecovery controller={comments} visibleTaskId={open?TASK_ID:null} onOpen={()=>{setTarget({taskId:TASK_ID});setOpen(true);}}/>{open?<MeetingDrawer controller={meetings} commentsController={comments} initialIntent={target} initialTab={target.tab} actorId={anna.id} workspace={{...alpha,role:viewer?'viewer':alpha.role}} project={{...project(alpha.id,PROJECT_ID,'Project'),archivedAt:archived?STAMP:null}} members={alphaMembers} taskId={TASK_ID} task={meetingTask} open onClose={()=>setOpen(false)}/>:null}</>;
+ }
+ return {...renderFieldUi(<MemoryRouter><Example/></MemoryRouter>),select:(tab:MeetingTab)=>act(()=>select(tab))};
+}
+
+describe('meeting discussion integration',()=>{
+ it('uses one keyboard tab row and preserves actual editor DOM and drafts through Discussion and locale changes',async()=>{
+  const {calls}=installFakeApi(routes());const ui=isolated();await ui.user.click(await screen.findByRole('button',{name:'Edit actual details'}));const duration=screen.getByLabelText('Actual duration, minutes');await ui.user.clear(duration);await ui.user.type(duration,'22');await ui.user.selectOptions(screen.getByLabelText('Attendance outcome'),'partial');await ui.user.type(screen.getByLabelText('Attendance comment (optional)'),'Attendance draft');
+  screen.getByRole('tab',{name:'Attendance'}).focus();await ui.user.keyboard('{End}');expect(screen.getByRole('tab',{name:'Discussion'})).toHaveFocus();expect(screen.getAllByRole('tablist')).toHaveLength(1);expect(screen.getAllByRole('tab')).toHaveLength(4);expect(screen.getAllByRole('tabpanel')).toHaveLength(1);await screen.findByText('No comments yet.');await ui.user.type(screen.getByLabelText('Comment'),'Unsent discussion');act(()=>localization.setLocale('de'));expect(screen.getByRole('tab',{name:'Diskussion (Entwurf)'})).toHaveAttribute('aria-selected','true');expect(screen.getByLabelText('Comment')).toHaveValue('Unsent discussion');
+  await ui.user.click(screen.getByRole('tab',{name:'Attendance'}));expect(screen.getByLabelText('Actual duration, minutes')).toBe(duration);expect(duration).toHaveValue(22);expect(screen.getByLabelText('Attendance outcome')).toHaveValue('partial');expect(screen.getByLabelText('Attendance comment (optional)')).toHaveValue('Attendance draft');expect(calls.filter(call=>call.method!=='GET')).toHaveLength(0);expect(calls.some(call=>call.path.endsWith('/activity'))).toBe(false);await ui.user.click(screen.getByRole('tab',{name:'Diskussion (Entwurf)'}));await ui.user.click(screen.getByText('Activity',{selector:'summary'}));await screen.findByText('No recorded task activity.');expect(calls.filter(call=>call.path.endsWith('/activity'))).toHaveLength(1);expect(screen.getAllByText('Activity',{selector:'summary'})).toHaveLength(1);
+ });
+ it('repeated explicit same-tab intent restores Attendance and Personal plan after Discussion',async()=>{
+  installFakeApi(routes());const ui=isolated();await screen.findByLabelText('Whose attendance');await ui.user.click(screen.getByRole('tab',{name:'Discussion'}));await screen.findByLabelText('Comment');ui.select('attendance');expect(screen.getByRole('tab',{name:'Attendance'})).toHaveAttribute('aria-selected','true');expect(screen.getByLabelText('Whose attendance')).toHaveValue(ATTENDANCE);ui.select('plan');await screen.findByRole('button',{name:'Preview personal plans'});await ui.user.click(screen.getByRole('tab',{name:'Discussion'}));ui.select('plan');expect(screen.getByRole('tab',{name:'Personal plan'})).toHaveAttribute('aria-selected','true');
+ });
+ it('honors repeated explicit ProjectPage Attendance and Plan navigation without clearing comment text',async()=>{
+  const {calls}=installFakeApi(routes());let go:(url:string)=>void=()=>undefined;
+  function Navigation(){const navigate=useNavigate();go=url=>navigate(url);return null;}
+  const {user}=renderFieldUi(<MemoryRouter initialEntries={[`${tablePath}?task=${TASK_ID}&meetingTab=attendance`]}><Navigation/><SessionProvider><AppRoutes/></SessionProvider></MemoryRouter>);
+  await screen.findByLabelText('Whose attendance');await user.click(screen.getByRole('tab',{name:'Discussion'}));await user.type(await screen.findByLabelText('Comment'),'Retained through explicit opens');
+  act(()=>go(`${tablePath}?task=${TASK_ID}&meetingTab=attendance`));await waitFor(()=>expect(screen.getByRole('tab',{name:'Attendance'})).toHaveAttribute('aria-selected','true'));expect(screen.getByLabelText('Whose attendance')).toHaveValue(ATTENDANCE);
+  act(()=>go(`${tablePath}?task=${TASK_ID}&meetingTab=plan`));await screen.findByRole('button',{name:'Preview personal plans'});await user.click(screen.getByRole('tab',{name:/^Discussion/}));expect(screen.getByLabelText('Comment')).toHaveValue('Retained through explicit opens');
+  act(()=>go(`${tablePath}?task=${TASK_ID}&meetingTab=plan`));await waitFor(()=>expect(screen.getByRole('tab',{name:'Personal plan'})).toHaveAttribute('aria-selected','true'));
+  await user.click(screen.getByRole('tab',{name:/^Discussion/}));act(()=>localization.setLocale('de'));expect(screen.getByRole('tab',{name:'Diskussion (Entwurf)'})).toHaveAttribute('aria-selected','true');expect(calls.filter(call=>call.method!=='GET')).toHaveLength(0);
+ });
+ it('forwards ProjectPage comments, posts inert plaintext only, and keeps metadata unsent',async()=>{
+  let stored:TaskCommentDto[]=[];const {calls}=installFakeApi(routes({[`GET ${path}/comments`]:()=>page(stored),[`POST ${path}/comments`]:request=>{stored=[{...comment,body:(request.body as {body:string}).body}];return created(stored[0]);}}));const {user}=renderApp(`${tablePath}?task=${TASK_ID}`);const notes=await screen.findByLabelText('Meeting notes');await user.type(notes,'Unsent meeting notes');await user.click(screen.getByRole('tab',{name:'Discussion'}));await screen.findByLabelText('Comment');
+  const text='  <img src=x onerror=alert(1)>\n[link](https://example.test)  ';fireEvent.change(screen.getByLabelText('Comment'),{target:{value:text}});await user.click(screen.getByRole('button',{name:'Add comment'}));await screen.findByText('Comment posted.');expect(screen.getByText(value=>value.includes('<img src=x onerror=alert(1)>')).textContent).toBe(text);expect(document.querySelector('img')).toBeNull();expect(document.querySelector('a[href="https://example.test"]')).toBeNull();await user.click(screen.getByRole('tab',{name:'Meeting'}));expect(screen.getByLabelText('Meeting notes')).toBe(notes);expect(notes).toHaveValue('Unsent meeting notes');const writes=calls.filter(call=>call.method!=='GET');expect(writes).toHaveLength(1);expect(writes[0]?.path).toBe(`${path}/comments`);expect(writes[0]?.body).toEqual({body:text});
+ });
+ it('keeps unknown comments exact through ProjectPage close and recovery',async()=>{
+  const lost=lostResponse();let attempts=0;const {calls}=installFakeApi(routes({[`POST ${path}/comments`]:request=>++attempts===1?lost.promise:created({...comment,body:(request.body as {body:string}).body})}));const {user}=renderApp(`${tablePath}?task=${TASK_ID}&meetingTab=attendance`);await user.click(await screen.findByRole('tab',{name:'Discussion'}));await screen.findByLabelText('Comment');fireEvent.change(screen.getByLabelText('Comment'),{target:{value:'  Exact meeting comment\ntext  '}});await user.click(screen.getByRole('button',{name:'Add comment'}));await waitFor(()=>expect(attempts).toBe(1));await close(user);await act(async()=>lost.lose());await user.click(await screen.findByRole('button',{name:'Open discussion'}));expect(await screen.findByLabelText('Comment')).toHaveValue('  Exact meeting comment\ntext  ');expect(screen.getByLabelText('Comment')).toBeDisabled();await user.click(screen.getByRole('button',{name:'Retry original comment'}));await screen.findByText('Comment posted.');const writes=calls.filter(call=>call.method==='POST');expect(writes).toHaveLength(2);expect(writes[1]?.body).toEqual(writes[0]?.body);expect(writes[1]?.headers.get('Idempotency-Key')).toBe(writes[0]?.headers.get('Idempotency-Key'));
+ });
+ it('keeps Weekly recovery reachable after closing and selecting a different weekly view',async()=>{
+  const {calls}=installFakeApi(routes());const {user}=renderApp(`${weekPath}?period=${PERIOD_A}`);await user.click(await screen.findByRole('button',{name:'Open meeting'}));await user.click(await screen.findByRole('tab',{name:'Discussion'}));await user.type(await screen.findByLabelText('Comment'),'Weekly comment draft');await close(user);await user.click(screen.getByRole('button',{name:/^Report$/}));await user.click(screen.getByRole('button',{name:'Open discussion'}));expect(await screen.findByLabelText('Comment')).toHaveValue('Weekly comment draft');expect(screen.getByRole('tab',{name:/^Discussion/})).toHaveAttribute('aria-selected','true');expect(calls.filter(call=>call.method!=='GET')).toHaveLength(0);
+ });
+ it.each([{viewer:true},{archived:true}])('keeps readonly discussion readable without composer %j',async options=>{
+  const {calls}=installFakeApi(routes({[`GET ${path}/comments`]:()=>page([comment])}));const ui=isolated(options);await ui.user.click(await screen.findByRole('tab',{name:'Discussion'}));await screen.findByText('Saved comment');expect(screen.queryByLabelText('Comment')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'Save meeting'})).not.toBeInTheDocument();expect(calls.filter(call=>call.method!=='GET')).toHaveLength(0);
+ });
+ it('hides cached discussion after denied access and does not read feeds through the wrong-period gate',async()=>{
+  let denied=false;const {calls}=installFakeApi(routes({[`GET ${path}/comments`]:()=>denied?failure(404,'NOT_FOUND','private'):page([comment])}));const {user,queryClient}=renderApp(`${tablePath}?task=${TASK_ID}&meetingPeriod=${PERIOD_B}`);await screen.findByRole('heading',{name:'This meeting belongs to another period'});expect(screen.queryByRole('tab',{name:'Discussion'})).not.toBeInTheDocument();expect(calls.some(call=>call.path.endsWith('/comments'))).toBe(false);await user.click(screen.getByRole('button',{name:"Open meeting's original period"}));await user.click(await screen.findByRole('tab',{name:'Discussion'}));await screen.findByText('Saved comment');denied=true;await act(async()=>{await queryClient.invalidateQueries({queryKey:['actor']});});await waitFor(()=>expect(screen.queryByText('Saved comment')).not.toBeInTheDocument());expect(screen.queryByLabelText('Comment')).not.toBeInTheDocument();expect(calls.filter(call=>call.method!=='GET')).toHaveLength(0);
+ });
+ it('opens the original held attendance save in Attendance while retaining an independent comment draft',async()=>{
+  const gate=deferred<Response>();const {calls}=installFakeApi(routes({[`POST ${path}/attendance/confirm`]:()=>gate.promise}));const {user}=renderApp(`${tablePath}?task=${TASK_ID}&meetingTab=attendance`);await user.selectOptions(await screen.findByLabelText('Attendance outcome'),'absent');await user.click(screen.getByRole('button',{name:"Confirm selected person's attendance"}));await waitFor(()=>expect(calls.filter(call=>call.method==='POST')).toHaveLength(1));await user.click(screen.getByRole('tab',{name:'Discussion'}));await user.type(await screen.findByLabelText('Comment'),'Independent comment draft');await close(user);
+  await user.click(screen.getByRole('button',{name:'Open original meeting save'}));await waitFor(()=>expect(screen.getByRole('tab',{name:'Attendance'})).toHaveAttribute('aria-selected','true'));expect(screen.getByLabelText('Attendance outcome')).toHaveValue('absent');expect(screen.getByLabelText('Attendance outcome')).toBeDisabled();await user.click(screen.getByRole('tab',{name:/^Discussion/}));expect(screen.getByLabelText('Comment')).toHaveValue('Independent comment draft');expect(calls.filter(call=>call.method!=='GET')).toHaveLength(1);expect(calls.find(call=>call.method==='POST')?.path).toBe(`${path}/attendance/confirm`);
+  await act(async()=>gate.resolve(ok({meeting:currentMeeting,attendances:[{...row,revision:2,status:'absent',postingState:'active',minutes:0,confirmedMeetingRevision:1}]})));
+ });
+ it('removes the discussion feed when a current meeting read is denied',async()=>{
+  let denied=false;installFakeApi(routes({[`GET ${path}/meeting`]:()=>denied?failure(404,'NOT_FOUND','private'):ok(currentMeeting),[`GET ${path}/comments`]:()=>page([comment])}));const {user,queryClient}=renderApp(`${tablePath}?task=${TASK_ID}`);await user.click(await screen.findByRole('tab',{name:'Discussion'}));await screen.findByText('Saved comment');denied=true;await act(async()=>{await queryClient.invalidateQueries({queryKey:['actor']});});await waitFor(()=>expect(screen.queryByText('Saved comment')).not.toBeInTheDocument());expect(screen.queryByLabelText('Comment')).not.toBeInTheDocument();expect(screen.queryByRole('tab',{name:/^Discussion/})).not.toBeInTheDocument();
+ });
+ it('does not reopen or steal focus when a comment resolves after the meeting closes',async()=>{
+  const gate=deferred<Response>();installFakeApi(routes({[`POST ${path}/comments`]:()=>gate.promise}));const {user}=renderApp(`${tablePath}?task=${TASK_ID}`);await user.click(await screen.findByRole('tab',{name:'Discussion'}));await user.type(await screen.findByLabelText('Comment'),'Sent once');await user.click(screen.getByRole('button',{name:'Add comment'}));await close(user);const outside=screen.getByRole('button',{name:/^Columns$/});outside.focus();await act(async()=>gate.resolve(created({...comment,body:'Sent once'})));await waitFor(()=>expect(screen.queryByRole('button',{name:'Open discussion'})).not.toBeInTheDocument());expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(outside).toHaveFocus();
+ });
+});

@@ -55,6 +55,8 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 09:48:20.289 | Personal columns complete browser run |8/8 pass21.2s; prior attempts preserved and rapid Close→Week product race remains explicit |
 | 09:50:08.830–09:50:29.933 | Personal columns final frames | Four settled Studio GET-only table/chooser frames;13choices, zero writes/errors/overflow |
 | 09:54:03.906 | Fourth window released | Changed-flow regression6/6 pass22.9s; all14assets unchanged, doctor owned/ready; no next-source builds by QA |
+| 10:05:57.600–10:06:04.763 | Original rapid Close→Week RED | Both sizes reproduce oldtaskresurrection6–8ms after Close; no injected delay or settledmask |
+| 10:06:39.338 | Brief RED window released | All14frozenassets unchanged/readinessok; nextsourcefix and Board/meeting gates remain pending |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 

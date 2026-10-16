@@ -1,3 +1,5 @@
+import { useCurrentSearchParams } from '../lib/useCurrentSearchParams';
+import { TaskBoard } from '../features/task-board';
 import { PersonalColumnsDialog } from '../features/task-table/PersonalColumnsDialog';
 import { reconcilePersonalColumns, tableColumnId } from '../features/task-table/personalColumns';
 import { usePersonalTablePreference } from '../features/task-table/usePersonalTablePreference';
@@ -36,7 +38,7 @@ import type {
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import {
   FieldManagerDialog,
   FieldValueDisplay,
@@ -181,6 +183,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const schedule = useScheduleWorkspace(actorId, workspace.id, project.id, workspace.timezone);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const navigate = useNavigate();
+  const location = useLocation();
   const meetingController=useMeetingWorkspace(actorId,workspace.id,project.id);
   const meetingPeriods=usePlanningPeriodsQuery(actorId,workspace.id,project.id);
   // Same for custom field values: a hidden drawer keeps a value write that is pending or unconfirmed.
@@ -206,12 +209,13 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
   const [quickAddSection, setQuickAddSection] = useState<string | null | undefined>(undefined);
-  const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField } | null>(null);
+  const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean } } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   const [filters, setFilters] = useState<TaskFilterValue>(emptyTaskFilters);
   const search = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useCurrentSearchParams();
   const taskId = searchParams.get('task');
+  const boardMode = searchParams.get('view') === 'board';
   const graphMode = searchParams.get('view') === 'graph';
   const ganttMode = searchParams.get('view') === 'gantt';
   const importMode = searchParams.get('view') === 'import';
@@ -223,6 +227,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     projectId: project.id,
     search,
     statusId: filters.statusId || undefined,
+    tagId: filters.tagId || undefined,
     participantMembershipId: filters.participantMembershipId || undefined,
     includeArchived: filters.includeArchived,
   });
@@ -264,8 +269,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   useEffect(() => {
     if (!activeInline) return;
     const column = activeInline.field === 'statusId' ? 'status' : activeInline.field === 'responsibleMembershipId' ? 'responsible' : 'dueDate';
-    if (!visibleColumnIds.includes(column)) setActiveInline(null);
-  }, [activeInline, visibleColumnIds]);
+    if (graphMode || ganttMode || importMode || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(column))) setActiveInline(null);
+  }, [activeInline, visibleColumnIds, boardMode, graphMode, ganttMode, importMode]);
   const fieldValues = useProjectFieldValuesQuery(
     actorId,
     workspace.id,
@@ -380,7 +385,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setTaskParam(null);
     setCreating(null);
     setQuickAddSection(undefined);
-    setActiveInline({ taskId: task.id, field });
+    setActiveInline({ taskId: task.id, field, focusClaim: { current: false } });
   };
   const closeInline = (taskId: string, field: TaskInlineField) => {
     setActiveInline(null);
@@ -418,7 +423,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       </header>
 
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
-      {taskId === null && creating === null && (quickAddSection === undefined || graphMode || ganttMode || importMode) && (!activeInline || personalColumns.denied || graphMode || ganttMode || importMode || !shownTasks.some(task => task.id === activeInline.taskId) || !visibleColumnIds.includes(activeInline.field === 'statusId' ? 'status' : activeInline.field === 'responsibleMembershipId' ? 'responsible' : 'dueDate')) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
+      {taskId === null && creating === null && (quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode) && (!activeInline || personalColumns.denied || graphMode || ganttMode || importMode || !shownTasks.some(task => task.id === activeInline.taskId) || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(activeInline.field === 'statusId' ? 'status' : activeInline.field === 'responsibleMembershipId' ? 'responsible' : 'dueDate'))) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
       <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable} />
@@ -428,7 +433,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       {meetingController.commands.create.pendingCommand||meetingController.commands.create.uncertain?<div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">{t('projects.projectPage.meetingCreationIsUnconfirmed')}<Button size="sm" onClick={()=>meetingController.setCreateOpen(true)}>{t('projects.projectPage.openMeetingCreation')}</Button></div>:null}
       <CreateMeetingDialog accessDenied={[members.error,sections.error,statuses.error,meetingPeriods.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={meetingPeriods.data??[]} statuses={statuses.data??[]} sections={sections.data??[]} ownMembershipId={members.data?.find(m=>m.userId===actorId)?.id??''} timezone={workspace.timezone} onCreated={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab','plan');return next;})}/>
       <nav aria-label={t('projects.projectPage.projectViews')} className="flex min-w-0 flex-nowrap gap-1 overflow-x-auto border-b border-line pb-2">
-        <Button size="sm" variant={graphMode || ganttMode || importMode ? 'ghost' : 'primary'} aria-current={!graphMode && !ganttMode && !importMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>{t('projects.projectPage.tasks')}</Button>
+        <Button size="sm" variant={boardMode || graphMode || ganttMode || importMode ? 'ghost' : 'primary'} aria-current={!boardMode && !graphMode && !ganttMode && !importMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>{t('projects.projectPage.tasks')}</Button>
+        <Button size="sm" variant={boardMode ? 'primary' : 'ghost'} aria-current={boardMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'board'); return next; })}>{t('projects.projectPage.board')}</Button>
         <Button size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
         <Button size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
         {canManageImports ? <Button size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
@@ -471,7 +477,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           ) : null}
           {taskTime.controls}
           <div className="flex min-w-0 items-center gap-2">
-            <div className="min-w-0 flex-1"><TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} /></div>
+            <div className="min-w-0 flex-1"><TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div>
             <PersonalColumnsDialog controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
           </div>
           {personalColumns.query.isError && !personalColumns.denied ? <p role="status" className="text-xs text-amber-800">{t('taskTable.personalColumns.loadFailed')}</p> : null}
@@ -486,9 +492,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             />
           ) : null}
           {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
+            boardMode={boardMode}
             onEditTaskField={startInline}
             draftTaskIds={new Set(commands.editSessions.current.keys())}
-            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} task={task} field={field} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
             quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => setQuickAddSection(undefined)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
@@ -515,7 +522,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             meetingMembershipId={searchParams.get('meetingMember')??undefined}
             meetingAttendanceId={searchParams.get('meetingAttendance')??undefined}
             meetingController={meetingController}
-            meetingTab={searchParams.get('meetingTab')==='attendance'?'attendance':searchParams.get('meetingTab')==='plan'?'plan':'meeting'}
+            meetingOpenIntent={location.key}
+            meetingTab={searchParams.get('meetingTab')==='attendance'?'attendance':searchParams.get('meetingTab')==='plan'?'plan':searchParams.get('meetingTab')==='meeting'?'meeting':undefined}
             actorId={actorId}
             workspace={workspace}
             project={project}
@@ -560,6 +568,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 }
 
 interface TaskListProps {
+  boardMode: boolean;
   selectedTaskIds: readonly string[];
   onSelectTask: (id: string, selected: boolean) => void;
   query: ReturnType<typeof useTaskListQuery>;
@@ -582,7 +591,7 @@ interface TaskListProps {
   onRenameSection: ((section: SectionDto) => void) | undefined;
 }
 
-function TaskList({ query, filtered, project, workspace, ...table }: TaskListProps) {
+function TaskList({ query, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
   const { t } = useTranslation();
   if (query.isPending) {
     return (
@@ -609,13 +618,13 @@ function TaskList({ query, filtered, project, workspace, ...table }: TaskListPro
   const scope = loadedTaskScope(query.data);
   return (
     <div className="space-y-3">
-      <TaskTable
+      {boardMode ? <TaskBoard tasks={dedupeTasks(scope.tasks)} statuses={table.statuses} members={table.members} partial={!scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={dedupeTasks(scope.tasks)}
         partial={filtered || !scope.complete}
         today={todayIn(workspace.timezone)}
         caption={t('projects.projectPage.tasksInValue', { p0: project.name })}
-      />
+      />}
       {query.isFetchNextPageError ? (
         <QueryErrorState
           error={query.error}

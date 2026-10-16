@@ -56,7 +56,8 @@ export interface TaskDrawerProps {
   commentsController?: TaskCommentsWorkspace;
   dependencyController?: DependencyWorkspace;
   meetingController?: MeetingWorkspace;
-  meetingTab?: MeetingTab;
+  meetingTab?: MeetingTab | undefined;
+  meetingOpenIntent?: string | undefined;
   meetingRequestedPeriodId?:string|undefined;
   onAcceptMeetingPeriod?:((id:string)=>void)|undefined;
   meetingMembershipId?: string|undefined;
@@ -144,7 +145,7 @@ export function TaskDrawer(props: TaskDrawerProps) {
       ? t('tasks.taskDrawer.projectValueVisibleToAllWorkspaceMembers', { p0: project.name })
       : t('tasks.taskDrawer.projectValueTheNewTaskWillBeVisible', { p0: project.name });
 
-  if(shown?.meetingId && props.meetingController) return <MeetingDrawer dependencyController={props.dependencyController} controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab??'meeting'} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
+  if(shown?.meetingId && props.meetingController) return <MeetingDrawer initialIntent={props.meetingOpenIntent} commentsController={props.commentsController} dependencyController={props.dependencyController} controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
   if(shown && shown.meetingId===undefined) return <DialogShell variant="drawer" title={t('tasks.taskDrawer.refreshTaskType')} description={t('tasks.taskDrawer.currentServerInformationIsRequiredToEditSafely')} open={open} onOpenChange={next=>{if(!next)onClose();}}><div className="mt-4 space-y-3"><p className="text-sm text-muted">{t('tasks.taskDrawer.theSavedResponseHasNoTaskTypeRefresh')}</p><Button onClick={()=>void detail.refetch()}>{t('tasks.taskDrawer.refreshTaskType')}</Button></div></DialogShell>;
   return (
     <DialogShell

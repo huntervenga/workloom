@@ -1,7 +1,7 @@
 import type { MembershipDto, TaskDto, TaskStatusDto } from '@workloom/contracts';
 import { Button, TextInput, inputClassName } from '@workloom/ui';
 import { Expand, X } from 'lucide-react';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { useTranslation } from '../../i18n';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
@@ -12,6 +12,8 @@ import { canEditTaskInline, canResumeInlineSession, type TaskInlineField } from 
 import { unresolvedTaskCommand, type EditSession, type TaskCommands } from './useTaskCommands';
 
 export interface InlineTaskEditProps {
+  /** One claim per explicit open; card/view remounts must not steal focus. */
+  focusClaim?: RefObject<boolean>;
   task: TaskDto;
   field: TaskInlineField;
   statuses: readonly TaskStatusDto[];
@@ -24,8 +26,10 @@ export interface InlineTaskEditProps {
 }
 
 /** Uses the exact seen task revision; only this cell's field can enter the update. */
-export function InlineTaskEdit({ task, field, statuses, members, commands, writable, onClose, onMoreDetails, onSaved }: InlineTaskEditProps) {
+export function InlineTaskEdit({ task, field, statuses, members, commands, writable, onClose, onMoreDetails, onSaved, focusClaim }: InlineTaskEditProps) {
   const { t } = useTranslation();
+  const shouldFocus = focusClaim?.current !== true;
+  useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
   const [foreignDraft] = useState(() => {
     const kept = commands.editSessions.current.get(task.id);
     return kept !== undefined && !canResumeInlineSession(kept, field);
@@ -62,8 +66,8 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     else editSessions.current.delete(task.id);
   }, [confirmed, dirty, editSessions, foreignDraft, pending, session, task.id, uncertain]);
 
-  if (foreignDraft) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="space-y-2 py-2 text-xs"><p>{t('tasks.inlineEdit.existingDraft')}</p><Button autoFocus size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.resumeDraft')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div>;
-  if (!editable && !uncertain) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="space-y-2 py-2 text-xs"><p>{t('tasks.inlineEdit.notEditable')}</p><Button autoFocus size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.moreDetails')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div>;
+  if (foreignDraft) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="space-y-2 py-2 text-xs"><p>{t('tasks.inlineEdit.existingDraft')}</p><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.resumeDraft')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div>;
+  if (!editable && !uncertain) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="space-y-2 py-2 text-xs"><p>{t('tasks.inlineEdit.notEditable')}</p><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.moreDetails')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div>;
   const change = (patch: Partial<TaskDraft>) => {
     setSession(before => ({ ...before, draft: { ...before.draft, ...patch } }));
     setErrors({});
@@ -96,14 +100,14 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   }} className="space-y-1.5 py-1">
     <fieldset disabled={frozen}>
       <legend className="sr-only">{t('tasks.inlineEdit.fields')}</legend>
-      {field === 'statusId' ? <select autoFocus aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
+      {field === 'statusId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
         {!statuses.some(status => status.id === session.draft.statusId) ? <option value={session.draft.statusId}>{t('tasks.taskFields.statusUnavailable')}</option> : null}
         {[...statuses].sort((a, b) => a.position - b.position).map(status => <option key={status.id} value={status.id}>{status.name}</option>)}
-      </select> : field === 'responsibleMembershipId' ? <select autoFocus aria-label={t('tasks.taskFields.assignee')} className={inputClassName('px-2 text-xs')} value={session.draft.responsibleMembershipId ?? ''} onChange={event => change({ responsibleMembershipId: event.target.value || null })}>
+      </select> : field === 'responsibleMembershipId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.assignee')} className={inputClassName('px-2 text-xs')} value={session.draft.responsibleMembershipId ?? ''} onChange={event => change({ responsibleMembershipId: event.target.value || null })}>
         <option value="">{t('tasks.taskFields.unassigned')}</option>
         {session.draft.responsibleMembershipId && !members.some(member => member.id === session.draft.responsibleMembershipId) ? <option value={session.draft.responsibleMembershipId}>{t('tasks.taskFields.memberUnavailable')}</option> : null}
         {members.map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}
-      </select> : <TextInput autoFocus aria-label={t('tasks.taskFields.dueDate')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="date" min="0001-01-01" max="9999-12-31" className="px-1 text-xs" value={session.draft.dueDate} onChange={event => change({ dueDate: event.target.value })} />}
+      </select> : <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.dueDate')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="date" min="0001-01-01" max="9999-12-31" className="px-1 text-xs" value={session.draft.dueDate} onChange={event => change({ dueDate: event.target.value })} />}
     </fieldset>
     {currentError ? <p role="alert" id={`${id}-error`} className="text-xs text-red-700">{t(currentError.key, currentError.params)}</p> : null}
     {blocked ? <p role="status" className="text-xs text-amber-800">{t('tasks.quickAdd.otherCommand')}</p> : null}

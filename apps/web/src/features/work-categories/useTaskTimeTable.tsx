@@ -7,8 +7,9 @@ import { RecordedWorkLabel } from '../../shared/RecordedWorkLabel';
 import type { CategorizedManualWorkLogDto, RecordedWorkLogDto, MembershipDto, PackageTimeRowDto, PlanningPeriodDto, ProjectDto, TaskDto, WorkspaceDto } from '@workloom/contracts';
 import { Button, inputClassName } from '@workloom/ui';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
-import { isAccessDenied } from '../../lib/api';
+import { Link } from 'react-router';
+import { useCurrentSearchParams } from '../../lib/useCurrentSearchParams';
+import { ApiError, isAccessDenied } from '../../lib/api';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
@@ -27,7 +28,7 @@ interface Breakdown { period: PlanningPeriodDto; task: TaskDto; workerId: string
 export function useTaskTimeTable(props: Props) {
   const { t } = useTranslation();
   const { actorId, workspace, project } = props;
-  const [params, setParams] = useSearchParams();
+  const [params, setParams] = useCurrentSearchParams();
   const ownMembershipId = props.members.find((member) => member.userId === actorId)?.id ?? '';
   const periodId = params.get('week') ?? '';
   const workerId = params.get('worker') ?? ownMembershipId;
@@ -66,7 +67,15 @@ export function useTaskTimeTable(props: Props) {
   const denied = props.accessDenied || accessError !== null;
   useUnsavedChangesWarning(Object.keys(planDrafts).length > 0 || Object.keys(factDrafts).length > 0 || Object.keys(categoryDrafts).length > 0);
 
-  const lens = (nextPeriod: string, nextWorker: string) => setParams((before) => { const next = new URLSearchParams(before); if (nextPeriod) next.set('week', nextPeriod); else next.delete('week'); if (nextWorker) next.set('worker', nextWorker); else next.delete('worker'); return next; });
+  const lens = (intent: { periodId?: string; workerId?: string }) => {
+    const updated = setParams(before => {
+      if (intent.periodId !== undefined) { if (intent.periodId) before.set('week', intent.periodId); else before.delete('week'); }
+      if (intent.workerId !== undefined) { if (intent.workerId) before.set('worker', intent.workerId); else before.delete('worker'); }
+      return before;
+    });
+    if (!updated) setOpeningError(new ApiError({ kind: 'unavailable', status: null }));
+    return updated;
+  };
   const read = async (operation: () => Promise<void>) => {
     if (busyRead.current) return;
     busyRead.current = true; setOpening(true); setOpeningError(null);
@@ -130,17 +139,17 @@ export function useTaskTimeTable(props: Props) {
       const mutation = commands[kind]; const variables = mutation.pendingCommand?.variables ?? mutation.uncertain?.variables;
       if (!variables) return [];
       const session = Object.values(planDrafts).find((item) => item.period.id === variables.periodId && ('commitmentId' in variables ? item.base?.id === variables.commitmentId : item.packageId === variables.input.workPackageId && item.membershipId === variables.input.membershipId));
-      return session ? [{ key: kind, pending: mutation.pendingCommand !== null, label: t('work-categories.personalWeeklyPlan'), resume: () => { lens(session.period.id, session.membershipId); setPlanKey(session.key); setPlanOpen(true); } }] : [];
+      return session ? [{ key: kind, pending: mutation.pendingCommand !== null, label: t('work-categories.personalWeeklyPlan'), resume: () => { if (!lens({ periodId: session.period.id, workerId: session.membershipId })) return; setPlanKey(session.key); setPlanOpen(true); } }] : [];
     }),
     ...(() => {
       const variables = commands.setFact.pendingCommand?.variables ?? commands.setFact.uncertain?.variables;
       const session = variables ? Object.values(factDrafts).find((item) => item.period.id === variables.periodId && item.taskId === variables.taskId && item.membershipId === variables.membershipId) : undefined;
-      return session ? [{ key: 'fact', pending: commands.setFact.pendingCommand !== null, label: t('work-categories.weeklyActualHours'), resume: () => { lens(session.period.id, session.membershipId); setFactKey(session.key); setFactOpen(true); } }] : [];
+      return session ? [{ key: 'fact', pending: commands.setFact.pendingCommand !== null, label: t('work-categories.weeklyActualHours'), resume: () => { if (!lens({ periodId: session.period.id, workerId: session.membershipId })) return; setFactKey(session.key); setFactOpen(true); } }] : [];
     })(),
     ...(() => {
       const variables = categoryCommands.recategorize.pendingCommand?.variables ?? categoryCommands.recategorize.uncertain?.variables;
       const session = variables ? categoryDrafts[variables.workLogId] : undefined;
-      return session ? [{ key: 'category', pending: categoryCommands.recategorize.pendingCommand !== null, label: t('work-categories.recordedWorkType'), resume: () => { lens(session.log.periodId, session.log.membershipId); setCategoryKey(session.key); setCategoryOpen(true); } }] : [];
+      return session ? [{ key: 'category', pending: categoryCommands.recategorize.pendingCommand !== null, label: t('work-categories.recordedWorkType'), resume: () => { if (!lens({ periodId: session.log.periodId, workerId: session.log.membershipId })) return; setCategoryKey(session.key); setCategoryOpen(true); } }] : [];
     })(),
   ];
   const representative = new Map<string, string>();
@@ -169,8 +178,8 @@ export function useTaskTimeTable(props: Props) {
 
   const controls = <section aria-label={t('work-categories.weeklyHoursInTable')} className="space-y-2 rounded-lg border border-line bg-surface px-3 py-2.5">
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <div className="flex min-w-0 flex-1 basis-44 items-center gap-2"><label htmlFor="task-time-week" className="shrink-0 text-xs font-medium">{t('work-categories.weekLabel')}</label><select aria-label={t('work-categories.weekForHours')} id="task-time-week" className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={periodId} onChange={(event) => lens(event.target.value, workerId)}><option value="">{t('work-categories.chooseAWeekExplicitly')}</option>{sortPlanningPeriods(periods.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.localStart}</option>)}</select></div>
-      <div className="flex min-w-0 flex-1 basis-40 items-center gap-2"><label htmlFor="task-time-worker" className="shrink-0 text-xs font-medium">{t('work-categories.personLabel')}</label><select aria-label={t('work-categories.whoseHoursToShow')} id="task-time-worker" className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={workerId} onChange={(event) => lens(periodId, event.target.value)}>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}{member.id === ownMembershipId ? t('work-categories.me') : ''}</option>)}</select></div>
+      <div className="flex min-w-0 flex-1 basis-44 items-center gap-2"><label htmlFor="task-time-week" className="shrink-0 text-xs font-medium">{t('work-categories.weekLabel')}</label><select aria-label={t('work-categories.weekForHours')} id="task-time-week" className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={periodId} onChange={(event) => lens({ periodId: event.target.value })}><option value="">{t('work-categories.chooseAWeekExplicitly')}</option>{sortPlanningPeriods(periods.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.localStart}</option>)}</select></div>
+      <div className="flex min-w-0 flex-1 basis-40 items-center gap-2"><label htmlFor="task-time-worker" className="shrink-0 text-xs font-medium">{t('work-categories.personLabel')}</label><select aria-label={t('work-categories.whoseHoursToShow')} id="task-time-worker" className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={workerId} onChange={(event) => lens({ workerId: event.target.value })}>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}{member.id === ownMembershipId ? t('work-categories.me') : ''}</option>)}</select></div>
       <details className="text-xs text-muted"><summary className="cursor-pointer rounded font-medium text-accent-ink">{t('work-categories.hoursHelp')}</summary><p className="max-w-xl pt-2">{t('work-categories.choosingAPersonChangesTheDisplayedHoursNotThe')}</p></details>
     </div>
     {periodId && !canWriteSubject ? <p className="text-xs text-muted">{t('work-categories.youCanViewThesePersonalHours')}</p> : null}

@@ -61,6 +61,6 @@ function TaskCard({ card, props, status }: { card: BoardCard; props: TaskBoardPr
       {task.meetingId === undefined ? <Badge tone="warning">{t('board.refreshTaskType')}</Badge> : task.meetingId !== null ? <Badge tone="muted">{t('board.meeting')}</Badge> : null}
       {props.draftTaskIds?.has(task.id) ? <Badge tone="muted">{t('board.draftKept')}</Badge> : null}
     </div> : null}
-    {hasEditor ? <div className="border-t border-line pt-2">{editor}</div> : props.writable && canEditTaskInline(task) ? <Button size="sm" aria-describedby={`${id}-title`} onClick={() => props.onEditStatus(task)}>{t('board.changeStatus')}</Button> : null}
+    {hasEditor ? <div className="border-t border-line pt-2">{editor}</div> : props.writable && canEditTaskInline(task) ? <Button size="sm" data-task-cell={`${task.id}:statusId`} aria-describedby={`${id}-title`} onClick={() => props.onEditStatus(task)}>{t('board.changeStatus')}</Button> : null}
   </li>;
 }

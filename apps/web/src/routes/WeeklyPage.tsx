@@ -1,3 +1,4 @@
+import { useTaskCommentsWorkspace, CommentCommandRecovery } from '../features/task-comments';
 import { message, useTranslation, type TranslationMessage } from '../i18n';
 import { EdgeDialog } from '../features/dependencies/EdgeDialog';
 import { DependencyNotices } from '../features/dependencies/DependencyNotices';
@@ -17,7 +18,8 @@ import type { PeriodCommitmentDto, ProjectDto, WorkspaceDto } from '@workloom/co
 import { Badge, Button, Skeleton, StateCard, inputClassName } from '@workloom/ui';
 import { ArrowLeft, CalendarDays, Lock, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useParams } from 'react-router';
+import { useCurrentSearchParams } from '../lib/useCurrentSearchParams';
 import { useTaskFieldsQuery } from '../features/fields';
 import { CommitmentDialog, commitmentSession, type CommitmentSession } from '../features/planning/CommitmentDialog';
 import { FactDialog, factSession, type FactSession } from '../features/planning/FactDialog';
@@ -62,9 +64,7 @@ export function WeeklyPage() {
 
 function WeeklyContent({ actorId, workspace, project }: { actorId: string; workspace: WorkspaceDto; project: ProjectDto }) {
   const { t } = useTranslation();
-  const [params, setParams] = useSearchParams();
-  const latestParams = useRef(params);
-  latestParams.current = params;
+  const [params, setParams] = useCurrentSearchParams();
   const periods = usePlanningPeriodsQuery(actorId, workspace.id, project.id);
   const packages = usePlanningPackagesQuery(actorId, workspace.id, project.id);
   const members = useMembershipsQuery(actorId, workspace.id);
@@ -102,6 +102,9 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   const worklogs = useRecordedWorkQuery(actorId, workspace.id, periodId);
   const meetings=useMeetingsQuery(actorId,workspace.id,project.id,periodId);
   const meetingController=useMeetingWorkspace(actorId,workspace.id,project.id);
+  const commentsController=useTaskCommentsWorkspace(actorId,workspace.id);
+  const discussionTarget=useRef<typeof meetingController.target>(null);
+  const openDiscussion=(taskId:string)=>{const target={taskId,tab:'meeting' as const};discussionTarget.current=target;meetingController.setTarget(target);};
   const meetingStatuses=useStatusesQuery(actorId,workspace.id,project.id);
   const meetingSections=useSectionsQuery(actorId,workspace.id,project.id);
   const runs = useReportRunsQuery(actorId, workspace.id, periodId);
@@ -123,7 +126,7 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   });
   useEffect(() => {
     if (!params.has('period') && periodId) setParams((before) => {
-      if (before.has('period')) return before;
+      if (before.has('period')) return null;
       const next = new URLSearchParams(before); next.set('period', periodId); return next;
     }, { replace: true });
   }, [params, periodId, setParams]);
@@ -176,10 +179,11 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
       const found = Object.values(factDrafts).find((draft) => draft.period.id === targetPeriodId && draft.taskId === variables?.taskId && draft.membershipId === variables.membershipId);
       selectPeriod(targetPeriodId, found?.membershipId);
       if (found) { setFactKey(found.key); setFactOpen(true); }
+    } else if (kind === 'freeze') {
+      selectPeriod(targetPeriodId); setFreezeOpen(true);
     } else {
-      selectPeriod(targetPeriodId);
-      if (kind === 'freeze') setFreezeOpen(true);
-      else setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'report'); next.delete('run'); return next; });
+      // One navigation restores the original report context without resurrecting either old run.
+      setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'report'); next.delete('run'); next.delete('typeRun'); return next; });
     }
   };
   const startFreeze = (scope: 'self' | 'project') => {
@@ -197,16 +201,14 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   const savePlan = (key: string) => { setPlanDrafts((before) => Object.fromEntries(Object.entries(before).filter(([itemKey]) => itemKey !== key))); if (planKeyRef.current === key) setPlanOpen(false); setAnnouncement(message('planning.personalPlanSaved')); };
   const saveFact = (key: string) => { setFactDrafts((before) => Object.fromEntries(Object.entries(before).filter(([itemKey]) => itemKey !== key))); if (factKeyRef.current === key) setFactOpen(false); setAnnouncement(message('planning.weeklyActualHoursSaved')); };
   // A completed calculation never replaces a period, view, or saved run chosen while it was pending.
-  const calculatedReport = (id: string, targetPeriodId: string, sourceRunId: string) => {
-    const current = latestParams.current;
-    if (current.get('period')?.toLowerCase() !== targetPeriodId.toLowerCase() || current.get('view') !== 'report' || (current.get('run') ?? '') !== sourceRunId) return;
-    const next = new URLSearchParams(current); next.set('run', id); setParams(next);
-  };
-  const calculatedTypeReport = (id: string, targetPeriodId: string, sourceRunId: string) => {
-    const current = latestParams.current;
-    if (current.get('period')?.toLowerCase() !== targetPeriodId.toLowerCase() || current.get('view') !== 'work-types' || (current.get('typeRun') ?? '') !== sourceRunId) return;
-    const next = new URLSearchParams(current); next.set('typeRun', id); setParams(next);
-  };
+  const calculatedReport = (id: string, targetPeriodId: string, sourceRunId: string) => setParams(current => {
+    if (current.get('period')?.toLowerCase() !== targetPeriodId.toLowerCase() || current.get('view') !== 'report' || (current.get('run') ?? '') !== sourceRunId) return null;
+    const next = new URLSearchParams(current); next.set('run', id); return next;
+  });
+  const calculatedTypeReport = (id: string, targetPeriodId: string, sourceRunId: string) => setParams(current => {
+    if (current.get('period')?.toLowerCase() !== targetPeriodId.toLowerCase() || current.get('view') !== 'work-types' || (current.get('typeRun') ?? '') !== sourceRunId) return null;
+    const next = new URLSearchParams(current); next.set('typeRun', id); return next;
+  });
   const selectedReport = (id: string, targetPeriodId: string) => setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'report'); if (id) next.set('run', id); else next.delete('run'); return next; });
   const selectedTypeReport = (id: string, targetPeriodId: string) => setParams((before) => { const next = new URLSearchParams(before); next.set('period', targetPeriodId); next.set('view', 'work-types'); if (id) next.set('typeRun', id); else next.delete('typeRun'); return next; });
   const heldTypeReport = categoryCommands.createReport.pendingCommand?.variables ?? categoryCommands.createReport.uncertain?.variables ?? null;
@@ -263,7 +265,8 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
       <div ref={recurrenceRef} tabIndex={-1} className="scroll-mt-4"><RecurrencePanel controller={recurrenceController} actorId={actorId} workspace={workspace} project={project} period={recurrencePeriod} periods={periods.isSuccess ? orderedPeriods : []} members={members.isSuccess ? members.data : []} statuses={meetingStatuses.isSuccess ? meetingStatuses.data : []} sections={meetingSections.isSuccess ? meetingSections.data : []} writable={canWrite} accessDenied={denied || [meetingStatuses.error, meetingSections.error].some(isAccessDenied)} onSelectPeriod={selectPeriod} onSelectSeries={selectSeries} onOpenMeeting={(taskId, targetPeriodId) => meetingController.setTarget({ taskId, tab: 'meeting', requestedPeriodId: targetPeriodId })} /></div>
       <>
         <CreateMeetingDialog accessDenied={denied||[meetingStatuses.error,meetingSections.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={orderedPeriods} statuses={meetingStatuses.data??[]} sections={meetingSections.data??[]} ownMembershipId={ownMembershipId??''} timezone={workspace.timezone} onCreated={taskId=>meetingController.setTarget({taskId,tab:'plan'})}/>
-        {meetingController.target?<MeetingDrawer dependencyController={dependencies} key={meetingController.target.taskId} controller={meetingController} actorId={actorId} workspace={workspace} project={project} members={members.data??[]} taskId={meetingController.target.taskId} requestedPeriodId={meetingController.target.requestedPeriodId} onAcceptOriginalPeriod={selectPeriod} initialMembershipId={meetingController.target.membershipId} initialAttendanceId={meetingController.target.attendanceId} initialTab={meetingController.target.tab} open={!denied} onClose={()=>meetingController.setTarget(null)}/>:null}
+        <CommentCommandRecovery controller={commentsController} visibleTaskId={denied?null:meetingController.target?.taskId??null} onOpen={openDiscussion}/>
+        {meetingController.target?<MeetingDrawer commentsController={commentsController} initialIntent={meetingController.target} onOpenTask={openDiscussion} dependencyController={dependencies} key={meetingController.target.taskId} controller={meetingController} actorId={actorId} workspace={workspace} project={project} members={members.data??[]} taskId={meetingController.target.taskId} requestedPeriodId={meetingController.target.requestedPeriodId} onAcceptOriginalPeriod={selectPeriod} initialMembershipId={meetingController.target.membershipId} initialAttendanceId={meetingController.target.attendanceId} initialTab={meetingController.target===discussionTarget.current?undefined:meetingController.target.tab} open={!denied} onClose={()=>meetingController.setTarget(null)}/>:null}
         <PeriodDialog projectId={project.id} timezone={workspace.timezone} fields={fields.isSuccess ? fields.data : []} mutation={commands.createPeriod} open={periodOpen && !denied} onOpenChange={setPeriodOpen} onCreated={(id) => { setPeriodOpen(false); selectPeriod(id); setAnnouncement(message('planning.weeklyPeriodCreated')); }} />
         <CommitmentDialog session={selectedPlan} open={planOpen && !denied} packages={packages.isSuccess ? packages.data : []} tasks={taskItems} members={members.isSuccess ? members.data : []} ownMembershipId={ownMembershipId} canWriteOthers={canManage} writable={canWrite} fixedMember commands={commands} hasMoreTasks={tasks.hasNextPage} loadingMoreTasks={tasks.isFetchingNextPage} onLoadTasks={() => void tasks.fetchNextPage()} onChange={(session) => setPlanDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setPlanOpen(false)} onSaved={savePlan} onReload={async (session) => { const fresh = await fetchPeriodCommitments(workspace.id, session.period.id); return fresh.find((item) => session.base ? item.id === session.base.id : item.workPackageId === session.packageId && item.membershipId === session.membershipId) ?? null; }} />
         <FactDialog session={selectedFact} open={factOpen && !denied} tasks={taskItems} members={members.isSuccess ? members.data : []} ownMembershipId={ownMembershipId} canWriteOthers={canManage} writable={canWrite} fixedMember mutation={commands.setFact} hasMoreTasks={tasks.hasNextPage} loadingMoreTasks={tasks.isFetchingNextPage} onLoadTasks={() => void tasks.fetchNextPage()} onChange={(session) => setFactDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setFactOpen(false)} onSaved={saveFact} onReload={async (session) => { const fresh = await fetchPeriodWorkLogs(workspace.id, session.period.id); return fresh.find((item) => item.taskId === session.taskId && item.membershipId === session.membershipId) ?? null; }} />

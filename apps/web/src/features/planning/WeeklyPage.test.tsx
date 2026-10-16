@@ -1,9 +1,11 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { created, failure, installFakeApi, json, ok, renderApp } from '../../test/fakeApi';
 import { planningKeys } from './queries';
 import { alpha, alphaMembers, anna } from '../../test/fakeApi';
 import { BASELINE_ID, MEMBER_ID, PROJECT_ID, PERIOD_A, PERIOD_B, PERSONAL_BASELINE_ID, RUN_ID, TASK_ID, baseline, commitment, log, lostResponse, period, report, rootPath, routes, snapshot, weekPath } from './test/fixtures';
+
+beforeAll(async () => { await import('../../routes/WeeklyPage'); });
 
 // Radix has both a top close icon and a visible close action. Target its labelled top button.
 async function close(user: ReturnType<typeof renderApp>['user'], name: string) {
