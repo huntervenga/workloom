@@ -94,3 +94,8 @@ The existing reference project is `f477730b-57dc-418f-a46b-0eeab30f8212` in work
 ## Worker observation acceptance and current limits
 
 The compiled completion/cutoff-control/My tasks eight-case gate passed. A separately authorized real worker run drained the known metadata-only backlog, then froze one explicitly armed new QA period after its actual deadline. One browser test retained desktop/mobile views, unsent second-person plan and independent personal-baseline report choices, refreshing only GET projections. Immutable request receipt, baseline/audit `source: job`, real queue start-after/acknowledgement and clean normal stop are recorded in [25](25-ux-verification.md). The worker is now OFF; automatic processing is not currently operating. Six future stale jobs remain stored. The original retained old tab still failed to load its missing lazy chunk; an explicit Refresh tab action now recovered the same URL on the new build. Updated-entry detection/copy needs another genuine later build. No continuous-worker or OS-reboot claim follows from this bounded run.
+
+
+## Next bounded gate preparation — 2026-10-16T11:52:50.178Z
+
+Eight cases (four flows at desktop1440/mobile390) are authored for section collapse, immutable work-type person lens, retained ordinary hours/custom-field protection and compact Board cards. Only static source checks and Playwright listing have run; no new browser, API fixture, build, restart, migration, queue or worker action is part of preparation. The current accepted compiled entry remains`index-eWPbXBeY.js`/source`634aac8`. New source implementation and these pending browser cases must not be reported as accepted runtime behavior. Details and coverage limits are in [25](25-ux-verification.md).
