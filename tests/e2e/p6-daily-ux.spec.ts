@@ -97,12 +97,13 @@ for (const [viewportName, viewport] of [['desktop', { width: 1440, height: 1000 
         current = next; writes.length = 0; await expect(editor).toHaveCount(0);
       }
       // This deliberately does NOT call closeProjectActions: it accepts the product overlay fix.
-      await openProjectActions(page); await page.getByRole('button', { name: 'Columns', exact: true }).click();
+      await openProjectActions(page); await page.getByRole('button', { name: 'Team columns', exact: true }).click();
       const columns = page.getByRole('dialog'); await expect(columns).toBeVisible();
       await columns.getByRole('button', { name: 'Close', exact: true }).click();
       await expect(page.locator('summary[aria-label="Project actions"]')).toBeFocused();
-      const view = page.locator('summary').filter({ hasText: /^View: Daily view$/ }); await view.click();
-      await expect(page.getByRole('radio', { name: 'All columns', exact: true })).toBeVisible(); await view.click();
+      await page.getByRole('button', { name: 'Columns', exact: true }).click();
+      const personal = page.getByRole('dialog', { name: 'My task columns', exact: true });
+      await expect(personal).toBeVisible(); await personal.getByRole('button', { name: 'Close', exact: true }).last().click();
       expect((await f.task(current.id)).revision).toBe(current.revision);
       await overflow(page); await page.screenshot({ path: info.outputPath(`daily-edit-${viewportName}.png`) });
     });

@@ -22,16 +22,20 @@ export async function closeProjectActions(page: Page): Promise<void> {
 
 export async function showAllColumns(page: Page): Promise<void> {
   await closeProjectActions(page);
-  const summary = page.locator('summary').filter({ hasText: /^View: (?:Daily view|All columns)$/ });
-  await expect(summary).toBeVisible();
-  if (!new URL(page.url()).searchParams.has('columns')) {
-    await summary.click();
-    const allColumns = page.getByRole('radio', { name: 'All columns', exact: true });
-    await allColumns.click();
-    await expect(page).toHaveURL(/(?:\?|&)columns=all(?:&|$)/);
-    await expect(allColumns).toBeChecked();
-    await summary.click();
+  await page.getByRole('button', { name: /^Columns(?: · unsaved)?$/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'My task columns', exact: true });
+  await expect(dialog.getByRole('button', { name: 'Use project defaults', exact: true })).toBeEnabled();
+  const boxes = dialog.getByRole('checkbox');
+  for (let index = 0; index < await boxes.count(); index++) {
+    const box = boxes.nth(index);
+    if (await box.isEnabled() && !await box.isChecked()) await box.check();
   }
+  const save = dialog.getByRole('button', { name: 'Save columns', exact: true });
+  if (await save.isEnabled()) {
+    await save.click();
+    await expect(dialog.getByText('Columns saved. Current settings refreshed.', { exact: true })).toBeVisible();
+  }
+  await dialog.getByRole('button', { name: 'Close', exact: true }).last().click();
 }
 
 export async function revealTaskFilters(page: Page): Promise<void> {

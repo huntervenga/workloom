@@ -43,6 +43,12 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 08:54:34.068 | Second compiled checkpoint `2d02bc4` | 14 served assets frozen; focused cases started with a failure cap |
 | 09:01:19.485–09:01:31.968 | Settled visual correction | Loaded custom values/dependency summary; fourteen GET-only frames, zero errors/writes/global overflow |
 | 09:04:22.083 | Second checkpoint window complete | One 8/8 focused run; four changed weekly cases covered passing across 3+1 runs; all 14 assets unchanged and doctor owned/ready |
+| 09:11:22.163–09:11:23.673 | Fresh pre-comments backup | Custom archive + real owned-copy restore match54tables/16,835rows +11migrationrows; copy removed |
+| 09:13:23.079–09:13:23.708 | Separate reviewed MAIN0011 GO | Only additive0011 applied; original54tables/16,835rows +11migrationrows preserved, new comments table empty |
+| 09:14:38.684 | Third checkpoint `bbc0e53` runtime | Ownedrestart preserves55tables; newAPIreads/14assets pass |
+| 09:21:57.320–09:22:04.033 | Comments/D1 visual proof | Six GET-only initial-result/literal-discussion frames; no Studio comments added |
+| 09:22:24.178 | Third checkpoint window complete | First complete8/8 pass18.0s, all14assets unchanged, doctor owned/ready; source-only D2/prefs separate |
+| 09:34:10.221–09:34:11.526 | Fresh pre-preferences backup | Actual owned-copy restore preserves55tables/17,177rows +12migrationrows; exact copy removed; MAIN0012 not yet applied |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 

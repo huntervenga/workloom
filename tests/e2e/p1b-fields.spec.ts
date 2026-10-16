@@ -55,7 +55,7 @@ async function setup(request: APIRequestContext, baseURL: string | undefined, la
 
 async function openManager(page: Page) {
   await openProjectActions(page);
-  await page.getByRole('main').getByRole('button', { name: "Columns", exact: true }).click();
+  await page.getByRole('main').getByRole('button', { name: "Team columns", exact: true }).click();
   const manager = page.getByRole('dialog', { name: "Project columns", exact: true });
   await expect(manager).toBeVisible();
   return manager;

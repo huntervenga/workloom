@@ -30,7 +30,7 @@ Preserve existing real API/PostgreSQL browser coverage when updating English lab
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| English catalog completeness and namespace consistency | Owner gate passed | Foundation audit: 158 files / 2,274 calls / 2,213 English messages; JSON-only browser proof below |
+| English catalog completeness and namespace consistency | Owner gate passed | Initial foundation audit: 158 files / 2,274 calls / 2,213 English messages; later checkpoint audits and JSON-only browser proof below |
 | Build, types, lint and affected web tests | Coordinator/owner gates passed | Root full build/lint/audit passed; initial full web 299/300, repaired legacy title assertion file 10/10; not one green 300-case run. QA scoped lint/root tests TypeScript passed. |
 | Existing browser workflows, desktop/mobile | 26/26 passed | Frozen optimized checkpoint `614bad9`, final complete suite 2.6m; migration provenance below |
 | GET-only final desktop/mobile screenshots and geometry | 10 surfaces passed | 08:41:50.031–08:42:23.805; zero attempted writes, page errors or global overflow |
@@ -177,3 +177,55 @@ All browser-test ESLint, root test TypeScript and `git diff --check` passed afte
 #### Settled visual correction
 
 Actual interval **09:01:19.485–09:01:31.968 UTC**, GET-only `2d02bc4`, desktop1440×1000/mobile390×844. Evidence `workloom-evidence/v2-checkpoint2-settled/`: fourteen frames covering table, loaded drawer overview, loaded fields/dependencies, week and saved report/work-type results, plus `audit.json`. Every context blocked writes and recorded **zero attempted writes, page errors or global horizontal overflow**. Field/dependency screenshots waited for actual **Research**, **On track** and **No unfinished predecessors**, correcting the earlier skeleton capture. Mobile fields/dependencies fit together in one settled viewport, so their two named screenshots coincide. Saved report/work-type captures intentionally scroll to real saved results; they do not claim those results start in the initial page viewport. Root's results-first report/layout follow-up remains a later source change.
+
+
+### Fresh pre-comments backup and actual restore verification
+
+Coordinator confirmed main-database quiet; foundation's disposable comments tests completed and cleaned their owned databases before this separate backup window. No main migration was authorized or applied by this operation.
+
+A fresh PostgreSQL17.5 custom archive completed **09:11:22.163 UTC**: `.local/postgres/backups/before-comments-20261016-b96eee92f8/database.dump`, **2,080,850 bytes**, SHA256 **`b812cc7e52a96c641579bc9ecc1b64741529c821535b9ad5aa9be554c667623c`**. Archive mode0600/private folder0700; credentials were parsed from the existing environment and passed only through child environment, never argv/logs. `pg_restore --list` read **634 catalog items**, including application table data and the migration ledger.
+
+Separate before/after-dump READ ONLY REPEATABLE READ snapshots matched all **54 public tables / 16,835 rows** and the complete **11-row `drizzle.__drizzle_migrations` prefix**, SHA256 `90b0cbd29ab78927133d79889342c71097c94b5332bd4bcc42f1693c92855ca5`. The larger row count reflects the already accepted additive QA fixtures. This establishes quiet during the backup.
+
+The archive was then **actually restored** into exact newly owned `workloom_test_backup_b96eee92f8`, using the existing private-socket peer maintenance seam through an ephemeral loopback bridge. All 54 table counts/full-row digests and the complete migration prefix matched the main pre-backup snapshot. Verification completed **09:11:23.673 UTC**; that own copy was normally dropped, exact remaining database count **0**, bridge closed. No force-drop, role/grant/configuration change, main restore, main schema change or service restart occurred. Private manifest `.local/runtime/comments-backup-20261016.json`; raw harness `/tmp/workloom-comments-backup.mjs`, metadata log `/tmp/workloom-comments-backup-result.log`.
+
+At this backup checkpoint, reviewed additive0011 still required a **separate coordinator GO**. That authorization and its actual postconditions are recorded below; the backup itself did not apply it.
+
+
+### Reviewed main0011 application and new runtime
+
+Coordinator explicitly authorized **MAIN0011 GO** after accepting the reviewed SQL/journal/schema, 14 disposable PostgreSQL cases, and the fresh backup/actual restore proof. Source checkpoint **`bbc0e53`**: coordinator reports all-workspace build, full normal **388/388 web cases**, global lint and localization audit passed. These source gates remain separate from the browser gate.
+
+Guarded normal migrator applied **only `0011_task_comments`**, **09:13:23.079–09:13:23.708 UTC**. Preflight required the exact12-entry journal ending0011 and the unchanged verified backup snapshot. Postcondition: all **54 original public tables / 16,835 rows** retained exact counts/full-row digests; all **11 previous migration rows** unchanged; exactly the expected12th receipt appended. New `task_comments` table empty. Seven expected constraints (including the memberships composite author identity), primary/timeline indexes and two active append-only triggers were present. Private proof `.local/runtime/comments-migration-20261016.json`; metadata log `/tmp/workloom-main-comments-migration.log`. No seed, backfill, main restore or future migration was applied.
+
+Verified helper-owned services were normally stopped/restarted. Final observed PG **41621** / API **41634**, start12:13:44 Asia/Nicosia; Vite **41675**,12:13:45. Doctor verified all owned/ready. At **09:14:38.684 UTC**, a new READ ONLY REPEATABLE READ comparison preserved all **55 public tables / 16,835 rows** exactly against the immediate post-migration snapshot, before any comments browser writes; `.local/runtime/comments-after-restart-20261016.json`. Worker OFF.
+
+Actual new API GET-only smoke **09:14:16.011 UTC** on the original clean Studio research task: comments0, explicit null cursor, activity1 with `created`, strict schemas passed, no writes. At **09:14:18.192 UTC**, all **14 optimized HTML/JS/CSS assets** returned200, correct MIME and exact dist bytes, database/schema readiness `ok`. Entry `/assets/index-D_tdw3Pv.js`,775,276bytes,SHA256 `f954938afe7911908bc2ee5c5e9eff85a75665109b9f378f2b2969314329e0d5`; `.local/runtime/assets-before-comments.json`.
+
+Eight bounded comments/results-first cases were collected after owned lint/root tests TypeScript passed, with max-failures2. The **first complete browser run passed 8/8 (18.0s)**. Test write fixtures stayed in the explicit original QA workspace; Studio was GET-only. Viewer uses a real isolated allowlisted dev-session cookie via API setup, not a browser actor-switch UI. Subsequent injected403 is explicitly a cached-feed UI simulation, not real membership revocation.
+
+
+#### Comments/results-first browser acceptance — first run passed
+
+Playwright CLI `test tests/e2e/task-comments.spec.ts tests/e2e/report-setup.spec.ts --config .local/playwright.current.config.ts --max-failures=2 --output test-results/v2-comments-first --reporter=list`: **8/8 pass (18.0s), no failed test attempts**. Log `/tmp/workloom-v2-comments-first.log`. Desktop1440×1000/mobile390×844 actual cases:
+
+- Unsaved task name/description survive Details/Discussion sibling tabs. Blank comments validate without a request; plain Enter inserts a newline, Ctrl+Enter posts once. Exact leading/trailing spaces, line breaks, literal HTML/script/Markdown persist in real PostgreSQL and after browser reload. React renders text without HTML/link/script execution. Trusted server author identity matches the current actor; task revision remains unchanged. Activity fetch begins only after explicit expansion and returns the strict safe public projection.
+- A genuinely committed pending post survives drawer close/reopen and its original late acknowledgement clears that sent draft once. A second real committed response is deliberately lost, then exact Retry sends the identical original bytes/key and leaves one comment row for that operation. No task revision changes.
+- A fresh isolated browser context obtains an existing allowlisted viewer through the real local dev-session API, verifies the resolved identity, reads the real saved feed with no composer, and receives real403 for API comment creation. A later scoped injected403 verifies the UI hides the previously loaded feed. That injection is **UI simulation**, not a real membership revocation; no fixture identity/permission was changed.
+- Both saved weekly/work-type reports initially show a result metric inside the viewport with setup hidden. Expanding setup sends no POST. A new real calculation commits while its response is held; selecting saved report B before releasing that response keeps B's selector/URL/result instead of replacing it with the late result for A. Exactly one explicit calculation POST occurs per check. Both sizes have no global horizontal overflow.
+
+Owned lint, root tests TypeScript and collection of exactly eight cases passed before execution. At **09:22:24.178 UTC**, all **14 optimized assets remained unchanged**, with database/schema readiness `ok`; `.local/runtime/assets-after-comments.json`. Helper doctor again verified PG41621/API41634/Vite41675 owned/ready, worker OFF. The exclusive mainDB/runtime window was released. Source-only `ac8cc25` personal-plan layout/personal-column work was not compiled or claimed by this gate.
+
+#### Final comments/results-first visual proof
+
+GET-only capture **09:21:57.320–09:22:04.033 UTC**, same frozen `bbc0e53`: six frames in `workloom-evidence/v2-comments-d1/`, `audit.json`. `desktop-discussion-literal.png` and `mobile-discussion-literal.png` show already-created QA tasks in the original workspace with the actual stored multiline literal comment. `desktop-report-initial.png`, `mobile-report-initial.png`, `desktop-work-types-initial.png` and `mobile-work-types-initial.png` show clean Studio selected results at their initial scroll position with setup collapsed. No Studio comment was created for a screenshot.
+
+All six frames: **zero attempted HTTP writes, zero page errors, zero global horizontal overflow**. Current task data, comments and saved result values were loaded before capture. The first capture-only attempt matched both Total recorded and Categorized `20h 55m` values; its QA ambiguity is retained in `initial-capture-selector.json`. The corrected guard scopes the first actual metric; this was not a product error and did not affect the first-green eight-case test gate.
+
+### Fresh backup before personal-column preferences
+
+Coordinator authorized backup/read-only evidence and an owned restore copy separately from the still-pending MAIN0012 application. At **09:34:10.221 UTC**, native PostgreSQL17.5 produced private `.local/postgres/backups/before-preferences-20261016-ed00099736/database.dump`: **2,121,547 bytes**, SHA256 `028c0f7fd860ad558017ee32cbf050c2b56aca546dd8c73674d79f5e17b6dfe3`, readable archive catalog644 items. The private directory is0700; archive0600. No credentials appear in command arguments or tracked evidence.
+
+READ ONLY REPEATABLE READ snapshots before/after the dump matched all **55 public tables / 17,177 rows** exactly. The **12 existing migration rows** matched SHA256 `50d67356547967aa727fb94d4784fd2254ac1edebe3083e974e3fd0f9e77a32f`. The archive was actually restored into exact unique owned `workloom_test_backup_ed00099736`; all55 table counts/full-row digests and the complete migration prefix matched. Verification completed **09:34:11.526 UTC**. That copy was normally dropped, exact remaining count0, ephemeral peer bridge closed. Private proof `.local/runtime/preferences-backup-20261016.json`; harness `/tmp/workloom-preferences-backup.mjs`. No main migration, main restore, seed or runtime restart occurred.
+
+Eight source-only browser cases are prepared in `personal-columns.spec.ts` (four each desktop/mobile); scoped lint passed. The former View/All columns helper and shared-manager trigger selectors are migrated to the actual personal Columns/Team columns controls, preserving behavioral assertions. Execution and D2 geometry remain pending the coordinated preferences build/migration/runtime window. These prepared checks are not passes.
