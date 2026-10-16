@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import * as C from '@workloom/contracts';
-import { assertBeforeCutoff, CATEGORIES, compareReports, DEMO, DemoError, describeError, expectedOracle, FACTS, LATE_PLANS, LATE_TASKS, main, MEETING, PEOPLE, PLANS,
+import { assertBeforeCutoff, CATEGORIES, compareReports, DEMO, DemoError, describeError, expectedOracle, FACTS, FIXTURE, LATE_PLANS, LATE_TASKS, main, MEETING, PEOPLE, PLANS,
   stableId, TASKS, taskBody, UNCATEGORIZED } from '../../scripts/bootstrap-asana-demo.mjs';
 
 const sum = values => values.reduce((total, value) => total + value, 0);
@@ -50,7 +51,8 @@ test('hand-computed literal totals pin the oracle: team package vs personal plan
   assert.deepEqual(oracle.workTypes.byPerson.mark, { totalActualMinutes: 540, activeSourceCount: 4, byCategory: { Management: 540, 'Client support': 0 } });
   assert.deepEqual(oracle.workTypes.byPerson.pavel, { totalActualMinutes: 990, activeSourceCount: 6, byCategory: { 'Client support': 750, 'Side feature': 150, [UNCATEGORIZED]: 45, Bug: 45, Management: 0 } });
   assert.deepEqual(oracle.meeting, { packageEstimateMinutes: 300, plannedMinutes: 300, actualMinutes: 210, sourceCount: 5, byPerson: { mark: 60, andrei: 60, anna: 60, michael: 30, pavel: 0 } });
-  assert.deepEqual(oracle.packages, { teamKnownEstimateMinutes: 7260, unknownEstimateCount: 1, naiveRowEstimateSumMinutes: 9180, sharedPackages: { 'persistent-views': 2, 'team-call': 5 } });
+  assert.deepEqual(oracle.packages, { teamKnownEstimateMinutes: 7260, unknownEstimateCount: 1, naiveRowEstimateSumMinutes: 9180, sharedPackages: { 'persistent-views': 2, 'team-call': 5 },
+    currentPackageBudgetMinutes: 7380, currentUnknownEstimateCount: 1, naiveCurrentCommitmentEstimateSumMinutes: 9300 });
   assert.equal(oracle.rows.length, 28);
   assert.deepEqual(oracle.rows.filter(row => row.scope !== 'original').map(row => [row.key, row.scope, row.plannedMinutes, row.actualMinutes]), [
     ['android-crash:pavel', 'unplanned', null, 45], ['hotfix-merge-regression:andrei', 'added_scope', 120, 150]]);
@@ -70,6 +72,29 @@ test('false sums from naive arithmetic over the literal fixture differ from the 
   assert.deepEqual([byKey('roadmap:mark'), byKey('board-focus:anna')].map(row => [row.actualMinutes, row.factRecorded]), [[0, false], [0, false]]);
   assert.deepEqual([byKey('escalations:mark'), byKey('team-call:pavel')].map(row => [row.actualMinutes, row.factRecorded]), [[0, true], [0, true]]);
   assert.deepEqual(byKey('persistent-views:anna').actualMinutes, 420); // parent 360 + detail subtask 60 in one package row
+});
+
+test('source budgets: pinned baseline 121h vs current loaded 123h, each package counted once', () => {
+  const roots = TASKS.filter(task => !task.parent), meetingBudget = MEETING.plannedDurationMinutes * MEETING.attendees.length;
+  const known = tasks => sum(tasks.map(task => task.estimate).filter(value => value !== null));
+  const baseline = known(roots) + meetingBudget, current = baseline + known(LATE_TASKS.filter(task => !task.parent));
+  assert.deepEqual([baseline, current].map(minutes => minutes / 60), [121, 123]);
+  assert.equal(roots.filter(task => task.estimate === null).length + LATE_TASKS.filter(task => task.estimate === null).length, 1);
+  // Summing a package estimate once per personal commitment double-counts the shared subtask package and the meeting.
+  const packageEstimate = key => { const task = [...TASKS, ...LATE_TASKS].find(item => item.key === key); return [...TASKS, ...LATE_TASKS].find(item => item.key === (task.parent ?? task.key)).estimate ?? 0; };
+  const naiveBaseline = sum(PLANS.map(([task]) => packageEstimate(task))) + meetingBudget * MEETING.attendees.length;
+  const naiveCurrent = naiveBaseline + sum(LATE_PLANS.map(([task]) => packageEstimate(task)));
+  assert.deepEqual([naiveBaseline, naiveCurrent].map(minutes => minutes / 60), [153, 155]);
+  const oracle = expectedOracle();
+  assert.deepEqual([oracle.packages.teamKnownEstimateMinutes, oracle.packages.currentPackageBudgetMinutes, oracle.packages.naiveRowEstimateSumMinutes, oracle.packages.naiveCurrentCommitmentEstimateSumMinutes],
+    [baseline, current, naiveBaseline, naiveCurrent]);
+  // Pinned weekly plan/fact numbers are independent of the current budget.
+  assert.deepEqual([oracle.team.knownPlannedMinutes, oracle.team.totalActualMinutes].map(minutes => minutes / 60), [94, 88]);
+});
+
+test('fixture literals are unchanged, so the executed private manifest stays compatible', () => {
+  assert.equal(createHash('sha256').update(JSON.stringify(FIXTURE)).digest('hex'), '8840dc445d6deb7fe4b5fd129ab70183835b6eca1e1e681d91c4a77d099cbec5');
+  assert.equal(stableId('workspace'), 'cad71e39-11fd-4aa8-8dca-9e48b2da8cab');
 });
 
 function simulated() {

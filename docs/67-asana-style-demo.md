@@ -2,7 +2,7 @@
 
 `scripts/bootstrap-asana-demo.mjs` sets up a separate synthetic workspace, **Team planning demo**, with one project, **Weekly team planning**. It is loosely modelled on a team board: five people, about four tasks each, mixed statuses and priorities, tags, one Work type category per task, a shared one-hour call, and a pinned weekly plan/fact report.
 
-**Status:** authored and checked offline only. The author did not run `--execute` or `--verify`. Every number below is the expected oracle computed from the fixture literals. It is not runtime evidence. Execution, preservation and UI acceptance are recorded separately once the root operator runs it.
+**Status:** accepted on aggregate checks. The root operator ran `--execute` locally and reported 270 oracle checks passed, 0 failed, original-row preservation passed, and 10 offline tests passed. Only those aggregates were shared; no runtime rows or database content were. The tables below come from the fixture literals, and the run's checks matched them. Browser and visual acceptance of this workspace has not been recorded.
 
 ```sh
 node scripts/bootstrap-asana-demo.mjs            # dry-run (default): no network, database or .env access
@@ -13,7 +13,7 @@ node --test tests/scripts/asana-demo.test.mjs    # offline fixture/oracle/compar
 
 ## People and identity
 
-Workloom accepts only the allowlisted synthetic actors, so the demo reuses five of them. It never renames them. The persona names appear only in section names. Reports, assignee chips and memberships still show the fixture display names.
+The named personas (Mark, Andrei, Anna, Michael, Pavel) are **section labels only**. Each one maps to an existing allowlisted Synthetic actor, and no identity was renamed or created. Reports, assignee chips and memberships still show the fixture display names below.
 
 | Section | Existing actor | Role |
 |---|---|---|
@@ -29,11 +29,14 @@ A sixth section, **Team rituals**, holds the meeting. The local API runs as Synt
 
 | Quantity | What it is | Expected total |
 |---|---|---|
-| Team package estimate | Whole-package estimate, counted once per package (task + detail subtasks; meeting = 60 min × 5) | 121h 00m (7,260 min) known; one package (`Stabilise flaky CI checks`) is unknown, not zero |
+| Team package estimate, **pinned baseline** | Whole-package estimates captured by the freeze, counted once per package (task + detail subtasks; meeting = 60 min × 5) | 121h 00m (7,260 min) known |
+| Team package estimate, **current** | The same packages plus the 2h `Hotfix: merge issue regression after release` package created after the freeze. This is what a loaded task-table budget footer shows | 123h 00m (7,380 min) known |
 | Personal weekly plan | Per person and package commitment for the week of 12 Oct, frozen before any fact | 94h 00m (5,640 min) |
 | Weekly fact | Manual period facts and meeting attendance, all recorded after the freeze | 84h 45m original, 88h 00m in total |
 
-If you summed each report row's package estimate, you would get 153h 00m (9,180 min). That is a false total: the shared Persistent views package appears twice and the meeting package five times.
+In both budgets, one package (`Stabilise flaky CI checks`) has an unknown estimate, not a zero. A **123h** table footer and the **121h** report baseline do not disagree: the extra 2h is post-freeze added scope, which the pinned baseline never includes. The weekly plan (94h) and fact (88h) are unaffected.
+
+Summing a package estimate once per personal commitment gives false totals: 153h 00m against the baseline, or 155h 00m with the late commitment. They are inflated because the shared Persistent views package is counted twice and the meeting package five times.
 
 ## Per person (weekly plan/fact report)
 
@@ -100,8 +103,8 @@ That gives 3h 30m in total, not the 5h 00m invited. Meeting time is counted once
 - work-type team and per-person buckets, including zero and uncategorized buckets;
 - that the weekly total equals the work-type total.
 
-Any failed check exits non-zero and leaves product data unchanged.
+Any failed check exits non-zero and leaves product data unchanged. The current 123h budget is a source-derived offline value, asserted in `tests/scripts/asana-demo.test.mjs` and shown in the dry-run. It is not one of the 270 runtime checks; those compare only the pinned reports.
 
 ## Where to look after the root run
 
-The run prints these links: `project`, `myTasks`, `week`, `report` (pinned weekly), `workTypes` (pinned work-type), `meeting`, `sharedPackage` (Persistent views) and `lateWork` (hotfix). In the project, group by section or assignee and show the Work type column. In the week view, open the saved report and the work-type view to compare them with the tables above.
+The root operator links the project. Inside it, group by section or assignee and show the Work type column. A loaded table's budget footer is expected to show the current 123h, not the 121h baseline. In the week view, open the saved report (121h baseline) and the work-type view, and compare them with the tables above.

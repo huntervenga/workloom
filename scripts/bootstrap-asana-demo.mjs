@@ -151,12 +151,16 @@ export function expectedOracle(fixture = FIXTURE) {
   const workType = list => ({ totalActualMinutes: sum(list.map(source => source.minutes)), activeSourceCount: list.length, byCategory: buckets(list) });
   const originalRows = rows.filter(row => row.scope === 'original'), meetingSources = sources.filter(source => source.pkg === meeting.key);
   const rowsPerPackage = {}; for (const row of originalRows) rowsPerPackage[row.pkg] = (rowsPerPackage[row.pkg] ?? 0) + 1;
+  // Current source budget also includes post-freeze packages; the pinned baseline above never does.
+  const current = [...frozen, ...lateTasks.filter(task => !task.parent).map(task => task.key)], knownCurrent = current.map(estimate).filter(value => value !== null);
   return { rows, team: summarize(rows), byPerson: Object.fromEntries(persons.map(person => [person, summarize(rows.filter(row => row.person === person))])),
     workTypes: { ...workType(sources), categorizedMinutes: sum(sources.filter(source => source.category !== UNCATEGORIZED).map(source => source.minutes)),
       uncategorizedMinutes: sum(sources.filter(source => source.category === UNCATEGORIZED).map(source => source.minutes)),
       byPerson: Object.fromEntries(persons.map(person => [person, workType(sources.filter(source => source.person === person))])) },
     packages: { teamKnownEstimateMinutes: sum([...frozen].map(estimate).filter(value => value !== null)), unknownEstimateCount: [...frozen].filter(pkg => estimate(pkg) === null).length,
-      naiveRowEstimateSumMinutes: sum(originalRows.map(row => row.packageEstimateMinutes ?? 0)), sharedPackages: Object.fromEntries(Object.entries(rowsPerPackage).filter(([, count]) => count > 1)) },
+      naiveRowEstimateSumMinutes: sum(originalRows.map(row => row.packageEstimateMinutes ?? 0)), sharedPackages: Object.fromEntries(Object.entries(rowsPerPackage).filter(([, count]) => count > 1)),
+      currentPackageBudgetMinutes: sum(knownCurrent), currentUnknownEstimateCount: current.length - knownCurrent.length,
+      naiveCurrentCommitmentEstimateSumMinutes: sum([...original.keys(), ...added.keys()].map(key => estimate(key.split(':')[0]) ?? 0)) },
     meeting: { packageEstimateMinutes: estimate(meeting.key), plannedMinutes: sum(originalRows.filter(row => row.pkg === meeting.key).map(row => row.plannedMinutes)),
       actualMinutes: sum(meetingSources.map(source => source.minutes)), sourceCount: meetingSources.length,
       byPerson: Object.fromEntries(meeting.attendees.map(person => [person, attendanceMinutes(meeting, person)])) },
@@ -267,7 +271,7 @@ function summary() {
     people: PEOPLE.map(person => ({ persona: person.label, section: sectionName(person), existingActor: person.fixtureName, role: person.role, membershipId: stableId(`membership:${person.key}`) })),
     counts: { rootTasks: TASKS.filter(task => !task.parent).length, detailSubtasks: TASKS.filter(task => task.parent).length, lateTasks: LATE_TASKS.length, meetings: 1,
       personalPlans: PLANS.length + MEETING.attendees.length + LATE_PLANS.length, facts: FACTS.length, attendancePostings: MEETING.attendees.length, tags: TAGS.length, workTypes: CATEGORIES.length },
-    hours: { teamPackageEstimates: hm(oracle.packages.teamKnownEstimateMinutes), personalPlans: hm(oracle.team.knownPlannedMinutes),
+    hours: { teamPackageEstimates: hm(oracle.packages.teamKnownEstimateMinutes), currentPackageBudget: hm(oracle.packages.currentPackageBudgetMinutes), personalPlans: hm(oracle.team.knownPlannedMinutes),
       originalFacts: hm(oracle.team.actualMinutes), allFacts: hm(oracle.team.totalActualMinutes), meetingFacts: hm(oracle.meeting.actualMinutes) },
     expected: { team: oracle.team, byPerson: byLabel(oracle.byPerson), workTypes: { ...oracle.workTypes, byPerson: byLabel(oracle.workTypes.byPerson) },
       meeting: { ...oracle.meeting, byPerson: byLabel(oracle.meeting.byPerson) }, packages: oracle.packages, weeklyRows: oracle.rows.length },
