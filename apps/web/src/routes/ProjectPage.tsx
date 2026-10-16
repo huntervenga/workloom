@@ -12,8 +12,8 @@ import { usePersonalTablePreference } from '../features/task-table/usePersonalTa
 import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/task-comments';
 import { ProjectActions } from '../features/projects/ProjectActions';
 import { weeklyPlanningHref } from '../features/planning/navigation';
-import { QuickTaskAdd } from '../features/tasks/QuickTaskAdd';
-import { InlineTaskEdit } from '../features/tasks/InlineTaskEdit';
+import { QuickTaskAdd, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
+import { InlineTaskEdit, type InlineCloseReason, type InlineSaveIntent } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
 import { canEditTaskInline, isCurrentEstimateProjection, matchesInlineTaskReceipt, taskInlineColumn, type TaskInlineField } from '../features/tasks/tableEditing';
 import { message, type TranslationMessage } from '../i18n';
@@ -45,9 +45,9 @@ import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/u
 import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
 import {
   FieldManagerDialog,
-  FieldValueDisplay,
   useProjectColumnsQuery,
   useProjectFieldValuesQuery,
   useSetTaskFieldValueMutation,
@@ -108,7 +108,7 @@ function ValueLoadingCell() {
   const { t } = useTranslation();
   return (
     <>
-      <span aria-hidden="true" className="text-subtle">
+      <span aria-hidden="true" className="px-1.5 text-subtle">
         …
       </span>
       <span className="sr-only">{t('projects.projectPage.loadingValue')}</span>
@@ -118,7 +118,7 @@ function ValueLoadingCell() {
 
 function ValueUnavailableCell() {
   const { t } = useTranslation();
-  return <span className="text-xs text-amber-800">{t('projects.projectPage.notLoaded')}</span>;
+  return <span className="truncate px-1.5 text-xs text-amber-800">{t('projects.projectPage.notLoaded')}</span>;
 }
 
 /** Fetches the project with the route guard; the loaded content owns every other query. */
@@ -208,9 +208,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const inlineFocusReturn = useRef<{ task: TaskDto; field: TaskInlineField; generation: number; presentationKey: string; ownsFocus: () => boolean; dispose: () => void } | null>(null);
   const inlineLeases = useRef(new Set<() => void>());
   const [savedAssignment, setSavedAssignment] = useState<{ taskId: string; membershipId: string | null; revision: number; generation: number } | null>(null);
+  // A cell clicked while another task save is still being sent opens once that answer arrives.
+  const [queuedInline, setQueuedInline] = useState<{ taskId: string; field: TaskInlineField; focus: Element | null } | null>(null);
   const invalidateInlineSave = useCallback(() => {
     inlineGeneration.current += 1;
     inlineReceipt.current = null;
+    setQueuedInline(null);
     for (const dispose of inlineLeases.current) dispose();
     inlineFocusReturn.current?.dispose();
     inlineFocusReturn.current = null;
@@ -327,18 +330,24 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     id: field.id,
     label: field.name,
     width,
-    // An unloaded value is not an unset one: `null` is shown only after a known read.
+    // An unloaded value is not an unset one: `null` is shown, and offered for a choice, only after a known read.
     renderCell: (task) =>
       fieldValues.isError ? (
         <ValueUnavailableCell />
       ) : fieldValues.isPending ? (
         <ValueLoadingCell />
       ) : (
-        <FieldValueDisplay
+        <InlineFieldValueCell
+          actorId={actorId}
+          workspaceId={workspace.id}
+          task={task}
           field={field}
-          value={valueByKey.get(fieldValueKey(task.id, field.id))?.value ?? null}
+          value={valueByKey.get(fieldValueKey(task.id, field.id)) ?? null}
           members={members.data ?? []}
-          compact
+          writable={writable && canEditTaskInline(task)}
+          mutation={fieldValueMutation}
+          drafts={fieldValueDrafts.current}
+          onMoreDetails={() => openTask(task.id)}
         />
       ),
   }));
@@ -353,7 +362,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // A value write still being sent or unconfirmed stays reachable while its task is not open.
   const heldFieldValue = fieldValueMutation.uncertain ?? fieldValueMutation.pendingCommand;
   const heldFieldTaskId = heldFieldValue?.variables.taskId ?? null;
-  const showHeldFieldValue = heldFieldTaskId !== null && taskId?.toLowerCase() !== heldFieldTaskId.toLowerCase();
+  // A value still being sent from a visible table cell shows its spinner there; a page notice would shift the grid.
+  const heldFieldVisibleInCell = fieldValueMutation.uncertain === null && heldFieldValue !== null && tableMode && !personalColumns.denied
+    && fieldColumns.some(column => column.field.id.toLowerCase() === heldFieldValue.variables.fieldId.toLowerCase())
+    && shownTasks.some(task => task.id.toLowerCase() === heldFieldValue.variables.taskId.toLowerCase() && !sectionHiddenTaskIds.has(task.id));
+  const showHeldFieldValue = heldFieldTaskId !== null && taskId?.toLowerCase() !== heldFieldTaskId.toLowerCase() && !heldFieldVisibleInCell;
   const metadata = [
     { query: sections, subject: 'sections' },
     { query: statuses, subject: 'statuses' },
@@ -378,7 +391,15 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 
   const inlineHead = useRef({ activeInline, loadedPackages, grouping, presentationKey: taskPresentationKey, completionWritable });
   useLayoutEffect(() => { inlineHead.current = { activeInline, loadedPackages, grouping, presentationKey: taskPresentationKey, completionWritable }; });
-  const beginInlineSave = (form: HTMLFormElement) => {
+  // Plain Enter on a saved or unchanged root-task title continues with a new task in its section.
+  const nextTaskSection = (task: TaskDto): string | null | undefined => {
+    const head = inlineHead.current;
+    if (head.grouping !== 'section' || !head.completionWritable || task.parentTaskId !== null || !canEditTaskInline(task)) return undefined;
+    if (task.sectionId === null) return null;
+    const section = sections.data?.find(item => item.id === task.sectionId);
+    return section && section.archivedAt === null ? section.id : undefined;
+  };
+  const beginInlineSave = (form: HTMLFormElement, intent: InlineSaveIntent) => {
     inlineFocusReturn.current?.dispose();
     inlineFocusReturn.current = null;
     inlineReceipt.current = null;
@@ -418,6 +439,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           inlineReceipt.current = { task: confirmed, field, generation, presentationKey: origin.presentationKey };
         }
         if (!ownsFocus) return;
+        const next = intent.continueWithNext && field === 'title' ? nextTaskSection(confirmed) : undefined;
+        if (next !== undefined) { dispose(); startQuickAdd(next); return; }
         waitingForHead = true;
         inlineFocusReturn.current = { task: confirmed, field, generation, presentationKey: origin.presentationKey, ownsFocus: () => ownsFocus, dispose };
       },
@@ -529,25 +552,54 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setQuickAddSection(targetSection);
   };
   const startInline = (task: TaskDto, field: TaskInlineField) => {
+    const held = unresolvedTaskCommand(commands);
+    const kept = commands.editSessions.current.get(task.id);
+    // Only the held cell itself may reopen for recovery; another task's or field's command must resolve first.
+    const reopensHeld = held !== null && held.taskId === task.id && (commands.update.pendingCommand !== null || commands.update.uncertain !== null) && (kept?.inlineField === undefined || kept.inlineField === field);
+    if (writable && canEditTaskInline(task) && held && !held.uncertain && !reopensHeld) {
+      // The in-flight save keeps its editor, focus lease and confirmation; this cell opens after its answer.
+      setQueuedInline({ taskId: task.id, field, focus: document.activeElement });
+      return;
+    }
     invalidateInlineSave();
-    if (!writable || !canEditTaskInline(task)) return;
-    const original = commands.editSessions.current.get(task.id)?.base ?? task;
+    if (!writable || !canEditTaskInline(task) || (held && !reopensHeld)) return;
+    const original = kept?.base ?? task;
     if (field === 'estimate' && !commands.update.pendingCommand && !commands.update.uncertain && !isCurrentEstimateProjection(original, inlineHead.current.loadedPackages.packages)) {
       setAnnouncement(message('tasks.inlineEstimate.refreshRequired'));
       return;
     }
-    const held = unresolvedTaskCommand(commands);
-    if (held && (held.taskId !== task.id || !commands.update.pendingCommand && !commands.update.uncertain)) return;
     setTaskParam(null);
     setCreating(null);
     setQuickAddSection(undefined);
     setActiveInline({ taskId: task.id, field, focusClaim: { current: false } });
   };
-  const closeInline = (taskId: string, field: TaskInlineField) => {
+  const closeInline = (task: TaskDto, field: TaskInlineField, reason: InlineCloseReason = 'cancel') => {
     invalidateInlineSave();
     setActiveInline(null);
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`button[data-task-cell="${taskId}:${field}"]`)?.focus());
+    if (reason === 'blur') return;
+    const next = reason === 'next' ? nextTaskSection(task) : undefined;
+    if (next !== undefined) { startQuickAdd(next); return; }
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`button[data-task-cell="${task.id}:${field}"]`)?.focus());
   };
+  const closeQuickAdd = (sectionId: string | null, reason: QuickAddCloseReason = 'cancel') => {
+    setQuickAddSection(undefined);
+    if (reason === 'cancel') requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`button[data-add-task-row="${sectionId ?? ''}"]`)?.focus());
+  };
+  const heldCommand = unresolvedTaskCommand(commands);
+  const heldKey = heldCommand ? `${heldCommand.taskId ?? 'create'}:${heldCommand.uncertain}` : '';
+  // Read at answer time: the current loaded row and the current open rules.
+  const openQueued = useRef<(queued: { taskId: string; field: TaskInlineField }) => void>(() => undefined);
+  openQueued.current = queued => {
+    const task = dedupeTasks(shownTasks).find(item => item.id === queued.taskId);
+    if (task) startInline(task, queued.field);
+  };
+  useEffect(() => {
+    if (!queuedInline || heldKey.endsWith(':false')) return;
+    setQueuedInline(null);
+    // An unknown outcome keeps every other cell closed; a moved focus means the person went elsewhere.
+    if (heldKey !== '' || (document.activeElement !== queuedInline.focus && document.activeElement !== document.body)) return;
+    openQueued.current(queuedInline);
+  }, [queuedInline, heldKey]);
   const closeDrawer = () => {
     setCreating(null);
     if (taskId !== null) setTaskParam(null);
@@ -702,8 +754,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onEditTaskField={startInline}
             draftTaskIds={new Set(commands.editSessions.current.keys())}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
-            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
-            quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => setQuickAddSection(undefined)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} commands={commands} writable={writable} onClose={reason => closeQuickAdd(quickAddSection ?? null, reason)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
             query={tasks}

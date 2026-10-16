@@ -1,18 +1,32 @@
-import { taskPrioritySchema, type MembershipDto, type TaskDto, type TaskStatusDto } from '@workloom/contracts';
-import { Button, TextInput, inputClassName } from '@workloom/ui';
-import { Expand, X } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useId, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { taskPrioritySchema, type MembershipDto, type TaskDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup } from '@workloom/contracts';
+import { Button, cn } from '@workloom/ui';
+import { Expand, LoaderCircle, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { useTranslation } from '../../i18n';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
+import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { SaveFeedback } from '../../shared/SaveFeedback';
+import { CellPopover } from './CellPopover';
 import { priorityLabels } from './TaskFields';
-import { submitTaskFormShortcut } from './TaskDrawer';
 import { buildUpdateInput, changedKeys, draftFromTask, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors } from './taskDraft';
 import { revealInlineEditor } from '../task-table/TaskTable';
 import type { WorkPackageEntry } from '../task-table/workPackages';
 import { canEditTaskInline, canResumeInlineSession, isCurrentEstimateProjection, type TaskInlineField } from './tableEditing';
 import { unresolvedTaskCommand, type EditSession, type TaskCommands } from './useTaskCommands';
+
+/**
+ * Why a cell editor closed without a confirmed save: `cancel` (Escape/Collapse) returns focus to
+ * the cell, `blur` leaves focus where the person moved it, and `next` is a plain Enter on an
+ * unchanged title, which the page may continue into the next quick task.
+ */
+export type InlineCloseReason = 'cancel' | 'blur' | 'next';
+
+/** What the page should do after this submitted draft is confirmed. */
+export interface InlineSaveIntent {
+  /** Plain Enter in the title: continue with a new task below when the page finds it appropriate. */
+  continueWithNext: boolean;
+}
 
 export interface InlineTaskEditProps {
   /** One claim per explicit open; card/view remounts must not steal focus. */
@@ -24,21 +38,36 @@ export interface InlineTaskEditProps {
   commands: TaskCommands;
   writable: boolean;
   estimatePackages?: ReadonlyMap<string, WorkPackageEntry> | undefined;
-  onClose: () => void;
+  onClose: (reason?: InlineCloseReason) => void;
   onMoreDetails: () => void;
   onSaved: (task: TaskDto) => void;
   /** Page-owned completion survives a row moving to another group or Board lane. */
-  onSaveStarted?: ((form: HTMLFormElement) => { onSuccess: (task: TaskDto) => void; onSettled: () => void }) | undefined;
+  onSaveStarted?: ((form: HTMLFormElement, intent: InlineSaveIntent) => { onSuccess: (task: TaskDto) => void; onSettled: () => void }) | undefined;
 }
 
-/** Uses the exact seen task revision; only this cell's field can enter the update. */
+const statusColors: Record<TaskStatusGroup, string> = { todo: '#94a3b8', in_progress: '#6366f1', done: '#10b981', cancelled: '#cbd5e1' };
+const priorityColors: Partial<Record<TaskPriority, string>> = { low: '#94a3b8', medium: '#64748b', high: '#d97706', urgent: '#e11d48' };
+const choiceFields = new Set<TaskInlineField>(['statusId', 'priority', 'responsibleMembershipId']);
+
+/** A fixed-height cell control: it fills the cell and never changes the row or column size. */
+const cellInputClassName = 'block h-8 w-full min-w-0 rounded border border-accent-line bg-surface px-2 text-sm text-ink outline-none ring-2 ring-accent-soft placeholder:text-subtle read-only:bg-canvas read-only:text-muted aria-[invalid=true]:border-red-300 aria-[invalid=true]:ring-red-100';
+const iconActionClassName = 'inline-flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas hover:text-ink disabled:opacity-50';
+
+/**
+ * Uses the exact seen task revision; only this cell's field can enter the update. Choices save
+ * at once through the same command; text saves on Enter or when focus leaves the editor.
+ */
 export function InlineTaskEdit({ task, field, statuses, members, commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
   // The same one-shot claim reveals the explicitly opened editor once; late ACKs, refreshes and remounts never pan.
   const revealOnMount = useRef(shouldFocus);
-  const reveal = useCallback((node: HTMLElement | null) => {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
+  const attach = useCallback((node: HTMLElement | null) => {
+    formRef.current = node instanceof HTMLFormElement ? node : null;
+    setAnchor(node);
     if (!node || !revealOnMount.current) return;
     revealOnMount.current = false;
     revealInlineEditor(node);
@@ -62,6 +91,7 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     setSession({ base: confirmed, draft: draftFromTask(confirmed), inlineField: field });
     setErrors({});
   }, [confirmed, field]);
+  const choice = choiceFields.has(field);
   const unresolved = unresolvedTaskCommand(commands);
   const pending = update.pendingCommand?.variables.taskId === task.id;
   const uncertain = update.uncertain?.variables.taskId === task.id;
@@ -80,76 +110,176 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     else editSessions.current.delete(task.id);
   }, [confirmed, dirty, editSessions, foreignDraft, pending, session, task.id, uncertain]);
 
-  // Layout stays inside the cell budget: text wraps and actions wrap instead of spilling under sticky cells.
-  if (foreignDraft) return <div ref={reveal} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="min-w-0 space-y-2 py-2 text-xs [overflow-wrap:anywhere]"><p>{t('tasks.inlineEdit.existingDraft')}</p><div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1"><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.resumeDraft')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div></div>;
-  if (!editable && !uncertain) return <div ref={reveal} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="min-w-0 space-y-2 py-2 text-xs [overflow-wrap:anywhere]"><p>{t('tasks.inlineEdit.notEditable')}</p><div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1"><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.moreDetails')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div></div>;
+  const currentError = errors.dueDate ?? errors.form ?? errors.title ?? errors.description ?? errors.startDate ?? errors.estimate;
+  const hasFeedback = staleEstimate || Boolean(currentError) || blocked || ownError !== null || uncertain;
+
+  const saved = (submitted: EditSession, result: TaskDto, bridge?: ReturnType<NonNullable<InlineTaskEditProps['onSaveStarted']>>) => {
+    if (!commands.confirmSession(submitted, result)) return;
+    if (bridge) { bridge.onSuccess(result); return; }
+    onSaved(result);
+    if (!mounted.current) return;
+    setSession({ base: result, draft: draftFromTask(result), inlineField: field });
+    setErrors({});
+    onClose();
+  };
+  /** One explicit submission of exactly this session object; its identity is the confirmation key. */
+  const submitSession = (current: EditSession, intent: InlineSaveIntent) => {
+    const form = formRef.current;
+    if (!form || confirmed || pending || blocked || !editable || needsReview || staleEstimate) return;
+    // A drawer or another cell's draft must never be submitted through this control.
+    if (!canResumeInlineSession(current, field)) return;
+    const result = buildUpdateInput(current.base, draftFromTask(current.base), current.draft);
+    if (!result.ok) { setErrors(result.errors); return; }
+    setErrors({});
+    if (result.input === null) { editSessions.current.delete(task.id); onClose(intent.continueWithNext ? 'next' : 'cancel'); return; }
+    // Retain the sent session before rendering, so recovery and confirmation see the same object.
+    editSessions.current.set(task.id, current);
+    const bridge = onSaveStarted?.(form, intent);
+    update.mutate({ taskId: task.id, input: result.input }, { onSuccess: confirmedTask => saved(current, confirmedTask, bridge), onSettled: () => bridge?.onSettled() });
+  };
+  const retry = () => {
+    const form = formRef.current;
+    if (!form || !uncertain) return;
+    const bridge = onSaveStarted?.(form, { continueWithNext: false });
+    update.retryUncertain({ onSuccess: result => saved(session, result, bridge), onSettled: () => bridge?.onSettled() });
+  };
+
+  // Leaving the editor commits text (with validation) or closes an unchanged one. Read at event time.
+  const leave = useRef<() => void>(() => undefined);
+  leave.current = () => {
+    if (choice || confirmed || pending || uncertain || blocked) return;
+    if (!dirty) { if (!hasFeedback) onClose('blur'); return; }
+    submitSession(session, { continueWithNext: false });
+  };
+  // A dismissed picker (Escape, outside press, Tab) closes the editor unless it shows feedback.
+  const chose = useRef(false);
+  const continueNext = useRef(false);
+  const dismiss = useRef<(trigger: HTMLElement) => void>(() => undefined);
+  dismiss.current = trigger => {
+    if (confirmed || pending || uncertain || hasFeedback) return;
+    onClose(document.activeElement === trigger ? 'cancel' : 'blur');
+  };
+  // Latched at mount: this editor's own claim is consumed by its first commit, and a sent or
+  // blocked command at mount keeps the list closed.
+  const openOnMount = useRef(shouldFocus && !frozen);
+  useLayoutEffect(() => {
+    if (!choice || !anchor) return undefined;
+    const trigger = anchor.querySelector<HTMLElement>('[role="combobox"]');
+    if (!trigger) return undefined;
+    // An explicit open shows the choices at once; remounts and late answers never reopen them.
+    if (openOnMount.current) { openOnMount.current = false; trigger.click(); }
+    let wasOpen = trigger.getAttribute('aria-expanded') === 'true';
+    const observer = new MutationObserver(() => {
+      const open = trigger.getAttribute('aria-expanded') === 'true';
+      if (wasOpen && !open) {
+        const madeChoice = chose.current;
+        chose.current = false;
+        if (!madeChoice) dismiss.current(trigger);
+      }
+      wasOpen = open;
+    });
+    observer.observe(trigger, { attributes: true, attributeFilter: ['aria-expanded'] });
+    return () => observer.disconnect();
+  }, [anchor, choice]);
+
+  const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose('cancel'); } };
+  const actions = (primary: ReactNode) => <div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1">
+    {primary}
+    <button type="button" className={iconActionClassName} title={t('tasks.quickAdd.moreDetails')} aria-label={t('tasks.quickAdd.moreDetails')} disabled={pending || uncertain || blocked} onClick={() => { editSessions.current.set(task.id, session); onMoreDetails(); }}><Expand size={14} aria-hidden="true" /></button>
+    <button type="button" className={iconActionClassName} title={t('tasks.quickAdd.collapse')} aria-label={t('tasks.quickAdd.collapse')} onClick={() => onClose('cancel')}><X size={14} aria-hidden="true" /></button>
+  </div>;
+
+  // Recovery-only states keep the cell one line; their explanation and actions sit in the popover.
+  if (foreignDraft || (!editable && !uncertain)) return <div ref={attach} onKeyDown={escape} className="flex h-8 min-w-0 items-center px-1.5">
+    <span className="truncate rounded-full bg-amber-50 px-1.5 py-px text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">{foreignDraft ? t('tasks.inlineEdit.draft') : t('tasks.inlineEdit.notEditableShort')}</span>
+    <CellPopover anchor={anchor}>
+      <p>{foreignDraft ? t('tasks.inlineEdit.existingDraft') : t('tasks.inlineEdit.notEditable')}</p>
+      <div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1">
+        <Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{foreignDraft ? t('tasks.quickAdd.resumeDraft') : t('tasks.quickAdd.moreDetails')}</Button>
+        <Button size="sm" variant="ghost" onClick={() => onClose('cancel')}>{t('tasks.quickAdd.collapse')}</Button>
+      </div>
+    </CellPopover>
+  </div>;
+
   const change = (patch: Partial<TaskDraft>) => {
     setSession(before => ({ ...before, draft: { ...before.draft, ...patch } }));
     setErrors({});
   };
-  const saved = (confirmed: TaskDto, bridge?: ReturnType<NonNullable<InlineTaskEditProps['onSaveStarted']>>) => {
-    if (!commands.confirmSession(session, confirmed)) return;
-    if (bridge) { bridge.onSuccess(confirmed); return; }
-    onSaved(confirmed);
-    if (!mounted.current) return;
-    setSession({ base: confirmed, draft: draftFromTask(confirmed), inlineField: field });
+  const choose = (value: string) => {
+    chose.current = true;
+    const patch: Partial<TaskDraft> | null = field === 'statusId' ? { statusId: value } : field === 'responsibleMembershipId' ? { responsibleMembershipId: value || null } : (() => {
+      const priority = taskPrioritySchema.safeParse(value);
+      return priority.success ? { priority: priority.data } : null;
+    })();
+    if (!patch) return;
+    const next: EditSession = { ...session, draft: { ...session.draft, ...patch } };
+    setSession(next);
     setErrors({});
-    onClose();
+    submitSession(next, { continueWithNext: false });
   };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (event.target !== event.currentTarget || confirmed || pending || blocked) return;
-    if (uncertain) {
-      const bridge = onSaveStarted?.(event.currentTarget);
-      update.retryUncertain({ onSuccess: result => saved(result, bridge), onSettled: () => bridge?.onSettled() });
-      return;
-    }
-    if (!editable || needsReview || staleEstimate) return;
-    // A drawer or another cell's draft must never be submitted through this control.
-    if (!canResumeInlineSession(session, field)) return;
-    const result = buildUpdateInput(session.base, draftFromTask(session.base), session.draft);
-    if (!result.ok) { setErrors(result.errors); return; }
-    setErrors({});
-    if (result.input === null) { editSessions.current.delete(task.id); onClose(); return; }
-    const bridge = onSaveStarted?.(event.currentTarget);
-    update.mutate({ taskId: task.id, input: result.input }, { onSuccess: result => saved(result, bridge), onSettled: () => bridge?.onSettled() });
+    if (uncertain) { retry(); return; }
+    submitSession(session, { continueWithNext: continueNext.current });
+    continueNext.current = false;
   };
-  const currentError = errors.dueDate ?? errors.form ?? errors.title ?? errors.description ?? errors.startDate ?? errors.estimate;
-  return <form ref={reveal} noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} onSubmit={submit} onKeyDown={event => {
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
-    if ((field === 'title' || field === 'estimate') && event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.closest('form') === event.currentTarget) {
+  const describedBy = [field === 'estimate' ? `${id}-estimate-help` : '', currentError ? `${id}-error` : '', staleEstimate ? `${id}-estimate-source` : ''].filter(Boolean).join(' ') || undefined;
+  const textProps = {
+    autoFocus: shouldFocus, readOnly: frozen, 'aria-disabled': frozen || undefined, 'aria-invalid': Boolean(currentError) || undefined,
+    'aria-describedby': describedBy, autoComplete: 'off', className: cellInputClassName,
+  } as const;
+  const statusOptions: ChoiceOption[] = [
+    ...(!statuses.some(status => status.id === session.draft.statusId) ? [{ value: session.draft.statusId, label: t('tasks.taskFields.statusUnavailable'), disabled: true }] : []),
+    ...[...statuses].sort((a, b) => a.position - b.position).map(status => ({ value: status.id, label: status.name, color: statusColors[status.group] })),
+  ];
+  const assigneeOptions: ChoiceOption[] = [
+    { value: '', label: t('tasks.taskFields.unassigned') },
+    ...(session.draft.responsibleMembershipId && !members.some(member => member.id === session.draft.responsibleMembershipId) ? [{ value: session.draft.responsibleMembershipId, label: t('tasks.taskFields.memberUnavailable'), disabled: true }] : []),
+    ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName })),
+  ];
+  const priorityOptions: ChoiceOption[] = taskPrioritySchema.options.map(priority => ({ value: priority, label: priorityLabels[priority], color: priorityColors[priority] }));
+  const picker = (label: string, value: string, options: readonly ChoiceOption[], searchable?: boolean) => <ChoicePicker compact autoFocus={shouldFocus} label={label} value={value} options={options} searchable={searchable}
+    disabled={frozen || needsReview} aria-describedby={describedBy} aria-invalid={Boolean(currentError) || undefined} onValueChange={choose} />;
+  const control = field === 'statusId' ? picker(t('tasks.taskFields.status'), session.draft.statusId, statusOptions)
+    : field === 'priority' ? picker(t('tasks.taskFields.priority'), session.draft.priority, priorityOptions)
+    : field === 'responsibleMembershipId' ? picker(t('tasks.taskFields.assignee'), session.draft.responsibleMembershipId ?? '', assigneeOptions, true)
+    : field === 'estimate' ? <input {...textProps} type="text" aria-label={t('tasks.inlineEstimate.label')} value={session.draft.estimate} onChange={event => change({ estimate: event.target.value })} />
+    : field === 'title' ? <input {...textProps} type="text" aria-label={t('tasks.taskFields.taskName')} maxLength={TASK_TITLE_MAX} value={session.draft.title} onChange={event => change({ title: event.target.value })} />
+    : <input {...textProps} type="date" aria-label={t('tasks.taskFields.dueDate')} min="0001-01-01" max="9999-12-31" className={cn(cellInputClassName, 'px-1')} value={session.draft.dueDate} onChange={event => change({ dueDate: event.target.value })} />;
+  const primary = uncertain ? <Button size="sm" className="h-7 px-2" variant="primary" type="submit">{t('tasks.inlineEdit.retry')}</Button>
+    : choice ? null
+    : <Button size="sm" className="h-7 px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || staleEstimate || undefined}>{pending ? t('tasks.inlineEdit.saving') : t('tasks.inlineEdit.save')}</Button>;
+  return <form ref={attach} noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} aria-busy={pending || undefined} onSubmit={submit}
+    onKeyDown={event => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose('cancel'); return; }
+      if (choice || event.key !== 'Enter' || !(event.target instanceof HTMLInputElement) || event.target.closest('form') !== event.currentTarget) return;
       if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
       event.preventDefault();
-      if (!frozen && !needsReview && !staleEstimate && !event.altKey && !event.shiftKey) event.currentTarget.requestSubmit();
-      return;
-    }
-    submitTaskFormShortcut(event, !frozen && !needsReview && !staleEstimate);
-  }} className="min-w-0 max-w-full space-y-1.5 py-1 [overflow-wrap:anywhere]">
-    <fieldset disabled={frozen} className="min-w-0">
-      <legend className="sr-only">{t('tasks.inlineEdit.fields')}</legend>
-      {field === 'estimate' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.inlineEstimate.label')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={`${id}-estimate-help${currentError ? ` ${id}-error` : ''}${staleEstimate ? ` ${id}-estimate-source` : ''}`} type="text" autoComplete="off" className="px-2 text-xs" value={session.draft.estimate} onChange={event => change({ estimate: event.target.value })} /> : field === 'title' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.taskName')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="text" maxLength={TASK_TITLE_MAX} autoComplete="off" className="px-2 text-xs" value={session.draft.title} onChange={event => change({ title: event.target.value })} /> : field === 'statusId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
-        {!statuses.some(status => status.id === session.draft.statusId) ? <option value={session.draft.statusId}>{t('tasks.taskFields.statusUnavailable')}</option> : null}
-        {[...statuses].sort((a, b) => a.position - b.position).map(status => <option key={status.id} value={status.id}>{status.name}</option>)}
-      </select> : field === 'priority' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.priority')} className={inputClassName('px-2 text-xs')} value={session.draft.priority} onChange={event => {
-        const priority = taskPrioritySchema.safeParse(event.target.value);
-        if (priority.success) change({ priority: priority.data });
-      }}>
-        {taskPrioritySchema.options.map(priority => <option key={priority} value={priority}>{priorityLabels[priority]}</option>)}
-      </select> : field === 'responsibleMembershipId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.assignee')} className={inputClassName('px-2 text-xs')} value={session.draft.responsibleMembershipId ?? ''} onChange={event => change({ responsibleMembershipId: event.target.value || null })}>
-        <option value="">{t('tasks.taskFields.unassigned')}</option>
-        {session.draft.responsibleMembershipId && !members.some(member => member.id === session.draft.responsibleMembershipId) ? <option value={session.draft.responsibleMembershipId}>{t('tasks.taskFields.memberUnavailable')}</option> : null}
-        {members.map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}
-      </select> : <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.dueDate')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="date" min="0001-01-01" max="9999-12-31" className="px-1 text-xs" value={session.draft.dueDate} onChange={event => change({ dueDate: event.target.value })} />}
-    </fieldset>
-    {field === 'estimate' ? <p id={`${id}-estimate-help`} className="text-xs text-muted">{t('tasks.inlineEstimate.sharedHelp')} {t('tasks.inlineEstimate.formatHelp')}</p> : null}
-    {staleEstimate ? <p id={`${id}-estimate-source`} role="status" className="text-xs text-amber-800">{t('tasks.inlineEstimate.refreshRequired')}</p> : null}
-    {currentError ? <p role="alert" id={`${id}-error`} className="text-xs text-red-700">{t(currentError.key, currentError.params)}</p> : null}
-    {blocked ? <p role="status" className="text-xs text-amber-800">{t('tasks.quickAdd.otherCommand')}</p> : null}
-    <SaveFeedback subject="taskSave" error={ownError} uncertainError={uncertain ? update.uncertain?.error ?? null : null} />
-    <div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1">
-      <Button size="sm" className="px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || (staleEstimate && !uncertain) || undefined}>{pending ? t('tasks.inlineEdit.saving') : uncertain ? t('tasks.inlineEdit.retry') : t('tasks.inlineEdit.save')}</Button>
-      <button type="button" className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas" title={t('tasks.quickAdd.moreDetails')} aria-label={t('tasks.quickAdd.moreDetails')} disabled={pending || uncertain || blocked} onClick={() => { editSessions.current.set(task.id, session); onMoreDetails(); }}><Expand size={14} aria-hidden="true" /></button>
-      <button type="button" className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas" title={t('tasks.quickAdd.collapse')} aria-label={t('tasks.quickAdd.collapse')} onClick={onClose}><X size={14} aria-hidden="true" /></button>
-    </div>
+      if (frozen || needsReview || staleEstimate || event.altKey || event.shiftKey) return;
+      // Plain Enter on a title continues to the next quick task; Ctrl/Cmd+Enter only saves.
+      continueNext.current = field === 'title' && !event.ctrlKey && !event.metaKey;
+      event.currentTarget.requestSubmit();
+    }}
+    onBlur={event => {
+      const form = event.currentTarget;
+      if (event.relatedTarget instanceof Node && form.contains(event.relatedTarget)) return;
+      window.setTimeout(() => {
+        // A window switch keeps the active element; only a real move out of the editor commits.
+        if (!mounted.current || !form.isConnected || (document.activeElement !== null && form.contains(document.activeElement))) return;
+        leave.current();
+      }, 0);
+    }}
+    className="relative flex h-8 min-w-0 items-center">
+    {control}
+    {pending ? <><LoaderCircle size={14} aria-hidden="true" className="pointer-events-none absolute right-2 text-muted motion-safe:animate-spin" /><span role="status" className="sr-only">{t('tasks.inlineEdit.saving')}</span></> : null}
+    {hasFeedback || field === 'estimate' ? <CellPopover anchor={anchor} side={choice ? 'top' : 'bottom'}>
+      {field === 'estimate' ? <p id={`${id}-estimate-help`} className="text-muted">{t('tasks.inlineEstimate.sharedHelp')} {t('tasks.inlineEstimate.formatHelp')}</p> : null}
+      {staleEstimate ? <p id={`${id}-estimate-source`} role="status" className="text-amber-800">{t('tasks.inlineEstimate.refreshRequired')}</p> : null}
+      {currentError ? <p role="alert" id={`${id}-error`} className="text-red-700">{t(currentError.key, currentError.params)}</p> : null}
+      {blocked ? <p role="status" className="text-amber-800">{t('tasks.quickAdd.otherCommand')}</p> : null}
+      <SaveFeedback subject="taskSave" error={ownError} uncertainError={uncertain ? update.uncertain?.error ?? null : null} />
+      {actions(primary)}
+    </CellPopover> : null}
   </form>;
 }

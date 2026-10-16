@@ -146,7 +146,7 @@ it('translates an existing inline title error without resetting the draft or sub
   }
   const ui = renderFieldUi(<Example />);
   fireEvent.change(screen.getByLabelText('Task name'), { target: { value: '' } });
-  await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+  await ui.user.keyboard('{Enter}');
   expect(screen.getByText('Enter a task name.')).toBeVisible();
   switchLocale('fr'); expect(screen.getByLabelText('Nom de tâche')).toHaveValue(''); expect(screen.getByLabelText('Nom de tâche')).toHaveAttribute('aria-invalid', 'true');
   expect(screen.getByText('Saisissez un nom de tâche.')).toBeVisible();

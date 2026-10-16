@@ -30,11 +30,14 @@ const views = () => within(screen.getByRole('navigation', { name: 'Project views
 const groupControl = () => screen.getByRole('combobox', { name: 'Group by' });
 const groupToggle = (name: string, collapsed = false) => screen.getByRole('button', { name: new RegExp(`^${collapsed ? 'Expand' : 'Collapse'} assignee group.*“${name}”$`) });
 const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filter(call => call.method !== 'GET');
+/** Choosing in an open custom list is the explicit save. */
+const choose = (user: ReturnType<typeof renderApp>['user'], list: string, option: string) => user.click(within(screen.getByRole('listbox', { name: list })).getByRole('option', { name: option }));
+const statusPicker = () => screen.getByRole('combobox', { name: 'Status' });
+const assigneePicker = () => screen.getByRole('combobox', { name: 'Assignee' });
 
 async function editAssignee(user: ReturnType<typeof renderApp>['user']) {
   await user.click(screen.getByRole('button', { name: `Edit assignee for ${parent.title}` }));
-  await user.selectOptions(screen.getByLabelText('Assignee'), NEXT.id);
-  await user.click(screen.getByRole('button', { name: 'Save' }));
+  await choose(user, 'Assignee', NEXT.displayName);
 }
 
 describe('page-owned task grouping', () => {
@@ -75,7 +78,7 @@ describe('page-owned task grouping', () => {
     await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
     const drawer = within(await screen.findByRole('dialog'));
     expect(drawer.getByLabelText('Task name')).toHaveValue('Unsent original draft');
-    expect(drawer.getByLabelText('Section')).toHaveValue(SECTION);
+    expect(drawer.getByLabelText('Section')).toHaveTextContent('Original section');
     expect(writes(calls)).toHaveLength(0);
   });
 
@@ -135,7 +138,7 @@ describe('page-owned task grouping', () => {
     installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => readingHead ? list.promise : page([parent]), [`PATCH ${rootPath}/tasks/${parent.id}`]: () => response.promise }));
     const { user } = renderApp(`${tablePath}?view=board`);
     await user.click(await screen.findByRole('button', { name: 'Change status' }));
-    await user.selectOptions(screen.getByLabelText('Status'), NEXT_STATUS); await user.click(screen.getByRole('button', { name: 'Save' }));
+    await choose(user, 'Status', 'Stored progress');
     readingHead = true; await act(async () => response.resolve(ok({ ...parent, statusId: NEXT_STATUS, revision: 2 })));
     await act(async () => list.resolve(page([{ ...parent, statusId: NEXT_STATUS, revision: 2 }])));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Change status' })).toHaveFocus());
@@ -147,7 +150,7 @@ describe('page-owned task grouping', () => {
     installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => readingHead ? list.promise : page([parent]), [`PATCH ${rootPath}/tasks/${parent.id}`]: () => response.promise }));
     const { user } = renderApp(`${tablePath}?view=board`);
     await user.click(await screen.findByRole('button', { name: 'Change status' }));
-    await user.selectOptions(screen.getByLabelText('Status'), NEXT_STATUS); await user.click(screen.getByRole('button', { name: 'Save' }));
+    await choose(user, 'Status', 'Stored progress');
     readingHead = true;
     await act(async () => response.resolve(ok({ ...parent, statusId: NEXT_STATUS, revision: 2 })));
     await waitFor(() => expect(screen.queryByLabelText('Status')).not.toBeInTheDocument());
@@ -164,14 +167,14 @@ describe('page-owned task grouping', () => {
     const { user } = renderApp(tablePath); await screen.findByRole('button', { name: parent.title });
     await editAssignee(user); await user.selectOptions(groupControl(), 'assignee');
     await act(async () => first.lose());
-    expect(screen.getByLabelText('Assignee')).toHaveValue(NEXT.id); expect(screen.getByLabelText('Assignee')).toBeDisabled();
+    expect(assigneePicker()).toHaveTextContent(NEXT.displayName); expect(assigneePicker()).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByLabelText('Assignee')).not.toBeInTheDocument());
     await screen.findByText(`Assignee saved: ${NEXT.displayName}.`);
     const sent = writes(calls); expect(sent).toHaveLength(2); expect(sent[0]?.body).toEqual({ expectedRevision: parent.revision, responsibleMembershipId: NEXT.id });
     expect(sent[1]?.body).toEqual(sent[0]?.body); expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));
     await user.click(screen.getByRole('button', { name: `Edit assignee for ${parent.title}` }));
-    await user.click(screen.getByRole('button', { name: 'Save' })); expect(writes(calls)).toHaveLength(2);
+    await choose(user, 'Assignee', NEXT.displayName); expect(writes(calls)).toHaveLength(2);
   });
 
 
@@ -205,7 +208,7 @@ describe('page-owned task grouping', () => {
 
   it('keeps a rich draft Resume-only when its assignee cell is opened in another grouping', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('button', { name: parent.title }));
+    await user.click(await screen.findByRole('button', { name: `Open task “${parent.title}”` }));
     const drawer = within(await screen.findByRole('dialog'));
     await user.type(drawer.getByLabelText('Description'), 'Retained rich description');
     await user.click(drawer.getByLabelText('Close', { selector: 'button' }));
@@ -223,20 +226,21 @@ describe('page-owned task grouping', () => {
     const { user } = renderApp(tablePath); await screen.findByRole('button', { name: parent.title }); await user.selectOptions(groupControl(), 'assignee');
     await editAssignee(user);
     if (replacement === 'same-editor') {
-      await user.click(screen.getByRole('button', { name: 'Collapse editor' }));
-      await user.click(screen.getByRole('button', { name: `Edit assignee for ${parent.title}` }));
+      // A pending choice has no collapse control; hiding its group unmounts and remounts the same editor.
+      await user.click(groupToggle(OWNER.displayName)); expect(screen.queryByRole('combobox', { name: 'Assignee' })).not.toBeInTheDocument();
+      await user.click(groupToggle(OWNER.displayName, true));
     } else {
       await user.click(views().getByRole('button', { name: 'Board' }));
       await user.click(views().getByRole('button', { name: 'Tasks' }));
       await user.click(screen.getByRole('button', { name: `Edit assignee for ${parent.title}` }));
     }
-    expect(screen.getByLabelText('Assignee')).toBeDisabled();
+    expect(assigneePicker()).toBeDisabled(); expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     const search = screen.getByLabelText('Search tasks'); await user.click(search);
     await act(async () => gate.resolve(ok(current = { ...parent, responsibleMembershipId: NEXT.id, revision: 2 })));
-    await waitFor(() => expect(screen.getByLabelText('Assignee')).toBeEnabled());
-    expect(screen.getByLabelText('Assignee')).toHaveValue(NEXT.id); expect(search).toHaveFocus();
+    await waitFor(() => expect(assigneePicker()).toBeEnabled());
+    expect(assigneePicker()).toHaveTextContent(NEXT.displayName); expect(search).toHaveFocus();
     expect(screen.queryByText(`Assignee saved: ${NEXT.displayName}.`)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Save' })); expect(writes(calls)).toHaveLength(1);
+    await user.click(assigneePicker()); await choose(user, 'Assignee', NEXT.displayName); expect(writes(calls)).toHaveLength(1);
   });
 
 
@@ -245,15 +249,15 @@ describe('page-owned task grouping', () => {
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`PATCH ${rootPath}/tasks/${parent.id}`]: () => gate.promise }));
     const { user, queryClient } = renderApp(`${tablePath}?view=board`);
     await user.click(await screen.findByRole('button', { name: 'Change status' }));
-    const original = screen.getByLabelText('Status');
-    await user.selectOptions(original, NEXT_STATUS); await user.click(screen.getByRole('button', { name: 'Save' }));
+    const original = statusPicker();
+    await choose(user, 'Status', 'Stored progress');
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     // The server has committed; a legitimate refreshed read can observe it before
     // the browser receives the held original write receipt.
     current = { ...parent, statusId: NEXT_STATUS, revision: 2 };
     await act(async () => { await queryClient.invalidateQueries({ queryKey: queryKeys.tasks(anna.id, alpha.id) }); });
     await waitFor(() => expect(original.isConnected).toBe(false));
-    expect(screen.getByLabelText('Status')).toBeDisabled();
+    expect(statusPicker()).toBeDisabled();
     await act(async () => gate.resolve(ok(current)));
     await waitFor(() => expect(screen.queryByLabelText('Status')).not.toBeInTheDocument());
     await waitFor(() => expect(screen.getByRole('button', { name: 'Change status' })).toHaveFocus());

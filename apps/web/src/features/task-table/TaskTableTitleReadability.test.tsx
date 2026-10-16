@@ -28,7 +28,7 @@ function handlers() {
     onSelectTask: vi.fn(), onEditTaskField: vi.fn() };
 }
 
-it('keeps full deep title names, loaded depth and the authorized parent while native actions stay separate', async () => {
+it('keeps full deep title names, loaded depth and the authorized parent while rename, details and other actions stay separate', async () => {
   const user = userEvent.setup();
   const calls = handlers();
   render(<TaskTable tasks={tasks} sections={[main, followup]} members={[owner]} statuses={statuses}
@@ -42,13 +42,16 @@ it('keeps full deep title names, loaded depth and the authorized parent while na
   if (!row) throw Error('Leaf task row required.');
   expect(within(row).getByText('Draft', { exact: true })).toBeVisible();
   expect(within(row).getByText('Section: Release follow-up')).toBeVisible();
+  // The visible name renames in place (Asana-style); the separate details action opens the task.
   leaf.focus();
   await user.keyboard('{Enter}');
-  expect(calls.onOpenTask).toHaveBeenCalledExactlyOnceWith('depth-8');
-  const rename = within(row).getByRole('button', { name: `Rename ${title}` });
-  rename.focus();
-  await user.keyboard('{Enter}');
   expect(calls.onEditTaskField).toHaveBeenCalledExactlyOnceWith(tasks[8], 'title');
+  expect(calls.onOpenTask).not.toHaveBeenCalled();
+  const details = within(row).getByRole('button', { name: `Open task “${title}”` });
+  details.focus();
+  await user.keyboard('{Enter}');
+  expect(calls.onOpenTask).toHaveBeenCalledExactlyOnceWith('depth-8');
+  expect(calls.onEditTaskField).toHaveBeenCalledTimes(1);
   await user.click(within(row).getByRole('button', { name: `Add subtask to “${title}”` }));
   expect(calls.onCreateChild).toHaveBeenCalledExactlyOnceWith(tasks[8]);
   await user.click(within(row).getByRole('checkbox', { name: `Select for graph: ${title}` }));
@@ -94,4 +97,20 @@ it('keeps Assignee grouping flat with existing parent context instead of a false
   expect(leaf).not.toHaveAttribute('aria-describedby');
   expect(leaf.closest('tr')).toHaveTextContent(`Section: Release follow-up · Subtask of ${titles[7]}`);
   expect(screen.queryByRole('button', { name: /subtasks of/ })).not.toBeInTheDocument();
+});
+
+it('keeps every task on one fixed-height line: long names truncate with the full name kept as tooltip and accessible name', () => {
+  const long = makeTask({ id: 'long', title: titles[3].repeat(3), sectionId: main.id, responsibleMembershipId: owner.id });
+  render(<TaskTable tasks={[long]} sections={[main]} members={[owner]} statuses={statuses} {...handlers()} writable draftTaskIds={new Set(['long'])} />);
+  const name = screen.getByRole('button', { name: long.title });
+  expect(name).toHaveAttribute('title', long.title);
+  expect(name.className).toContain('truncate');
+  expect(name.className).not.toContain('whitespace-normal');
+  const row = name.closest('tr');
+  if (!row) throw Error('Task row required.');
+  expect(row.className).toContain('h-10');
+  for (const cell of within(row).getAllByRole('cell')) expect(cell.className).toContain('whitespace-nowrap');
+  // Secondary badges share the same line instead of adding a second one.
+  expect(within(row).getByText('Draft', { exact: true }).closest('[class*="basis-full"]')).toBeNull();
+  expect(row.querySelector('p')).toBeNull();
 });

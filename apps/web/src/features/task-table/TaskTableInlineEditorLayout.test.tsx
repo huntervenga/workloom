@@ -8,7 +8,7 @@ import { lostResponse, rootPath, task } from '../planning/test/fixtures';
 import { InlineTaskEdit } from '../tasks/InlineTaskEdit';
 import { taskInlineColumn, type TaskInlineField } from '../tasks/tableEditing';
 import { useTaskCommands } from '../tasks/useTaskCommands';
-import { INLINE_EDITOR_COLUMN_WIDTH, TaskTable } from './TaskTable';
+import { TaskTable } from './TaskTable';
 import { makeMember, makeSection, makeTask, statuses } from './taskTableFixtures';
 
 // Source presentation contract only; real pointer/geometry acceptance stays in the browser gate.
@@ -18,7 +18,7 @@ const launch = makeTask({ id: 'launch', title: 'Prepare the launch checklist', s
 const columnIds = ['title', 'status', 'responsible', 'dueDate', 'priority', 'estimate'] as const;
 const widths: Record<string, number> = { title: 320, status: 144, responsible: 176, dueDate: 128, priority: 96, estimate: 128 };
 const baseMinWidth = columnIds.reduce((sum, id) => sum + (widths[id] ?? 0), 0);
-const editorFields: readonly TaskInlineField[] = ['statusId', 'responsibleMembershipId', 'dueDate', 'priority', 'estimate'];
+const editorFields: readonly TaskInlineField[] = ['title', 'statusId', 'responsibleMembershipId', 'dueDate', 'priority', 'estimate'];
 
 function handlers() {
   return { onOpenTask: vi.fn(), onCreateTask: vi.fn(), onCreateChild: vi.fn(), onEditTaskField: vi.fn() };
@@ -28,46 +28,52 @@ function colWidths(): string[] {
   return [...screen.getByRole('table').querySelectorAll('col')].map(col => col.style.width);
 }
 
-describe('active inline editor column budget', () => {
-  it.each(editorFields)('gives the shared %s editor a real column width while order, title and sticky budget stay intact', field => {
+const baseWidths = columnIds.map(id => id === 'title' ? '' : `${widths[id]}px`);
+
+describe('fixed grid while a cell editor is open', () => {
+  it.each(editorFields)('keeps every column width, the table minimum and the single-line row for an open %s editor', field => {
     const column = taskInlineColumn(field);
     render(<TaskTable tasks={[launch]} sections={[main]} members={[owner]} statuses={statuses} {...handlers()} writable
       columnIds={columnIds} activeFieldEditor={{ taskId: launch.id, field }}
-      renderTaskFieldEditor={(task, edited) => task.id === launch.id && edited === field ? <form aria-label="Shared editor"><button type="button">Collapse editor</button></form> : null} />);
-    const headers = screen.getAllByRole('columnheader').map(header => header.textContent);
-    expect(headers).toEqual(['Task', 'Status', 'Assignee', 'Due date', 'Priority', 'Team estimate']);
-    const index = columnIds.indexOf(column);
-    const extra = INLINE_EDITOR_COLUMN_WIDTH - (widths[column] ?? 0);
-    expect(colWidths()).toEqual(columnIds.map(id => id === 'title' ? '' : `${id === column ? INLINE_EDITOR_COLUMN_WIDTH : widths[id]}px`));
-    expect(screen.getByRole('table').querySelectorAll('col[data-inline-editor]')).toHaveLength(1);
-    // The title keeps its own minimum: the table grows and scrolls locally instead of squeezing it.
-    expect(screen.getByRole('table')).toHaveStyle({ minWidth: `${baseMinWidth + extra}px` });
-    const row = screen.getByRole('button', { name: launch.title }).closest('tr');
-    if (!row) throw Error('Task row required.');
-    const cells = within(row).getAllByRole('cell');
-    expect(cells).toHaveLength(columnIds.length);
-    expect(within(cells[index] as HTMLElement).getByRole('form', { name: 'Shared editor' })).toBeInTheDocument();
-    expect(cells.at(-1)?.className).toContain('lg:sticky');
+      renderTaskFieldEditor={(row, edited) => row.id === launch.id && edited === field ? <form aria-label="Shared editor"><button type="button">Collapse editor</button></form> : null} />);
+    expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Task', 'Status', 'Assignee', 'Due date', 'Priority', 'Team estimate']);
+    expect(colWidths()).toEqual(baseWidths);
+    expect(screen.getByRole('table').querySelectorAll('col[data-inline-editor]')).toHaveLength(0);
+    expect(screen.getByRole('table')).toHaveStyle({ minWidth: `${baseMinWidth}px` });
+    const form = screen.getByRole('form', { name: 'Shared editor' });
+    const cell = form.closest('td');
+    const row = cell?.closest('tr');
+    if (!cell || !row) throw Error('Editor cell required.');
+    expect(within(row).getAllByRole('cell').indexOf(cell)).toBe(columnIds.indexOf(column));
+    expect(cell).toHaveAttribute('data-editing');
+    expect(row.querySelectorAll('[data-editing]')).toHaveLength(1);
+    // Every body cell is one fixed line that truncates instead of wrapping or growing.
+    expect(row.className).toContain('h-10');
+    for (const td of within(row).getAllByRole('cell')) {
+      expect(td.className).toContain('h-10');
+      expect(td.className).toContain('whitespace-nowrap');
+      expect(td.className).toContain('overflow-hidden');
+    }
+    expect(within(row).getAllByRole('cell').at(-1)?.className).toContain('lg:sticky');
   });
 
-  it('leaves widths untouched for title editing, hidden columns, unloaded tasks and no active editor', () => {
+  it('marks no cell for hidden columns, unloaded tasks or no active editor', () => {
     const renderWith = (activeFieldEditor: { taskId: string; field: TaskInlineField } | undefined, ids: readonly string[] = columnIds) => render(
       <TaskTable tasks={[launch]} sections={[main]} members={[owner]} statuses={statuses} {...handlers()} writable columnIds={ids} activeFieldEditor={activeFieldEditor} />);
-    const base = columnIds.map(id => id === 'title' ? '' : `${widths[id]}px`);
-    for (const active of [undefined, { taskId: launch.id, field: 'title' as const }, { taskId: 'unloaded', field: 'priority' as const }]) {
+    for (const active of [undefined, { taskId: 'unloaded', field: 'priority' as const }]) {
       const view = renderWith(active);
-      expect(colWidths()).toEqual(base);
-      expect(screen.getByRole('table')).toHaveStyle({ minWidth: `${baseMinWidth}px` });
+      expect(colWidths()).toEqual(baseWidths);
+      expect(document.querySelectorAll('[data-editing]')).toHaveLength(0);
       view.unmount();
     }
     renderWith({ taskId: launch.id, field: 'priority' }, columnIds.filter(id => id !== 'priority'));
-    expect(screen.getByRole('table').querySelectorAll('col[data-inline-editor]')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-editing]')).toHaveLength(0);
     expect(screen.getByRole('table')).toHaveStyle({ minWidth: `${baseMinWidth - (widths.priority ?? 0)}px` });
   });
 });
 
-describe('native inline editor inside its budget', () => {
-  it('keeps lost-ACK recovery and wrapping Collapse inside the Priority cell, then restores the column', async () => {
+describe('real inline editor inside its fixed cell', () => {
+  it('keeps the custom picker, lost-ACK recovery and Collapse out of the row flow, then restores the plain cell', async () => {
     const first = lostResponse();
     installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => first.promise });
     function Example() {
@@ -79,26 +85,30 @@ describe('native inline editor inside its budget', () => {
     }
     const ui = renderFieldUi(<Example />);
     const priorityIndex = columnIds.indexOf('priority');
-    await ui.user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), 'urgent');
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    const listbox = screen.getByRole('listbox', { name: 'Priority' });
+    // The menu is portalled outside the table, so it can neither clip nor reflow a cell.
+    expect(listbox.closest('table')).toBeNull();
+    expect(screen.getByRole('table').querySelector('select')).toBeNull();
+    await ui.user.click(within(listbox).getByRole('option', { name: 'Urgent' }));
     await act(async () => first.lose());
     const retry = await screen.findByRole('button', { name: 'Retry' });
     const form = retry.closest('form');
     const cell = form?.closest('td');
     if (!form || !cell) throw Error('Inline editor cell required.');
     expect(within(cell.closest('tr') as HTMLElement).getAllByRole('cell').indexOf(cell)).toBe(priorityIndex);
-    expect(colWidths()[priorityIndex]).toBe(`${INLINE_EDITOR_COLUMN_WIDTH}px`);
-    expect(form.className).toContain('min-w-0');
-    expect(form.className).toContain('[overflow-wrap:anywhere]');
-    expect(within(form).getByRole('alert')).toBeInTheDocument();
-    const collapse = within(form).getByRole('button', { name: 'Collapse editor' });
-    const actions = collapse.closest('[data-inline-actions]');
-    expect(actions?.className).toContain('flex-wrap');
-    expect(actions).toContainElement(retry);
+    expect(colWidths()).toEqual(baseWidths);
+    expect(form.className).toContain('h-8');
+    // Feedback stays in the editor's DOM (focus, Escape, form ownership) but outside the layout flow.
+    const popover = retry.closest<HTMLElement>('[data-cell-popover]');
+    expect(popover).not.toBeNull();
+    expect(popover?.style.position).toBe('fixed');
+    expect(within(popover as HTMLElement).getByRole('alert')).toBeInTheDocument();
+    const collapse = within(popover as HTMLElement).getByRole('button', { name: 'Collapse editor' });
     expect(collapse).toBeEnabled();
     await ui.user.click(collapse);
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Collapse editor' })).not.toBeInTheDocument());
-    expect(colWidths()[priorityIndex]).toBe(`${widths.priority}px`);
+    expect(colWidths()).toEqual(baseWidths);
+    expect(document.querySelectorAll('[data-editing]')).toHaveLength(0);
   });
 });
 
@@ -112,7 +122,7 @@ describe('one-shot local reveal of an explicitly opened editor', () => {
     const box = (left: number, width: number) => ({ left, right: left + width, top: 0, bottom: 40, width, height: 40, x: left, y: 0, toJSON: () => ({}) }) as DOMRect;
     const geometry = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
       if (this.matches('[data-task-table-scroll]')) return box(0, 600);
-      return this.tagName === 'FORM' ? box(700 - scrollLeft, 264) : box(0, 0);
+      return this.tagName === 'FORM' ? box(700 - scrollLeft, 88) : box(0, 0);
     });
     Object.defineProperty(document.documentElement, 'clientWidth', { configurable: true, get: () => 1000 });
     function Example() {
@@ -135,27 +145,28 @@ describe('one-shot local reveal of an explicitly opened editor', () => {
       const pageScroll = vi.spyOn(window, 'scrollTo');
 
       await ui.user.click(screen.getByRole('button', { name: 'Open Priority explicitly' }));
-      expect(pans).toEqual([364]);
+      expect(pans).toEqual([188]);
       expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveFocus();
+      expect(screen.getByRole('listbox', { name: 'Priority' })).toBeInTheDocument();
 
-      await ui.user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), 'urgent');
-      await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+      await ui.user.click(screen.getByRole('option', { name: 'Urgent' }));
       await act(async () => first.lose());
       await screen.findByRole('button', { name: 'Retry' });
-      expect(pans).toEqual([364]);
+      expect(pans).toEqual([188]);
 
-      // The consumed claim survives a remount: no focus steal and no second pan.
+      // The consumed claim survives a remount: no focus steal, no reopened list and no second pan.
       scrollLeft = 0;
       const remount = screen.getByRole('button', { name: 'Remount editor' });
       await ui.user.click(remount);
       expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+      expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
       expect(remount).toHaveFocus();
-      expect(pans).toEqual([364]);
+      expect(pans).toEqual([188]);
 
       await ui.user.click(screen.getByRole('button', { name: 'Collapse editor' }));
       await waitFor(() => expect(screen.queryByRole('form')).not.toBeInTheDocument());
       await ui.user.click(screen.getByRole('button', { name: 'Open Priority explicitly' }));
-      expect(pans).toEqual([364, 364]);
+      expect(pans).toEqual([188, 188]);
       expect(pageScroll).not.toHaveBeenCalled();
     } finally {
       geometry.mockRestore();

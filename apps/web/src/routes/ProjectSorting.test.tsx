@@ -64,7 +64,7 @@ it('restores the sort URL through Back and a fresh mount without taking identity
   let reloadUrl = '';
   try {
     await screen.findByRole('button', { name: parent.title }); expect(sort()).toHaveValue('due_asc');
-    await ui.user.click(screen.getByRole('button', { name: parent.title })); await screen.findByRole('dialog');
+    await ui.user.click(screen.getByRole('button', { name: `Open task “${parent.title}”` })); await screen.findByRole('dialog');
     await act(async () => ui.router.navigate(-1)); await screen.findByRole('table');
     expect(sort()).toHaveValue('due_asc'); expect(ui.router.state.location.hash).toBe('#anchor');
     reloadUrl = `${ui.router.state.location.pathname}${ui.router.state.location.search}${ui.router.state.location.hash}`;
@@ -87,12 +87,14 @@ it.each(['sort=unknown', 'sort=manual', 'sort=due_asc&sort=due_asc', 'sort='])('
 it('keeps a child draft exactly once when a due first page precedes its parent and the next page rejoins the canonical tree', async () => {
   const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.get('sort') !== 'due_asc' ? page([parent]) : request.searchParams.has('cursor') ? page([parent], 'another-due-page') : page([child], 'due-parent-page') }));
   const { user } = renderApp(tablePath); await screen.findByRole('button', { name: parent.title }); await user.selectOptions(sort(), 'due_asc');
-  await user.click(await screen.findByRole('button', { name: `Rename ${child.title}` }));
+  await user.click(await screen.findByRole('button', { name: child.title }));
   fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Raw child draft retained' } });
   expect(screen.getByTitle('Parent task is outside the loaded set')).toBeInTheDocument();
-  const more = screen.getByRole('button', { name: 'Load more tasks' }); await user.click(more);
+  // Moving focus out of a text cell commits it, so load the page without leaving the editor.
+  fireEvent.click(screen.getByRole('button', { name: 'Load more tasks' }));
   await waitFor(() => expect(screen.queryByTitle('Parent task is outside the loaded set')).not.toBeInTheDocument());
-  expect(screen.getByLabelText('Task name')).toHaveValue('Raw child draft retained'); expect(more).toHaveFocus();
+  // The row rejoins its parent's group; the remounted editor keeps the raw draft but never reclaims focus.
+  expect(screen.getByLabelText('Task name')).toHaveValue('Raw child draft retained'); expect(screen.getByLabelText('Task name')).not.toHaveFocus();
   expect(screen.getAllByRole('checkbox', { name: `Select for graph: ${child.title}` })).toHaveLength(1);
   expect(screen.getByRole('button', { name: 'Collapse section “First section”' }).closest('th')).toHaveTextContent('loaded: 2 tasks');
   expect(screen.getByRole('button', { name: 'Collapse section “Second section”' }).closest('th')).toHaveTextContent('loaded: 0 tasks');
@@ -127,13 +129,14 @@ it('keeps a held quick command and its exact retry through a sort change without
 it('does not let a pre-sort inline acknowledgement close a remounted editor or steal focus', async () => {
   const gate = deferred<Response>(); let current = parent;
   const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current, child]), [`PATCH ${rootPath}/tasks/${parent.id}`]: () => gate.promise }));
-  const { user } = renderApp(tablePath); await user.click(await screen.findByRole('button', { name: `Rename ${parent.title}` }));
-  fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Confirmed renamed parent' } }); await user.click(screen.getByRole('button', { name: 'Save' }));
+  const { user } = renderApp(tablePath); await user.click(await screen.findByRole('button', { name: parent.title }));
+  fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Confirmed renamed parent' } }); await user.keyboard('{Enter}');
   await waitFor(() => expect(writes(calls)).toHaveLength(1)); await user.selectOptions(sort(), 'due_asc');
   const search = screen.getByLabelText('Search tasks'); await user.click(search);
   await act(async () => gate.resolve(ok(current = { ...parent, title: 'Confirmed renamed parent', revision: 2 })));
-  await waitFor(() => expect(screen.getByLabelText('Task name')).toBeEnabled()); expect(search).toHaveFocus();
-  expect(screen.getByLabelText('Task name')).toHaveValue('Confirmed renamed parent'); await user.click(screen.getByRole('button', { name: 'Save' })); expect(writes(calls)).toHaveLength(1);
+  await waitFor(() => expect(screen.getByLabelText('Task name')).not.toHaveAttribute('readonly')); expect(search).toHaveFocus();
+  expect(screen.queryByRole('form', { name: /^Add a task to/ })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Task name')).toHaveValue('Confirmed renamed parent'); await user.click(screen.getByLabelText('Task name')); await user.keyboard('{Control>}{Enter}{/Control}'); expect(writes(calls)).toHaveLength(1);
 });
 
 it.each([false, true])('preserves same-turn retained Sort and Week partial intents in either order (week first: %s)', async weekFirst => {
@@ -156,7 +159,7 @@ it('does not resurrect a closed task when an already-rendered Sort control fires
   installFakeApi(routes()); const ui = app(`${tablePath}?other=kept#anchor`);
   try {
     await screen.findByRole('table'); const retainedSort = sort();
-    await ui.user.click(screen.getByRole('button', { name: parent.title }));
+    await ui.user.click(screen.getByRole('button', { name: `Open task “${parent.title}”` }));
     const drawer = within(await screen.findByRole('dialog')); const close = drawer.getByLabelText('Close', { selector: 'button' });
     await act(async () => { fireEvent.click(close); fireEvent.change(retainedSort, { target: { value: 'due_asc' } }); });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -183,7 +186,7 @@ it('retains descendant collapse through a cold pending sort query and a Board ro
 
 it('exposes the original dirty child editor when its descendant disclosure hides it, and restores its raw text after sorting', async () => {
   const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
-  await user.click(await screen.findByRole('button', { name: `Rename ${child.title}` }));
+  await user.click(await screen.findByRole('button', { name: child.title }));
   fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Unsent child under collapsed parent' } });
   await user.click(screen.getByRole('button', { name: `Collapse subtasks of “${parent.title}”` }));
   expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument(); await screen.findByRole('button', { name: 'Resume original editor' });

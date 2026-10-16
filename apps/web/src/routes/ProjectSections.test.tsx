@@ -94,7 +94,7 @@ describe('page-owned section collapse', () => {
 
   it('keeps a dirty cross-section child editor recoverable after its displayed root group collapses', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('button', { name: `Rename ${child.title}` }));
+    await user.click(await screen.findByRole('button', { name: child.title }));
     fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Unsent child rename' } });
     await user.click(collapse());
     expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
@@ -112,18 +112,18 @@ describe('page-owned section collapse', () => {
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([parent, current, other]), [`PATCH ${rootPath}/tasks/${child.id}`]: () => ++attempts === 1 ? first.promise : ok(current = { ...child, statusId: NEXT_STATUS, revision: 2 }) }));
     const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Edit status for ${child.title}` }));
-    await user.selectOptions(screen.getByLabelText('Status'), NEXT_STATUS); await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(within(screen.getByRole('listbox', { name: 'Status' })).getByRole('option', { name: 'Stored progress' }));
     await waitFor(() => expect(attempts).toBe(1)); await user.click(collapse());
     await act(async () => first.lose()); await screen.findByRole('button', { name: 'Resume original editor' });
     await user.click(views().getByRole('button', { name: 'Board' }));
-    expect(screen.getByLabelText('Status')).toBeDisabled();
-    expect(screen.getByLabelText('Status')).toHaveValue(NEXT_STATUS);
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent('Stored progress');
     expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument();
     await user.click(views().getByRole('button', { name: 'Tasks' }));
     await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
     const drawer = await screen.findByRole('dialog');
-    expect(within(drawer).getByLabelText('Status')).toBeDisabled();
-    expect(within(drawer).getByLabelText('Status')).toHaveValue(NEXT_STATUS);
+    expect(within(drawer).getByRole('combobox', { name: 'Status' })).toBeDisabled();
+    expect(within(drawer).getByRole('combobox', { name: 'Status' })).toHaveTextContent('Stored progress');
     await user.click(within(drawer).getByRole('button', { name: 'Retry submission' }));
     await waitFor(() => expect(attempts).toBe(2));
     await waitFor(() => expect(within(drawer).queryByRole('button', { name: 'Retry submission' })).not.toBeInTheDocument());
@@ -143,7 +143,7 @@ describe('page-owned section collapse', () => {
     await act(async () => first.lose()); await screen.findByRole('button', { name: 'Resume original editor' });
     await user.click(screen.getByRole('button', { name: 'Add task to “Second section”' }));
     expect(collapse()).toHaveAttribute('aria-expanded', 'true'); expect(expand('Second section')).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByLabelText('Task name')).toHaveValue('Original first-section draft'); expect(screen.getByLabelText('Task name')).toBeDisabled();
+    expect(screen.getByLabelText('Task name')).toHaveValue('Original first-section draft'); expect(screen.getByLabelText('Task name')).toHaveAttribute('readonly');
     await user.click(collapse()); await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
     expect(collapse()).toHaveAttribute('aria-expanded', 'true');
     await user.click(screen.getByRole('button', { name: 'Retry original' }));
@@ -158,9 +158,9 @@ describe('page-owned section collapse', () => {
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([parent, current, other]), [`PATCH ${rootPath}/tasks/${child.id}`]: () => gate.promise, [`POST ${rootPath}/tasks`]: () => gate.promise }));
     const { user } = renderApp(tablePath);
     if (kind === 'inline') {
-      await user.click(await screen.findByRole('button', { name: `Rename ${child.title}` }));
+      await user.click(await screen.findByRole('button', { name: child.title }));
       fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Confirmed hidden title' } });
-      await user.click(screen.getByRole('button', { name: 'Save' }));
+      await user.keyboard('{Control>}{Enter}{/Control}');
     } else {
       await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
       await user.type(screen.getByLabelText('Task name'), 'Confirmed hidden title'); await user.click(quickForm().getByRole('button', { name: 'Add task' }));
@@ -172,7 +172,9 @@ describe('page-owned section collapse', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument());
     expect(expand()).toHaveFocus(); expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument(); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await user.click(expand()); expect(screen.getByLabelText('Task name')).toHaveValue(kind === 'quick' ? '' : 'Confirmed hidden title');
-    await user.click(kind === 'quick' ? quickForm().getByRole('button', { name: 'Add task' }) : screen.getByRole('button', { name: 'Save' })); expect(writes(calls)).toHaveLength(1);
+    if (kind === 'quick') await user.click(quickForm().getByRole('button', { name: 'Add task' }));
+    else { await user.click(screen.getByLabelText('Task name')); await user.keyboard('{Control>}{Enter}{/Control}'); }
+    expect(writes(calls)).toHaveLength(1);
   });
 
   it('lets viewers collapse sections while keeping task mutations unavailable', async () => {
@@ -258,7 +260,7 @@ it.each([false, true])('keeps the drawer-owned custom value draft outside sectio
     },
   }));
   const { user } = renderApp(tablePath);
-  await user.click(await screen.findByRole('button', { name: parent.title }));
+  await user.click(await screen.findByRole('button', { name: `Open task “${parent.title}”` }));
   await user.click(await screen.findByRole('button', { name: 'Edit “Section note”' }));
   let valueDialog = await screen.findByRole('dialog', { name: 'Value of “Section note”' });
   await user.type(within(valueDialog).getByRole('textbox', { name: 'Section note' }), 'Retained custom value');
@@ -270,7 +272,7 @@ it.each([false, true])('keeps the drawer-owned custom value draft outside sectio
   if (submitted) {
     await act(async () => first.lose()); await user.click(await screen.findByRole('button', { name: 'Open submission' }));
   } else {
-    await user.click(expand()); await user.click(screen.getByRole('button', { name: parent.title }));
+    await user.click(expand()); await user.click(screen.getByRole('button', { name: `Open task “${parent.title}”` }));
   }
   await user.click(await screen.findByRole('button', { name: 'Edit “Section note”' }));
   valueDialog = await screen.findByRole('dialog', { name: 'Value of “Section note”' });

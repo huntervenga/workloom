@@ -181,7 +181,7 @@ it('keeps original task-command recovery reachable when a saved preference hides
   const { user } = renderApp(tablePath);
   await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` }));
   fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
-  await user.click(screen.getByRole('button', { name: 'Save' }));
+  await user.keyboard('{Enter}');
   await waitFor(() => expect(calls.some(call => call.method === 'PATCH')).toBe(true));
   await act(async () => lose()); await screen.findByRole('button', { name: 'Retry' });
   await user.click(screen.getByRole('button', { name: 'Columns' }));

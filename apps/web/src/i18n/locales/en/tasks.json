@@ -201,7 +201,8 @@
     "retry": "Retry original",
     "add": "Add task",
     "moreDetails": "More details",
-    "keyboardHint": "Enter adds · Escape keeps draft"
+    "keyboardHint": "Enter adds · Escape keeps draft",
+    "keyboardHintNext": "Enter adds this task and starts the next one. Escape closes and keeps a typed draft."
   },
   "inlineEdit": {
     "existingDraft": "This task has other unsaved changes. Resume its full draft to review them.",
@@ -217,7 +218,8 @@
     "editPriority": "Edit priority for {{title}}",
     "draft": "Draft",
     "draftHint": "This task has unsaved changes. Open its details to resume.",
-    "editTitle": "Rename {{title}}"
+    "editTitle": "Rename {{title}}",
+    "notEditableShort": "Read only"
   },
   "recovery": {
     "unconfirmed": "A task command is unconfirmed. Its original values and key are kept.",

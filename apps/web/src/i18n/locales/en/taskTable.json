@@ -82,7 +82,10 @@
       "other": "· Not estimated: {{count}} tasks"
     },
     "hierarchyDepth": "Loaded hierarchy depth {{depth}}.",
-    "parentContext": "Parent: {{title}}"
+    "parentContext": "Parent: {{title}}",
+    "openDetails": "Open details",
+    "openTask": "Open task “{{title}}”",
+    "addTaskRow": "Add task…"
   },
   "estimate": {
     "estimateIsTooLarge": "Estimate is too large.",

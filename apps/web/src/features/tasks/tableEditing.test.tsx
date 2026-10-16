@@ -1,11 +1,11 @@
 import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { alpha, alphaMembers, anna, created, deferred, failure, installFakeApi, ok, project } from '../../test/fakeApi';
 import { renderFieldUi } from '../fields/test/fixtures';
 import { PROJECT_ID, rootPath, task } from '../planning/test/fixtures';
-import { InlineTaskEdit } from './InlineTaskEdit';
+import { InlineTaskEdit, type InlineCloseReason } from './InlineTaskEdit';
 import { QuickTaskAdd } from './QuickTaskAdd';
 import { TaskDrawer } from './TaskDrawer';
 import { draftFromTask, emptyDraft } from './taskDraft';
@@ -20,26 +20,26 @@ const statuses: TaskStatusDto[] = [
 ];
 
 function quick(seed?: CreateSession) {
-  const onCreated = vi.fn(); const onMoreDetails = vi.fn();
+  const onCreated = vi.fn(); const onMoreDetails = vi.fn(); const onClosed = vi.fn();
   let current: TaskCommands | null = null;
   function Example() {
     const commands = useTaskCommands(anna.id, alpha.id);
     current = commands;
     const [open, setOpen] = useState(() => { if (seed) commands.createSession.current = seed; return true; });
-    return <>{open ? <QuickTaskAdd projectId={PROJECT_ID} sectionId={SECTION} sectionName="Stored section" statuses={statuses} members={alphaMembers} commands={commands} writable onClose={() => setOpen(false)} onMoreDetails={onMoreDetails} onCreated={onCreated} /> : null}<button onClick={() => setOpen(true)}>Resume QA create</button><button>Outside focus</button></>;
+    return <>{open ? <QuickTaskAdd projectId={PROJECT_ID} sectionId={SECTION} sectionName="Stored section" statuses={statuses} commands={commands} writable onClose={reason => { onClosed(reason); setOpen(false); }} onMoreDetails={onMoreDetails} onCreated={onCreated} /> : null}<button onClick={() => setOpen(true)}>Resume QA create</button><button>Outside focus</button></>;
   }
   const view = renderFieldUi(<Example />);
-  return { ...view, onCreated, onMoreDetails, commands: () => { if (!current) throw new Error('No command harness'); return current; } };
+  return { ...view, onCreated, onMoreDetails, onClosed, commands: () => { if (!current) throw new Error('No command harness'); return current; } };
 }
 
 function inline(field: TaskInlineField, seed?: EditSession, source: TaskDto = task) {
-  const onSaved = vi.fn(); const onMoreDetails = vi.fn(); const onClosed = vi.fn();
+  const onSaved = vi.fn(); const onMoreDetails = vi.fn(); const onClosed = vi.fn<(reason?: InlineCloseReason) => void>();
   let current: TaskCommands | null = null;
   function Example() {
     const commands = useTaskCommands(anna.id, alpha.id);
     current = commands;
     const [open, setOpen] = useState(() => { if (seed) commands.editSessions.current.set(source.id, seed); return true; });
-    return <>{open ? <InlineTaskEdit task={source} field={field} statuses={statuses} members={alphaMembers} commands={commands} writable onClose={() => { onClosed(); setOpen(false); }} onMoreDetails={onMoreDetails} onSaved={onSaved} /> : null}<button onClick={() => setOpen(true)}>Resume QA cell</button><button>Outside focus</button></>;
+    return <>{open ? <InlineTaskEdit task={source} field={field} statuses={statuses} members={alphaMembers} commands={commands} writable onClose={reason => { onClosed(reason); setOpen(false); }} onMoreDetails={onMoreDetails} onSaved={onSaved} /> : null}<button onClick={() => setOpen(true)}>Resume QA cell</button><button onClick={() => setOpen(false)}>Hide QA cell</button><button>Outside focus</button></>;
   }
   const view = renderFieldUi(<Example />);
   return { ...view, onSaved, onMoreDetails, onClosed, commands: () => { if (!current) throw new Error('No command harness'); return current; } };
@@ -71,25 +71,82 @@ function assertExactRetry(calls: { body: unknown; headers: Headers }[]) {
   expect(calls[0]?.headers.get('Idempotency-Key')).toBe(calls[1]?.headers.get('Idempotency-Key'));
 }
 
+/** A sent or unknown create keeps its exact title visible, focusable and unchangeable. */
+function expectLockedTitle(input: HTMLElement, value: string) {
+  expect(input).toHaveValue(value);
+  expect(input).toHaveAttribute('readonly');
+  expect(input).toHaveAttribute('aria-disabled', 'true');
+}
+
+/** An explicitly opened choice cell shows its custom list at once; a choice is the save. */
+async function choose(user: ReturnType<typeof renderFieldUi>['user'], option: string) {
+  await user.click(within(screen.getByRole('listbox')).getByRole('option', { name: option }));
+}
+
 describe('section quick creation', () => {
-  it('sends only explicit basic fields, waits for confirmation, then focuses the same section for another task', async () => {
+  it('creates a title-only root task on Enter, keeps the focused row read-only while sent, then continues in the same blank row', async () => {
     const response = deferred<Response>();
     const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: () => response.promise });
     const ui = quick();
-    await ui.user.type(screen.getByLabelText('Task name'), '  Quick task  ');
-    await ui.user.selectOptions(screen.getByLabelText('Assignee'), alphaMembers[1]?.id ?? '');
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+    const input = screen.getByLabelText('Task name');
+    expect(input).toHaveFocus();
+    expect(document.querySelector('select')).toBeNull();
+    await ui.user.type(input, '  Quick task  ');
     expect(calls).toHaveLength(0);
-    await ui.user.click(screen.getByRole('button', { name: 'Add task' }));
+    await ui.user.keyboard('{Enter}');
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0]?.body).toEqual({ projectId: PROJECT_ID, sectionId: SECTION, title: 'Quick task', statusId: task.statusId, responsibleMembershipId: alphaMembers[1]?.id, dueDate: '2026-10-20' });
+    expect(calls[0]?.body).toEqual({ projectId: PROJECT_ID, sectionId: SECTION, title: 'Quick task', statusId: task.statusId });
     expect(ui.onCreated).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Task name')).toBeDisabled();
-    await act(async () => response.resolve(created({ ...task, sectionId: SECTION, title: 'Quick task', responsibleMembershipId: alphaMembers[1]?.id, dueDate: '2026-10-20' })));
+    expectLockedTitle(input, '  Quick task  ');
+    expect(input).toHaveFocus();
+    await ui.user.type(input, 'ignored');
+    expect(input).toHaveValue('  Quick task  ');
+    await act(async () => response.resolve(created({ ...task, sectionId: SECTION, title: 'Quick task' })));
     await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
     expect(screen.getByLabelText('Task name')).toHaveValue('');
-    await waitFor(() => expect(screen.getByLabelText('Task name')).toHaveFocus());
+    expect(screen.getByLabelText('Task name')).not.toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Task name')).toHaveFocus();
     expect(ui.commands().createSession.current).toBeNull();
+    expect(calls).toHaveLength(1);
+  });
+
+  it('adds several tasks with Enter only, each once with its own key, while blank Enter creates nothing and keeps focus', async () => {
+    let next = 0;
+    const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => created({ ...task, id: `f2000000-0000-4000-8000-00000000010${++next}`, sectionId: SECTION, title: (request.body as { title: string }).title }) });
+    const ui = quick();
+    const input = screen.getByLabelText('Task name');
+    for (const title of ['First fast task', 'Second fast task']) {
+      await ui.user.type(input, `${title}{Enter}`);
+      await waitFor(() => expect(input).toHaveValue(''));
+      expect(input).toHaveFocus();
+    }
+    await ui.user.keyboard('{Enter}');
+    await ui.user.type(input, '   {Enter}');
+    expect(input).toHaveFocus();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(calls.map(call => (call.body as { title: string }).title)).toEqual(['First fast task', 'Second fast task']);
+    expect(new Set(calls.map(call => call.headers.get('Idempotency-Key'))).size).toBe(2);
+    expect(ui.onCreated).toHaveBeenCalledTimes(2);
+    expect(ui.onClosed).not.toHaveBeenCalled();
+  });
+
+  it('closes an untouched row when focus leaves, but keeps a typed draft open and uncreated', async () => {
+    const { calls } = installFakeApi({});
+    const ui = quick();
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await waitFor(() => expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('blur'));
+    expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus();
+    await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
+    await ui.user.type(screen.getByLabelText('Task name'), 'Typed but not sent');
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+    expect(screen.getByLabelText('Task name')).toHaveValue('Typed but not sent');
+    expect(ui.onClosed).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+    await ui.user.click(screen.getByLabelText('Task name'));
+    await ui.user.keyboard('{Escape}');
+    expect(ui.onClosed).toHaveBeenLastCalledWith('cancel');
+    expect(ui.commands().createSession.current?.draft.title).toBe('Typed but not sent');
   });
 
   it('retains an escaped draft and retries an unknown create with its original values and key after reopening', async () => {
@@ -101,12 +158,12 @@ describe('section quick creation', () => {
     await waitFor(() => expect(attempt).toBe(1));
     await act(async () => first.lose());
     await screen.findByRole('button', { name: 'Retry original' });
+    expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'More details' })).toBeDisabled();
     await ui.user.keyboard('{Escape}');
     expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
-    expect(screen.getByLabelText('Task name')).toHaveValue('Original quick draft');
-    expect(screen.getByLabelText('Task name')).toBeDisabled();
+    expectLockedTitle(screen.getByLabelText('Task name'), 'Original quick draft');
     await ui.user.click(screen.getByRole('button', { name: 'Retry original' }));
     await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
     assertExactRetry(calls);
@@ -128,6 +185,18 @@ describe('section quick creation', () => {
     expect(ui.commands().createSession.current).toBeNull();
   });
 
+  it('does not take focus back when a pending create confirms after the person moved elsewhere', async () => {
+    const response = deferred<Response>();
+    installFakeApi({ [`POST ${rootPath}/tasks`]: () => response.promise });
+    const ui = quick();
+    await ui.user.type(screen.getByLabelText('Task name'), 'Moved away{Enter}');
+    await waitFor(() => expect(ui.commands().create.pendingCommand).not.toBeNull());
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await act(async () => response.resolve(created({ ...task, sectionId: SECTION, title: 'Moved away' })));
+    await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus();
+  });
+
   it('reconciles a reopened pending create after confirmation without allowing a duplicate or stealing focus', async () => {
     const response = deferred<Response>();
     const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: () => response.promise });
@@ -137,7 +206,7 @@ describe('section quick creation', () => {
     await waitFor(() => expect(ui.commands().create.pendingCommand).not.toBeNull());
     await ui.user.keyboard('{Escape}');
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
-    expect(screen.getByLabelText('Task name')).toBeDisabled();
+    expectLockedTitle(screen.getByLabelText('Task name'), 'Pending remount create');
     await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
     await act(async () => response.resolve(created({ ...task, title: 'Pending remount create' })));
     await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
@@ -148,9 +217,12 @@ describe('section quick creation', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('offers a richer create draft for resumption without changing it or sending a basic create', async () => {
+  it.each([
+    ['richer', { title: 'Rich draft', description: 'Kept description', estimate: '2:00' }],
+    ['assignee or date', { title: 'Earlier quick draft', responsibleMembershipId: alphaMembers[1]?.id ?? null, dueDate: '2026-10-20' }],
+  ] as const)('offers a %s create draft for resumption without changing it or sending a title-only create', async (_kind, patch) => {
     const { calls } = installFakeApi({});
-    const seed: CreateSession = { request: { sectionId: SECTION, parent: null }, workScope: 'detail', draft: { ...emptyDraft(task.statusId, SECTION), title: 'Rich draft', description: 'Kept description', estimate: '2:00' } };
+    const seed: CreateSession = { request: { sectionId: SECTION, parent: null }, workScope: 'detail', origin: 'quick', draft: { ...emptyDraft(task.statusId, SECTION), ...patch } };
     const ui = quick(seed);
     expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
     await ui.user.click(screen.getByRole('button', { name: 'Resume draft' }));
@@ -160,76 +232,90 @@ describe('section quick creation', () => {
   });
 });
 
-describe('explicit inline task edits', () => {
-  it.each(['title', 'statusId', 'responsibleMembershipId', 'dueDate'] as const)('updates only %s with the original task revision after explicit Save', async field => {
-    const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: request => ok({ ...task, ...(request.body as object), revision: task.revision + 1 }) });
+describe('immediate inline choices', () => {
+  it.each([
+    ['statusId', 'Stored progress', { statusId: STATUS_PROGRESS }],
+    ['responsibleMembershipId', 'Unassigned', { responsibleMembershipId: null }],
+    ['priority', 'High', { priority: 'high' }],
+  ] as const)('opens a custom %s list at once and saves only the explicit choice with the original revision', async (field, option, patch) => {
+    const gate = deferred<Response>();
+    const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise });
     const ui = inline(field);
-    const patch = field === 'title' ? { title: 'Renamed task' } : field === 'statusId' ? { statusId: STATUS_PROGRESS } : field === 'responsibleMembershipId' ? { responsibleMembershipId: null } : { dueDate: '2026-10-20' };
-    if (field === 'title') { await ui.user.clear(screen.getByLabelText('Task name')); await ui.user.type(screen.getByLabelText('Task name'), '  Renamed task  '); }
-    else if (field === 'statusId') await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
-    else if (field === 'responsibleMembershipId') await ui.user.selectOptions(screen.getByLabelText('Assignee'), '');
-    else fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+    expect(document.querySelector('select')).toBeNull();
+    const list = screen.getByRole('listbox');
+    expect(list.closest('form')).toBeNull();
     expect(calls).toHaveLength(0);
-    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
-    expect(calls).toHaveLength(0);
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
+    await choose(ui.user, option);
+    await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toEqual({ expectedRevision: task.revision, ...patch });
+    expect(screen.getByRole('combobox', { name: field === 'statusId' ? 'Status' : field === 'priority' ? 'Priority' : 'Assignee' })).toBeDisabled();
+    expect(screen.getByRole('form')).toHaveAttribute('aria-busy', 'true');
+    expect(ui.onSaved).not.toHaveBeenCalled();
+    await act(async () => gate.resolve(ok({ ...task, ...patch, revision: task.revision + 1 })));
+    await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
+    expect(calls).toHaveLength(1);
     expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
   });
 
-  it('keeps a single-field draft across Escape and resumes it without losing its original base revision', async () => {
+  it('closes on Escape without a write and returns the close to the cell; choosing the current value writes nothing', async () => {
     const { calls } = installFakeApi({});
     const ui = inline('statusId');
-    await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
-    await ui.user.keyboard('{Escape}');
+    await ui.user.keyboard('{ArrowDown}{Escape}');
+    await waitFor(() => expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('cancel'));
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
-    expect(screen.getByLabelText('Status')).toHaveValue(STATUS_PROGRESS);
-    expect(ui.commands().editSessions.current.get(task.id)?.base.revision).toBe(task.revision);
+    await choose(ui.user, 'Stored todo');
+    await waitFor(() => expect(ui.onClosed).toHaveBeenCalledTimes(2));
     expect(calls).toHaveLength(0);
+    expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
   });
 
   it('keeps an unknown update locked and retries exactly after Escape and reopen', async () => {
     const first = lost(); let attempt = 0;
     const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => ++attempt === 1 ? first.promise : ok({ ...task, statusId: STATUS_PROGRESS, revision: 2 }) });
     const ui = inline('statusId');
-    await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    await choose(ui.user, 'Stored progress');
     await waitFor(() => expect(attempt).toBe(1));
     await act(async () => first.lose());
-    await screen.findByRole('button', { name: 'Retry' });
-    await ui.user.keyboard('{Escape}');
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    expect(retry.closest('form')).toBe(screen.getByRole('form'));
+    expect(retry.closest('[data-cell-popover]')).not.toBeNull();
+    await ui.user.click(screen.getByRole('button', { name: 'Hide QA cell' }));
+    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Status')).toBeDisabled();
+    expect(screen.getByLabelText('Status')).toHaveTextContent('Stored progress');
     expect(screen.getByRole('button', { name: 'More details' })).toBeDisabled();
     await ui.user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
     assertExactRetry(calls);
   });
 
-  it.each([false, true])('reconciles a reopened pending cell to its confirmed revision without saving the old draft again (retry: %s)', async retry => {
+  it.each([false, true])('reconciles a reopened pending cell to its confirmed revision without saving the old choice again (retry: %s)', async retry => {
     const response = deferred<Response>();
     const first = lost(); let attempts = 0;
     const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => ++attempts === 1 && retry ? first.promise : response.promise });
     const ui = inline('statusId');
-    await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    await choose(ui.user, 'Stored progress');
     await waitFor(() => expect(ui.commands().update.pendingCommand).not.toBeNull());
     if (retry) {
       await act(async () => first.lose());
       await ui.user.click(await screen.findByRole('button', { name: 'Retry' }));
       await waitFor(() => expect(calls).toHaveLength(2));
     }
-    await ui.user.keyboard('{Escape}');
+    await ui.user.click(screen.getByRole('button', { name: 'Hide QA cell' }));
+    expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
+    expect(screen.getByLabelText('Status')).toBeDisabled();
     await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
     await act(async () => response.resolve(ok({ ...task, statusId: STATUS_PROGRESS, revision: task.revision + 1 })));
     await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
-    expect(screen.getByLabelText('Status')).toHaveValue(STATUS_PROGRESS);
+    expect(screen.getByLabelText('Status')).toHaveTextContent('Stored progress');
     expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus();
-    expect(ui.onClosed).toHaveBeenCalledTimes(1);
+    expect(ui.onClosed).not.toHaveBeenCalled();
     expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    await ui.user.click(screen.getByLabelText('Status'));
+    await choose(ui.user, 'Stored progress');
     expect(calls).toHaveLength(retry ? 2 : 1);
     if (retry) assertExactRetry(calls);
   });
@@ -239,63 +325,118 @@ describe('explicit inline task edits', () => {
     const seed: EditSession = { base: task, draft: { ...draftFromTask(task), description: 'Unsaved drawer content', dueDate: '2026-10-20' }, inlineField: 'dueDate' };
     const ui = inline('statusId', seed);
     expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     await ui.user.click(screen.getByRole('button', { name: 'Resume draft' }));
     expect(ui.onMoreDetails).toHaveBeenCalledTimes(1);
     expect(ui.commands().editSessions.current.get(task.id)).toEqual(seed);
     expect(calls).toHaveLength(0);
   });
 
-  it('preserves a rejected stale draft and requires explicit details review instead of adopting a new revision', async () => {
+  it('preserves a rejected stale choice and requires explicit details review instead of adopting a new revision', async () => {
     const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => failure(409, 'REVISION_CONFLICT', 'private server internals') });
     const ui = inline('statusId');
-    await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    await choose(ui.user, 'Stored progress');
     await waitFor(() => expect(ui.commands().update.error).not.toBeNull());
-    expect(screen.getByLabelText('Status')).toHaveValue(STATUS_PROGRESS);
-    expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('alert')).toBeVisible();
+    expect(screen.getByLabelText('Status')).toHaveTextContent('Stored progress');
+    expect(screen.getByLabelText('Status')).toBeDisabled();
     expect(ui.commands().editSessions.current.get(task.id)?.base.revision).toBe(task.revision);
     expect(screen.queryByText('private server internals')).not.toBeInTheDocument();
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
     expect(calls).toHaveLength(1);
     await ui.user.click(screen.getByRole('button', { name: 'More details' }));
     expect(ui.onMoreDetails).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
   });
 
-  it('rejects a due date before the current start without sending or changing the original date', async () => {
-    const { calls } = installFakeApi({});
-    const ui = inline('dueDate', undefined, { ...task, startDate: '2026-10-19' });
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-18' } });
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Due date must be on or after the start date.');
-    expect(screen.getByLabelText('Due date')).toHaveAttribute('aria-invalid', 'true');
-    expect(calls).toHaveLength(0);
-    expect(task.dueDate).toBeNull();
-  });
-
-  it('does not close another view or steal focus after an escaped pending edit confirms', async () => {
+  it('does not close another view or steal focus after a hidden pending choice confirms', async () => {
     const response = deferred<Response>();
     installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => response.promise });
     const ui = inline('statusId');
-    await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    await choose(ui.user, 'Stored progress');
     await waitFor(() => expect(ui.commands().update.pendingCommand).not.toBeNull());
-    await ui.user.keyboard('{Escape}');
+    await ui.user.click(screen.getByRole('button', { name: 'Hide QA cell' }));
     await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
     await act(async () => response.resolve(ok({ ...task, statusId: STATUS_PROGRESS, revision: 2 })));
     await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
-    expect(ui.onClosed).toHaveBeenCalledTimes(1);
+    expect(ui.onClosed).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Status')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus();
     expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
   });
 });
 
+describe('inline text commits', () => {
+  it.each([
+    ['title', { title: 'Renamed task' }],
+    ['dueDate', { dueDate: '2026-10-20' }],
+    ['estimate', { estimateMinutes: 90 }],
+  ] as const)('commits %s when focus leaves the editor, with only that field and the original revision', async (field, patch) => {
+    const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: request => ok({ ...task, ...(request.body as object), revision: task.revision + 1 }) });
+    const packages = new Map([[task.workPackageId, { workPackageId: task.workPackageId, revision: task.workPackageRevision, estimate: { status: 'estimated' as const, minutes: task.estimateMinutes ?? 0 }, taskIds: [task.id] }]]);
+    const onSaved = vi.fn();
+    function Example() {
+      const commands = useTaskCommands(anna.id, alpha.id);
+      const [open, setOpen] = useState(true);
+      return <>{open ? <InlineTaskEdit task={task} field={field} statuses={statuses} members={alphaMembers} commands={commands} writable estimatePackages={packages} onClose={() => setOpen(false)} onMoreDetails={vi.fn()} onSaved={onSaved} /> : null}<button>Outside focus</button></>;
+    }
+    const ui = renderFieldUi(<Example />);
+    if (field === 'title') { await ui.user.clear(screen.getByLabelText('Task name')); await ui.user.type(screen.getByLabelText('Task name'), '  Renamed task  '); }
+    else if (field === 'dueDate') fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+    else { await ui.user.clear(screen.getByLabelText('Team estimate (hours)')); await ui.user.type(screen.getByLabelText('Team estimate (hours)'), '1:30'); }
+    expect(calls).toHaveLength(0);
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(calls).toHaveLength(1);
+    const body = calls[0]?.body as Record<string, unknown>;
+    if (field === 'estimate') expect(body).toMatchObject({ estimateMinutes: 90 });
+    else expect(body).toEqual({ expectedRevision: task.revision, ...patch });
+    expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus();
+  });
+
+  it('closes an untouched text editor on blur without a write, keeping outside focus', async () => {
+    const { calls } = installFakeApi({});
+    const ui = inline('dueDate');
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await waitFor(() => expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('blur'));
+    expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('keeps a single-field text draft across Escape and resumes it without losing its original base revision', async () => {
+    const { calls } = installFakeApi({});
+    const ui = inline('title');
+    fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Kept title draft' } });
+    await ui.user.keyboard('{Escape}');
+    expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('cancel');
+    await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
+    expect(screen.getByLabelText('Task name')).toHaveValue('Kept title draft');
+    expect(ui.commands().editSessions.current.get(task.id)?.base.revision).toBe(task.revision);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('rejects a due date before the current start without sending or changing the original date', async () => {
+    const { calls } = installFakeApi({});
+    const ui = inline('dueDate', undefined, { ...task, startDate: '2026-10-19' });
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-18' } });
+    await ui.user.keyboard('{Enter}');
+    expect(screen.getByRole('alert')).toHaveTextContent('Due date must be on or after the start date.');
+    expect(screen.getByLabelText('Due date')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('alert').closest('[data-cell-popover]')).not.toBeNull();
+    // Leaving an invalid draft keeps it and its explanation instead of closing or sending it.
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+    expect(screen.getByLabelText('Due date')).toHaveValue('2026-10-18');
+    expect(ui.onClosed).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
+    expect(task.dueDate).toBeNull();
+  });
+});
+
 describe('authoritative task write rejection', () => {
-  it.each([{ status: 409, code: 'DEPENDENCY_BLOCKED' }, { status: 409, code: 'FIELD_LOCKED' }, { status: 403, code: 'FORBIDDEN' }])('retains the original draft after $code without claiming success or retrying automatically', async ({ status, code }) => {
+  it.each([{ status: 409, code: 'DEPENDENCY_BLOCKED' }, { status: 409, code: 'FIELD_LOCKED' }, { status: 403, code: 'FORBIDDEN' }])('retains the original choice after $code without claiming success or retrying automatically', async ({ status, code }) => {
     const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => failure(status, code, 'sensitive rejection details') });
     const ui = inline('statusId');
-    await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    await choose(ui.user, 'Stored progress');
     await waitFor(() => expect(ui.commands().update.error).not.toBeNull());
     expect(ui.onSaved).not.toHaveBeenCalled();
     expect(calls).toHaveLength(1);
@@ -367,20 +508,19 @@ describe('full drawer confirmation identity', () => {
   });
 });
 
-it('preserves an independent replacement edit draft when an old pending inline edit confirms', async () => {
+it('preserves an independent replacement edit draft when an old pending inline choice confirms', async () => {
   const response = deferred<Response>();
   installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => response.promise });
   const ui = inline('statusId');
-  await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
-  await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+  await choose(ui.user, 'Stored progress');
   await waitFor(() => expect(ui.commands().update.pendingCommand).not.toBeNull());
-  await ui.user.keyboard('{Escape}');
+  await ui.user.click(screen.getByRole('button', { name: 'Hide QA cell' }));
   const independent: EditSession = { base: task, draft: { ...draftFromTask(task), description: 'Independent replacement' } };
   ui.commands().editSessions.current.set(task.id, independent);
   await act(async () => response.resolve(ok({ ...task, statusId: STATUS_PROGRESS, revision: task.revision + 1 })));
   await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
   expect(ui.commands().editSessions.current.get(task.id)).toBe(independent);
-  expect(ui.onClosed).toHaveBeenCalledTimes(1);
+  expect(ui.onClosed).not.toHaveBeenCalled();
 });
 
 
@@ -398,20 +538,55 @@ describe('inline title keyboard and retained sessions', () => {
     expect(calls).toHaveLength(1); expect(calls[0]?.body).toEqual({ expectedRevision: task.revision, title: 'Composed title' });
   });
 
+  it('keeps the sent title focused and read-only while pending, so typing cannot change the sent value', async () => {
+    const gate = deferred<Response>();
+    const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise });
+    const ui = inline('title'); const input = screen.getByLabelText('Task name');
+    fireEvent.change(input, { target: { value: 'Sent title' } });
+    await ui.user.keyboard('{Enter}');
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(input).toHaveFocus(); expect(input).toHaveAttribute('readonly'); expect(screen.getByRole('status')).toHaveTextContent('Saving…');
+    await ui.user.type(input, ' extra{Enter}');
+    expect(input).toHaveValue('Sent title'); expect(calls).toHaveLength(1);
+    await act(async () => gate.resolve(ok({ ...task, title: 'Sent title', revision: 2 })));
+    await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
+  });
+
   it.each(['', 'x'.repeat(501)])('announces an invalid title without submitting or discarding it', async title => {
     const { calls } = installFakeApi({}); const ui = inline('title'); const input = screen.getByLabelText('Task name');
     fireEvent.change(input, { target: { value: title } });
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    await ui.user.keyboard('{Enter}');
     expect(input).toHaveAttribute('aria-invalid', 'true'); expect(input).toHaveAccessibleDescription(screen.getByRole('alert').textContent ?? '');
     expect(input).toHaveValue(title); expect(calls).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
     await ui.user.keyboard('{Escape}'); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
     expect(screen.getByLabelText('Task name')).toHaveValue(title);
   });
 
-  it('closes an unchanged trimmed title without issuing an update', async () => {
+  it('closes an unchanged trimmed title on Enter without an update, offering the next quick task', async () => {
     const { calls } = installFakeApi({}); const ui = inline('title');
     fireEvent.change(screen.getByLabelText('Task name'), { target: { value: `  ${task.title}  ` } });
-    await ui.user.keyboard('{Enter}'); expect(ui.onClosed).toHaveBeenCalledTimes(1); expect(calls).toHaveLength(0);
+    await ui.user.keyboard('{Enter}'); expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('next'); expect(calls).toHaveLength(0);
+  });
+
+  it('passes the continue intent only for plain Enter, never for Ctrl/Cmd+Enter or blur commits', async () => {
+    installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: request => ok({ ...task, ...(request.body as object), revision: task.revision + 1 }) });
+    const intents: boolean[] = [];
+    function Example() {
+      const commands = useTaskCommands(anna.id, alpha.id);
+      const [mount, setMount] = useState(0);
+      return <><InlineTaskEdit key={mount} task={task} field="title" statuses={statuses} members={alphaMembers} commands={commands} writable onClose={vi.fn()} onMoreDetails={vi.fn()} onSaved={vi.fn()}
+        onSaveStarted={(_form, intent) => { intents.push(intent.continueWithNext); return { onSuccess: () => setMount(value => value + 1), onSettled: () => undefined }; }} /><button>Outside focus</button></>;
+    }
+    const ui = renderFieldUi(<Example />);
+    for (const [title, gesture] of [['Plain', '{Enter}'], ['Modified', '{Control>}{Enter}{/Control}'], ['Blurred', null]] as const) {
+      const input = await screen.findByDisplayValue(task.title);
+      fireEvent.change(input, { target: { value: title } });
+      if (gesture) await ui.user.keyboard(gesture); else await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+      await waitFor(() => expect(intents).toHaveLength(['Plain', 'Modified', 'Blurred'].indexOf(title) + 1));
+      await screen.findByDisplayValue(task.title);
+    }
+    expect(intents).toEqual([true, false, false]);
   });
 
   it.each(['rich-title', 'other-cell'] as const)('offers only Resume for a %s draft instead of saving it through the title input', async origin => {
@@ -428,14 +603,14 @@ describe('inline title keyboard and retained sessions', () => {
     const ui = inline('title'); fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Confirmed new title' } });
     await ui.user.keyboard('{Enter}'); await waitFor(() => expect(attempt).toBe(1));
     if (retry) { await act(async () => first.lose()); await screen.findByRole('button', { name: 'Retry' }); }
-    await ui.user.click(screen.getByRole('button', { name: 'Collapse editor' })); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
-    expect(screen.getByLabelText('Task name')).toHaveValue('Confirmed new title'); expect(screen.getByLabelText('Task name')).toBeDisabled();
-    if (retry) { await ui.user.click(screen.getByRole('button', { name: 'Retry' })); await waitFor(() => expect(attempt).toBe(2)); await ui.user.click(screen.getByRole('button', { name: 'Collapse editor' })); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' })); }
+    await ui.user.keyboard('{Escape}'); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
+    expect(screen.getByLabelText('Task name')).toHaveValue('Confirmed new title'); expect(screen.getByLabelText('Task name')).toHaveAttribute('readonly');
+    if (retry) { await ui.user.click(screen.getByRole('button', { name: 'Retry' })); await waitFor(() => expect(attempt).toBe(2)); await ui.user.keyboard('{Escape}'); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' })); }
     await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
     await act(async () => response.resolve(ok({ ...task, title: 'Confirmed new title', revision: 2 })));
     await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1)); expect(screen.getByLabelText('Task name')).toHaveValue('Confirmed new title');
     expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus(); expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
-    await ui.user.click(screen.getByRole('button', { name: 'Save' })); expect(calls).toHaveLength(retry ? 2 : 1);
+    await ui.user.click(screen.getByLabelText('Task name')); await ui.user.keyboard('{Enter}'); expect(calls).toHaveLength(retry ? 2 : 1);
     if (retry) assertExactRetry(calls);
   });
 });

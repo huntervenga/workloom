@@ -1,4 +1,4 @@
-import { canEditTaskInline, isCurrentEstimateProjection, taskInlineColumn, type TaskInlineField } from '../tasks/tableEditing';
+import { canEditTaskInline, isCurrentEstimateProjection, type TaskInlineField } from '../tasks/tableEditing';
 import { t, useTranslation, formatDate } from '../../i18n';
 import type {
   MembershipDto,
@@ -10,7 +10,7 @@ import type {
   TaskStatusGroup,
 } from '@workloom/contracts';
 import { Avatar, Badge, Button, cn } from '@workloom/ui';
-import { ChevronDown, ChevronRight, Flag, Link2, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
+import { ChevronDown, ChevronRight, Flag, Link2, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useId, useMemo, useState, Fragment, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import { visibleTaskRows, type TaskTreeNode } from './taskTree';
@@ -69,8 +69,8 @@ export interface TaskTableProps {
   onEditTaskField?: ((task: TaskDto, field: TaskInlineField) => void) | undefined;
   renderTaskFieldEditor?: ((task: TaskDto, field: TaskInlineField) => ReactNode) | undefined;
   /**
-   * Presentation only: the cell whose editor `renderTaskFieldEditor` returns. Its visible column
-   * gets a real editor width instead of letting the form spill under neighbouring/sticky cells.
+   * Presentation only: the cell whose editor `renderTaskFieldEditor` returns. It is marked, never
+   * widened: column widths and row heights stay fixed while any cell editor is open.
    */
   activeFieldEditor?: { taskId: string; field: TaskInlineField } | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
@@ -90,8 +90,6 @@ export interface TaskTableProps {
 /** Width of the built-in columns at the minimum table width: title 360px plus 800px. */
 const BASE_MIN_WIDTH = 1160;
 const noCustomColumns: readonly TaskTableCustomColumn[] = [];
-/** Shared inline editor budget: input, wrapped save/recovery feedback and the action row. */
-export const INLINE_EDITOR_COLUMN_WIDTH = 288;
 
 /**
  * One explicit inline open pans only this table's own horizontal scroll so the editor sits between
@@ -122,6 +120,23 @@ export function revealInlineEditor(editor: HTMLElement): void {
 /** Icon-only control; callers add its size and text color. */
 const iconButtonClassName =
   'inline-flex shrink-0 items-center justify-center rounded-md transition-colors hover:bg-slate-100 hover:text-ink';
+
+/** Row actions stay in the accessibility tree; pointer users see them on hover or focus. */
+const rowActionClassName =
+  'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100';
+
+/**
+ * Every body cell has one fixed single-line height. Content truncates instead of wrapping, so
+ * opening, typing, choosing, pending and error states never grow a row or a column.
+ */
+const cellClassName = 'h-10 max-h-10 overflow-hidden whitespace-nowrap px-1.5 py-0 align-middle';
+
+/** Vertical grid line drawn inside the cell, so it also follows sticky cells while scrolling. */
+const gridLineClassName = 'shadow-[inset_-1px_0_0_var(--color-line)]';
+
+/** Read-mode cell control: the whole cell is the click target, with one consistent hover/focus. */
+const cellButtonClassName =
+  'flex h-8 w-full min-w-0 items-center rounded px-1.5 outline-none hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent';
 
 /**
  * From `lg` the estimate column sticks to the right edge, so the header, every task estimate and
@@ -382,6 +397,9 @@ interface RowContext {
   renderTaskFieldEditor: TaskTableProps['renderTaskFieldEditor'];
   renderCompletionAction: TaskTableProps['renderCompletionAction'];
   draftTaskIds: ReadonlySet<string>;
+  /** Grid line classes of a visible column, shared by its header and body cells. */
+  columnLine: (id: string) => string | undefined;
+  activeFieldEditor: TaskTableProps['activeFieldEditor'];
 }
 
 function sectionLabel(sectionId: string | null, sectionById: ReadonlyMap<string, SectionDto>): string {
@@ -410,89 +428,95 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
       : t('taskTable.grouping.unloadedParentContext', { section: sectionLabel(task.sectionId, ctx.sectionById) }) : null;
   const titleEditor = ctx.renderTaskFieldEditor?.(task, 'title');
   const editingTitle = titleEditor !== undefined && titleEditor !== null;
-  const renameLabel = t('tasks.inlineEdit.editTitle', { title: task.title });
+  const editable = ctx.onEditTaskField !== undefined && canEditTaskInline(task);
+  const isEditing = (field: TaskInlineField) => ctx.activeFieldEditor?.taskId === task.id && ctx.activeFieldEditor.field === field;
   const cell = (field: TaskInlineField, content: ReactNode): ReactNode => {
     const editor = ctx.renderTaskFieldEditor?.(task, field);
     if (editor !== undefined && editor !== null) return editor;
-    if (!ctx.onEditTaskField || !canEditTaskInline(task)) return content;
-    if (field === 'estimate' && !isCurrentEstimateProjection(task, ctx.summary.packages)) return <span title={t('tasks.inlineEstimate.refreshRequired')}>{content}<span className="sr-only">{t('tasks.inlineEstimate.refreshRequired')}</span></span>;
-    const label = field === 'estimate' ? t('tasks.inlineEstimate.edit', { title: task.title }) : field === 'title' ? renameLabel : field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : field === 'priority' ? t('tasks.inlineEdit.editPriority', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
-    return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className={cn('flex min-h-8 w-full min-w-0 items-center rounded px-1 hover:bg-slate-100', field === 'estimate' ? 'justify-end text-right' : 'text-left')}>{content}</button>;
+    const align = field === 'estimate' ? 'justify-end text-right' : 'text-left';
+    if (!editable) return <span className={cn('flex h-8 min-w-0 items-center px-1.5', align)}>{content}</span>;
+    if (field === 'estimate' && !isCurrentEstimateProjection(task, ctx.summary.packages)) return <span className={cn('flex h-8 min-w-0 items-center px-1.5', align)} title={t('tasks.inlineEstimate.refreshRequired')}>{content}<span className="sr-only">{t('tasks.inlineEstimate.refreshRequired')}</span></span>;
+    const label = field === 'estimate' ? t('tasks.inlineEstimate.edit', { title: task.title }) : field === 'title' ? t('tasks.inlineEdit.editTitle', { title: task.title }) : field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : field === 'priority' ? t('tasks.inlineEdit.editPriority', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
+    return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className={cn(cellButtonClassName, align)}>{content}</button>;
   };
+  const td = (id: string, field: TaskInlineField | null, content: ReactNode, className?: string) =>
+    <td data-editing={field !== null && isEditing(field) ? '' : undefined} className={cn(cellClassName, ctx.columnLine(id), className)}>{content}</td>;
+  // Secondary title information stays on the same single line and truncates before the title does.
+  const chip = (tone: 'muted' | 'warning', label: ReactNode, title?: string) => <span title={title} className={cn('inline-flex min-w-0 max-w-40 shrink-0 items-center rounded-full px-1.5 py-px text-[11px] font-medium ring-1 ring-inset', tone === 'warning' ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-canvas text-muted ring-line')}><span className="truncate">{label}</span></span>;
+  const meta = <>
+    {context ? <span className="min-w-0 shrink truncate text-xs text-muted" title={context}>{context}</span> : null}
+    {childCount > 0 ? <span className="shrink-0 text-xs text-muted tabular-nums" title={childCountText}>{childCountText}</span> : null}
+    {node.detachedReason === 'parent_not_loaded' ? chip('muted', <>{t('taskTable.taskTable.subtask3')}<span className="sr-only">{t('taskTable.taskTable.parentTaskNotLoaded')}</span></>, t('taskTable.taskTable.parentTaskIsOutsideTheLoadedSet')) : null}
+    {node.detachedReason === 'cycle' ? chip('warning', t('taskTable.taskTable.hierarchyCycle'), t('taskTable.taskTable.parentRelationshipsFormACycleRefreshData')) : null}
+    {showSection ? chip('muted', t('taskTable.taskTable.sectionName', { name: sectionLabel(task.sectionId, ctx.sectionById) })) : null}
+    {ctx.draftTaskIds.has(task.id) ? chip('warning', t('tasks.inlineEdit.draft'), t('tasks.inlineEdit.draftHint')) : null}
+    {task.meetingId ? chip('muted', t('taskTable.taskTable.meeting')) : null}
+    {task.archivedAt !== null ? chip('muted', t('taskTable.taskTable.archived2')) : null}
+  </>;
+  const describedBy = node.depth > 0 ? hierarchyDescriptionId : undefined;
+  const titleClassName = cn('min-w-16 shrink truncate rounded px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', finished ? 'text-muted' : 'text-ink');
   const builtinCells: Record<string, ReactNode> = {
     title: (      <td
-        className="py-1 pr-3 lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]"
+        data-editing={isEditing('title') ? '' : undefined}
+        className={cn('h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]')}
         style={{ paddingLeft: 12 }}>
-        <div className="flex min-w-0 items-start gap-1.5">
+        <div className="flex h-10 min-w-0 items-center gap-1">
           {ctx.onSelectTask ? <span className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center border-r border-line pr-2"><input type="checkbox" aria-label={t('taskTable.taskTable.selectForGraphValue', { p0: task.title })} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /></span> : null}
-          <div className="min-w-0 flex-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
-            <div className="flex min-w-0 items-start gap-1.5">
-              {childCount > 0 ? (
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  aria-label={t('taskTable.taskTable.valueSubtasksOfValue', { p0: expanded ? t('taskTable.taskTable.collapse') : t('taskTable.taskTable.expand'), p1: task.title })}
-                  onClick={() => ctx.onToggle(task.id)}
-                  className={cn(iconButtonClassName, 'size-6 text-muted')}
-                >
-                  {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                </button>
-              ) : <span aria-hidden="true" className="size-6 shrink-0" />}
-              {ctx.renderCompletionAction?.(task)}
-              {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
-              <div className="min-w-0 flex-1">
-                {editingTitle ? titleEditor : (
-                  <div className="flex min-w-0 items-start gap-1">
-                    <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title}
-                      aria-describedby={node.depth > 0 ? hierarchyDescriptionId : undefined}
-                      className={cn('min-w-0 flex-1 whitespace-normal rounded-sm py-1 text-left text-sm font-medium leading-5 [overflow-wrap:anywhere] hover:text-accent-ink hover:underline', finished ? 'text-muted' : 'text-ink')}>{task.title}</button>
-                    {ctx.onEditTaskField && canEditTaskInline(task) ? <button type="button" data-task-cell={`${task.id}:title`} aria-label={renameLabel} title={renameLabel} onClick={event => { event.stopPropagation(); ctx.onEditTaskField?.(task, 'title'); }} className={cn(iconButtonClassName, 'size-7 text-subtle')}><Pencil size={14} aria-hidden="true" /></button> : null}
-                  </div>
-                )}
-                {node.depth > 0 ? <span id={hierarchyDescriptionId} className="sr-only">
-                  {t('taskTable.taskTable.hierarchyDepth', { depth: node.depth })}
-                  {parent ? ` ${t('taskTable.taskTable.parentContext', { title: parent.title })}` : null}
-                </span> : null}
-                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 empty:hidden">
-                  {context ? <p className="min-w-0 basis-full text-xs text-muted [overflow-wrap:anywhere]" title={context}>{context}</p> : null}
-                  {childCount > 0 ? <span className="text-xs text-muted tabular-nums" title={childCountText}>
-                    {childCountText}
-                  </span> : null}
-                  {node.detachedReason === 'parent_not_loaded' ? <Badge tone="muted" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }} title={t('taskTable.taskTable.parentTaskIsOutsideTheLoadedSet')}>
-                    {t('taskTable.taskTable.subtask3')}<span className="sr-only">{t('taskTable.taskTable.parentTaskNotLoaded')}</span>
-                  </Badge> : null}
-                  {node.detachedReason === 'cycle' ? <Badge tone="warning" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }} title={t('taskTable.taskTable.parentRelationshipsFormACycleRefreshData')}>
-                    {t('taskTable.taskTable.hierarchyCycle')}
-                  </Badge> : null}
-                  {showSection ? <Badge tone="muted" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
-                    {t('taskTable.taskTable.sectionName', { name: sectionLabel(task.sectionId, ctx.sectionById) })}
-                  </Badge> : null}
-                  {ctx.draftTaskIds.has(task.id) ? <Badge tone="warning" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }} title={t('tasks.inlineEdit.draftHint')}>{t('tasks.inlineEdit.draft')}</Badge> : null}
-                  {task.meetingId ? <Badge tone="muted" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{t('taskTable.taskTable.meeting')}</Badge> : null}
-                  {task.archivedAt !== null ? <Badge tone="muted" className="min-w-0 max-w-full" style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{t('taskTable.taskTable.archived2')}</Badge> : null}
-                </div>
-              </div>
-              {ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null ? (
-                <button type="button" aria-label={t('taskTable.taskTable.addSubtaskToValue', { p0: task.title })}
-                  onClick={() => ctx.onCreateChild?.(task)} className={cn(iconButtonClassName, 'size-7 text-subtle group-hover:text-muted')}>
-                  <Plus size={16} aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
+          <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
+            {childCount > 0 ? (
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-label={t('taskTable.taskTable.valueSubtasksOfValue', { p0: expanded ? t('taskTable.taskTable.collapse') : t('taskTable.taskTable.expand'), p1: task.title })}
+                onClick={() => ctx.onToggle(task.id)}
+                className={cn(iconButtonClassName, 'size-6 text-muted')}
+              >
+                {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+              </button>
+            ) : <span aria-hidden="true" className="size-6 shrink-0" />}
+            {ctx.renderCompletionAction?.(task)}
+            {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
+            {editingTitle ? <><div className="min-w-32 flex-1">{titleEditor}</div>{meta}</> : editable ? <>
+              {/* Clicking the visible name renames in place (Asana-style); details have their own action. */}
+              <button type="button" data-task-cell={`${task.id}:title`} title={task.title} aria-describedby={describedBy}
+                onClick={() => ctx.onEditTaskField?.(task, 'title')} className={cn(titleClassName, 'cursor-text hover:bg-slate-100')}>{task.title}</button>
+              {meta}
+              <span aria-hidden="true" className="h-8 min-w-2 flex-1 cursor-text" onClick={() => ctx.onEditTaskField?.(task, 'title')} />
+            </> : <>
+              <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title} aria-describedby={describedBy}
+                className={cn(titleClassName, 'hover:text-accent-ink hover:underline')}>{task.title}</button>
+              {meta}
+              <span aria-hidden="true" className="min-w-0 flex-1" />
+            </>}
+            <button type="button" aria-label={t('taskTable.taskTable.openTask', { title: task.title })} title={t('taskTable.taskTable.openDetails')}
+              onClick={() => ctx.onOpenTask(task.id)} className={cn(iconButtonClassName, 'size-7 text-muted', rowActionClassName)}>
+              <PanelRightOpen size={15} aria-hidden="true" />
+            </button>
+            {node.depth > 0 ? <span id={hierarchyDescriptionId} className="sr-only">
+              {t('taskTable.taskTable.hierarchyDepth', { depth: node.depth })}
+              {parent ? ` ${t('taskTable.taskTable.parentContext', { title: parent.title })}` : null}
+            </span> : null}
+            {ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null ? (
+              <button type="button" aria-label={t('taskTable.taskTable.addSubtaskToValue', { p0: task.title })}
+                onClick={() => ctx.onCreateChild?.(task)} className={cn(iconButtonClassName, 'size-7 text-subtle hover:text-muted', rowActionClassName)}>
+                <Plus size={16} aria-hidden="true" />
+              </button>
+            ) : null}
           </div>
         </div>
       </td>),
-    status: <td className="px-3 py-1">{cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)}</td>,
-    responsible: <td className="px-3 py-1">{cell('responsibleMembershipId', task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)}</td>,
-    participants: <td className="px-3 py-1"><ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} /></td>,
-    dueDate: <td className="px-3 py-1">{cell('dueDate', <DueDateCell dueDate={task.dueDate} today={ctx.today} finished={finished} />)}</td>,
-    tags: <td className="px-3 py-1"><TagsCell tags={task.tags} /></td>,
-    priority: <td className="px-3 py-1">{cell('priority', <PriorityCell priority={task.priority} />)}</td>,
-    estimate: <td className={cn('px-3 py-1 text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && stickyEstimateClassName)}>{cell('estimate', <EstimateCell task={task} summary={ctx.summary} />)}</td>,
+    status: td('status', 'statusId', cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)),
+    responsible: td('responsible', 'responsibleMembershipId', cell('responsibleMembershipId', task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)),
+    participants: td('participants', null, <span className="flex h-8 min-w-0 items-center px-1.5"><ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} /></span>),
+    dueDate: td('dueDate', 'dueDate', cell('dueDate', <DueDateCell dueDate={task.dueDate} today={ctx.today} finished={finished} />)),
+    tags: td('tags', null, <span className="flex h-8 min-w-0 items-center px-1.5"><TagsCell tags={task.tags} /></span>),
+    priority: td('priority', 'priority', cell('priority', <PriorityCell priority={task.priority} />)),
+    estimate: td('estimate', 'estimate', cell('estimate', <EstimateCell task={task} summary={ctx.summary} />), cn('text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && stickyEstimateClassName)),
   };
-  return <tr className="group h-11 border-t border-line hover:bg-canvas/70">{ctx.columnIds.map(id => {
+  return <tr data-task-row={task.id} className="group h-10 border-t border-line hover:bg-canvas/70">{ctx.columnIds.map(id => {
     const custom = ctx.customColumns.find(column => column.id === id);
-    return <Fragment key={id}>{builtinCells[id] ?? (custom ? <td className="min-w-0 overflow-hidden px-3 py-1">{custom.renderCell(task)}</td> : null)}</Fragment>;
+    // Supplied cells bring their own control padding; the row height still bounds them.
+    return <Fragment key={id}>{builtinCells[id] ?? (custom ? td(id, null, <div className="flex h-10 min-w-0 items-center overflow-hidden">{custom.renderCell(task)}</div>, 'min-w-0') : null)}</Fragment>;
   })}</tr>;
 }
 
@@ -501,6 +525,15 @@ function groupTitle(group: TableTaskGroup): string {
   if (group.kind === 'section' && group.section !== null) return group.section.name;
   if (group.kind === 'missing_section') return t('taskTable.taskTable.sectionUnavailable');
   return t('taskTable.taskTable.noSection');
+}
+
+/** Root tasks can be created only in real, active section groups (including No section). */
+function acceptsNewTasks(group: TableTaskGroup, writable: boolean): boolean {
+  return writable && (group.kind === 'section' || group.kind === 'no_section') && (group.section === null || group.section.archivedAt === null);
+}
+
+function addTaskLabel(group: TableTaskGroup): string {
+  return group.section === null ? t('taskTable.taskTable.addTaskWithoutASection') : t('taskTable.taskTable.addTaskToValue', { p0: group.section.name });
 }
 
 function GroupHeader({
@@ -529,7 +562,8 @@ function GroupHeader({
   const { t } = useTranslation();
   const { section } = group;
   const archived = section !== null && section.archivedAt !== null;
-  const canCreate = writable && (group.kind === 'section' || group.kind === 'no_section') && !archived;
+  // An expanded group offers its own persistent Add task row at the end instead.
+  const canCreate = collapsed && acceptsNewTasks(group, writable);
   const countText = partial ? t('taskTable.taskTable.loadedValue2', { p0: formatTaskCount(group.taskCount) }) : formatTaskCount(group.taskCount);
   const assignee = group.kind === 'assignee';
   const disclosureLabel = assignee
@@ -542,7 +576,7 @@ function GroupHeader({
 
   return (
     <tr className="h-10 border-t border-line bg-canvas">
-      <th scope="rowgroup" colSpan={columnCount} className="px-3 py-1 text-left font-normal">
+      <th scope="rowgroup" colSpan={columnCount} className="h-10 px-3 py-0 text-left font-normal">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
@@ -575,7 +609,7 @@ function GroupHeader({
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label={section === null ? t('taskTable.taskTable.addTaskWithoutASection') : t('taskTable.taskTable.addTaskToValue', { p0: section.name })}
+                aria-label={addTaskLabel(group)}
                 onClick={() => onCreateTask(section === null ? null : section.id)}
               >
                 <Plus size={14} aria-hidden="true" />
@@ -584,6 +618,23 @@ function GroupHeader({
           </div>
         </div>
       </th>
+    </tr>
+  );
+}
+
+function AddTaskRow({ sectionId, label, columnCount, onCreate }: { sectionId: string | null; label: string; columnCount: number; onCreate: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <tr className="h-10 border-t border-line">
+      <td colSpan={columnCount} className="h-10 p-0">
+        <div className="sticky left-0 flex h-10 w-[min(100cqw,44rem)] max-w-full items-center pr-2 pl-[42px]">
+          <button type="button" data-add-task-row={sectionId ?? ''} aria-label={label} onClick={onCreate}
+            className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded px-1.5 text-left text-sm text-muted outline-none hover:bg-slate-100 hover:text-ink focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
+            <Plus size={14} aria-hidden="true" className="shrink-0" />
+            <span className="truncate">{t('taskTable.taskTable.addTaskRow')}</span>
+          </button>
+        </div>
+      </td>
     </tr>
   );
 }
@@ -663,11 +714,15 @@ export function TaskTable({
   const columnCount = columns.length;
   const groups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale, sortMode), [tasks, sections, members, grouping, locale, sortMode]);
   const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
-  // The flexible title column keeps its own minimum; the table grows and scrolls locally instead.
-  const editorColumnId = activeFieldEditor && taskById.has(activeFieldEditor.taskId) ? taskInlineColumn(activeFieldEditor.field) : null;
-  const columnWidth = (column: { id: string; width: number }) => column.id === editorColumnId && column.id !== 'title' ? Math.max(column.width, INLINE_EDITOR_COLUMN_WIDTH) : column.width;
-  const editorExtraWidth = columns.reduce((sum, column) => sum + columnWidth(column) - column.width, 0);
-  const minWidth = editorExtraWidth + (columnIds ? columns.reduce((sum, column) => sum + column.width, 0) : (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0));
+  // Widths never depend on an open editor: the grid stays still while any cell is edited.
+  const minWidth = columnIds ? columns.reduce((sum, column) => sum + column.width, 0) : (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0);
+  const stickyEstimate = visibleIds.at(-1) === 'estimate';
+  const columnLine = (id: string): string | undefined => {
+    const index = visibleIds.indexOf(id);
+    if (id === 'title' || index < 0 || index === visibleIds.length - 1) return undefined;
+    // From lg the sticky estimate draws its own leading line.
+    return stickyEstimate && index === visibleIds.length - 2 ? 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)]' : gridLineClassName;
+  };
   const summary = useMemo(() => summarizeWorkPackages(tasks), [tasks]);
   const statusById = useMemo(() => new Map(statuses.map((status) => [status.id, status])), [statuses]);
   const memberById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
@@ -717,14 +772,17 @@ export function TaskTable({
     columnIds: visibleIds,
     onEditTaskField: writable ? onEditTaskField : undefined,
     renderTaskFieldEditor, renderCompletionAction, draftTaskIds,
+    columnLine,
+    activeFieldEditor: activeFieldEditor && taskById.has(activeFieldEditor.taskId) ? activeFieldEditor : undefined,
   };
+  const quickAddRow = (content: ReactNode) => <tr data-quick-add-row="" className="h-10 border-t border-line bg-surface"><td colSpan={columnCount} className="h-10 p-0"><div className="sticky left-0 flex h-10 w-[min(100cqw,44rem)] max-w-full items-center pr-2 pl-[42px]">{content}</div></td></tr>;
 
   return (
     <div data-task-table-scroll="" className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
-        <colgroup>{columns.map(column => <col key={column.id} data-inline-editor={column.id === editorColumnId || undefined} style={column.id === 'title' ? undefined : { width: columnWidth(column) }} />)}</colgroup>
-        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('px-3 font-medium', column.id === 'title' && 'lg:sticky lg:left-0 lg:z-[1] lg:bg-surface', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && onSelectTask ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 border-r border-line pr-1 text-center text-[10px] text-subtle">{t('tasks.completion.graph')}</span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
+        <colgroup>{columns.map(column => <col key={column.id} style={column.id === 'title' ? undefined : { width: column.width }} />)}</colgroup>
+        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && onSelectTask ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 border-r border-line pr-1 text-center text-[10px] text-subtle">{t('tasks.completion.graph')}</span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
           const collapsed = collapsedGroups.has(group.key);
@@ -747,20 +805,22 @@ export function TaskTable({
                 }}
                 onRenameSection={onRenameSection}
               />
-              {grouping === 'section' && !collapsed && quickAdd?.sectionId === group.sectionId ? <tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr> : null}
               {collapsed ? null : rows.length === 0 ? (
-                <tr className="h-11 border-t border-line">
-                  <td colSpan={columnCount} className="py-1 pr-3 pl-[42px] text-sm text-muted">
+                <tr className="h-10 border-t border-line">
+                  <td colSpan={columnCount} className="h-10 py-0 pr-3 pl-[42px] text-sm text-muted">
                     {partial ? t('taskTable.taskTable.noLoadedTasksInThisSection') : t('taskTable.taskTable.noTasksYet')}
                   </td>
                 </tr>
               ) : (
                 rows.map((node) => <TaskRow key={node.task.id} node={node} group={group} ctx={ctx} />)
               )}
+              {/* Asana-style: the quick row, or a persistent Add task row, closes every expanded section. */}
+              {grouping !== 'section' || collapsed ? null : quickAdd?.sectionId === group.sectionId ? quickAddRow(quickAdd.content)
+                : acceptsNewTasks(group, writable) ? <AddTaskRow sectionId={group.sectionId} label={addTaskLabel(group)} columnCount={columnCount} onCreate={() => onCreateTask(group.sectionId)} /> : null}
             </tbody>
           );
         })}
-        {grouping === 'section' && quickAdd && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody><tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr></tbody> : null}
+        {grouping === 'section' && quickAdd && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody>{quickAddRow(quickAdd.content)}</tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
           <SummaryRow summary={summary} partial={partial} columnCount={columnCount} />
         </tfoot>

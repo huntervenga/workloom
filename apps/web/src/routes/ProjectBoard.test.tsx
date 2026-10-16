@@ -30,6 +30,10 @@ async function board(user: ReturnType<typeof renderApp>['user']) {
 }
 async function closeDrawer(user: ReturnType<typeof renderApp>['user']) { await user.keyboard('{Escape}'); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument()); }
 
+/** Choosing in the open custom status list is the explicit save. */
+const choose = (user: ReturnType<typeof renderApp>['user'], option: string) => user.click(within(screen.getByRole('listbox', { name: 'Status' })).getByRole('option', { name: option }));
+const statusPicker = () => screen.getByRole('combobox', { name: 'Status' });
+
 describe('project Board integration', () => {
   it('switches the same filtered loaded set between Table and Board and uses the existing task drawer', async () => {
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => page(request.searchParams.get('statusId') === NEXT ? [other] : [task, other]) }));
@@ -81,8 +85,8 @@ describe('project Board integration', () => {
     expect(screen.getAllByRole('button', { name: 'Newest row title' })).toHaveLength(1);
     const card = screen.getByRole('button', { name: 'Newest row title' }).closest('li'); if (!card) throw new Error('Missing card');
     await user.click(within(card).getByRole('button', { name: 'Change status' }));
-    expect(screen.getByLabelText('Status')).toHaveValue(NEXT);
-    await user.selectOptions(screen.getByLabelText('Status'), task.statusId); await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(statusPicker()).toHaveTextContent('Stored progress');
+    await choose(user, 'Stored todo');
     await waitFor(() => expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1));
     expect(calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: 3, statusId: task.statusId });
     await user.click(views().getByRole('button', { name: 'Tasks' }));
@@ -96,12 +100,12 @@ describe('project Board integration', () => {
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`GET ${rootPath}/projects/${PROJECT_ID}/table-preferences/me`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, membershipId: alphaMembers[0]?.id, revision: 1, columns: [{ column: { kind: 'builtin', key: 'title' }, visible: true }, { column: { kind: 'builtin', key: 'status' }, visible: false }] }), [`PATCH ${rootPath}/tasks/${task.id}`]: () => ++attempt === 1 ? first.promise : ok(current = { ...task, statusId: NEXT, revision: 2 }) }));
     const { user } = renderApp(`${tablePath}?view=board`);
     await user.click(await screen.findByRole('button', { name: 'Change status' }));
-    await user.selectOptions(screen.getByLabelText('Status'), NEXT); await user.click(screen.getByRole('button', { name: 'Save' }));
+    await choose(user, 'Stored progress');
     await waitFor(() => expect(attempt).toBe(1)); await act(async () => first.lose()); await screen.findByRole('button', { name: 'Retry' });
     await user.click(views().getByRole('button', { name: 'Tasks' })); expect(screen.queryByRole('columnheader', { name: 'Status' })).not.toBeInTheDocument();
     await screen.findByRole('button', { name: 'Resume original editor' }); await board(user);
     await user.click(screen.getByRole('button', { name: 'Change status' }));
-    expect(screen.getByLabelText('Status')).toHaveValue(NEXT); expect(screen.getByLabelText('Status')).toBeDisabled();
+    expect(statusPicker()).toHaveTextContent('Stored progress'); expect(statusPicker()).toBeDisabled(); expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(attempt).toBe(2)); await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument());
     const writes = calls.filter(call => call.method === 'PATCH'); expect(writes[0]?.body).toEqual({ expectedRevision: 1, statusId: NEXT });
@@ -112,8 +116,8 @@ describe('project Board integration', () => {
     const gate = deferred<Response>(); let current = task;
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => page(request.searchParams.has('search') ? [] : [current]), [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise }));
     const { user } = renderApp(`${tablePath}?view=board`);
-    await user.click(await screen.findByRole('button', { name: 'Change status' })); await user.selectOptions(screen.getByLabelText('Status'), NEXT);
-    await user.click(screen.getByRole('button', { name: 'Save' })); await waitFor(() => expect(calls.some(call => call.method === 'PATCH')).toBe(true));
+    await user.click(await screen.findByRole('button', { name: 'Change status' })); await choose(user, 'Stored progress');
+    await waitFor(() => expect(calls.some(call => call.method === 'PATCH')).toBe(true));
     await user.type(screen.getByLabelText('Search tasks'), 'not matching');
     await screen.findByText('0 loaded tasks in this view.'); await screen.findByRole('button', { name: 'Resume original editor' });
     const search = screen.getByLabelText('Search tasks'); expect(search).toHaveFocus();
@@ -149,16 +153,17 @@ describe('project Board integration', () => {
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 
-  it('focuses a deliberately opened status field and returns to its card action after Escape or confirmed Save', async () => {
+  it('focuses a deliberately opened status list and returns to its card action after Escape or a confirmed choice', async () => {
     let current = task;
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`PATCH ${rootPath}/tasks/${task.id}`]: () => ok(current = { ...task, statusId: NEXT, revision: 2 }) }));
     const { user } = renderApp(`${tablePath}?view=board`);
     await user.click(await screen.findByRole('button', { name: 'Change status' }));
-    expect(screen.getByLabelText('Status')).toHaveFocus(); await user.selectOptions(screen.getByLabelText('Status'), NEXT);
-    await user.keyboard('{Escape}');
+    expect(statusPicker()).toHaveFocus(); expect(screen.getByRole('listbox', { name: 'Status' })).toBeInTheDocument();
+    await user.keyboard('{ArrowDown}{Escape}');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Change status' })).toHaveFocus());
-    await user.keyboard('{Enter}'); expect(screen.getByLabelText('Status')).toHaveFocus(); expect(screen.getByLabelText('Status')).toHaveValue(NEXT);
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(0);
+    await user.keyboard('{Enter}'); expect(statusPicker()).toHaveFocus(); expect(statusPicker()).toHaveTextContent('Stored todo');
+    await choose(user, 'Stored progress');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Change status' })).toHaveFocus());
     const lane = screen.getByRole('heading', { name: 'Stored progress' }).closest('section'); if (!lane) throw new Error('Missing current lane');
     expect(within(lane).getByRole('button', { name: task.title })).toBeInTheDocument(); expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
@@ -185,27 +190,26 @@ it('reconciles a pending status session across Board→Table→Board after confi
   const gate = deferred<Response>(); let current = task;
   const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise }));
   const { user } = renderApp(`${tablePath}?view=board`);
-  await user.click(await screen.findByRole('button', { name: 'Change status' })); await user.selectOptions(screen.getByLabelText('Status'), NEXT);
-  await user.click(screen.getByRole('button', { name: 'Save' })); await waitFor(() => expect(calls.some(call => call.method === 'PATCH')).toBe(true));
-  await user.click(views().getByRole('button', { name: 'Tasks' })); expect(screen.getByLabelText('Status')).toBeDisabled();
-  await board(user); expect(screen.getByLabelText('Status')).toBeDisabled();
+  await user.click(await screen.findByRole('button', { name: 'Change status' })); await choose(user, 'Stored progress');
+  await waitFor(() => expect(calls.some(call => call.method === 'PATCH')).toBe(true));
+  await user.click(views().getByRole('button', { name: 'Tasks' })); expect(statusPicker()).toBeDisabled();
+  await board(user); expect(statusPicker()).toBeDisabled();
   const focus = document.activeElement; current = { ...task, statusId: NEXT, revision: 2 };
   await act(async () => gate.resolve(ok(current)));
-  await waitFor(() => expect(screen.getByLabelText('Status')).toBeEnabled());
-  expect(document.activeElement).toBe(focus); expect(screen.getByLabelText('Status')).toHaveValue(NEXT);
-  await user.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(statusPicker()).toBeEnabled());
+  expect(document.activeElement).toBe(focus); expect(statusPicker()).toHaveTextContent('Stored progress');
+  await user.click(statusPicker()); await choose(user, 'Stored progress');
   expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
 });
 
 it('keeps a dependency-enforced status rejection in the original lane without claiming completion', async () => {
   const { calls } = installFakeApi(routes({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => failure(409, 'DEPENDENCY_BLOCKED', 'private predecessor details') }));
   const { user } = renderApp(`${tablePath}?view=board`);
-  await user.click(await screen.findByRole('button', { name: 'Change status' })); await user.selectOptions(screen.getByLabelText('Status'), DONE_A);
-  await user.click(screen.getByRole('button', { name: 'Save' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true'));
+  await user.click(await screen.findByRole('button', { name: 'Change status' })); await choose(user, 'Stored done A');
+  await waitFor(() => expect(screen.getByRole('alert')).toBeVisible()); expect(statusPicker()).toBeDisabled();
   const originalLane = screen.getByRole('heading', { name: 'Stored todo' }).closest('section'); if (!originalLane) throw new Error('Missing status lane');
   expect(within(originalLane).getByRole('button', { name: task.title })).toBeInTheDocument();
-  expect(screen.getByLabelText('Status')).toHaveValue(DONE_A); expect(screen.queryByText('private predecessor details')).not.toBeInTheDocument();
+  expect(statusPicker()).toHaveTextContent('Stored done A'); expect(screen.queryByText('private predecessor details')).not.toBeInTheDocument();
   expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
 });
 

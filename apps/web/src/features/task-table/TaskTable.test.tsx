@@ -387,3 +387,48 @@ describe('TaskTable assignee grouping', () => {
     expect(screen.queryByRole('button', { name: /assignee group/ })).not.toBeInTheDocument();
   });
 });
+
+describe('TaskTable Asana-style add rows', () => {
+  it('closes each expanded writable section with one persistent Add task row and keeps the header add only for collapsed groups', async () => {
+    const user = userEvent.setup();
+    const archived = makeSection({ id: 'old-section', name: 'Old section', archivedAt: '2026-10-01T00:00:00Z' });
+    const handlers = renderTable({ tasks: [launch, makeTask({ id: 'old-row', title: 'Old row', sectionId: archived.id })], sections: [design, analytics, archived], writable: true });
+    const analyticsRow = screen.getByRole('button', { name: 'Add task to “Аналитика”' });
+    expect(analyticsRow.closest('th')).toBeNull();
+    expect(analyticsRow).toHaveTextContent('Add task…');
+    // The add row is the last row of its section, after the loaded tasks.
+    const body = analyticsRow.closest('tbody');
+    expect(body?.lastElementChild).toBe(analyticsRow.closest('tr'));
+    expect(within(body as HTMLElement).getByRole('button', { name: launch.title })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add task to “Дизайн”' }).closest('th')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add task to “Old section”' })).not.toBeInTheDocument();
+    await user.click(analyticsRow);
+    expect(handlers.onCreateTask).toHaveBeenCalledWith(analytics.id);
+    await user.click(screen.getByRole('button', { name: 'Collapse section “Аналитика”' }));
+    const header = screen.getByRole('button', { name: 'Add task to “Аналитика”' });
+    expect(header.closest('th')).not.toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Add task to “Аналитика”' })).toHaveLength(1);
+  });
+
+  it('replaces only the target section add row with the supplied quick row at the end of that section', () => {
+    renderTable({ tasks: [launch], writable: true, quickAdd: { sectionId: analytics.id, content: <span>Quick row content</span> } });
+    const quick = screen.getByText('Quick row content').closest('tr');
+    expect(quick).toHaveAttribute('data-quick-add-row');
+    expect(quick?.className).toContain('h-10');
+    expect(quick?.parentElement?.lastElementChild).toBe(quick);
+    expect(screen.queryByRole('button', { name: 'Add task to “Аналитика”' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add task to “Дизайн”' })).toBeInTheDocument();
+  });
+
+  it('separates in-place rename on the name from the details action', async () => {
+    const user = userEvent.setup();
+    const onEditTaskField = vi.fn();
+    const handlers = renderTable({ tasks: [launch], writable: true, onEditTaskField });
+    await user.click(screen.getByRole('button', { name: launch.title }));
+    expect(onEditTaskField).toHaveBeenCalledExactlyOnceWith(launch, 'title');
+    expect(handlers.onOpenTask).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: `Open task “${launch.title}”` }));
+    expect(handlers.onOpenTask).toHaveBeenCalledExactlyOnceWith(launch.id);
+    expect(onEditTaskField).toHaveBeenCalledTimes(1);
+  });
+});

@@ -28,7 +28,7 @@ describe('inline team package estimate', () => {
     fireEvent.change(input, { target: { value: '1,5' } }); await user.keyboard('{Enter}');
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     expect(writes(calls)[0]?.body).toEqual({ expectedRevision: detail.revision, estimateMinutes: 90, expectedWorkPackageRevision: 7 });
-    expect(input).toBeDisabled(); expect(screen.getByText('Loaded team budget').closest('tr')).toHaveTextContent('2h');
+    expect(input).toHaveAttribute('readonly'); expect(input).toHaveFocus(); expect(screen.getByText('Loaded team budget').closest('tr')).toHaveTextContent('2h');
     rows = rows.map(row => ({ ...row, estimateMinutes: 90, workPackageRevision: 8 }));
     await act(async () => gate.resolve(ok(rows[1])));
     await waitFor(() => expect(screen.getByRole('button', { name: `Edit team estimate for ${detail.title}` })).toHaveFocus());
@@ -69,7 +69,7 @@ describe('inline team package estimate', () => {
 
   it('keeps rich drawer edits Resume-only even when only the estimate changed', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('button', { name: base.title }));
+    await user.click(await screen.findByRole('button', { name: `Open task “${base.title}”` }));
     const drawer = within(await screen.findByRole('dialog')); await user.click(drawer.getByText('More details', { selector: 'summary' }));
     fireEvent.change(drawer.getByLabelText('Team estimate, hours'), { target: { value: '3,5' } });
     await user.click(drawer.getByLabelText('Close', { selector: 'button' })); await user.click(await edit());
@@ -154,9 +154,9 @@ describe('inline team package estimate', () => {
     const { user } = renderApp(tablePath); await user.click(await edit());
     fireEvent.change(screen.getByLabelText('Team estimate (hours)'), { target: { value: '1:15' } }); await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(writes(calls)).toHaveLength(1)); await user.click(screen.getByRole('button', { name: 'Collapse editor' })); await user.click(await edit());
-    expect(screen.getByLabelText('Team estimate (hours)')).toHaveValue('1:15'); expect(screen.getByLabelText('Team estimate (hours)')).toBeDisabled();
+    expect(screen.getByLabelText('Team estimate (hours)')).toHaveValue('1:15'); expect(screen.getByLabelText('Team estimate (hours)')).toHaveAttribute('readonly');
     await act(async () => gate.resolve(ok(current = { ...base, estimateMinutes: 75, workPackageRevision: 8 })));
-    await waitFor(() => expect(screen.getByLabelText('Team estimate (hours)')).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText('Team estimate (hours)')).not.toHaveAttribute('readonly'));
     expect(screen.getByLabelText('Team estimate (hours)')).toHaveValue('1:15'); await user.click(screen.getByRole('button', { name: 'Save' }));
     expect(writes(calls)).toHaveLength(1);
   });

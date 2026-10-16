@@ -1,7 +1,7 @@
 import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { alpha, alphaMembers, deferred, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
+import { alpha, deferred, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 beforeAll(async () => { await import('./ProjectPage'); });
@@ -52,18 +52,24 @@ describe('explicit task completion', () => {
   });
   it('never submits an existing rich draft through the circle', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('button', { name: task.title })); const drawer = await screen.findByRole('dialog');
+    await user.click(await screen.findByRole('button', { name: `Open task “${task.title}”` })); const drawer = await screen.findByRole('dialog');
     await user.type(within(drawer).getByLabelText('Task name'), ' unsaved'); await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: `Resume draft for ${task.title}` }));
     expect(within(await screen.findByRole('dialog')).getByLabelText('Task name')).toHaveValue(`${task.title} unsaved`);
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
-  it('keeps an active inline edit intact and does not auto-save it', async () => {
+  it('keeps an active inline edit intact and does not auto-save it through the circle', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Edit assignee for ${task.title}` }));
-    await user.selectOptions(screen.getByLabelText('Assignee'), alphaMembers[1]?.id ?? '');
+    expect(screen.getByRole('listbox', { name: 'Assignee' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Finish or collapse the current field edit first.' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Assignee' })).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: task.title }));
+    fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Typed title only' } });
+    expect(screen.getByRole('button', { name: 'Finish or collapse the current field edit first.' })).toBeDisabled();
+    expect(screen.getByLabelText('Task name')).toHaveValue('Typed title only');
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
   it('keeps a dependency refusal visible without an optimistic completed state or raw server copy', async () => {

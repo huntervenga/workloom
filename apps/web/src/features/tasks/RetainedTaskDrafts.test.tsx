@@ -83,7 +83,7 @@ it('releases a reverted or explicitly discarded draft and disposes protection af
 
 
 it('protects an actual collapsed inline title draft without claiming a write was sent', async () => {
- const ui=setup(tablePath);await ui.user.click(await screen.findByRole('button',{name:`Rename ${child.title}`}));
+ const ui=setup(tablePath);await ui.user.click(await screen.findByRole('button',{name:child.title}));
  fireEvent.change(screen.getByLabelText('Task name'),{target:{value:'Collapsed actual inline title'}});await ui.user.keyboard('{Escape}');expect(unload()).toBe(true);expect(protectedCommandsFor(ui.client).protecting).toBe(false);
  await act(async()=>{await ui.router.navigate('/outside-repro');});const guard=await screen.findByRole('dialog',{name:'Leave this page?'});expect(guard).toHaveTextContent('You have an unsaved draft');await ui.user.click(within(guard).getByRole('button',{name:'Stay'}));
  await ui.user.click(screen.getByRole('button',{name:'Resume original editor'}));expect(await screen.findByLabelText('Task name')).toHaveValue('Collapsed actual inline title');expect(ui.calls.filter(c=>c.method!=='GET')).toHaveLength(0);

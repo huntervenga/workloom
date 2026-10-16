@@ -33,7 +33,8 @@ export function freshQuickSession(sectionId: string | null, statusId: string): C
 
 export function canResumeQuickSession(session: CreateSession, sectionId: string | null): boolean {
   if (session.origin !== 'quick' || session.request.parent !== null || session.request.sectionId !== sectionId) return false;
-  const basicFields = new Set<keyof TaskDraft>(['title', 'statusId', 'responsibleMembershipId', 'dueDate']);
+  // The quick row shows only the title; any other retained value must be reviewed in details.
+  const basicFields = new Set<keyof TaskDraft>(['title']);
   return changedKeys(emptyDraft(session.draft.statusId, sectionId), session.draft).every(key => basicFields.has(key));
 }
 
