@@ -1,6 +1,6 @@
 # Explicit project cutoff automation
 
-Status: source implementation in progress, not accepted or deployed. The compiled local runtime remains at the separately approved checkpoint. Migration0013, queue installation, deployment and worker startup require separate coordinator gates. Automatic reports remain deferred.
+Status: **bounded local acceptance at compiled checkpoint `bafc9d6`; worker now OFF**. Separate coordinator gates applied additive0013, installed the four approved queues, passed the compiled desktop/mobile controls and observed one real normal-worker deadline freeze. [25](25-ux-verification.md) records actual backup/restore, old-row/journal preservation, browser evidence, job provenance and clean SIGTERM stop; six future stale cutoff jobs remain stored. The source checks below retain their dated scope. New managed-helper support in [43](43-managed-local-worker.md) has focused source tests only and awaits its real lifecycle gate. Continuous operation, automatic reports, Auth/private ACL and deployment remain outside this acceptance.
 
 This is the exact additive backend contract for [the approved design](22-next-cutoff-worker.md). It does not change stored period DTOs, pinned snapshots, existing public command hashes or manual freeze semantics. The companion interface is documented in [cutoff readiness UI](36-cutoff-readiness-ui.md).
 

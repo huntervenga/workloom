@@ -1,5 +1,7 @@
 # My tasks applied URL lens
 
+**Current acceptance:** source `fd0fa07` is included in the compiled `bafc9d6` checkpoint. The later [QA ledger](25-ux-verification.md) records the complete 8/8 desktop/mobile completion/cutoff/My tasks gate, including applied URL filters, separate unsent search, Open→Back/reload, malformed/duplicate values and ignored foreign identity keys with zero browser writes. The source-only checkpoint below preserves its original scope; its compiled-pending tail is superseded by that separate browser evidence.
+
 My tasks keeps its applied relation, completion, archive and search filters in the current route URL. Opening a task and using browser Back restores the same personal list; loading that URL afresh applies the same lens. This is one current applied lens, not a named view or a global sidebar preference. The ordinary sidebar link can still open the default personal list.
 
 ## Validation and identity

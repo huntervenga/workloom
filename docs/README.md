@@ -15,7 +15,7 @@
 | [09 Первая задача реализации](09-first-implementation-task.md) | Задание и критерии приёмки P0; исторический handoff |
 | [10 Внешние календари](10-calendar-integration.md) | Будущий дизайн личных подключений Google/Outlook после первого пилота; не входит в P0–P6 |
 | [11 Журнал доказательств](11-implementation-progress.md) | Фактические проверки P0, ограниченных P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b/P5a/P5b, исторические checkpoints и неисполненное |
-| [12 Активный прогон](12-active-run.md) | Ledger текущего прогона: сроки, политика моделей, владельцы и текущий срез; доказательства — только в 11 |
+| [12 Исторический прогон](12-active-run.md) | Прежний ledger со своей датированной provenance; текущий UX-прогон находится в 24/25 |
 | [13 Контракт P2a](13-p2a-contract.md) | Замороженный ограниченный каталог недельного планирования, факта, фиксации и отчётов |
 | [14 Контракт P2b](14-p2b-contract.md) | Категории внесённых часов и быстрый недельный ввод; принятый bounded scope, evidence в11 |
 | [15 Контракт P3a](15-p3a-contract.md) | Разовые shared meetings, explicit personal plan и attendance; bounded local gates, evidence в11 |
@@ -25,7 +25,7 @@
 | [19 Контракт P5a](19-p5-import-contract.md) | Ограниченный CSV stage/mapping/preview/apply/reconciliation; точные gates в11 |
 | [20 Контракт P5b](20-p5b-mcp-contract.md) | Локальные scoped credentials, семь чтений и две guarded task writes через stdio MCP |
 | [21 Передача локального пилота](21-local-pilot-handoff.md) | Запуск, безопасные границы, walkthrough и следующие действия |
-| [22 Следующий срез: cutoff worker](22-next-cutoff-worker.md) | PLANNED / не реализован: будущая автоматическая фиксация по cutoff и объяснение overdue state |
+| [22 Дизайн cutoff worker](22-next-cutoff-worker.md) | Исходный согласованный дизайн; bounded local acceptance теперь в 25, точный реализованный контракт в 38 |
 | [23 English UI and localization](23-localization-and-ux.md) | JSON catalogs, locale discovery and translation workflow |
 | [24 Current daily UX run](24-current-ux-run.md) | New eight-hour run, owners and actual phase ledger; historical 12 remains unchanged |
 | [25 UX verification](25-ux-verification.md) | New browser, locale, runtime and demo evidence; initial failures retained |
@@ -36,13 +36,24 @@
 | [30 Time context](30-time-context-ux.md) | Week/person navigation, separate report cohort and saved-row task links |
 | [31 Task discussion](31-task-comments.md) | Literal ordinary-task comments, trusted authors, lazy activity and exact retry |
 | [32 Personal task columns](32-personal-table-columns.md) | Own order/visibility, versioned reset, current-head retry and accepted local0012 proof |
-| [33 Task board](33-task-board.md) | Loaded-task status board: functional browser gate passed; populated-later-lane mobile overflow remains |
+| [33 Task board](33-task-board.md) | Loaded-task status board; исторический overflow 284px исправлен на compiled v4, фактическая геометрия в 25 |
 | [34 Single-tag task filter](34-task-tag-filter.md) | One intersecting tag filter: isolated backend and actual paged table/board browser gates |
+| [35 Task completion](35-task-completion.md) | Explicit status-only completion/reopen, retained drafts and exact retry; compiled desktop/mobile gate in 25 supersedes original source-only tail |
+| [36 Cutoff readiness UI](36-cutoff-readiness-ui.md) | Explicit enable/off/recovery and truthful persisted readiness; compiled controls and real-job observation in 25 |
+| [37 My tasks applied lens](37-my-tasks-applied-lens.md) | Current-actor URL filters and separate unsent search; compiled desktop/mobile gate in 25 supersedes original source-only tail |
+| [38 Cutoff automation](38-cutoff-automation-contract.md) | Additive0013, current-authority jobs, four queues and bounded real deadline freeze accepted locally; worker now OFF |
+| [39 Inline task title](39-inline-task-title.md) | Source-only explicit rename; compiled keyboard/geometry/browser gates pending |
+| [40 Drawer hierarchy](40-task-detail-hierarchy.md) | Source-only parent/child draft-safe actions and parent-read retarget protection; compiled gate pending |
+| [41 Old-tab recovery](41-old-tab-recovery.md) | Source-only changed-entry guidance; genuine old-tab transition failed, explicit refresh/new-entry recovery pending |
+| [42 Board time context](42-board-time-context.md) | Source-only density and retained hours recovery; new compiled geometry/browser gate pending |
+| [43 Managed local worker](43-managed-local-worker.md) | Focused source tests; real managed start/drain/stop gate and OS reboot remain unverified |
 
 Продуктовые требования находятся в 01. Документы 02–08 уточняют реализацию и этапность: весь командный пилот из 01 не должен появиться в первой локальной версии. Если конкретные DTO и физическая схема конфликтуют с продуктовым поведением, согласовать исправление до реализации, а не изменять требования молча.
 
 Состояние на 16 октября 2026 года: локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b/P5a/P5b. Доступны таблица задач и типизированные колонки, недельный план/freeze/факт, pinned отчёты, shared meetings и explicit attendance, конечные серии встреч с DST preview и отдельным materialization worker, current dependency graph с собственной раскладкой, date-only Gantt и атомарным review/apply обычных дат, ограниченный CSV import с исходниками и сверкой, локальный stdio MCP с собственными scoped credentials. Полный P1/P2/P3/P4, MVP и пилот не завершены. Pointer drag, Private ACL/Auth, полный импорт, остальные MCP tools/remote MCP, внешние календари и production остаются будущими.
 
-Исторические gates и checkpoints — в [11](11-implementation-progress.md) и [12](12-active-run.md). Текущий отдельный UX-прогон — [24](24-current-ux-run.md), его фактические browser/runtime/data gates, initial failures и известные ограничения — [25](25-ux-verification.md). Quickstart — в корневом [README](../README.md), отдельный запуск worker — в [его README](../apps/worker/README.md). `npm run dev` запускает API+web; worker запускается отдельно после явной queue migration.
+Текущий собранный checkpoint — `bafc9d6`, с completion `20dd1ff` и My tasks lens `fd0fa07`. В 25 отдельно записаны build/types/lint, 1296 unit cases / 77 suites и 581 web cases / 92 suites, полный 8/8 desktop/mobile gate и реальный job: cutoff 11:09:57.204 UTC, frozenAt 11:09:59.005 UTC, исходная оценка 180 минут / личный план 90 минут. Оба браузера сохранили неотправленный план 2.25 часа и выбранный personal-baseline report. Сохранность 56 старых таблиц / 20,280 строк доказана backup/actual restore и additive0013; четыре новые таблицы были пусты при применении, прежний migration prefix сохранён. Четыре очереди установлены отдельно, старые jobs/receipts сохранены. Worker штатно остановлен в 11:10:20 UTC и OFF; шесть будущих stale jobs остаются. Board overflow 284→0 принят на фактических populated lanes.
+
+Новые source commits `b039001`, `9f38c23`, `c423972`, `9433b5d` ещё не входят в принятый runtime/browser checkpoint. Managed helper имеет только source-проверки. Исторические gates и checkpoints — в [11](11-implementation-progress.md) и [12](12-active-run.md). Текущий отдельный UX-прогон — [24](24-current-ux-run.md), его фактические browser/runtime/data gates, initial failures и известные ограничения — [25](25-ux-verification.md). Quickstart — в корневом [README](../README.md), отдельный запуск worker — в [его README](../apps/worker/README.md). `npm run dev` запускает API+web; worker запускается отдельно после явной queue migration.
 
 Для продолжения читать 02,06,11 и контракт следующего bounded среза. Оставшиеся acceptance tables описывают целевой продукт, а не выполненные проверки. Для командного пилота дополнительно обязательны 07–08.

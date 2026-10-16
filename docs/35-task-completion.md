@@ -1,5 +1,7 @@
 # Explicit task completion
 
+**Current acceptance:** completion source `20dd1ff` is included in compiled checkpoint `bafc9d6`. The later [QA ledger](25-ux-verification.md) records the complete 8/8 desktop/mobile completion/cutoff/My tasks gate, real status-only writes and exact recovery, plus populated Studio Board geometry with global overflow 0 at both sizes. This supersedes the original compiled-pending statements below while preserving their source-checkpoint provenance. Newer inline-title/hierarchy/Board-density source changes require their own compiled gate.
+
 Completion is a task-status command, separate from the square Graph selection. The pinned Task cell shows a round completion control beside its title, with Graph selection in a secondary labeled gutter. Hierarchy indentation applies to task content, leaving the selection gutter aligned. The existing title width, personal column identities, hierarchy, loaded scope and package totals are unchanged. Board receives the same page-owned completion action through an optional render slot; its existing Change status action remains available.
 
 ## Choices and confirmed state

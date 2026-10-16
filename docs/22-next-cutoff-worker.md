@@ -1,7 +1,8 @@
 # P2c next slice: deadline freeze worker and truthful overdue UI
 
-**IMPLEMENTATION IN PROGRESS / NOT ACCEPTED.** The root coordinator approved the bounded backend contract on 16 October 2026. This document itself does not authorize production deployment, main-database migration, queue installation or worker startup; those remain separate verified gates.
-The accepted application ends at bounded P5b plus local UI follow-ups; see [current journal](11-implementation-progress.md) and [handoff](21-local-pilot-handoff.md).
+**BOUNDED LOCAL CUTOFF SLICE ACCEPTED; WORKER NOW OFF.** The original approved design below records the pre-implementation gap and proposed seams. The implemented additive contract is [38](38-cutoff-automation-contract.md), the interface is [36](36-cutoff-readiness-ui.md), and current acceptance evidence is [25](25-ux-verification.md). Its future-tense descriptions are design provenance, not a statement that the accepted cutoff slice is still absent.
+
+At compiled checkpoint `bafc9d6`, separate gates applied additive0013 with old data preserved, installed the four approved queues, passed the completion/cutoff/My tasks desktop/mobile browser gate, and observed a normal worker freeze one explicitly armed period after its stored deadline. The worker then drained/stopped normally and is OFF; six future stale jobs remain. This is bounded local synthetic evidence, with automatic reports, continuous operation, Auth/private ACL and production still outside scope. New managed-helper source in [43](43-managed-local-worker.md) has no real managed-lifecycle acceptance yet; historical gates remain in [11](11-implementation-progress.md).
 
 ## Current behavior and precise gap
 
