@@ -1,5 +1,5 @@
 import { useTranslation } from '../../i18n';
-import type { MembershipDto, TaskStatusDto } from '@workloom/contracts';
+import type { MembershipDto, TagDto, TaskStatusDto } from '@workloom/contracts';
 import { Button, TextInput, inputClassName } from '@workloom/ui';
 import { X } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
@@ -9,6 +9,7 @@ export interface TaskFilterValue {
   search: string;
   statusId: string;
   participantMembershipId: string;
+  tagId: string;
   includeArchived: boolean;
 }
 
@@ -16,11 +17,12 @@ export const emptyTaskFilters: TaskFilterValue = {
   search: '',
   statusId: '',
   participantMembershipId: '',
+  tagId: '',
   includeArchived: false,
 };
 
 export function hasActiveTaskFilters(value: TaskFilterValue): boolean {
-  return value.search.trim() !== '' || value.statusId !== '' || value.participantMembershipId !== '' || value.includeArchived;
+  return value.search.trim() !== '' || value.statusId !== '' || value.participantMembershipId !== '' || value.tagId !== '' || value.includeArchived;
 }
 
 /** `value` once it has stayed the same for `delayMs`; clearing applies at once. */
@@ -39,22 +41,29 @@ export interface TaskFiltersProps {
   onChange: (value: TaskFilterValue) => void;
   statuses: readonly TaskStatusDto[];
   members: readonly MembershipDto[];
+  tags?: readonly TagDto[];
 }
 
 const selectClassName = inputClassName('mt-1.5 pr-8');
 const labelClassName = 'text-sm font-medium text-ink';
 
-export function TaskFilters({ value, onChange, statuses, members }: TaskFiltersProps) {
+export function TaskFilters({ value, onChange, statuses, members, tags = [] }: TaskFiltersProps) {
   const { t, locale } = useTranslation();
-  const ids = { search: useId(), status: useId(), participant: useId(), archived: useId(), hint: useId() };
+  const ids = { search: useId(), status: useId(), participant: useId(), tag: useId(), archived: useId(), hint: useId() };
   const orderedStatuses = useMemo(() => [...statuses].sort((a, b) => a.position - b.position), [statuses]);
   const orderedMembers = useMemo(
     () => [...members].sort((a, b) => a.displayName.localeCompare(b.displayName, locale)),
     [members, locale],
   );
+  const orderedTags = useMemo(
+    () => tags.filter(tag => tag.archivedAt === null).sort((a, b) => a.name.localeCompare(b.name, locale)),
+    [tags, locale],
+  );
+  const selectedTag = tags.find(tag => tag.id === value.tagId);
+  const unavailableTag = value.tagId !== '' && !orderedTags.some(tag => tag.id === value.tagId);
   const set = (patch: Partial<TaskFilterValue>) => onChange({ ...value, ...patch });
 
-  const activeCount = Number(value.statusId !== '') + Number(value.participantMembershipId !== '') + Number(value.includeArchived);
+  const activeCount = Number(value.statusId !== '') + Number(value.participantMembershipId !== '') + Number(value.tagId !== '') + Number(value.includeArchived);
   return (
     <div className="flex min-w-0 items-center gap-2">
       <div className="min-w-0 flex-1">
@@ -76,6 +85,14 @@ export function TaskFilters({ value, onChange, statuses, members }: TaskFiltersP
             <select id={ids.participant} className={selectClassName} value={value.participantMembershipId} onChange={event => set({ participantMembershipId: event.target.value })}>
               <option value="">{t('tasks.taskFilters.allParticipants')}</option>
               {orderedMembers.map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={ids.tag} className={labelClassName}>{t('tasks.taskFilters.taskTag')}</label>
+            <select id={ids.tag} className={selectClassName} value={value.tagId} onChange={event => set({ tagId: event.target.value })}>
+              <option value="">{t('tasks.taskFilters.allTags')}</option>
+              {unavailableTag ? <option value={value.tagId}>{selectedTag ? t('tasks.taskFields.valueArchived', { p0: selectedTag.name }) : t('tasks.taskFilters.tagUnavailable')}</option> : null}
+              {orderedTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
             </select>
           </div>
           <label className="flex items-center gap-2 text-sm text-ink-soft" htmlFor={ids.archived}>

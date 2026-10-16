@@ -173,7 +173,10 @@
       "one": "Filters ({{count}})",
       "other": "Filters ({{count}})"
     },
-    "filters": "Filters"
+    "filters": "Filters",
+    "taskTag": "Task tag",
+    "allTags": "All tags",
+    "tagUnavailable": "Tag unavailable"
   },
   "taskDraft": {
     "enterATaskName": "Enter a task name.",

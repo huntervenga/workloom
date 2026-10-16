@@ -42,10 +42,12 @@ function taskPath(workspaceId: string, taskId: string): string {
 /** Drops empty values so equal filters share one cache entry and one request. */
 export function normalizeTaskFilters(filters: TaskListFilters): TaskListFilters {
   const search = filters.search?.trim();
+  const tagId = filters.tagId?.trim();
   const normalized: TaskListFilters = { projectId: filters.projectId };
   if (filters.sectionId) normalized.sectionId = filters.sectionId;
   if (filters.statusId) normalized.statusId = filters.statusId;
   if (filters.participantMembershipId) normalized.participantMembershipId = filters.participantMembershipId;
+  if (tagId) normalized.tagId = tagId;
   if (search) normalized.search = search;
   if (filters.includeArchived) normalized.includeArchived = true;
   return normalized;
