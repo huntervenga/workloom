@@ -26,6 +26,8 @@ function isCommandFor(variables: SetTaskFieldValueVariables | null | undefined, 
 
 /** Edit state of one field's value, kept while the editor is closed and reopened. */
 export interface FieldEditSession {
+  /** Stable original edit identity, retained through immutable draft updates. */
+  identity: object;
   /** Definition the draft is edited against; its revision is sent as `expectedDefinitionRevision`. */
   field: TaskFieldDefinitionDto;
   /** Value row the draft is based on; null when the task has none (`expectedRevision: 0`). */
@@ -46,7 +48,7 @@ export function newFieldSession(
   value: TaskFieldValueDto | null,
   draft: FieldDraft = draftFromFieldValue(field, value?.value ?? null),
 ): FieldEditSession {
-  return { field, value, draft, submitted: false, stale: false, serverLocked: false, previous: null };
+  return { identity: {}, field, value, draft, submitted: false, stale: false, serverLocked: false, previous: null };
 }
 
 function sameJson(a: unknown, b: unknown): boolean {
@@ -91,6 +93,8 @@ export interface FieldValueFormProps {
   mutation: SetFieldValueMutation;
   /** Shown when another value command is unresolved; this form sends nothing meanwhile. */
   blockedNotice: ReactNode;
+  /** Capture after validation and only before the first send; exact retries retain it. */
+  onSubmitSession?: ((session: FieldEditSession) => void) | undefined;
   onSessionChange: (update: (session: FieldEditSession) => FieldEditSession) => void;
   /** Drops the draft and starts over from the loaded data. */
   onDiscard: () => void;
@@ -170,6 +174,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
       return;
     }
     setNotice(null);
+    props.onSubmitSession?.(session);
     onSessionChange((current) => ({ ...current, submitted: true, previous: null }));
     mutation.mutate(
       {

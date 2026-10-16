@@ -2,7 +2,7 @@ import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
 import { Badge, Button, Skeleton } from '@workloom/ui';
 import { Lock, Pencil } from 'lucide-react';
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { isAccessDenied } from '../../lib/api';
 import { isUuid } from '../../lib/format';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
@@ -14,12 +14,13 @@ import {
   heldFieldCommand,
   isSessionDirty,
   newFieldSession,
-  type FieldEditSession,
   type FreshFieldData,
   type SetFieldValueMutation,
 } from './FieldValueForm';
 import { useTaskFieldValuesQuery, useTaskFieldsQuery, type SetTaskFieldValueVariables } from './queries';
 import { draftFromFieldValue, sameId } from './valueDraft';
+import { observableFieldDrafts, type FieldValueDraftStore, type FieldValueSessions } from './fieldValueDraftStore';
+export type { FieldValueDraftStore } from './fieldValueDraftStore';
 
 export interface TaskCustomFieldsProps {
   actorId: string;
@@ -33,13 +34,6 @@ export interface TaskCustomFieldsProps {
   onOpenTask: (taskId: string) => void;
   /** Page-owned drafts survive switching tasks and closing the whole drawer. */
   draftStore?: FieldValueDraftStore | undefined;
-}
-
-type Sessions = Partial<Record<string, FieldEditSession>>;
-export type FieldValueDraftStore = Map<string, Sessions>;
-
-function withoutKey(sessions: Sessions, key: string): Sessions {
-  return Object.fromEntries(Object.entries(sessions).filter(([candidate]) => candidate !== key));
 }
 
 /**
@@ -64,24 +58,18 @@ export function TaskCustomFields({
 
   const [openFieldId, setOpenFieldId] = useState<string | null>(null);
   const taskKey = task.id.toLowerCase();
-  const [sessions, setSessions] = useState<Sessions>(() => draftStore?.get(taskKey) ?? {});
-  useEffect(() => {
-    draftStore?.set(taskKey, sessions);
-  }, [draftStore, taskKey, sessions]);
+  const store = useMemo(() => observableFieldDrafts(draftStore ?? new Map()), [draftStore]);
+  const sessions = useSyncExternalStore(store.subscribe, () => store.getTask(taskKey));
+  const setSessions = (update: (current: FieldValueSessions) => FieldValueSessions) => store.set(taskKey, update(store.getTask(taskKey)));
   const [confirmedFieldId, setConfirmedFieldId] = useState<string | null>(null);
 
-  // A confirmed write, possibly sent before this component remounted, closes its editor.
-  const [seenData, setSeenData] = useState(mutation.data);
-  if (mutation.data !== seenData) {
-    setSeenData(mutation.data);
+  useEffect(() => {
     const confirmed = mutation.data;
-    if (confirmed !== undefined && sameId(confirmed.taskId, task.id)) {
-      const key = confirmed.fieldId.toLowerCase();
-      setSessions((current) => withoutKey(current, key));
-      if (openFieldId === key) setOpenFieldId(null);
-      setConfirmedFieldId(key);
-    }
-  }
+    if (!confirmed || !sameId(confirmed.taskId, task.id) || !store.confirm(confirmed)) return;
+    const key = confirmed.fieldId.toLowerCase();
+    setOpenFieldId(current => current === key ? null : current);
+    setConfirmedFieldId(key);
+  }, [mutation.data, store, task.id]);
 
   useUnsavedChangesWarning(Object.values(sessions).some((session) => session !== undefined && isSessionDirty(session)));
 
@@ -246,6 +234,7 @@ export function TaskCustomFields({
           writable={writable}
           mutation={mutation}
           blockedNotice={heldNotice}
+          onSubmitSession={session => store.capture(taskKey, session)}
           onSessionChange={(update) => {
             const key = openFieldId;
             setSessions((current) => {

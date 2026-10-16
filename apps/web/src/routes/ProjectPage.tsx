@@ -40,7 +40,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import {
   FieldManagerDialog,
@@ -49,7 +49,7 @@ import {
   useProjectFieldValuesQuery,
   useSetTaskFieldValueMutation,
   useTaskFieldsQuery,
-  type FieldValueDraftStore,
+  useFieldValueDrafts,
 } from '../features/fields';
 import { RenameProjectDialog } from '../features/projects/ProjectDialogs';
 import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMutation } from '../features/projects/queries';
@@ -191,21 +191,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const meetingPeriods=usePlanningPeriodsQuery(actorId,workspace.id,project.id);
   // Same for custom field values: a hidden drawer keeps a value write that is pending or unconfirmed.
   const fieldValueMutation = useSetTaskFieldValueMutation(actorId, workspace.id);
-  const fieldValueDrafts = useRef<FieldValueDraftStore>(new Map());
-  // The write may finish while its drawer is closed. Retire only that confirmed draft;
-  // later unsent changes are kept until the next command actually receives an answer.
-  useEffect(() => {
-    const confirmed = fieldValueMutation.data;
-    if (!confirmed) return;
-    const key = confirmed.taskId.toLowerCase();
-    const drafts = fieldValueDrafts.current.get(key);
-    if (drafts) {
-      fieldValueDrafts.current.set(
-        key,
-        Object.fromEntries(Object.entries(drafts).filter(([id]) => id !== confirmed.fieldId.toLowerCase())),
-      );
-    }
-  }, [fieldValueMutation.data]);
+  const fieldValueDrafts = useFieldValueDrafts(actorId, workspace.id, project.id, fieldValueMutation);
   const fieldDefinitions = useTaskFieldsQuery(actorId, workspace.id, project.id);
   const projectColumns = useProjectColumnsQuery(actorId, workspace.id, project.id);
   const renameSectionMutation = useUpdateSectionMutation(actorId, workspace.id);

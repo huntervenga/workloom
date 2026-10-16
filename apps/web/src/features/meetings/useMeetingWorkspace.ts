@@ -1,10 +1,10 @@
 import type { AttendanceDto, MeetingDto, MeetingPlanPreviewDto, TaskDto } from '@workloom/contracts';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { useWorkCategoryCommands } from '../work-categories/queries';
 import type { RecategorizeSession } from '../work-categories/RecategorizeDialog';
-import { useSetTaskFieldValueMutation, type FieldValueDraftStore } from '../fields';
+import { useSetTaskFieldValueMutation, useFieldValueDrafts } from '../fields';
 import { taskWouldRegress, tagsWouldRegress, useUpdateTaskMutation } from '../tasks/queries';
 import { useMeetingCommands } from './queries';
 import { formatEstimateInput } from '../task-table';
@@ -35,7 +35,7 @@ export function useMeetingWorkspace(actorId:string,workspaceId:string,projectId:
  });
  const taskUpdate=useUpdateTaskMutation(actorId,workspaceId);
  const fieldValueMutation=useSetTaskFieldValueMutation(actorId,workspaceId);
- const fieldValueDrafts=useRef<FieldValueDraftStore>(new Map());
+ const fieldValueDrafts=useFieldValueDrafts(actorId,workspaceId,projectId,fieldValueMutation);
  const categoryCommands=useWorkCategoryCommands(actorId,workspaceId,projectId);
  const [categoryDrafts,setCategoryDrafts]=useState<Record<string,RecategorizeSession>>({});
  const [categoryKey,setCategoryKey]=useState<string|null>(null);
