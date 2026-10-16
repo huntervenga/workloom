@@ -273,15 +273,15 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
           <CircleAlert size={14} aria-hidden="true" />
         </button>
       ) : null}
+      {/* The picker is closed whenever there is feedback, so it sits below the cell, away from page notices above the table. */}
       {feedbackError && feedbackOpen ? (
-        <CellPopover anchor={anchor} side="top">
+        <CellPopover anchor={anchor}>
           <SaveFeedback subject="fieldValueSave" error={ownError} uncertainError={pending ? null : (uncertainHere?.error ?? null)} />
           <div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1">
-            {uncertainHere ? (
-              <Button size="sm" variant="primary" onClick={retry}>{t('inlineFields.retry')}</Button>
-            ) : (
-              <Button size="sm" onClick={moreDetails}>{t('inlineFields.review')}</Button>
-            )}
+            {uncertainHere ? <Button size="sm" variant="primary" onClick={retry}>{t('inlineFields.retry')}</Button> : null}
+            {/* Always a direct route to details; opening them neither retries nor discards the held command.
+                An unknown outcome keeps this feedback open: it is only hidden under the dialog and returns with its Retry. */}
+            <Button size="sm" onClick={uncertainHere ? () => onMoreDetails() : moreDetails}>{t('inlineFields.review')}</Button>
             <Button size="sm" variant="ghost" onClick={() => setFeedbackOpen(false)}>{t('inlineFields.hide')}</Button>
           </div>
         </CellPopover>

@@ -1,3 +1,4 @@
+import { chooseTimeContext, timeContextLabel } from './test/timeContext';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -146,17 +147,17 @@ it('keeps another week/person draft open and protected after the earlier save ac
     [`PUT ${rootPath}/tasks/${TASK_ID}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`]: () => gate.promise,
   });
   await screen.findByRole('table');
-  await ui.user.selectOptions(screen.getByLabelText('Week for hours'), PERIOD_B); await ui.user.selectOptions(screen.getByLabelText('Whose hours to show'), other);
+  await chooseTimeContext(ui.user, 'Week for hours', PERIOD_B); await chooseTimeContext(ui.user, 'Whose hours to show', other);
   let dialog = await open(ui, 'fact'); fireEvent.change(within(dialog).getByLabelText('Actual hours this week'), { target: { value: '4' } }); await close(ui);
-  await ui.user.selectOptions(screen.getByLabelText('Week for hours'), PERIOD_A); await ui.user.selectOptions(screen.getByLabelText('Whose hours to show'), MEMBER_ID);
+  await chooseTimeContext(ui.user, 'Week for hours', PERIOD_A); await chooseTimeContext(ui.user, 'Whose hours to show', MEMBER_ID);
   dialog = await open(ui, 'fact'); fireEvent.change(within(dialog).getByLabelText('Actual hours this week'), { target: { value: '2' } });
   await ui.user.click(within(dialog).getByRole('button', { name: 'Save actual hours' })); await waitFor(() => expect(ui.calls.some(call => call.method === 'PUT')).toBe(true)); await close(ui);
-  await ui.user.selectOptions(screen.getByLabelText('Week for hours'), PERIOD_B); await ui.user.selectOptions(screen.getByLabelText('Whose hours to show'), other);
+  await chooseTimeContext(ui.user, 'Week for hours', PERIOD_B); await chooseTimeContext(ui.user, 'Whose hours to show', other);
   dialog = await open(ui, 'fact'); expect(within(dialog).getByLabelText('Actual hours this week')).toHaveValue('4'); expect(within(dialog).getByLabelText('Actual hours this week')).toBeDisabled();
   await act(async () => gate.resolve(ok(categorized(120))));
   expect(screen.getByRole('dialog', { name: 'Record weekly actual hours' })).toBe(dialog);
   expect(within(dialog).getByLabelText('Actual hours this week')).toHaveValue('4'); expect(within(dialog).getByLabelText('Actual hours this week')).toBeEnabled();
-  expect(screen.getByLabelText('Week for hours')).toHaveValue(PERIOD_B); expect(screen.getByLabelText('Whose hours to show')).toHaveValue(other);
+  expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_B)); expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', other));
   expect(protectedCommandsFor(ui.client).protecting).toBe(false); expect(protectedDraftsFor(ui.client).protecting).toBe(true);
   fireEvent.change(within(dialog).getByLabelText('Actual hours this week'), { target: { value: '' } }); await close(ui);
   expect(protectedDraftsFor(ui.client).protecting).toBe(false); expect(unload()).toBe(false); expect(ui.calls.filter(call => call.method !== 'GET')).toHaveLength(1);

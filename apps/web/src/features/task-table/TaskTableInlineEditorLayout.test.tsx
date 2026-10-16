@@ -16,7 +16,7 @@ const main = makeSection({ id: 'main', name: 'Launch preparation' });
 const owner = makeMember({ id: 'owner', userId: 'user-owner', displayName: 'Synthetic Owner' });
 const launch = makeTask({ id: 'launch', title: 'Prepare the launch checklist', sectionId: main.id, responsibleMembershipId: owner.id, priority: 'high', estimateMinutes: 180 });
 const columnIds = ['title', 'status', 'responsible', 'dueDate', 'priority', 'estimate'] as const;
-const widths: Record<string, number> = { title: 320, status: 144, responsible: 176, dueDate: 128, priority: 96, estimate: 128 };
+const widths: Record<string, number> = { title: 460, status: 144, responsible: 176, dueDate: 128, priority: 96, estimate: 128 };
 const baseMinWidth = columnIds.reduce((sum, id) => sum + (widths[id] ?? 0), 0);
 const editorFields: readonly TaskInlineField[] = ['title', 'statusId', 'responsibleMembershipId', 'dueDate', 'priority', 'estimate'];
 
@@ -28,7 +28,7 @@ function colWidths(): string[] {
   return [...screen.getByRole('table').querySelectorAll('col')].map(col => col.style.width);
 }
 
-const baseWidths = columnIds.map(id => id === 'title' ? '' : `${widths[id]}px`);
+const baseWidths = columnIds.map(id => id === 'title' ? 'clamp(280px, 42cqw, 460px)' : `${widths[id]}px`);
 
 describe('fixed grid while a cell editor is open', () => {
   it.each(editorFields)('keeps every column width, the table minimum and the single-line row for an open %s editor', field => {
@@ -39,7 +39,7 @@ describe('fixed grid while a cell editor is open', () => {
     expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Task', 'Status', 'Assignee', 'Due date', 'Priority', 'Team estimate']);
     expect(colWidths()).toEqual(baseWidths);
     expect(screen.getByRole('table').querySelectorAll('col[data-inline-editor]')).toHaveLength(0);
-    expect(screen.getByRole('table')).toHaveStyle({ minWidth: `${baseMinWidth}px` });
+    expect(screen.getByRole('table')).toHaveStyle({ minWidth: `calc(clamp(280px, 42cqw, 460px) + ${baseMinWidth - 460}px)` });
     const form = screen.getByRole('form', { name: 'Shared editor' });
     const cell = form.closest('td');
     const row = cell?.closest('tr');
@@ -68,7 +68,7 @@ describe('fixed grid while a cell editor is open', () => {
     }
     renderWith({ taskId: launch.id, field: 'priority' }, columnIds.filter(id => id !== 'priority'));
     expect(document.querySelectorAll('[data-editing]')).toHaveLength(0);
-    expect(screen.getByRole('table')).toHaveStyle({ minWidth: `${baseMinWidth - (widths.priority ?? 0)}px` });
+    expect(screen.getByRole('table')).toHaveStyle({ minWidth: `calc(clamp(280px, 42cqw, 460px) + ${baseMinWidth - 460 - (widths.priority ?? 0)}px)` });
   });
 });
 

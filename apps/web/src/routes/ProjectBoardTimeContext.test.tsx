@@ -1,3 +1,4 @@
+import { timeContextLabel } from '../features/work-categories/test/timeContext';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -36,8 +37,8 @@ describe('Board density with retained time context', () => {
     const { calls } = installFakeApi(tableRoutes());
     const { user } = renderProject(`${tablePath}?week=${PERIOD_A}&worker=${person}&meetingPeriod=${PERIOD_A}&meetingMember=${MEMBER_ID}&meetingAttendance=saved-attendance&other=kept#anchor`);
     await screen.findByRole('table');
-    await waitFor(() => expect(screen.getByLabelText('Week for hours')).toHaveValue(PERIOD_A));
-    expect(screen.getByLabelText('Whose hours to show')).toHaveValue(person);
+    await waitFor(() => expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)));
+    expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', person));
     const weekHref = views().getByRole('link', { name: 'Week' }).getAttribute('href');
     await showBoard(user);
     expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument();
@@ -49,8 +50,8 @@ describe('Board density with retained time context', () => {
     for (const part of [`week=${PERIOD_A}`, `worker=${person}`, `meetingPeriod=${PERIOD_A}`, `meetingMember=${MEMBER_ID}`, 'meetingAttendance=saved-attendance', 'other=kept', '#anchor', 'view=board']) expect(location).toHaveTextContent(part);
     await user.click(views().getByRole('button', { name: 'Tasks' }));
     await screen.findByRole('table');
-    expect(screen.getByLabelText('Week for hours')).toHaveValue(PERIOD_A);
-    expect(screen.getByLabelText('Whose hours to show')).toHaveValue(person);
+    expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A));
+    expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', person));
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 

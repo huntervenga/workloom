@@ -5,7 +5,7 @@ import type { MeetingSelection, MeetingTab } from '../meetings/useMeetingWorkspa
 import { fetchTask } from '../tasks/api';
 import { RecordedWorkLabel } from '../../shared/RecordedWorkLabel';
 import type { CategorizedManualWorkLogDto, RecordedWorkLogDto, MembershipDto, PackageTimeRowDto, PlanningPeriodDto, ProjectDto, TaskDto, WorkspaceDto } from '@workloom/contracts';
-import { Button, inputClassName } from '@workloom/ui';
+import { Button } from '@workloom/ui';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
@@ -13,6 +13,7 @@ import { useCurrentSearchParams } from '../../lib/useCurrentSearchParams';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';
 import { DialogShell } from '../../shared/DialogShell';
+import { ChoicePicker } from '../../shared/ChoicePicker';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { CommitmentDialog, FactDialog, commitmentSession, factSession, fetchPlanningPeriod, fetchPeriodCommitments,  sortPlanningPeriods, usePlanningCommands, usePlanningPackagesQuery, usePlanningPeriodQuery, usePlanningPeriodsQuery, type FactSession } from '../planning';
 import { useTaskFieldsQuery } from '../fields';
@@ -198,10 +199,10 @@ export function useTaskTimeTable(props: Props) {
     {openingError ? <QueryErrorState error={openingError} subject="taskTime" headingLevel={3} retrying={opening} onRetry={() => setOpeningError(null)} /> : null}
     {heldNotices.map((notice) => <div key={notice.key} role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><span className="min-w-0 flex-1">{t('work-categories.theOriginalWeekAndPersonArePreserved2', { label: notice.label, saveState: notice.pending ? t('work-categories.waitingForServerResponse') : t('work-categories.resultStillUnknown') })}</span><Button size="sm" onClick={notice.resume}>{t('work-categories.openOriginalHoursSave')}</Button></div>)}
   </>;
-  const controls = <section aria-label={t('work-categories.weeklyHoursInTable')} className="space-y-2 rounded-lg border border-line bg-surface px-3 py-2.5">
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <div className="flex min-w-0 flex-1 basis-44 items-center gap-2"><label htmlFor="task-time-week" className="shrink-0 text-xs font-medium">{t('work-categories.weekLabel')}</label><select aria-label={t('work-categories.weekForHours')} id="task-time-week" className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={periodId} onChange={(event) => lens({ periodId: event.target.value })}><option value="">{t('work-categories.chooseAWeekExplicitly')}</option>{sortPlanningPeriods(periods.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.localStart}</option>)}</select></div>
-      <div className="flex min-w-0 flex-1 basis-40 items-center gap-2"><label htmlFor="task-time-worker" className="shrink-0 text-xs font-medium">{t('work-categories.personLabel')}</label><select aria-label={t('work-categories.whoseHoursToShow')} id="task-time-worker" className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={workerId} onChange={(event) => lens({ workerId: event.target.value })}>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}{member.id === ownMembershipId ? t('work-categories.me') : ''}</option>)}</select></div>
+  const controls = <section aria-label={t('work-categories.weeklyHoursInTable')} className="min-w-0 space-y-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex min-w-0 flex-1 basis-52 items-center gap-2 sm:max-w-80"><label htmlFor="task-time-week" className="shrink-0 text-xs font-medium">{t('work-categories.weekLabel')}</label><ChoicePicker compact label={t('work-categories.weekForHours')} id="task-time-week" className="h-8 flex-1 text-xs shadow-none" value={periodId} onValueChange={value => lens({ periodId: value })} options={[{ value: '', label: t('work-categories.chooseAWeekExplicitly') }, ...sortPlanningPeriods(periods.data ?? []).map(item => ({ value: item.id, label: `${item.name} · ${item.localStart}` }))]} /></div>
+      <div className="flex min-w-0 flex-1 basis-44 items-center gap-2 sm:max-w-64"><label htmlFor="task-time-worker" className="shrink-0 text-xs font-medium">{t('work-categories.personLabel')}</label><ChoicePicker compact searchable label={t('work-categories.whoseHoursToShow')} id="task-time-worker" className="h-8 flex-1 text-xs shadow-none" value={workerId} onValueChange={value => lens({ workerId: value })} options={props.members.map(member => ({ value: member.id, label: `${member.displayName}${member.id === ownMembershipId ? t('work-categories.me') : ''}`, avatarName: member.displayName }))} /></div>
       <details className="text-xs text-muted"><summary className="cursor-pointer rounded font-medium text-accent-ink">{t('work-categories.hoursHelp')}</summary><p className="max-w-xl pt-2">{t('work-categories.choosingAPersonChangesTheDisplayedHoursNotThe')}</p></details>
     </div>
     {periodId && !canWriteSubject ? <p className="text-xs text-muted">{t('work-categories.youCanViewThesePersonalHours')}</p> : null}

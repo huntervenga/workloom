@@ -1,4 +1,4 @@
-import type { TagDto, TaskDto, TaskWorkScope } from '@workloom/contracts';
+import type { CreateTaskInput, TagDto, TaskDto, TaskWorkScope } from '@workloom/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';
@@ -10,7 +10,7 @@ import {
   useRestoreTaskMutation,
   useUpdateTaskMutation,
 } from './queries';
-import type { TaskDraft } from './taskDraft';
+import { changedKeys, emptyDraft, type TaskDraft } from './taskDraft';
 import type { TaskInlineField } from './tableEditing';
 
 /** Where a new task goes: a section (or none) and, for a subtask, its parent as listed. */
@@ -50,6 +50,54 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
   const sessions = useMemo(() => ({ actorId, workspaceId, ...createRetainedTaskSessions() }), [actorId, workspaceId]);
   const { createSession, editSessions } = sessions;
   const drafts = protectedDraftsFor(useQueryClient());
+  // Unsent text and explicit submissions outlive a collapsed/remounted add row. Each queued
+  // session/input is immutable; only the front entry may reach the existing command writer.
+  const quick = useMemo(() => ({
+    actorId, workspaceId,
+    draft: null as CreateSession | null,
+    queue: [] as { session: CreateSession; input: CreateTaskInput; onCreated: (task: TaskDto) => void }[],
+    sending: false,
+    paused: false,
+    publish: () => {},
+  }), [actorId, workspaceId]);
+  const [quickVersion, updateQuick] = useState(0);
+  const quickProtected = useCallback(() => quick.queue.length > 0 || (quick.draft !== null && changedKeys(emptyDraft(quick.draft.draft.statusId, quick.draft.request.sectionId), quick.draft.draft).length > 0), [quick]);
+  const notifyQuick = () => { quick.publish(); updateQuick(value => value + 1); };
+  const setQuickDraft = (session: CreateSession) => {
+    quick.draft = session;
+    if (quick.queue.length === 0) createSession.current = changedKeys(emptyDraft(session.draft.statusId, session.request.sectionId), session.draft).length > 0 ? session : null;
+    notifyQuick();
+  };
+  const enqueueQuickCreate = (session: CreateSession, input: CreateTaskInput, next: CreateSession, onCreated: (task: TaskDto) => void) => {
+    quick.queue.push({ session, input, onCreated });
+    quick.draft = next;
+    createSession.current = quick.queue[0]?.session ?? null;
+    notifyQuick();
+  };
+  const retryQuickCreate = () => { quick.paused = false; notifyQuick(); };
+  const releaseQuickDraft = () => { quick.draft = null; notifyQuick(); };
+  const discardRejectedQuickCreate = () => {
+    if (!quick.paused || quick.sending || create.pendingCommand || create.uncertain) return;
+    const rejected = quick.queue.shift();
+    if (rejected && createSession.current === rejected.session) {
+      const draft = quick.draft;
+      createSession.current = quick.queue[0]?.session ?? (draft && changedKeys(emptyDraft(draft.draft.statusId, draft.request.sectionId), draft.draft).length > 0 ? draft : null);
+    }
+    quick.paused = false;
+    create.reset();
+    notifyQuick();
+  };
+  useEffect(() => {
+    const entry = drafts.register();
+    quick.publish = () => entry.set(quickProtected());
+    quick.publish();
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!quickProtected()) return;
+      event.preventDefault(); event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => { quick.publish = () => {}; entry.dispose(); window.removeEventListener('beforeunload', warn); };
+  }, [drafts, quick, quickProtected]);
   useEffect(() => {
     const entry = drafts.register();
     const sync = () => entry.set(sessions.getSnapshot());
@@ -79,9 +127,28 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
   }, [createSession, editSessions]);
 
 
+  useEffect(() => {
+    const front = quick.queue[0];
+    if (!front || quick.sending || quick.paused || create.pendingCommand || update.pendingCommand || update.uncertain || archive.pendingCommand || archive.uncertain || restore.pendingCommand || restore.uncertain) return;
+    quick.sending = true;
+    // An uncertain front is retried only after the explicit Retry action unpauses it. The
+    // unchanged input lets the existing tracker reuse the original body and idempotency key.
+    void create.mutateAsync({ input: front.input }).then(task => {
+      if (confirmSession(front.session, task)) front.onCreated(task);
+      if (quick.queue[0] === front) quick.queue.shift();
+      const draft = quick.draft;
+      if (createSession.current === null || createSession.current === front.session) createSession.current = quick.queue[0]?.session ?? (draft && changedKeys(emptyDraft(draft.draft.statusId, draft.request.sectionId), draft.draft).length > 0 ? draft : null);
+    }).catch(() => { quick.paused = true; }).finally(() => {
+      quick.sending = false;
+      quick.publish();
+      updateQuick(value => value + 1);
+    });
+  }, [quick, quickVersion, create, update.pendingCommand, update.uncertain, archive.pendingCommand, archive.uncertain, restore.pendingCommand, restore.uncertain, confirmSession, createSession]);
+
+
   const addCreatedTag = useCallback((tag: TagDto) => setCreatedTags((previous) => [...previous, tag]), []);
 
-  return { create, update, archive, restore, createTag, createdTags, addCreatedTag, createSession, editSessions, confirmedSessions, confirmSession };
+  return { create, update, archive, restore, createTag, createdTags, addCreatedTag, createSession, editSessions, confirmedSessions, confirmSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, discardRejectedQuickCreate };
 }
 
 export type TaskCommands = ReturnType<typeof useTaskCommands>;

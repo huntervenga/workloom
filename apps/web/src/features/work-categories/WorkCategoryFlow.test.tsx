@@ -1,3 +1,4 @@
+import { chooseTimeContext, timeContextLabel } from './test/timeContext';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { alphaMembers, created, installFakeApi, ok, renderApp } from '../../test/fakeApi';
@@ -11,7 +12,7 @@ async function close(user: ReturnType<typeof renderApp>['user'], name: string) {
 }
 
 async function selectWeek(user: ReturnType<typeof renderApp>['user']) {
-  await user.selectOptions(await screen.findByLabelText("Week for hours"), PERIOD_A);
+  await chooseTimeContext(user, 'Week for hours', PERIOD_A);
   await screen.findByRole('button', { name: `Weekly actual hours: ${task.title}` });
 }
 
@@ -32,28 +33,28 @@ describe('quick fact and category report boundaries', () => {
     expect(within(dialog).queryByLabelText("Whose hours")).not.toBeInTheDocument();
     await user.type(within(dialog).getByLabelText("Actual hours this week"), '5');
     await close(user, "Record weekly actual hours");
-    await user.selectOptions(screen.getByLabelText("Week for hours"), PERIOD_B);
-    await user.selectOptions(screen.getByLabelText("Whose hours to show"), otherMember);
+    await chooseTimeContext(user, 'Week for hours', PERIOD_B);
+    await chooseTimeContext(user, 'Whose hours to show', otherMember);
     await user.click(await screen.findByRole('button', { name: `Weekly actual hours: ${task.title}` }));
     dialog = await screen.findByRole('dialog', { name: "Record weekly actual hours" });
     await user.type(within(dialog).getByLabelText("Actual hours this week"), '2');
     await close(user, "Record weekly actual hours");
-    await user.selectOptions(screen.getByLabelText("Week for hours"), PERIOD_A);
-    await user.selectOptions(screen.getByLabelText("Whose hours to show"), MEMBER_ID);
+    await chooseTimeContext(user, 'Week for hours', PERIOD_A);
+    await chooseTimeContext(user, 'Whose hours to show', MEMBER_ID);
     await user.click(await screen.findByRole('button', { name: `Weekly actual hours: ${task.title}` }));
     dialog = await screen.findByRole('dialog', { name: "Record weekly actual hours" });
     expect(within(dialog).getByLabelText("Actual hours this week")).toHaveValue('5');
     await user.click(within(dialog).getByRole('button', { name: "Save actual hours" }));
     await waitFor(() => expect(attempts).toBe(1));
     await close(user, "Record weekly actual hours");
-    await user.selectOptions(screen.getByLabelText("Week for hours"), PERIOD_B);
-    await user.selectOptions(screen.getByLabelText("Whose hours to show"), otherMember);
+    await chooseTimeContext(user, 'Week for hours', PERIOD_B);
+    await chooseTimeContext(user, 'Whose hours to show', otherMember);
     await act(async () => gate.lose());
     await user.click(await screen.findByRole('button', { name: "Open original hours save" }));
     dialog = await screen.findByRole('dialog', { name: "Record weekly actual hours" });
     expect(within(dialog).getByLabelText("Actual hours this week")).toHaveValue('5:00');
-    expect(screen.getByLabelText("Week for hours")).toHaveValue(PERIOD_A);
-    expect(screen.getByLabelText("Whose hours to show")).toHaveValue(MEMBER_ID);
+    expect(screen.getByLabelText("Week for hours")).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A));
+    expect(screen.getByLabelText("Whose hours to show")).toHaveTextContent(timeContextLabel('Whose hours to show', MEMBER_ID));
     await user.click(within(dialog).getByRole('button', { name: "Retry original save" }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     const writes = calls.filter((call) => call.method === 'PUT');
@@ -62,8 +63,8 @@ describe('quick fact and category report boundaries', () => {
     expect(writes[1]?.path).toBe(writes[0]?.path);
     expect(writes[1]?.body).toEqual(writes[0]?.body);
     expect(writes[1]?.headers.get('Idempotency-Key')).toBe(writes[0]?.headers.get('Idempotency-Key'));
-    await user.selectOptions(screen.getByLabelText("Week for hours"), PERIOD_B);
-    await user.selectOptions(screen.getByLabelText("Whose hours to show"), otherMember);
+    await chooseTimeContext(user, 'Week for hours', PERIOD_B);
+    await chooseTimeContext(user, 'Whose hours to show', otherMember);
     await user.click(await screen.findByRole('button', { name: `Weekly actual hours: ${task.title}` }));
     dialog = await screen.findByRole('dialog', { name: "Record weekly actual hours" });
     expect(within(dialog).getByLabelText("Actual hours this week")).toHaveValue('2');

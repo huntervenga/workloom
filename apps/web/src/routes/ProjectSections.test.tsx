@@ -1,3 +1,4 @@
+import { chooseTimeContext, timeContextLabel } from '../features/work-categories/test/timeContext';
 import type { SectionDto, TaskDto, TaskFieldValueDto } from '@workloom/contracts';
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -7,7 +8,7 @@ import { AppRoutes } from '../app/AppRoutes';
 import { SessionProvider } from '../app/session';
 import { createQueryClient } from '../lib/queryClient';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { alpha, anna, created, deferred, installFakeApi, json, ok, project, renderApp, type RouteTable } from '../test/fakeApi';
+import { alpha, anna, created, deferred, failure, installFakeApi, json, ok, project, renderApp, type RouteTable } from '../test/fakeApi';
 import { queryKeys } from '../lib/queryKeys';
 import { commitment, lostResponse } from '../features/planning/test/fixtures';
 import { field } from '../features/fields/test/fixtures';
@@ -92,19 +93,29 @@ describe('page-owned section collapse', () => {
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it('keeps a dirty cross-section child editor recoverable after its displayed root group collapses', async () => {
-    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
+  it('commits a dirty cross-section title before collapse and retains its held command through the drawer', async () => {
+    const gate = deferred<Response>();
+    let current = child;
+    const { calls } = installFakeApi(routes({
+      [`GET ${rootPath}/tasks`]: () => page([parent, current, other, loose]),
+      [`GET ${rootPath}/tasks/${child.id}`]: () => ok(current),
+      [`PATCH ${rootPath}/tasks/${child.id}`]: () => gate.promise,
+    }));
+    const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: child.title }));
-    fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Unsent child rename' } });
+    fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Autosaved child rename' } });
     await user.click(collapse());
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]?.body).toEqual({ expectedRevision: child.revision, title: 'Autosaved child rename' });
     expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
-    expect(unloadPrevented()).toBe(true); await screen.findByRole('button', { name: 'Resume original editor' });
-    await user.click(expand());
-    expect(screen.getByLabelText('Task name')).toHaveValue('Unsent child rename');
-    expect(collapse()).toHaveFocus();
-    await user.click(collapse()); await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
-    expect(within(await screen.findByRole('dialog')).getByLabelText('Task name')).toHaveValue('Unsent child rename');
-    expect(writes(calls)).toHaveLength(0);
+    expect(unloadPrevented()).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
+    const drawer = within(await screen.findByRole('dialog'));
+    expect(drawer.getByLabelText('Task name')).toHaveValue('Autosaved child rename');
+    expect(drawer.getByLabelText('Task name')).toBeDisabled();
+    await act(async () => gate.resolve(ok(current = { ...child, title: 'Autosaved child rename', revision: child.revision + 1 })));
+    await waitFor(() => expect(unloadPrevented()).toBe(false));
+    expect(writes(calls)).toHaveLength(1);
   });
 
   it('retains an unknown inline command through section collapse and retries the original revision/key', async () => {
@@ -139,18 +150,56 @@ describe('page-owned section collapse', () => {
     await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
     await user.type(screen.getByLabelText('Task name'), 'Original first-section draft');
     await user.click(quickForm().getByRole('button', { name: 'Add task' })); await waitFor(() => expect(attempts).toBe(1));
+    await user.type(screen.getByLabelText('Task name'), 'Next unsent title');
     await user.click(collapse()); await user.click(collapse('Second section'));
     await act(async () => first.lose()); await screen.findByRole('button', { name: 'Resume original editor' });
     await user.click(screen.getByRole('button', { name: 'Add task to “Second section”' }));
     expect(collapse()).toHaveAttribute('aria-expanded', 'true'); expect(expand('Second section')).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByLabelText('Task name')).toHaveValue('Original first-section draft'); expect(screen.getByLabelText('Task name')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Task name')).toHaveValue('Next unsent title'); expect(screen.getByLabelText('Task name')).not.toHaveAttribute('readonly');
+    expect(screen.getByText('Submitted task: Original first-section draft')).toBeInTheDocument();
     await user.click(collapse()); await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
     expect(collapse()).toHaveAttribute('aria-expanded', 'true');
     await user.click(screen.getByRole('button', { name: 'Retry original' }));
-    await waitFor(() => expect(screen.getByLabelText('Task name')).toHaveValue(''));
+    await waitFor(() => expect(writes(calls)).toHaveLength(2));
+    await waitFor(() => expect(screen.getByLabelText('Task name')).toHaveValue('Next unsent title'));
     const sent = writes(calls); expect(sent).toHaveLength(2); expect(sent[0]?.body).toMatchObject({ sectionId: SECTION_A, title: 'Original first-section draft' });
     expect(sent[1]?.body).toEqual(sent[0]?.body); expect(sent[0]?.headers.get('Idempotency-Key')).toBeTruthy();
     expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));
+  });
+
+  it('reopens rejected quick-queue recovery after collapse so the rejected original can be discarded explicitly', async () => {
+    let attempts = 0;
+    const { calls } = installFakeApi(routes({ [`POST ${rootPath}/tasks`]: request => ++attempts === 1 ? failure(409, 'REVISION_CONFLICT', 'private') : created({ ...parent, ...(request.body as object) }) }));
+    const { user } = renderApp(tablePath);
+    await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
+    await user.type(screen.getByLabelText('Task name'), 'Rejected task{Enter}Replacement draft');
+    await screen.findByRole('button', { name: 'Discard rejected task' });
+    await user.click(screen.getByRole('button', { name: 'Collapse editor' }));
+    await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Task name')).toHaveValue('Replacement draft');
+    await user.click(screen.getByRole('button', { name: 'Discard rejected task' }));
+    await user.click(screen.getByLabelText('Task name')); await user.keyboard('{Enter}');
+    await waitFor(() => expect(writes(calls)).toHaveLength(2));
+    expect(writes(calls)[1]?.body).toEqual({ projectId: PROJECT_ID, sectionId: SECTION_A, title: 'Replacement draft', statusId: parent.statusId });
+  });
+
+  it.each(['untouched', 'confirmed'] as const)('uses the newly opened section after an earlier %s blank quick row', async previous => {
+    const { calls } = installFakeApi(routes({ [`POST ${rootPath}/tasks`]: request => created({ ...parent, ...(request.body as object) }) }));
+    const { user } = renderApp(tablePath);
+    await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
+    if (previous === 'confirmed') {
+      await user.type(screen.getByLabelText('Task name'), 'First completed create{Enter}');
+      await waitFor(() => expect(writes(calls)).toHaveLength(1));
+      await waitFor(() => expect(unloadPrevented()).toBe(false));
+    }
+    await user.click(screen.getByRole('button', { name: 'Collapse editor' }));
+    await user.click(screen.getByRole('button', { name: 'Add task to “Second section”' }));
+    const row = within(screen.getByRole('form', { name: 'Add a task to Second section' }));
+    expect(row.getByRole('textbox', { name: 'Task name' })).toHaveValue('');
+    await user.type(row.getByRole('textbox', { name: 'Task name' }), 'Task for second section{Enter}');
+    await waitFor(() => expect(writes(calls)).toHaveLength(previous === 'confirmed' ? 2 : 1));
+    expect(writes(calls).at(-1)?.body).toEqual({ projectId: PROJECT_ID, sectionId: SECTION_B, title: 'Task for second section', statusId: parent.statusId });
   });
 
   it.each(['inline', 'quick'] as const)('does not reopen or steal focus after a hidden pending %s acknowledgement', async kind => {
@@ -223,7 +272,7 @@ it.each(['plan', 'fact'] as const)('preserves an ordinary %s hours draft and its
   const savePath = kind === 'plan' ? `POST ${rootPath}/periods/${PERIOD_A}/commitments` : `PUT ${rootPath}/tasks/${parent.id}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`;
   const { calls } = installFakeApi(routes({ [savePath]: () => ++attempts === 1 ? first.promise : kind === 'plan' ? created(commitment(150)) : ok(categorized(150)) }));
   const { user } = renderApp(tablePath);
-  await user.selectOptions(await screen.findByLabelText('Week for hours'), PERIOD_A);
+  await chooseTimeContext(user, 'Week for hours', PERIOD_A);
   const action = kind === 'plan' ? `Weekly plan: ${parent.title}` : `Weekly actual hours: ${parent.title}`;
   const title = kind === 'plan' ? 'Add to weekly plan' : 'Record weekly actual hours';
   const input = kind === 'plan' ? 'Planned hours' : 'Actual hours this week';
@@ -238,7 +287,7 @@ it.each(['plan', 'fact'] as const)('preserves an ordinary %s hours draft and its
   await waitFor(() => expect(attempts).toBe(1)); await closeDialog(user, title); await user.click(collapse());
   await act(async () => first.lose()); await user.click(await screen.findByRole('button', { name: 'Open original hours save' }));
   dialog = await screen.findByRole('dialog', { name: title }); expect(within(dialog).getByLabelText(input)).toHaveValue('2:30');
-  expect(screen.getByLabelText('Week for hours')).toHaveValue(PERIOD_A); expect(screen.getByLabelText('Whose hours to show')).toHaveValue(MEMBER_ID);
+  expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)); expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', MEMBER_ID));
   await user.click(within(dialog).getByRole('button', { name: 'Retry original save' }));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: title })).not.toBeInTheDocument());
   const sent = writes(calls); expect(sent).toHaveLength(2); expect(sent[1]?.path).toBe(sent[0]?.path);

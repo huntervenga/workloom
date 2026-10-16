@@ -68,7 +68,10 @@ it('retains deep task badges and package totals through native descendant disclo
   const toggle = screen.getByRole('button', { name: `Collapse subtasks of “${parent}”` });
   const parentRow = toggle.closest('tr');
   if (!parentRow) throw Error('Loaded parent task row required.');
-  expect(within(parentRow).getByText('Loaded: 1 subtask')).toBeVisible();
+  const count = within(parentRow).getByText('Loaded: 1 subtask');
+  expect(count).toHaveClass('sr-only');
+  expect(count.parentElement).toHaveAttribute('title', 'Loaded: 1 subtask');
+  expect(within(count.parentElement as HTMLElement).getByText('1')).toBeVisible();
   toggle.focus();
   await user.keyboard('{Enter}');
   expect(screen.queryByRole('button', { name: titles[8] })).not.toBeInTheDocument();
@@ -113,4 +116,15 @@ it('keeps every task on one fixed-height line: long names truncate with the full
   // Secondary badges share the same line instead of adding a second one.
   expect(within(row).getByText('Draft', { exact: true }).closest('[class*="basis-full"]')).toBeNull();
   expect(row.querySelector('p')).toBeNull();
+});
+
+it('gives idle names the full flexible budget while details and subtask actions overlay without changing the row flow', () => {
+  render(<TaskTable tasks={[makeTask({ id: 'overlay', title: titles[0], sectionId: main.id })]} sections={[main]} members={[]} statuses={statuses} {...handlers()} writable />);
+  const title = screen.getByRole('button', { name: titles[0] });
+  expect(title.className).toContain('flex-1');
+  expect(title.className).toContain('min-w-0');
+  const actions = title.closest('td')?.querySelector('[data-task-row-actions]');
+  expect(actions).toHaveClass('absolute', 'opacity-0', 'group-focus-within:opacity-100', '[@media(hover:none)]:opacity-100');
+  expect(within(actions as HTMLElement).getByRole('button', { name: `Open task “${titles[0]}”` })).toBeInTheDocument();
+  expect(within(actions as HTMLElement).getByRole('button', { name: `Add subtask to “${titles[0]}”` })).toBeInTheDocument();
 });

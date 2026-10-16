@@ -1,3 +1,5 @@
+import type { UserEvent } from '@testing-library/user-event';
+import { timeContextLabel } from '../features/work-categories/test/timeContext';
 import type { ColumnChoice, PersonalTablePreferenceDto } from '@workloom/contracts';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, expect, it } from 'vitest';
@@ -7,6 +9,12 @@ import { scheduleContext } from '../features/schedule/test/fixtures';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { columns, field } from '../features/fields/test/fixtures';
 import { MEMBER_ID, PERIOD_A, PROJECT_ID, categorized, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+
+async function tableChoice(user: UserEvent, control: HTMLElement, value: 'section' | 'assignee' | 'manual' | 'due_asc') {
+  await user.click(control);
+  const name = { section: 'Section', assignee: 'Assignee', manual: 'Manual', due_asc: 'Due date' }[value];
+  await user.click(within(screen.getByRole('listbox', { name: control.getAttribute('aria-label') ?? '' })).getByRole('option', { name }));
+}
 
 beforeAll(async () => { await import('./ProjectPage'); });
 const path = `${rootPath}/projects/${PROJECT_ID}`;
@@ -45,7 +53,7 @@ it('restores retained week/person, search/filter/group/sort and unsaved personal
   await screen.findByRole('button', { name: 'Columns' }); await user.type(screen.getByLabelText('Search tasks'), 'retained search');
   await user.click(screen.getByText('Filters', { selector: 'summary' })); await user.selectOptions(screen.getByLabelText('Task participant'), MEMBER_ID);
   await user.click(screen.getByText('Filters (1)', { selector: 'summary' }));
-  await user.selectOptions(screen.getByLabelText('Group by'), 'assignee'); await user.selectOptions(screen.getByLabelText('Sort'), 'due_asc');
+  await tableChoice(user, screen.getByLabelText('Group by'), 'assignee'); await tableChoice(user, screen.getByLabelText('Sort'), 'due_asc');
   await user.click(screen.getByRole('button', { name: 'Columns' })); await user.click(screen.getByLabelText('Tags')); await user.keyboard('{Escape}');
   const weekHref = views().getByRole('link', { name: 'Week' }).getAttribute('href');
   for (const view of ['graph', 'import', 'gantt', 'board'] as const) {
@@ -54,9 +62,9 @@ it('restores retained week/person, search/filter/group/sort and unsaved personal
     expect(views().getByRole('link', { name: 'Week' })).toHaveAttribute('href', weekHref);
   }
   await show(user, 'table');
-  expect(screen.getByLabelText('Week for hours')).toHaveValue(PERIOD_A); expect(screen.getByLabelText('Whose hours to show')).toHaveValue(person);
+  expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)); expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', person));
   expect(screen.getByLabelText('Search tasks')).toHaveValue('retained search'); expect(screen.getByText('Filters (1)', { selector: 'summary' })).toBeInTheDocument();
-  expect(screen.getByLabelText('Group by')).toHaveValue('assignee'); expect(screen.getByLabelText('Sort')).toHaveValue('due_asc');
+  expect(screen.getByLabelText('Group by')).toHaveTextContent('Assignee'); expect(screen.getByLabelText('Sort')).toHaveTextContent('Due date');
   await user.click(screen.getByRole('button', { name: 'Columns · unsaved' })); expect(screen.getByLabelText('Tags')).not.toBeChecked();
   expect(writes(calls)).toHaveLength(0);
 });

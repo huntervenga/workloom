@@ -12,11 +12,18 @@
 // - A custom single-select cell is one direct combobox named "Edit {field} for {title}" (inlineFields.edit).
 // - Journeys: leaving a dirty title for an adjacent cell saves it once and opens that cell's picker after the
 //   acknowledgement; while a quick create is unacknowledged the add row stays blank, focused and typeable.
+// - A same-task cell click after a confirmed acknowledgement but before the refreshed list head never opens
+//   against the pre-confirmation row; it opens on the refreshed head and saves against the confirmed revision.
+// - Normal editing, pending and closing never move the table's document origin (scroll offsets excluded).
+// - A real pointer click on non-focusable page content dismisses a status/priority picker without a write and
+//   without returning focus to the old cell.
+// - Unconfirmed custom-value feedback lives in the top layer but never paints above task details or its value
+//   dialog; it returns unchanged after only the dialogs close, and its retry resends the original body and key.
 // All labels come from the current English catalogs.
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route, type TestInfo } from '@playwright/test';
 import {
-  personalTablePreferenceResponseSchema, taskFieldDefinitionResponseSchema, taskFieldValueResponseSchema,
+  personalTablePreferenceResponseSchema, taskFieldDefinitionResponseSchema, taskFieldValueListResponseSchema, taskFieldValueResponseSchema,
   taskListResponseSchema, taskResponseSchema, type ColumnChoice, type TaskDto, type TaskTableBuiltinColumn,
 } from '@workloom/contracts';
 import { apiCall, dailyFixture, gate, taskResult } from './support/daily-fixture.js';
@@ -52,11 +59,17 @@ async function projectTasks(f: Daily) {
   return taskListResponseSchema.parse(await r.json()).data;
 }
 
-/** Read-only: rendered table, header and every body-row size. Portaled popovers are not row content. */
+/**
+ * Read-only: rendered table, header and every body-row size, plus the table's document origin. The origin
+ * adds the window and table-scrollport scroll offsets, so a legitimate focus scroll is not a shift, while
+ * content inserted above the table (a page-level notice) is. Portaled popovers are not row content.
+ */
 function grid(page: Page) {
   return taskTable(page).evaluate(node => {
     const table = node as HTMLTableElement, px = (n: number) => Math.round(n * 10) / 10;
+    const scroller = table.closest<HTMLElement>('[data-task-table-scroll]');
     return {
+      top: px(table.getBoundingClientRect().top + scrollY + (scroller?.scrollTop ?? 0)),
       table: px(table.getBoundingClientRect().width),
       head: [...(table.tHead?.rows[0]?.cells ?? [])].map(cell => ({ name: cell.textContent?.trim() ?? '', width: px(cell.getBoundingClientRect().width) })),
       rows: [...table.tBodies].flatMap(body => [...body.rows]).map(row => ({ text: (row.cells[0]?.textContent ?? '').trim().slice(0, 48), height: px(row.getBoundingClientRect().height) })),
@@ -66,15 +79,17 @@ function grid(page: Page) {
 }
 type Grid = Awaited<ReturnType<typeof grid>>;
 const near = (a: number, b: number) => Math.abs(a - b) <= 0.5;
-function frameDrift(before: Grid, after: Grid, out: string[]) {
+/** `origin: false` is only for a state that intentionally shows a page-level notice; normal editing, pending and closing keep it. */
+function frameDrift(before: Grid, after: Grid, out: string[], { origin = true } = {}) {
+  if (origin && !near(before.top, after.top)) out.push(`table document top ${before.top} → ${after.top}`);
   if (!near(before.table, after.table)) out.push(`table width ${before.table} → ${after.table}`);
   if (before.head.length !== after.head.length) out.push(`header count ${before.head.length} → ${after.head.length}`);
   before.head.forEach((cell, i) => { const next = after.head[i]; if (next && !near(cell.width, next.width)) out.push(`header ${cell.name} ${cell.width} → ${next.width}`); });
   if (after.pageOverflow > 0) out.push(`page horizontal overflow ${after.pageOverflow}`);
 }
-function drift(before: Grid, after: Grid): string[] {
+function drift(before: Grid, after: Grid, options?: { origin?: boolean }): string[] {
   const out: string[] = [];
-  frameDrift(before, after, out);
+  frameDrift(before, after, out, options);
   if (before.rows.length !== after.rows.length) out.push(`row count ${before.rows.length} → ${after.rows.length}`);
   before.rows.forEach((row, i) => { const next = after.rows[i]; if (next && !near(row.height, next.height)) out.push(`row ${i} "${row.text}" ${row.height} → ${next.height}`); });
   return out;
@@ -144,6 +159,19 @@ function recordWrites(page: Page) {
 /** One rendered frame after a key, so a request a handler would start has been issued. Not a timer. */
 const settleFrame = (page: Page) => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
 const shot = (page: Page, info: TestInfo, name: string) => page.screenshot({ path: info.outputPath(`${name}.png`) });
+/** Read-only: where focus is now; `inTable` covers both the old cell button and its in-cell editor. */
+function focusOwner(page: Page) {
+  return page.evaluate(() => {
+    const active = document.activeElement;
+    return { tag: active?.tagName ?? null, body: active === null || active === document.body, inTable: active !== null && active.closest('table') !== null, label: active?.getAttribute('aria-label') ?? null };
+  });
+}
+/** Read-only: open top-layer popovers outside every dialog; these would paint above a modal dialog. */
+function popoversOutsideDialogs(page: Page) {
+  return page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[popover]')]
+    .filter(el => el.matches(':popover-open') && el.closest('[role="dialog"],[role="alertdialog"]') === null)
+    .map(el => ({ cellPopover: el.hasAttribute('data-cell-popover'), text: (el.textContent ?? '').trim().slice(0, 80) })));
+}
 
 for (const [name, viewport] of viewports) test.describe(`Asana table interactions ${name}`, () => {
   test.use({ viewport });
@@ -273,7 +301,7 @@ for (const [name, viewport] of viewports) test.describe(`Asana table interaction
       await rename.click(); await expect(titleBox).toBeFocused();
       await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.type(next);
       const typing = await grid(page); measured.push({ stage: 'typing', grid: typing }); expect.soft(drift(base, typing), 'title typing').toEqual([]);
-      await page.keyboard.press('Enter'); await committed.wait;
+      await page.keyboard.press('ControlOrMeta+Enter'); await committed.wait;
       expect((await f.task(work.id)).title).toBe(next); await expect(titleBox).toHaveValue(next);
       const pending = await grid(page); measured.push({ stage: 'pending', grid: pending }); expect.soft(drift(base, pending), 'title pending').toEqual([]); await shot(page, info, `title-pending-${name}`);
       held.release(); const retry = inlineForm(page).getByRole('button', { name: 'Retry', exact: true }); await expect(retry).toBeVisible(); await expect(titleBox).toHaveValue(next);
@@ -423,4 +451,311 @@ for (const [name, viewport] of viewports) test.describe(`Asana table interaction
       expect(await f.task(work.id)).toEqual(work); expect(await f.task(neighbour.id)).toEqual(neighbour);
     } finally { await evidenceJson(info, `asana-custom-enum-${name}.json`, { viewport, projectId: f.project.id, fieldId: field.id, measured, writes, errors }); }
   });
+
+  test('outside pointer: a real click on the non-focusable project heading dismisses the status and priority pickers without a write and without returning focus to the old cell', async ({ page, request, baseURL }, info) => {
+    test.setTimeout(60_000);
+    const f = await dailyFixture(request, baseURL, 'Asana outside dismiss'); await useColumns(f);
+    const work = await f.createTask(`${f.token} outside`, { priority: 'medium', dueDate: '2027-06-01', estimateMinutes: 90 }); const neighbour = await f.createTask(`${f.token} outside neighbour`);
+    const { writes, errors } = recordWrites(page); const measured: Record<string, unknown>[] = [];
+    try {
+      await page.goto(f.path); const heading = page.getByRole('heading', { level: 1, name: f.project.name, exact: true });
+      await expect(heading).toBeVisible(); await expect(page.getByRole('button', { name: `Edit status for ${work.title}`, exact: true })).toBeVisible();
+      const base = await grid(page); measured.push({ stage: 'base', grid: base, headingTabIndex: await heading.evaluate(el => el.tabIndex) });
+      for (const [field, label] of [['status', 'Edit status for'], ['priority', 'Edit priority for']] as const) {
+        const trigger = page.getByRole('button', { name: `${label} ${work.title}`, exact: true }); await trigger.click();
+        // A highlighted but unchosen option must not be committed by leaving.
+        await expectUsablePicker(page); await page.keyboard.press('ArrowDown');
+        const opened = await grid(page); measured.push({ stage: `${field} open`, grid: opened }); expect.soft(drift(base, opened), `${field} open`).toEqual([]);
+        // An ordinary pointer click with Playwright actionability checks: nothing may cover the heading.
+        await heading.click();
+        await expect(picker(page)).toHaveCount(0); await expect(inlineForm(page)).toHaveCount(0); await expect(trigger).toBeVisible();
+        // Let any deferred focus return run before asserting that none happened.
+        await settleFrame(page); await settleFrame(page);
+        const owner = await focusOwner(page), closed = await grid(page); measured.push({ stage: `${field} dismissed by heading click`, focus: owner, grid: closed });
+        expect(await trigger.evaluate(el => el === document.activeElement)).toBe(false); expect(owner.inTable).toBe(false);
+        expect.soft(drift(base, closed), `${field} dismissed`).toEqual([]); await shot(page, info, `outside-dismiss-${field}-${name}`);
+        expect(writes).toEqual([]); expect(await f.task(work.id)).toEqual(work);
+      }
+      await expect(page.getByRole('dialog')).toHaveCount(0); expect(new URL(page.url()).searchParams.get('task')).toBeNull();
+      expect(writes).toEqual([]); expect(errors).toEqual([]); expect(await f.task(neighbour.id)).toEqual(neighbour);
+    } finally { await evidenceJson(info, `asana-outside-dismiss-${name}.json`, { viewport, projectId: f.project.id, taskIds: [work.id, neighbour.id], measured, writes, errors }); }
+  });
+
+  test('custom field unconfirmed: a lost committed value acknowledgement keeps cell recovery hidden under task details, never above the dialog, then the exact original retry stores one revision', async ({ page, request, baseURL }, info) => {
+    test.setTimeout(90_000);
+    const f = await dailyFixture(request, baseURL, 'Asana custom unconfirmed');
+    const field = (await f.post('/fields', { projectId: f.project.id, name: 'QA stage', type: 'single_select', options: [{ name: 'Design', color: '#6366f1' }, { name: 'Review', color: '#0d9488' }, { name: 'Ship', color: '#f59e0b' }] }, taskFieldDefinitionResponseSchema)).data;
+    const review = field.options.find(option => option.name === 'Review'); if (!review) throw Error('Stored Review option required.');
+    await useColumns(f, field.id); const work = await f.createTask(`${f.token} unconfirmed stage`); const neighbour = await f.createTask(`${f.token} unconfirmed neighbour`);
+    const valuePath = `${f.prefix}/tasks/${work.id}/field-values/${field.id}`, attempts: { key: string | undefined; body: string | null }[] = [], served: number[] = [];
+    const { writes, errors } = recordWrites(page); const measured: Record<string, unknown>[] = [];
+    const storedValues = async () => {
+      const r = await f.request.get(`${f.prefix}/tasks/${work.id}/field-values`); expect(r.status(), await r.text()).toBe(200);
+      return taskFieldValueListResponseSchema.parse(await r.json()).data;
+    };
+    await page.route(`**${valuePath}`, async route => {
+      if (route.request().method() !== 'PUT') return route.continue();
+      attempts.push({ key: route.request().headers()['idempotency-key'], body: route.request().postData() });
+      // The real server answers every attempt; only the first answer is lost on its way back.
+      const actual = await route.fetch(); served.push(actual.status());
+      if (attempts.length === 1) { await route.abort('failed'); return; }
+      await route.fulfill({ response: actual });
+    });
+    const retryOriginal = page.getByRole('button', { name: 'Retry original', exact: true });
+    const openSubmission = page.getByRole('button', { name: 'Open submission', exact: true });
+    try {
+      await page.goto(f.path); await expect(taskTable(page).getByRole('columnheader', { name: field.name, exact: true })).toBeVisible(); const base = await grid(page); measured.push({ stage: 'base', grid: base });
+      const trigger = page.getByRole('combobox', { name: CUSTOM_EDIT_LABEL(field.name, work.title), exact: true });
+      await trigger.click(); await expectUsablePicker(page); const opened = await grid(page); measured.push({ stage: 'open', grid: opened }); expect.soft(drift(base, opened), 'custom open').toEqual([]);
+      await arrowTo(page, picker(page).getByRole('option', { name: 'Review', exact: true })); expect(writes).toEqual([]);
+      await page.keyboard.press('Enter');
+      await expect(retryOriginal).toBeVisible(); expect(attempts).toHaveLength(1); expect(served).toEqual([200]);
+      // Committed on the server although the browser never saw the answer.
+      expect(await storedValues()).toEqual([expect.objectContaining({ fieldId: field.id, revision: 1, value: { type: 'single_select', value: review.id } })]);
+      await expect(trigger).toContainText('Review'); await expect(trigger).toBeDisabled(); await expect(openSubmission).toBeVisible();
+      const cellRetry = await placement(retryOriginal); expect(cellRetry).toMatchObject({ inViewport: true, hit: true });
+      // The details route of this same feedback popover, next to its Retry original.
+      const reviewInDetails = page.locator('[data-cell-popover]').filter({ has: retryOriginal }).getByRole('button', { name: 'Review in details', exact: true });
+      await expect(reviewInDetails).toBeVisible(); const cellReview = await placement(reviewInDetails); expect(cellReview).toMatchObject({ inViewport: true, hit: true });
+      // The unconfirmed state intentionally adds the page-level "Open submission" notice; only this stage skips the origin oracle.
+      const failed = await grid(page); measured.push({ stage: 'unconfirmed', grid: failed, retry: cellRetry, review: cellReview }); expect.soft(drift(base, failed, { origin: false }), 'custom unconfirmed').toEqual([]);
+      await shot(page, info, `custom-unconfirmed-cell-${name}`);
+
+      await reviewInDetails.click(); expect(attempts).toHaveLength(1);
+      const drawer = page.getByRole('dialog', { name: work.title, exact: true }); await expect(drawer).toBeVisible();
+      await expect(drawer.getByText(`The value of “${field.name}” is unconfirmed. Other field values wait until its result is known.`, { exact: true })).toBeVisible();
+      await expect(retryOriginal).toBeHidden(); expect(await popoversOutsideDialogs(page)).toEqual([]);
+      const drawerClose = drawer.getByRole('button', { name: 'Close', exact: true }).first(), openValue = drawer.getByRole('button', { name: `Open “${field.name}”`, exact: true });
+      const closeHit = await placement(drawerClose); await openValue.scrollIntoViewIfNeeded(); const openHit = await placement(openValue);
+      measured.push({ stage: 'task details over unconfirmed cell', close: closeHit, openValue: openHit, popovers: await popoversOutsideDialogs(page) });
+      expect(closeHit).toMatchObject({ inViewport: true, hit: true }); expect(openHit).toMatchObject({ inViewport: true, hit: true }); await shot(page, info, `custom-unconfirmed-details-${name}`);
+
+      await openValue.click();
+      const valueDialog = page.getByRole('dialog', { name: `Value of “${field.name}”`, exact: true }); const retained = valueDialog.getByRole('combobox', { name: field.name, exact: true });
+      await expect(retained).toContainText('Review'); await expect(retained).toBeDisabled();
+      await expect(valueDialog.getByText('Showing the submitted value. It stays fixed until the server responds.', { exact: true })).toBeVisible();
+      await expect(retryOriginal).toBeHidden(); expect(await popoversOutsideDialogs(page)).toEqual([]);
+      const resend = valueDialog.getByRole('button', { name: 'Retry submission', exact: true }), valueClose = valueDialog.getByRole('group', { name: 'Value actions', exact: true }).getByRole('button', { name: 'Close', exact: true });
+      const valueHits: Record<string, unknown> = {};
+      for (const [label, button] of [['retry submission', resend], ['close', valueClose]] as const) {
+        await button.scrollIntoViewIfNeeded(); const hit = await placement(button); valueHits[label] = hit; expect(hit, label).toMatchObject({ inViewport: true, hit: true });
+      }
+      measured.push({ stage: 'value dialog over unconfirmed cell', buttons: valueHits }); await shot(page, info, `custom-unconfirmed-value-${name}`);
+
+      // Close only the dialogs: nothing is resent, and the original cell recovery comes back unchanged.
+      await valueClose.click(); await expect(valueDialog).toHaveCount(0); await expect(drawer).toBeVisible();
+      await expect(retryOriginal).toBeHidden(); expect(await popoversOutsideDialogs(page)).toEqual([]);
+      await drawerClose.click(); await expect(drawer).toHaveCount(0); await settleFrame(page); expect(attempts).toHaveLength(1);
+      await expect(retryOriginal).toBeVisible(); await expect(openSubmission).toBeVisible(); await expect(trigger).toContainText('Review');
+      const restored = await placement(retryOriginal); measured.push({ stage: 'dialogs closed, cell recovery restored', retry: restored }); expect(restored).toMatchObject({ inViewport: true, hit: true });
+
+      const resent = page.waitForResponse(r => apiCall(r, 'PUT', valuePath)); await retryOriginal.click(); const response = await resent;
+      expect(response.status(), await response.text()).toBe(200); const value = taskFieldValueResponseSchema.parse(await response.json()).data;
+      await expect(retryOriginal).toHaveCount(0); await expect(openSubmission).toHaveCount(0); await expect(trigger).toBeEnabled(); await expect(trigger).toContainText('Review');
+      await settleFrame(page); expect(attempts).toHaveLength(2); expect(attempts[1]).toEqual(attempts[0]); expect(attempts[0]?.key).toBeTruthy(); expect(served).toEqual([200, 200]);
+      expect(JSON.parse(attempts[0]?.body ?? '{}')).toEqual({ expectedRevision: 0, expectedDefinitionRevision: field.revision, value: { type: 'single_select', value: review.id } });
+      expect(value).toMatchObject({ taskId: work.id, fieldId: field.id, revision: 1, value: { type: 'single_select', value: review.id } });
+      expect(await storedValues()).toEqual([value]);
+      const after = await grid(page); measured.push({ stage: 'retried and confirmed', grid: after }); expect.soft(drift(base, after), 'custom confirmed').toEqual([]);
+      expect(writes).toEqual([{ method: 'PUT', path: valuePath }, { method: 'PUT', path: valuePath }]); expect(errors).toEqual([]);
+      expect(await f.task(work.id)).toEqual(work); expect(await f.task(neighbour.id)).toEqual(neighbour);
+    } finally { await evidenceJson(info, `asana-custom-unconfirmed-${name}.json`, { viewport, projectId: f.project.id, fieldId: field.id, attempts, served, measured, writes, errors }); if (!page.isClosed()) await page.unroute(`**${valuePath}`); }
+  });
+
+  test('picker search accepts a native Search click then uninterrupted typing without stealing focus or writing', async ({ page, request, baseURL }, info) => {
+    const f = await dailyFixture(request, baseURL, 'Asana search focus'); await useColumns(f);
+    const work = await f.createTask(`${f.token} search focus`); const { writes, errors } = recordWrites(page);
+    await page.goto(f.path); const base = await grid(page);
+    const trigger = page.getByRole('button', { name: `Edit assignee for ${work.title}`, exact: true });
+    await trigger.click(); await expectUsablePicker(page);
+    const search = page.getByRole('combobox', { name: 'Search: Assignee', exact: true });
+    expect(await placement(search)).toMatchObject({ inViewport: true, hit: true, inTable: false });
+    await search.click(); await expect(search).toBeFocused();
+    const query = f.other.displayName;
+    await page.keyboard.type(query.slice(0, 2)); await expect(search).toHaveValue(query.slice(0, 2)); await expect(search).toBeFocused();
+    await settleFrame(page); await page.keyboard.type(query.slice(2));
+    await expect(search).toHaveValue(query); await expect(search).toBeFocused();
+    await expect(picker(page).getByRole('option', { name: query, exact: true })).toBeVisible();
+    await expect(picker(page).getByRole('option', { name: f.own.displayName, exact: true })).toHaveCount(0);
+    expect(drift(base, await grid(page))).toEqual([]); expect(writes).toEqual([]); expect(await f.task(work.id)).toEqual(work);
+    await shot(page, info, `picker-search-native-focus-${name}`);
+    await page.keyboard.press('Escape'); await expect(picker(page)).toHaveCount(0); await expect(trigger).toBeFocused();
+    await settleFrame(page); expect(writes).toEqual([]); expect(errors).toEqual([]);
+    await evidenceJson(info, `asana-search-native-focus-${name}.json`, { viewport, projectId: f.project.id, taskId: work.id, query, writes, errors });
+  });
+
+  test('drawer assignee picker stays inside its modal, searches and closes alone on Escape, then explicit form Save persists only that assignee', async ({ page, request, baseURL }, info) => {
+    const f = await dailyFixture(request, baseURL, 'Asana modal picker'); await useColumns(f);
+    const work = await f.createTask(`${f.token} modal picker`, { description: 'Keep this exact description', priority: 'high', dueDate: '2027-06-01', estimateMinutes: 90 });
+    const neighbour = await f.createTask(`${f.token} modal neighbour`);
+    const path = `${f.prefix}/tasks/${work.id}`; const { writes, errors } = recordWrites(page);
+    const attempts: { key: string | undefined; body: unknown }[] = [];
+    await page.route(`**${path}`, async route => {
+      if (route.request().method() === 'PATCH') attempts.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() });
+      await route.continue();
+    });
+    try {
+      await page.goto(f.path);
+      const title = page.getByRole('button', { name: work.title, exact: true }); await title.hover();
+      await page.getByRole('button', { name: `Open task “${work.title}”`, exact: true }).click();
+      const drawer = page.getByRole('dialog', { name: work.title, exact: true });
+      await expect(drawer.getByLabel('Task name', { exact: true })).toHaveValue(work.title);
+      const assignee = drawer.getByRole('combobox', { name: 'Assignee', exact: true }); await assignee.click();
+      await expect(picker(page)).toBeVisible();
+      expect(await picker(page).evaluate(el => el.closest('[role="dialog"]')?.getAttribute('aria-labelledby') !== null && el.closest('[role="dialog"]') !== null)).toBe(true);
+      const firstGeometry = await pickerGeometry(picker(page)); expect(firstGeometry.inViewport).toBe(true);
+      expect(firstGeometry.options.filter(option => option.shown).every(option => option.hit)).toBe(true);
+      const search = drawer.getByRole('combobox', { name: 'Search: Assignee', exact: true });
+      expect(await placement(search)).toMatchObject({ inViewport: true, hit: true, inTable: false });
+      await search.click(); await page.keyboard.type(f.other.displayName); await expect(search).toHaveValue(f.other.displayName); await expect(search).toBeFocused();
+      await expect(picker(page).getByRole('option', { name: f.other.displayName, exact: true })).toBeVisible();
+      await page.keyboard.press('Escape'); await expect(picker(page)).toHaveCount(0); await expect(drawer).toBeVisible(); await expect(assignee).toBeFocused();
+      await settleFrame(page); expect(writes).toEqual([]); expect(await f.task(work.id)).toEqual(work);
+      await assignee.click(); await drawer.getByRole('combobox', { name: 'Search: Assignee', exact: true }).click(); await page.keyboard.type(f.other.displayName);
+      const target = picker(page).getByRole('option', { name: f.other.displayName, exact: true });
+      expect(await placement(target)).toMatchObject({ inViewport: true, hit: true, inTable: false }); await target.click();
+      await expect(picker(page)).toHaveCount(0); await expect(assignee).toContainText(f.other.displayName); await settleFrame(page);
+      expect(writes).toEqual([]); expect(await f.task(work.id)).toEqual(work);
+      await shot(page, info, `drawer-assignee-draft-${name}`);
+      const saved = page.waitForResponse(response => apiCall(response, 'PATCH', path));
+      await drawer.getByRole('button', { name: 'Save', exact: true }).click(); const after = await taskResult(await saved, 200);
+      expect(attempts).toHaveLength(1); expect(attempts[0]?.key).toBeTruthy();
+      expect(attempts[0]?.body).toEqual({ expectedRevision: work.revision, responsibleMembershipId: f.other.id });
+      expect(kept(after)).toEqual({ ...kept(work), responsibleMembershipId: f.other.id });
+      expect(after.participants).toEqual(work.participants); expect(after.participantsRevision).toBe(work.participantsRevision); expect(after.workPackageRevision).toBe(work.workPackageRevision);
+      expect(kept(await f.task(work.id))).toEqual(kept(after)); expect(after.revision).toBe(work.revision + 1); expect(await f.task(neighbour.id)).toEqual(neighbour);
+      expect(writes).toEqual([{ method: 'PATCH', path }]); expect(errors).toEqual([]);
+    } finally {
+      await evidenceJson(info, `asana-modal-assignee-${name}.json`, { viewport, projectId: f.project.id, taskId: work.id, attempts, writes, errors });
+      if (!page.isClosed()) await page.unroute(`**${path}`);
+    }
+  });
+
+
+  test('journey: plain title Enter opens the next blank immediately and queues its explicit create behind the held title acknowledgement without wiping newer input or stealing focus', async ({ page, request, baseURL }, info) => {
+    test.setTimeout(60_000);
+    const f = await dailyFixture(request, baseURL, 'Asana rename to create'); await useColumns(f);
+    const work = await f.createTask(`${f.token} original title`, { description: 'Keep existing description', estimateMinutes: 60 });
+    const path = `${f.prefix}/tasks/${work.id}`, createPath = `${f.prefix}/tasks`;
+    const patches: { key: string | undefined; body: unknown }[] = [], posts: { key: string | undefined; body: Record<string, unknown> }[] = [];
+    const committed = gate(), ack = gate(); const { writes, errors } = recordWrites(page); const measured: Record<string, unknown>[] = [];
+    await page.route(`**${path}`, async route => {
+      if (route.request().method() !== 'PATCH') return route.continue();
+      patches.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() });
+      const actual = await route.fetch(); expect(actual.status()).toBe(200); committed.release(); await ack.wait;
+      await route.fulfill({ response: actual });
+    });
+    await page.route(`**${createPath}`, async route => {
+      if (route.request().method() === 'POST') posts.push({ key: route.request().headers()['idempotency-key'], body: route.request().postDataJSON() as Record<string, unknown> });
+      await route.continue();
+    });
+    const renamed = `${f.token} renamed existing`, nextTitle = `${f.token} queued new task`, newerBuffer = `${f.token} unsent newer buffer`;
+    const row = () => taskTable(page).locator(`[data-task-row="${work.id}"]`);
+    try {
+      await page.goto(f.path); const base = await grid(page); const rowHeight = (await row().boundingBox())?.height;
+      expect(rowHeight).toBeGreaterThan(0);
+      await page.getByRole('button', { name: work.title, exact: true }).click();
+      const titleBox = inlineForm(page).getByRole('textbox', { name: 'Task name', exact: true }); await expect(titleBox).toBeFocused();
+      await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.type(renamed);
+      const titleSaved = page.waitForResponse(response => apiCall(response, 'PATCH', path)); await page.keyboard.press('Enter');
+      const quickTitle = quickForm(page).getByRole('textbox', { name: 'Task name', exact: true });
+      await expect(quickTitle).toBeVisible(); await expect(quickTitle).toBeFocused(); await expect(quickTitle).toHaveValue(''); await expect(quickTitle).toBeEditable();
+      await committed.wait; expect(patches).toHaveLength(1); expect(posts).toEqual([]);
+      expect(kept(await f.task(work.id))).toEqual({ ...kept(work), title: renamed });
+      // The original task is committed on the server, while the browser still has no UPDATE ACK.
+      await page.keyboard.type(nextTitle); await expect(quickTitle).toHaveValue(nextTitle); await page.keyboard.press('Enter');
+      await expect(quickTitle).toHaveValue(''); await expect(quickTitle).toBeFocused(); await expect(quickTitle).toBeEditable();
+      await page.keyboard.type(newerBuffer); await expect(quickTitle).toHaveValue(newerBuffer);
+      await settleFrame(page); expect(posts).toEqual([]); expect(patches).toHaveLength(1);
+      expect(writes).toEqual([{ method: 'PATCH', path }]);
+      const pending = await grid(page); measured.push({ stage: 'update ACK held, next create queued, newer buffer typed', grid: pending });
+      const pendingDrift: string[] = []; frameDrift(base, pending, pendingDrift); expect(pendingDrift).toEqual([]); expect((await row().boundingBox())?.height).toBe(rowHeight);
+      await shot(page, info, `rename-next-queued-${name}`);
+      const search = page.getByLabel('Search tasks', { exact: true }); await search.click(); await expect(search).toBeFocused();
+      const createSaved = page.waitForResponse(response => apiCall(response, 'POST', createPath)); ack.release();
+      const afterRename = await taskResult(await titleSaved, 200), created = await taskResult(await createSaved, 201);
+      await expect(page.getByRole('button', { name: renamed, exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: nextTitle, exact: true })).toBeVisible();
+      await expect(quickTitle).toHaveValue(newerBuffer); await expect(search).toBeFocused();
+      await settleFrame(page); expect(patches).toHaveLength(1); expect(posts).toHaveLength(1);
+      expect(patches[0]?.body).toEqual({ expectedRevision: work.revision, title: renamed });
+      expect(posts[0]?.body).toMatchObject({ projectId: f.project.id, sectionId: f.section.id, title: nextTitle });
+      expect(patches[0]?.key).toBeTruthy(); expect(posts[0]?.key).toBeTruthy(); expect(posts[0]?.key).not.toBe(patches[0]?.key);
+      expect(kept(afterRename)).toEqual({ ...kept(work), title: renamed }); expect(afterRename.revision).toBe(work.revision + 1);
+      expect(created).toMatchObject({ title: nextTitle, projectId: f.project.id, sectionId: f.section.id, parentTaskId: null });
+      const stored = await projectTasks(f); expect(stored.map(task => task.title).sort()).toEqual([renamed, nextTitle].sort());
+      expect(stored.every(task => task.sectionId === f.section.id)).toBe(true); expect(await f.task(work.id)).toEqual(afterRename); expect(await f.task(created.id)).toEqual(created);
+      const after = await grid(page); measured.push({ stage: 'rename and queued create confirmed, newer buffer kept', grid: after });
+      const finalDrift: string[] = []; frameDrift(base, after, finalDrift); expect(finalDrift).toEqual([]); expect((await row().boundingBox())?.height).toBe(rowHeight);
+      expect(writes).toEqual([{ method: 'PATCH', path }, { method: 'POST', path: createPath }]); expect(errors).toEqual([]);
+      await shot(page, info, `rename-next-confirmed-${name}`);
+    } finally {
+      ack.release(); await evidenceJson(info, `asana-rename-next-create-${name}.json`, { viewport, projectId: f.project.id, work, renamed, nextTitle, newerBuffer, patches, posts, measured, writes, errors });
+      if (!page.isClosed()) { await page.unroute(`**${path}`); await page.unroute(`**${createPath}`); }
+    }
+  });
+
+  test('journey: a same-task status click after the confirmed title acknowledgement but before the refreshed list head waits for that head, then saves the explicit status once against the confirmed revision', async ({ page, request, baseURL }, info) => {
+    test.setTimeout(60_000);
+    const f = await dailyFixture(request, baseURL, 'Asana stale head'); await useColumns(f);
+    const work = await f.createTask(`${f.token} stale head`, { description: 'Keep this exact description', priority: 'high', dueDate: '2027-06-01', estimateMinutes: 90 });
+    const neighbour = await f.createTask(`${f.token} stale head neighbour`);
+    const path = `${f.prefix}/tasks/${work.id}`, listPath = `${f.prefix}/tasks`;
+    const patches: { key: string | undefined; body: unknown }[] = [], heldLists: string[] = [];
+    const listHeld = gate(), listGate = gate(); let armed = false;
+    const { writes, errors } = recordWrites(page); const measured: Record<string, unknown>[] = [];
+    page.on('request', q => { if (q.method() === 'PATCH' && new URL(q.url()).pathname === path) patches.push({ key: q.headers()['idempotency-key'], body: q.postDataJSON() }); });
+    // Only this project's task-list reads, and only after the initial load: the real answer is fetched, then its delivery waits.
+    const isProjectList = (url: URL) => url.pathname === listPath && url.searchParams.get('projectId') === f.project.id;
+    const holdList = async (route: Route) => {
+      if (!armed || route.request().method() !== 'GET') return route.continue();
+      const actual = await route.fetch(); expect(actual.status()).toBe(200);
+      heldLists.push(route.request().url()); listHeld.release(); await listGate.wait;
+      await route.fulfill({ response: actual });
+    };
+    await page.route(isProjectList, holdList);
+    const renamed = `${f.token} stale head renamed`, row = () => taskTable(page).locator(`[data-task-row="${work.id}"]`);
+    try {
+      await page.goto(f.path); const status = row().getByRole('button', { name: /^Edit status for / });
+      await expect(status).toBeVisible(); const base = await grid(page); measured.push({ stage: 'base', grid: base });
+      await page.getByRole('button', { name: work.title, exact: true }).click();
+      const titleBox = inlineForm(page).getByRole('textbox', { name: 'Task name', exact: true }); await expect(titleBox).toBeFocused();
+      await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.type(renamed);
+      armed = true;
+      const titleSaved = page.waitForResponse(r => apiCall(r, 'PATCH', path)); await page.keyboard.press('ControlOrMeta+Enter');
+      const confirmed = await taskResult(await titleSaved, 200);
+      expect(confirmed.revision).toBe(work.revision + 1); expect(kept(confirmed)).toEqual({ ...kept(work), title: renamed });
+      // The acknowledgement has been delivered and its list refresh has started; that refresh is now held.
+      await listHeld.wait; expect(patches).toHaveLength(1); expect(await f.task(work.id)).toEqual(confirmed);
+      await expect(inlineForm(page)).toHaveCount(0);
+      const shownBefore = await row().evaluate(el => (el.textContent ?? '').trim().slice(0, 160));
+      // The ordinary click on the same task's status cell while the loaded row still predates the confirmation.
+      await status.click(); await settleFrame(page); await settleFrame(page);
+      const waiting = await grid(page); measured.push({ stage: 'status clicked while refreshed list held', grid: waiting, shownBefore, heldLists: heldLists.length, inlineForms: await inlineForm(page).count() });
+      expect(await picker(page).count(), 'no status picker from the pre-confirmation row').toBe(0); expect(patches).toHaveLength(1);
+      expect.soft(drift(base, waiting), 'status click while list held').toEqual([]); await shot(page, info, `stale-head-held-${name}`);
+
+      listGate.release();
+      await expect(page.getByRole('form', { name: `Edit ${renamed} in the task table`, exact: true })).toBeVisible();
+      const usable = await expectUsablePicker(page); await expect(row().getByRole('button', { name: renamed, exact: true })).toHaveText(renamed);
+      measured.push({ stage: 'status picker after refreshed head', grid: await grid(page), picker: usable }); expect(patches).toHaveLength(1);
+      await arrowTo(page, picker(page).getByRole('option', { name: f.progress.name, exact: true })); expect(patches).toHaveLength(1);
+      const statusSaved = page.waitForResponse(r => apiCall(r, 'PATCH', path)); await page.keyboard.press('Enter'); const afterStatus = await taskResult(await statusSaved, 200);
+      expect(patches[1]?.body).toEqual({ expectedRevision: confirmed.revision, statusId: f.progress.id });
+      expect(patches[0]?.body).toEqual({ expectedRevision: work.revision, title: renamed });
+      expect(patches.every(p => Boolean(p.key))).toBe(true); expect(new Set(patches.map(p => p.key)).size).toBe(2);
+      await expect(picker(page)).toHaveCount(0); await expect(page.getByRole('button', { name: renamed, exact: true })).toHaveText(renamed);
+      await expect(page.getByRole('button', { name: `Edit status for ${renamed}`, exact: true })).toContainText(f.progress.name);
+      await settleFrame(page); expect(patches).toHaveLength(2);
+      const after = await grid(page); measured.push({ stage: 'title and status confirmed', grid: after }); expect.soft(drift(base, after), 'title and status confirmed').toEqual([]);
+      const final = await f.task(work.id); expect(final).toEqual(afterStatus);
+      expect(kept(final)).toEqual({ ...kept(work), title: renamed, statusId: f.progress.id }); expect(final.revision).toBe(work.revision + 2);
+      expect(await f.task(neighbour.id)).toEqual(neighbour);
+      expect(writes).toEqual([{ method: 'PATCH', path }, { method: 'PATCH', path }]); expect(errors).toEqual([]);
+    } finally {
+      listGate.release(); await evidenceJson(info, `asana-stale-head-${name}.json`, { viewport, projectId: f.project.id, work, renamed, patches, heldLists, measured, writes, errors });
+      if (!page.isClosed()) await page.unroute(isProjectList, holdList);
+    }
+  });
+
 });

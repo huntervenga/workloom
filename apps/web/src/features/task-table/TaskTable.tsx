@@ -87,8 +87,8 @@ export interface TaskTableProps {
   className?: string | undefined;
 }
 
-/** Width of the built-in columns at the minimum table width: title 360px plus 800px. */
-const BASE_MIN_WIDTH = 1160;
+/** The scroller container gives desktop names room while leaving medium/mobile browsing usable. */
+const titleWidth = 'clamp(280px, 42cqw, 460px)';
 const noCustomColumns: readonly TaskTableCustomColumn[] = [];
 
 /**
@@ -123,7 +123,7 @@ const iconButtonClassName =
 
 /** Row actions stay in the accessibility tree; pointer users see them on hover or focus. */
 const rowActionClassName =
-  'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100';
+  'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100';
 
 /**
  * Every body cell has one fixed single-line height. Content truncates instead of wrapping, so
@@ -135,8 +135,8 @@ const cellClassName = 'h-10 max-h-10 overflow-hidden whitespace-nowrap px-1.5 py
 const gridLineClassName = 'shadow-[inset_-1px_0_0_var(--color-line)]';
 
 /** Read-mode cell control: the whole cell is the click target, with one consistent hover/focus. */
-const cellButtonClassName =
-  'flex h-8 w-full min-w-0 items-center rounded px-1.5 outline-none hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent';
+const cellButtonClassName = cn(
+  'flex h-8 w-full min-w-0 items-center px-1.5 outline-none hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', 'rounded');
 
 /**
  * From `lg` the estimate column sticks to the right edge, so the header, every task estimate and
@@ -445,7 +445,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   const chip = (tone: 'muted' | 'warning', label: ReactNode, title?: string) => <span title={title} className={cn('inline-flex min-w-0 max-w-40 shrink-0 items-center rounded-full px-1.5 py-px text-[11px] font-medium ring-1 ring-inset', tone === 'warning' ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-canvas text-muted ring-line')}><span className="truncate">{label}</span></span>;
   const meta = <>
     {context ? <span className="min-w-0 shrink truncate text-xs text-muted" title={context}>{context}</span> : null}
-    {childCount > 0 ? <span className="shrink-0 text-xs text-muted tabular-nums" title={childCountText}>{childCountText}</span> : null}
+    {childCount > 0 ? <span className="shrink-0 text-xs text-muted tabular-nums" title={childCountText}><span aria-hidden="true">{childCount}</span><span className="sr-only">{childCountText}</span></span> : null}
     {node.detachedReason === 'parent_not_loaded' ? chip('muted', <>{t('taskTable.taskTable.subtask3')}<span className="sr-only">{t('taskTable.taskTable.parentTaskNotLoaded')}</span></>, t('taskTable.taskTable.parentTaskIsOutsideTheLoadedSet')) : null}
     {node.detachedReason === 'cycle' ? chip('warning', t('taskTable.taskTable.hierarchyCycle'), t('taskTable.taskTable.parentRelationshipsFormACycleRefreshData')) : null}
     {showSection ? chip('muted', t('taskTable.taskTable.sectionName', { name: sectionLabel(task.sectionId, ctx.sectionById) })) : null}
@@ -454,15 +454,15 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     {task.archivedAt !== null ? chip('muted', t('taskTable.taskTable.archived2')) : null}
   </>;
   const describedBy = node.depth > 0 ? hierarchyDescriptionId : undefined;
-  const titleClassName = cn('min-w-16 shrink truncate rounded px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', finished ? 'text-muted' : 'text-ink');
+  const titleClassName = cn('min-w-0 flex-1 truncate px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', 'rounded', finished ? 'text-muted' : 'text-ink');
   const builtinCells: Record<string, ReactNode> = {
     title: (      <td
         data-editing={isEditing('title') ? '' : undefined}
         className={cn('h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]')}
         style={{ paddingLeft: 12 }}>
-        <div className="flex h-10 min-w-0 items-center gap-1">
+        <div className="relative flex h-10 min-w-0 items-center gap-1">
           {ctx.onSelectTask ? <span className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center border-r border-line pr-2"><input type="checkbox" aria-label={t('taskTable.taskTable.selectForGraphValue', { p0: task.title })} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /></span> : null}
-          <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
+          <div className={cn("flex min-w-0 flex-1 items-center gap-1 [@media(hover:none)]:pr-16", editingTitle && 'pr-16')} style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
             {childCount > 0 ? (
               <button
                 type="button"
@@ -476,20 +476,19 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
             ) : <span aria-hidden="true" className="size-6 shrink-0" />}
             {ctx.renderCompletionAction?.(task)}
             {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
-            {editingTitle ? <><div className="min-w-32 flex-1">{titleEditor}</div>{meta}</> : editable ? <>
+            {editingTitle ? <><div className="min-w-0 flex-1">{titleEditor}</div><span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span></> : editable ? <>
               {/* Clicking the visible name renames in place (Asana-style); details have their own action. */}
               <button type="button" data-task-cell={`${task.id}:title`} title={task.title} aria-describedby={describedBy}
                 onClick={() => ctx.onEditTaskField?.(task, 'title')} className={cn(titleClassName, 'cursor-text hover:bg-slate-100')}>{task.title}</button>
-              {meta}
-              <span aria-hidden="true" className="h-8 min-w-2 flex-1 cursor-text" onClick={() => ctx.onEditTaskField?.(task, 'title')} />
+              <span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span>
             </> : <>
               <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title} aria-describedby={describedBy}
                 className={cn(titleClassName, 'hover:text-accent-ink hover:underline')}>{task.title}</button>
-              {meta}
-              <span aria-hidden="true" className="min-w-0 flex-1" />
+              <span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span>
             </>}
+            <span data-task-row-actions="" className={cn('absolute right-0 top-1 flex h-8 items-center gap-0.5 rounded bg-surface pl-1 shadow-[-6px_0_6px_var(--color-surface)]', rowActionClassName)}>
             <button type="button" aria-label={t('taskTable.taskTable.openTask', { title: task.title })} title={t('taskTable.taskTable.openDetails')}
-              onClick={() => ctx.onOpenTask(task.id)} className={cn(iconButtonClassName, 'size-7 text-muted', rowActionClassName)}>
+              onClick={() => ctx.onOpenTask(task.id)} className={cn(iconButtonClassName, 'size-7 text-muted')}>
               <PanelRightOpen size={15} aria-hidden="true" />
             </button>
             {node.depth > 0 ? <span id={hierarchyDescriptionId} className="sr-only">
@@ -498,10 +497,11 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
             </span> : null}
             {ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null ? (
               <button type="button" aria-label={t('taskTable.taskTable.addSubtaskToValue', { p0: task.title })}
-                onClick={() => ctx.onCreateChild?.(task)} className={cn(iconButtonClassName, 'size-7 text-subtle hover:text-muted', rowActionClassName)}>
+                onClick={() => ctx.onCreateChild?.(task)} className={cn(iconButtonClassName, 'size-7 text-subtle hover:text-muted')}>
                 <Plus size={16} aria-hidden="true" />
               </button>
             ) : null}
+            </span>
           </div>
         </div>
       </td>),
@@ -697,7 +697,7 @@ export function TaskTable({
   const { t, locale } = useTranslation();
   const expandedColumns = columnPreset === 'expanded';
   const builtinColumns = [
-    { id: 'title', label: t('taskTable.taskTable.task2'), width: 320 },
+    { id: 'title', label: t('taskTable.taskTable.task2'), width: 460 },
     { id: 'status', label: t('taskTable.taskTable.status'), width: 144 },
     { id: 'responsible', label: t('taskTable.taskTable.assignee'), width: 176 },
     { id: 'participants', label: t('taskTable.taskTable.participants'), width: 96 },
@@ -715,7 +715,8 @@ export function TaskTable({
   const groups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale, sortMode), [tasks, sections, members, grouping, locale, sortMode]);
   const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
   // Widths never depend on an open editor: the grid stays still while any cell is edited.
-  const minWidth = columnIds ? columns.reduce((sum, column) => sum + column.width, 0) : (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0);
+  const otherColumnsWidth = columns.reduce((sum, column) => sum + (column.id === 'title' ? 0 : column.width), 0);
+  const minWidth = `calc(${titleWidth} + ${otherColumnsWidth}px)`;
   const stickyEstimate = visibleIds.at(-1) === 'estimate';
   const columnLine = (id: string): string | undefined => {
     const index = visibleIds.indexOf(id);
@@ -781,7 +782,7 @@ export function TaskTable({
     <div data-task-table-scroll="" className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
-        <colgroup>{columns.map(column => <col key={column.id} style={column.id === 'title' ? undefined : { width: column.width }} />)}</colgroup>
+        <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? titleWidth : column.width }} />)}</colgroup>
         <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && onSelectTask ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 border-r border-line pr-1 text-center text-[10px] text-subtle">{t('tasks.completion.graph')}</span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {

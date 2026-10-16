@@ -1,3 +1,4 @@
+import { chooseTimeContext, timeContextLabel } from './test/timeContext';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { created, installFakeApi, ok, renderApp } from '../../test/fakeApi';
@@ -25,9 +26,9 @@ describe('quick weekly table entry', () => {
     }, [`POST ${rootPath}/periods/${PERIOD_A}/commitments`]: () => ++attempts === 1 ? gate.promise : created(commitment(180)) });
     const { user } = renderApp(tablePath);
     await screen.findByRole('button', { name: task.title });
-    expect(screen.getByLabelText("Week for hours")).toHaveValue('');
+    expect(screen.getByLabelText("Week for hours")).toHaveTextContent(timeContextLabel('Week for hours', ''));
     expect(calls.some((call) => call.path.endsWith('task-time-summary'))).toBe(false);
-    await user.selectOptions(screen.getByLabelText("Week for hours"), PERIOD_A);
+    await chooseTimeContext(user, 'Week for hours', PERIOD_A);
     await user.click(await screen.findByRole('button', { name: `Weekly plan: ${otherTask.title}` }));
     let dialog = await screen.findByRole('dialog', { name: "Add to weekly plan" });
     await user.type(within(dialog).getByLabelText("Planned hours"), '2');
@@ -63,4 +64,31 @@ describe('quick weekly table entry', () => {
     expect(writes[1]?.headers.get('Idempotency-Key')).toBe(writes[0]?.headers.get('Idempotency-Key'));
     expect(calls.some((call) => call.path.includes(`/tasks/${TASK_ID}/manual-period-work`))).toBe(false);
   });
+});
+
+it('keeps week choice explicit through opening, choosing and clearing while the person picker remains searchable without writes', async () => {
+  const { calls } = installFakeApi(tableRoutes());
+  const { user } = renderApp(tablePath);
+  const week = await screen.findByRole('combobox', { name: 'Week for hours' });
+  expect(week).toHaveTextContent(timeContextLabel('Week for hours', ''));
+  await user.click(week);
+  await user.keyboard('{Escape}');
+  expect(week).toHaveTextContent(timeContextLabel('Week for hours', ''));
+  expect(calls.some(call => call.path.endsWith('task-time-summary'))).toBe(false);
+  await chooseTimeContext(user, 'Week for hours', PERIOD_A);
+  await screen.findByRole('button', { name: `Weekly plan: ${task.title}` });
+  await chooseTimeContext(user, 'Week for hours', '');
+  expect(week).toHaveTextContent(timeContextLabel('Week for hours', ''));
+  expect(screen.queryByRole('button', { name: `Weekly plan: ${task.title}` })).not.toBeInTheDocument();
+  const person = screen.getByRole('combobox', { name: 'Whose hours to show' });
+  await user.click(person);
+  const search = screen.getByRole('combobox', { name: 'Search: Whose hours to show' });
+  await user.click(search);
+  await user.keyboard('no matching person');
+  expect(search).toHaveFocus();
+  expect(search).toHaveValue('no matching person');
+  expect(within(screen.getByRole('listbox', { name: 'Whose hours to show' })).queryAllByRole('option')).toHaveLength(0);
+  await user.keyboard('{Escape}');
+  expect(person).toHaveFocus();
+  expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
 });

@@ -71,11 +71,11 @@ function assertExactRetry(calls: { body: unknown; headers: Headers }[]) {
   expect(calls[0]?.headers.get('Idempotency-Key')).toBe(calls[1]?.headers.get('Idempotency-Key'));
 }
 
-/** A sent or unknown create keeps its exact title visible, focusable and unchangeable. */
-function expectLockedTitle(input: HTMLElement, value: string) {
+/** The next unsent title is always editable; the sent session is held by the owner. */
+function expectNextTitle(input: HTMLElement, value = '') {
   expect(input).toHaveValue(value);
-  expect(input).toHaveAttribute('readonly');
-  expect(input).toHaveAttribute('aria-disabled', 'true');
+  expect(input).not.toHaveAttribute('readonly');
+  expect(input).not.toHaveAttribute('aria-disabled');
 }
 
 /** An explicitly opened choice cell shows its custom list at once; a choice is the save. */
@@ -84,9 +84,9 @@ async function choose(user: ReturnType<typeof renderFieldUi>['user'], option: st
 }
 
 describe('section quick creation', () => {
-  it('creates a title-only root task on Enter, keeps the focused row read-only while sent, then continues in the same blank row', async () => {
+  it('clears the next input before the ACK and serializes explicitly queued titles without clearing newer text', async () => {
     const response = deferred<Response>();
-    const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: () => response.promise });
+    const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => (request.body as { title: string }).title === 'Quick task' ? response.promise : created({ ...task, id: 'f2000000-0000-4000-8000-000000000102', sectionId: SECTION, title: 'Queued second task' }) });
     const ui = quick();
     const input = screen.getByLabelText('Task name');
     expect(input).toHaveFocus();
@@ -97,17 +97,19 @@ describe('section quick creation', () => {
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toEqual({ projectId: PROJECT_ID, sectionId: SECTION, title: 'Quick task', statusId: task.statusId });
     expect(ui.onCreated).not.toHaveBeenCalled();
-    expectLockedTitle(input, '  Quick task  ');
+    expectNextTitle(input);
     expect(input).toHaveFocus();
-    await ui.user.type(input, 'ignored');
-    expect(input).toHaveValue('  Quick task  ');
-    await act(async () => response.resolve(created({ ...task, sectionId: SECTION, title: 'Quick task' })));
-    await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
-    expect(screen.getByLabelText('Task name')).toHaveValue('');
-    expect(screen.getByLabelText('Task name')).not.toHaveAttribute('readonly');
-    expect(screen.getByLabelText('Task name')).toHaveFocus();
-    expect(ui.commands().createSession.current).toBeNull();
+    await ui.user.type(input, 'Queued second task{Enter}Third unsent title');
     expect(calls).toHaveLength(1);
+    expect(ui.commands().createSession.current?.draft.title).toBe('  Quick task  ');
+    expect(ui.commands().quick.queue.map(entry => entry.session.draft.title)).toEqual(['  Quick task  ', 'Queued second task']);
+    await act(async () => response.resolve(created({ ...task, sectionId: SECTION, title: 'Quick task' })));
+    await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(2));
+    expectNextTitle(screen.getByLabelText('Task name'), 'Third unsent title');
+    expect(screen.getByLabelText('Task name')).toHaveFocus();
+    expect(ui.commands().createSession.current?.draft.title).toBe('Third unsent title');
+    expect(calls.map(call => (call.body as { title: string }).title)).toEqual(['Quick task', 'Queued second task']);
+    expect(calls[1]?.headers.get('Idempotency-Key')).not.toBe(calls[0]?.headers.get('Idempotency-Key'));
   });
 
   it('adds several tasks with Enter only, each once with its own key, while blank Enter creates nothing and keeps focus', async () => {
@@ -163,7 +165,8 @@ describe('section quick creation', () => {
     await ui.user.keyboard('{Escape}');
     expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
-    expectLockedTitle(screen.getByLabelText('Task name'), 'Original quick draft');
+    expectNextTitle(screen.getByLabelText('Task name'));
+    expect(ui.commands().createSession.current?.draft.title).toBe('Original quick draft');
     await ui.user.click(screen.getByRole('button', { name: 'Retry original' }));
     await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
     assertExactRetry(calls);
@@ -206,7 +209,8 @@ describe('section quick creation', () => {
     await waitFor(() => expect(ui.commands().create.pendingCommand).not.toBeNull());
     await ui.user.keyboard('{Escape}');
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
-    expectLockedTitle(screen.getByLabelText('Task name'), 'Pending remount create');
+    expectNextTitle(screen.getByLabelText('Task name'));
+    expect(ui.commands().createSession.current?.draft.title).toBe('Pending remount create');
     await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
     await act(async () => response.resolve(created({ ...task, title: 'Pending remount create' })));
     await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
@@ -215,6 +219,44 @@ describe('section quick creation', () => {
     expect(ui.commands().createSession.current).toBeNull();
     await ui.user.click(screen.getByRole('button', { name: 'Add task' }));
     expect(calls).toHaveLength(1);
+  });
+
+  it('holds queued creates behind an unknown response and preserves queued/current titles across remount and exact retry', async () => {
+    const first = lost(); let attempt = 0;
+    const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => ++attempt === 1 ? first.promise : created({ ...task, title: (request.body as { title: string }).title }) });
+    const ui = quick();
+    await ui.user.type(screen.getByLabelText('Task name'), 'First unknown{Enter}Second queued{Enter}Third unsent');
+    expect(calls).toHaveLength(1);
+    await act(async () => first.lose());
+    await screen.findByRole('button', { name: 'Retry original' });
+    expect(calls).toHaveLength(1);
+    expect(ui.commands().quick.queue.map(entry => entry.input.title)).toEqual(['First unknown', 'Second queued']);
+    await ui.user.keyboard('{Escape}');
+    await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
+    expectNextTitle(screen.getByLabelText('Task name'), 'Third unsent');
+    await ui.user.click(screen.getByRole('button', { name: 'Retry original' }));
+    await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(2));
+    expect(calls).toHaveLength(3);
+    assertExactRetry(calls.slice(0, 2));
+    expect(calls[2]?.body).toEqual({ projectId: PROJECT_ID, sectionId: SECTION, title: 'Second queued', statusId: task.statusId });
+    expect(calls[2]?.headers.get('Idempotency-Key')).not.toBe(calls[0]?.headers.get('Idempotency-Key'));
+    expectNextTitle(screen.getByLabelText('Task name'), 'Third unsent');
+  });
+
+  it('keeps a definitely rejected front for explicit retry or discard and never drops the next typed title', async () => {
+    let attempt = 0;
+    const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => ++attempt === 1 ? failure(409, 'REVISION_CONFLICT', 'private') : created({ ...task, title: (request.body as { title: string }).title }) });
+    const ui = quick();
+    await ui.user.type(screen.getByLabelText('Task name'), 'Rejected first{Enter}Replacement unsent');
+    await screen.findByRole('button', { name: 'Discard rejected task' });
+    expect(calls).toHaveLength(1);
+    expectNextTitle(screen.getByLabelText('Task name'), 'Replacement unsent');
+    await ui.user.click(screen.getByRole('button', { name: 'Discard rejected task' }));
+    expect(ui.commands().quick.queue).toHaveLength(0);
+    expect(ui.commands().createSession.current?.draft.title).toBe('Replacement unsent');
+    await ui.user.click(screen.getByLabelText('Task name')); await ui.user.keyboard('{Enter}');
+    await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
+    expect(calls.map(call => (call.body as { title: string }).title)).toEqual(['Rejected first', 'Replacement unsent']);
   });
 
   it.each([

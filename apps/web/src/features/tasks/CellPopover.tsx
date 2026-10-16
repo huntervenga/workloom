@@ -1,11 +1,23 @@
 import { cn } from '@workloom/ui';
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 const EDGE = 8;
 const GAP = 4;
+// Selectors are written without spaces: they are DOM queries, never displayed copy.
+const MODAL = '[role="dialog"],[role="alertdialog"]';
 
 function supportsTopLayer(node: HTMLElement): boolean {
   return typeof node.showPopover === 'function' && typeof node.hidePopover === 'function';
+}
+
+/**
+ * True while the newest open dialog is not the one holding `anchor`. Top-layer feedback would
+ * otherwise paint above that dialog; feedback of a cell inside the topmost dialog stays shown.
+ */
+function coveredByDialog(anchor: HTMLElement): boolean {
+  const open = [...anchor.ownerDocument.querySelectorAll<HTMLElement>(MODAL)].filter(dialog => !dialog.hidden && dialog.dataset.state !== 'closed');
+  const top = open.at(-1);
+  return top !== undefined && !top.contains(anchor);
 }
 
 /**
@@ -13,6 +25,8 @@ function supportsTopLayer(node: HTMLElement): boolean {
  * It stays a DOM child of the editor, so focus, Escape and form ownership keep working, but it is
  * shown in the browser top layer where available and positioned against the viewport. It never
  * takes layout space, so a cell, its row and the grid keep their size; it never takes focus itself.
+ * While a later dialog is open elsewhere it is only hidden: its content, the command it describes
+ * and its actions stay mounted and reappear unchanged when that dialog closes.
  */
 export function CellPopover({ anchor, side = 'bottom', className, children }: {
   anchor: HTMLElement | null;
@@ -22,9 +36,20 @@ export function CellPopover({ anchor, side = 'bottom', className, children }: {
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [covered, setCovered] = useState(false);
+  useLayoutEffect(() => {
+    if (!anchor) return undefined;
+    const doc = anchor.ownerDocument;
+    const check = () => setCovered(coveredByDialog(anchor));
+    check();
+    // Dialogs are portalled to the body; their mount, unmount and state changes are all mutations.
+    const observer = new MutationObserver(check);
+    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'data-state', 'hidden'] });
+    return () => observer.disconnect();
+  }, [anchor]);
   useLayoutEffect(() => {
     const node = ref.current;
-    if (!node || !anchor) return undefined;
+    if (!node || !anchor || covered) return undefined;
     const topLayer = supportsTopLayer(node);
     if (topLayer) {
       // Manual popovers have no light dismiss and never move focus.
@@ -66,11 +91,12 @@ export function CellPopover({ anchor, side = 'bottom', className, children }: {
         node.removeAttribute('popover');
       }
     };
-  }, [anchor, side]);
+  }, [anchor, side, covered]);
   return (
     <div
       ref={ref}
       data-cell-popover=""
+      hidden={covered || undefined}
       style={{ position: 'fixed', inset: 'auto', margin: 0, top: 0, left: 0 }}
       className={cn(
         'z-40 w-max max-w-[min(22rem,calc(100vw-16px))] space-y-2 overflow-visible rounded-lg border border-line bg-surface p-2 text-left text-xs whitespace-normal text-ink shadow-lg [overflow-wrap:anywhere]',

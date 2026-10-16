@@ -128,18 +128,55 @@ describe('project Board integration', () => {
     expect(screen.queryByText('Draft kept')).not.toBeInTheDocument(); expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
   });
 
-  it.each(['quick', 'due'] as const)('keeps a hidden %s draft recoverable when switching to Board', async kind => {
+  it('keeps a hidden unsent quick task draft recoverable when switching to Board', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await screen.findByRole('button', { name: task.title });
-    if (kind === 'quick') {
-      await user.click(screen.getByRole('button', { name: 'Add task without a section' })); await user.type(screen.getByLabelText('Task name'), 'Unsent quick title');
-    } else {
-      await user.click(screen.getByRole('button', { name: `Edit due date for ${task.title}` })); fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
-    }
-    await board(user); expect(screen.queryByLabelText(kind === 'quick' ? 'Task name' : 'Due date')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add task without a section' })); await user.type(screen.getByLabelText('Task name'), 'Unsent quick title');
+    await board(user); expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
-    const dialog = await screen.findByRole('dialog', { name: kind === 'quick' ? 'New task' : task.title });
-    expect(within(dialog).getByLabelText(kind === 'quick' ? 'Task name' : 'Due date')).toHaveValue(kind === 'quick' ? 'Unsent quick title' : '2026-10-20');
+    const dialog = await screen.findByRole('dialog', { name: 'New task' });
+    expect(within(dialog).getByLabelText('Task name')).toHaveValue('Unsent quick title');
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+  });
+
+  it('saves a valid due date once when the real Board click leaves its cell and keeps the pending draft recoverable', async () => {
+    const gate = deferred<Response>(); let current = task;
+    const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`GET ${rootPath}/tasks/${task.id}`]: () => ok(current), [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise }));
+    const { user } = renderApp(tablePath);
+    await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` })); fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+    // The actual outside click: leaving the cell commits before Board replaces the table.
+    await user.click(views().getByRole('button', { name: 'Board' })); await screen.findByRole('region', { name: 'Task status lanes' });
+    expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
+    await waitFor(() => expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1));
+    const write = calls.find(call => call.method === 'PATCH');
+    expect(write?.body).toEqual({ expectedRevision: task.revision, dueDate: '2026-10-20' }); expect(write?.headers.get('Idempotency-Key')).toBeTruthy();
+    const card = screen.getByRole('button', { name: task.title }).closest('li'); if (!card) throw new Error('Missing card');
+    expect(within(card).getByText('No due date')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
+    const dialog = await screen.findByRole('dialog', { name: task.title });
+    expect(within(dialog).getByLabelText('Due date')).toHaveValue('2026-10-20'); expect(within(dialog).getByLabelText('Due date')).toBeDisabled();
+    const focus = document.activeElement;
+    await act(async () => gate.resolve(ok(current = { ...task, dueDate: '2026-10-20', revision: 2 })));
+    await waitFor(() => expect(within(dialog).getByLabelText('Due date')).toBeEnabled());
+    expect(within(dialog).getByLabelText('Due date')).toHaveValue('2026-10-20'); expect(document.activeElement).toBe(focus);
+    await closeDrawer(user);
+    expect(screen.getByRole('region', { name: 'Task status lanes' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument(); expect(screen.queryByText('Draft kept')).not.toBeInTheDocument();
+    const confirmedCard = screen.getByRole('button', { name: task.title }).closest('li'); if (!confirmedCard) throw new Error('Missing confirmed card');
+    await waitFor(() => expect(within(confirmedCard).queryByText('No due date')).not.toBeInTheDocument());
+    await user.click(views().getByRole('button', { name: 'Tasks' })); await screen.findByRole('table');
+    expect(screen.getByRole('button', { name: `Edit due date for ${task.title}` }).querySelector('time')).toHaveAttribute('datetime', '2026-10-20');
+    expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
+  });
+
+  it('keeps an Escape-collapsed unsent due date recoverable across Board without writing', async () => {
+    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
+    await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` })); fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+    await user.keyboard('{Escape}'); expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
+    await board(user); await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
+    const dialog = await screen.findByRole('dialog', { name: task.title });
+    expect(within(dialog).getByLabelText('Due date')).toHaveValue('2026-10-20');
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 

@@ -61,7 +61,7 @@ describe('actual retained custom-field draft protection', () => {
     fireEvent.change(within(editor).getByLabelText('Field signal'), { target: { value: 'not a valid number' } });
     expect(unload()).toBe(true);
     await closeFieldAndDrawer(ui);
-    await ui.user.click(screen.getByRole('button', { name: task.title }));
+    await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
     expect(within(await openField(ui)).getByLabelText('Field signal')).toHaveValue('not a valid number');
     await closeFieldAndDrawer(ui);
 
@@ -73,7 +73,7 @@ describe('actual retained custom-field draft protection', () => {
     expect(guard).toHaveTextContent('You have an unsaved draft');
     expect(guard).not.toHaveTextContent('The server may have saved');
     await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
-    await ui.user.click(screen.getByRole('button', { name: task.title }));
+    await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
     expect(within(await openField(ui)).getByLabelText('Field signal')).toHaveValue('not a valid number');
     expect(ui.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
@@ -87,7 +87,7 @@ it('leaves clean open/close input unprotected and releases an explicitly discard
   await closeFieldAndDrawer(ui);
   expect(unload()).toBe(false);
   expect(protectedDraftsFor(ui.client).protecting).toBe(false);
-  await ui.user.click(screen.getByRole('button', { name: task.title }));
+  await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
   const editor = await openField(ui);
   fireEvent.change(within(editor).getByLabelText('Field signal'), { target: { value: '0' } });
   expect(unload()).toBe(true);
@@ -113,7 +113,7 @@ it('asks before an actual actor switch with only a hidden field draft and keeps 
   expect(guard).toHaveTextContent('You have an unsaved draft');
   expect(switchActor).not.toHaveBeenCalled();
   await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
-  await ui.user.click(screen.getByRole('button', { name: task.title }));
+  await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
   expect(within(await openField(ui)).getByLabelText('Field signal')).toHaveValue('invalid actor-owned input');
   expect(ui.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
 });
@@ -146,7 +146,7 @@ it('keeps pending/unknown field commands exact while confirmation retires only i
   const guard = await screen.findByRole('dialog', { name: 'Leave this page?' });
   expect(guard).toHaveTextContent('The server may have saved');
   await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
-  await ui.user.click(screen.getByRole('button', { name: task.title }));
+  await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
   editor = await openField(ui);
   expect(within(editor).getByLabelText('Field signal')).toHaveValue('0');
   expect(within(editor).getByLabelText('Field signal')).toBeDisabled();

@@ -188,6 +188,8 @@
     "checkTheCompletedFields": "Check the completed fields."
   },
   "quickAdd": {
+    "submittedTitle": "Submitted task: {{title}}",
+    "discardRejected": "Discard rejected task",
     "existingDraft": "A task draft is already saved on this page. Resume it to keep all its details.",
     "resumeDraft": "Resume draft",
     "collapse": "Collapse editor",

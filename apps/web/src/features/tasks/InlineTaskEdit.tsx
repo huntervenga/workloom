@@ -50,8 +50,8 @@ const priorityColors: Partial<Record<TaskPriority, string>> = { low: '#94a3b8', 
 const choiceFields = new Set<TaskInlineField>(['statusId', 'priority', 'responsibleMembershipId']);
 
 /** A fixed-height cell control: it fills the cell and never changes the row or column size. */
-const cellInputClassName = 'block h-8 w-full min-w-0 rounded border border-accent-line bg-surface px-2 text-sm text-ink outline-none ring-2 ring-accent-soft placeholder:text-subtle read-only:bg-canvas read-only:text-muted aria-[invalid=true]:border-red-300 aria-[invalid=true]:ring-red-100';
-const iconActionClassName = 'inline-flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas hover:text-ink disabled:opacity-50';
+const cellInputClassName = cn('block h-8 w-full min-w-0 border border-accent-line bg-surface px-2 text-sm text-ink outline-none ring-2 ring-accent-soft placeholder:text-subtle read-only:bg-canvas read-only:text-muted aria-[invalid=true]:border-red-300 aria-[invalid=true]:ring-red-100', 'rounded');
+const iconActionClassName = cn('inline-flex size-7 shrink-0 items-center justify-center text-muted hover:bg-canvas hover:text-ink disabled:opacity-50', 'rounded');
 
 /**
  * Uses the exact seen task revision; only this cell's field can enter the update. Choices save
@@ -63,6 +63,7 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
   // The same one-shot claim reveals the explicitly opened editor once; late ACKs, refreshes and remounts never pan.
   const revealOnMount = useRef(shouldFocus);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const attach = useCallback((node: HTMLElement | null) => {
@@ -152,12 +153,13 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     submitSession(session, { continueWithNext: false });
   };
   // A dismissed picker (Escape, outside press, Tab) closes the editor unless it shows feedback.
+  // Only a keyboard dismissal that leaves focus on the trigger returns it to the cell.
   const chose = useRef(false);
   const continueNext = useRef(false);
-  const dismiss = useRef<(trigger: HTMLElement) => void>(() => undefined);
-  dismiss.current = trigger => {
+  const dismiss = useRef<(trigger: HTMLElement, pressedOutside: boolean) => void>(() => undefined);
+  dismiss.current = (trigger, pressedOutside) => {
     if (confirmed || pending || uncertain || hasFeedback) return;
-    onClose(document.activeElement === trigger ? 'cancel' : 'blur');
+    onClose(!pressedOutside && document.activeElement === trigger ? 'cancel' : 'blur');
   };
   // Latched at mount: this editor's own claim is consumed by its first commit, and a sent or
   // blocked command at mount keeps the list closed.
@@ -169,17 +171,32 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     // An explicit open shows the choices at once; remounts and late answers never reopen them.
     if (openOnMount.current) { openOnMount.current = false; trigger.click(); }
     let wasOpen = trigger.getAttribute('aria-expanded') === 'true';
+    // The picker closes on an outside press before focus moves, so the press itself is recorded.
+    // Window capture runs before the picker's own document listener; any key resets it.
+    let pressedOutside = false;
+    const press = (event: PointerEvent) => {
+      const target = event.target;
+      pressedOutside = target instanceof Element && !anchor.contains(target) && target.closest('[data-choice-picker-menu]') === null;
+    };
+    const key = () => { pressedOutside = false; };
+    window.addEventListener('pointerdown', press, true);
+    window.addEventListener('keydown', key, true);
     const observer = new MutationObserver(() => {
-      const open = trigger.getAttribute('aria-expanded') === 'true';
+      const open = trigger.getAttribute('aria-expanded') === 'true';      setPickerOpen(open);
       if (wasOpen && !open) {
         const madeChoice = chose.current;
         chose.current = false;
-        if (!madeChoice) dismiss.current(trigger);
+        if (!madeChoice) dismiss.current(trigger, pressedOutside);
+        pressedOutside = false;
       }
       wasOpen = open;
     });
     observer.observe(trigger, { attributes: true, attributeFilter: ['aria-expanded'] });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('pointerdown', press, true);
+      window.removeEventListener('keydown', key, true);
+    };
   }, [anchor, choice]);
 
   const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose('cancel'); } };
@@ -263,7 +280,13 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     }}
     onBlur={event => {
       const form = event.currentTarget;
-      if (event.relatedTarget instanceof Node && form.contains(event.relatedTarget)) return;
+      if (event.relatedTarget instanceof Node) {
+        if (form.contains(event.relatedTarget)) return;
+        // Commit before the next cell's click can replace this form. Null relatedTarget
+        // still needs the deferred active-element check for window switches.
+        leave.current();
+        return;
+      }
       window.setTimeout(() => {
         // A window switch keeps the active element; only a real move out of the editor commits.
         if (!mounted.current || !form.isConnected || (document.activeElement !== null && form.contains(document.activeElement))) return;
@@ -273,7 +296,7 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     className="relative flex h-8 min-w-0 items-center">
     {control}
     {pending ? <><LoaderCircle size={14} aria-hidden="true" className="pointer-events-none absolute right-2 text-muted motion-safe:animate-spin" /><span role="status" className="sr-only">{t('tasks.inlineEdit.saving')}</span></> : null}
-    {hasFeedback || field === 'estimate' ? <CellPopover anchor={anchor} side={choice ? 'top' : 'bottom'}>
+    {(hasFeedback || field === 'estimate') && !pickerOpen ? <CellPopover anchor={anchor} side={choice ? 'top' : 'bottom'}>
       {field === 'estimate' ? <p id={`${id}-estimate-help`} className="text-muted">{t('tasks.inlineEstimate.sharedHelp')} {t('tasks.inlineEstimate.formatHelp')}</p> : null}
       {staleEstimate ? <p id={`${id}-estimate-source`} role="status" className="text-amber-800">{t('tasks.inlineEstimate.refreshRequired')}</p> : null}
       {currentError ? <p role="alert" id={`${id}-error`} className="text-red-700">{t(currentError.key, currentError.params)}</p> : null}

@@ -258,6 +258,7 @@ export function TaskFields({
             id={ids.responsible}
             className="mt-1.5"
             label={t('tasks.taskFields.assignee')}
+            searchable
             value={draft.responsibleMembershipId ?? ''}
             options={responsibleChoices}
             onValueChange={(value) => onChange({ responsibleMembershipId: value === '' ? null : value })}

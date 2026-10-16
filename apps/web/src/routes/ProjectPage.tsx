@@ -1,3 +1,4 @@
+import { ChoicePicker } from '../shared/ChoicePicker';
 import { DialogReturnFocus } from '../shared/DialogShell';
 import { orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
 import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
@@ -15,6 +16,7 @@ import { weeklyPlanningHref } from '../features/planning/navigation';
 import { QuickTaskAdd, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
 import { InlineTaskEdit, type InlineCloseReason, type InlineSaveIntent } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
+import { SaveFeedback } from '../shared/SaveFeedback';
 import { canEditTaskInline, isCurrentEstimateProjection, matchesInlineTaskReceipt, taskInlineColumn, type TaskInlineField } from '../features/tasks/tableEditing';
 import { message, type TranslationMessage } from '../i18n';
 import { useTranslation } from '../i18n';
@@ -68,7 +70,7 @@ import {
   type TaskFilterValue,
 } from '../features/tasks/TaskFilters';
 import { loadedTaskScope, useTagsQuery, useTaskListQuery } from '../features/tasks/queries';
-import { useTaskCommands, unresolvedTaskCommand, type CreateRequest } from '../features/tasks/useTaskCommands';
+import { useTaskCommands, unresolvedTaskCommand, type CreateRequest, type EditSession } from '../features/tasks/useTaskCommands';
 import { WorkCategorySettings, useTaskTimeTable } from '../features/work-categories';
 import { useMembershipsQuery } from '../features/workspace/queries';
 import { isAccessDenied } from '../lib/api';
@@ -97,6 +99,16 @@ function todayIn(timeZone: string): string | undefined {
 interface FieldColumn {
   field: TaskFieldDefinitionDto;
   width: number;
+}
+
+interface QueuedInline {
+  taskId: string;
+  field: TaskInlineField;
+  focus: Element | null;
+  /** The list heads loaded when the cell was clicked, before the held answer. */
+  listUpdatedAt: number;
+  /** Each task command's last result when the cell was clicked. */
+  receipts: readonly (TaskDto | undefined)[];
 }
 
 
@@ -208,8 +220,13 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const inlineFocusReturn = useRef<{ task: TaskDto; field: TaskInlineField; generation: number; presentationKey: string; ownsFocus: () => boolean; dispose: () => void } | null>(null);
   const inlineLeases = useRef(new Set<() => void>());
   const [savedAssignment, setSavedAssignment] = useState<{ taskId: string; membershipId: string | null; revision: number; generation: number } | null>(null);
-  // A cell clicked while another task save is still being sent opens once that answer arrives.
-  const [queuedInline, setQueuedInline] = useState<{ taskId: string; field: TaskInlineField; focus: Element | null } | null>(null);
+  // A cell clicked while another task save is still being sent opens once that answer arrives
+  // and, after a confirmed write, once the list has refetched heads at least that new.
+  const [queuedInline, setQueuedInline] = useState<QueuedInline | null>(null);
+  const commandReceipts = () => [commands.update.data, commands.archive.data, commands.restore.data, commands.create.data];
+  // A title save whose editor already continued into the next new task. Its exact retained
+  // session ties page-level progress, outcome feedback and recovery to that one command.
+  const [continuation, setContinuation] = useState<{ taskId: string; session: EditSession } | null>(null);
   const invalidateInlineSave = useCallback(() => {
     inlineGeneration.current += 1;
     inlineReceipt.current = null;
@@ -421,6 +438,22 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       inlineLeases.current.delete(dispose);
     };
     inlineLeases.current.add(dispose);
+    const sourceTask = origin.activeInline?.field === 'title' && intent.continueWithNext
+      ? dedupeTasks(shownTasks).find(task => task.id === origin.activeInline?.taskId) : undefined;
+    const immediateNext = sourceTask ? nextTaskSection(sourceTask) : undefined;
+    const continuedSession = sourceTask ? commands.editSessions.current.get(sourceTask.id) : undefined;
+    const continued = immediateNext !== undefined && ownsFocus && sourceTask !== undefined && continuedSession !== undefined;
+    if (continued) {
+      // The update keeps its original retained session, while the next row accepts unsent
+      // titles immediately. Its create queue waits for this update's confirmed result.
+      // As in startQuickAdd, a retained quick draft keeps its own section.
+      const kept = commands.createSession.current;
+      const target = kept?.origin === 'quick' ? kept.request.sectionId : immediateNext;
+      setContinuation({ taskId: sourceTask.id, session: continuedSession });
+      expandQuickSection(target);
+      setActiveInline(null);
+      setQuickAddSection(target);
+    }
     const isCurrent = () => {
       const head = inlineHead.current;
       return inlineGeneration.current === generation && head.completionWritable &&
@@ -430,6 +463,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     return {
       onSettled: () => { if (!waitingForHead) dispose(); },
       onSuccess: (confirmed: TaskDto) => {
+        if (continued) {
+          // The editor already continued: announce the one confirmation without moving focus.
+          setContinuation(before => before?.session === continuedSession ? null : before);
+          setAnnouncement(message('tasks.taskDrawer.taskSaved'));
+          return;
+        }
         if (!origin.activeInline || !isCurrent()) return;
         const field = origin.activeInline.field;
         // The command/session ledger already confirmed this precise submitted draft.
@@ -491,6 +530,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 
   const openTask = (id: string) => {
     invalidateInlineSave();
+    // Its own editor now shows the continued save's state and feedback.
+    setContinuation(before => before?.taskId === id ? null : before);
     setQuickAddSection(undefined);
     setActiveInline(null);
     setCreating(null);
@@ -525,7 +566,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const kept = commands.createSession.current;
     setActiveInline(null);
     setTaskParam(null);
-    if (kept?.origin === 'quick' && (commands.create.pendingCommand || commands.create.uncertain)) {
+    if (kept?.origin === 'quick' && (commands.quick.queue.length > 0 || commands.create.pendingCommand || commands.create.uncertain)) {
       setGrouping('section');
       setCreating(null);
       expandQuickSection(kept.request.sectionId);
@@ -556,9 +597,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const kept = commands.editSessions.current.get(task.id);
     // Only the held cell itself may reopen for recovery; another task's or field's command must resolve first.
     const reopensHeld = held !== null && held.taskId === task.id && (commands.update.pendingCommand !== null || commands.update.uncertain !== null) && (kept?.inlineField === undefined || kept.inlineField === field);
-    if (writable && canEditTaskInline(task) && held && !held.uncertain && !reopensHeld) {
-      // The in-flight save keeps its editor, focus lease and confirmation; this cell opens after its answer.
-      setQueuedInline({ taskId: task.id, field, focus: document.activeElement });
+    // A list refetch, e.g. after a just-confirmed save, may still carry this row's older head.
+    if (writable && canEditTaskInline(task) && ((held && !held.uncertain && !reopensHeld) || (!held && tasks.isRefetching))) {
+      // The in-flight save keeps its editor, focus lease and confirmation; this cell opens after its
+      // answer and the current list refetch, then from the row as reloaded.
+      setQueuedInline({ taskId: task.id, field, focus: document.activeElement, listUpdatedAt: tasks.dataUpdatedAt, receipts: commandReceipts() });
       return;
     }
     invalidateInlineSave();
@@ -571,6 +614,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setTaskParam(null);
     setCreating(null);
     setQuickAddSection(undefined);
+    setContinuation(before => before?.taskId === task.id ? null : before);
     setActiveInline({ taskId: task.id, field, focusClaim: { current: false } });
   };
   const closeInline = (task: TaskDto, field: TaskInlineField, reason: InlineCloseReason = 'cancel') => {
@@ -579,27 +623,53 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     if (reason === 'blur') return;
     const next = reason === 'next' ? nextTaskSection(task) : undefined;
     if (next !== undefined) { startQuickAdd(next); return; }
-    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`button[data-task-cell="${task.id}:${field}"]`)?.focus());
+    requestAnimationFrame(() => {
+      if (document.activeElement === null || document.activeElement === document.body) document.querySelector<HTMLButtonElement>(`button[data-task-cell="${task.id}:${field}"]`)?.focus();
+    });
   };
   const closeQuickAdd = (sectionId: string | null, reason: QuickAddCloseReason = 'cancel') => {
     setQuickAddSection(undefined);
-    if (reason === 'cancel') requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`button[data-add-task-row="${sectionId ?? ''}"]`)?.focus());
+    if (reason === 'cancel') requestAnimationFrame(() => {
+      if (document.activeElement === null || document.activeElement === document.body) document.querySelector<HTMLButtonElement>(`button[data-add-task-row="${sectionId ?? ''}"]`)?.focus();
+    });
   };
   const heldCommand = unresolvedTaskCommand(commands);
   const heldKey = heldCommand ? `${heldCommand.taskId ?? 'create'}:${heldCommand.uncertain}` : '';
-  // Read at answer time: the current loaded row and the current open rules.
-  const openQueued = useRef<(queued: { taskId: string; field: TaskInlineField }) => void>(() => undefined);
-  openQueued.current = queued => {
+  // A confirmed write refetches list heads asynchronously. Until its own row is loaded at every
+  // confirmed revision (or, when it left the list, a later list is loaded), rows are stale.
+  const listHeadCurrent = (confirmed: TaskDto, listUpdatedAt: number) => {
+    const loaded = dedupeTasks(shownTasks).find(task => task.id.toLowerCase() === confirmed.id.toLowerCase());
+    if (!loaded) return tasks.dataUpdatedAt > listUpdatedAt;
+    return loaded.revision >= confirmed.revision && loaded.participantsRevision >= confirmed.participantsRevision
+      && (loaded.workPackageId !== confirmed.workPackageId || loaded.workPackageRevision >= confirmed.workPackageRevision);
+  };
+  // Read at answer time: the current command receipts, loaded rows and open rules.
+  const settleQueued = useRef<(queued: QueuedInline) => void>(() => undefined);
+  settleQueued.current = queued => {
+    if (heldKey.endsWith(':false')) return;
+    // An unknown outcome keeps every other cell closed.
+    if (heldKey !== '') { setQueuedInline(null); return; }
+    // Explicit quick creates are sent one after another; the next one may already be sending
+    // in this commit. The cell waits for the whole queue, including a paused rejected front.
+    if (commands.quick.queue.length > 0 || commands.quick.sending) return;
+    // Every result newer than the click is a confirmed write; the list must include them all.
+    const receipts = commandReceipts();
+    const confirmed = receipts.filter((receipt, i): receipt is TaskDto => receipt !== undefined && receipt !== queued.receipts[i]);
+    // A failed list refetch replaces the stale rows with its error, and the person reopens the
+    // cell after an explicit retry rather than editing an old head.
+    if (tasks.isError && !tasks.isFetchNextPageError) { setQueuedInline(null); return; }
+    // Any list refetch, with or without a new receipt, may still change this row's head.
+    if (tasks.isRefetching) return;
+    if (confirmed.length > 0 && (tasks.isFetching || !confirmed.every(receipt => listHeadCurrent(receipt, queued.listUpdatedAt)))) return;
+    setQueuedInline(null);
+    // A moved focus means the person went elsewhere.
+    if (document.activeElement !== queued.focus && document.activeElement !== document.body) return;
     const task = dedupeTasks(shownTasks).find(item => item.id === queued.taskId);
     if (task) startInline(task, queued.field);
   };
   useEffect(() => {
-    if (!queuedInline || heldKey.endsWith(':false')) return;
-    setQueuedInline(null);
-    // An unknown outcome keeps every other cell closed; a moved focus means the person went elsewhere.
-    if (heldKey !== '' || (document.activeElement !== queuedInline.focus && document.activeElement !== document.body)) return;
-    openQueued.current(queuedInline);
-  }, [queuedInline, heldKey]);
+    if (queuedInline) settleQueued.current(queuedInline);
+  }, [queuedInline, heldKey, commands.quickVersion, tasks.isFetching, tasks.isRefetching, tasks.isError, shownTasks]);
   const closeDrawer = () => {
     setCreating(null);
     if (taskId !== null) setTaskParam(null);
@@ -609,7 +679,22 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const inlineEditorHidden = activeInline === null || personalColumns.denied || graphMode || ganttMode || importMode
     || !shownTasks.some(task => task.id === activeInline.taskId)
     || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(taskInlineColumn(activeInline.field)) || sectionHiddenTaskIds.has(activeInline.taskId));
-  const showTaskRecovery = taskId === null && creating === null && quickEditorHidden && inlineEditorHidden;
+  // The continued title save, only while its exact submitted session is still retained.
+  const continued = continuation !== null && commands.editSessions.current.get(continuation.taskId) === continuation.session ? continuation : null;
+  const continuedPending = continued !== null && commands.update.pendingCommand?.variables.taskId === continued.taskId;
+  const continuedUncertain = continued !== null && commands.update.uncertain?.variables.taskId === continued.taskId ? commands.update.uncertain.error : null;
+  const continuedError = continued !== null && !continuedPending && commands.update.variables?.taskId === continued.taskId
+    && commands.update.variables.input.expectedRevision === continued.session.base.revision ? commands.update.error : null;
+  const continuedFeedback = continued !== null && (continuedUncertain !== null || continuedError !== null) && taskId === null && creating === null
+    && (inlineEditorHidden || activeInline?.taskId !== continued.taskId);
+  // Nothing else needs page-level recovery: no other edit draft and no other held command.
+  const continuedOnly = continued !== null && commands.editSessions.current.size === 1
+    && [commands.create, commands.archive, commands.restore].every(command => !command.pendingCommand && !command.uncertain);
+  const showTaskRecovery = taskId === null && creating === null && (quickEditorHidden || commands.editSessions.current.size > 0) && inlineEditorHidden
+    // An ordinary pending continuation needs no page notice that shifts the table; its definite
+    // or unknown outcome has its own alert with the same recovery.
+    && !(continuedOnly && ((continuedPending && !quickEditorHidden) || (continuedFeedback && (!quickEditorHidden || commands.createSession.current === null))));
+  const draftTaskIds = new Set([...commands.editSessions.current.keys()].filter(id => !(continuedPending && id === continued?.taskId)));
 
   // A rename still being sent or unconfirmed keeps its section: reopening shows that one.
   const heldSectionId =
@@ -627,7 +712,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
           </div>
         </div>
-        {writable && metadataReady ? <Button size="sm" variant="primary" onClick={() => startCreate({ sectionId: null, parent: null })}><Plus size={16} aria-hidden="true" />{t('projects.projectPage.newTask')}</Button> : null}
+        {writable && metadataReady ? <Button size="sm" variant="primary" onClick={() => { if (grouping === 'section' && !boardMode && !graphMode && !ganttMode && !importMode) startQuickAdd(null); else startCreate({ sectionId: null, parent: null }); }}><Plus size={16} aria-hidden="true" />{t('projects.projectPage.newTask')}</Button> : null}
         <ProjectActions>
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
@@ -644,6 +729,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       </div> : null}
       <TaskCompletionFeedback controller={completion} onReview={openTask} />
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
+      {continuedFeedback ? <SaveFeedback subject="taskSave" error={continuedError} uncertainError={continuedUncertain}
+        action={<Button size="sm" onClick={() => openTask(continued.taskId)}>{t('tasks.recovery.resume')}</Button>} /> : null}
       {showTaskRecovery ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
@@ -701,21 +788,19 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {showTaskFilters ? <div className="min-w-0 basis-full sm:basis-0 sm:flex-1"><TaskFilters value={filters} onChange={next => { invalidateInlineSave(); setFilters(next); }} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
             {!boardMode && !graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
               {t('taskTable.grouping.label')}
-              <select aria-label={t('taskTable.grouping.label')} className="min-h-8 rounded border border-line bg-surface px-2 text-xs text-ink" value={grouping} onChange={event => { invalidateInlineSave(); setGrouping(event.target.value === 'assignee' ? 'assignee' : 'section'); }}>
-                <option value="section">{t('taskTable.grouping.section')}</option>
-                <option value="assignee">{t('taskTable.grouping.assignee')}</option>
-              </select>
+              <ChoicePicker compact label={t('taskTable.grouping.label')} value={grouping}
+                options={[{ value: 'section', label: t('taskTable.grouping.section') }, { value: 'assignee', label: t('taskTable.grouping.assignee') }]}
+                onValueChange={value => { invalidateInlineSave(); setGrouping(value === 'assignee' ? 'assignee' : 'section'); }} />
             </label> : null}
             {!graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
               {t('taskTable.sort.label')}
-              <select aria-label={t('taskTable.sort.label')} className="min-h-8 rounded border border-line bg-surface px-2 text-xs text-ink" value={sortMode} onChange={event => {
-                const nextSort = event.target.value === 'due_asc' ? 'due_asc' : 'manual';
-                invalidateInlineSave();
-                setSearchParams(before => { const next = new URLSearchParams(before); if (nextSort === 'due_asc') next.set('sort', nextSort); else next.delete('sort'); return next; });
-              }}>
-                <option value="manual">{t('taskTable.sort.manual')}</option>
-                <option value="due_asc">{t('taskTable.sort.dueDate')}</option>
-              </select>
+              <ChoicePicker compact label={t('taskTable.sort.label')} value={sortMode}
+                options={[{ value: 'manual', label: t('taskTable.sort.manual') }, { value: 'due_asc', label: t('taskTable.sort.dueDate') }]}
+                onValueChange={value => {
+                  const nextSort = value === 'due_asc' ? 'due_asc' : 'manual';
+                  invalidateInlineSave();
+                  setSearchParams(before => { const next = new URLSearchParams(before); if (nextSort === 'due_asc') next.set('sort', nextSort); else next.delete('sort'); return next; });
+                }} />
             </label> : null}
             <DialogReturnFocus targetRef={tableMode ? defaultColumnReturn : activeViewControl}>
               <PersonalColumnsDialog showTrigger={tableMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
@@ -752,7 +837,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             collapsedGroupKeys={collapsedGroupKeys}
             onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
-            draftTaskIds={new Set(commands.editSessions.current.keys())}
+            draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
             quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} commands={commands} writable={writable} onClose={reason => closeQuickAdd(quickAddSection ?? null, reason)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}

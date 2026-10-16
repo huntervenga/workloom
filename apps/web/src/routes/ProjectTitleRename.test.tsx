@@ -57,6 +57,30 @@ describe('project inline task title rename', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('opens the next editable title before the rename ACK and holds explicit creates until that result is known', async () => {
+    const gate = deferred<Response>(); let current = task;
+    const { calls } = installFakeApi(routes({
+      [`GET ${rootPath}/tasks`]: () => page([current]),
+      [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise,
+      [`POST ${rootPath}/tasks`]: request => created({ ...task, id: 'f2000000-0000-4000-8000-000000000078', title: (request.body as { title: string }).title }),
+    }));
+    const { user } = renderApp(tablePath);
+    await user.click(await rename()); fireEvent.change(titleBox(), { target: { value: 'Held rename then next' } });
+    await user.keyboard('{Enter}');
+    const quick = within(await screen.findByRole('form', { name: 'Add a task to No section' }));
+    const next = quick.getByRole('textbox', { name: 'Task name' });
+    expect(next).toHaveValue(''); expect(next).not.toHaveAttribute('readonly'); expect(next).toHaveFocus();
+    await user.keyboard('Queued after rename{Enter}Unsent after queue');
+    expect(calls.filter(call => call.method === 'POST')).toHaveLength(0);
+    const search = screen.getByLabelText('Search tasks'); await user.click(search);
+    await act(async () => gate.resolve(ok(current = { ...task, title: 'Held rename then next', revision: task.revision + 1 })));
+    await waitFor(() => expect(calls.filter(call => call.method === 'POST')).toHaveLength(1));
+    expect(next).toHaveValue('Unsent after queue'); expect(search).toHaveFocus();
+    expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
+    expect(calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: task.revision, title: 'Held rename then next' });
+    expect(calls.find(call => call.method === 'POST')?.body).toEqual({ projectId: PROJECT_ID, title: 'Queued after rename', statusId: task.statusId });
+  });
+
   it('continues an unchanged plain Enter into the next quick task and Escape returns to the add row without writes', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await user.click(await rename()); await user.keyboard('{Enter}');
@@ -67,16 +91,27 @@ describe('project inline task title rename', () => {
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 
-  it('retains an escaped title and exposes hidden Board recovery through the rich drawer without saving', async () => {
-    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
+  it('retains an escaped title, then safely autosaves it when the reopened editor leaves for Board', async () => {
+    const gate = deferred<Response>(); let current = task;
+    const { calls } = installFakeApi(routes({
+      [`GET ${rootPath}/tasks`]: () => page([current]),
+      [`GET ${rootPath}/tasks/${task.id}`]: () => ok(current),
+      [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise,
+    }));
+    const { user } = renderApp(tablePath);
     await user.click(await rename()); fireEvent.change(titleBox(), { target: { value: 'Kept inline title' } });
     await user.keyboard('{Escape}'); expect(await rename()).toHaveFocus();
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
     await user.keyboard('{Enter}'); expect(titleBox()).toHaveValue('Kept inline title');
     await user.click(views().getByRole('button', { name: 'Board' })); await screen.findByRole('region', { name: 'Task status lanes' });
     expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
+    await waitFor(() => expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1));
+    expect(calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: task.revision, title: 'Kept inline title' });
     await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
     expect(within(await screen.findByRole('dialog')).getByLabelText('Task name')).toHaveValue('Kept inline title');
-    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+    await act(async () => gate.resolve(ok(current = { ...task, title: 'Kept inline title', revision: task.revision + 1 })));
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getByLabelText('Task name')).not.toHaveAttribute('readonly'));
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
   });
 
   it('never saves a preexisting drawer title-only draft through rename', async () => {
@@ -93,7 +128,7 @@ describe('project inline task title rename', () => {
     const gate = lostResponse(); let attempts = 0; let current = task;
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`PATCH ${rootPath}/tasks/${task.id}`]: () => ++attempts === 1 ? gate.promise : ok(current = { ...task, title: 'Exact title retry', revision: 2 }) }));
     const { user } = renderApp(tablePath); await user.click(await rename());
-    fireEvent.change(titleBox(), { target: { value: 'Exact title retry' } }); await user.keyboard('{Enter}'); await waitFor(() => expect(attempts).toBe(1));
+    fireEvent.change(titleBox(), { target: { value: 'Exact title retry' } }); await user.keyboard('{Control>}{Enter}{/Control}'); await waitFor(() => expect(attempts).toBe(1));
     await act(async () => gate.lose());
     const retry = await screen.findByRole('button', { name: 'Retry' });
     expect(retry.closest('form')).toBe(screen.getByRole('form', { name: /in the task table$/ }));
@@ -124,7 +159,7 @@ describe('project inline task title rename', () => {
   it('keeps a refused revision and title visible for explicit review without exposing server copy', async () => {
     const { calls } = installFakeApi(routes({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => failure(409, 'REVISION_CONFLICT', 'private title details') }));
     const { user } = renderApp(tablePath); await user.click(await rename()); fireEvent.change(titleBox(), { target: { value: 'Unconfirmed name' } });
-    await user.keyboard('{Enter}'); await screen.findByRole('alert'); expect(titleBox()).toHaveValue('Unconfirmed name');
+    await user.keyboard('{Control>}{Enter}{/Control}'); await screen.findByRole('alert'); expect(titleBox()).toHaveValue('Unconfirmed name');
     expect(screen.queryByRole('form', { name: /^Add a task to/ })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save' })).toHaveAttribute('aria-disabled', 'true'); expect(screen.queryByText('private title details')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Save' })); expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);

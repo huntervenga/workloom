@@ -3,6 +3,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { alpha, alphaMembers, anna, failure, installFakeApi, ok, type FakeRequest, type RouteTable } from '../../test/fakeApi';
+import { DialogShell } from '../../shared/DialogShell';
 import { task } from '../planning/test/fixtures';
 import { InlineFieldValueCell } from './InlineFieldValueCell';
 import { newFieldSession, type SetFieldValueMutation } from './FieldValueForm';
@@ -231,6 +232,117 @@ describe('InlineFieldValueCell retained sessions and recovery', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: LABEL })).toBeEnabled());
     expect(document.querySelector('[data-cell-popover]')).toBeNull();
     expect(ui.exposed.drafts.getTask(task.id)).toEqual({});
+  });
+
+  it('hides an unknown write feedback under a later dialog and keeps the original session, body and key for Retry after it closes', async () => {
+    const definition = stage();
+    const lost = heldResponse();
+    let attempt = 0;
+    const api = installFakeApi({ [`PUT ${valuePath}`]: (request) => (++attempt === 1 ? lost.promise : echo(definition, 1)(request)) });
+    const exposed = {} as Exposed;
+    function WithDialog() {
+      const mutation = useSetTaskFieldValueMutation(anna.id, alpha.id);
+      const owner = useFieldValueDrafts(anna.id, alpha.id, task.projectId, mutation);
+      const [open, setOpen] = useState(false);
+      Object.assign(exposed, { drafts: owner.current, mutation });
+      return (
+        <>
+          <InlineFieldValueCell actorId={anna.id} workspaceId={alpha.id} task={task} field={definition} value={null}
+            members={alphaMembers} writable mutation={mutation} drafts={owner.current} onMoreDetails={() => undefined} />
+          <button type="button" onClick={() => setOpen(true)}>Open details dialog</button>
+          <DialogShell title="Task details" description="Another dialog above the table" open={open} onOpenChange={setOpen}><p>Dialog body</p></DialogShell>
+        </>
+      );
+    }
+    const ui = renderFieldUi(<WithDialog />);
+    const writes = () => api.calls.filter((call) => call.method !== 'GET');
+    await ui.user.click(screen.getByRole('combobox', { name: LABEL }));
+    await ui.user.click(screen.getByRole('option', { name: 'Review' }));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    await act(async () => { lost.lose(); });
+    const popover = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-cell-popover]');
+      if (!node) throw new Error('Expected cell popover');
+      return node;
+    });
+    expect(popover).toBeVisible();
+    const held = exposed.mutation.uncertain;
+    const session = exposed.drafts.getTask(task.id)[FIELD_ID];
+    await ui.user.click(screen.getByRole('button', { name: 'Open details dialog' }));
+    await screen.findByRole('dialog', { name: 'Task details' });
+    // Never painted above the dialog, but the unknown command and its retained session are untouched.
+    await waitFor(() => expect(popover).not.toBeVisible());
+    expect(exposed.mutation.uncertain).toBe(held);
+    expect(exposed.drafts.getTask(task.id)[FIELD_ID]).toBe(session);
+    expect(writes()).toHaveLength(1);
+    await ui.user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(popover).toBeVisible());
+    await ui.user.click(within(popover).getByRole('button', { name: 'Retry original' }));
+    await waitFor(() => expect(writes()).toHaveLength(2));
+    const [first, second] = writes();
+    expect(second?.body).toEqual(first?.body);
+    expect(second?.headers.get('Idempotency-Key')).toBe(first?.headers.get('Idempotency-Key'));
+    await waitFor(() => expect(exposed.drafts.getTask(task.id)).toEqual({}));
+  });
+
+  it('opens details directly from unknown-write feedback without retrying, discarding or changing the held request', async () => {
+    const definition = stage();
+    const lost = heldResponse();
+    let attempt = 0;
+    const api = installFakeApi({ [`PUT ${valuePath}`]: (request) => (++attempt === 1 ? lost.promise : echo(definition, 1)(request)) });
+    const exposed = {} as Exposed;
+    const onMoreDetails = vi.fn();
+    function WithDetails() {
+      const mutation = useSetTaskFieldValueMutation(anna.id, alpha.id);
+      const owner = useFieldValueDrafts(anna.id, alpha.id, task.projectId, mutation);
+      const [open, setOpen] = useState(false);
+      Object.assign(exposed, { drafts: owner.current, mutation });
+      return (
+        <>
+          <InlineFieldValueCell actorId={anna.id} workspaceId={alpha.id} task={task} field={definition} value={null}
+            members={alphaMembers} writable mutation={mutation} drafts={owner.current} onMoreDetails={() => { onMoreDetails(); setOpen(true); }} />
+          <DialogShell title="Task details" description="The page opens the task drawer" open={open} onOpenChange={setOpen}><p>Details body</p></DialogShell>
+        </>
+      );
+    }
+    const ui = renderFieldUi(<WithDetails />);
+    const writes = () => api.calls.filter((call) => call.method !== 'GET');
+    await ui.user.click(screen.getByRole('combobox', { name: LABEL }));
+    await ui.user.click(screen.getByRole('option', { name: 'Review' }));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    await act(async () => { lost.lose(); });
+    const popover = await waitFor(() => {
+      const node = document.querySelector<HTMLElement>('[data-cell-popover]');
+      if (!node) throw new Error('Expected cell popover');
+      return node;
+    });
+    // Unknown outcome: Retry, a direct route to details and Hide, all inside the feedback itself.
+    expect(within(popover).getAllByRole('button').map((button) => button.textContent)).toEqual(['Retry original', 'Review in details', 'Hide']);
+    expect(screen.getByRole('combobox', { name: LABEL })).toBeDisabled();
+    const held = exposed.mutation.uncertain;
+    const session = exposed.drafts.getTask(task.id)[FIELD_ID];
+    await ui.user.click(within(popover).getByRole('button', { name: 'Review in details' }));
+    expect(onMoreDetails).toHaveBeenCalledTimes(1);
+    await screen.findByRole('dialog', { name: 'Task details' });
+    // The same feedback stays mounted and is only hidden under the dialog.
+    await waitFor(() => expect(popover).not.toBeVisible());
+    expect(popover).toBeInTheDocument();
+    expect(document.querySelector('[data-cell-popover]')).toBe(popover);
+    expect(writes()).toHaveLength(1);
+    expect(exposed.mutation.uncertain).toBe(held);
+    expect(exposed.mutation.pendingCommand).toBeNull();
+    expect(exposed.drafts.getTask(task.id)[FIELD_ID]).toBe(session);
+    await ui.user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    // The same element returns with its Retry; the held write is resent unchanged only on that explicit action.
+    await waitFor(() => expect(popover).toBeVisible());
+    expect(document.querySelector('[data-cell-popover]')).toBe(popover);
+    await ui.user.click(within(popover).getByRole('button', { name: 'Retry original' }));
+    await waitFor(() => expect(writes()).toHaveLength(2));
+    const [first, second] = writes();
+    expect(second?.body).toEqual(first?.body);
+    expect(second?.headers.get('Idempotency-Key')).toBe(first?.headers.get('Idempotency-Key'));
   });
 
   it('disables choices while another value command is held', async () => {
