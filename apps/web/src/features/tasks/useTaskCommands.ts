@@ -1,5 +1,8 @@
 import type { TagDto, TaskDto, TaskWorkScope } from '@workloom/contracts';
-import { useCallback, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { protectedDraftsFor } from '../../lib/protectedDrafts';
+import { createRetainedTaskSessions } from './retainedTaskSessions';
 import {
   useArchiveTaskMutation,
   useCreateTagMutation,
@@ -44,8 +47,24 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
   const createTag = useCreateTagMutation(actorId, workspaceId);
   /** Tags created from the task form, shown before the tag list refetches. */
   const [createdTags, setCreatedTags] = useState<TagDto[]>([]);
-  const createSession = useRef<CreateSession | null>(null);
-  const editSessions = useRef(new Map<string, EditSession>());
+  const sessions = useMemo(() => ({ actorId, workspaceId, ...createRetainedTaskSessions() }), [actorId, workspaceId]);
+  const { createSession, editSessions } = sessions;
+  const drafts = protectedDraftsFor(useQueryClient());
+  useEffect(() => {
+    const entry = drafts.register();
+    const sync = () => entry.set(sessions.getSnapshot());
+    const unsubscribe = sessions.subscribe(sync);
+    sync();
+    // Read current retained input at event time, including changes earlier in this turn.
+    // This owner outlives every drawer/inline form, so hiding a form cannot remove protection.
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!sessions.getSnapshot()) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => { unsubscribe(); entry.dispose(); window.removeEventListener('beforeunload', warn); };
+  }, [drafts, sessions]);
   // Object identity ties confirmation to exactly the submitted draft, including after remount.
   // Weak keys retain neither discarded sessions nor an unbounded task history.
   const confirmedSessions = useRef(new WeakMap<CreateSession | EditSession, TaskDto>());
@@ -57,7 +76,7 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
     if (editSessions.current.get(task.id) === session) editSessions.current.delete(task.id);
     notifyConfirmation(version => version + 1);
     return true;
-  }, []);
+  }, [createSession, editSessions]);
 
 
   const addCreatedTag = useCallback((tag: TagDto) => setCreatedTags((previous) => [...previous, tag]), []);

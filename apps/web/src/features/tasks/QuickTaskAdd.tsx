@@ -91,7 +91,7 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
     <SaveFeedback subject="taskSave" error={commands.create.error} uncertainError={commands.create.uncertain?.error ?? null} />
     <div className="flex flex-wrap items-center gap-2">
       <Button size="sm" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || undefined}>{pending ? t('tasks.quickAdd.creating') : uncertain ? t('tasks.quickAdd.retry') : t('tasks.quickAdd.add')}</Button>
-      <Button size="sm" disabled={pending || uncertain || blocked} onClick={() => { commands.createSession.current = session; onMoreDetails(); }}>{t('tasks.quickAdd.moreDetails')}</Button>
+      <Button size="sm" disabled={pending || uncertain || blocked} onClick={() => { commands.createSession.current = dirty || pending || uncertain ? session : null; onMoreDetails(); }}>{t('tasks.quickAdd.moreDetails')}</Button>
       <Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button>
       <span className="text-xs text-muted">{t('tasks.quickAdd.keyboardHint')}</span>
     </div>
