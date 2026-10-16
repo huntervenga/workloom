@@ -107,3 +107,5 @@ export {createDependencyRepository} from './repositories/dependency-repository.j
 export {createTaskScheduleApplication} from './schedule-application.js';
 
 export {createProjectImportApplication} from './imports/import-application.js';
+export {createLocalCredentialApplication,parseLocalMcpBearer,type LocalMcpApplicationOptions} from './local-mcp/credentials.js';
+export {createLocalMcpApplication} from './local-mcp/application.js';

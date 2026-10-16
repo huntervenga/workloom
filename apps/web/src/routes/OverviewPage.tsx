@@ -48,6 +48,8 @@ export function OverviewPage() {
         </div>
       </div>
 
+      <Link to={`/w/${workspace.id}/integrations`} className="inline-flex rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-accent-ink">Интеграции · локальный MCP</Link>
+
       <dl className="grid gap-3 sm:grid-cols-3">
         <DetailTile icon={<Clock size={16} aria-hidden="true" />} label="Часовой пояс">
           <span className="[overflow-wrap:anywhere]">{workspace.timezone}</span>

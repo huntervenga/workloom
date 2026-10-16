@@ -3,7 +3,7 @@
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
  * produce no diff). Immutability triggers live only in SQL.
  */
-import type { ProjectImportDto,ProjectImportReconciliationDto,ImportOwnedRevisions } from '@workloom/contracts';
+import type { LocalMcpScope,ProjectImportDto,ProjectImportReconciliationDto,ImportOwnedRevisions } from '@workloom/contracts';
 import type { RecurrenceResolutionDto, RecurrenceScheduleInput, RecurrenceTemplateInput } from '@workloom/contracts';
 import type { MeetingDto, AttendanceDto, AttendanceHistoryDto, AttendanceAttribution, TaskFieldData, TaskFieldDefinitionDto, PlanningSnapshotDto, PeriodCommitmentDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto, WorkCategorySnapshot, WorkTypeReportRunDto, WorkTypeReportRowDto } from '@workloom/contracts';
 import { sql } from 'drizzle-orm';
@@ -106,6 +106,7 @@ export const auditEvents = pgTable(
     eventOrdinal: integer('event_ordinal').notNull(),
     schemaVersion: integer('schema_version').notNull().default(1),
     actorUserId: uuid('actor_user_id').notNull(),
+    credentialId: uuid('credential_id'),
     actorMembershipId: uuid('actor_membership_id').notNull(),
     source: commandSourceEnum('source').notNull(),
     requestId: text('request_id').notNull(),
@@ -120,6 +121,7 @@ export const auditEvents = pgTable(
   (table) => [
     foreignKey({ name: 'audit_events_workspace_fk', columns: [table.workspaceId], foreignColumns: [workspaces.id] }),
     foreignKey({ name: 'audit_events_actor_user_fk', columns: [table.actorUserId], foreignColumns: [users.id] }),
+    foreignKey({name:'audit_events_credential_owner_fk',columns:[table.workspaceId,table.actorUserId,table.credentialId],foreignColumns:[localMcpCredentials.workspaceId,localMcpCredentials.ownerUserId,localMcpCredentials.id]}),
     foreignKey({
       name: 'audit_events_actor_membership_fk',
       columns: [table.workspaceId, table.actorMembershipId],
@@ -809,6 +811,7 @@ export const taskFieldValueHistory = pgTable(
 
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'local_mcp_credentials',
   'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
   'users',
   'workspaces',
@@ -1318,4 +1321,17 @@ export const externalImportReferences=pgTable('external_import_references',{
  foreignKey({name:'external_import_references_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
  foreignKey({name:'external_import_references_import_fk',columns:[t.workspaceId,t.projectId,t.importId,t.sourceNamespace],foreignColumns:[projectImports.workspaceId,projectImports.projectId,projectImports.id,projectImports.sourceNamespace]}),
  check('external_import_references_shape_check',sql`char_length(${t.sourceNamespace}) BETWEEN 1 AND 160 AND char_length(${t.externalId}) BETWEEN 1 AND 254 AND ${t.sourceDigest} ~ '^[a-f0-9]{64}$' AND jsonb_typeof(${t.ownedRevisions})='object' AND (${t.ownedRevisions} ?& ARRAY['taskRevision','participantsRevision','workPackageRevision','fields']) IS TRUE`),
+]);
+
+/** Local synthetic MCP credential; hashes never leave the credential store. */
+export const localMcpCredentials=pgTable('local_mcp_credentials',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),ownerUserId:uuid('owner_user_id').notNull(),name:text('name').notNull(),
+ secretHash:text('secret_hash').notNull(),hashVersion:integer('hash_version').notNull(),scopes:jsonb('scopes').$type<LocalMcpScope[]>().notNull(),
+ revision:integer('revision').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),expiresAt:timestamp('expires_at',{withTimezone:true}).notNull(),revokedAt:timestamp('revoked_at',{withTimezone:true}),
+},t=>[
+ unique('local_mcp_credentials_scope_unique').on(t.workspaceId,t.id),
+ unique('local_mcp_credentials_owner_scope_unique').on(t.workspaceId,t.ownerUserId,t.id),
+ foreignKey({name:'local_mcp_credentials_owner_fk',columns:[t.workspaceId,t.ownerUserId],foreignColumns:[memberships.workspaceId,memberships.userId]}),
+ check('local_mcp_credentials_shape_check',sql`char_length(${t.name}) between 1 and 100 and ${t.secretHash} ~ '^[a-f0-9]{64}$' and ${t.hashVersion}=1 and ${t.expiresAt} >= ${t.createdAt}+interval '60 seconds' and ${t.expiresAt} <= ${t.createdAt}+interval '86400 seconds' and ((${t.revision}=1 and ${t.revokedAt} is null) or (${t.revision}=2 and ${t.revokedAt} is not null)) and case when jsonb_typeof(${t.scopes})='array' then jsonb_array_length(${t.scopes}) between 1 and 6 and ${t.scopes} <@ '["projects.read","tasks.read","members.read","fields.read","tasks.create","tasks.update"]'::jsonb else false end`),
+ index('local_mcp_credentials_owner_idx').on(t.workspaceId,t.ownerUserId),
 ]);

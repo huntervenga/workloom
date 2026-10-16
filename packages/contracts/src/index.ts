@@ -15,3 +15,4 @@ export * from './dependencies.js';
 export * from './schedule.js';
 
 export * from './imports.js';
+export * from './local-mcp.js';

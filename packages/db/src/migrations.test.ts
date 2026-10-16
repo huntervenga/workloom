@@ -16,7 +16,7 @@ describe('migration journal', () => {
   const expected = readExpectedMigrations();
 
   it('lists the migrations with Drizzle-compatible hashes', () => {
-    expect(expected.map((migration) => migration.tag)).toEqual(['0000_p0_identity_workspaces', '0001_p1a_tasks', '0002_p1b_fields', '0003_p2a_planning', '0004_p2b_work_categories', '0005_p3a_meetings', '0006_recurrence_materialization', '0007_dependencies_graph', '0008_task_calendar_dates', '0009_project_imports']);
+    expect(expected.map((migration) => migration.tag)).toEqual(['0000_p0_identity_workspaces', '0001_p1a_tasks', '0002_p1b_fields', '0003_p2a_planning', '0004_p2b_work_categories', '0005_p3a_meetings', '0006_recurrence_materialization', '0007_dependencies_graph', '0008_task_calendar_dates', '0009_project_imports', '0010_local_mcp_credentials']);
     for (const migration of expected) {
       const sqlText = readFileSync(join(MIGRATIONS_FOLDER, `${migration.tag}.sql`), 'utf8');
       expect(migration.hash).toBe(createHash('sha256').update(sqlText).digest('hex'));

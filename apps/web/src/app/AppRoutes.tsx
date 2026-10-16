@@ -1,5 +1,6 @@
 import { LoaderCircle } from 'lucide-react';
 import { Route, Routes } from 'react-router';
+import { IntegrationsPage } from '../routes/IntegrationsPage';
 import { HomeRedirect } from '../routes/HomeRedirect';
 import { MembersPage } from '../routes/MembersPage';
 import { NotFoundPage } from '../routes/NotFoundPage';
@@ -22,6 +23,7 @@ export function AppRoutes() {
         <Route path="w/:workspaceId" element={<WorkspaceLayout />}>
           <Route index element={<OverviewPage />} />
           <Route path="members" element={<MembersPage />} />
+          <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route path="projects/:projectId/week" element={<WeeklyPage />} />

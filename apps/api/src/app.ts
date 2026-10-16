@@ -6,6 +6,8 @@ import {
   createDatabase,
   createDependencyApplication,
   createMeetingApplication,
+  createLocalCredentialApplication,
+  createLocalMcpApplication,
   createPlanningApplication,
   createProjectImportApplication,
   createReadinessProbe,
@@ -19,7 +21,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
@@ -31,6 +33,7 @@ import { registerFieldRoutes } from './http/field-routes.js';
 import { registerDependencyRoutes } from './http/dependency-routes.js';
 import { registerMeetingRoutes } from './http/meeting-routes.js';
 import { registerImportRoutes } from './http/import-routes.js';
+import {registerLocalMcpRoutes} from './http/local-mcp-routes.js';
 import { registerPlanningRoutes } from './http/planning-routes.js';
 import { registerRecurrenceRoutes } from './http/recurrence-routes.js';
 import { registerScheduleRoutes } from './http/schedule-routes.js';
@@ -70,6 +73,9 @@ export interface AppDependencies {
   readonly taskScheduleApplication?: TaskScheduleApplication;
   /** P5a bounded file import, current privileged source access and atomic apply owned by domain. */
   readonly projectImportApplication?: ProjectImportApplication;
+  /** Credential-bound MCP facade; writes require current scopes and the shared barrier check. */
+  readonly localCredentialApplication?: LocalCredentialApplication;
+  readonly localMcpApplication?: LocalMcpApplication;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
   /** Web dist directory; null disables static serving. Default: apps/web/dist when config.serveWeb. */
@@ -114,6 +120,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.taskScheduleApplication ?? (database === undefined ? undefined : createTaskScheduleApplication(database));
   const projectImportApplication =
     dependencies.projectImportApplication ?? (database === undefined ? undefined : createProjectImportApplication(database));
+  const localCredentialApplication=dependencies.localCredentialApplication??(database===undefined?undefined:createLocalCredentialApplication(database,{enableTaskWrites:true}));
+  const localMcpApplication=dependencies.localMcpApplication??(database===undefined?undefined:createLocalMcpApplication(database,{enableTaskWrites:true}));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
   const identity =
     dependencies.identityAdapter ??
@@ -221,6 +229,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (projectImportApplication !== undefined) {
     registerImportRoutes(app, { identity, imports: projectImportApplication });
   }
+  if(localCredentialApplication!==undefined&&localMcpApplication!==undefined){registerLocalMcpRoutes(app,{identity,credentials:localCredentialApplication,mcp:localMcpApplication,guards:guardOptions});}
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);
   }

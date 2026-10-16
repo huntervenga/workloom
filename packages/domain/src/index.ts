@@ -125,3 +125,7 @@ export {setTaskFieldValueInScope} from './fields/service.js';
 
 export * from './imports/ports.js';
 export {createProjectImportApplication} from './imports/service.js';
+export type {LocalCredentialApplication,LocalMcpApplication} from './local-mcp/application.js';
+export {LOCAL_MCP_TOOL_SCOPE,LOCAL_MCP_SCOPE_CAPABILITY,allowedLocalMcpScopes,assertLocalCredentialCurrent,assertLocalMcpScope} from './local-mcp/policy.js';
+
+export {createLocalCredentialService,type StoredLocalCredential,type LocalCredentialRepository,type LocalCredentialScope,type LocalCredentialReader} from './local-mcp/service.js';

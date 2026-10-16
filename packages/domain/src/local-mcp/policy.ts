@@ -1,0 +1,8 @@
+import type {LocalMcpScope,LocalMcpToolName,LocalCredentialDto} from '@workloom/contracts';
+import {capabilityRequiredError,unauthenticatedError} from '../errors.js';
+import {roleHasCapability,type WorkspaceRole,type Capability} from '../access/capabilities.js';
+export const LOCAL_MCP_TOOL_SCOPE:Readonly<Record<LocalMcpToolName,LocalMcpScope>>={list_projects:'projects.read',get_project:'projects.read',search_tasks:'tasks.read',get_task:'tasks.read',list_memberships:'members.read',get_field_definitions:'fields.read',get_task_field_values:'fields.read',create_task:'tasks.create',update_task:'tasks.update'};
+export const LOCAL_MCP_SCOPE_CAPABILITY:Readonly<Record<LocalMcpScope,Capability>>={'projects.read':'task.read','tasks.read':'task.read','members.read':'members.read','fields.read':'task.read','tasks.create':'task.edit','tasks.update':'task.edit'};
+export function allowedLocalMcpScopes(role:WorkspaceRole,enableTaskWrites=false):LocalMcpScope[]{return (Object.keys(LOCAL_MCP_SCOPE_CAPABILITY) as LocalMcpScope[]).filter(s=>(enableTaskWrites||!['tasks.create','tasks.update'].includes(s))&&roleHasCapability(role,LOCAL_MCP_SCOPE_CAPABILITY[s]));}
+export function assertLocalCredentialCurrent(row:LocalCredentialDto,at:Date):void{if(row.revokedAt!==null||Date.parse(row.expiresAt)<=at.getTime())throw unauthenticatedError();}
+export function assertLocalMcpScope(row:LocalCredentialDto,role:WorkspaceRole,tool:LocalMcpToolName,enableTaskWrites=false):void{const scope=LOCAL_MCP_TOOL_SCOPE[tool];if(!row.scopes.includes(scope)||!allowedLocalMcpScopes(role,enableTaskWrites).includes(scope))throw capabilityRequiredError();}

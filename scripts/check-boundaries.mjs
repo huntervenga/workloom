@@ -12,9 +12,9 @@ import ts from 'typescript';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const BROWSER_PACKAGES = ['apps/web', 'packages/ui', 'packages/contracts'];
-const SERVER_WORKSPACES = ['@workloom/api', '@workloom/worker', '@workloom/db', '@workloom/domain'];
-const SERVER_LIBRARIES = ['fastify', 'drizzle-orm', 'drizzle-kit', 'pg', 'postgres', 'pg-boss', 'dotenv'];
-const SERVER_DIRS = ['apps/api', 'apps/worker', 'packages/db', 'packages/domain'].map((dir) => join(root, dir));
+const SERVER_WORKSPACES = ['@workloom/api', '@workloom/worker', '@workloom/mcp', '@workloom/db', '@workloom/domain'];
+const SERVER_LIBRARIES = ['@modelcontextprotocol/server','fastify', 'drizzle-orm', 'drizzle-kit', 'pg', 'postgres', 'pg-boss', 'dotenv'];
+const SERVER_DIRS = ['apps/api', 'apps/worker', 'apps/mcp', 'packages/db', 'packages/domain'].map((dir) => join(root, dir));
 const SOURCE_FILE = /\.[cm]?[jt]sx?$/;
 const SKIPPED_DIRS = new Set(['node_modules', 'dist', 'coverage']);
 

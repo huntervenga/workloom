@@ -16,6 +16,8 @@ const browserSources = ['apps/web/src', 'packages/ui/src', 'packages/contracts/s
 const serverOnlyPackages = [
   '@workloom/api',
   '@workloom/worker',
+  '@workloom/mcp',
+  '@modelcontextprotocol/server',
   '@workloom/db',
   '@workloom/domain',
   'fastify',
@@ -84,7 +86,7 @@ export default defineConfig(
             { group: ['node:*'], message: boundaryMessage },
             { group: serverOnlyPackages.flatMap((name) => [name, `${name}/*`]), message: boundaryMessage },
             {
-              group: ['**/apps/api/**', '**/apps/worker/**', '**/packages/db/**', '**/packages/domain/**'],
+              group: ['**/apps/api/**', '**/apps/worker/**', '**/apps/mcp/**', '**/packages/db/**', '**/packages/domain/**'],
               message: boundaryMessage,
             },
           ],

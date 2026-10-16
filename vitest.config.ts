@@ -13,6 +13,7 @@ export default defineConfig({
             'packages/**/src/**/*.test.ts',
             'apps/api/src/**/*.test.ts',
             'apps/worker/src/**/*.test.ts',
+            'apps/mcp/src/**/*.test.ts',
           ],
           exclude: ['**/node_modules/**', '**/dist/**', 'packages/ui/**'],
           environment: 'node',
@@ -24,7 +25,7 @@ export default defineConfig({
           include: ['tests/integration/**/*.test.ts'],
           exclude: ['**/node_modules/**', '**/dist/**'],
           environment: 'node',
-          // Files share one real PostgreSQL database; run them one at a time.
+          // Each file owns a throwaway PostgreSQL database; serialize to limit resources.
           fileParallelism: false,
           testTimeout: 30_000,
           hookTimeout: 60_000,

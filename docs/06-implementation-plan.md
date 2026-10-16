@@ -1,6 +1,6 @@
 # План реализации Workloom
 
-Версия от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b/P5a; P3b добавил конечные серии встреч, protected calendar census и отдельный recurrence worker. Точные gates, initial failures, исправления и source checkpoints — в [11](11-implementation-progress.md). Полный P1/P2/P3/P4/P5, P6, MVP и пилот не завершены. Приёмка ниже сохраняет будущие требования. Стек — [02](02-architecture.md), данные — [03](03-domain-and-data.md), API — [04](04-api-and-integrations.md), клиент — [05](05-client-and-ux.md).
+Версия от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b/P5a/P5b; P3b добавил конечные серии встреч, protected calendar census и отдельный recurrence worker. Точные gates, initial failures, исправления и source checkpoints — в [11](11-implementation-progress.md). Полный P1/P2/P3/P4/P5, P6, MVP и пилот не завершены. Приёмка ниже сохраняет будущие требования. Стек — [02](02-architecture.md), данные — [03](03-domain-and-data.md), API — [04](04-api-and-integrations.md), клиент — [05](05-client-and-ux.md).
 
 ## Порядок работы
 
@@ -141,7 +141,7 @@ Workloom защищает запись и URL внутри продукта. Д�
 
 ## P5 Отчёты импорт и MCP
 
-Статус: ограниченный P5a по [19](19-p5-import-contract.md) реализует CSV до50 строк задач, явное сопоставление пяти скалярных типов, readonly preview, atomic create/skip и полную сверку исходника. Это не полный Asana import, перенос приватных ACL, report builder или MCP. Точные текущие gates и границы — в [11](11-implementation-progress.md); acceptance table ниже сохраняет будущие требования.
+Статус: ограниченный P5a по [19](19-p5-import-contract.md) реализует CSV до50 строк задач, явное сопоставление пяти скалярных типов, readonly preview, atomic create/skip и полную сверку исходника. P5b по [20](20-p5b-mcp-contract.md) добавил локальные scoped credentials, семь чтений и keyed create/update через stdio MCP с проверкой отзыва внутри writer barrier. Это не полный Asana import, перенос приватных ACL, report builder или полный MCP/remote OAuth. Точные текущие gates и границы — в [11](11-implementation-progress.md); acceptance table ниже сохраняет будущие требования.
 
 | ID | Работа | Владение | Приёмка |
 | --- | --- | --- | --- |

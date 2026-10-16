@@ -1,6 +1,6 @@
 # API, команды и интеграции
 
-Статус: **первоначальный целевой каталог полного контракта**,16октября2026года. Примеры/маршруты ниже не заменяют более новые фактические bounded contracts: [P2a13](13-p2a-contract.md), [P2b14](14-p2b-contract.md), [P3a15](15-p3a-contract.md), [P3b16](16-p3b-contract.md), [P4a17](17-p4-contract.md), [P4b18](18-p4b-contract.md), [P5a19](19-p5-import-contract.md) и actual Zod/application exports в packages/contracts/domain. Локально приняты P0–boundedP5a; CSV-only create/skip import имеет отдельный accepted bounded контракт19. Это не полная реализация всех операций P1–P6 или external MCP. Исторический P0/P1a subset перечислен ниже для контекста.
+Статус: **первоначальный целевой каталог полного контракта**,16октября2026года. Примеры/маршруты ниже не заменяют более новые фактические bounded contracts: [P2a13](13-p2a-contract.md), [P2b14](14-p2b-contract.md), [P3a15](15-p3a-contract.md), [P3b16](16-p3b-contract.md), [P4a17](17-p4-contract.md), [P4b18](18-p4b-contract.md), [P5a19](19-p5-import-contract.md), [P5b20](20-p5b-mcp-contract.md) и actual Zod/application exports в packages/contracts/domain. Локально приняты P0–boundedP5b; CSV-only create/skip import и локальные девять scoped MCP tools имеют отдельные accepted bounded контракты19/20. Это не полная реализация всех операций P1–P6 или external MCP. Исторический P0/P1a subset перечислен ниже для контекста.
 
 P0:
 
