@@ -294,6 +294,42 @@ describe('explicit current-settings reload around retained and held column saves
     expect(resent?.body).toEqual(sent?.body); expect(ui.writes()).toBe(2);
   });
 
+  it('keeps a save that starts during an awaited read retry held through that read, its lost ACK and the exact retry', async () => {
+    let lose: () => void = () => undefined; let puts = 0; let failRead = false; let heldRead: Promise<Response> | null = null;
+    const first = new Promise<Response>((_resolve, reject) => { lose = () => reject(new TypeError('Failed to fetch')); });
+    const ui = example({
+      [`GET ${path}`]: () => heldRead ?? (failRead ? failure(503, 'UNAVAILABLE', 'internal read failure') : ok(head(3, [title]))),
+      [`PUT ${path}`]: () => ++puts === 1 ? first : ok(head(4, [title])),
+    });
+    await waitFor(() => expect(ui.controller().query.isSuccess).toBe(true));
+    await ui.user.click(screen.getByRole('button', { name: 'Columns' })); await ui.user.click(screen.getByLabelText('Tags'));
+    failRead = true; await act(async () => { await ui.controller().query.refetch(); });
+    await waitFor(() => expect(ui.controller().query.error).toMatchObject({ kind: 'unavailable' }));
+    // The explicit read retry is still awaiting its GET when the user saves the retained draft.
+    const read = deferred<Response>(); heldRead = read.promise;
+    await ui.user.click(within(screen.getByRole('dialog', { name: 'My task columns' })).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(ui.reads()).toBe(3));
+    await ui.user.click(screen.getByRole('button', { name: 'Save columns' }));
+    await waitFor(() => expect(ui.writes()).toBe(1));
+    const draft = ui.controller().draft;
+    expect(draft?.expectedRevision).toBe(3);
+    // Another tab moved the head; the read lands while the PUT is still pending.
+    heldRead = null; await act(async () => read.resolve(ok(head(4, [title]))));
+    await waitFor(() => expect(ui.controller().query.data?.revision).toBe(4));
+    await waitFor(() => expect(ui.controller().query.isFetching).toBe(false));
+    expect(ui.controller().command.pendingCommand).not.toBeNull(); expect(ui.controller().draft).toBe(draft);
+    expect(screen.getByLabelText('Tags')).not.toBeChecked(); expect(ui.writes()).toBe(1);
+    await act(async () => lose());
+    await waitFor(() => expect(ui.controller().command.uncertain).not.toBeNull());
+    expect(ui.controller().draft).toBe(draft); expect(ui.writes()).toBe(1);
+    await ui.user.click(screen.getByRole('button', { name: 'Retry original columns' }));
+    await waitFor(() => expect(ui.controller().held).toBeNull());
+    const [sent, resent] = ui.calls.filter(call => call.method === 'PUT');
+    expect(sent?.body).toMatchObject({ expectedRevision: 3 });
+    expect(resent?.headers.get('Idempotency-Key')).toBe(sent?.headers.get('Idempotency-Key'));
+    expect(resent?.body).toEqual(sent?.body); expect(ui.writes()).toBe(2);
+  });
+
   it('uses neutral access copy, never a not-saved claim, when an unconfirmed save is retried and then denied', async () => {
     let lose: () => void = () => undefined; let puts = 0;
     const first = new Promise<Response>((_resolve, reject) => { lose = () => reject(new TypeError('Failed to fetch')); });
