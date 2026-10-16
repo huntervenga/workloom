@@ -1,8 +1,9 @@
 import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
 import { changedKeys, draftFromTask, emptyDraft, type TaskDraft } from './taskDraft';
+import type { WorkPackageEntry } from '../task-table/workPackages';
 import type { CreateSession, EditSession } from './useTaskCommands';
 
-export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate';
+export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate' | 'estimate';
 
 /** View/recovery mapping must follow the edited field rather than assume a date fallback. */
 export function taskInlineColumn(field: TaskInlineField) {
@@ -11,6 +12,7 @@ export function taskInlineColumn(field: TaskInlineField) {
     case 'statusId': return 'status';
     case 'responsibleMembershipId': return 'responsible';
     case 'dueDate': return field;
+    case 'estimate': return field;
   }
 }
 
@@ -37,4 +39,27 @@ export function canResumeQuickSession(session: CreateSession, sectionId: string 
 export function canResumeInlineSession(session: EditSession, field: TaskInlineField): boolean {
   const changed = changedKeys(draftFromTask(session.base), session.draft);
   return changed.length === 0 || session.inlineField === field && changed.every(key => key === field);
+}
+
+/** A displayed package value is safe to edit only from that exact source projection. */
+export function isCurrentEstimateProjection(task: TaskDto, packages: ReadonlyMap<string, WorkPackageEntry> | undefined): boolean {
+  const entry = packages?.get(task.workPackageId);
+  if (!entry || entry.estimate.status === 'conflict' || entry.revision !== task.workPackageRevision) return false;
+  const minutes = entry.estimate.status === 'estimated' ? entry.estimate.minutes : null;
+  return minutes === task.estimateMinutes;
+}
+
+/** Estimate-only writes advance the package revision, independently of task revision. */
+export function matchesInlineTaskReceipt(current: TaskDto, receipt: TaskDto, field: TaskInlineField): boolean {
+  if (current.id !== receipt.id || current.revision !== receipt.revision) return false;
+  switch (field) {
+    case 'estimate':
+      return current.workPackageId === receipt.workPackageId &&
+        current.workPackageRevision === receipt.workPackageRevision && current.estimateMinutes === receipt.estimateMinutes;
+    case 'title':
+    case 'statusId':
+    case 'responsibleMembershipId':
+    case 'dueDate':
+      return current[field] === receipt[field];
+  }
 }

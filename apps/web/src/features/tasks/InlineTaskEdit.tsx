@@ -8,7 +8,8 @@ import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { submitTaskFormShortcut } from './TaskDrawer';
 import { buildUpdateInput, changedKeys, draftFromTask, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors } from './taskDraft';
-import { canEditTaskInline, canResumeInlineSession, type TaskInlineField } from './tableEditing';
+import type { WorkPackageEntry } from '../task-table/workPackages';
+import { canEditTaskInline, canResumeInlineSession, isCurrentEstimateProjection, type TaskInlineField } from './tableEditing';
 import { unresolvedTaskCommand, type EditSession, type TaskCommands } from './useTaskCommands';
 
 export interface InlineTaskEditProps {
@@ -20,6 +21,7 @@ export interface InlineTaskEditProps {
   members: readonly MembershipDto[];
   commands: TaskCommands;
   writable: boolean;
+  estimatePackages?: ReadonlyMap<string, WorkPackageEntry> | undefined;
   onClose: () => void;
   onMoreDetails: () => void;
   onSaved: (task: TaskDto) => void;
@@ -28,7 +30,7 @@ export interface InlineTaskEditProps {
 }
 
 /** Uses the exact seen task revision; only this cell's field can enter the update. */
-export function InlineTaskEdit({ task, field, statuses, members, commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted }: InlineTaskEditProps) {
+export function InlineTaskEdit({ task, field, statuses, members, commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
@@ -59,6 +61,7 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   const denied = isAccessDenied(ownError);
   const needsReview = ownError instanceof ApiError && ownError.kind === 'conflict';
   const editable = writable && canEditTaskInline(task) && !denied;
+  const staleEstimate = field === 'estimate' && !isCurrentEstimateProjection(session.base, estimatePackages);
   const frozen = pending || uncertain || blocked || !editable;
   const dirty = changedKeys(draftFromTask(session.base), session.draft).length > 0;
   useUnsavedChangesWarning(dirty || uncertain);
@@ -91,7 +94,7 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
       update.retryUncertain({ onSuccess: result => saved(result, bridge), onSettled: () => bridge?.onSettled() });
       return;
     }
-    if (!editable || needsReview) return;
+    if (!editable || needsReview || staleEstimate) return;
     // A drawer or another cell's draft must never be submitted through this control.
     if (!canResumeInlineSession(session, field)) return;
     const result = buildUpdateInput(session.base, draftFromTask(session.base), session.draft);
@@ -104,17 +107,17 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   const currentError = errors.dueDate ?? errors.form ?? errors.title ?? errors.description ?? errors.startDate ?? errors.estimate;
   return <form noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} onSubmit={submit} onKeyDown={event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
-    if (field === 'title' && event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.closest('form') === event.currentTarget) {
+    if ((field === 'title' || field === 'estimate') && event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.closest('form') === event.currentTarget) {
       if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
       event.preventDefault();
-      if (!frozen && !needsReview && !event.altKey && !event.shiftKey) event.currentTarget.requestSubmit();
+      if (!frozen && !needsReview && !staleEstimate && !event.altKey && !event.shiftKey) event.currentTarget.requestSubmit();
       return;
     }
-    submitTaskFormShortcut(event, !frozen && !needsReview);
+    submitTaskFormShortcut(event, !frozen && !needsReview && !staleEstimate);
   }} className="space-y-1.5 py-1">
     <fieldset disabled={frozen}>
       <legend className="sr-only">{t('tasks.inlineEdit.fields')}</legend>
-      {field === 'title' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.taskName')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="text" maxLength={TASK_TITLE_MAX} autoComplete="off" className="px-2 text-xs" value={session.draft.title} onChange={event => change({ title: event.target.value })} /> : field === 'statusId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
+      {field === 'estimate' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.inlineEstimate.label')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={`${id}-estimate-help${currentError ? ` ${id}-error` : ''}${staleEstimate ? ` ${id}-estimate-source` : ''}`} type="text" autoComplete="off" className="px-2 text-xs" value={session.draft.estimate} onChange={event => change({ estimate: event.target.value })} /> : field === 'title' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.taskName')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="text" maxLength={TASK_TITLE_MAX} autoComplete="off" className="px-2 text-xs" value={session.draft.title} onChange={event => change({ title: event.target.value })} /> : field === 'statusId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
         {!statuses.some(status => status.id === session.draft.statusId) ? <option value={session.draft.statusId}>{t('tasks.taskFields.statusUnavailable')}</option> : null}
         {[...statuses].sort((a, b) => a.position - b.position).map(status => <option key={status.id} value={status.id}>{status.name}</option>)}
       </select> : field === 'responsibleMembershipId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.assignee')} className={inputClassName('px-2 text-xs')} value={session.draft.responsibleMembershipId ?? ''} onChange={event => change({ responsibleMembershipId: event.target.value || null })}>
@@ -123,11 +126,13 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
         {members.map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}
       </select> : <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.dueDate')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="date" min="0001-01-01" max="9999-12-31" className="px-1 text-xs" value={session.draft.dueDate} onChange={event => change({ dueDate: event.target.value })} />}
     </fieldset>
+    {field === 'estimate' ? <p id={`${id}-estimate-help`} className="text-xs text-muted">{t('tasks.inlineEstimate.sharedHelp')} {t('tasks.inlineEstimate.formatHelp')}</p> : null}
+    {staleEstimate ? <p id={`${id}-estimate-source`} role="status" className="text-xs text-amber-800">{t('tasks.inlineEstimate.refreshRequired')}</p> : null}
     {currentError ? <p role="alert" id={`${id}-error`} className="text-xs text-red-700">{t(currentError.key, currentError.params)}</p> : null}
     {blocked ? <p role="status" className="text-xs text-amber-800">{t('tasks.quickAdd.otherCommand')}</p> : null}
     <SaveFeedback subject="taskSave" error={ownError} uncertainError={uncertain ? update.uncertain?.error ?? null : null} />
     <div className="flex items-center gap-1">
-      <Button size="sm" className="px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || undefined}>{pending ? t('tasks.inlineEdit.saving') : uncertain ? t('tasks.inlineEdit.retry') : t('tasks.inlineEdit.save')}</Button>
+      <Button size="sm" className="px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || (staleEstimate && !uncertain) || undefined}>{pending ? t('tasks.inlineEdit.saving') : uncertain ? t('tasks.inlineEdit.retry') : t('tasks.inlineEdit.save')}</Button>
       <button type="button" className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas" title={t('tasks.quickAdd.moreDetails')} aria-label={t('tasks.quickAdd.moreDetails')} disabled={pending || uncertain || blocked} onClick={() => { editSessions.current.set(task.id, session); onMoreDetails(); }}><Expand size={14} aria-hidden="true" /></button>
       <button type="button" className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas" title={t('tasks.quickAdd.collapse')} aria-label={t('tasks.quickAdd.collapse')} onClick={onClose}><X size={14} aria-hidden="true" /></button>
     </div>

@@ -13,7 +13,7 @@ import { weeklyPlanningHref } from '../features/planning/navigation';
 import { QuickTaskAdd } from '../features/tasks/QuickTaskAdd';
 import { InlineTaskEdit } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
-import { canEditTaskInline, taskInlineColumn, type TaskInlineField } from '../features/tasks/tableEditing';
+import { canEditTaskInline, isCurrentEstimateProjection, matchesInlineTaskReceipt, taskInlineColumn, type TaskInlineField } from '../features/tasks/tableEditing';
 import { message, type TranslationMessage } from '../i18n';
 import { useTranslation } from '../i18n';
 import { ImportView, ImportNotices } from '../features/imports/ImportView';
@@ -55,7 +55,7 @@ import {
 import { RenameProjectDialog } from '../features/projects/ProjectDialogs';
 import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMutation } from '../features/projects/queries';
 import { CreateSectionDialog, RenameSectionDialog } from '../features/projects/SectionDialogs';
-import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, type TaskTableCustomColumn } from '../features/task-table';
+import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, type TaskTableCustomColumn } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
 import { TaskDrawer } from '../features/tasks/TaskDrawer';
 import {
@@ -260,6 +260,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const shownTasks = useMemo(() =>
     tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [],
     [tasks.data, tasks.isError, tasks.isFetchNextPageError]);
+  const loadedPackages = useMemo(() => summarizeWorkPackages(shownTasks), [shownTasks]);
   // Use the same root hierarchy as the table: a child can belong to another section's group.
   const sectionGroups = useMemo(() => buildTaskGroups(shownTasks, sections.data ?? [], locale), [shownTasks, sections.data, locale]);
   const taskGroups = useMemo(() => buildTableGroups(shownTasks, sections.data ?? [], members.data ?? [], grouping, locale), [shownTasks, sections.data, members.data, grouping, locale]);
@@ -357,8 +358,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   }, [taskPresentationKey, invalidateInlineSave]);
   const completion = useTaskCompletion(commands, { tasks: dedupeTasks(shownTasks), statuses: statuses.data ?? [], writable: completionWritable, editingTaskId: activeInline?.taskId ?? null, focusScope: taskPresentationKey }, () => setAnnouncement(message('tasks.completion.saved')));
 
-  const inlineHead = useRef({ activeInline, grouping, presentationKey: taskPresentationKey, completionWritable });
-  useLayoutEffect(() => { inlineHead.current = { activeInline, grouping, presentationKey: taskPresentationKey, completionWritable }; });
+  const inlineHead = useRef({ activeInline, loadedPackages, grouping, presentationKey: taskPresentationKey, completionWritable });
+  useLayoutEffect(() => { inlineHead.current = { activeInline, loadedPackages, grouping, presentationKey: taskPresentationKey, completionWritable }; });
   const beginInlineSave = (form: HTMLFormElement) => {
     inlineFocusReturn.current?.dispose();
     inlineFocusReturn.current = null;
@@ -412,7 +413,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const receipt = inlineReceipt.current;
     if (receipt) {
       const current = dedupeTasks(shownTasks).find(task => task.id === receipt.task.id);
-      if (receipt.generation === inlineGeneration.current && receipt.presentationKey === taskPresentationKey && completionWritable && current && canEditTaskInline(current) && current.revision === receipt.task.revision && current[receipt.field] === receipt.task[receipt.field]) {
+      if (receipt.generation === inlineGeneration.current && receipt.presentationKey === taskPresentationKey && completionWritable && current && canEditTaskInline(current) && matchesInlineTaskReceipt(current, receipt.task, receipt.field)) {
         setSavedAssignment({ taskId: current.id, membershipId: current.responsibleMembershipId, revision: current.revision, generation: receipt.generation });
       }
       inlineReceipt.current = null;
@@ -425,7 +426,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       return;
     }
     const current = dedupeTasks(shownTasks).find(task => task.id === intent.task.id);
-    if (!current || !canEditTaskInline(current) || current.revision !== intent.task.revision || current[intent.field] !== intent.task[intent.field]) {
+    if (!current || !canEditTaskInline(current) || !matchesInlineTaskReceipt(current, intent.task, intent.field) || (intent.field === 'estimate' && !isCurrentEstimateProjection(current, loadedPackages.packages))) {
       intent.dispose();
       inlineFocusReturn.current = null;
       return;
@@ -437,7 +438,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     intent.dispose();
     if (target) target.focus();
     inlineFocusReturn.current = null;
-  }, [activeInline, tasks.isFetching, shownTasks, taskPresentationKey, completionWritable, grouping]);
+  }, [activeInline, tasks.isFetching, shownTasks, taskPresentationKey, completionWritable, grouping, loadedPackages]);
 
   const setTaskParam = (next: string | null) =>
     setSearchParams((previous) => {
@@ -512,6 +513,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const startInline = (task: TaskDto, field: TaskInlineField) => {
     invalidateInlineSave();
     if (!writable || !canEditTaskInline(task)) return;
+    const original = commands.editSessions.current.get(task.id)?.base ?? task;
+    if (field === 'estimate' && !commands.update.pendingCommand && !commands.update.uncertain && !isCurrentEstimateProjection(original, inlineHead.current.loadedPackages.packages)) {
+      setAnnouncement(message('tasks.inlineEstimate.refreshRequired'));
+      return;
+    }
     const held = unresolvedTaskCommand(commands);
     if (held && (held.taskId !== task.id || !commands.update.pendingCommand && !commands.update.uncertain)) return;
     setTaskParam(null);
@@ -652,7 +658,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
             draftTaskIds={new Set(commands.editSessions.current.keys())}
-            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
             quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => setQuickAddSection(undefined)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
@@ -782,7 +788,7 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
     <div className="space-y-3">
       {boardMode ? <TaskBoard renderCompletionAction={table.renderCompletionAction} tasks={dedupeTasks(scope.tasks)} statuses={table.statuses} members={table.members} partial={!scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
-        tasks={dedupeTasks(scope.tasks)}
+        tasks={scope.tasks}
         partial={filtered || !scope.complete}
         today={todayIn(workspace.timezone)}
         caption={t('projects.projectPage.tasksInValue', { p0: project.name })}

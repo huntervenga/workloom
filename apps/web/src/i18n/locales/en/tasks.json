@@ -251,5 +251,12 @@
     "reviewChange": "Review the status change for {{title}}.",
     "retry": "Retry original status change",
     "saved": "Task status change confirmed."
+  },
+  "inlineEstimate": {
+    "edit": "Edit team estimate for {{title}}",
+    "label": "Team estimate (hours)",
+    "sharedHelp": "This changes the shared budget for the whole team and every task in this work package.",
+    "formatHelp": "Use hours such as 1.5 or 1:30. Leave blank for unknown; 0 means zero.",
+    "refreshRequired": "Refresh task data before editing this shared package estimate."
   }
 }

@@ -1,4 +1,4 @@
-import { canEditTaskInline, type TaskInlineField } from '../tasks/tableEditing';
+import { canEditTaskInline, isCurrentEstimateProjection, type TaskInlineField } from '../tasks/tableEditing';
 import { t, useTranslation, formatDate } from '../../i18n';
 import type {
   MembershipDto,
@@ -375,8 +375,9 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     const editor = ctx.renderTaskFieldEditor?.(task, field);
     if (editor !== undefined && editor !== null) return editor;
     if (!ctx.onEditTaskField || !canEditTaskInline(task)) return content;
-    const label = field === 'title' ? renameLabel : field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
-    return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className="flex min-h-8 w-full min-w-0 items-center rounded px-1 text-left hover:bg-slate-100">{content}</button>;
+    if (field === 'estimate' && !isCurrentEstimateProjection(task, ctx.summary.packages)) return <span title={t('tasks.inlineEstimate.refreshRequired')}>{content}<span className="sr-only">{t('tasks.inlineEstimate.refreshRequired')}</span></span>;
+    const label = field === 'estimate' ? t('tasks.inlineEstimate.edit', { title: task.title }) : field === 'title' ? renameLabel : field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
+    return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className={cn('flex min-h-8 w-full min-w-0 items-center rounded px-1 hover:bg-slate-100', field === 'estimate' ? 'justify-end text-right' : 'text-left')}>{content}</button>;
   };
   const builtinCells: Record<string, ReactNode> = {
     title: (      <td
@@ -449,7 +450,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     dueDate: <td className="px-3 py-1">{cell('dueDate', <DueDateCell dueDate={task.dueDate} today={ctx.today} finished={finished} />)}</td>,
     tags: <td className="px-3 py-1"><TagsCell tags={task.tags} /></td>,
     priority: <td className="px-3 py-1"><PriorityCell priority={task.priority} /></td>,
-    estimate: <td className={cn('px-3 py-1 text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && stickyEstimateClassName)}><EstimateCell task={task} summary={ctx.summary} /></td>,
+    estimate: <td className={cn('px-3 py-1 text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && stickyEstimateClassName)}>{cell('estimate', <EstimateCell task={task} summary={ctx.summary} />)}</td>,
   };
   return <tr className="group h-11 border-t border-line hover:bg-canvas/70">{ctx.columnIds.map(id => {
     const custom = ctx.customColumns.find(column => column.id === id);
