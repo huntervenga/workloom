@@ -206,5 +206,9 @@
   "timeZoneExample": "Asia/Nicosia",
   "savedActualDurationHelp": "Saved actual duration: {{duration}}. Full attendance uses this duration; partial attendance must not exceed it.",
   "actualDurationRequiredHelp": "Save the actual start and duration above before confirming full or partial attendance. You can record planned absence separately.",
-  "partialTimeExample": "For example, 0:30"
+  "partialTimeExample": "For example, 0:30",
+  "editActualDetails": "Edit actual details",
+  "hideActualEditor": "Hide editor",
+  "personalAttendance": "Individual attendance",
+  "chooseAttendancePerson": "Choose a person"
 }

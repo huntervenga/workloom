@@ -181,6 +181,7 @@ test.describe('P1b desktop 1440', () => {
     await page.screenshot({ path: info.outputPath('p1b-desktop-value-history.png') });
     await closeDialog(history);
     await closeDialog(drawer);
+    await showAllColumns(page);
 
     const table = page.getByRole('main').getByRole('table');
     const estimate = table.getByRole('columnheader', { name: "Team estimate", exact: true });

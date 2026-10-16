@@ -2,8 +2,8 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { created, failure, installFakeApi, json, ok, renderApp } from '../../test/fakeApi';
 import { planningKeys } from './queries';
-import { alpha, anna } from '../../test/fakeApi';
-import { BASELINE_ID, MEMBER_ID, PERIOD_A, PERIOD_B, PERSONAL_BASELINE_ID, RUN_ID, TASK_ID, baseline, commitment, log, lostResponse, period, report, rootPath, routes, snapshot, weekPath } from './test/fixtures';
+import { alpha, alphaMembers, anna } from '../../test/fakeApi';
+import { BASELINE_ID, MEMBER_ID, PROJECT_ID, PERIOD_A, PERIOD_B, PERSONAL_BASELINE_ID, RUN_ID, TASK_ID, baseline, commitment, log, lostResponse, period, report, rootPath, routes, snapshot, weekPath } from './test/fixtures';
 
 // Radix has both a top close icon and a visible close action. Target its labelled top button.
 async function close(user: ReturnType<typeof renderApp>['user'], name: string) {
@@ -163,4 +163,73 @@ describe('weekly planning lifecycle', () => {
     expect(await screen.findByRole('checkbox', { name: /Compare only known personal plans/ })).toBeChecked();
   });
 
+});
+
+
+describe('explicit weekly person and period context', () => {
+  it('keeps an unselected table week empty and carries the person back after an explicit week selection', async () => {
+    const colleague = alphaMembers[1]; if (!colleague) throw new Error('Missing colleague');
+    const { calls } = installFakeApi(routes());
+    const { user } = renderApp(`${weekPath}?period=&worker=${colleague.id}`);
+    expect(await screen.findByRole('heading', { name: 'Choose a week' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Period', { exact: true })).toHaveValue('');
+    expect(screen.getByLabelText('Time entry for')).toHaveValue(colleague.id);
+    expect(calls.some(call => /\/periods\/[^/]+$/.test(call.path))).toBe(false);
+    await user.selectOptions(screen.getByLabelText('Period', { exact: true }), PERIOD_B);
+    await screen.findByRole('button', { name: 'Add to plan' });
+    expect(screen.getByRole('link', { name: 'Back to task table' })).toHaveAttribute('href', `/w/${alpha.id}/projects/${PROJECT_ID}?week=${PERIOD_B}&worker=${colleague.id}`);
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+  });
+
+  it('keeps independent same-week person drafts and resumes a lost save under its original person and key', async () => {
+    const colleague = alphaMembers[1]; if (!colleague) throw new Error('Missing colleague');
+    const gate = lostResponse(); let attempts = 0;
+    const { calls } = installFakeApi({ ...routes(), [`POST ${rootPath}/periods/${PERIOD_A}/commitments`]: () => ++attempts === 1 ? gate.promise : created(commitment(180)) });
+    const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&worker=${colleague.id}`);
+    let dialog = await openPlan(user);
+    expect(within(dialog).getByRole('region', { name: 'Time entry context' })).toHaveTextContent(colleague.displayName);
+    expect(within(dialog).queryByLabelText('Whose plan')).not.toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('Planned hours'), '2');
+    await close(user, 'Add to weekly plan');
+    await user.selectOptions(screen.getByLabelText('Time entry for'), MEMBER_ID);
+    dialog = await openPlan(user);
+    await user.selectOptions(within(dialog).getByLabelText('Whole task'), 'f1000000-0000-4000-8000-000000000001');
+    await user.type(within(dialog).getByLabelText('Planned hours'), '3');
+    await user.click(within(dialog).getByRole('button', { name: 'Save personal plan' }));
+    await waitFor(() => expect(attempts).toBe(1));
+    await close(user, 'Add to weekly plan');
+    await user.selectOptions(screen.getByLabelText('Time entry for'), colleague.id);
+    dialog = await openPlan(user);
+    expect(within(dialog).getByLabelText('Planned hours')).toHaveValue('2');
+    await act(async () => gate.lose());
+    expect(within(dialog).getByRole('button', { name: 'Save personal plan' })).toBeDisabled();
+    expect(within(dialog).queryByRole('button', { name: 'Retry original save' })).not.toBeInTheDocument();
+    await close(user, 'Add to weekly plan');
+    await user.click(screen.getByRole('button', { name: 'Open original save' }));
+    dialog = await screen.findByRole('dialog', { name: 'Add to weekly plan' });
+    expect(screen.getByLabelText('Time entry for')).toHaveValue(MEMBER_ID);
+    expect(within(dialog).getByRole('region', { name: 'Time entry context' })).toHaveTextContent(anna.displayName);
+    await user.click(within(dialog).getByRole('button', { name: 'Retry original save' }));
+    await waitFor(() => expect(attempts).toBe(2));
+    const writes = calls.filter(call => call.method === 'POST');
+    expect(writes[0]?.body).toMatchObject({ membershipId: MEMBER_ID, plannedMinutes: 180 });
+    expect(writes[1]?.body).toEqual(writes[0]?.body);
+    expect(writes[1]?.headers.get('Idempotency-Key')).toBe(writes[0]?.headers.get('Idempotency-Key'));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText('Time entry for'), colleague.id);
+    dialog = await openPlan(user);
+    expect(within(dialog).getByLabelText('Planned hours')).toHaveValue('2');
+  });
+
+  it('never replaces an unavailable carried person with the actor and does not change report people', async () => {
+    const missing = 'c0000000-0000-4000-8000-000000009999';
+    const { calls } = installFakeApi({ ...routes(), [`GET ${rootPath}/periods/${PERIOD_A}/baselines`]: () => ok([baseline()]) });
+    const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&worker=${missing}`);
+    expect(await screen.findByRole('button', { name: 'Add to plan' })).toBeDisabled();
+    expect(screen.getByLabelText('Time entry for')).toHaveValue(missing);
+    expect(screen.getByRole('button', { name: 'Record actual hours' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Report' }));
+    expect(screen.getByRole('checkbox', { name: anna.displayName })).not.toBeChecked();
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+  });
 });

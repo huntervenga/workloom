@@ -55,4 +55,4 @@ The implementation's process/environment guards have focused tests:
 node --test tests/scripts/local-runtime.test.mjs
 ```
 
-The initial read-only `doctor` verified all three preexisting processes and readiness without adopting them. A real controlled stop/start and data persistence check remains a separate gate in [25](25-ux-verification.md); pure guard tests do not prove reboot survival or browser behavior.
+The initial read-only `doctor` verified all three preexisting processes and readiness without adopting them. On **2026-10-16, 08:20:01.258–08:21:38.126 UTC**, the coordinated real stop/start → doctor → stop/start → doctor gate passed, with all **54 public tables / 11,480 rows** matching exact pre/post counts and full-row digests. See [25](25-ux-verification.md) for process identities and snapshots. This proves that controlled local restart; an actual OS reboot was **not tested**. Pure guard tests remain separate from browser workflow evidence.

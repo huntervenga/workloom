@@ -1,3 +1,9 @@
+import { ProjectActions } from '../features/projects/ProjectActions';
+import { weeklyPlanningHref } from '../features/planning/navigation';
+import { QuickTaskAdd } from '../features/tasks/QuickTaskAdd';
+import { InlineTaskEdit } from '../features/tasks/InlineTaskEdit';
+import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
+import { canEditTaskInline, type TaskInlineField } from '../features/tasks/tableEditing';
 import { message, type TranslationMessage } from '../i18n';
 import { useTranslation } from '../i18n';
 import { ImportView, ImportNotices } from '../features/imports/ImportView';
@@ -25,8 +31,8 @@ import type {
   WorkspaceDto,
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
-import { ArrowLeft, CalendarDays, FolderPlus, Lock, MoreHorizontal, Pencil, Plus, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
   FieldManagerDialog,
@@ -51,7 +57,7 @@ import {
   type TaskFilterValue,
 } from '../features/tasks/TaskFilters';
 import { loadedTaskScope, useTagsQuery, useTaskListQuery } from '../features/tasks/queries';
-import { useTaskCommands, type CreateRequest } from '../features/tasks/useTaskCommands';
+import { useTaskCommands, unresolvedTaskCommand, type CreateRequest } from '../features/tasks/useTaskCommands';
 import { WorkCategorySettings, useTaskTimeTable } from '../features/work-categories';
 import { useMembershipsQuery } from '../features/workspace/queries';
 import { isAccessDenied } from '../lib/api';
@@ -207,6 +213,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const renameSectionMutation = useUpdateSectionMutation(actorId, workspace.id);
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
+  const [quickAddSection, setQuickAddSection] = useState<string | null | undefined>(undefined);
+  const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   const [filters, setFilters] = useState<TaskFilterValue>(emptyTaskFilters);
   const search = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
@@ -320,6 +328,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     });
 
   const openTask = (id: string) => {
+    setQuickAddSection(undefined);
+    setActiveInline(null);
     setCreating(null);
     setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);for(const key of ['meetingTab','meetingMember','meetingAttendance','meetingPeriod'])next.delete(key);return next;});
   };
@@ -338,8 +348,42 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   };
   const startCreate = (request: CreateRequest) => {
     if (!writable || request.parent?.archivedAt) return;
+    const kept = commands.createSession.current;
+    setActiveInline(null);
     setTaskParam(null);
-    setCreating(commands.createSession.current?.request ?? request);
+    if (kept?.origin === 'quick' && (commands.create.pendingCommand || commands.create.uncertain)) {
+      setCreating(null);
+      setQuickAddSection(kept.request.sectionId);
+      setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); next.delete('task'); return next; });
+      return;
+    }
+    setQuickAddSection(undefined);
+    if (kept?.origin === 'quick') {
+      const { origin: _origin, ...drawerSession } = kept;
+      commands.createSession.current = drawerSession;
+    }
+    setCreating(kept?.request ?? request);
+  };
+  const startQuickAdd = (sectionId: string | null) => {
+    if (!writable || !metadataReady) return;
+    setTaskParam(null);
+    setCreating(null);
+    setActiveInline(null);
+    const kept = commands.createSession.current;
+    setQuickAddSection(kept?.origin === 'quick' ? kept.request.sectionId : sectionId);
+  };
+  const startInline = (task: TaskDto, field: TaskInlineField) => {
+    if (!writable || !canEditTaskInline(task)) return;
+    const held = unresolvedTaskCommand(commands);
+    if (held && (held.taskId !== task.id || !commands.update.pendingCommand && !commands.update.uncertain)) return;
+    setTaskParam(null);
+    setCreating(null);
+    setQuickAddSection(undefined);
+    setActiveInline({ taskId: task.id, field });
+  };
+  const closeInline = (taskId: string, field: TaskInlineField) => {
+    setActiveInline(null);
+    requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`button[data-task-cell="${taskId}:${field}"]`)?.focus());
   };
   const closeDrawer = () => {
     setCreating(null);
@@ -362,20 +406,17 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           </div>
         </div>
         {writable && metadataReady ? <Button size="sm" variant="primary" onClick={() => startCreate({ sectionId: null, parent: null })}><Plus size={16} aria-hidden="true" />{t('projects.projectPage.newTask')}</Button> : null}
-        <details className="relative shrink-0" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
-          <summary aria-label={t('projects.projectPage.projectActions')} title={t('projects.projectPage.projectActions')} className="flex size-8 cursor-pointer list-none items-center justify-center rounded-lg border border-line bg-surface text-muted hover:bg-canvas [&::-webkit-details-marker]:hidden"><MoreHorizontal size={18} aria-hidden="true" /></summary>
-          <div aria-label={t('projects.projectPage.projectActions')} className="absolute right-0 z-30 mt-2 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-line bg-surface p-2 shadow-lg [&_button]:w-full [&_button]:justify-start">
-            <p className="px-2 py-1 text-xs font-medium text-muted">{t('projects.projectPage.projectActions')}</p>
+        <ProjectActions>
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
             <FieldManagerDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             {writable ? <CreateSectionDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} trigger={<Button size="sm" variant="ghost"><FolderPlus size={16} aria-hidden="true" />{t('projects.projectPage.newSection')}</Button>} onCreated={section => setAnnouncement(message('projects.projectPage.sectionValueCreated', { p0: section.name }))} /> : null}
-          </div>
-        </details>
+        </ProjectActions>
       </header>
 
+      {taskId === null && creating === null && (quickAddSection === undefined || graphMode || ganttMode || importMode) && (!activeInline || !shownTasks.some(task => task.id === activeInline.taskId)) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
       <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable} />
@@ -389,7 +430,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         <Button size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
         <Button size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
         {canManageImports ? <Button size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
-        <Link to={`/w/${workspace.id}/projects/${project.id}/week`} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>
+        <Link to={weeklyPlanningHref(workspace.id, project.id, { periodId: taskTime.context.periodId, workerId: taskTime.context.workerId, explicitEmptyPeriod: true })} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>
           <CalendarDays size={16} aria-hidden="true" />{t('projects.projectPage.week')}</Link>
       </nav>
 
@@ -449,6 +490,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             />
           ) : null}
           {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : <TaskList
+            onEditTaskField={startInline}
+            draftTaskIds={new Set(commands.editSessions.current.keys())}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} task={task} field={field} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => setQuickAddSection(undefined)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
             query={tasks}
@@ -462,7 +507,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             customColumns={[...taskTime.columns, ...(columnPreset === 'expanded' ? customColumns : [])]}
             writable={writable}
             onOpenTask={openTask}
-            onCreateTask={(sectionId) => startCreate({ sectionId: sectionId ?? null, parent: null })}
+            onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
             onCreateChild={(parent) => startCreate({ sectionId: parent.sectionId, parent })}
             onRenameSection={writable ? renameSection : undefined}
           />}
@@ -529,6 +574,10 @@ interface TaskListProps {
   members: readonly MembershipDto[];
   customColumns: readonly TaskTableCustomColumn[];
   columnPreset: 'compact' | 'expanded';
+  onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;
+  renderTaskFieldEditor: NonNullable<ComponentProps<typeof TaskTable>['renderTaskFieldEditor']>;
+  draftTaskIds: ReadonlySet<string>;
+  quickAdd: ComponentProps<typeof TaskTable>['quickAdd'];
   writable: boolean;
   onOpenTask: (taskId: string) => void;
   onCreateTask: (sectionId?: string | null) => void;

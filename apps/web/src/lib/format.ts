@@ -1,13 +1,5 @@
 import { t, localization } from '../i18n';
 
-const pluralRules = new Intl.PluralRules('ru-RU');
-
-export function pluralizeRu(count: number, forms: { one: string; few: string; many: string }): string {
-  const rule = pluralRules.select(count);
-  const word = rule === 'one' ? forms.one : rule === 'few' ? forms.few : forms.many;
-  return `${count} ${word}`;
-}
-
 export function formatMemberCount(count: number): string {
   return t('common.membersCount', { count });
 }

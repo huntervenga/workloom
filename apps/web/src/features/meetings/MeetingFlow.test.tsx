@@ -75,3 +75,72 @@ describe('meeting command and source boundaries',()=>{
   let denied=false;installFakeApi({...routes(),[`GET ${rootPath}/tasks/${TASK_ID}/meeting`]:()=>denied?failure(404,'NOT_FOUND','private'):ok(meeting({summaryText:'Секретный итог'}))});const {user,queryClient}=renderApp(`${tablePath}?task=${TASK_ID}`);const dialog=await screen.findByRole('dialog',{name:meetingTask.title});await within(dialog).findByDisplayValue('Секретный итог');denied=true;await act(async()=>{await queryClient.invalidateQueries({queryKey:['actor']});});await waitFor(()=>expect(screen.queryByDisplayValue('Секретный итог')).not.toBeInTheDocument());expect(screen.queryByRole('button',{name:"Save meeting"})).not.toBeInTheDocument();void user;
  });
 });
+
+
+describe('individual attendance context and actual-details disclosure', () => {
+  it('requires explicit selection when the acting person has no attendance row', async () => {
+    const colleague = alphaMembers[1]; if (!colleague) throw new Error('Missing colleague');
+    const row = { ...attendance(), membershipId: colleague.id };
+    const { calls } = installFakeApi({ ...routes(), [`GET ${rootPath}/tasks/${TASK_ID}/attendance`]: () => ok([row]), [`POST ${rootPath}/tasks/${TASK_ID}/attendance/confirm`]: () => ok({ meeting: meeting(), attendances: [row] }) });
+    const { user } = renderApp(`${tablePath}?task=${TASK_ID}&meetingTab=attendance`);
+    const drawer = await screen.findByRole('dialog', { name: meetingTask.title });
+    const person = await within(drawer).findByLabelText('Whose attendance');
+    expect(person).toHaveValue('');
+    expect(within(drawer).queryByRole('button', { name: "Confirm selected person's attendance" })).not.toBeInTheDocument();
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+    await user.selectOptions(person, row.id);
+    await user.selectOptions(within(drawer).getByLabelText('Attendance outcome'), 'absent');
+    await user.click(within(drawer).getByRole('button', { name: "Confirm selected person's attendance" }));
+    await waitFor(() => expect(calls.some(call => call.path.endsWith('/attendance/confirm'))).toBe(true));
+    expect(calls.find(call => call.path.endsWith('/attendance/confirm'))?.body).toMatchObject({ rows: [{ attendanceId: row.id, status: 'absent', attributionBasis: 'planned_absence', minutes: 0 }] });
+    expect(calls.some(call => call.method === 'PATCH')).toBe(false);
+  });
+
+  it('collapses saved actual details, but keeps an unsaved actual edit visible after closing and reopening', async () => {
+    const current = meeting({ actualStartAt: STAMP, actualDurationMinutes: 60 });
+    const { calls } = installFakeApi(routes(() => current));
+    const { user } = renderApp(`${tablePath}?task=${TASK_ID}&meetingTab=attendance`);
+    let drawer = await screen.findByRole('dialog', { name: meetingTask.title });
+    const edit = await within(drawer).findByRole('button', { name: 'Edit actual details' });
+    expect(within(drawer).getByLabelText('Actual duration, minutes')).not.toBeVisible();
+    expect(within(drawer).getByRole('region', { name: 'Individual attendance' })).toBeVisible();
+    await user.click(edit);
+    const duration = within(drawer).getByLabelText('Actual duration, minutes');
+    await user.clear(duration); await user.type(duration, '75');
+    await close(user, meetingTask.title);
+    await user.click(screen.getByRole('button', { name: meetingTask.title }));
+    drawer = await screen.findByRole('dialog', { name: meetingTask.title });
+    await user.click(within(drawer).getByRole('tab', { name: 'Attendance' }));
+    expect(await within(drawer).findByLabelText('Actual duration, minutes')).toBeVisible();
+    expect(within(drawer).getByLabelText('Actual duration, minutes')).toHaveValue(75);
+    expect(within(drawer).queryByRole('button', { name: 'Hide editor' })).not.toBeInTheDocument();
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+  });
+
+  it('keeps a lost actual-details save expanded and retries it without posting attendance', async () => {
+    let current = meeting({ actualStartAt: STAMP, actualDurationMinutes: 60 });
+    const gate = lostResponse(); let attempts = 0;
+    const { calls } = installFakeApi({ ...routes(() => current), [`PATCH ${rootPath}/tasks/${TASK_ID}/meeting`]: request => { attempts += 1; if (attempts === 1) return gate.promise; current = { ...current, actualDurationMinutes: (request.body as UpdateMeetingInput).actualDurationMinutes ?? 60, revision: 2 }; return ok(current); } });
+    const { user } = renderApp(`${tablePath}?task=${TASK_ID}&meetingTab=attendance`);
+    let drawer = await screen.findByRole('dialog', { name: meetingTask.title });
+    await user.click(await within(drawer).findByRole('button', { name: 'Edit actual details' }));
+    const duration = within(drawer).getByLabelText('Actual duration, minutes');
+    await user.clear(duration); await user.type(duration, '75');
+    await user.click(within(drawer).getByRole('button', { name: 'Save actual details' }));
+    await waitFor(() => expect(attempts).toBe(1));
+    await close(user, meetingTask.title);
+    await act(async () => gate.lose());
+    await user.click(screen.getByRole('button', { name: 'Open original meeting save' }));
+    drawer = await screen.findByRole('dialog', { name: meetingTask.title });
+    expect(await within(drawer).findByLabelText('Actual duration, minutes')).toBeVisible();
+    expect(within(drawer).getByLabelText('Actual duration, minutes')).toBeDisabled();
+    expect(within(drawer).getByLabelText('Actual duration, minutes')).toHaveValue(75);
+    await user.click(within(drawer).getByRole('button', { name: 'Retry original actual details' }));
+    await waitFor(() => expect(attempts).toBe(2));
+    const writes = calls.filter(call => call.method === 'PATCH');
+    expect(writes[0]?.body).toMatchObject({ expectedMeetingRevision: 1, actualDurationMinutes: 75 });
+    expect(writes[1]?.body).toEqual(writes[0]?.body);
+    expect(writes[1]?.headers.get('Idempotency-Key')).toBe(writes[0]?.headers.get('Idempotency-Key'));
+    expect(calls.some(call => call.path.endsWith('/attendance/confirm'))).toBe(false);
+  });
+});

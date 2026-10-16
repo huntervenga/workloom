@@ -8,6 +8,7 @@ import {
   useUpdateTaskMutation,
 } from './queries';
 import type { TaskDraft } from './taskDraft';
+import type { TaskInlineField } from './tableEditing';
 
 /** Where a new task goes: a section (or none) and, for a subtask, its parent as listed. */
 export interface CreateRequest {
@@ -19,12 +20,16 @@ export interface CreateSession {
   request: CreateRequest;
   draft: TaskDraft;
   workScope: TaskWorkScope;
+  /** Quick creation keeps recovery in its original inline form while a command is unresolved. */
+  origin?: 'quick';
 }
 
 export interface EditSession {
   /** The snapshot the draft was made against; its revisions are the guards. */
   base: TaskDto;
   draft: TaskDraft;
+  /** Limits an inline save to the single field whose draft the user opened. */
+  inlineField?: TaskInlineField;
 }
 
 /**
@@ -41,10 +46,23 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
   const [createdTags, setCreatedTags] = useState<TagDto[]>([]);
   const createSession = useRef<CreateSession | null>(null);
   const editSessions = useRef(new Map<string, EditSession>());
+  // Object identity ties confirmation to exactly the submitted draft, including after remount.
+  // Weak keys retain neither discarded sessions nor an unbounded task history.
+  const confirmedSessions = useRef(new WeakMap<CreateSession | EditSession, TaskDto>());
+  const [, notifyConfirmation] = useState(0);
+  const confirmSession = useCallback((session: CreateSession | EditSession, task: TaskDto): boolean => {
+    if (confirmedSessions.current.has(session)) return false;
+    confirmedSessions.current.set(session, task);
+    if (createSession.current === session) createSession.current = null;
+    if (editSessions.current.get(task.id) === session) editSessions.current.delete(task.id);
+    notifyConfirmation(version => version + 1);
+    return true;
+  }, []);
+
 
   const addCreatedTag = useCallback((tag: TagDto) => setCreatedTags((previous) => [...previous, tag]), []);
 
-  return { create, update, archive, restore, createTag, createdTags, addCreatedTag, createSession, editSessions };
+  return { create, update, archive, restore, createTag, createdTags, addCreatedTag, createSession, editSessions, confirmedSessions, confirmSession };
 }
 
 export type TaskCommands = ReturnType<typeof useTaskCommands>;

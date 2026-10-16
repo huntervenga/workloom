@@ -15,13 +15,21 @@ export async function revealTaskDetails(drawer: Locator): Promise<void> {
   if (!opened) await summary.click();
 }
 
+export async function closeProjectActions(page: Page): Promise<void> {
+  const summary = page.locator('summary[aria-label="Project actions"]');
+  if (await summary.count() && await summary.locator('..').evaluate(element => element.hasAttribute('open'))) await summary.click();
+}
+
 export async function showAllColumns(page: Page): Promise<void> {
+  await closeProjectActions(page);
   const summary = page.locator('summary').filter({ hasText: /^View: (?:Daily view|All columns)$/ });
   await expect(summary).toBeVisible();
   if (!new URL(page.url()).searchParams.has('columns')) {
     await summary.click();
-    await page.getByRole('radio', { name: 'All columns', exact: true }).check();
+    const allColumns = page.getByRole('radio', { name: 'All columns', exact: true });
+    await allColumns.click();
     await expect(page).toHaveURL(/(?:\?|&)columns=all(?:&|$)/);
+    await expect(allColumns).toBeChecked();
     await summary.click();
   }
 }

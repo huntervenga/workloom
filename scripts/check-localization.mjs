@@ -23,6 +23,7 @@ const violations = [];
 // These diagnostics are never shown directly: safe error descriptions use fixed catalog keys.
 const literalExemptions = new Map([
   ['apps/web/src/main.tsx:Root element #root is missing', 'Developer bootstrap diagnostic; never displayed.'],
+  ['apps/web/src/features/projects/ProjectActions.tsx:button, a', 'DOM selector for dismissing the action popover; never rendered as copy.'],
   ['apps/web/src/features/work-categories/CategoryBadge.tsx:legacy', 'Stable reason-enum lookup fallback; the indexed result is a translated label, not the enum string.'],
   ['apps/web/src/app/session.tsx:useSession must be used inside SessionProvider', 'Developer hook invariant; route boundary shows fixed localized error copy.'],
   ['apps/web/src/features/identity/identity.tsx:useMe must be used inside MeProvider', 'Developer hook invariant; route boundary shows fixed localized error copy.'],
@@ -86,6 +87,9 @@ const estimateKeys = callTranslationKeys(readSource('apps/web/src/features/task-
 const taskIssueKeys = callTranslationKeys(readSource('apps/web/src/features/tasks/taskDraft.ts'), 'taskDraftIssue', 0, false, false, new Map([['estimate.messageKey', estimateKeys]]));
 dynamicKeys.set('apps/web/src/features/task-table/estimate.ts', new Map([['messageKey', { keys: estimateKeys, reason: 'EstimateValidationKey is created only by finite literal invalid(...) calls in this parser.' }]]));
 dynamicKeys.set('apps/web/src/features/tasks/TaskFields.tsx', new Map([['message.key', { keys: taskIssueKeys, reason: 'Task field errors use descriptors from the taskDraftIssue factory, whose literal calls and finite estimate-message input are extracted.' }]]));
+dynamicKeys.set('apps/web/src/features/tasks/InlineTaskEdit.tsx', new Map([['currentError.key', { keys: taskIssueKeys, reason: 'Inline editing renders the same checked TaskDraftIssue descriptors as the task drawer.' }]]));
+dynamicKeys.set('apps/web/src/features/tasks/QuickTaskAdd.tsx', new Map([['issue.key', { keys: taskIssueKeys, reason: 'Quick add renders the same checked TaskDraftIssue descriptors as the task drawer.' }]]));
+
 dynamicKeys.set('apps/web/src/features/tasks/TaskDrawer.tsx', new Map([
   ['errors.form.key', { keys: taskIssueKeys, reason: 'Task form errors are descriptors from the checked taskDraftIssue factory.' }],
   ['notice', { keys: callTranslationKeys(readSource('apps/web/src/features/tasks/TaskDrawer.tsx'), 'setNotice', 0, true), reason: 'Nullable task notice key state; every setter call is extracted and must be a literal key or reset.' }],
@@ -100,6 +104,7 @@ for (const [file, expressions, sources] of [
   ['apps/web/src/features/fields/ProjectColumnsEditor.tsx', ['announcement.key'], ['apps/web/src/features/fields/ProjectColumnsEditor.tsx']],
   ['apps/web/src/features/tasks/TagDialogs.tsx', ['fieldError.key', 'announcement.key'], ['apps/web/src/features/tasks/TagDialogs.tsx']],
   ['apps/web/src/routes/ProjectPage.tsx', ['announcement.key'], ['apps/web/src/routes/ProjectPage.tsx', 'apps/web/src/features/tasks/TaskDrawer.tsx']],
+  ['apps/web/src/routes/WeeklyPage.tsx', ['announcement.key'], ['apps/web/src/routes/WeeklyPage.tsx']],
 ]) {
   const keys = sources.flatMap(source => callTranslationKeys(readSource(source), 'message', 0));
   const rules = dynamicKeys.get(file) ?? new Map();

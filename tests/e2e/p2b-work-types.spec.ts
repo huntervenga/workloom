@@ -11,7 +11,7 @@ import {
   type TaskDto, type WorkTypeReportRunDto,
 } from '@workloom/contracts';
 
-import { openProjectActions } from './support/disclosures.js';
+import { closeProjectActions, openProjectActions } from './support/disclosures.js';
 import { loadLiveData } from './support/live-api.js';
 
 function match(response: Response, method: string, path: string) {
@@ -66,6 +66,7 @@ async function bindUI(page: Page, f: Awaited<ReturnType<typeof setup>>, screensh
   await dialog.getByRole('button', { name: "Save work-type field", exact: true }).click();
   const binding = (await parse(await result, 200, projectWorkCategoryBindingResponseSchema)).data;
   expect(binding.fieldId).toBe(f.field.id); await expect(dialog).toHaveCount(0);
+  await closeProjectActions(page);
   return binding;
 }
 async function factUI(page: Page, f: Awaited<ReturnType<typeof setup>>, task: TaskDto, hours: string) {
@@ -87,7 +88,7 @@ async function reportUI(page: Page, f: Awaited<ReturnType<typeof setup>>) {
   const result = page.waitForResponse(r => match(r, 'POST', `${f.prefix}/work-type-report-runs`));
   await page.getByRole('button', { name: "Calculate hours breakdown", exact: true }).click();
   const run = (await parse(await result, 201, workTypeReportRunResponseSchema)).data;
-  await expect(page.getByLabel("Saved breakdown", { exact: true })).toHaveValue(run.id);
+  await expect(page.getByRole('combobox', { name: "Saved breakdown", exact: true })).toHaveValue(run.id);
   return run;
 }
 async function viewportShot(page: Page, path: string, chart = false) {
@@ -171,12 +172,12 @@ test.describe('P2b desktop1440', () => {
     expect(changed).toMatchObject({ id: aLog.id, minutes: 60, category: { optionId: f.b.id } });
     await editor.close();
     await page.reload();
-    await expect(page.getByLabel("Saved breakdown", { exact: true })).toHaveValue(run.id);
+    await expect(page.getByRole('combobox', { name: "Saved breakdown", exact: true })).toHaveValue(run.id);
     const stored = await request.get(`${f.prefix}/work-type-report-runs/${run.id}`);
     expect(workTypeReportRunResponseSchema.parse(await stored.json()).data).toEqual(run);
     const next = await reportUI(page, f);
     expect(next.byCategory.find(x => x.optionId === f.b.id)).toMatchObject({ minutes: 90, sharePercent: 75 });
-    await page.getByLabel("Saved breakdown", { exact: true }).selectOption(run.id);
+    await page.getByRole('combobox', { name: "Saved breakdown", exact: true }).selectOption(run.id);
     await expect(page.getByRole('figure', { name: "Share of recorded hours", exact: true }).getByRole('img', { name: 'Развитие: 1h, 50%', exact: true })).toBeVisible();
     await writeFile(info.outputPath('p2b-preview.json'), JSON.stringify({ path: `${f.path}/week?period=${f.period.id}&view=work-types&typeRun=${run.id}`, projectId: f.project.id, periodId: f.period.id, runId: run.id }, null, 2));
   });
@@ -243,7 +244,7 @@ test.describe('P2b mobile390', () => {
     await viewportShot(page, info.outputPath('p2b-mobile-category-report.png'));
     await viewportShot(page, info.outputPath('p2b-mobile-category-chart.png'), true);
     await noOverflow(page); await page.reload();
-    await expect(page.getByLabel("Saved breakdown", { exact: true })).toHaveValue(run.id);
+    await expect(page.getByRole('combobox', { name: "Saved breakdown", exact: true })).toHaveValue(run.id);
     await expect(page.getByRole('figure', { name: "Share of recorded hours", exact: true }).getByRole('img', { name: 'Развитие: 1h 30m, 100%', exact: true })).toBeVisible();
   });
 });

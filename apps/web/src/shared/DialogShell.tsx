@@ -1,13 +1,20 @@
 import { t, useTranslation } from '../i18n';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import { createContext, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react';
+import { createContext, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode, type RefObject } from 'react';
 
 interface DialogLayer {
   parent: DialogLayer | null;
 }
 
 const DialogLayerContext = createContext<DialogLayer | null>(null);
+const DialogReturnFocusContext = createContext<RefObject<HTMLElement | null> | null>(null);
+
+/** A dismissed action menu may hide its trigger; return this dialog to a visible control. */
+export function DialogReturnFocus({ targetRef, children }: { targetRef: RefObject<HTMLElement | null>; children: ReactNode }) {
+  return <DialogReturnFocusContext.Provider value={targetRef}>{children}</DialogReturnFocusContext.Provider>;
+}
+
 let openLayers: readonly DialogLayer[] = [];
 const layerListeners = new Set<() => void>();
 const subscribeLayers = (listener: () => void) => {
@@ -59,6 +66,7 @@ const contentClasses = {
 export function DialogShell({ title, description, trigger, open, onOpenChange, variant = 'center', children }: DialogShellProps) {
   useTranslation();
   const openerRef = useRef<HTMLElement | null>(null);
+  const returnFocus = useContext(DialogReturnFocusContext);
   const parentLayer = useContext(DialogLayerContext);
   const [layer] = useState<DialogLayer>(() => ({ parent: parentLayer }));
   const layers = useSyncExternalStore(subscribeLayers, getLayers, getLayers);
@@ -69,6 +77,7 @@ export function DialogShell({ title, description, trigger, open, onOpenChange, v
   const overlayZ = 40 + Math.max(0, layers.indexOf(layer)) * 20;
 
   return (
+    <DialogReturnFocusContext.Provider value={null}>
     <DialogLayerContext.Provider value={layer}>
       <Dialog.Root open={open} onOpenChange={onOpenChange}>
         {trigger ? <Dialog.Trigger asChild>{trigger}</Dialog.Trigger> : null}
@@ -82,6 +91,11 @@ export function DialogShell({ title, description, trigger, open, onOpenChange, v
               openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
             }}
             onCloseAutoFocus={(event) => {
+              if (returnFocus?.current?.isConnected) {
+                event.preventDefault();
+                returnFocus.current.focus();
+                return;
+              }
               if (trigger) return;
               event.preventDefault();
               if (openerRef.current?.isConnected) openerRef.current.focus();
@@ -104,5 +118,6 @@ export function DialogShell({ title, description, trigger, open, onOpenChange, v
         </Dialog.Portal>
       </Dialog.Root>
     </DialogLayerContext.Provider>
+    </DialogReturnFocusContext.Provider>
   );
 }

@@ -16,7 +16,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
 import { Archive, ArchiveRestore, Lock, RefreshCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ApiError } from '../../lib/api';
 import { describeError } from '../../lib/errors';
 import { isUuid } from '../../lib/format';
@@ -283,6 +283,15 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
     () => editSessions.current.get(taskId) ?? { base: latest, draft: draftFromTask(latest, new Set(members.map((m) => m.id))) },
   );
   const [restored, setRestored] = useState(() => editSessions.current.has(taskId));
+  const confirmed = commands.confirmedSessions.current.get(session);
+  useEffect(() => {
+    if (!confirmed) return;
+    setSession({ base: confirmed, draft: draftFromTask(confirmed) });
+    setRestored(false);
+    setErrors({});
+    setReview(null);
+    setNotice(null);
+  }, [confirmed]);
   const [errors, setErrors] = useState<TaskDraftErrors>({});
   const [notice, setNotice] = useState<'tasks.taskDrawer.noChangesToSave' | 'tasks.taskDrawer.theFormNowShowsTheLatestTaskVersion' | 'tasks.taskDrawer.yourChangesHaveBeenAppliedToTheLatest' | null>(null);
   const [lastCommand, setLastCommand] = useState<TaskCommandName | null>(null);
@@ -320,14 +329,15 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
 
   // Keep the draft in memory while it is unsaved or unconfirmed, so closing the drawer loses nothing.
   useEffect(() => {
+    if (confirmed) return;
     if (dirty || locked) editSessions.current.set(taskId, session);
     else editSessions.current.delete(taskId);
-  }, [dirty, locked, session, taskId, editSessions]);
+  }, [confirmed, dirty, locked, session, taskId, editSessions]);
   useUnsavedChangesWarning(dirty || locked);
 
   const adopt = (task: TaskDto, message: TranslationMessage) => {
     // Runs even if the drawer closed meanwhile: the confirmed task replaces the kept draft.
-    editSessions.current.delete(task.id);
+    if (!commands.confirmSession(session, task)) return;
     setSession({ base: task, draft: draftFromTask(task, memberIds) });
     setRestored(false);
     setReview(null);
@@ -352,7 +362,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (event.target !== event.currentTarget || busy) return;
+    if (event.target !== event.currentTarget || confirmed || busy) return;
     if (locked) {
       retryLocked();
       return;
@@ -669,6 +679,15 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
     createSession.current ?? (statusId === null ? null : freshCreateSession(request, statusId)),
   );
   const [restored, setRestored] = useState(() => createSession.current !== null);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const confirmed = session ? commands.confirmedSessions.current.get(session) : undefined;
+  useEffect(() => {
+    if (!confirmed || !session || !statusId) return;
+    setSession(freshCreateSession(session.request, statusId));
+    setRestored(false);
+    setErrors({});
+  }, [confirmed, session, statusId]);
   const [errors, setErrors] = useState<TaskDraftErrors>({});
   const { tagsById } = useLookups(props, []);
 
@@ -680,8 +699,8 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
     (changedKeys(pristine.draft, session.draft).length > 0 || session.workScope !== pristine.workScope);
 
   useEffect(() => {
-    createSession.current = session !== null && (dirty || locked) ? session : null;
-  }, [createSession, dirty, locked, session]);
+    if (!confirmed) createSession.current = session !== null && (dirty || locked) ? session : null;
+  }, [confirmed, createSession, dirty, locked, session]);
   useUnsavedChangesWarning(dirty || locked);
 
   if (!writable) {
@@ -700,8 +719,10 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
       : { kind: 'own' };
 
   const done = (task: TaskDto) => {
-    createSession.current = null;
-    onCreated(task);
+    const ownsVisibleSession = createSession.current === session;
+    if (!commands.confirmSession(session, task)) return;
+    if (mounted.current && ownsVisibleSession) onCreated(task);
+    else props.onAnnounce(message('tasks.taskDrawer.taskSaved'));
   };
   const setDraft = (patch: Partial<TaskDraft>) =>
     setSession((current) => (current ? { ...current, draft: { ...current.draft, ...patch } } : current));
@@ -709,7 +730,7 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (event.target !== event.currentTarget || busy) return;
+    if (event.target !== event.currentTarget || confirmed || busy) return;
     if (locked) {
       create.retryUncertain({ onSuccess: done });
       return;

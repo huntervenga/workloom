@@ -284,7 +284,7 @@ test.describe('P3a mobile390', () => {
     await page.reload();
     await drawer.getByRole('tab', { name: "Attendance", exact: true }).click();
     await expect(drawer.getByLabel("Actual start", { exact: true })).toHaveValue('');
-    await expect(drawer).toContainText('Отсутствие подтверждения не равно нулю');
+    await expect(drawer).toContainText('Unconfirmed is different from zero.');
     await drawer.getByRole('combobox', { name: "Attendance outcome", exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: info.outputPath('p3a-mobile-planned-absence.png') });
     await drawer.getByRole('button', { name: "Attendance history", exact: true }).click();

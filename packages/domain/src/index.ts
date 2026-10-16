@@ -129,3 +129,7 @@ export type {LocalCredentialApplication,LocalMcpApplication} from './local-mcp/a
 export {LOCAL_MCP_TOOL_SCOPE,LOCAL_MCP_SCOPE_CAPABILITY,allowedLocalMcpScopes,assertLocalCredentialCurrent,assertLocalMcpScope} from './local-mcp/policy.js';
 
 export {createLocalCredentialService,type StoredLocalCredential,type LocalCredentialRepository,type LocalCredentialScope,type LocalCredentialReader} from './local-mcp/service.js';
+
+export * from './my-tasks/application.js';
+export * from './my-tasks/ports.js';
+export { createMyTasksApplication } from './my-tasks/service.js';

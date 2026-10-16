@@ -11,6 +11,7 @@ import { useSession } from './session';
 import { AppShell } from './shell/AppShell';
 import { createAsyncRoute } from './AsyncRoute';
 
+const MyTasksPage = createAsyncRoute(() => import('../routes/MyTasksPage').then(module => ({ default: module.MyTasksPage })), 'myTasks.loading');
 const ProjectPage = createAsyncRoute(() => import('../routes/ProjectPage').then(module => ({ default: module.ProjectPage })), 'shell.loadingProject');
 const WeeklyPage = createAsyncRoute(() => import('../routes/WeeklyPage').then(module => ({ default: module.WeeklyPage })), 'shell.loadingWeek');
 const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPage').then(module => ({ default: module.IntegrationsPage })), 'shell.loadingIntegrations');
@@ -26,6 +27,7 @@ export function AppRoutes() {
         <Route index element={<HomeRedirect />} />
         <Route path="w/:workspaceId" element={<WorkspaceLayout />}>
           <Route index element={<OverviewPage />} />
+          <Route path="my-tasks" element={<MyTasksPage />} />
           <Route path="members" element={<MembersPage />} />
           <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="projects" element={<ProjectsPage />} />

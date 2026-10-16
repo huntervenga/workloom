@@ -1,7 +1,7 @@
 import { t, useTranslation } from '../../i18n';
 import type { MeDto } from '@workloom/contracts';
 import { Logomark, cn } from '@workloom/ui';
-import { FolderKanban, LayoutDashboard, Users } from 'lucide-react';
+import { CheckCheck, FolderKanban, LayoutDashboard, Users } from 'lucide-react';
 import { Link, NavLink } from 'react-router';
 import type { WorkspaceRole } from '../../features/workspace/roles';
 import { WorkspaceChooser } from '../../features/workspace/WorkspaceChooser';
@@ -44,6 +44,12 @@ export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarCon
                     <LayoutDashboard size={18} aria-hidden="true" />
 
                     {t('shell.overview')}
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink to={`/w/${workspaceId}/my-tasks`} className={navLinkClass} onClick={onNavigate}>
+                    <CheckCheck size={18} aria-hidden="true" />
+                    {t('myTasks.title')}
                   </NavLink>
                 </li>
                 <li>

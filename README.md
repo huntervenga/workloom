@@ -22,6 +22,9 @@
 - [Контракт P5b: локальный MCP](docs/20-p5b-mcp-contract.md)
 - [Передача локального пилота](docs/21-local-pilot-handoff.md)
 - [Локальный worker: запуск, health и остановка](apps/worker/README.md)
+- [Безопасный перезапуск сохранённой локальной базы и приложения](docs/26-local-runtime.md)
+- [Чистый синтетический пример Workloom Studio](docs/27-synthetic-demo.md)
+- [Новый UX-прогон и его фактические проверки](docs/25-ux-verification.md)
 
 ## Стек и границы
 

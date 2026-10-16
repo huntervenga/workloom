@@ -34,13 +34,16 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 07:40:56.609–07:41:10.796 | Initial desktop/mobile audit | Six GET-only surfaces captured; zero attempted writes, zero page errors, no global horizontal overflow |
 | 08:17:24.241 | Initial UI/localization checkpoint | Authors frozen; real JSON-only locale/draft smoke passed and temporary locale removed |
 | 08:17 | Controlled verification preparation | Read-only P0 shell 6/6 passed; full mutating browser/API gate waits for root build/runtime window |
-| Pending | Durable startup/shutdown verification | Not run |
-| Pending | Final visual review and delivery | Not run |
+| 08:20:01.258–08:21:38.126 | Controlled durable restart | Helper start/doctor/stop/start/doctor passed; all 54 tables / 11,480 rows preserved exactly |
+| 08:39:26.296 | Frozen compiled browser checkpoint | Full 26/26 pass; all 12 served assets unchanged from the pre-suite manifest |
+| 08:39:35.113–08:39:39.804 | Additive synthetic workspace | 82 commands acknowledged; all 54 tables / 14,647 pre-existing rows preserved exactly |
+| 08:41:50.031–08:42:23.805 | Final clean-workspace frames | Ten GET-only desktop/mobile surfaces, zero errors/attempted writes/global overflow |
+| 08:43:29.401 | Exclusive checkpoint window released | Assets unchanged, helper doctor all owned/ready; next source slice has a separate gate |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 
 ## Demo and data hygiene
 
-GET inventory at the initial audit found one accessible workspace, **183 active projects**, and six synthetic memberships (owner, admin, three members, viewer). Many projects are prior E2E/compatibility fixtures. Do not delete or archive them to make screenshots cleaner. A separate clean, English synthetic workspace/project is the preferred additive demo direction; its exact actor count and setup must be coordinated with the fixture allowlist and root before writes.
+GET inventory at the initial audit found one accessible workspace, **183 active projects**, and six synthetic memberships (owner, admin, three members, viewer). Many projects are prior E2E/compatibility fixtures. Do not delete or archive them to make screenshots cleaner. The approved additive **Workloom Studio** workspace now contains two English projects and 18 purposeful tasks, using the existing six actors. Its exact repeatable setup and stable entry links are in [27](27-synthetic-demo.md). The original workspace and historical fixtures remain intact.
 
 The existing reference project is `f477730b-57dc-418f-a46b-0eeab30f8212` in workspace `5eed0000-0000-4000-8000-000000000201`. [21](21-local-pilot-handoff.md) contains its preserved walkthrough. Its Russian user-authored names are existing data, separate from UI localization completeness.

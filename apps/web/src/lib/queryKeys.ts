@@ -24,6 +24,8 @@ export const queryKeys = {
   tags: (actorId: string, workspaceId: string) => ['actor', actorId, 'workspace', workspaceId, 'tags'] as const,
   /** Prefix of every task list and task detail in the workspace. */
   tasks: (actorId: string, workspaceId: string) => ['actor', actorId, 'workspace', workspaceId, 'tasks'] as const,
+  myTasks: (actorId: string, workspaceId: string, filters: object) =>
+    ['actor', actorId, 'workspace', workspaceId, 'tasks', 'my', filters] as const,
   projectTaskLists: (actorId: string, workspaceId: string, projectId: string) =>
     ['actor', actorId, 'workspace', workspaceId, 'tasks', 'list', projectId] as const,
   /** `params` are the normalized filters and page size, without a cursor. */

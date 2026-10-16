@@ -19,10 +19,10 @@ export interface LiveData {
 }
 
 const SETUP_HINT =
-  'PostgreSQL must already be running, migrated and seeded (from the repository root: ' +
-  'npm run db:up && npm run db:migrate && npm run db:seed:demo). playwright.config.ts runs ' +
-  'npm run dev when http://127.0.0.1:4311 is unavailable and otherwise reuses the local server outside CI ' +
-  '(web on 4311, API on 127.0.0.1:4310).';
+  'Existing local PostgreSQL must already be running and migrated. ' +
+  'Use node scripts/local-runtime.mjs doctor and docs/26-local-runtime.md; do not reseed or initialize an existing database to run tests. ' +
+  'The default config reuses web 4311; a frozen compiled-app override may use 4310.';
+
 
 async function getJson(request: APIRequestContext, path: string): Promise<unknown> {
   let response;
@@ -42,7 +42,7 @@ export async function loadLiveData(request: APIRequestContext): Promise<LiveData
   const workspaces = workspaceListResponseSchema.parse(await getJson(request, '/api/v1/workspaces')).data;
   const firstWorkspace = workspaces[0];
   if (!firstWorkspace) {
-    throw new Error(`The dev actor "${me.actor.displayName}" has no workspace. Run npm run db:seed:demo. ${SETUP_HINT}`);
+    throw new Error(`The dev actor "${me.actor.displayName}" has no workspace. ${SETUP_HINT}`);
   }
   const members = membershipListResponseSchema.parse(
     await getJson(request, `/api/v1/workspaces/${firstWorkspace.id}/memberships`),

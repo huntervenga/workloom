@@ -18,10 +18,11 @@ export function Topbar({ actorId, workspaceId, workspaceName, menu }: TopbarProp
   useTranslation();
   const queryClient = useQueryClient();
   const onOverview = useMatch('/w/:workspaceId') !== null;
+  const onMyTasks = useMatch('/w/:workspaceId/my-tasks') !== null;
   const onMembers = useMatch('/w/:workspaceId/members') !== null;
   const onProjects = useMatch('/w/:workspaceId/projects') !== null;
   const onProject = useMatch('/w/:workspaceId/projects/:projectId') !== null;
-  const section = onMembers ? t('routes.members') : onProjects || onProject ? t('routes.projects') : onOverview ? t('shell.overview') : null;
+  const section = onMyTasks ? t('myTasks.title') : onMembers ? t('routes.members') : onProjects || onProject ? t('routes.projects') : onOverview ? t('shell.overview') : null;
   // Inside a project the section is a way back, not the current page.
   const sectionHref = onProject && workspaceId ? `/w/${workspaceId}/projects` : null;
   const fetching =

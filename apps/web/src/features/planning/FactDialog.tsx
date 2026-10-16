@@ -6,6 +6,7 @@ import { ApiError } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { formatEstimateInput, parseEstimateInput } from '../task-table';
+import { PlanningEntryContext } from './PlanningEntryContext';
 import type { PlanningCommands } from './queries';
 
 export interface FactSession {
@@ -20,7 +21,7 @@ export interface FactSession {
   stale: boolean;
 }
 export function factSession(period: PlanningPeriodDto, log: ManualPeriodWorkLogDto | null, membershipId: string, taskId = ''): FactSession {
-  return { key: log?.id ?? `new:${period.id}`, period, base: log, taskId: log?.taskId ?? taskId, membershipId: log?.membershipId ?? membershipId, hours: formatEstimateInput(log?.minutes ?? null), reason: '', state: log?.state ?? 'active', stale: false };
+  return { key: log?.id ?? `new:${period.id}:${membershipId}`, period, base: log, taskId: log?.taskId ?? taskId, membershipId: log?.membershipId ?? membershipId, hours: formatEstimateInput(log?.minutes ?? null), reason: '', state: log?.state ?? 'active', stale: false };
 }
 interface Props {
   session: FactSession | null;
@@ -31,6 +32,7 @@ interface Props {
   canWriteOthers: boolean;
   writable: boolean;
   fixedContext?: boolean;
+  fixedMember?: boolean;
   contextNote?: ReactNode;
   mutation: PlanningCommands['setFact'];
   hasMoreTasks: boolean;
@@ -92,11 +94,12 @@ export function FactDialog(props: Props) {
     <DialogShell title={session.base ? t('planning.editWeeklyActualHours') : t('planning.recordWeeklyActualHours')} description={t('planning.aPersonalEntryForTheWholePeriodWithoutA', { periodName: session.period.name })} open={props.open} onOpenChange={(next) => { if (!next) props.onClose(); }}>
       <form className="mt-5 space-y-4" onSubmit={submit} noValidate>
         <Badge tone="muted">{t('planning.weeklyEntry')}</Badge>
+        {props.fixedContext || props.fixedMember ? <PlanningEntryContext period={session.period.name} person={props.members.find(member => member.id === session.membershipId)?.displayName ?? t('planning.savedPersonMissingFromCurrentList')} {...(props.fixedContext ? { task: props.tasks.find(task => task.id === session.taskId)?.title ?? t('planning.savedTaskNotLoaded') } : {})} /> : null}
         {props.contextNote}
         {blocked ? <p role="status" className="text-sm text-amber-800">{t('planning.anotherActualHoursEntryIsSavingOrItsResult')}</p> : null}
         <fieldset disabled={locked || !editable} className="min-w-0 space-y-4">
-          <div className="space-y-1.5"><label htmlFor={`${id}-task`} className="text-sm font-medium">{t('planning.task')}</label><select id={`${id}-task`} className={inputClassName()} value={session.taskId} disabled={session.base !== null || props.fixedContext} onChange={(event) => props.onChange({ ...session, taskId: event.target.value })}><option value="">{t('planning.chooseATask')}</option>{props.tasks.filter(task=>task.meetingId===null).map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}{missingTask ? <option value={session.taskId}>{t('planning.savedTaskNotLoaded')}</option> : null}</select>{props.hasMoreTasks ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>{t('planning.loadMoreTasks')}</Button> : null}</div>
-          <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">{t('planning.whoseHours')}</label><select id={`${id}-member`} className={inputClassName()} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers || props.fixedContext} onChange={(event) => props.onChange({ ...session, membershipId: event.target.value })}><option value="">{t('planning.chooseAPerson')}</option>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}{missingMember ? <option value={session.membershipId}>{t('planning.savedPersonMissingFromCurrentList')}</option> : null}</select></div>
+          {!props.fixedContext ? <div className="space-y-1.5"><label htmlFor={`${id}-task`} className="text-sm font-medium">{t('planning.task')}</label><select id={`${id}-task`} className={inputClassName()} value={session.taskId} disabled={session.base !== null || props.fixedContext} onChange={(event) => props.onChange({ ...session, taskId: event.target.value })}><option value="">{t('planning.chooseATask')}</option>{props.tasks.filter(task=>task.meetingId===null).map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}{missingTask ? <option value={session.taskId}>{t('planning.savedTaskNotLoaded')}</option> : null}</select>{props.hasMoreTasks ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>{t('planning.loadMoreTasks')}</Button> : null}</div> : null}
+          {!props.fixedContext && !props.fixedMember ? <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">{t('planning.whoseHours')}</label><select id={`${id}-member`} className={inputClassName()} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers || props.fixedContext} onChange={(event) => props.onChange({ ...session, membershipId: event.target.value })}><option value="">{t('planning.chooseAPerson')}</option>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}{missingMember ? <option value={session.membershipId}>{t('planning.savedPersonMissingFromCurrentList')}</option> : null}</select></div> : null}
           <div className="space-y-1.5"><label htmlFor={`${id}-hours`} className="text-sm font-medium">{t('planning.actualHoursThisWeek')}</label><TextInput id={`${id}-hours`} autoFocus={props.fixedContext} value={shownHours} onChange={(event) => props.onChange({ ...session, hours: event.target.value })} inputMode="decimal" placeholder={t('planning.forExample5Or130')} /><p className="text-xs text-muted">{t('planning.0ConfirmsNoTimeSpentBlankStaysUnknownThis')}</p></div>
           {session.base ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={shownState === 'void'} onChange={(event) => props.onChange({ ...session, state: event.target.checked ? 'void' : 'active' })} />{t('planning.voidThisEntry')}</label> : null}
           <div className="space-y-1.5"><label htmlFor={`${id}-reason`} className="text-sm font-medium">{session.base ? t('planning.reasonForCorrection') : t('planning.commentOptional')}</label><TextInput id={`${id}-reason`} value={shownReason} onChange={(event) => props.onChange({ ...session, reason: event.target.value })} maxLength={1000} /></div>

@@ -26,9 +26,10 @@ describe('quick fact and category report boundaries', () => {
     await selectWeek(user);
     await user.click(screen.getByRole('button', { name: `Weekly actual hours: ${task.title}` }));
     let dialog = await screen.findByRole('dialog', { name: "Record weekly actual hours" });
-    expect(within(dialog).getByLabelText("Task")).toHaveValue(TASK_ID);
-    expect(within(dialog).getByLabelText("Whose hours")).toHaveValue(MEMBER_ID);
-    expect(within(dialog).getByLabelText("Task")).toBeDisabled();
+    expect(within(dialog).getByRole("region", { name: "Time entry context" })).toHaveTextContent(task.title);
+    expect(within(dialog).getByRole("region", { name: "Time entry context" })).toHaveTextContent(alphaMembers.find(member => member.id === MEMBER_ID)?.displayName ?? "");
+    expect(within(dialog).queryByLabelText("Task")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Whose hours")).not.toBeInTheDocument();
     await user.type(within(dialog).getByLabelText("Actual hours this week"), '5');
     await close(user, "Record weekly actual hours");
     await user.selectOptions(screen.getByLabelText("Week for hours"), PERIOD_B);

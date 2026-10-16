@@ -261,3 +261,18 @@ describe('TaskTable everyday columns', () => {
     expect(within(summaryRow()).getByText('1h 30m')).toBeInTheDocument();
   });
 });
+
+describe('TaskTable inline edit boundaries', () => {
+  it.each([
+    { name: 'meeting', patch: { meetingId: 'e9000000-0000-4000-8000-000000000001' } },
+    { name: 'archived', patch: { archivedAt: '2026-10-16T10:00:00.000Z' } },
+    { name: 'unknown type', patch: { meetingId: undefined } },
+  ])('keeps $name rows out of ordinary cell edits', ({ patch }) => {
+    const onEditTaskField = vi.fn();
+    renderTable({ tasks: [makeTask({ id: 'guarded-row', title: 'Guarded task', ...patch })], writable: true, onEditTaskField });
+    expect(screen.queryByRole('button', { name: 'Edit status for Guarded task' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit assignee for Guarded task' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit due date for Guarded task' })).not.toBeInTheDocument();
+    expect(onEditTaskField).not.toHaveBeenCalled();
+  });
+});

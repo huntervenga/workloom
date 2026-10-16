@@ -109,3 +109,6 @@ export {createTaskScheduleApplication} from './schedule-application.js';
 export {createProjectImportApplication} from './imports/import-application.js';
 export {createLocalCredentialApplication,parseLocalMcpBearer,type LocalMcpApplicationOptions} from './local-mcp/credentials.js';
 export {createLocalMcpApplication} from './local-mcp/application.js';
+
+export { createMyTasksApplication } from './my-tasks/application.js';
+export { createMyTasksCursorCodec, type MyTasksCursorOptions } from './my-tasks/cursor.js';

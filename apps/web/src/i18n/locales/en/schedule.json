@@ -86,7 +86,18 @@
     "startDate": "start date",
     "dueDate": "due date",
     "originalPlanMember": "original plan member",
-    "frozenDatesLabel": "Frozen"
+    "frozenDatesLabel": "Frozen",
+    "startValue": "Start: {{date}}",
+    "dueValue": "Due: {{date}}",
+    "planStartValue": "Plan · start: {{date}}",
+    "unfinishedPredecessorCount": {
+      "one": "{{count}} unfinished predecessor",
+      "other": "{{count}} unfinished predecessors"
+    },
+    "editSelectedDateCount": {
+      "one": "Edit selected date ({{count}} task)",
+      "other": "Edit selected dates ({{count}} tasks)"
+    }
   },
   "scheduleDialog": {
     "editTaskDates": "Edit task dates",

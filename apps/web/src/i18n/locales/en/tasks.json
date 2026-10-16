@@ -183,5 +183,45 @@
     "enterAValidDateBetweenYears0001And": "Enter a valid date between years 0001 and 9999.",
     "dueDateMustBeOnOrAfterThe": "Due date must be on or after the start date.",
     "checkTheCompletedFields": "Check the completed fields."
+  },
+  "quickAdd": {
+    "existingDraft": "A task draft is already saved on this page. Resume it to keep all its details.",
+    "resumeDraft": "Resume draft",
+    "collapse": "Collapse editor",
+    "noStatus": "Add a task status before creating tasks.",
+    "form": "Add a task to {{section}}",
+    "section": "Add to {{section}}",
+    "fields": "New task fields",
+    "titlePlaceholder": "Task name · Enter to add",
+    "otherCommand": "Another task command is still pending or unconfirmed. Resume its original editor first.",
+    "creating": "Adding…",
+    "retry": "Retry original",
+    "add": "Add task",
+    "moreDetails": "More details",
+    "keyboardHint": "Enter adds · Escape keeps draft"
+  },
+  "inlineEdit": {
+    "existingDraft": "This task has other unsaved changes. Resume its full draft to review them.",
+    "notEditable": "This task cannot be edited here. Open its details to check the latest access and task type.",
+    "form": "Edit {{title}} in the task table",
+    "fields": "Task cell fields",
+    "saving": "Saving…",
+    "retry": "Retry",
+    "save": "Save",
+    "editStatus": "Edit status for {{title}}",
+    "editAssignee": "Edit assignee for {{title}}",
+    "editDueDate": "Edit due date for {{title}}",
+    "draft": "Draft",
+    "draftHint": "This task has unsaved changes. Open its details to resume."
+  },
+  "recovery": {
+    "unconfirmed": "A task command is unconfirmed. Its original values and key are kept.",
+    "pending": "A task command is waiting for the server response. Its original values are kept.",
+    "draftKept": "Your new task draft is kept on this page.",
+    "resume": "Resume original editor",
+    "editDraftCount": {
+      "one": "{{count}} task draft is kept on this page.",
+      "other": "{{count}} task drafts are kept on this page."
+    }
   }
 }

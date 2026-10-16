@@ -53,7 +53,7 @@ function twoMembers(): [MembershipDto, MembershipDto] {
   const [first, second] = members;
   if (!first || !second) {
     throw new Error(
-      `Workspace "${firstWorkspace.name}" needs at least two active members, got ${members.length}. Run npm run db:seed:demo.`,
+      `Workspace "${firstWorkspace.name}" needs at least two active members, got ${members.length}. Inspect the existing local fixtures and docs/26-local-runtime.md; do not reseed the durable database.`,
     );
   }
   for (const member of [first, second]) {

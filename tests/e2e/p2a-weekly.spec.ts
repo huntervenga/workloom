@@ -73,7 +73,7 @@ async function reportUI(page: Page, prefix: string, baseline: PlanBaselineDto) {
   const result = page.waitForResponse((item) => call(item, 'POST', `${prefix}/report-runs`));
   await page.getByRole('button', { name: "Calculate new report", exact: true }).click();
   const run = (await parsed(await result, 201, weeklyPlanFactReportRunResponseSchema)).data;
-  await expect(page.getByLabel("Saved report", { exact: true })).toHaveValue(run.id);
+  await expect(page.getByRole('combobox', { name: "Saved report", exact: true })).toHaveValue(run.id);
   await expect(page.getByRole('region', { name: "Saved report", exact: true })).toBeVisible();
   return run;
 }
@@ -98,7 +98,7 @@ test.describe('P2a desktop1440', () => {
     });
     await create.getByLabel("First day of the week", { exact: true }).fill(inputs.start);
     await create.getByLabel("Period time zone", { exact: true }).fill('Asia/Nicosia');
-    const cutoffInput = create.getByLabel('Срок фиксации (Europe/Berlin)', { exact: true });
+    const cutoffInput = create.getByLabel('Baseline deadline (Europe/Berlin)', { exact: true });
     await cutoffInput.fill('2027-03-28T02:30');
     let attempts = 0;
     const observe = (request: Request) => { if (request.method() === 'POST' && new URL(request.url()).pathname === `${f.prefix}/periods`) attempts++; };
@@ -162,14 +162,14 @@ test.describe('P2a desktop1440', () => {
     });
     expect(correctedResponse.status(), await correctedResponse.text()).toBe(200);
     await page.reload();
-    await expect(page.getByLabel("Saved report", { exact: true })).toHaveValue(run.id);
+    await expect(page.getByRole('combobox', { name: "Saved report", exact: true })).toHaveValue(run.id);
     await expect(summary).toContainText('25%');
     const storedResponse = await request.get(`${f.prefix}/report-runs/${run.id}`);
     expect(storedResponse.status()).toBe(200);
     expect(weeklyPlanFactReportRunResponseSchema.parse(await storedResponse.json()).data).toEqual(run);
     const next = await reportUI(page, f.prefix, baseline);
     expect(next.summary.actualMinutes).toBe(660);
-    await page.getByLabel("Saved report", { exact: true }).selectOption(run.id);
+    await page.getByRole('combobox', { name: "Saved report", exact: true }).selectOption(run.id);
     await expect(summary).toContainText('25%');
     await writeFile(info.outputPath('p2a-preview.json'), JSON.stringify({ path: `${f.path}?period=${period.id}&view=report&run=${run.id}`, periodId: period.id, baselineId: baseline.id, runId: run.id }, null, 2));
   });
@@ -200,7 +200,7 @@ test.describe('P2a mobile390', () => {
     await reportScreenshot(page, info.outputPath('p2a-mobile-week-report.png'));
     await reportScreenshot(page, info.outputPath('p2a-mobile-week-report-chart.png'), 'chart');
     await page.reload();
-    await expect(page.getByLabel("Saved report", { exact: true })).toHaveValue(run.id);
+    await expect(page.getByRole('combobox', { name: "Saved report", exact: true })).toHaveValue(run.id);
     await expect(figure.getByRole('img', { name: `${f.own.displayName}, actual: 5h`, exact: true })).toBeVisible();
     await noOverflow(page);
   });

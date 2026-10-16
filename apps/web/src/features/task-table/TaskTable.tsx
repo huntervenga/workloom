@@ -1,3 +1,4 @@
+import { canEditTaskInline, type TaskInlineField } from '../tasks/tableEditing';
 import { t, useTranslation, formatDate } from '../../i18n';
 import type {
   MembershipDto,
@@ -59,6 +60,10 @@ export interface TaskTableProps {
   customColumns?: readonly TaskTableCustomColumn[] | undefined;
   /** Compact keeps everyday columns; expanded also shows participants, tags and priority. */
   columnPreset?: 'compact' | 'expanded' | undefined;
+  onEditTaskField?: ((task: TaskDto, field: TaskInlineField) => void) | undefined;
+  renderTaskFieldEditor?: ((task: TaskDto, field: TaskInlineField) => ReactNode) | undefined;
+  draftTaskIds?: ReadonlySet<string> | undefined;
+  quickAdd?: { sectionId: string | null; content: ReactNode } | undefined;
   className?: string | undefined;
 }
 
@@ -324,6 +329,9 @@ interface RowContext {
   today: string | undefined;
   customColumns: readonly TaskTableCustomColumn[];
   expandedColumns: boolean;
+  onEditTaskField: TaskTableProps['onEditTaskField'];
+  renderTaskFieldEditor: TaskTableProps['renderTaskFieldEditor'];
+  draftTaskIds: ReadonlySet<string>;
 }
 
 function sectionLabel(sectionId: string | null, sectionById: ReadonlyMap<string, SectionDto>): string {
@@ -344,6 +352,13 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
   ];
   const childCountText = ctx.partial ? t('taskTable.taskTable.loadedValue', { p0: formatSubtaskCount(childCount) }) : formatSubtaskCount(childCount);
 
+  const cell = (field: TaskInlineField, content: ReactNode): ReactNode => {
+    const editor = ctx.renderTaskFieldEditor?.(task, field);
+    if (editor !== undefined && editor !== null) return editor;
+    if (!ctx.onEditTaskField || !canEditTaskInline(task)) return content;
+    const label = field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
+    return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className="flex min-h-8 w-full min-w-0 items-center rounded px-1 text-left hover:bg-slate-100">{content}</button>;
+  };
   return (
     <tr className="group h-11 border-t border-line hover:bg-canvas/70">
       <td
@@ -396,6 +411,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
               <span className="min-w-0 truncate">{t('taskTable.taskTable.sectionName', { name: sectionLabel(task.sectionId, ctx.sectionById) })}</span>
             </Badge>
           ) : null}
+          {ctx.draftTaskIds.has(task.id) ? <Badge tone="warning" title={t('tasks.inlineEdit.draftHint')}>{t('tasks.inlineEdit.draft')}</Badge> : null}
           {task.meetingId ? <Badge tone="muted">{t('taskTable.taskTable.meeting')}</Badge> : null}
           {task.archivedAt !== null ? <Badge tone="muted">{t('taskTable.taskTable.archived2')}</Badge> : null}
           {ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null ? (
@@ -411,27 +427,27 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
         </div>
       </td>
       <td className="px-3 py-1">
-        {status === undefined ? (
+        {cell('statusId', status === undefined ? (
           <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span>
         ) : (
           <span className="flex min-w-0 items-center gap-1.5">
             <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} />
             <span className="truncate text-ink-soft" title={status.name}>{status.name}</span>
           </span>
-        )}
+        ))}
       </td>
       <td className="px-3 py-1">
-        {task.responsibleMembershipId === null ? (
+        {cell('responsibleMembershipId', task.responsibleMembershipId === null ? (
           <Empty label={t('taskTable.taskTable.unassigned')} />
         ) : (
           <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />
-        )}
+        ))}
       </td>
       {ctx.expandedColumns ? <td className="px-3 py-1">
         <ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} />
       </td> : null}
       <td className="px-3 py-1">
-        <DueDateCell dueDate={task.dueDate} today={ctx.today} finished={finished} />
+        {cell('dueDate', <DueDateCell dueDate={task.dueDate} today={ctx.today} finished={finished} />)}
       </td>
       {ctx.expandedColumns ? <td className="px-3 py-1">
         <TagsCell tags={task.tags} />
@@ -573,6 +589,7 @@ export function TaskTable({
   caption = t('taskTable.taskTable.projectTasks'),
   customColumns = noCustomColumns,
   columnPreset = 'expanded',
+  onEditTaskField, renderTaskFieldEditor, draftTaskIds = new Set(), quickAdd,
   className,
 }: TaskTableProps) {
   const { t, locale } = useTranslation();
@@ -610,6 +627,8 @@ export function TaskTable({
     today,
     customColumns,
     expandedColumns,
+    onEditTaskField: writable ? onEditTaskField : undefined,
+    renderTaskFieldEditor, draftTaskIds,
   };
 
   return (
@@ -621,7 +640,7 @@ export function TaskTable({
           <col style={{ width: 144 }} />
           <col style={{ width: 176 }} />
           {expandedColumns ? <col className="w-24" /> : null}
-          <col style={{ width: 112 }} />
+          <col style={{ width: 128 }} />
           {expandedColumns ? <col className="w-32" /> : null}
           {expandedColumns ? <col className="w-24" /> : null}
           {customColumns.map(column => <col key={column.id} style={{ width: column.width }} />)}
@@ -674,6 +693,7 @@ export function TaskTable({
                 onCreateTask={onCreateTask}
                 onRenameSection={onRenameSection}
               />
+              {quickAdd?.sectionId === group.sectionId ? <tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr> : null}
               {rows.length === 0 ? (
                 <tr className="h-11 border-t border-line">
                   <td colSpan={columnCount} className="py-1 pr-3 pl-[42px] text-sm text-muted">
@@ -686,6 +706,7 @@ export function TaskTable({
             </tbody>
           );
         })}
+        {quickAdd && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody><tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr></tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
           <SummaryRow summary={summary} partial={partial} columnCount={columnCount} />
         </tfoot>

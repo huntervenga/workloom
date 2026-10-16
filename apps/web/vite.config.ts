@@ -27,6 +27,9 @@ export default defineConfig({
     emptyOutDir: true,
   },
   test: {
+    // Locale resources are discovered from directory contents with import.meta.glob.
+    // Persistent transform caches can retain an old inventory after JSON files are added.
+    fsModuleCache: false,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
   },

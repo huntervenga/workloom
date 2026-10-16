@@ -34,8 +34,8 @@ describe('quick weekly table entry', () => {
     await close(user, "Add to weekly plan");
     await user.click(screen.getByRole('button', { name: `Weekly plan: ${task.title}` }));
     dialog = await screen.findByRole('dialog', { name: "Add to weekly plan" });
-    expect(within(dialog).getByLabelText("Whole task")).toHaveValue(PACKAGE_ID);
-    expect(within(dialog).getByLabelText("Whole task")).toBeDisabled();
+    expect(within(dialog).getByRole("region", { name: "Time entry context" })).toHaveTextContent(task.title);
+    expect(within(dialog).queryByLabelText("Whole task")).not.toBeInTheDocument();
     await user.type(within(dialog).getByLabelText("Planned hours"), '3');
     await user.click(within(dialog).getByRole('button', { name: "Save personal plan" }));
     await waitFor(() => expect(attempts).toBe(1));

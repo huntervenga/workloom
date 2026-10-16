@@ -26,6 +26,11 @@
 | [20 Контракт P5b](20-p5b-mcp-contract.md) | Локальные scoped credentials, семь чтений и две guarded task writes через stdio MCP |
 | [21 Передача локального пилота](21-local-pilot-handoff.md) | Запуск, безопасные границы, walkthrough и следующие действия |
 | [22 Следующий срез: cutoff worker](22-next-cutoff-worker.md) | PLANNED / не реализован: будущая автоматическая фиксация по cutoff и объяснение overdue state |
+| [23 English UI and localization](23-localization-and-ux.md) | JSON catalogs, locale discovery and translation workflow |
+| [24 Current daily UX run](24-current-ux-run.md) | New eight-hour run, owners and actual phase ledger; historical 12 remains unchanged |
+| [25 UX verification](25-ux-verification.md) | New browser, locale, runtime and demo evidence; initial failures retained |
+| [26 Safe local runtime](26-local-runtime.md) | Existing durable cluster doctor/start/stop, identity guards and recovery limits |
+| [27 Clean synthetic workspace](27-synthetic-demo.md) | Workloom Studio entry links, additive setup and exact replay rules |
 
 Продуктовые требования находятся в 01. Документы 02–08 уточняют реализацию и этапность: весь командный пилот из 01 не должен появиться в первой локальной версии. Если конкретные DTO и физическая схема конфликтуют с продуктовым поведением, согласовать исправление до реализации, а не изменять требования молча.
 

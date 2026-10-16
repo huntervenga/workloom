@@ -139,5 +139,6 @@
   "theOriginalWeekAndPersonArePreserved2": "{{label}}: {{saveState}}. The original week and person are preserved.",
   "hoursHelp": "About hours",
   "weekLabel": "Week",
-  "personLabel": "Person"
+  "personLabel": "Person",
+  "savedReportTitle": "Title in saved report"
 }

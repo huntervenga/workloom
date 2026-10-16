@@ -16,3 +16,5 @@ export * from './schedule.js';
 
 export * from './imports.js';
 export * from './local-mcp.js';
+
+export * from './my-tasks.js';

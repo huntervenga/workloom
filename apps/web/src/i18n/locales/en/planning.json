@@ -236,5 +236,34 @@
   "baselineDeadlineInZone": "Baseline deadline: {{cutoff}} · {{timezone}}",
   "baselineOptionsAndHelp": "Baseline options and help",
   "personalHoursHint": "Personal hours for this week. Shared task estimates stay separate.",
-  "invalidPlannedHours": "Enter nonnegative planned hours, such as 1.5 or 1:30. Use whole minutes and a value no greater than 2,147,483,647 minutes."
+  "invalidPlannedHours": "Enter nonnegative planned hours, such as 1.5 or 1:30. Use whole minutes and a value no greater than 2,147,483,647 minutes.",
+  "chooseWeek": "Choose a week",
+  "chooseWeekBeforeHours": "Choose a period to view its plans, actual hours, and reports. Your person selection is preserved.",
+  "timeEntryFor": "Time entry for",
+  "selectedPersonUnavailable": "Selected person · unavailable",
+  "timeEntryPersonScope": "Sets the person for new plan and actual-hour entries. Report people are selected separately in each report.",
+  "selectedPersonReadOnly": "You can view this person’s hours. Choose yourself to add an entry.",
+  "chooseAvailablePerson": "Choose an available person before adding an entry.",
+  "entryContext": "Time entry context",
+  "savedReportTitle": "Title in saved report",
+  "reportTasks": {
+    "none": "No linked tasks in this saved report row.",
+    "show": {
+      "one": "View linked task ({{count}})",
+      "other": "View linked tasks ({{count}})"
+    },
+    "hide": "Hide linked tasks",
+    "currentContext": "Current task titles and access are checked separately. Opening a task keeps this saved report in this tab.",
+    "currentTitle": "Current task title",
+    "showing": "Showing {{shown}} of {{total}} linked tasks.",
+    "showMore": {
+      "one": "Show {{count}} more task",
+      "other": "Show {{count}} more tasks"
+    },
+    "unavailable": "This task is no longer available to you.",
+    "loadFailed": "Unable to check current task access. Try again.",
+    "retry": "Check task again",
+    "loading": "Checking current task access…",
+    "openNewTab": "Open current task in a new tab"
+  }
 }
