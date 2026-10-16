@@ -18,10 +18,10 @@ function attendance(overrides:Partial<AttendanceDto>={}):AttendanceDto {return {
 function routes(getMeeting:()=>MeetingDto|Promise<MeetingDto>):RouteTable {return {...tableRoutes(),[`GET ${rootPath}/tasks`]:()=>ok([meetingTask]),[`GET ${rootPath}/tasks/${TASK_ID}`]:()=>ok(meetingTask),[`GET ${rootPath}/tasks/${TASK_ID}/meeting`]:async()=>ok(await getMeeting()),[`GET ${rootPath}/tasks/${TASK_ID}/attendance`]:()=>ok([attendance()])};}
 const seriesHref=`/w/${alpha.id}/projects/${PROJECT_ID}/week?period=${PERIOD_B}&series=${SERIES_ID}`;
 function expectSeriesControls(dialog:HTMLElement) {
- for(const label of ['Начало встречи','Часовой пояс встречи','Длительность встречи, минуты','Организатор'])expect(within(dialog).getByLabelText(label)).toBeDisabled();
+ for(const label of ["Meeting start","Meeting time zone","Meeting duration, minutes","Organizer"])expect(within(dialog).getByLabelText(label)).toBeDisabled();
  const attendee=within(dialog).getByRole('checkbox',{name:alphaMembers[0]?.displayName??''});expect(attendee).toBeDisabled();expect(attendee).toBeChecked();
- expect(within(dialog).queryByRole('button',{name:'Отменить встречу'})).not.toBeInTheDocument();expect(within(dialog).queryByRole('button',{name:'Вернуть встречу в расписание'})).not.toBeInTheDocument();
- expect(within(dialog).getByRole('link',{name:'Открыть серию встреч'})).toHaveAttribute('href',seriesHref);
+ expect(within(dialog).queryByRole('button',{name:"Cancel meeting"})).not.toBeInTheDocument();expect(within(dialog).queryByRole('button',{name:"Restore meeting to schedule"})).not.toBeInTheDocument();
+ expect(within(dialog).getByRole('link',{name:"Open meeting series"})).toHaveAttribute('href',seriesHref);
 }
 
 describe('recurring meeting occurrence in the P3a drawer',()=>{
@@ -30,14 +30,14 @@ describe('recurring meeting occurrence in the P3a drawer',()=>{
   const {calls}=installFakeApi({...routes(()=>current),
    [`PATCH ${rootPath}/tasks/${TASK_ID}/meeting`]:request=>{const input=request.body as UpdateMeetingInput;writes.push(input);current={...current,revision:current.revision+1,...(input.joinUrl!==undefined?{joinUrl:input.joinUrl}:{}),...(input.summaryText!==undefined?{summaryText:input.summaryText}:{}),...(input.actualStartAt!==undefined?{actualStartAt:input.actualStartAt}:{}),...(input.actualDurationMinutes!==undefined?{actualDurationMinutes:input.actualDurationMinutes}:{})};return ok(current);},
    [`POST ${rootPath}/tasks/${TASK_ID}/attendance/confirm`]:()=>{current={...current,hasPostedAttendance:true};return ok({meeting:current,attendances:[attendance({status:'present',postingState:'active',minutes:45,revision:2,confirmedMeetingRevision:current.revision})]});}});
-  const {user}=renderApp(`${tablePath}?task=${TASK_ID}&week=${PERIOD_A}`);const dialog=await screen.findByRole('dialog',{name:meetingTask.title});const summary=await within(dialog).findByLabelText('Итоги встречи');
-  expectSeriesControls(dialog);expect(within(dialog).getByLabelText('Длительность встречи, минуты')).toHaveValue(45);expect(within(dialog).getByText('Встреча из серии')).toBeInTheDocument();
+  const {user}=renderApp(`${tablePath}?task=${TASK_ID}&week=${PERIOD_A}`);const dialog=await screen.findByRole('dialog',{name:meetingTask.title});const summary=await within(dialog).findByLabelText("Meeting notes");
+  expectSeriesControls(dialog);expect(within(dialog).getByLabelText("Meeting duration, minutes")).toHaveValue(45);expect(within(dialog).getByText("Recurring meeting")).toBeInTheDocument();
   expect(dialog).not.toHaveTextContent(SERIES_ID);expect(dialog).not.toHaveTextContent(INSTANCE_ID);expect(dialog).not.toHaveTextContent('first_valid_gap');
-  await user.type(within(dialog).getByLabelText('Ссылка на встречу'),'https://meet.example.test/series');await user.type(summary,'Итог серии');await user.click(within(dialog).getByRole('button',{name:'Сохранить встречу'}));
+  await user.type(within(dialog).getByLabelText("Meeting link"),'https://meet.example.test/series');await user.type(summary,'Итог серии');await user.click(within(dialog).getByRole('button',{name:"Save meeting"}));
   await waitFor(()=>expect(writes).toHaveLength(1));expect(writes[0]).toEqual({expectedMeetingRevision:1,joinUrl:'https://meet.example.test/series',summaryText:'Итог серии'});
-  await user.click(within(dialog).getByRole('tab',{name:'Присутствие'}));const fill=await within(dialog).findByRole('button',{name:'Встреча прошла по плану — заполнить'});await waitFor(()=>expect(fill).toBeEnabled());await user.click(fill);await user.click(within(dialog).getByRole('button',{name:'Сохранить фактические данные'}));
+  await user.click(within(dialog).getByRole('tab',{name:"Attendance"}));const fill=await within(dialog).findByRole('button',{name:"Meeting followed the plan · fill details"});await waitFor(()=>expect(fill).toBeEnabled());await user.click(fill);await user.click(within(dialog).getByRole('button',{name:"Save actual details"}));
   await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]).toEqual({expectedMeetingRevision:2,actualStartAt:PLANNED_START,actualDurationMinutes:45});
-  const result=within(dialog).getByLabelText('Результат присутствия');await waitFor(()=>expect(result).toBeEnabled());await user.selectOptions(result,'present');await user.click(within(dialog).getByRole('button',{name:'Подтвердить выбранного участника'}));
+  const result=within(dialog).getByLabelText("Attendance outcome");await waitFor(()=>expect(result).toBeEnabled());await user.selectOptions(result,'present');await user.click(within(dialog).getByRole('button',{name:"Confirm selected person's attendance"}));
   await waitFor(()=>expect(calls.some(c=>c.path.endsWith('/attendance/confirm'))).toBe(true));
   expect(calls.find(c=>c.path.endsWith('/attendance/confirm'))?.body).toEqual({expectedMeetingRevision:3,periodId:PERIOD_B,rows:[{attendanceId:ATTENDANCE,expectedAttendanceRevision:1,expectedWorkLogRevision:null,kind:'confirm',status:'present',attributionBasis:'actual_meeting',reason:null}]});
   const writePaths=calls.filter(c=>c.method!=='GET').map(c=>`${c.method} ${c.path}`);
@@ -48,11 +48,11 @@ describe('recurring meeting occurrence in the P3a drawer',()=>{
   let current=recurringMeeting();let hold=false;const gate=deferred<undefined>();const writes:UpdateMeetingInput[]=[];
   const {calls}=installFakeApi({...routes(async()=>{if(hold)await gate.promise;return current;}),
    [`PATCH ${rootPath}/tasks/${TASK_ID}/meeting`]:request=>{const input=request.body as UpdateMeetingInput;writes.push(input);current={...current,revision:current.revision+1,...(input.summaryText!==undefined?{summaryText:input.summaryText}:{})};if(writes.length===1){hold=true;return ok(withoutSeries(current));}return ok(current);}});
-  const {user}=renderApp(`${tablePath}?task=${TASK_ID}&week=${PERIOD_A}`);const dialog=await screen.findByRole('dialog',{name:meetingTask.title});const summary=await within(dialog).findByLabelText('Итоги встречи');expectSeriesControls(dialog);
+  const {user}=renderApp(`${tablePath}?task=${TASK_ID}&week=${PERIOD_A}`);const dialog=await screen.findByRole('dialog',{name:meetingTask.title});const summary=await within(dialog).findByLabelText("Meeting notes");expectSeriesControls(dialog);
   const meetingReads=()=>calls.filter(c=>c.method==='GET'&&c.path===`${rootPath}/tasks/${TASK_ID}/meeting`).length;const readsBefore=meetingReads();
-  await user.type(summary,'Итог');await user.click(within(dialog).getByRole('button',{name:'Сохранить встречу'}));await waitFor(()=>expect(writes).toHaveLength(1));
+  await user.type(summary,'Итог');await user.click(within(dialog).getByRole('button',{name:"Save meeting"}));await waitFor(()=>expect(writes).toHaveLength(1));
   // The authoritative reread is in flight and held; only the ref-less outcome has been applied.
-  await waitFor(()=>expect(meetingReads()).toBeGreaterThan(readsBefore));const save=within(dialog).getByRole('button',{name:'Сохранить встречу'});await waitFor(()=>expect(save).toBeEnabled());
+  await waitFor(()=>expect(meetingReads()).toBeGreaterThan(readsBefore));const save=within(dialog).getByRole('button',{name:"Save meeting"});await waitFor(()=>expect(save).toBeEnabled());
   expectSeriesControls(dialog);
   await user.type(summary,' — дополнение');await user.click(save);await waitFor(()=>expect(writes).toHaveLength(2));
   expect(writes[1]).toEqual({expectedMeetingRevision:2,summaryText:'Итог — дополнение'});

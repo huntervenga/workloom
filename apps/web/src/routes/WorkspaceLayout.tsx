@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../i18n';
 import type { WorkspaceDto } from '@workloom/contracts';
 import { StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, Lock } from 'lucide-react';
@@ -20,12 +21,13 @@ export function useWorkspaceContext(): WorkspaceOutletContext {
 }
 
 export function WorkspaceLayout() {
+  useTranslation();
   const { workspaceId = '' } = useParams();
   const actorId = useMe().actor.id;
   const workspace = useWorkspaceQuery(actorId, workspaceId);
 
   if (!isUuid(workspaceId)) return <WorkspaceUnavailable />;
-  if (workspace.isPending) return <PageSkeleton label="Загрузка пространства" />;
+  if (workspace.isPending) return <PageSkeleton label={t('routes.loadingWorkspace')} />;
 
   // Errors win over any previously loaded data, so a denied refetch hides the workspace.
   if (workspace.isError) {
@@ -45,17 +47,19 @@ export function WorkspaceLayout() {
 }
 
 function WorkspaceUnavailable() {
-  useDocumentTitle('Пространство недоступно');
+  useTranslation();
+  useDocumentTitle(t('routes.workspaceUnavailable'));
   return (
     <StateCard
       headingLevel={1}
       icon={<Lock size={18} aria-hidden="true" />}
-      title="Пространство недоступно"
-      description="Такого пространства нет или у текущего пользователя нет к нему доступа."
+      title={t('routes.workspaceUnavailable')}
+      description={t('routes.workspaceUnavailableDescription')}
       actions={
         <Link to="/" className={buttonClassName({ variant: 'primary' })}>
           <ArrowLeft size={16} aria-hidden="true" />
-          К доступным пространствам
+
+          {t('routes.backWorkspaces')}
         </Link>
       }
     />

@@ -14,6 +14,18 @@ test.beforeAll(async ({ request }) => {
   live = await loadLiveData(request);
 });
 
+// This entire shell suite is read-only, including real-response state probes.
+const blockedWrites: string[] = [];
+test.beforeEach(async ({ page }) => {
+  blockedWrites.length = 0;
+  await page.route('**/*', async route => {
+    const method = route.request().method();
+    if (['GET', 'HEAD', 'OPTIONS'].includes(method)) await route.continue();
+    else { blockedWrites.push(`${method} ${new URL(route.request().url()).pathname}`); await route.abort(); }
+  });
+});
+test.afterEach(() => { expect(blockedWrites, 'shell test attempted no mutations').toEqual([]); });
+
 async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   const overflow = await page.evaluate(() => ({
     document: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -38,16 +50,16 @@ test.describe('desktop', () => {
 
     const main = page.getByRole('main');
     await expect(main.getByRole('heading', { level: 1, name: firstWorkspace.name })).toBeVisible();
-    await expect(page.getByRole('navigation', { name: 'Навигационная цепочка' })).toContainText(firstWorkspace.name);
+    await expect(page.getByRole('navigation', { name: "Breadcrumbs" })).toContainText(firstWorkspace.name);
 
-    const sidebar = page.getByRole('complementary', { name: 'Боковая панель' });
-    const localMode = sidebar.getByRole('region', { name: 'Локальный режим — тестовый пользователь' });
+    const sidebar = page.getByRole('complementary', { name: "Sidebar" });
+    const localMode = sidebar.getByRole('region', { name: "Local demo" });
     await expect(localMode).toBeVisible();
     await expect(localMode).toContainText(me.actor.displayName);
 
-    await sidebar.getByRole('link', { name: 'Участники' }).click();
+    await sidebar.getByRole('link', { name: "Members" }).click();
     await expect(page).toHaveURL(new RegExp(`/w/${firstWorkspace.id}/members$`));
-    await expect(main.getByRole('heading', { level: 1, name: 'Участники' })).toBeVisible();
+    await expect(main.getByRole('heading', { level: 1, name: "Members" })).toBeVisible();
 
     const table = main.getByRole('table');
     // Header row + one row per persisted active membership.
@@ -56,7 +68,7 @@ test.describe('desktop', () => {
       await expect(table.getByRole('row').filter({ hasText: member.displayName })).toHaveCount(1);
     }
     const ownRow = table.getByRole('row').filter({ hasText: me.actor.displayName });
-    await expect(ownRow.getByTitle('Текущий пользователь')).toBeVisible();
+    await expect(ownRow.getByTitle("Current user")).toBeVisible();
 
     await page.screenshot({ path: testInfo.outputPath('p0-desktop-members.png'), fullPage: true });
   });
@@ -64,8 +76,8 @@ test.describe('desktop', () => {
   test('real API: an unknown workspace id shows the unavailable state', async ({ page }) => {
     await page.goto('/w/00000000-0000-4000-8000-00000000dead');
     const main = page.getByRole('main');
-    await expect(main.getByRole('heading', { level: 1, name: 'Пространство недоступно' })).toBeVisible();
-    await expect(main.getByRole('link', { name: 'К доступным пространствам' })).toBeVisible();
+    await expect(main.getByRole('heading', { level: 1, name: "Workspace unavailable" })).toBeVisible();
+    await expect(main.getByRole('link', { name: "Back to available workspaces" })).toBeVisible();
   });
 
   test('UI state (delayed real response): loading is shown until the workspace list arrives', async ({ page }) => {
@@ -77,7 +89,7 @@ test.describe('desktop', () => {
     });
 
     await page.goto('/');
-    const loading = page.getByRole('main').getByRole('status').filter({ hasText: 'Загрузка пространств' });
+    const loading = page.getByRole('main').getByRole('status').filter({ hasText: "Loading workspaces" });
     await expect(loading).toBeVisible();
 
     release();
@@ -103,10 +115,10 @@ test.describe('desktop', () => {
     const main = page.getByRole('main');
     const alert = main.getByRole('alert');
     // The query client retries 503 twice with backoff before showing the error.
-    await expect(alert.getByRole('heading', { level: 1, name: 'Не удалось загрузить пространства' })).toBeVisible({
+    await expect(alert.getByRole('heading', { level: 1, name: "Unable to load workspaces" })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(alert).toContainText('Сервис временно недоступен');
+    await expect(alert).toContainText('The service is temporarily unavailable');
     await expect(alert).toContainText('req_e2e_503');
     await expect(alert).not.toContainText('mocked outage');
     expect(mockedCalls).toBeGreaterThanOrEqual(1);
@@ -115,7 +127,7 @@ test.describe('desktop', () => {
     const realResponse = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/v1/workspaces' && response.status() === 200,
     );
-    await alert.getByRole('button', { name: 'Повторить' }).click();
+    await alert.getByRole('button', { name: "Try again" }).click();
     await realResponse;
     await expect(page).toHaveURL(new RegExp(`/w/${live.firstWorkspace.id}$`));
     await expect(main.getByRole('heading', { level: 1, name: live.firstWorkspace.name })).toBeVisible();
@@ -132,7 +144,7 @@ test.describe('desktop', () => {
 
     await page.goto('/');
     const main = page.getByRole('main');
-    await expect(main.getByRole('heading', { level: 1, name: 'Нет доступных пространств' })).toBeVisible();
+    await expect(main.getByRole('heading', { level: 1, name: "No workspaces available" })).toBeVisible();
     await expect(main).toContainText(live.me.actor.displayName);
     await expect(page).toHaveURL(/\/$/);
   });
@@ -149,20 +161,20 @@ test.describe('mobile 390px', () => {
     const main = page.getByRole('main');
     await expect(main).toBeVisible();
     await expect(main.getByRole('heading', { level: 1, name: firstWorkspace.name })).toBeVisible();
-    await expect(main).toContainText('Локальный режим — тестовый пользователь');
-    await expect(page.getByRole('complementary', { name: 'Боковая панель' })).toBeHidden();
+    await expect(page.getByTitle("Local mode with synthetic data", { exact: true })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: "Sidebar" })).toBeHidden();
     await expectNoHorizontalOverflow(page);
     await page.screenshot({ path: testInfo.outputPath('p0-mobile-overview.png'), fullPage: true });
 
-    await page.getByRole('button', { name: 'Открыть меню' }).click();
-    const drawer = page.getByRole('dialog', { name: 'Навигация' });
-    await expect(drawer.getByRole('region', { name: 'Локальный режим — тестовый пользователь' })).toContainText(
+    await page.getByRole('button', { name: "Open menu" }).click();
+    const drawer = page.getByRole('dialog', { name: "Navigation" });
+    await expect(drawer.getByRole('region', { name: "Local demo" })).toContainText(
       me.actor.displayName,
     );
-    await drawer.getByRole('link', { name: 'Участники' }).click();
+    await drawer.getByRole('link', { name: "Members" }).click();
     await expect(drawer).toBeHidden();
 
-    await expect(main.getByRole('heading', { level: 1, name: 'Участники' })).toBeVisible();
+    await expect(main.getByRole('heading', { level: 1, name: "Members" })).toBeVisible();
     await expect(main.getByRole('table').getByRole('row')).toHaveCount(members.length + 1);
     await expectNoHorizontalOverflow(page);
   });

@@ -1,3 +1,5 @@
+import { message, type TranslationMessage } from '../../i18n';
+import { useTranslation } from '../../i18n';
 import { DependencyPanel } from '../dependencies/DependencyPanel';
 import type { DependencyWorkspace } from '../dependencies/useDependencyWorkspace';
 import { MeetingDrawer } from '../meetings/MeetingDrawer';
@@ -14,7 +16,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
 import { Archive, ArchiveRestore, Lock, RefreshCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ApiError } from '../../lib/api';
 import { describeError } from '../../lib/errors';
 import { isUuid } from '../../lib/format';
@@ -82,7 +84,7 @@ export interface TaskDrawerProps {
   /** Reopens the kept new-task form, e.g. to resolve its unconfirmed create. */
   onResumeCreate: () => void;
   onCreated: (task: TaskDto) => void;
-  onAnnounce: (message: string) => void;
+  onAnnounce: (message: TranslationMessage) => void;
 }
 
 /** Newest copy of every tag by ID, so a renamed tag shows its current name. */
@@ -104,6 +106,16 @@ function mergeTags(...lists: (readonly TagDto[])[]): Map<string, TagDto> {
 const formBodyClassName = '-mx-1 min-h-0 flex-1 scroll-py-4 space-y-4 overflow-y-auto px-1 pt-1 pb-6';
 const formFooterClassName = 'flex shrink-0 flex-wrap items-center gap-2 border-t border-line bg-surface pt-4';
 
+/** Submits only this form; portalled/nested editors keep their own keyboard behavior. */
+export function submitTaskFormShortcut(event: KeyboardEvent<HTMLFormElement>, enabled: boolean): void {
+  if (!enabled || event.defaultPrevented || event.nativeEvent.isComposing || event.key !== 'Enter' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return;
+  const target = event.target;
+  if (!(target instanceof Element) || target.closest('form') !== event.currentTarget) return;
+  event.preventDefault();
+  event.currentTarget.requestSubmit();
+}
+
+
 function defaultStatusId(statuses: readonly TaskStatusDto[]): string | null {
   const ordered = [...statuses].sort((a, b) => a.position - b.position);
   return (ordered.find((status) => status.group === 'todo') ?? ordered[0])?.id ?? null;
@@ -114,6 +126,7 @@ function defaultStatusId(statuses: readonly TaskStatusDto[]): string | null {
  * fetched by ID and shown only when the task belongs to this project.
  */
 export function TaskDrawer(props: TaskDrawerProps) {
+  const { t } = useTranslation();
   const { actorId, workspace, project, taskId, creating, onClose } = props;
   const detail = useTaskQuery(actorId, workspace.id, taskId ?? '');
   const shown =
@@ -123,14 +136,14 @@ export function TaskDrawer(props: TaskDrawerProps) {
   const open = taskId !== null || creating !== null;
 
   const title =
-    taskId !== null ? (shown?.title ?? 'Задача') : creating?.parent ? 'Новая подзадача' : 'Новая задача';
+    taskId !== null ? (shown?.title ?? t('tasks.taskDrawer.task')) : creating?.parent ? t('tasks.taskDrawer.newSubtask') : t('tasks.taskDrawer.newTask');
   const description =
     taskId !== null
-      ? `Проект «${project.name}». Задачу видят все участники пространства.`
-      : `Проект «${project.name}». Новую задачу увидят все участники пространства.`;
+      ? t('tasks.taskDrawer.projectValueVisibleToAllWorkspaceMembers', { p0: project.name })
+      : t('tasks.taskDrawer.projectValueTheNewTaskWillBeVisible', { p0: project.name });
 
   if(shown?.meetingId && props.meetingController) return <MeetingDrawer dependencyController={props.dependencyController} controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab??'meeting'} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
-  if(shown && shown.meetingId===undefined) return <DialogShell variant="drawer" title="Тип задачи уточняется" description="Для безопасного редактирования нужна актуальная информация сервера." open={open} onOpenChange={next=>{if(!next)onClose();}}><div className="mt-4 space-y-3"><p className="text-sm text-muted">Сохранённый ответ не содержит тип задачи. Обновите её перед изменением.</p><Button onClick={()=>void detail.refetch()}>Обновить тип задачи</Button></div></DialogShell>;
+  if(shown && shown.meetingId===undefined) return <DialogShell variant="drawer" title={t('tasks.taskDrawer.refreshTaskType')} description={t('tasks.taskDrawer.currentServerInformationIsRequiredToEditSafely')} open={open} onOpenChange={next=>{if(!next)onClose();}}><div className="mt-4 space-y-3"><p className="text-sm text-muted">{t('tasks.taskDrawer.theSavedResponseHasNoTaskTypeRefresh')}</p><Button onClick={()=>void detail.refetch()}>{t('tasks.taskDrawer.refreshTaskType')}</Button></div></DialogShell>;
   return (
     <DialogShell
       variant="drawer"
@@ -158,41 +171,42 @@ interface OtherTaskCommandNoticeProps {
 
 /** Another task command of this page is unresolved, so this form sends nothing until it is. */
 function OtherTaskCommandNotice({ command, onOpenTask, onResumeCreate }: OtherTaskCommandNoticeProps) {
+  const { t } = useTranslation();
   const { taskId } = command;
-  const subject = taskId === null ? 'Создание новой задачи' : 'Изменение другой задачи';
+
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
       <span className="min-w-0 flex-1">
-        {subject} {command.uncertain ? 'ещё не подтверждено' : 'ещё отправляется'}. Пока его результат неизвестен, новые
-        изменения задач не отправляются.
-      </span>
+        {t(taskId === null ? command.uncertain ? 'tasks.taskDrawer.createUnconfirmed' : 'tasks.taskDrawer.createPending' : command.uncertain ? 'tasks.taskDrawer.otherEditUnconfirmed' : 'tasks.taskDrawer.otherEditPending')}</span>
       <Button size="sm" onClick={() => (taskId === null ? onResumeCreate() : onOpenTask(taskId))}>
-        {taskId === null ? 'Открыть новую задачу' : 'Открыть ту задачу'}
+        {taskId === null ? t('tasks.taskDrawer.openNewTask') : t('tasks.taskDrawer.openThatTask')}
       </Button>
     </div>
   );
 }
 
 function TaskUnavailable() {
+  const { t } = useTranslation();
   return (
     <StateCard
       className="mt-6"
       headingLevel={3}
       icon={<Lock size={18} aria-hidden="true" />}
-      title="Задача недоступна"
-      description="Такой задачи нет или у текущего пользователя нет к ней доступа."
+      title={t('tasks.taskDrawer.taskUnavailable')}
+      description={t('tasks.taskDrawer.thisTaskDoesNotExistOrYouDo')}
     />
   );
 }
 
 function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnType<typeof useTaskQuery> }) {
+  const { t } = useTranslation();
   const { taskId, detail, project, workspace } = props;
   if (!isUuid(taskId)) return <TaskUnavailable />;
 
   if (detail.isPending) {
     return (
       <div role="status" className="mt-6 space-y-3">
-        <span className="sr-only">Загрузка задачи</span>
+        <span className="sr-only">{t('tasks.taskDrawer.loadingTask')}</span>
         <Skeleton className="h-10" />
         <Skeleton className="h-24" />
         <Skeleton className="h-10" />
@@ -222,10 +236,9 @@ function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnTyp
       {detail.isError ? (
         <div role="alert" className="mt-4 flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
           <TriangleAlert size={16} aria-hidden="true" className="shrink-0" />
-          <span className="min-w-0 flex-1">Не удалось обновить задачу. Показана последняя загруженная версия.</span>
+          <span className="min-w-0 flex-1">{t('tasks.taskDrawer.couldNotRefreshThisTaskShowingTheLast')}</span>
           <Button size="sm" onClick={() => void detail.refetch()}>
-            Повторить
-          </Button>
+            {t('tasks.taskDrawer.retry')}</Button>
         </div>
       ) : null}
       {/* Keyed by ID only: a refetch never remounts the inputs. */}
@@ -235,6 +248,7 @@ function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnTyp
 }
 
 function useLookups(props: TaskDrawerProps, extra: readonly TagDto[]) {
+  useTranslation();
   const { statuses, sections, members, tags, commands } = props;
   const tagsById = useMemo(() => mergeTags(tags, commands.createdTags, extra), [tags, commands.createdTags, extra]);
   const memberIds = useMemo(() => new Set(members.map((member) => member.id)), [members]);
@@ -245,6 +259,7 @@ function useLookups(props: TaskDrawerProps, extra: readonly TagDto[]) {
 type TaskCommandName = 'update' | 'archive' | 'restore';
 
 function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
+  const { t } = useTranslation();
   const {
     actorId,
     workspace,
@@ -269,7 +284,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
   );
   const [restored, setRestored] = useState(() => editSessions.current.has(taskId));
   const [errors, setErrors] = useState<TaskDraftErrors>({});
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<'tasks.taskDrawer.noChangesToSave' | 'tasks.taskDrawer.theFormNowShowsTheLatestTaskVersion' | 'tasks.taskDrawer.yourChangesHaveBeenAppliedToTheLatest' | null>(null);
   const [lastCommand, setLastCommand] = useState<TaskCommandName | null>(null);
   const [review, setReview] = useState<TaskDto | null>(null);
   const [reloading, setReloading] = useState<'idle' | 'loading' | 'failed'>('idle');
@@ -310,7 +325,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
   }, [dirty, locked, session, taskId, editSessions]);
   useUnsavedChangesWarning(dirty || locked);
 
-  const adopt = (task: TaskDto, message: string) => {
+  const adopt = (task: TaskDto, message: TranslationMessage) => {
     // Runs even if the drawer closed meanwhile: the confirmed task replaces the kept draft.
     editSessions.current.delete(task.id);
     setSession({ base: task, draft: draftFromTask(task, memberIds) });
@@ -320,9 +335,9 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
     setNotice(null);
     onAnnounce(message);
   };
-  const saved = (task: TaskDto) => adopt(task, 'Задача сохранена.');
-  const archivedDone = (task: TaskDto) => adopt(task, 'Задача перенесена в архив.');
-  const restoredDone = (task: TaskDto) => adopt(task, 'Задача восстановлена из архива.');
+  const saved = (task: TaskDto) => adopt(task, message('tasks.taskDrawer.taskSaved'));
+  const archivedDone = (task: TaskDto) => adopt(task, message('tasks.taskDrawer.taskArchived'));
+  const restoredDone = (task: TaskDto) => adopt(task, message('tasks.taskDrawer.taskRestoredFromArchive'));
 
   const setDraft = (patch: Partial<TaskDraft>) => {
     setSession((current) => ({ ...current, draft: { ...current.draft, ...patch } }));
@@ -350,7 +365,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
     }
     setErrors({});
     if (result.input === null) {
-      setNotice('Изменений нет — сохранять нечего.');
+      setNotice('tasks.taskDrawer.noChangesToSave');
       return;
     }
     setNotice(null);
@@ -389,29 +404,27 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
   const unavailableParticipantIds = activeParticipantIds(base).filter((id) => !memberIds.has(id));
 
   return (
-    <form noValidate onSubmit={submit} className="mt-5 flex min-h-0 flex-1 flex-col">
+    <form noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, canEdit && !busy && !locked)} className="mt-3 flex min-h-0 flex-1 flex-col">
       <div className={formBodyClassName}>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-          {archived ? <Badge tone="muted">В архиве</Badge> : null}
-          {base.parentTaskId !== null ? <Badge tone="muted">Подзадача</Badge> : null}
-          <span>Видна всем участникам пространства.</span>
-          {dirty && !locked ? <span className="font-medium text-ink-soft">Есть несохранённые изменения.</span> : null}
+          {archived ? <Badge tone="muted">{t('tasks.taskDrawer.archived')}</Badge> : null}
+          {base.parentTaskId !== null ? <Badge tone="muted">{t('tasks.taskDrawer.subtask')}</Badge> : null}
+          {dirty && !locked ? <span className="font-medium text-ink-soft">{t('tasks.taskDrawer.unsavedChanges')}</span> : null}
         </div>
 
         {archived ? (
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
-            Задача в архиве: её можно просмотреть{writable ? ' или восстановить' : ''}, но не изменить.
+            {t(writable ? 'tasks.taskDrawer.archivedCanRestore' : 'tasks.taskDrawer.archivedReadOnly')}
           </p>
         ) : !writable ? (
-          <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">Задача доступна только для просмотра.</p>
+          <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">{t('tasks.taskDrawer.thisTaskIsReadOnly')}</p>
         ) : null}
 
         {restored && !locked ? (
           <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
-            <span className="min-w-0 flex-1">Восстановлен несохранённый черновик этой задачи.</span>
+            <span className="min-w-0 flex-1">{t('tasks.taskDrawer.yourUnsavedDraftHasBeenRestored')}</span>
             <Button size="sm" variant="ghost" onClick={discardRestored}>
-              Сбросить черновик
-            </Button>
+              {t('tasks.taskDrawer.discardDraft')}</Button>
           </div>
         ) : null}
 
@@ -421,10 +434,9 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
 
         {newerOnServer && !locked ? (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink-soft">
-            <span className="min-w-0 flex-1">Задача изменилась после того, как вы открыли форму.</span>
+            <span className="min-w-0 flex-1">{t('tasks.taskDrawer.thisTaskChangedAfterYouOpenedTheForm')}</span>
             <Button size="sm" onClick={() => setReview(latest)}>
-              Посмотреть изменения
-            </Button>
+              {t('tasks.taskDrawer.reviewChanges')}</Button>
           </div>
         ) : null}
 
@@ -441,20 +453,20 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
               setReview(null);
               setLastCommand(null);
               setRestored(false);
-              setNotice('Форма показывает актуальную версию задачи.');
+              setNotice('tasks.taskDrawer.theFormNowShowsTheLatestTaskVersion');
             }}
             onKeepMine={() => {
               setSession({ base: review, draft: rebaseDraft(baseDraft, draft, draftFromTask(review, memberIds)) });
               setReview(null);
               setLastCommand(null);
-              setNotice('Ваши изменения перенесены на актуальную версию. Проверьте поля и сохраните.');
+              setNotice('tasks.taskDrawer.yourChangesHaveBeenAppliedToTheLatest');
             }}
             onDismiss={() => setReview(null)}
           />
         ) : null}
 
         <fieldset disabled={!canEdit || locked || busy} className="min-w-0">
-          <legend className="sr-only">Поля задачи</legend>
+          <legend className="sr-only">{t('tasks.taskDrawer.taskFields')}</legend>
           <TaskFields
             draft={draft}
             onChange={setDraft}
@@ -496,7 +508,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
           />
         ) : null}
 
-        {errors.form ? <p className="text-sm text-red-700">{errors.form}</p> : null}
+        {errors.form ? <p className="text-sm text-red-700">{t(errors.form.key, errors.form.params)}</p> : null}
         <SaveFeedback
           error={shownError}
           uncertainError={lockedCommand ? (mutations[lockedCommand].uncertain?.error ?? null) : null}
@@ -505,46 +517,44 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
             conflict && review === null ? (
               <Button size="sm" aria-disabled={reloading === 'loading' || undefined} onClick={() => void loadLatest()}>
                 <RefreshCw size={16} aria-hidden="true" className={reloading === 'loading' ? 'motion-safe:animate-spin' : undefined} />
-                Загрузить актуальную версию
-              </Button>
+                {t('tasks.taskDrawer.loadLatestVersion')}</Button>
             ) : null
           }
         />
         {reloading === 'failed' ? (
-          <p className="text-sm text-red-700">Не удалось загрузить актуальную версию задачи. Повторите попытку.</p>
+          <p className="text-sm text-red-700">{t('tasks.taskDrawer.couldNotLoadTheLatestTaskTryAgain')}</p>
         ) : null}
         {notice ? (
           <p role="status" className="rounded-lg bg-canvas px-3 py-2.5 text-sm leading-relaxed text-ink-soft">
-            {notice}
+            {t(notice)}
           </p>
         ) : null}
       </div>
 
       <div className={formFooterClassName}>
+        {canEdit && !locked ? <span className="order-last ml-auto text-xs text-muted">{t('tasks.taskDrawer.keyboardSave')}</span> : null}
         {locked ? (
           <Button type="submit" variant="primary" aria-disabled={busy || undefined}>
-            {pending ? 'Отправляем…' : 'Повторить отправку'}
+            {pending ? t('tasks.taskDrawer.submitting') : t('tasks.taskDrawer.retrySubmission')}
           </Button>
         ) : canEdit ? (
           <Button type="submit" variant="primary" aria-disabled={busy || undefined}>
-            {update.pendingCommand?.variables.taskId === taskId ? 'Сохраняем…' : 'Сохранить'}
+            {update.pendingCommand?.variables.taskId === taskId ? t('tasks.taskDrawer.saving') : t('tasks.taskDrawer.save')}
           </Button>
         ) : null}
         {writable && !archived && !locked ? (
           dirty ? (
-            <span className="text-xs text-muted">Чтобы отправить задачу в архив, сначала сохраните или сбросьте изменения.</span>
+            <span className="text-xs text-muted">{t('tasks.taskDrawer.saveOrDiscardYourChangesBeforeArchivingThis')}</span>
           ) : (
             <Button aria-disabled={busy || undefined} onClick={runArchive}>
               <Archive size={16} aria-hidden="true" />
-              В архив
-            </Button>
+              {t('tasks.taskDrawer.archive')}</Button>
           )
         ) : null}
         {writable && archived && !locked ? (
           <Button aria-disabled={busy || undefined} onClick={runRestore}>
             <ArchiveRestore size={16} aria-hidden="true" />
-            Восстановить
-          </Button>
+            {t('tasks.taskDrawer.restore')}</Button>
         ) : null}
       </div>
     </form>
@@ -568,47 +578,44 @@ interface ReviewPanelProps {
  * takes the current version or keeps their changes on top of it and then saves explicitly.
  */
 function ReviewPanel({ base, baseDraft, draft, latest, latestDraft, lookups, onTakeLatest, onKeepMine, onDismiss }: ReviewPanelProps) {
+  const { t } = useTranslation();
   const headingId = useId();
   const theirs = new Set(changedKeys(baseDraft, latestDraft));
   const mine = new Set(changedKeys(baseDraft, draft));
   const keys = taskDraftKeys.filter((key) => theirs.has(key) || mine.has(key));
   const revisions = [
-    base.revision === latest.revision ? null : `задача: ${base.revision} → ${latest.revision}`,
+    base.revision === latest.revision ? null : t('tasks.taskDrawer.taskValueValue', { p0: base.revision, p1: latest.revision }),
     base.workPackageRevision === latest.workPackageRevision
       ? null
-      : `оценка: ${base.workPackageRevision} → ${latest.workPackageRevision}`,
+      : t('tasks.taskDrawer.estimateValueValue', { p0: base.workPackageRevision, p1: latest.workPackageRevision }),
     base.participantsRevision === latest.participantsRevision
       ? null
-      : `участники: ${base.participantsRevision} → ${latest.participantsRevision}`,
+      : t('tasks.taskDrawer.participantsValueValue', { p0: base.participantsRevision, p1: latest.participantsRevision }),
   ].filter((line) => line !== null);
 
   return (
     <section aria-labelledby={headingId} className="space-y-3 rounded-xl border border-line-strong bg-canvas p-3">
       <h3 id={headingId} className="text-sm font-semibold text-ink">
-        Актуальная версия задачи
-      </h3>
+        {t('tasks.taskDrawer.latestTaskVersion')}</h3>
       <p className="text-xs text-muted">
-        {revisions.length > 0 ? `Версии изменились — ${revisions.join('; ')}.` : 'Версии не изменились.'}
-        {latest.archivedAt !== null && base.archivedAt === null ? ' Задача перенесена в архив.' : null}
-        {latest.archivedAt === null && base.archivedAt !== null ? ' Задача восстановлена из архива.' : null}
+        {revisions.length > 0 ? t('tasks.taskDrawer.versionsChangedValue', { p0: revisions.join('; ') }) : t('tasks.taskDrawer.versionsAreUnchanged')}
+        {latest.archivedAt !== null && base.archivedAt === null ? t('tasks.taskDrawer.theTaskWasArchived') : null}
+        {latest.archivedAt === null && base.archivedAt !== null ? t('tasks.taskDrawer.theTaskWasRestoredFromArchive') : null}
       </p>
       {keys.length === 0 ? (
-        <p className="text-sm text-ink-soft">Поля задачи совпадают с вашим черновиком.</p>
+        <p className="text-sm text-ink-soft">{t('tasks.taskDrawer.theTaskFieldsMatchYourDraft')}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[28rem] text-left text-sm">
-            <caption className="sr-only">Различия актуальной версии и черновика</caption>
+            <caption className="sr-only">{t('tasks.taskDrawer.latestVersionAndDraftDifferences')}</caption>
             <thead className="text-xs text-muted">
               <tr>
                 <th scope="col" className="py-1 pr-3 font-medium">
-                  Поле
-                </th>
+                  {t('tasks.taskDrawer.field')}</th>
                 <th scope="col" className="py-1 pr-3 font-medium">
-                  Сейчас на сервере
-                </th>
+                  {t('tasks.taskDrawer.onTheServer')}</th>
                 <th scope="col" className="py-1 font-medium">
-                  Ваш черновик
-                </th>
+                  {t('tasks.taskDrawer.yourDraft')}</th>
               </tr>
             </thead>
             <tbody>
@@ -620,7 +627,7 @@ function ReviewPanel({ base, baseDraft, draft, latest, latestDraft, lookups, onT
                   <td className="py-1.5 pr-3 [overflow-wrap:anywhere] text-ink">{formatDraftValue(key, latestDraft, lookups)}</td>
                   <td className="py-1.5 [overflow-wrap:anywhere] text-ink">
                     {formatDraftValue(key, draft, lookups)}
-                    {mine.has(key) ? <span className="text-xs text-muted"> (изменено вами)</span> : null}
+                    {mine.has(key) ? <span className="text-xs text-muted"> {t('tasks.taskDrawer.changedByYou')}</span> : null}
                   </td>
                 </tr>
               ))}
@@ -630,16 +637,13 @@ function ReviewPanel({ base, baseDraft, draft, latest, latestDraft, lookups, onT
       )}
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={onTakeLatest}>
-          Взять актуальную версию
-        </Button>
+          {t('tasks.taskDrawer.useLatestVersion')}</Button>
         {mine.size > 0 ? (
           <Button size="sm" variant="primary" onClick={onKeepMine}>
-            Оставить мои изменения
-          </Button>
+            {t('tasks.taskDrawer.keepMyChanges')}</Button>
         ) : null}
         <Button size="sm" variant="ghost" onClick={onDismiss}>
-          Скрыть
-        </Button>
+          {t('tasks.taskDrawer.hide')}</Button>
       </div>
     </section>
   );
@@ -651,6 +655,7 @@ function freshCreateSession(request: CreateRequest, statusId: string): CreateSes
 }
 
 function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
+  const { t } = useTranslation();
   const { project, statuses, sections, members, writable, commands, request, onCreated, onOpenTask, onResumeCreate } = props;
   const { create, createSession } = commands;
   const pending = create.pendingCommand !== null;
@@ -680,10 +685,10 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
   useUnsavedChangesWarning(dirty || locked);
 
   if (!writable) {
-    return <p className="mt-6 text-sm text-muted">Создавать задачи в этом проекте нельзя.</p>;
+    return <p className="mt-6 text-sm text-muted">{t('tasks.taskDrawer.youCannotCreateTasksInThisProject')}</p>;
   }
   if (session === null || statusId === null) {
-    return <p className="mt-6 text-sm text-muted">В проекте нет статусов задач, поэтому создать задачу нельзя.</p>;
+    return <p className="mt-6 text-sm text-muted">{t('tasks.taskDrawer.addATaskStatusToThisProjectBefore')}</p>;
   }
 
   const { draft, workScope } = session;
@@ -719,11 +724,11 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
   };
 
   return (
-    <form noValidate onSubmit={submit} className="mt-5 flex min-h-0 flex-1 flex-col">
+    <form noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, !busy && !locked)} className="mt-3 flex min-h-0 flex-1 flex-col">
       <div className={formBodyClassName}>
         {parent ? (
           <p className="text-sm text-ink-soft">
-            Подзадача к «<span className="[overflow-wrap:anywhere]">{parent.title}</span>».
+            {t('tasks.taskDrawer.subtaskOfTask', { title: parent.title })}
           </p>
         ) : null}
         {blockedByOther ? (
@@ -731,7 +736,7 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
         ) : null}
         {restored && !locked ? (
           <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
-            <span className="min-w-0 flex-1">Восстановлен несохранённый черновик новой задачи.</span>
+            <span className="min-w-0 flex-1">{t('tasks.taskDrawer.yourUnsavedNewTaskDraftHasBeenRestored')}</span>
             <Button
               size="sm"
               variant="ghost"
@@ -741,16 +746,15 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
                 setErrors({});
               }}
             >
-              Начать заново
-            </Button>
+              {t('tasks.taskDrawer.startOver')}</Button>
           </div>
         ) : null}
 
         <fieldset disabled={locked || busy} className="min-w-0 space-y-4">
-          <legend className="sr-only">Поля новой задачи</legend>
+          <legend className="sr-only">{t('tasks.taskDrawer.newTaskFields')}</legend>
           {parent ? (
             <fieldset>
-              <legend className="text-sm font-medium text-ink">Объём подзадачи</legend>
+              <legend className="text-sm font-medium text-ink">{t('tasks.taskDrawer.subtaskScope')}</legend>
               <div className="mt-1.5 space-y-1.5">
                 <label className="flex items-start gap-2 text-sm text-ink-soft">
                   <input
@@ -760,7 +764,7 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
                     checked={workScope === 'detail'}
                     onChange={() => setScope('detail')}
                   />
-                  <span>Детализация — входит в оценку родительской задачи</span>
+                  <span>{t('tasks.taskDrawer.detailIncludedInTheParentEstimate')}</span>
                 </label>
                 <label className="flex items-start gap-2 text-sm text-ink-soft">
                   <input
@@ -770,7 +774,7 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
                     checked={workScope === 'added_scope'}
                     onChange={() => setScope('added_scope')}
                   />
-                  <span>Дополнительный объём — своя оценка</span>
+                  <span>{t('tasks.taskDrawer.additionalWorkSeparateEstimate')}</span>
                 </label>
               </div>
             </fieldset>
@@ -801,13 +805,14 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
           />
         </fieldset>
 
-        {errors.form ? <p className="text-sm text-red-700">{errors.form}</p> : null}
+        {errors.form ? <p className="text-sm text-red-700">{t(errors.form.key, errors.form.params)}</p> : null}
         <SaveFeedback error={create.error} uncertainError={create.uncertain?.error ?? null} subject="taskSave" />
       </div>
 
       <div className={formFooterClassName}>
+        {!locked ? <span className="order-last ml-auto text-xs text-muted">{t('tasks.taskDrawer.keyboardCreate')}</span> : null}
         <Button type="submit" variant="primary" aria-disabled={busy || undefined}>
-          {pending ? 'Создаём…' : locked ? 'Повторить отправку' : 'Создать задачу'}
+          {pending ? t('tasks.taskDrawer.creating') : locked ? t('tasks.taskDrawer.retrySubmission') : t('tasks.taskDrawer.createTask')}
         </Button>
       </div>
     </form>

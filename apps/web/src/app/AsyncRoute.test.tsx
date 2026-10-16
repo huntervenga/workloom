@@ -16,18 +16,18 @@ describe('isolated asynchronous routes', () => {
     const first = new Promise<{ default: ComponentType }>((_resolve, reject) => { rejectFirst = reject; });
     const second = deferred<{ default: ComponentType }>();
     const load = vi.fn().mockImplementationOnce(() => first).mockImplementationOnce(() => second.promise);
-    const Page = createAsyncRoute(load, 'Загрузка тестовой страницы');
+    const Page = createAsyncRoute(load, 'shell.loadingProject');
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const user = userEvent.setup();
     try {
       render(<Page />);
-      expect(screen.getByRole('status')).toHaveTextContent('Загрузка тестовой страницы');
+      expect(screen.getByRole('status')).toHaveTextContent('Loading project');
       await act(async () => rejectFirst(new Error('Chunk unavailable')));
-      expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось открыть страницу');
+      expect(await screen.findByRole('alert')).toHaveTextContent("Unable to open this page");
       expect(load).toHaveBeenCalledTimes(1);
-      await user.click(screen.getByRole('button', { name: 'Повторить загрузку страницы' }));
+      await user.click(screen.getByRole('button', { name: "Try loading page again" }));
       expect(load).toHaveBeenCalledTimes(2);
-      expect(screen.getByRole('status')).toHaveTextContent('Загрузка тестовой страницы');
+      expect(screen.getByRole('status')).toHaveTextContent('Loading project');
       await act(async () => second.resolve({ default: () => <h1>Страница загружена</h1> }));
       expect(await screen.findByRole('heading', { name: 'Страница загружена' })).toBeInTheDocument();
       expect(load).toHaveBeenCalledTimes(2);
@@ -41,9 +41,9 @@ describe('isolated asynchronous routes', () => {
       useProtectedDraft(value !== '');
       return <><label>Черновик<input value={value} onChange={event => setValue(event.target.value)} /></label><button onClick={() => setParams({ view: 'other' })}>Другое представление</button><Link to="/next">Другая страница</Link></>;
     }
-    const Draft = createAsyncRoute(async () => ({ default: DraftPage }), 'Загрузка черновика');
+    const Draft = createAsyncRoute(async () => ({ default: DraftPage }), 'shell.loadingProject');
     const next = deferred<{ default: ComponentType }>(); const loadNext = vi.fn(() => next.promise);
-    const Next = createAsyncRoute(loadNext, 'Загрузка другой страницы');
+    const Next = createAsyncRoute(loadNext, 'shell.loadingWeek');
     const client = createQueryClient({ retry: false });
     const router = createMemoryRouter([{ element: <><ProtectedNavigationGuard /><Outlet /></>, children: [{ path: '/', element: <Draft /> }, { path: '/next', element: <Next /> }] }]);
     const view = render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
@@ -54,15 +54,15 @@ describe('isolated asynchronous routes', () => {
       expect(router.state.location.search).toBe('?view=other');
       expect(screen.getByRole('textbox', { name: 'Черновик' })).toHaveValue('Сохранить мои даты и часы');
       await user.click(screen.getByRole('link', { name: 'Другая страница' }));
-      const dialog = await screen.findByRole('dialog', { name: 'Уйти со страницы?' });
-      expect(dialog).toHaveTextContent('На странице есть несохранённый черновик.');
+      const dialog = await screen.findByRole('dialog', { name: "Leave this page?" });
+      expect(dialog).toHaveTextContent("You have an unsaved draft on this page.");
       expect(loadNext).not.toHaveBeenCalled();
-      await user.click(within(dialog).getByRole('button', { name: 'Остаться' }));
+      await user.click(within(dialog).getByRole('button', { name: "Stay" }));
       expect(screen.getByRole('textbox', { name: 'Черновик' })).toHaveValue('Сохранить мои даты и часы');
       await user.click(screen.getByRole('link', { name: 'Другая страница' }));
-      await user.click(within(await screen.findByRole('dialog', { name: 'Уйти со страницы?' })).getByRole('button', { name: 'Уйти без сохранения' }));
+      await user.click(within(await screen.findByRole('dialog', { name: "Leave this page?" })).getByRole('button', { name: "Leave without saving" }));
       await waitFor(() => expect(loadNext).toHaveBeenCalledTimes(1));
-      expect(screen.getByRole('status')).toHaveTextContent('Загрузка другой страницы');
+      expect(screen.getByRole('status')).toHaveTextContent('Loading week');
       await act(async () => next.resolve({ default: () => <h1>Другая страница загружена</h1> }));
       expect(await screen.findByRole('heading', { name: 'Другая страница загружена' })).toBeInTheDocument();
     } finally { view.unmount(); router.dispose(); client.clear(); }

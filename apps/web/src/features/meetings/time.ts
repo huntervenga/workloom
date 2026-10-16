@@ -1,3 +1,4 @@
+import { t, formatDate } from '../../i18n';
 import { Temporal } from 'temporal-polyfill';
 
 export type ClockResolution = { kind: 'valid'; instant: string; label: string } | { kind: 'overlap'; earlier: string; later: string; earlierLabel: string; laterLabel: string } | { kind: 'invalid'; message: string };
@@ -7,17 +8,17 @@ export function resolveMeetingClock(local: string, timezone: string): ClockResol
     const wall = Temporal.PlainDateTime.from(local);
     const earlier = wall.toZonedDateTime(timezone, { disambiguation: 'earlier' });
     const later = wall.toZonedDateTime(timezone, { disambiguation: 'later' });
-    if (!earlier.toPlainDateTime().equals(wall) || !later.toPlainDateTime().equals(wall)) return { kind: 'invalid', message: 'Такого местного времени нет из-за перевода часов. Выберите другое время.' };
+    if (!earlier.toPlainDateTime().equals(wall) || !later.toPlainDateTime().equals(wall)) return { kind: 'invalid', message: t('meetings.thisLocalTimeDoesNotExistBecauseOfA') };
     const instant = earlier.toInstant().toString({ smallestUnit: 'millisecond' });
     if (earlier.epochNanoseconds !== later.epochNanoseconds) return { kind: 'overlap', earlier: instant, later: later.toInstant().toString({ smallestUnit: 'millisecond' }), earlierLabel: `${earlier.offset} · ${instant}`, laterLabel: `${later.offset} · ${later.toInstant().toString()}` };
     return { kind: 'valid', instant, label: `${earlier.offset} · ${instant}` };
-  } catch { return { kind: 'invalid', message: 'Укажите дату, время и действительный часовой пояс IANA.' }; }
+  } catch { return { kind: 'invalid', message: t('meetings.enterADateTimeAndValidIanaTimeZone') }; }
 }
 export function meetingLocal(instant: string, timezone: string): string {
   return Temporal.Instant.from(instant).toZonedDateTimeISO(timezone).toPlainDateTime().toString({ smallestUnit: 'minute' });
 }
 export function meetingTime(instant: string, timezone: string): string {
-  return new Intl.DateTimeFormat('ru', { timeZone: timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(instant)) + ` · ${timezone}`;
+  return formatDate(new Date(instant), { timeZone: timezone, dateStyle: 'medium', timeStyle: 'short' }) + ` · ${timezone}`;
 }
 
 export function clockChoice(instant:string,timezone:string):string {

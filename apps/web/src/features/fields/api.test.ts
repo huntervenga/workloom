@@ -156,8 +156,8 @@ describe('useSetTaskFieldValueMutation', () => {
       .catch((caught: unknown) => caught);
 
     const described = describeError(error, 'fieldValueSave');
-    expect(described).toMatchObject({ title: 'Не удалось сохранить значение поля', retryable: false, requestId: 'req_test_err' });
-    expect(described.description).toContain('заблокировано');
+    expect(described).toMatchObject({ title: 'Unable to save field value', retryable: false, requestId: 'req_test_err' });
+    expect(described.description).toContain('locked');
     expect(`${described.title} ${described.description}`).not.toMatch(/s3cret|update|postgres/);
   });
 });

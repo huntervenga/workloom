@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import { localMcpSecretPreimage } from '@workloom/contracts';
 /** Side-effect-free local MCP v1 encoding. The returned token belongs only in private UI memory. */
 export interface CredentialSecret {
@@ -15,7 +16,7 @@ export async function encodeCredentialSecret(id: string, bytes: Uint8Array<Array
   return { id: canonicalId, token: `wlm_local_v1_${canonicalId}.${secret}`, secretHash: Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join(''), hashVersion: 1 };
 }
 export async function generateCredentialSecret(): Promise<CredentialSecret> {
-  if (!globalThis.crypto?.subtle || !globalThis.crypto.randomUUID || !globalThis.crypto.getRandomValues) throw new Error('Этот браузер не поддерживает безопасное создание локального ключа.');
+  if (!globalThis.crypto?.subtle || !globalThis.crypto.randomUUID || !globalThis.crypto.getRandomValues) throw new Error(t('mcp.thisBrowserCannotSecurelyGenerateALocalCredential'));
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
   try { return await encodeCredentialSecret(globalThis.crypto.randomUUID(), bytes, globalThis.crypto.subtle); }
   finally { bytes.fill(0); }

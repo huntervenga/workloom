@@ -1,9 +1,10 @@
+import { t } from '../../i18n';
 import { projectImportMappingSchema, type ProjectImportDto, type ProjectImportMapping, type TaskFieldDefinitionDto } from '@workloom/contracts';
 export const coreColumns = [
-  ['externalIdColumn', 'Внешний ID задачи'], ['titleColumn', 'Название задачи'], ['descriptionColumn', 'Описание'],
-  ['startDateColumn', 'Дата начала'], ['dueDateColumn', 'Срок'], ['parentExternalIdColumn', 'Внешний ID родительской задачи'],
-  ['responsibleColumn', 'Ответственный'], ['participantsColumn', 'Участники'], ['statusColumn', 'Статус'],
-  ['sectionColumn', 'Раздел'], ['tagsColumn', 'Теги'], ['privateColumn', 'Признак приватности'],
+  ['externalIdColumn', 'imports.externalTaskId'], ['titleColumn', 'imports.taskTitle'], ['descriptionColumn', 'imports.description'],
+  ['startDateColumn', 'imports.startDate'], ['dueDateColumn', 'imports.dueDate'], ['parentExternalIdColumn', 'imports.externalParentTaskId'],
+  ['responsibleColumn', 'imports.assignee'], ['participantsColumn', 'imports.participants'], ['statusColumn', 'imports.status'],
+  ['sectionColumn', 'imports.section'], ['tagsColumn', 'imports.tags'], ['privateColumn', 'imports.privacyFlag'],
 ] as const;
 export type CoreColumnKey = (typeof coreColumns)[number][0];
 export type ScalarChoice = { column: number; fieldId: string; empty: 'missing' | 'null'; sourceMeaning: 'ordinary' | 'current_estimate' | 'current_actual'; sourceUnit: 'minutes' | 'hours' | '' };
@@ -54,4 +55,4 @@ export function buildImportMapping(source: ProjectImportDto, form: ImportMapping
   const parsed = projectImportMappingSchema.safeParse(base);
   return parsed.success ? parsed.data : null;
 }
-export const columnName = (source: ProjectImportDto, index: number) => `${index + 1} · ${source.headers[index] || 'Без названия'}`;
+export const columnName = (source: ProjectImportDto, index: number) => `${index + 1} · ${source.headers[index] || t('imports.untitled2')}`;

@@ -1,3 +1,5 @@
+import { message, type TranslationMessage } from '../../i18n';
+import { t, useTranslation } from '../../i18n';
 import type { ProjectColumnsDto } from '@workloom/contracts';
 import { Badge, Button } from '@workloom/ui';
 import { ChevronDown, ChevronUp, Pencil, RefreshCw } from 'lucide-react';
@@ -41,13 +43,13 @@ type ReloadState =
   | { state: 'done'; added: number; removed: number };
 
 function reloadNotice(reload: ReloadState): string | null {
-  if (reload.state === 'failed') return 'Не удалось загрузить актуальное расположение. Повторите попытку.';
-  if (reload.state === 'missing') return 'Настройки колонок проекта больше недоступны.';
+  if (reload.state === 'failed') return t('fields.projectColumnsEditor.couldNotLoadTheLatestColumnLayoutTry');
+  if (reload.state === 'missing') return t('fields.projectColumnsEditor.projectColumnSettingsAreNoLongerAvailable');
   if (reload.state !== 'done') return null;
-  const parts = ['Загружена актуальная версия расположения. Ваш порядок и видимость сохранены для оставшихся колонок'];
-  if (reload.added > 0) parts.push(`новые колонки (${reload.added}) добавлены в конец`);
-  if (reload.removed > 0) parts.push(`колонки, которых больше нет в проекте (${reload.removed}), убраны`);
-  return `${parts.join('; ')}. Проверьте расположение и сохраните его снова.`;
+  const parts = [t('fields.projectColumnsEditor.latestLayoutLoadedYourOrderAndVisibilityHave')];
+  if (reload.added > 0) parts.push(t('fields.projectColumnsEditor.newColumnsValueAddedAtTheEnd', { p0: reload.added }));
+  if (reload.removed > 0) parts.push(t('fields.projectColumnsEditor.columnsNoLongerInTheProjectValueRemoved', { p0: reload.removed }));
+  return t('fields.projectColumnsEditor.valueReviewTheLayoutAndSaveAgain', { p0: parts.join('; ') });
 }
 
 export interface ProjectColumnsEditorProps {
@@ -77,6 +79,7 @@ export function ProjectColumnsEditor({
   reload,
   onEditField,
 }: ProjectColumnsEditorProps) {
+  const { t } = useTranslation();
   const command = sentCommand(mutation);
   const own = command !== null && command.variables.projectId === projectId;
   const otherTarget = command !== null && !own;
@@ -94,7 +97,7 @@ export function ProjectColumnsEditor({
   // The confirmed answer is shown until the refetch catches up, so the old order does not flash back.
   const [saved, setSaved] = useState<ProjectColumnsDto | null>(null);
   const [reloadState, setReloadState] = useState<ReloadState>({ state: 'idle' });
-  const [announcement, setAnnouncement] = useState('');
+  const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const focusAfterMove = useRef<{ fieldId: string; direction: 'up' | 'down' } | null>(null);
 
@@ -104,7 +107,7 @@ export function ProjectColumnsEditor({
   const shown = own ? byPosition(command.variables.input.columns) : base.columns;
   const frozen = !canManage || own || otherTarget;
   const changed = draft !== null && (draft.revision !== server.revision || !sameLayout(draft.columns, serverColumns));
-  const nameOf = (fieldId: string) => fieldNames.get(fieldId) ?? 'Колонка недоступна';
+  const nameOf = (fieldId: string) => fieldNames.get(fieldId) ?? t('fields.projectColumnsEditor.columnUnavailable');
 
   // Moving a row re-renders the list; focus follows the moved column's button.
   useEffect(() => {
@@ -131,7 +134,7 @@ export function ProjectColumnsEditor({
     next[index] = other;
     next[target] = moving;
     focusAfterMove.current = { fieldId: moving.fieldId, direction };
-    setAnnouncement(`Колонка «${nameOf(moving.fieldId)}» перемещена на позицию ${target + 1} из ${next.length}.`);
+    setAnnouncement(message('fields.projectColumnsEditor.columnValueMovedToPositionValueOfValue', { p0: nameOf(moving.fieldId), p1: target + 1, p2: next.length }));
     edit(next);
   };
 
@@ -139,7 +142,7 @@ export function ProjectColumnsEditor({
     setSaved(result);
     setDraft(null);
     setReloadState({ state: 'idle' });
-    setAnnouncement('Расположение колонок сохранено.');
+    setAnnouncement(message('fields.projectColumnsEditor.columnLayoutSaved'));
   };
 
   const save = () => {
@@ -183,23 +186,23 @@ export function ProjectColumnsEditor({
   const otherNotice = !otherTarget
     ? null
     : command.pending
-      ? 'Сохраняется расположение колонок другого проекта. Здесь его можно будет изменить после ответа сервера.'
-      : 'Расположение колонок другого проекта не подтверждено. Сначала откройте тот проект и повторите отправку.';
+      ? t('fields.projectColumnsEditor.anotherProjectSColumnLayoutIsBeingSaved')
+      : t('fields.projectColumnsEditor.anotherProjectSColumnLayoutIsUnconfirmedOpen');
   const notice = otherNotice ?? reloadNotice(reloadState);
 
   return (
-    <section aria-label="Расположение колонок" className="space-y-3">
+    <section aria-label={t('fields.projectColumnsEditor.columnLayout')} className="space-y-3">
       <p role="status" className="sr-only">
-        {announcement}
+        {announcement ? t(announcement.key, announcement.params) : null}
       </p>
       {shown.length === 0 ? (
-        <p className="text-sm text-muted">Колонок пока нет.</p>
+        <p className="text-sm text-muted">{t('fields.projectColumnsEditor.noColumnsYet')}</p>
       ) : (
         <>
           {canManage ? (
-            <p className="text-xs leading-relaxed text-subtle">Отмеченные колонки видны в таблице задач проекта.</p>
+            <p className="text-xs leading-relaxed text-subtle">{t('fields.projectColumnsEditor.checkedColumnsAppearInTheProjectSTask')}</p>
           ) : null}
-          <ul ref={listRef} aria-label="Колонки" className="divide-y divide-line rounded-xl border border-line">
+          <ul ref={listRef} aria-label={t('fields.projectColumnsEditor.columns')} className="divide-y divide-line rounded-xl border border-line">
             {shown.map((column, index) => {
               const name = nameOf(column.fieldId);
               return (
@@ -228,7 +231,7 @@ export function ProjectColumnsEditor({
                       {name}
                     </span>
                   )}
-                  {column.visible ? null : <Badge tone="muted">Скрыта</Badge>}
+                  {column.visible ? null : <Badge tone="muted">{t('fields.projectColumnsEditor.hidden')}</Badge>}
                   {canManage ? (
                     <>
                       <Button
@@ -237,7 +240,7 @@ export function ProjectColumnsEditor({
                         className="px-2"
                         data-field={column.fieldId}
                         data-move="up"
-                        aria-label={`Поднять колонку «${name}»`}
+                        aria-label={t('fields.projectColumnsEditor.moveColumnValueUp', { p0: name })}
                         disabled={frozen || index === 0}
                         onClick={() => move(index, 'up')}
                       >
@@ -249,7 +252,7 @@ export function ProjectColumnsEditor({
                         className="px-2"
                         data-field={column.fieldId}
                         data-move="down"
-                        aria-label={`Опустить колонку «${name}»`}
+                        aria-label={t('fields.projectColumnsEditor.moveColumnValueDown', { p0: name })}
                         disabled={frozen || index === shown.length - 1}
                         onClick={() => move(index, 'down')}
                       >
@@ -260,7 +263,7 @@ export function ProjectColumnsEditor({
                           size="sm"
                           variant="ghost"
                           className="px-2"
-                          aria-label={`Изменить колонку «${name}»`}
+                          aria-label={t('fields.projectColumnsEditor.editColumnValue', { p0: name })}
                           onClick={() => onEditField(column.fieldId)}
                         >
                           <Pencil size={14} aria-hidden="true" />
@@ -293,8 +296,7 @@ export function ProjectColumnsEditor({
                     aria-hidden="true"
                     className={reloadState.state === 'loading' ? 'motion-safe:animate-spin' : undefined}
                   />
-                  Загрузить актуальную версию
-                </Button>
+                  {t('fields.projectColumnsEditor.loadLatestVersion')}</Button>
               ) : null
             }
           />
@@ -313,8 +315,7 @@ export function ProjectColumnsEditor({
                     if (mutation.pendingCommand === null) mutation.reset();
                   }}
                 >
-                  Отменить изменения
-                </Button>
+                  {t('fields.projectColumnsEditor.discardChanges')}</Button>
               ) : null}
               <Button
                 variant="primary"
@@ -322,7 +323,7 @@ export function ProjectColumnsEditor({
                 aria-disabled={(own && command.pending) || otherTarget || undefined}
                 onClick={save}
               >
-                {own && command.pending ? 'Сохраняем…' : uncertain ? 'Повторить отправку' : 'Сохранить расположение'}
+                {own && command.pending ? t('fields.projectColumnsEditor.saving') : uncertain ? t('fields.projectColumnsEditor.retrySubmission') : t('fields.projectColumnsEditor.saveLayout')}
               </Button>
             </div>
           ) : null}

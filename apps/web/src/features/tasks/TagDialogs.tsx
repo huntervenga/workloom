@@ -1,3 +1,5 @@
+import { message, type TranslationMessage } from '../../i18n';
+import { useTranslation } from '../../i18n';
 import { createTagInputSchema, type TagDto, type UpdateTagInput } from '@workloom/contracts';
 import { Badge, Button, Skeleton, TextInput, cn } from '@workloom/ui';
 import { Pencil, Plus, RefreshCw, Tags } from 'lucide-react';
@@ -23,14 +25,15 @@ export interface TagFormValue {
   color: string | null;
 }
 
-function tagProblem(value: TagFormValue): string | null {
+function tagProblem(value: TagFormValue): TranslationMessage | null {
   if (createTagInputSchema.safeParse(value).success) return null;
-  if (value.name.trim() === '') return 'Введите название тега.';
-  if (value.name.trim().length > TAG_NAME_MAX) return `Название должно быть не длиннее ${TAG_NAME_MAX} символов.`;
-  return 'Цвет должен быть в формате #rrggbb.';
+  if (value.name.trim() === '') return message('tasks.tagDialogs.enterATagName');
+  if (value.name.trim().length > TAG_NAME_MAX) return message('tasks.tagDialogs.nameMustBeValueCharactersOrFewer', { p0: TAG_NAME_MAX });
+  return message('tasks.tagDialogs.useAColorInRrggbbFormat');
 }
 
 export function TagSwatch({ color, className }: { color: string | null; className?: string }) {
+  useTranslation();
   return (
     <span
       aria-hidden="true"
@@ -73,9 +76,10 @@ function TagForm({
   onSubmit,
   onCancel,
 }: TagFormProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(sent ? sent.name : initial.name);
   const [color, setColor] = useState<string | null>(sent ? sent.color : initial.color);
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<TranslationMessage | null>(null);
   const frozen = pending || locked || blocked || sent !== null;
   const shown = sent ?? { name, color };
   const nameRef = useRef<HTMLInputElement>(null);
@@ -108,8 +112,7 @@ function TagForm({
     <form noValidate onSubmit={submit} className="space-y-3">
       <div>
         <label htmlFor={nameId} className="text-sm font-medium text-ink">
-          Название тега
-        </label>
+          {t('tasks.tagDialogs.tagName')}</label>
         <TextInput
           ref={nameRef}
           id={nameId}
@@ -127,7 +130,7 @@ function TagForm({
         />
         {fieldError ? (
           <p id={errorId} className="mt-1.5 text-sm text-red-700">
-            {fieldError}
+            {t(fieldError.key, fieldError.params)}
           </p>
         ) : null}
       </div>
@@ -140,13 +143,11 @@ function TagForm({
             disabled={frozen}
             onChange={(event) => setColor(event.target.checked ? (initial.color ?? DEFAULT_TAG_COLOR) : null)}
           />
-          Цвет
-        </label>
+          {t('tasks.tagDialogs.color')}</label>
         {shown.color !== null ? (
           <>
             <label htmlFor={colorId} className="sr-only">
-              Цвет тега
-            </label>
+              {t('tasks.tagDialogs.tagColor')}</label>
             <input
               id={colorId}
               type="color"
@@ -157,7 +158,7 @@ function TagForm({
             />
           </>
         ) : (
-          <span className="text-xs text-subtle">Без цвета</span>
+          <span className="text-xs text-subtle">{t('tasks.tagDialogs.noColor')}</span>
         )}
       </div>
 
@@ -169,9 +170,9 @@ function TagForm({
       ) : null}
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button onClick={onCancel}>{locked ? 'Скрыть' : 'Отмена'}</Button>
+        <Button onClick={onCancel}>{locked ? t('tasks.tagDialogs.hide') : t('tasks.tagDialogs.cancel')}</Button>
         <Button type="submit" variant="primary" aria-disabled={pending || blocked || undefined}>
-          {pending ? 'Сохраняем…' : locked ? 'Повторить отправку' : submitLabel}
+          {pending ? t('tasks.tagDialogs.saving') : locked ? t('tasks.tagDialogs.retrySubmission') : submitLabel}
         </Button>
       </div>
     </form>
@@ -209,6 +210,7 @@ export interface CreateTagDialogProps {
 
 /** «Новый тег» from inside the task form; the task draft and focus stay where they were. */
 export function CreateTagDialog({ mutation, onCreated }: CreateTagDialogProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const changeOpen = (next: boolean) => {
     setOpen(next);
@@ -222,13 +224,12 @@ export function CreateTagDialog({ mutation, onCreated }: CreateTagDialogProps) {
 
   return (
     <DialogShell
-      title="Новый тег"
-      description="Тег появится во всём пространстве. Задачи хранят ссылку на тег, поэтому переименование его не теряет."
+      title={t('tasks.tagDialogs.newTag')}
+      description={t('tasks.tagDialogs.tagsAreSharedAcrossTheWorkspaceRenamingA')}
       trigger={
         <Button size="sm" variant="ghost">
           <Plus size={14} aria-hidden="true" />
-          Новый тег
-        </Button>
+          {t('tasks.tagDialogs.newTag')}</Button>
       }
       open={open}
       onOpenChange={changeOpen}
@@ -236,7 +237,7 @@ export function CreateTagDialog({ mutation, onCreated }: CreateTagDialogProps) {
       <div className="mt-5">
         <TagForm
           initial={{ name: '', color: null }}
-          submitLabel="Создать тег"
+          submitLabel={t('tasks.tagDialogs.createTag')}
           pending={mutation.isPending}
           locked={uncertain !== null}
           sent={sentCreateValue(mutation)}
@@ -256,14 +257,15 @@ export interface TagManagerDialogProps {
   canEdit: boolean;
 }
 
-function orderTags(tags: readonly TagDto[]): TagDto[] {
+function orderTags(tags: readonly TagDto[], locale: string): TagDto[] {
   return [...tags].sort(
-    (a, b) => Number(a.archivedAt !== null) - Number(b.archivedAt !== null) || a.name.localeCompare(b.name, 'ru'),
+    (a, b) => Number(a.archivedAt !== null) - Number(b.archivedAt !== null) || a.name.localeCompare(b.name, locale),
   );
 }
 
 /** Workspace tags: create and rename, by ID and revision. Archiving is not offered here. */
 export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDialogProps) {
+  const { t, locale } = useTranslation();
   const [open, setOpen] = useState(false);
   const tags = useTagsQuery(actorId, workspaceId);
   const create = useCreateTagMutation(actorId, workspaceId);
@@ -272,7 +274,7 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
   const [editingId, setEditingId] = useState<string | null>(null);
   // Outlives the edit form, so reopening it while the command is unresolved shows what was submitted.
   const [sentEdit, setSentEdit] = useState<SentTagEdit | null>(null);
-  const [announcement, setAnnouncement] = useState('');
+  const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
 
   // An uncertain command keeps its form open until it is resent and confirmed.
   const showCreate = canEdit && (creating || create.uncertain !== null);
@@ -295,31 +297,30 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
   };
   const onCreated = (tag: TagDto) => {
     setCreating(false);
-    setAnnouncement(`Тег «${tag.name}» создан.`);
+    setAnnouncement(message('tasks.tagDialogs.tagValueCreated', { p0: tag.name }));
   };
 
   return (
     <DialogShell
-      title="Теги пространства"
-      description="Теги общие для всех проектов пространства. Задачи ссылаются на тег, поэтому после переименования он остаётся на задачах."
+      title={t('tasks.tagDialogs.workspaceTags')}
+      description={t('tasks.tagDialogs.tagsAreSharedAcrossWorkspaceProjectsRenamingA')}
       trigger={
         <Button>
           <Tags size={16} aria-hidden="true" />
-          Теги
-        </Button>
+          {t('tasks.tagDialogs.tags')}</Button>
       }
       open={open}
       onOpenChange={changeOpen}
     >
       <div className="mt-5 space-y-4">
         <p role="status" className="sr-only">
-          {announcement}
+          {announcement ? t(announcement.key, announcement.params) : null}
         </p>
         {showCreate ? (
-          <section aria-label="Новый тег" className="rounded-xl border border-line p-3">
+          <section aria-label={t('tasks.tagDialogs.newTag')} className="rounded-xl border border-line p-3">
             <TagForm
               initial={{ name: '', color: null }}
-              submitLabel="Создать тег"
+              submitLabel={t('tasks.tagDialogs.createTag')}
               pending={create.isPending}
               locked={create.uncertain !== null}
               sent={sentCreateValue(create)}
@@ -334,15 +335,14 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
         ) : canEdit ? (
           <Button variant="primary" onClick={() => setCreating(true)}>
             <Plus size={16} aria-hidden="true" />
-            Новый тег
-          </Button>
+            {t('tasks.tagDialogs.newTag')}</Button>
         ) : (
-          <p className="text-sm text-muted">Роль «Наблюдатель» позволяет только просматривать теги.</p>
+          <p className="text-sm text-muted">{t('tasks.tagDialogs.viewersCanBrowseTags')}</p>
         )}
 
         {tags.isPending ? (
           <div role="status" className="space-y-2">
-            <span className="sr-only">Загрузка тегов</span>
+            <span className="sr-only">{t('tasks.tagDialogs.loadingTags')}</span>
             <Skeleton className="h-8" />
             <Skeleton className="h-8" />
           </div>
@@ -355,10 +355,10 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
             onRetry={() => void tags.refetch()}
           />
         ) : tags.data.length === 0 ? (
-          <p className="text-sm text-muted">Тегов пока нет.</p>
+          <p className="text-sm text-muted">{t('tasks.tagDialogs.noTagsYet')}</p>
         ) : (
-          <ul aria-label="Теги" className="divide-y divide-line rounded-xl border border-line">
-            {orderTags(tags.data).map((tag) =>
+          <ul aria-label={t('tasks.tagDialogs.tags')} className="divide-y divide-line rounded-xl border border-line">
+            {orderTags(tags.data, locale).map((tag) =>
               activeEditId === tag.id ? (
                 <li key={tag.id} className="p-3">
                   <EditTagForm
@@ -370,7 +370,7 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
                     onSend={setSentEdit}
                     onDone={(renamed) => {
                       closeEdit();
-                      if (renamed) setAnnouncement(`Тег «${renamed.name}» сохранён.`);
+                      if (renamed) setAnnouncement(message('tasks.tagDialogs.tagValueSaved', { p0: renamed.name }));
                     }}
                   />
                 </li>
@@ -380,13 +380,13 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
                   <span className="min-w-0 flex-1 truncate text-sm text-ink" title={tag.name}>
                     {tag.name}
                   </span>
-                  {tag.archivedAt !== null ? <Badge tone="muted">В архиве</Badge> : null}
+                  {tag.archivedAt !== null ? <Badge tone="muted">{t('tasks.tagDialogs.archived')}</Badge> : null}
                   {canEdit ? (
                     <Button
                       size="sm"
                       variant="ghost"
                       className="px-2"
-                      aria-label={`Изменить тег «${tag.name}»`}
+                      aria-label={t('tasks.tagDialogs.editTagValue', { p0: tag.name })}
                       onClick={() => {
                         if (update.uncertain === null) setEditingId(tag.id);
                       }}
@@ -419,6 +419,7 @@ interface EditTagFormProps {
  * shared by all tags, so while it carries another tag's command this form is blocked.
  */
 function EditTagForm({ actorId, workspaceId, tag, mutation, sentEdit, onSend, onDone }: EditTagFormProps) {
+  const { t } = useTranslation();
   const reloadTags = useReloadTags(actorId, workspaceId);
   const [base, setBase] = useState({ revision: tag.revision, name: tag.name, color: tag.color });
   const [reload, setReload] = useState<'idle' | 'loading' | 'done' | 'failed' | 'missing'>('idle');
@@ -441,8 +442,8 @@ function EditTagForm({ actorId, workspaceId, tag, mutation, sentEdit, onSend, on
   const otherNotice = !otherTarget
     ? null
     : mutation.isPending
-      ? 'Сохраняется изменение другого тега. Этот тег можно будет изменить после ответа сервера.'
-      : 'Изменение другого тега не подтверждено. Сначала повторите его отправку.';
+      ? t('tasks.tagDialogs.anotherTagIsBeingSavedWaitForThe')
+      : t('tasks.tagDialogs.anotherTagChangeIsUnconfirmedRetryItsOriginal');
 
   const loadLatest = async () => {
     if (reload === 'loading') return;
@@ -464,7 +465,7 @@ function EditTagForm({ actorId, workspaceId, tag, mutation, sentEdit, onSend, on
   return (
     <TagForm
       initial={{ name: tag.name, color: tag.color }}
-      submitLabel="Сохранить"
+      submitLabel={t('tasks.tagDialogs.save')}
       pending={mutation.isPending && own}
       locked={uncertain !== null}
       sent={sent}
@@ -479,8 +480,7 @@ function EditTagForm({ actorId, workspaceId, tag, mutation, sentEdit, onSend, on
             conflict ? (
               <Button size="sm" aria-disabled={reload === 'loading' || undefined} onClick={() => void loadLatest()}>
                 <RefreshCw size={16} aria-hidden="true" className={reload === 'loading' ? 'motion-safe:animate-spin' : undefined} />
-                Загрузить актуальную версию
-              </Button>
+                {t('tasks.tagDialogs.loadLatestVersion')}</Button>
             ) : null
           }
         />
@@ -488,11 +488,11 @@ function EditTagForm({ actorId, workspaceId, tag, mutation, sentEdit, onSend, on
       notice={
         otherNotice ??
         (reload === 'done'
-          ? `Загружена актуальная версия: «${base.name}». Ваши значения остались в полях — сохраните их, если они всё ещё нужны.`
+          ? t('tasks.tagDialogs.latestVersionLoadedValueYourValuesRemainIn', { p0: base.name })
           : reload === 'failed'
-            ? 'Не удалось загрузить актуальную версию тега. Повторите попытку.'
+            ? t('tasks.tagDialogs.couldNotLoadTheLatestTagTryAgain')
             : reload === 'missing'
-              ? 'Тег больше недоступен.'
+              ? t('tasks.tagDialogs.thisTagIsNoLongerAvailable')
               : null)
       }
       onSubmit={(value) => {

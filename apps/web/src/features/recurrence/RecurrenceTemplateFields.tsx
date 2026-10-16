@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import type { MembershipDto, SectionDto, TaskStatusDto } from '@workloom/contracts';
 import { TextInput, inputClassName } from '@workloom/ui';
 import { useId } from 'react';
@@ -32,6 +33,7 @@ function MissingOption({ selected, known, label }: { selected: string; known: re
 }
 
 export function RecurrenceTemplateFields({ value, onChange, members, statuses, sections, disabled = false }: RecurrenceTemplateFieldsProps) {
+  const { t } = useTranslation();
   const id = useId();
   const set = <K extends keyof RecurrenceTemplateDraft>(key: K, next: RecurrenceTemplateDraft[K]) => onChange({ ...value, [key]: next });
   const toggleAttendee = (membershipId: string, checked: boolean) =>
@@ -47,7 +49,7 @@ export function RecurrenceTemplateFields({ value, onChange, members, statuses, s
   return (
     <fieldset disabled={disabled} className="min-w-0 space-y-4">
       <div className="min-w-0 space-y-1.5">
-        <label htmlFor={`${id}-title`} className={labelClass}>Название встречи</label>
+        <label htmlFor={`${id}-title`} className={labelClass}>{t('recurrence.meetingTitle')}</label>
         <TextInput
           id={`${id}-title`}
           value={value.title}
@@ -55,29 +57,29 @@ export function RecurrenceTemplateFields({ value, onChange, members, statuses, s
           aria-describedby={`${id}-title-hint`}
           onChange={(e) => set('title', e.target.value)}
         />
-        <p id={`${id}-title-hint`} className="text-xs text-muted">Это название получит каждая встреча серии.</p>
+        <p id={`${id}-title-hint`} className="text-xs text-muted">{t('recurrence.eachMeetingInTheSeriesUsesThisTitle')}</p>
       </div>
 
       <div className="min-w-0 space-y-1.5">
-        <label htmlFor={`${id}-organizer`} className={labelClass}>Организатор</label>
+        <label htmlFor={`${id}-organizer`} className={labelClass}>{t('recurrence.organizer')}</label>
         <select
           id={`${id}-organizer`}
           className={inputClassName()}
           value={value.organizerMembershipId}
           onChange={(e) => set('organizerMembershipId', e.target.value)}
         >
-          <option value="">Выберите организатора</option>
+          <option value="">{t('recurrence.chooseAnOrganizer')}</option>
           {members.map((m) => (
             <option key={m.id} value={m.id}>{m.displayName}</option>
           ))}
-          <MissingOption selected={value.organizerMembershipId} known={members} label="Сохранённый организатор недоступен" />
+          <MissingOption selected={value.organizerMembershipId} known={members} label={t('recurrence.savedOrganizerUnavailable')} />
         </select>
       </div>
 
       <fieldset className="min-w-0 space-y-2">
-        <legend className={`mb-2 ${labelClass}`}>Участники встреч серии</legend>
+        <legend className={`mb-2 ${labelClass}`}>{t('recurrence.seriesParticipants')}</legend>
         {members.length === 0 && missingAttendeeIds.length === 0 ? (
-          <p className="text-sm text-muted">Нет доступных участников пространства.</p>
+          <p className="text-sm text-muted">{t('recurrence.noAvailableWorkspaceMembers')}</p>
         ) : null}
         {members.map((m) => (
           <label key={m.id} className="flex min-w-0 items-center gap-2 text-sm">
@@ -93,48 +95,48 @@ export function RecurrenceTemplateFields({ value, onChange, members, statuses, s
           <label key={membershipId} className="flex min-w-0 items-center gap-2 text-sm">
             <input type="checkbox" checked onChange={(e) => toggleAttendee(membershipId, e.target.checked)} />
             <span className="min-w-0 [overflow-wrap:anywhere]">
-              {missingAttendeeIds.length > 1 ? `Сохранённый участник ${index + 1} недоступен` : 'Сохранённый участник недоступен'}
+              {missingAttendeeIds.length > 1 ? t('recurrence.savedPersonUnavailable2', { position: index + 1 }) : t('recurrence.savedPersonUnavailable3')}
             </span>
           </label>
         ))}
-        <p className="text-xs text-muted">Организатор входит в состав только при выбранном флажке.</p>
+        <p className="text-xs text-muted">{t('recurrence.theOrganizerIsIncludedOnlyWhenTheirCheckboxIs')}</p>
       </fieldset>
 
       <div className="grid min-w-0 gap-4 sm:grid-cols-2">
         <div className="min-w-0 space-y-1.5">
-          <label htmlFor={`${id}-status`} className={labelClass}>Статус встречи</label>
+          <label htmlFor={`${id}-status`} className={labelClass}>{t('recurrence.meetingStatus')}</label>
           <select id={`${id}-status`} className={inputClassName()} value={value.statusId} onChange={(e) => set('statusId', e.target.value)}>
-            <option value="">Выберите статус</option>
+            <option value="">{t('recurrence.chooseAStatus')}</option>
             {statuses.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
-            <MissingOption selected={value.statusId} known={statuses} label="Сохранённый статус недоступен" />
+            <MissingOption selected={value.statusId} known={statuses} label={t('recurrence.savedStatusUnavailable')} />
           </select>
         </div>
         <div className="min-w-0 space-y-1.5">
-          <label htmlFor={`${id}-section`} className={labelClass}>Раздел встречи</label>
+          <label htmlFor={`${id}-section`} className={labelClass}>{t('recurrence.meetingSection')}</label>
           <select id={`${id}-section`} className={inputClassName()} value={value.sectionId} onChange={(e) => set('sectionId', e.target.value)}>
-            <option value="">Без раздела</option>
+            <option value="">{t('recurrence.noSection')}</option>
             {sections.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
-            <MissingOption selected={value.sectionId} known={sections} label="Сохранённый раздел недоступен" />
+            <MissingOption selected={value.sectionId} known={sections} label={t('recurrence.savedSectionUnavailable')} />
           </select>
         </div>
       </div>
 
       <div className="min-w-0 space-y-1.5">
-        <label htmlFor={`${id}-url`} className={labelClass}>Ссылка на встречу</label>
+        <label htmlFor={`${id}-url`} className={labelClass}>{t('recurrence.meetingLink')}</label>
         <TextInput
           id={`${id}-url`}
           type="url"
           inputMode="url"
-          placeholder="https://"
+          placeholder={t('recurrence.webAddressExample')}
           value={value.joinUrl}
           aria-describedby={`${id}-url-hint`}
           onChange={(e) => set('joinUrl', e.target.value)}
         />
-        <p id={`${id}-url-hint`} className="text-xs text-muted">Необязательно. Только адрес http:// или https://; приглашения не отправляются.</p>
+        <p id={`${id}-url-hint`} className="text-xs text-muted">{t('recurrence.optionalUseAnHttpOrHttpsAddressNoInvitations')}</p>
       </div>
     </fieldset>
   );

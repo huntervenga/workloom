@@ -1,0 +1,7 @@
+{
+  "cancel": "Cancel",
+  "hide": "Hide",
+  "saving": "Saving…",
+  "resend": "Retry same change",
+  "nameLengthHint": "Up to {{count}} characters."
+}

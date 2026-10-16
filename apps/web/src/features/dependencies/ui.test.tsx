@@ -28,17 +28,17 @@ describe('project graph roots and retained layout', () => {
     });
     const { user } = renderApp(tablePath);
     await screen.findByRole('table');
-    await user.click(screen.getByRole('button', { name: 'Граф' }));
+    await user.click(screen.getByRole('button', { name: "Graph" }));
     if (count === 100) {
       await waitFor(() => expect(calls.some(call => call.path.endsWith('/graph'))).toBe(true));
       expect(calls.find(call => call.path.endsWith('/graph'))?.searchParams.get('rootTaskIds')?.split(',')).toHaveLength(100);
-      expect(screen.queryByText(/Загружено больше 100 задач/)).not.toBeInTheDocument();
-      expect(await screen.findByText(/Исходный набор взят из загруженных задач таблицы/)).toBeInTheDocument();
+      expect(screen.queryByText(/More than 100 tasks are loaded/)).not.toBeInTheDocument();
+      expect(await screen.findByText(/Starting tasks taken from the loaded task table/)).toBeInTheDocument();
     } else {
-      expect(await screen.findByRole('alert')).toHaveTextContent('Загружено больше 100 задач');
+      expect(await screen.findByRole('alert')).toHaveTextContent('More than 100 tasks are loaded');
       expect(calls.filter(call => call.path.endsWith('/graph'))).toHaveLength(0);
-      await user.click(screen.getByText('Изменить исходные задачи (0)'));
-      const roots = screen.getByRole('group', { name: 'Исходные задачи графа' });
+      await user.click(screen.getByText('Choose starting tasks (0)'));
+      const roots = screen.getByRole('group', { name: "Graph starting tasks" });
       await user.click(within(roots).getByRole('checkbox', { name: 'Задача 101' }));
       await waitFor(() => expect(calls.filter(call => call.path.endsWith('/graph'))).toHaveLength(1));
       expect(calls.find(call => call.path.endsWith('/graph'))?.searchParams.get('rootTaskIds')).toBe(taskAt(101).id);
@@ -52,15 +52,15 @@ describe('project graph roots and retained layout', () => {
       [`GET ${rootPath}/projects/${PROJECT_ID}/graph`]: request => ok(graph([first], request.searchParams.get('rootTaskIds')?.split(',') ?? [])),
     });
     const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('checkbox', { name: `Выбрать для графа: ${first.title}` }));
-    await user.click(screen.getByRole('button', { name: 'Граф выбранных (1)' }));
-    await screen.findByText(/Исходный набор взят из выбранных задач/);
+    await user.click(await screen.findByRole('checkbox', { name: `Select for graph: ${first.title}` }));
+    await user.click(screen.getByRole('button', { name: "Selected graph (1)" }));
+    await screen.findByText(/Starting tasks taken from your selection/);
     await waitFor(() => expect(calls.some(call => call.path.endsWith('/graph'))).toBe(true));
-    await user.click(screen.getByRole('button', { name: 'Задачи' }));
-    await user.type(screen.getByLabelText('Поиск задач'), 'новая страница');
+    await user.click(screen.getByRole('button', { name: "Tasks" }));
+    await user.type(screen.getByLabelText("Search tasks"), 'новая страница');
     await waitFor(() => expect(screen.getByRole('button', { name: filtered.title })).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Граф выбранных (1)' }));
-    await screen.findByText(/Исходный набор взят из выбранных задач/);
+    await user.click(screen.getByRole('button', { name: "Selected graph (1)" }));
+    await screen.findByText(/Starting tasks taken from your selection/);
     expect(calls.filter(call => call.path.endsWith('/graph')).every(call => call.searchParams.get('rootTaskIds') === first.id)).toBe(true);
   });
 
@@ -78,19 +78,19 @@ describe('project graph roots and retained layout', () => {
       },
     });
     const { user, queryClient } = renderApp(`${tablePath}?view=graph`);
-    const list = await screen.findByRole('list', { name: 'Задачи и связи графа' });
-    await user.click(within(list).getByText('Положение на моей раскладке'));
-    const right = within(list).getByRole('button', { name: `Вправо: ${shown.title}` });
+    const list = await screen.findByRole('list', { name: "Graph tasks and dependencies" });
+    await user.click(within(list).getByText("Position in my layout"));
+    const right = within(list).getByRole('button', { name: `Right: ${shown.title}` });
     await waitFor(() => expect(right).toBeEnabled());
     await user.click(right);
-    await user.click(screen.getByRole('button', { name: 'Сохранить мою раскладку' }));
+    await user.click(screen.getByRole('button', { name: "Save my layout" }));
     await waitFor(() => expect(calls.some(call => call.method === 'PUT')).toBe(true));
     expect(calls.find(call => call.method === 'PUT')?.body).toEqual({ expectedRevision: 1, positions: [{ taskId: shown.id, x: 30, y: 20 }, { taskId: hidden.id, x: 900, y: 100 }] });
     deny = true;
     await act(async () => { await queryClient.invalidateQueries({ queryKey: dependencyKeys.root(anna.id, alpha.id) }); });
-    await screen.findByText('Граф и личные координаты скрыты: доступ не подтверждён.');
-    expect(screen.queryByRole('list', { name: 'Задачи и связи графа' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Сохранить мою раскладку' })).not.toBeInTheDocument();
+    await screen.findByText("Graph and personal positions are hidden because access is unconfirmed.");
+    expect(screen.queryByRole('list', { name: "Graph tasks and dependencies" })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "Save my layout" })).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('Sensitive graph text');
   });
 });
@@ -114,24 +114,24 @@ describe('shared task dependency card', () => {
       [`PATCH ${rootPath}/dependencies/${current.id}`]: request => { const input = request.body as { state: 'active' | 'removed' }; current = { ...current, revision: current.revision + 1, state: input.state }; return ok(current); },
     });
     const { user } = renderApp(`${tablePath}?task=${anchor.id}`);
-    const card = await screen.findByRole('region', { name: 'Связи задачи' });
-    expect(await within(card).findByText('Незавершённых предшественников: 1')).toBeInTheDocument();
-    expect(within(card).getByText(/Начать или завершить задачу можно после завершения всех предшественников/)).toBeInTheDocument();
-    await user.click(within(card).getByRole('button', { name: 'Добавить связь' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Добавить связь задач' });
-    const taskSelect = within(dialog).getByLabelText('Связанная задача');
+    const card = await screen.findByRole('region', { name: "Task dependencies" });
+    expect(await within(card).findByText("Unfinished predecessors: 1")).toBeInTheDocument();
+    expect(within(card).getByText(/Complete all predecessors before starting or completing this task/)).toBeInTheDocument();
+    await user.click(within(card).getByRole('button', { name: "Add dependency" }));
+    const dialog = await screen.findByRole('dialog', { name: "Add task dependency" });
+    const taskSelect = within(dialog).getByLabelText("Related task");
     await waitFor(() => expect(within(taskSelect).getByRole('option', { name: predecessor.title })).toBeInTheDocument());
     await user.selectOptions(taskSelect, predecessor.id);
-    await user.click(within(dialog).getByRole('button', { name: 'Добавить связь' }));
-    await within(dialog).findByText('Связь создаёт цикл');
+    await user.click(within(dialog).getByRole('button', { name: "Add dependency" }));
+    await within(dialog).findByText('This dependency creates a cycle');
     expect(taskSelect).toHaveValue(predecessor.id);
     expect(dialog).not.toHaveTextContent('Sensitive cycle path');
     await user.selectOptions(taskSelect, alternate.id);
-    await user.click(within(dialog).getByRole('button', { name: 'Добавить связь' }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Добавить связь задач' })).not.toBeInTheDocument());
-    await user.click(within(card).getByText('Все связи, включая снятые'));
-    await user.click(await within(card).findByRole('button', { name: 'Снять связь' }));
-    await user.click(await within(card).findByRole('button', { name: 'Восстановить связь' }));
+    await user.click(within(dialog).getByRole('button', { name: "Add dependency" }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: "Add task dependency" })).not.toBeInTheDocument());
+    await user.click(within(card).getByText("All dependencies, including removed"));
+    await user.click(await within(card).findByRole('button', { name: "Remove dependency" }));
+    await user.click(await within(card).findByRole('button', { name: "Restore dependency" }));
     await waitFor(() => expect(current.revision).toBe(3));
     expect(calls.filter(call => call.method === 'PATCH').map(call => call.body)).toEqual([{ expectedRevision: 1, state: 'removed' }, { expectedRevision: 2, state: 'active' }]);
     expect(calls.filter(call => call.method === 'POST').map(call => call.body)).toEqual([

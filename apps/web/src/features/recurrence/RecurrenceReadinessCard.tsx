@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../../i18n';
 import type {
   PlanningPeriodDto,
   RecurrenceBindingProgressDto,
@@ -32,9 +33,9 @@ export interface RecurrenceReadinessCardProps {
 type ReadinessState = RecurrenceReadinessDto['state'];
 
 const stateLabels: Record<ReadinessState, string> = {
-  complete: 'Встречи подготовлены',
-  pending: 'Подготовка не завершена',
-  blocked: 'Подготовка остановлена',
+  get complete() { return t('recurrence.meetingsPrepared'); },
+  get pending() { return t('recurrence.preparationIncomplete'); },
+  get blocked() { return t('recurrence.preparationBlocked'); },
 };
 
 const stateTones: Record<ReadinessState, BadgeTone> = {
@@ -44,27 +45,27 @@ const stateTones: Record<ReadinessState, BadgeTone> = {
 };
 
 const stateDescriptions: Record<ReadinessState, string> = {
-  complete: 'Все встречи серий, которые относятся к этому периоду, подготовлены.',
-  pending: 'Часть встреч серий этого периода ещё не подготовлена.',
-  blocked: 'Подготовка части встреч остановлена. Её нужно восстановить в настройках серии.',
+  get complete() { return t('recurrence.allRecurringMeetingsInThisPeriodArePrepared'); },
+  get pending() { return t('recurrence.someRecurringMeetingsInThisPeriodAreNotPrepared'); },
+  get blocked() { return t('recurrence.preparationIsBlockedForSomeMeetingsResolveItIn'); },
 };
 
 const bindingStateLabels: Record<RecurrenceBindingProgressDto['state'], string> = {
-  complete: 'Подготовлена',
-  pending: 'Не завершена',
-  blocked: 'Остановлена',
+  get complete() { return t('recurrence.prepared'); },
+  get pending() { return t('recurrence.incomplete'); },
+  get blocked() { return t('recurrence.blocked'); },
 };
 
 /** Fixed, payload-free copy for every bounded block code. */
 const blockedReasons: Record<RecurrenceBlockedCode, string> = {
-  authorization_missing: 'Никто не разрешил подготовку встреч этой серии от своего имени.',
-  authorizer_inactive: 'Участник, разрешивший подготовку, больше не состоит в пространстве.',
-  authorizer_capability_revoked: 'У участника, разрешившего подготовку, больше нет права изменять задачи.',
-  authorization_revision_stale: 'Разрешение на подготовку устарело после изменения серии.',
-  cross_period_conflict: 'Встреча серии относится сразу к нескольким выбранным периодам.',
-  candidate_limit_exceeded: 'В серии больше встреч, чем можно подготовить за один раз по правилам серии.',
-  source_unavailable: 'Данные серии сейчас недоступны для подготовки.',
-  unsupported_event_version: 'Запрос на подготовку записан в неподдерживаемом формате.',
+  get authorization_missing() { return t('recurrence.noOneHasAuthorizedPreparationOfThisSeriesOn'); },
+  get authorizer_inactive() { return t('recurrence.thePersonWhoAuthorizedPreparationIsNoLongerA'); },
+  get authorizer_capability_revoked() { return t('recurrence.thePersonWhoAuthorizedPreparationNoLongerHasTask'); },
+  get authorization_revision_stale() { return t('recurrence.preparationAuthorizationIsOutdatedAfterASeriesChange'); },
+  get cross_period_conflict() { return t('recurrence.aSeriesMeetingFallsWithinMoreThanOneSelected'); },
+  get candidate_limit_exceeded() { return t('recurrence.theSeriesHasMoreMeetingsThanCanBePrepared'); },
+  get source_unavailable() { return t('recurrence.seriesDataIsCurrentlyUnavailableForPreparation'); },
+  get unsupported_event_version() { return t('recurrence.thePreparationRequestUsesAnUnsupportedFormat'); },
 };
 
 const authorizationCodes: ReadonlySet<RecurrenceBlockedCode> = new Set([
@@ -76,8 +77,8 @@ const authorizationCodes: ReadonlySet<RecurrenceBlockedCode> = new Set([
 
 const hintClass = 'text-xs leading-relaxed text-muted';
 
-const pauseNote =
-  'Встречи готовятся только в явно выбранных периодах серии. Приостановка серии останавливает лишь фоновую подготовку: встречи всех выбранных периодов остаются в календаре периода, и их можно подготовить здесь.';
+const pauseNote = () =>
+  t('recurrence.meetingsArePreparedOnlyInExplicitlySelectedPeriodsPausing');
 
 function sameId(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
@@ -85,9 +86,9 @@ function sameId(a: string, b: string): boolean {
 
 function recoveryHint(code: RecurrenceBlockedCode | null): string {
   if (code !== null && authorizationCodes.has(code)) {
-    return 'Участник с правом изменять задачи может открыть серию и разрешить подготовку от своего имени. Права другого человека не используются.';
+    return t('recurrence.someoneWithTaskEditingPermissionCanOpenTheSeries');
   }
-  return 'Откройте серию, чтобы проверить её расписание и выбранные периоды.';
+  return t('recurrence.openTheSeriesToCheckItsScheduleAndSelected');
 }
 
 export function RecurrenceReadinessCard({
@@ -104,6 +105,7 @@ export function RecurrenceReadinessCard({
   onRefresh,
   onOpenSeries,
 }: RecurrenceReadinessCardProps) {
+  const { t } = useTranslation();
   const headingId = useId();
   const readiness = data !== undefined && sameId(data.periodId, period.id) ? data : undefined;
   const result = lastResult !== undefined && sameId(lastResult.periodId, period.id) ? lastResult : undefined;
@@ -111,8 +113,7 @@ export function RecurrenceReadinessCard({
   const header = (
     <div className="min-w-0">
       <h3 id={headingId} className="font-semibold">
-        Встречи серий в периоде
-      </h3>
+        {t('recurrence.recurringMeetingsInPeriod')}</h3>
       <p className="mt-1 text-sm [overflow-wrap:anywhere] text-muted">{period.name}</p>
     </div>
   );
@@ -142,11 +143,10 @@ export function RecurrenceReadinessCard({
         {header}
         {loading ? (
           <p role="status" className="text-sm text-muted">
-            Проверяем подготовку встреч периода…
-          </p>
+            {t('recurrence.checkingPeriodMeetingPreparation')}</p>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-muted">Состояние подготовки встреч для этого периода ещё не получено.</p>
+            <p className="text-sm text-muted">{t('recurrence.preparationStateForThisPeriodIsNotAvailableYet')}</p>
             <RefreshButton fetching={fetching} onRefresh={onRefresh} />
           </div>
         )}
@@ -168,16 +168,15 @@ export function RecurrenceReadinessCard({
         <p className="text-sm leading-relaxed">{stateDescriptions.complete}</p>
         {result !== undefined && result.frozenBaselineIds.length > 0 ? (
           <p role="status" className={hintClass}>
-            Подготовка завершена, и исходный план этого периода зафиксирован.
-          </p>
+            {t('recurrence.preparationIsCompleteAndThisPeriodsBaselineIsSaved')}</p>
         ) : null}
         <details className="rounded-lg border border-line bg-canvas px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium">Подробнее о подготовке</summary>
+          <summary className="cursor-pointer text-sm font-medium">{t('recurrence.preparationDetails')}</summary>
           <div className="mt-3 space-y-4 pb-1">
             <ReadinessCounts readiness={readiness} />
             {result !== undefined ? <LastResult result={result} /> : null}
             <BindingList readiness={readiness} onOpenSeries={onOpenSeries} />
-            <p className={hintClass}>{pauseNote}</p>
+            <p className={hintClass}>{pauseNote()}</p>
             <RefreshButton fetching={fetching} onRefresh={onRefresh} />
           </div>
         </details>
@@ -198,9 +197,7 @@ export function RecurrenceReadinessCard({
 
       {readiness.state !== 'complete' ? (
         <p className={hintClass}>
-          Пока подготовка не завершена, исходный план периода не фиксируется: частично подготовленные встречи не создают снимок
-          плана.
-        </p>
+          {t('recurrence.thePeriodBaselineCannotBeSavedUntilPreparationIs')}</p>
       ) : null}
 
       {result !== undefined ? <LastResult result={result} /> : null}
@@ -208,18 +205,17 @@ export function RecurrenceReadinessCard({
       <div className="flex flex-wrap items-center gap-2">
         {writable && needsPrepare ? (
           <Button variant="primary" disabled={blocked || materializing} onClick={onPrepare}>
-            {materializing ? 'Готовим встречи…' : canContinue ? 'Продолжить подготовку встреч' : 'Подготовить встречи периода'}
+            {materializing ? t('recurrence.preparingMeetings') : canContinue ? t('recurrence.continuePreparingMeetings') : t('recurrence.preparePeriodMeetings')}
           </Button>
         ) : null}
         <RefreshButton fetching={fetching} onRefresh={onRefresh} />
       </div>
       {writable && needsPrepare && blocked && !materializing ? (
         <p role="status" className={hintClass}>
-          Сейчас выполняется другая операция. Подготовку можно запустить после её завершения.
-        </p>
+          {t('recurrence.anotherOperationIsRunningPreparationCanStartAfterIt')}</p>
       ) : null}
       {!writable && needsPrepare ? (
-        <p className={hintClass}>Подготовить встречи может участник с правом изменять задачи проекта.</p>
+        <p className={hintClass}>{t('recurrence.preparingMeetingsRequiresPermissionToEditProjectTasks')}</p>
       ) : null}
 
       {readiness.bindings.length > 0 ? (
@@ -228,27 +224,27 @@ export function RecurrenceReadinessCard({
         </div>
       ) : null}
 
-      <p className={`border-t border-line pt-4 ${hintClass}`}>{pauseNote}</p>
+      <p className={`border-t border-line pt-4 ${hintClass}`}>{pauseNote()}</p>
     </section>
   );
 }
 
 function ReadinessCounts({ readiness }: { readiness: RecurrenceReadinessDto }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-2">
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-lg border border-line bg-canvas p-3">
-          <dt className="text-xs text-muted">Не подготовлено</dt>
+          <dt className="text-xs text-muted">{t('recurrence.notPrepared')}</dt>
           <dd className="mt-1 text-lg font-semibold tabular-nums">{readiness.missingCount}</dd>
         </div>
         <div className="rounded-lg border border-line bg-canvas p-3">
-          <dt className="text-xs text-muted">Остановлено</dt>
+          <dt className="text-xs text-muted">{t('recurrence.blocked')}</dt>
           <dd className="mt-1 text-lg font-semibold tabular-nums">{readiness.blockedCount}</dd>
         </div>
       </dl>
       <p className={hintClass}>
-        Итоги учитывают весь период. Встречи, отменённые до подготовки, не считаются неподготовленными.
-      </p>
+        {t('recurrence.totalsCoverTheEntirePeriodMeetingsCancelledBeforePreparation')}</p>
     </div>
   );
 }
@@ -260,12 +256,13 @@ function BindingList({
   readiness: RecurrenceReadinessDto;
   onOpenSeries: (seriesId: string) => void;
 }) {
+  const { t } = useTranslation();
   if (readiness.bindings.length === 0) return null;
   return (
     <div className="space-y-2">
-      <h4 className="text-sm font-medium">Серии периода</h4>
+      <h4 className="text-sm font-medium">{t('recurrence.periodSeries')}</h4>
       {readiness.truncated ? (
-        <p className={hintClass}>Состояние выше относится ко всему периоду, но список ниже показывает только часть серий.</p>
+        <p className={hintClass}>{t('recurrence.theStatusAboveCoversTheEntirePeriodButThe')}</p>
       ) : null}
       <ul className="space-y-2">
         {readiness.bindings.map((binding, index) => (
@@ -277,6 +274,7 @@ function BindingList({
 }
 
 function RefreshButton({ fetching, onRefresh }: { fetching: boolean; onRefresh: () => void }) {
+  const { t } = useTranslation();
   return (
     <Button
       aria-disabled={fetching || undefined}
@@ -285,28 +283,27 @@ function RefreshButton({ fetching, onRefresh }: { fetching: boolean; onRefresh: 
       }}
     >
       <RefreshCw size={16} aria-hidden="true" className={fetching ? 'motion-safe:animate-spin' : undefined} />
-      {fetching ? 'Обновляем…' : 'Обновить состояние'}
+      {fetching ? t('recurrence.refreshing') : t('recurrence.refreshStatus')}
     </Button>
   );
 }
 
 function LastResult({ result }: { result: RecurrenceMaterializationResultDto }) {
+  const { t } = useTranslation();
   return (
     <div role="status" className="space-y-1.5 rounded-lg border border-line bg-canvas p-3">
-      <p className="text-sm font-medium">Последний запуск подготовки</p>
+      <p className="text-sm font-medium">{t('recurrence.lastPreparationRun')}</p>
       <p className="text-sm">
-        Подготовлено встреч за этот шаг: <span className="tabular-nums">{result.createdCount}</span>. Это число только последнего
-        шага, а не всего периода.
-      </p>
+        {t('recurrence.meetingsPreparedInThisStep')}<span className="tabular-nums">{result.createdCount}</span>{t('recurrence.thisCountCoversTheLatestStepNotTheWhole')}</p>
       <p className="text-sm">
-        Осталось подготовить по данным сервера: <span className="tabular-nums">{result.remainingCount}</span>.
+        {t('recurrence.stillToPrepareAccordingToTheServer')}<span className="tabular-nums">{result.remainingCount}</span>.
       </p>
-      {result.truncated ? <p className={hintClass}>Показана только часть серий. Итоги выше относятся ко всему периоду; полное состояние подготовки проверяйте после обновления.</p> : null}
+      {result.truncated ? <p className={hintClass}>{t('recurrence.onlySomeSeriesAreShownTotalsAboveCoverThe')}</p> : null}
       {result.status === 'blocked' ? (
-        <p className={hintClass}>Подготовка части встреч остановлена. Причины указаны в списке серий ниже.</p>
+        <p className={hintClass}>{t('recurrence.someMeetingPreparationIsBlockedReasonsAppearInThe')}</p>
       ) : null}
       {result.frozenBaselineIds.length > 0 ? (
-        <p className={hintClass}>Подготовка завершена, и исходный план этого периода зафиксирован.</p>
+        <p className={hintClass}>{t('recurrence.preparationIsCompleteAndThisPeriodsBaselineIsSaved')}</p>
       ) : null}
     </div>
   );
@@ -321,26 +318,26 @@ function BindingRow({
   position: number;
   onOpenSeries: (seriesId: string) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <li className="space-y-1.5 rounded-lg border border-line p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">Серия {position}</span>
+        <span className="text-sm font-medium">{t('recurrence.series2', { position: position })}</span>
         <Badge tone={stateTones[binding.state]}>{bindingStateLabels[binding.state]}</Badge>
         {binding.state !== 'complete' ? (
           <span className="text-xs text-muted">
-            Осталось подготовить: <span className="tabular-nums">{binding.remainingCount}</span>
+            {t('recurrence.stillToPrepare')}<span className="tabular-nums">{binding.remainingCount}</span>
           </span>
         ) : null}
       </div>
       {binding.state === 'blocked' ? (
         <>
           <p className="text-sm">
-            {binding.blockedCode === null ? 'Подготовка остановлена.' : blockedReasons[binding.blockedCode]}
+            {binding.blockedCode === null ? t('recurrence.preparationBlocked2') : blockedReasons[binding.blockedCode]}
           </p>
           <p className={hintClass}>{recoveryHint(binding.blockedCode)}</p>
           <Button size="sm" onClick={() => onOpenSeries(binding.seriesId)}>
-            Открыть серию для восстановления
-          </Button>
+            {t('recurrence.openSeriesToResolve')}</Button>
         </>
       ) : null}
     </li>

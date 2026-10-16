@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import {
   recurrenceEditPreviewInputSchema,
   recurrenceExceptionPreviewInputSchema,
@@ -113,57 +114,57 @@ export interface RecurrenceManagementCallbacks {
 }
 
 /** Fixed copy per schema path; the most specific prefix comes first. Schema messages are never shown. */
-const problemCopy: readonly (readonly [string, string])[] = [
-  ['expectedRevision', 'Данные серии устарели. Откройте форму заново.'],
-  ['expectedSeriesRevision', 'Данные серии устарели. Откройте форму заново.'],
-  ['expectedInstanceRevision', 'Данные встречи устарели. Откройте форму заново.'],
-  ['effectiveFromNominalDate', 'Укажите дату, с которой действуют изменения серии.'],
-  ['schedule.startDate', 'Укажите дату начала серии.'],
-  ['schedule.localTime', 'Укажите время серии в формате ЧЧ:ММ.'],
-  ['schedule.timezone', 'Укажите часовой пояс IANA, например Asia/Nicosia.'],
-  ['schedule.weekdays', 'Выберите хотя бы один день недели.'],
-  ['schedule.plannedDurationMinutes', 'Длительность — целое число минут от 1 до 1440.'],
-  ['schedule.end.endDate', 'Последняя дата серии должна быть не раньше даты начала и не дальше 366 дней от неё.'],
-  ['schedule.end.count', 'Число встреч — целое число от 1 до 366.'],
-  ['schedule.end', 'Проверьте окончание серии.'],
-  ['schedule', 'Проверьте расписание серии.'],
-  ['template.title', 'Введите название встречи.'],
-  ['template.statusId', 'Выберите статус встречи.'],
-  ['template.sectionId', 'Выберите раздел из списка или «Без раздела».'],
-  ['template.organizerMembershipId', 'Выберите организатора.'],
-  ['template.attendeeMembershipIds', 'Отметьте от 1 до 100 участников встреч серии.'],
-  ['template.joinUrl', 'Ссылка на встречу должна начинаться с http:// или https://.'],
-  ['template', 'Проверьте поля встречи.'],
-  ['periodIds', 'Отметьте от 1 до 52 периодов для добавления.'],
-  ['kind', 'Выберите действие со встречей.'],
-  ['localDate', 'Укажите новую дату встречи.'],
-  ['localTime', 'Укажите новое время встречи в формате ЧЧ:ММ.'],
-  ['reason', 'Укажите причину — до 1000 символов.'],
+const problemCopy: readonly (readonly [string, `recurrence.${string}`])[] = [
+  ['expectedRevision', 'recurrence.seriesDataIsOutdatedReopenTheForm'],
+  ['expectedSeriesRevision', 'recurrence.seriesDataIsOutdatedReopenTheForm'],
+  ['expectedInstanceRevision', 'recurrence.meetingDataIsOutdatedReopenTheForm'],
+  ['effectiveFromNominalDate', 'recurrence.enterTheDateWhenSeriesChangesStart'],
+  ['schedule.startDate', 'recurrence.enterTheSeriesStartDate'],
+  ['schedule.localTime', 'recurrence.enterTheSeriesTimeAsHhMm'],
+  ['schedule.timezone', 'recurrence.enterAnIanaTimeZoneSuchAsAsiaNicosia'],
+  ['schedule.weekdays', 'recurrence.chooseAtLeastOneWeekday'],
+  ['schedule.plannedDurationMinutes', 'recurrence.durationMustBeAWholeNumberOfMinutesFrom'],
+  ['schedule.end.endDate', 'recurrence.theLastDateMustBeOnOrAfterThe'],
+  ['schedule.end.count', 'recurrence.meetingCountMustBeAWholeNumberFrom1'],
+  ['schedule.end', 'recurrence.checkTheSeriesEnd'],
+  ['schedule', 'recurrence.checkTheSeriesSchedule'],
+  ['template.title', 'recurrence.enterAMeetingTitle'],
+  ['template.statusId', 'recurrence.chooseAMeetingStatus'],
+  ['template.sectionId', 'recurrence.chooseASectionFromTheListOrNoSection'],
+  ['template.organizerMembershipId', 'recurrence.chooseAnOrganizer2'],
+  ['template.attendeeMembershipIds', 'recurrence.select1100SeriesParticipants'],
+  ['template.joinUrl', 'recurrence.meetingLinkMustBeginWithHttpOrHttps'],
+  ['template', 'recurrence.checkTheMeetingFields'],
+  ['periodIds', 'recurrence.select152PeriodsToAdd'],
+  ['kind', 'recurrence.chooseAMeetingAction'],
+  ['localDate', 'recurrence.enterANewMeetingDate'],
+  ['localTime', 'recurrence.enterTheNewMeetingTimeAsHhMm'],
+  ['reason', 'recurrence.enterAReasonOfUpTo1000Characters'],
 ];
 
 function problemsOf(issues: readonly { path: readonly PropertyKey[] }[]): string[] {
   const describe = (path: string) =>
-    problemCopy.find(([prefix]) => path === prefix || path.startsWith(`${prefix}.`))?.[1] ?? 'Проверьте поля изменения.';
+    t(problemCopy.find(([prefix]) => path === prefix || path.startsWith(`${prefix}.`))?.[1] ?? 'recurrence.checkTheChangeFields');
   return [...new Set(issues.map((issue) => describe(issue.path.map(String).join('.'))))];
 }
 
 const errorCopy: Record<ApiErrorKind, string> = {
-  network: 'Не удалось выполнить проверку. Повторите попытку.',
-  server: 'Не удалось выполнить проверку. Повторите попытку.',
-  unavailable: 'Сервис временно недоступен. Повторите проверку позже.',
-  invalid_response: 'Не удалось выполнить проверку. Повторите попытку.',
-  rate_limited: 'Слишком много запросов. Повторите проверку позже.',
-  unauthenticated: 'Нет доступа. Обновите страницу.',
-  forbidden: 'Серия или встреча недоступна.',
-  not_found: 'Серия или встреча недоступна.',
-  conflict: 'Серия или встреча изменилась после открытия формы. Проверьте актуальные данные.',
-  validation: 'Изменение не прошло проверку на сервере. Проверьте поля.',
-  invalid_input: 'Проверьте поля изменения.',
+  get network() { return t('recurrence.couldNotCompleteTheCheckTryAgain'); },
+  get server() { return t('recurrence.couldNotCompleteTheCheckTryAgain'); },
+  get unavailable() { return t('recurrence.theServiceIsTemporarilyUnavailableTryThePreviewLater'); },
+  get invalid_response() { return t('recurrence.couldNotCompleteTheCheckTryAgain'); },
+  get rate_limited() { return t('recurrence.tooManyRequestsTryThePreviewLater'); },
+  get unauthenticated() { return t('recurrence.accessUnavailableRefreshThePage'); },
+  get forbidden() { return t('recurrence.seriesOrMeetingUnavailable'); },
+  get not_found() { return t('recurrence.seriesOrMeetingUnavailable'); },
+  get conflict() { return t('recurrence.theSeriesOrMeetingChangedAfterYouOpenedThis'); },
+  get validation() { return t('recurrence.theServerRejectedThisChangeCheckTheFields'); },
+  get invalid_input() { return t('recurrence.checkTheChangeFields'); },
 };
 
 /** Fixed, safe copy for a failed preview; server messages and details are never shown. */
 export function recurrencePreviewErrorCopy(error: Error): string {
-  if (isMaterializationRequired(error)) return 'Сначала подготовьте встречи затронутого периода, затем повторите проверку.';
+  if (isMaterializationRequired(error)) return t('recurrence.prepareMeetingsInTheAffectedPeriodThenPreviewAgain');
   return error instanceof ApiError ? errorCopy[error.kind] : errorCopy.network;
 }
 

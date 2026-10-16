@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import dagre from '@dagrejs/dagre';
 import type { Point } from './useDependencyWorkspace';
 
@@ -8,7 +9,7 @@ const COORDINATE_LIMIT = 100000;
 export function fitAutomaticPositions(positions: Readonly<Record<string, Point>>): Record<string, Point> {
   const entries = Object.entries(positions).sort(([a], [b]) => a.localeCompare(b));
   if (entries.some(([, point]) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) {
-    throw new Error('Не удалось вычислить конечные координаты графа.');
+    throw new Error(t('dependencies.layout.couldNotCalculateFiniteGraphPositions'));
   }
   if (entries.every(([, point]) => Math.abs(point.x) <= COORDINATE_LIMIT && Math.abs(point.y) <= COORDINATE_LIMIT)) {
     return Object.fromEntries(entries);
@@ -19,7 +20,7 @@ export function fitAutomaticPositions(positions: Readonly<Record<string, Point>>
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const spanX = maxX - minX, spanY = maxY - minY;
   if (!Number.isFinite(spanX) || !Number.isFinite(spanY)) {
-    throw new Error('Не удалось вычислить конечные границы графа.');
+    throw new Error(t('dependencies.layout.couldNotCalculateFiniteGraphBounds'));
   }
   const centerX = minX + spanX / 2;
   const centerY = minY + spanY / 2;

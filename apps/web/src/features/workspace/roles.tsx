@@ -1,13 +1,14 @@
+import { t, useTranslation } from '../../i18n';
 import type { WorkspaceDto } from '@workloom/contracts';
 import { Badge, type BadgeTone } from '@workloom/ui';
 
 export type WorkspaceRole = WorkspaceDto['role'];
 
 export const roleLabels: Record<WorkspaceRole, string> = {
-  owner: 'Владелец',
-  admin: 'Администратор',
-  member: 'Участник',
-  viewer: 'Наблюдатель',
+  get owner() { return t('workspace.owner'); },
+  get admin() { return t('workspace.admin'); },
+  get member() { return t('routes.member'); },
+  get viewer() { return t('workspace.viewer'); },
 };
 
 const roleTones: Record<WorkspaceRole, BadgeTone> = {
@@ -18,5 +19,6 @@ const roleTones: Record<WorkspaceRole, BadgeTone> = {
 };
 
 export function RoleBadge({ role }: { role: WorkspaceRole }) {
+  useTranslation();
   return <Badge tone={roleTones[role]}>{roleLabels[role]}</Badge>;
 }

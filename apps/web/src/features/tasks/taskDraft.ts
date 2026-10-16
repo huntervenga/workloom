@@ -1,3 +1,5 @@
+import type { TranslationParameters } from '../../i18n';
+import type { EstimateValidationKey } from '../task-table/estimate';
 import {
   sqlCalendarDateSchema,
   createTaskInputSchema,
@@ -49,7 +51,15 @@ export const taskDraftKeys = [
 
 export type TaskDraftKey = (typeof taskDraftKeys)[number];
 
-export type TaskDraftErrors = Partial<Record<'title' | 'description' | 'startDate' | 'dueDate' | 'estimate' | 'form', string>>;
+export type TaskDraftIssueKey = 'tasks.taskDraft.enterATaskName' | 'tasks.taskDraft.nameMustBeValueCharactersOrFewer' | 'tasks.taskDraft.descriptionMustBe20000CharactersOrFewer' | 'tasks.taskDraft.enterAValidDate' | 'tasks.taskDraft.enterAValidDateBetweenYears0001And' | 'tasks.taskDraft.dueDateMustBeOnOrAfterThe' | 'tasks.taskDraft.checkTheCompletedFields' | EstimateValidationKey;
+export interface TaskDraftIssue { key: TaskDraftIssueKey; params?: TranslationParameters }
+export type TaskDraftErrors = Partial<Record<'title' | 'description' | 'startDate' | 'dueDate' | 'estimate' | 'form', TaskDraftIssue>>;
+
+/** Kept in draft state as data; UI components translate only when rendering. */
+export function taskDraftIssue(key: TaskDraftIssueKey, params?: TranslationParameters): TaskDraftIssue {
+  return params ? { key, params } : { key };
+}
+
 
 export type BuildResult<T> = { ok: true; input: T } | { ok: false; errors: TaskDraftErrors };
 
@@ -140,21 +150,21 @@ export function rebaseDraft(oldBase: TaskDraft, draft: TaskDraft, newBase: TaskD
 function checkDraft(draft: TaskDraft, checkEstimate: boolean): { errors: TaskDraftErrors; minutes: number | null } {
   const errors: TaskDraftErrors = {};
   const title = draft.title.trim();
-  if (title === '') errors.title = 'Введите название задачи.';
-  else if (title.length > TASK_TITLE_MAX) errors.title = `Название должно быть не длиннее ${TASK_TITLE_MAX} символов.`;
+  if (title === '') errors.title = taskDraftIssue('tasks.taskDraft.enterATaskName');
+  else if (title.length > TASK_TITLE_MAX) errors.title = taskDraftIssue('tasks.taskDraft.nameMustBeValueCharactersOrFewer', { maxLength: TASK_TITLE_MAX });
   if (draft.description.length > TASK_DESCRIPTION_MAX) {
-    errors.description = 'Описание должно быть не длиннее 20 000 символов.';
+    errors.description = taskDraftIssue('tasks.taskDraft.descriptionMustBe20000CharactersOrFewer');
   }
   if (draft.dueDate !== '' && !sqlCalendarDateSchema.safeParse(draft.dueDate).success) {
-    errors.dueDate = 'Укажите существующую дату.';
+    errors.dueDate = taskDraftIssue('tasks.taskDraft.enterAValidDate');
   }
-  if (draft.startDate && !sqlCalendarDateSchema.safeParse(draft.startDate).success) errors.startDate = 'Укажите существующую дату от 0001 до 9999 года.';
-  if (draft.startDate && draft.dueDate && draft.startDate > draft.dueDate) errors.dueDate = 'Срок не может быть раньше даты начала.';
+  if (draft.startDate && !sqlCalendarDateSchema.safeParse(draft.startDate).success) errors.startDate = taskDraftIssue('tasks.taskDraft.enterAValidDateBetweenYears0001And');
+  if (draft.startDate && draft.dueDate && draft.startDate > draft.dueDate) errors.dueDate = taskDraftIssue('tasks.taskDraft.dueDateMustBeOnOrAfterThe');
   let minutes: number | null = null;
   if (checkEstimate) {
     const estimate = parseEstimateInput(draft.estimate);
     if (estimate.valid) minutes = estimate.minutes;
-    else errors.estimate = estimate.message;
+    else errors.estimate = taskDraftIssue(estimate.messageKey);
   }
   return { errors, minutes };
 }
@@ -198,7 +208,7 @@ export function buildCreateInput(projectId: string, draft: TaskDraft, options: C
   if (draft.tagIds.length > 0) input.tagIds = [...draft.tagIds];
   if (!inherited && minutes !== null) input.estimateMinutes = minutes;
 
-  if (!createTaskInputSchema.safeParse(input).success) return { ok: false, errors: { form: 'Проверьте заполненные поля.' } };
+  if (!createTaskInputSchema.safeParse(input).success) return { ok: false, errors: { form: taskDraftIssue('tasks.taskDraft.checkTheCompletedFields') } };
   return { ok: true, input };
 }
 
@@ -232,6 +242,6 @@ export function buildUpdateInput(base: TaskDto, baseDraft: TaskDraft, draft: Tas
     input.expectedWorkPackageRevision = base.workPackageRevision;
   }
 
-  if (!updateTaskInputSchema.safeParse(input).success) return { ok: false, errors: { form: 'Проверьте заполненные поля.' } };
+  if (!updateTaskInputSchema.safeParse(input).success) return { ok: false, errors: { form: taskDraftIssue('tasks.taskDraft.checkTheCompletedFields') } };
   return { ok: true, input };
 }

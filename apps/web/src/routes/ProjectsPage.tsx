@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
 import { ChevronRight, Eye, FolderKanban, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -11,16 +12,18 @@ import { QueryErrorState } from '../shared/QueryErrorState';
 import { useWorkspaceContext } from './WorkspaceLayout';
 
 export function ProjectsPage() {
+  const { t } = useTranslation();
   const { actorId, workspace } = useWorkspaceContext();
   const projects = useProjectsQuery(actorId, workspace.id);
   const canEdit = workspace.role !== 'viewer';
-  const [announcement, setAnnouncement] = useState('');
-  useDocumentTitle(`Проекты · ${workspace.name}`);
+  const [announcement, setAnnouncement] = useState<{ kind: 'created' | 'renamed'; name: string } | null>(null);
+  useDocumentTitle(t('routes.projectsTitle', { workspace: workspace.name }));
 
   const createTrigger = (
     <Button variant="primary">
       <Plus size={16} aria-hidden="true" />
-      Новый проект
+
+      {t('routes.newProject')}
     </Button>
   );
 
@@ -28,13 +31,13 @@ export function ProjectsPage() {
     <div className="space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-[1.75rem]">Проекты</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-[1.75rem]">{t('routes.projects')}</h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted">
             {projects.isSuccess
               ? projects.data.nextCursor === null
-                ? `${formatProjectCount(projects.data.projects.length)} в пространстве «${workspace.name}».`
-                : `Загружено ${formatProjectCount(projects.data.projects.length)} — это не весь список.`
-              : 'Проекты пространства и их задачи.'}
+                ? t('routes.projectsSummary', { projects: formatProjectCount(projects.data.projects.length), workspace: workspace.name })
+                : t('routes.projectsPartial', { projects: formatProjectCount(projects.data.projects.length) })
+              : t('routes.projectsDescription')}
           </p>
         </div>
         {canEdit ? (
@@ -42,7 +45,7 @@ export function ProjectsPage() {
             actorId={actorId}
             workspaceId={workspace.id}
             trigger={createTrigger}
-            onCreated={(project) => setAnnouncement(`Проект «${project.name}» создан.`)}
+            onCreated={(project) => setAnnouncement({ kind: 'created', name: project.name })}
           />
         ) : null}
       </header>
@@ -50,17 +53,18 @@ export function ProjectsPage() {
       {canEdit ? null : (
         <p className="flex items-center gap-2 text-sm text-muted">
           <Eye size={16} aria-hidden="true" className="shrink-0 text-subtle" />
-          Роль «Наблюдатель» позволяет только просматривать проекты.
+
+          {t('routes.viewerHelp')}
         </p>
       )}
 
       <p role="status" className="sr-only">
-        {announcement}
+        {announcement ? t(announcement.kind === 'created' ? 'routes.projectCreated' : 'routes.projectRenamed', { name: announcement.name }) : ''}
       </p>
 
       {projects.isPending ? (
         <div role="status" className="space-y-px overflow-hidden rounded-2xl border border-line bg-surface">
-          <span className="sr-only">Загрузка проектов</span>
+          <span className="sr-only">{t('routes.loadingProjects')}</span>
           {[0, 1, 2].map((row) => (
             <div key={row} className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
               <Skeleton className="size-8 rounded-lg" />
@@ -78,15 +82,15 @@ export function ProjectsPage() {
       ) : projects.data.projects.length === 0 ? (
         <StateCard
           icon={<FolderKanban size={18} aria-hidden="true" />}
-          title="Проектов пока нет"
+          title={t('routes.noProjects')}
           description={
             canEdit
-              ? 'Создайте первый проект, чтобы собрать в нём задачи команды.'
-              : 'Когда участники создадут проекты, они появятся здесь.'
+              ? t('routes.createFirst')
+              : t('routes.viewerNoProjects')
           }
         />
       ) : (
-        <ul aria-label="Проекты" className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
+        <ul aria-label={t('routes.projects')} className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
           {orderProjects(projects.data.projects).map((project) => (
             <li key={project.id} className="flex items-center gap-2 px-2 py-1.5 sm:px-3">
               <Link
@@ -102,7 +106,7 @@ export function ProjectsPage() {
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink" title={project.name}>
                   {project.name}
                 </span>
-                {project.archivedAt ? <Badge tone="muted">В архиве</Badge> : null}
+                {project.archivedAt ? <Badge tone="muted">{t('routes.archived')}</Badge> : null}
                 <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-subtle group-hover:text-muted" />
               </Link>
               {canEdit ? (
@@ -110,9 +114,9 @@ export function ProjectsPage() {
                   actorId={actorId}
                   workspaceId={workspace.id}
                   project={project}
-                  onRenamed={(renamed) => setAnnouncement(`Проект переименован в «${renamed.name}».`)}
+                  onRenamed={(renamed) => setAnnouncement({ kind: 'renamed', name: renamed.name })}
                   trigger={
-                    <Button variant="ghost" size="sm" className="px-2" aria-label={`Переименовать проект «${project.name}»`}>
+                    <Button variant="ghost" size="sm" className="px-2" aria-label={t('routes.renameProject', { name: project.name })}>
                       <Pencil size={16} aria-hidden="true" />
                     </Button>
                   }

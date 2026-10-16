@@ -28,15 +28,15 @@ describe('identity and workspace loading', () => {
     });
 
     renderApp('/');
-    expect(screen.getByRole('status')).toHaveTextContent('Загрузка Workloom');
+    expect(screen.getByRole('status')).toHaveTextContent("Loading Workloom");
 
     me.resolve(ok({ actor: anna, authMode: 'dev' }));
 
     expect(await screen.findByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
     expect(screen.getAllByText(anna.displayName).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Локальный режим — тестовый пользователь').length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Local demo").length).toBeGreaterThan(0);
     expect(await screen.findByText('Вера Образцова')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Все участники/ })).toHaveAttribute('href', `/w/${alpha.id}/members`);
+    expect(screen.getByRole('link', { name: /All members/ })).toHaveAttribute('href', `/w/${alpha.id}/members`);
   });
 
   it('shows a safe identity error and recovers on retry', async () => {
@@ -51,10 +51,10 @@ describe('identity and workspace loading', () => {
 
     const { user } = renderApp('/');
 
-    expect(await screen.findByRole('heading', { name: 'Не удалось определить пользователя' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "Unable to identify the current user" })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(/hunter2|select \*/);
 
-    await user.click(screen.getByRole('button', { name: 'Повторить' }));
+    await user.click(screen.getByRole('button', { name: "Try again" }));
 
     expect(await screen.findByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
   });
@@ -64,7 +64,7 @@ describe('identity and workspace loading', () => {
 
     renderApp('/');
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Нет доступных пространств' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: "No workspaces available" })).toBeInTheDocument();
   });
 
   it('does not reveal a workspace the actor cannot access', async () => {
@@ -75,11 +75,11 @@ describe('identity and workspace loading', () => {
 
     const { user } = renderApp(`/w/${beta.id}`);
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Пространство недоступно' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: "Workspace unavailable" })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('Бета');
     expect(calls.some((call) => call.path.endsWith('/memberships'))).toBe(false);
 
-    await user.click(screen.getByRole('link', { name: 'К доступным пространствам' }));
+    await user.click(screen.getByRole('link', { name: "Back to available workspaces" }));
 
     expect(await screen.findByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
   });
@@ -98,17 +98,17 @@ describe('members', () => {
 
     const { user } = renderApp(`/w/${alpha.id}/members`);
 
-    expect(await screen.findByRole('heading', { name: 'Не удалось загрузить участников' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "Unable to load members" })).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('hunter2');
 
-    await user.click(screen.getByRole('button', { name: 'Повторить' }));
+    await user.click(screen.getByRole('button', { name: "Try again" }));
 
     const table = await screen.findByRole('table');
     expect(within(table).getAllByRole('row')).toHaveLength(alphaMembers.length + 1);
     const annaRow = within(table).getByText(anna.displayName).closest('tr');
     expect(annaRow).not.toBeNull();
-    expect(within(annaRow as HTMLElement).getByText('Вы')).toBeInTheDocument();
-    expect(within(table).getByText('Администратор')).toBeInTheDocument();
+    expect(within(annaRow as HTMLElement).getByText("You")).toBeInTheDocument();
+    expect(within(table).getByText("Admin")).toBeInTheDocument();
   });
 
   it('removes loaded members when a refresh is denied', async () => {
@@ -125,9 +125,9 @@ describe('members', () => {
     expect(await screen.findByText('Вера Образцова')).toBeInTheDocument();
 
     revoked = true;
-    await user.click(screen.getByRole('button', { name: 'Обновить' }));
+    await user.click(screen.getByRole('button', { name: "Refresh" }));
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Пространство недоступно' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: "Workspace unavailable" })).toBeInTheDocument();
     expect(screen.queryByText('Вера Образцова')).not.toBeInTheDocument();
     expect(screen.queryByRole('table')).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText(alpha.name)).not.toBeInTheDocument());
@@ -141,7 +141,7 @@ describe('switching context', () => {
     const { user, queryClient } = renderApp(`/w/${alpha.id}`);
     expect(await screen.findByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
 
-    screen.getByRole('button', { name: /^Пространство/ }).focus();
+    screen.getByRole('button', { name: /^Workspace/ }).focus();
     await user.keyboard('{Enter}');
     await user.click(await screen.findByRole('menuitemradio', { name: new RegExp(beta.name) }));
 
@@ -170,14 +170,14 @@ describe('switching context', () => {
     const { user, queryClient } = renderApp('/');
     expect(await screen.findByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
 
-    (await screen.findByRole('button', { name: /Сменить пользователя/ })).focus();
+    (await screen.findByRole('button', { name: /Switch user/ })).focus();
     await user.keyboard('{Enter}');
     await user.click(await screen.findByRole('menuitemradio', { name: /Борис/ }));
 
     // The server has not answered yet, but nothing of the previous actor is on screen.
     expect(screen.queryByText(alpha.name)).not.toBeInTheDocument();
     expect(screen.queryByText(anna.displayName)).not.toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Переключаем тестового пользователя');
+    expect(screen.getByRole('status')).toHaveTextContent("Switching test user");
     await waitFor(() =>
       expect(queryClient.getQueryCache().findAll({ queryKey: queryKeys.actor(anna.id) })).toHaveLength(0),
     );
@@ -207,14 +207,14 @@ describe('switching context', () => {
     const { user, queryClient } = renderApp('/');
     expect(await screen.findByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
 
-    (await screen.findByRole('button', { name: /Сменить пользователя/ })).focus();
+    (await screen.findByRole('button', { name: /Switch user/ })).focus();
     await user.keyboard('{Enter}');
     await user.click(await screen.findByRole('menuitemradio', { name: /Борис/ }));
 
     // Session recovery navigates through '/' and remounts the overview. Query the current DOM
     // inside one retrying assertion instead of retaining a node across that transition.
     await waitFor(() => {
-      expect(screen.getByText('Не удалось сменить тестового пользователя')).toBeInTheDocument();
+      expect(screen.getByText("Unable to switch test user")).toBeInTheDocument();
       expect(screen.getByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
       expect(queryClient.getQueryData(queryKeys.me)).toMatchObject({ actor: { id: anna.id } });
     });

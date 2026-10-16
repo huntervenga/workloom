@@ -1,36 +1,37 @@
+import { t, useTranslation } from '../../i18n';
 import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto } from '@workloom/contracts';
 import { TextInput, cn, inputClassName } from '@workloom/ui';
 import { UserRound } from 'lucide-react';
-import { useId, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { formatEstimate, parseEstimateInput } from '../task-table';
 import { TagSwatch } from './TagDialogs';
-import { TASK_DESCRIPTION_MAX, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors, type TaskDraftKey } from './taskDraft';
+import { TASK_DESCRIPTION_MAX, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors, type TaskDraftIssue, type TaskDraftKey } from './taskDraft';
 
 export const priorityLabels: Record<TaskPriority, string> = {
-  none: 'Без приоритета',
-  low: 'Низкий',
-  medium: 'Средний',
-  high: 'Высокий',
-  urgent: 'Срочный',
+  get none() { return t('tasks.taskFields.noPriority'); },
+  get low() { return t('tasks.taskFields.low'); },
+  get medium() { return t('tasks.taskFields.medium'); },
+  get high() { return t('tasks.taskFields.high'); },
+  get urgent() { return t('tasks.taskFields.urgent'); },
 };
 
 const priorities: TaskPriority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 
 export const fieldLabels: Record<TaskDraftKey, string> = {
-  title: 'Название',
-  description: 'Описание',
-  statusId: 'Статус',
-  sectionId: 'Раздел',
-  responsibleMembershipId: 'Ответственный',
-  participantMembershipIds: 'Участники',
-  startDate: 'Дата начала',
-  dueDate: 'Срок',
-  priority: 'Приоритет',
-  tagIds: 'Теги',
-  estimate: 'Оценка задачи',
+  get title() { return t('tasks.taskFields.taskName'); },
+  get description() { return t('tasks.taskFields.description'); },
+  get statusId() { return t('tasks.taskFields.status'); },
+  get sectionId() { return t('tasks.taskFields.section'); },
+  get responsibleMembershipId() { return t('tasks.taskFields.assignee'); },
+  get participantMembershipIds() { return t('tasks.taskFields.participants'); },
+  get startDate() { return t('tasks.taskFields.startDate'); },
+  get dueDate() { return t('tasks.taskFields.dueDate'); },
+  get priority() { return t('tasks.taskFields.priority'); },
+  get tagIds() { return t('tasks.taskFields.tags'); },
+  get estimate() { return t('tasks.taskFields.teamEstimate'); },
 };
 
-export const UNAVAILABLE_MEMBER = 'Участник недоступен';
+export const UNAVAILABLE_MEMBER = () => t('tasks.taskFields.memberUnavailable');
 
 /** Lookups for showing IDs by name; unknown IDs get neutral copy, never invented names. */
 export interface TaskLookups {
@@ -41,36 +42,36 @@ export interface TaskLookups {
 }
 
 export function formatDraftValue(key: TaskDraftKey, draft: TaskDraft, lookups: TaskLookups): string {
-  const memberName = (id: string) => lookups.members.find((member) => member.id === id)?.displayName ?? UNAVAILABLE_MEMBER;
+  const memberName = (id: string) => lookups.members.find((member) => member.id === id)?.displayName ?? UNAVAILABLE_MEMBER();
   switch (key) {
     case 'title':
       return draft.title.trim();
     case 'description':
-      return draft.description === '' ? 'Без описания' : draft.description.length > 160 ? `${draft.description.slice(0, 160)}…` : draft.description;
+      return draft.description === '' ? t('tasks.taskFields.noDescription') : draft.description.length > 160 ? `${draft.description.slice(0, 160)}…` : draft.description;
     case 'statusId':
-      return lookups.statuses.find((status) => status.id === draft.statusId)?.name ?? 'Статус недоступен';
+      return lookups.statuses.find((status) => status.id === draft.statusId)?.name ?? t('tasks.taskFields.statusUnavailable');
     case 'sectionId':
       return draft.sectionId === null
-        ? 'Без раздела'
-        : (lookups.sections.find((section) => section.id === draft.sectionId)?.name ?? 'Раздел недоступен');
+        ? t('tasks.taskFields.noSection')
+        : (lookups.sections.find((section) => section.id === draft.sectionId)?.name ?? t('tasks.taskFields.sectionUnavailable'));
     case 'responsibleMembershipId':
-      return draft.responsibleMembershipId === null ? 'Не назначен' : memberName(draft.responsibleMembershipId);
+      return draft.responsibleMembershipId === null ? t('tasks.taskFields.unassigned') : memberName(draft.responsibleMembershipId);
     case 'participantMembershipIds':
-      return draft.participantMembershipIds.length === 0 ? 'Нет участников' : draft.participantMembershipIds.map(memberName).join(', ');
+      return draft.participantMembershipIds.length === 0 ? t('tasks.taskFields.noParticipants') : draft.participantMembershipIds.map(memberName).join(', ');
     case 'startDate':
-      return draft.startDate || 'Без начала';
+      return draft.startDate || t('tasks.taskFields.noStartDate');
     case 'dueDate':
-      return draft.dueDate === '' ? 'Без срока' : draft.dueDate;
+      return draft.dueDate === '' ? t('tasks.taskFields.noDueDate') : draft.dueDate;
     case 'priority':
       return priorityLabels[draft.priority];
     case 'tagIds':
       return draft.tagIds.length === 0
-        ? 'Без тегов'
-        : draft.tagIds.map((id) => lookups.tags.get(id)?.name ?? 'Тег недоступен').join(', ');
+        ? t('tasks.taskFields.noTags')
+        : draft.tagIds.map((id) => lookups.tags.get(id)?.name ?? t('tasks.taskFields.tagUnavailable')).join(', ');
     case 'estimate': {
       const parsed = parseEstimateInput(draft.estimate);
       if (!parsed.valid) return draft.estimate;
-      return parsed.minutes === null ? 'Не оценено' : formatEstimate(parsed.minutes);
+      return parsed.minutes === null ? t('tasks.taskFields.notEstimated') : formatEstimate(parsed.minutes);
     }
   }
 }
@@ -110,10 +111,11 @@ const selectClassName = inputClassName('mt-1.5 pr-8');
 const labelClassName = 'text-sm font-medium text-ink';
 const errorClassName = 'mt-1.5 text-sm text-red-700';
 
-function FieldError({ id, message }: { id: string; message: string | undefined }) {
+function FieldError({ id, message }: { id: string; message: TaskDraftIssue | undefined }) {
+  const { t } = useTranslation();
   return message ? (
     <p id={id} className={errorClassName}>
-      {message}
+      {t(message.key, message.params)}
     </p>
   ) : null;
 }
@@ -136,7 +138,14 @@ export function TaskFields({
   tagAction,
   autoFocusTitle = false,
 }: TaskFieldsProps) {
+  const { t, locale } = useTranslation();
   const id = useId();
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  // Each explicit validation attempt gets a new error object, so the same error reopens
+  // details after the user closes it. Native toggling remains fully under user control.
+  useLayoutEffect(() => {
+    if ((errors.startDate || errors.estimate) && detailsRef.current) detailsRef.current.open = true;
+  }, [errors]);
   const ids = {
     title: `${id}-title`,
     titleError: `${id}-title-error`,
@@ -178,7 +187,7 @@ export function TaskFields({
   const savedTags = new Set(savedTagIds);
   const tagOptions = [...tags.values()]
     .filter((tag) => tag.archivedAt === null || selectedTags.has(tag.id) || savedTags.has(tag.id))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    .sort((a, b) => a.name.localeCompare(b.name, locale));
   const missingTagIds = draft.tagIds.filter((tagId) => !tags.has(tagId));
 
   const toggle = (list: readonly string[], value: string, on: boolean) =>
@@ -186,10 +195,9 @@ export function TaskFields({
 
   return (
     <div className="space-y-4">
-      <div>
+<div>
         <label htmlFor={ids.title} className={labelClassName}>
-          Название
-        </label>
+          {t('tasks.taskFields.taskName')}</label>
         <TextInput
           id={ids.title}
           className="mt-1.5"
@@ -203,68 +211,25 @@ export function TaskFields({
         />
         <FieldError id={ids.titleError} message={errors.title} />
       </div>
-
-      <div>
-        <label htmlFor={ids.description} className={labelClassName}>
-          Описание
-        </label>
-        <textarea
-          id={ids.description}
-          className={inputClassName('mt-1.5 h-auto min-h-24 py-2 leading-relaxed')}
-          rows={4}
-          value={draft.description}
-          maxLength={TASK_DESCRIPTION_MAX}
-          aria-invalid={errors.description ? true : undefined}
-          aria-describedby={errors.description ? ids.descriptionError : undefined}
-          onChange={(event) => onChange({ description: event.target.value })}
-        />
-        <FieldError id={ids.descriptionError} message={errors.description} />
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
+<div className="grid gap-3 sm:grid-cols-2"><div>
           <label htmlFor={ids.status} className={labelClassName}>
-            Статус
-          </label>
+            {t('tasks.taskFields.status')}</label>
           <select
             id={ids.status}
             className={selectClassName}
             value={draft.statusId}
             onChange={(event) => onChange({ statusId: event.target.value })}
           >
-            {statusKnown ? null : <option value={draft.statusId}>Статус недоступен</option>}
+            {statusKnown ? null : <option value={draft.statusId}>{t('tasks.taskFields.statusUnavailable')}</option>}
             {orderedStatuses.map((status) => (
               <option key={status.id} value={status.id}>
                 {status.name}
               </option>
             ))}
           </select>
-        </div>
-
-        <div>
-          <label htmlFor={ids.section} className={labelClassName}>
-            Раздел
-          </label>
-          <select
-            id={ids.section}
-            className={selectClassName}
-            value={draft.sectionId ?? ''}
-            onChange={(event) => onChange({ sectionId: event.target.value === '' ? null : event.target.value })}
-          >
-            <option value="">Без раздела</option>
-            {sectionKnown ? null : <option value={draft.sectionId ?? ''}>Раздел недоступен</option>}
-            {sectionOptions.map((section) => (
-              <option key={section.id} value={section.id}>
-                {section.archivedAt === null ? section.name : `${section.name} (в архиве)`}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
+        </div><div>
           <label htmlFor={ids.responsible} className={labelClassName}>
-            Ответственный
-          </label>
+            {t('tasks.taskFields.assignee')}</label>
           <select
             id={ids.responsible}
             className={selectClassName}
@@ -273,20 +238,70 @@ export function TaskFields({
               onChange({ responsibleMembershipId: event.target.value === '' ? null : event.target.value })
             }
           >
-            <option value="">Не назначен</option>
-            {responsibleKnown ? null : <option value={draft.responsibleMembershipId ?? ''}>{UNAVAILABLE_MEMBER}</option>}
+            <option value="">{t('tasks.taskFields.unassigned')}</option>
+            {responsibleKnown ? null : <option value={draft.responsibleMembershipId ?? ''}>{UNAVAILABLE_MEMBER()}</option>}
             {members.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.displayName}
               </option>
             ))}
           </select>
-        </div>
-
-        <div>
+        </div><div>
+          <label htmlFor={ids.due} className={labelClassName}>
+            {t('tasks.taskFields.dueDate')}</label>
+          <TextInput
+            id={ids.due}
+            type="date"
+            min="0001-01-01" max="9999-12-31"
+            className="mt-1.5"
+            value={draft.dueDate}
+            aria-invalid={errors.dueDate ? true : undefined}
+            aria-describedby={errors.dueDate ? ids.dueError : undefined}
+            onChange={(event) => onChange({ dueDate: event.target.value })}
+          />
+          <FieldError id={ids.dueError} message={errors.dueDate} />
+        </div></div>
+<div>
+        <label htmlFor={ids.description} className={labelClassName}>
+          {t('tasks.taskFields.description')}</label>
+        <textarea
+          id={ids.description}
+          className={inputClassName('mt-1.5 h-auto min-h-20 py-2 leading-relaxed')}
+          rows={3}
+          value={draft.description}
+          maxLength={TASK_DESCRIPTION_MAX}
+          aria-invalid={errors.description ? true : undefined}
+          aria-describedby={errors.description ? ids.descriptionError : undefined}
+          onChange={(event) => onChange({ description: event.target.value })}
+        />
+        <FieldError id={ids.descriptionError} message={errors.description} />
+      </div>
+<details ref={detailsRef} className="rounded-lg border border-line p-3">
+<summary className="cursor-pointer text-sm font-medium text-ink">{t('tasks.taskFields.moreDetails')}<span className="ml-2 text-xs font-normal text-muted">{t('tasks.taskFields.moreDetailsHint')}</span></summary>
+<div className="mt-4 space-y-4"><div className="grid gap-4 sm:grid-cols-2"><div>
+          <label htmlFor={ids.section} className={labelClassName}>
+            {t('tasks.taskFields.section')}</label>
+          <select
+            id={ids.section}
+            className={selectClassName}
+            value={draft.sectionId ?? ''}
+            onChange={(event) => onChange({ sectionId: event.target.value === '' ? null : event.target.value })}
+          >
+            <option value="">{t('tasks.taskFields.noSection')}</option>
+            {sectionKnown ? null : <option value={draft.sectionId ?? ''}>{t('tasks.taskFields.sectionUnavailable')}</option>}
+            {sectionOptions.map((section) => (
+              <option key={section.id} value={section.id}>
+                {section.archivedAt === null ? section.name : t('tasks.taskFields.valueArchived', { p0: section.name })}
+              </option>
+            ))}
+          </select>
+        </div><div>
+          <label htmlFor={ids.start} className={labelClassName}>{t('tasks.taskFields.startDate')}</label>
+          <TextInput id={ids.start} type="date" min="0001-01-01" max="9999-12-31" className="mt-1.5" value={draft.startDate ?? ''} aria-invalid={errors.startDate ? true : undefined} aria-describedby={errors.startDate ? ids.startError : undefined} onChange={event => onChange({ startDate: event.target.value })} />
+          <FieldError id={ids.startError} message={errors.startDate} />
+        </div><div>
           <label htmlFor={ids.priority} className={labelClassName}>
-            Приоритет
-          </label>
+            {t('tasks.taskFields.priority')}</label>
           <select
             id={ids.priority}
             className={selectClassName}
@@ -302,40 +317,15 @@ export function TaskFields({
               </option>
             ))}
           </select>
-        </div>
-
-        <div>
-          <label htmlFor={ids.start} className={labelClassName}>Дата начала</label>
-          <TextInput id={ids.start} type="date" min="0001-01-01" max="9999-12-31" className="mt-1.5" value={draft.startDate ?? ''} aria-invalid={errors.startDate ? true : undefined} aria-describedby={errors.startDate ? ids.startError : undefined} onChange={event => onChange({ startDate: event.target.value })} />
-          <FieldError id={ids.startError} message={errors.startDate} />
-        </div>
-        <div>
-          <label htmlFor={ids.due} className={labelClassName}>
-            Срок
-          </label>
-          <TextInput
-            id={ids.due}
-            type="date"
-            min="0001-01-01" max="9999-12-31"
-            className="mt-1.5"
-            value={draft.dueDate}
-            aria-invalid={errors.dueDate ? true : undefined}
-            aria-describedby={errors.dueDate ? ids.dueError : undefined}
-            onChange={(event) => onChange({ dueDate: event.target.value })}
-          />
-          <FieldError id={ids.dueError} message={errors.dueDate} />
-        </div>
-
-        <div>
+        </div><div>
           <label htmlFor={ids.estimate} className={labelClassName}>
-            Оценка задачи, часы
-          </label>
+            {t('tasks.taskFields.teamEstimateHours')}</label>
           <TextInput
             id={ids.estimate}
             className="mt-1.5"
             inputMode="decimal"
             autoComplete="off"
-            placeholder="Не оценено"
+            placeholder={t('tasks.taskFields.notEstimated')}
             value={estimateMode.kind === 'inherited' ? estimateMode.text : draft.estimate}
             readOnly={estimateMode.kind === 'inherited'}
             aria-invalid={errors.estimate ? true : undefined}
@@ -345,21 +335,16 @@ export function TaskFields({
             }}
           />
           <FieldError id={ids.estimateError} message={errors.estimate} />
-        </div>
-      </div>
-
-      <p id={ids.estimateHint} className="rounded-lg bg-canvas px-3 py-2 text-xs leading-relaxed text-muted">
+        </div></div><p id={ids.estimateHint} className="rounded-lg bg-canvas px-3 py-2 text-xs leading-relaxed text-muted">
         {estimateMode.kind === 'inherited'
-          ? `Подзадача-детализация входит в оценку задачи «${estimateMode.parentTitle}»: оценка общая и отдельно не задаётся. Для новой работы выберите «Дополнительный объём».`
+          ? t('tasks.taskFields.includedInValueThisSubtaskSharesItsParent', { p0: estimateMode.parentTitle })
           : estimateMode.kind === 'shared'
-            ? 'Оценка задачи — общий бюджет команды на эту работу, не личная оценка и не базовый план. Подзадачи-детализация показывают ту же оценку, поэтому изменение затронет и их. Участники её не делят и не умножают.'
-            : 'Оценка задачи — общий бюджет команды на эту работу, не личная оценка и не базовый план. Например: 1,5 или 1:30. Пустое поле — «не оценено», 0 — оценено в ноль.'}
-      </p>
-
-      <fieldset>
-        <legend className={labelClassName}>Участники</legend>
+            ? t('tasks.taskFields.sharedBudgetForTheWholeTeamAndLinked')
+            : t('tasks.taskFields.sharedBudgetForTheWholeTeamEnter1')}
+      </p><fieldset>
+        <legend className={labelClassName}>{t('tasks.taskFields.participants')}</legend>
         {members.length === 0 && retainedParticipantIds.length === 0 ? (
-          <p className="mt-1.5 text-sm text-muted">В пространстве нет участников.</p>
+          <p className="mt-1.5 text-sm text-muted">{t('tasks.taskFields.noWorkspaceMembers')}</p>
         ) : (
           <ul className="mt-1.5 grid gap-1 sm:grid-cols-2">
             {members.map((member) => (
@@ -398,7 +383,7 @@ export function TaskFields({
                     />
                     <UserRound size={14} aria-hidden="true" className="shrink-0" />
                     <span className="truncate">
-                      {retainedParticipantIds.length > 1 ? `${UNAVAILABLE_MEMBER} ${index + 1}` : UNAVAILABLE_MEMBER}
+                      {retainedParticipantIds.length > 1 ? `${UNAVAILABLE_MEMBER()} ${index + 1}` : UNAVAILABLE_MEMBER()}
                     </span>
                   </label>
                 </li>
@@ -408,17 +393,13 @@ export function TaskFields({
         )}
         {retainedParticipantIds.length > 0 ? (
           <p className="mt-1 text-xs text-muted">
-            Недоступный участник больше не состоит в пространстве, но остаётся в задаче. Снимите отметку, чтобы убрать его
-            из участников.
-          </p>
+            {t('tasks.taskFields.thisMemberHasLeftTheWorkspaceButRemains')}</p>
         ) : null}
-      </fieldset>
-
-      <fieldset>
-        <legend className={labelClassName}>Теги</legend>
+      </fieldset><fieldset>
+        <legend className={labelClassName}>{t('tasks.taskFields.tags')}</legend>
         {tagAction ? <div className="mt-1">{tagAction}</div> : null}
         {tagOptions.length === 0 && missingTagIds.length === 0 ? (
-          <p className="mt-1.5 text-sm text-muted">Тегов пока нет.</p>
+          <p className="mt-1.5 text-sm text-muted">{t('tasks.taskFields.noTagsYet')}</p>
         ) : (
           <ul className="mt-1.5 flex flex-wrap gap-1.5">
             {tagOptions.map((tag) => {
@@ -441,19 +422,19 @@ export function TaskFields({
                       onChange={(event) => onChange({ tagIds: toggle(draft.tagIds, tag.id, event.target.checked) })}
                     />
                     <TagSwatch color={tag.color} className={archived ? 'opacity-50' : undefined} />
-                    <span className="truncate">{archived ? `${tag.name} (в архиве)` : tag.name}</span>
+                    <span className="truncate">{archived ? t('tasks.taskFields.valueArchived', { p0: tag.name }) : tag.name}</span>
                   </label>
                 </li>
               );
             })}
             {missingTagIds.map((tagId) => (
               <li key={tagId} className="inline-flex items-center rounded-full border border-line px-2.5 py-1 text-xs text-muted">
-                Тег недоступен
-              </li>
+                {t('tasks.taskFields.tagUnavailable')}</li>
             ))}
           </ul>
         )}
-      </fieldset>
-    </div>
+      </fieldset></div>
+</details>
+</div>
   );
 }

@@ -1,0 +1,32 @@
+{
+  "brand": "Workloom",
+  "close": "Close",
+  "cancel": "Cancel",
+  "save": "Save",
+  "saving": "Saving\u2026",
+  "retry": "Try again",
+  "retrying": "Retrying\u2026",
+  "loading": "Loading\u2026",
+  "membersCount": {
+    "one": "{{count}} member",
+    "other": "{{count}} members"
+  },
+  "projectsCount": {
+    "one": "{{count}} project",
+    "other": "{{count}} projects"
+  },
+  "documentTitle": "{{title}} \u00b7 Workloom",
+  "hide": "Hide",
+  "resend": "Retry same change",
+  "requestId": "Request ID:",
+  "blockedUncertain": "This change was not sent because the previous result is still unknown. Retry the previous change without editing it.",
+  "blockedPending": "This change was not sent because the previous request is waiting for the server. Wait for its result, then try again.",
+  "uncertainHelp": "The server may have saved this change. Your submitted values are kept in the form until confirmation. Retry the same change without editing it; this will not create a duplicate. The form is kept until you leave this page.",
+  "otherNotSent": "No other changes were sent.",
+  "nameLengthHint": "Up to {{count}} characters.",
+  "periodWork": "Weekly entry",
+  "plannedAbsence": "Planned absence",
+  "meetingAttendance": "Meeting attendance",
+  "attendanceStamp": "{{source}} \u00b7 {{date}} UTC",
+  "language": "Language"
+}

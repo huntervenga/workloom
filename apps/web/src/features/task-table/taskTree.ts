@@ -1,3 +1,4 @@
+import { localization } from '../../i18n';
 import type { SectionDto, TaskDto } from '@workloom/contracts';
 import { dedupeTasks } from './workPackages';
 
@@ -31,8 +32,8 @@ function compareTasks(a: TaskDto, b: TaskDto): number {
   return a.position - b.position || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
 }
 
-function compareSections(a: SectionDto, b: SectionDto): number {
-  return a.position - b.position || a.name.localeCompare(b.name, 'ru') || a.id.localeCompare(b.id);
+function compareSections(a: SectionDto, b: SectionDto, locale: string): number {
+  return a.position - b.position || a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id);
 }
 
 function countNodes(nodes: readonly TaskTreeNode[]): number {
@@ -44,7 +45,7 @@ function countNodes(nodes: readonly TaskTreeNode[]): number {
  * their real `parentTaskId`. A child stays under its parent even when its own section differs.
  * Every loaded task appears exactly once; cycles and missing parents never drop or loop.
  */
-export function buildTaskGroups(tasks: readonly TaskDto[], sections: readonly SectionDto[]): TaskGroup[] {
+export function buildTaskGroups(tasks: readonly TaskDto[], sections: readonly SectionDto[], locale = localization.getLocale()): TaskGroup[] {
   const unique = dedupeTasks(tasks).sort(compareTasks);
   const byId = new Map(unique.map((task) => [task.id, task]));
   const childrenOf = new Map<string, TaskDto[]>();
@@ -100,7 +101,7 @@ export function buildTaskGroups(tasks: readonly TaskDto[], sections: readonly Se
 
   const groups: TaskGroup[] = [];
   const knownSectionIds = new Set<string>();
-  for (const section of [...sections].sort(compareSections)) {
+  for (const section of [...sections].sort((a, b) => compareSections(a, b, locale))) {
     if (knownSectionIds.has(section.id)) continue;
     knownSectionIds.add(section.id);
     const sectionRoots = rootsBySection.get(section.id) ?? [];

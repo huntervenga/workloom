@@ -1,3 +1,4 @@
+import { useTranslation, type TranslationKey } from '../../i18n';
 import {
   workspaceResponseSchema, type ProjectImportDto, type ProjectImportMapping, type ProjectImportPreviewDto, type TaskFieldDefinitionDto,
 } from '@workloom/contracts';
@@ -9,16 +10,17 @@ import { fetchPlanningPeriod } from '../planning/api';
 import { fetchProject } from '../projects/api';
 import { workspacePath } from '../workspace/queries';
 import { fetchImportReconciliation, fetchProjectImport, previewProjectImport } from './api';
-import { readCsvFile, type CsvFileSource, type CsvUpload } from './file';
+import { CsvFileReadError, readCsvFile, type CsvFileSource, type CsvUpload } from './file';
 import { buildImportMapping, formFromMapping, initialMapping, type ImportMappingForm } from './mapping';
 import { useImportCommands } from './queries';
 export interface ImportDraft { id: string; source: ProjectImportDto; form: ImportMappingForm; baseForm: string; preview: ProjectImportPreviewDto | null; previewFingerprint: string | null; error: Error | null }
 const encoded = (revision: number, mapping: ProjectImportMapping) => JSON.stringify({ expectedImportRevision: revision, mapping });
 const newUpload = (namespace = '') => ({ id: crypto.randomUUID(), namespace, baseNamespace: namespace, file: null as CsvUpload | null });
 export function useImportWorkspace(a: string, w: string, p: string, selectedId: string, onSelect: (id: string) => void) {
+  const { t } = useTranslation();
   const [upload, setUpload] = useState(() => newUpload());
   const [drafts, setDrafts] = useState<Record<string, ImportDraft>>({});
-  const [reading, setReading] = useState(false), [fileError, setFileError] = useState<string | null>(null);
+  const [reading, setReading] = useState(false), [fileError, setFileError] = useState<TranslationKey | null>(null);
   const [previewing, setPreviewing] = useState<string | null>(null), [rebasing, setRebasing] = useState<string | null>(null);
   const [readDenied, setReadDenied] = useState(false), [checkingAccess, setCheckingAccess] = useState(false);
   const [openingRecovery, setOpeningRecovery] = useState<string | null>(null);
@@ -47,7 +49,7 @@ export function useImportWorkspace(a: string, w: string, p: string, selectedId: 
     const sequence = ++fileSequence.current; setReading(true); setFileError(null);
     setUpload(current => ({ ...current, file: null }));
     try { const decoded = await readCsvFile(file); if (sequence === fileSequence.current) setUpload(current => ({ ...current, file: decoded })); }
-    catch (error) { if (sequence === fileSequence.current) setFileError(error instanceof Error ? error.message : 'Не удалось прочитать файл.'); }
+    catch (error) { if (sequence === fileSequence.current) setFileError(error instanceof CsvFileReadError ? error.messageKey : 'imports.couldNotReadTheFile'); }
     finally { if (sequence === fileSequence.current) setReading(false); }
   };
   const stage = () => {
@@ -82,7 +84,7 @@ export function useImportWorkspace(a: string, w: string, p: string, selectedId: 
       });
     } catch (error) {
       if (isAccessDenied(error)) noteDenied();
-      setDrafts(current => { const now = current[draft.source.id], nowMapping = now ? buildImportMapping(now.source, now.form, fields) : null; return now?.id === draft.id && nowMapping && previews.current[draft.id] === sequence && encoded(now.source.revision, nowMapping) === fingerprint ? { ...current, [draft.source.id]: { ...now, error: error instanceof Error ? error : new Error('Не удалось проверить импорт.') } } : current; });
+      setDrafts(current => { const now = current[draft.source.id], nowMapping = now ? buildImportMapping(now.source, now.form, fields) : null; return now?.id === draft.id && nowMapping && previews.current[draft.id] === sequence && encoded(now.source.revision, nowMapping) === fingerprint ? { ...current, [draft.source.id]: { ...now, error: error instanceof Error ? error : new Error(t('imports.couldNotPreviewTheImport')) } } : current; });
     } finally { setPreviewing(current => current === draft.id ? null : current); }
   };
   const canApply = (draft: ImportDraft, fields: readonly TaskFieldDefinitionDto[]) => {
@@ -98,11 +100,11 @@ export function useImportWorkspace(a: string, w: string, p: string, selectedId: 
     if (applyHeld || rebasing || denied) return;
     setRebasing(draft.id);
     try {
-      if (!await refreshCatalog()) throw new Error('Не удалось обновить справочники.');
+      if (!await refreshCatalog()) throw new Error(t('imports.couldNotRefreshReferences'));
       const fresh = await fetchProjectImport(w, p, draft.source.id);
       setDrafts(current => { const now = current[draft.source.id]; return now?.id === draft.id ? { ...current, [draft.source.id]: { ...now, source: fresh.revision >= now.source.revision ? fresh : now.source, preview: null, previewFingerprint: null, error: null } } : current; });
       commands.apply.reset();
-    } catch (error) { if (isAccessDenied(error)) noteDenied(); setDrafts(current => current[draft.source.id]?.id === draft.id ? { ...current, [draft.source.id]: { ...current[draft.source.id], error: error instanceof Error ? error : new Error('Не удалось обновить импорт.') } } : current); }
+    } catch (error) { if (isAccessDenied(error)) noteDenied(); setDrafts(current => current[draft.source.id]?.id === draft.id ? { ...current, [draft.source.id]: { ...current[draft.source.id], error: error instanceof Error ? error : new Error(t('imports.couldNotRefreshTheImport')) } } : current); }
     finally { setRebasing(null); }
   };
   const recoverAccess = async (refreshCatalog: () => Promise<boolean>) => {
@@ -129,11 +131,11 @@ export function useImportWorkspace(a: string, w: string, p: string, selectedId: 
       const period = await fetchPlanningPeriod(w, periodId);
       if (latestSelected.current !== draft.source.id || latestDrafts.current[draft.source.id]?.preview?.previewHash !== hash) return null;
       return `/w/${w}/projects/${period.projectId}/week?period=${period.id}`;
-    } catch (error) { if (isAccessDenied(error)) noteDenied(); setDrafts(current => current[draft.source.id] ? { ...current, [draft.source.id]: { ...current[draft.source.id], error: error instanceof Error ? error : new Error('Не удалось открыть период.') } } : current); return null; }
+    } catch (error) { if (isAccessDenied(error)) noteDenied(); setDrafts(current => current[draft.source.id] ? { ...current, [draft.source.id]: { ...current[draft.source.id], error: error instanceof Error ? error : new Error(t('imports.couldNotOpenThePeriod')) } } : current); return null; }
     finally { setOpeningRecovery(null); }
   };
   const dirty = !!upload.file || upload.namespace !== upload.baseNamespace || Object.values(drafts).some(draft => JSON.stringify(draft.form) !== draft.baseForm);
   useProtectedDraft(dirty); useUnsavedChangesWarning(dirty);
-  return { upload, reading, fileError, chooseFile, stage, setNamespace, clearUpload, stageHeld, applyHeld, drafts, ensureDraft, change, preview, previewing, rebase, rebasing, apply, canApply, denied, noteDenied, checkingAccess, recoverAccess, openingRecovery, openRecovery, commands, lastStagedId };
+  return { upload, reading, fileError: fileError ? t(fileError) : null, chooseFile, stage, setNamespace, clearUpload, stageHeld, applyHeld, drafts, ensureDraft, change, preview, previewing, rebase, rebasing, apply, canApply, denied, noteDenied, checkingAccess, recoverAccess, openingRecovery, openRecovery, commands, lastStagedId };
 }
 export type ImportWorkspace = ReturnType<typeof useImportWorkspace>;

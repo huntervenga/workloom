@@ -38,19 +38,19 @@ function mount({ current = meeting(), rows = attendance(), writable = true, bloc
   return { user: userEvent.setup(), onSaved };
 }
 async function prepare(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: 'Подготовить присутствие команды' }));
+  await user.click(screen.getByRole('button', { name: "Select team members" }));
 }
 
 describe('controlled team attendance review and command boundary', () => {
   it('never posts on invitation, opening, or preparation; unknown stays skipped and removed roster is excluded', async () => {
     const { calls } = installFakeApi({});
     const { user } = mount();
-    expect(screen.queryByLabelText('Результат команды: Участник 1')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Attendance outcome: Участник 1")).not.toBeInTheDocument();
     await prepare(user);
     expect(screen.getAllByRole('combobox')).toHaveLength(5);
-    expect(screen.getByLabelText('Результат команды: Участник 1')).toHaveValue('unknown');
+    expect(screen.getByLabelText("Attendance outcome: Участник 1")).toHaveValue('unknown');
     expect(screen.queryByText('Участник 6')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Подтвердить присутствие команды' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
     expect(calls).toHaveLength(0);
   });
 
@@ -60,14 +60,14 @@ describe('controlled team attendance review and command boundary', () => {
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: current, attendances: rows.slice(0, 5) }) });
     const { user, onSaved } = mount({ rows, current });
     await prepare(user);
-    await user.click(screen.getByRole('button', { name: 'Все выбранные присутствовали' }));
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 4'), 'partial');
-    await user.type(screen.getByLabelText('Время команды, часы: Участник 4'), '0:30');
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 5'), 'absent');
-    const review = screen.getByRole('region', { name: 'Проверка командного присутствия' });
-    expect(within(review).getByText(/Подтверждаемые минуты: 3 ч 30 мин/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: "Mark selected as attended" }));
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 4"), 'partial');
+    await user.type(screen.getByLabelText("Time attended, hours: Участник 4"), '0:30');
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 5"), 'absent');
+    const review = screen.getByRole('region', { name: "Review team attendance" });
+    expect(within(review).getByText(/Confirmed time: 3h 30m/)).toBeInTheDocument();
     expect(calls).toHaveLength(0);
-    await user.click(screen.getByRole('button', { name: 'Подтвердить присутствие команды' }));
+    await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toEqual({ expectedMeetingRevision: 3, periodId: PERIOD_A, rows: rows.slice(0, 5).map((row, i) => ({ attendanceId: row.id, expectedAttendanceRevision: row.revision, expectedWorkLogRevision: null, kind: 'confirm', status: i === 4 ? 'absent' : i === 3 ? 'partial' : 'present', attributionBasis: 'actual_meeting', minutes: i === 4 ? 0 : i === 3 ? 30 : 60, reason: null })) });
     expect(calls[0]?.headers.get('Idempotency-Key')).toMatch(/^[a-f0-9-]{36}$/);
@@ -80,8 +80,8 @@ describe('controlled team attendance review and command boundary', () => {
     const { calls } = installFakeApi({ [path]: () => ok(response) });
     const { user, onSaved } = mount({ rows }); await prepare(user);
     for (let i = 2; i <= 5; i++) await user.click(screen.getByRole('checkbox', { name: `Участник ${i}` }));
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 1'), 'absent');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить присутствие команды' }));
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'absent');
+    await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(calls[0]?.body).toMatchObject({ rows: [{ attendanceId: rows[0]?.id, status: 'absent' }] });
     expect(onSaved).toHaveBeenCalledWith(response, [rows[0]?.id]);
@@ -91,12 +91,12 @@ describe('controlled team attendance review and command boundary', () => {
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: [] }) });
     const { user } = mount({ current: meeting({ actualStartAt: null, actualDurationMinutes: null }) });
     await prepare(user);
-    expect(screen.getByRole('button', { name: 'Все выбранные присутствовали' })).toBeDisabled();
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 1'), 'present');
-    expect(screen.getByRole('button', { name: 'Подтвердить присутствие команды' })).toBeDisabled();
-    expect(screen.getByText(/Сначала сохраните фактическое начало/)).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 1'), 'absent');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить присутствие команды' }));
+    expect(screen.getByRole('button', { name: "Mark selected as attended" })).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'present');
+    expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
+    expect(screen.getByText(/Save the meeting's actual start/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'absent');
+    await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toMatchObject({ rows: [{ status: 'absent', minutes: 0, attributionBasis: 'planned_absence' }] });
   });
@@ -108,12 +108,12 @@ describe('controlled team attendance review and command boundary', () => {
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: rows.slice(0, 1) }) });
     const { user } = mount({ rows });
     await prepare(user);
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 1'), 'partial');
-    const minutes = screen.getByLabelText('Время команды, часы: Участник 1');
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'partial');
+    const minutes = screen.getByLabelText("Time attended, hours: Участник 1");
     await user.clear(minutes); await user.type(minutes, '0:30');
-    expect(screen.getByRole('button', { name: 'Подтвердить присутствие команды' })).toBeDisabled();
-    await user.type(screen.getByLabelText('Причина команды: Участник 1'), 'Уточнили участие');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить присутствие команды' }));
+    expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
+    await user.type(screen.getByLabelText("Attendance reason: Участник 1"), 'Уточнили участие');
+    await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toMatchObject({ rows: [{ expectedAttendanceRevision: 4, expectedWorkLogRevision: 9, kind: 'confirm', status: 'partial', minutes: 30, reason: 'Уточнили участие' }] });
     expect(JSON.stringify(calls[0]?.body)).not.toContain('category');
@@ -122,16 +122,16 @@ describe('controlled team attendance review and command boundary', () => {
   it('requires reason for void and rejects partial0 or duration overflow without any network write', async () => {
     const rows = attendance(); const first = rows[0]; if (!first) throw new Error('Missing fixture'); rows[0] = posted(first);
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: [] }) }); const { user } = mount({ rows }); await prepare(user);
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 1'), 'void');
-    expect(screen.getByRole('button', { name: 'Подтвердить присутствие команды' })).toBeDisabled();
-    await user.type(screen.getByLabelText('Причина команды: Участник 1'), 'Ошибка');
-    expect(screen.getByRole('button', { name: 'Подтвердить присутствие команды' })).toBeEnabled();
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 1'), 'partial');
-    const minutes = screen.getByLabelText('Время команды, часы: Участник 1');
-    for (const value of ['0', '1:01']) { await user.clear(minutes); await user.type(minutes, value); expect(screen.getByRole('button', { name: 'Подтвердить присутствие команды' })).toBeDisabled(); }
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'void');
+    expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
+    await user.type(screen.getByLabelText("Attendance reason: Участник 1"), 'Ошибка');
+    expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeEnabled();
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'partial');
+    const minutes = screen.getByLabelText("Time attended, hours: Участник 1");
+    for (const value of ['0', '1:01']) { await user.clear(minutes); await user.type(minutes, value); expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled(); }
     expect(calls).toHaveLength(0);
-    await user.selectOptions(screen.getByLabelText('Результат команды: Участник 1'), 'void');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить присутствие команды' }));
+    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'void');
+    await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toMatchObject({ rows: [{ kind: 'void', expectedAttendanceRevision: 4, expectedWorkLogRevision: 9, reason: 'Ошибка' }] });
   });
@@ -139,10 +139,10 @@ describe('controlled team attendance review and command boundary', () => {
   it('allows truthful cancelled planned absence only with a reason and no invented actual start', async () => {
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: [] }) });
     const { user } = mount({ current: meeting({ state: 'cancelled', actualStartAt: null, actualDurationMinutes: null }) });
-    await prepare(user); await user.selectOptions(screen.getByLabelText('Результат команды: Участник 1'), 'absent');
-    expect(screen.getByRole('button', { name: 'Подтвердить присутствие команды' })).toBeDisabled();
-    await user.type(screen.getByLabelText('Причина команды: Участник 1'), 'Встреча отменена');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить присутствие команды' }));
+    await prepare(user); await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'absent');
+    expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
+    await user.type(screen.getByLabelText("Attendance reason: Участник 1"), 'Встреча отменена');
+    await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toMatchObject({ rows: [{ status: 'absent', minutes: 0, attributionBasis: 'planned_absence', reason: 'Встреча отменена' }] });
     expect(JSON.stringify(calls[0]?.body)).not.toContain('actualStartAt');
@@ -152,18 +152,18 @@ describe('controlled team attendance review and command boundary', () => {
     const gate = lostResponse(); let attempts = 0;
     const response = { meeting: meeting(), attendances: attendance() };
     const { calls } = installFakeApi({ [path]: () => ++attempts === 1 ? gate.promise : ok(response) });
-    const { user, onSaved } = mount(); await prepare(user); await user.click(screen.getByRole('button', { name: 'Все выбранные присутствовали' }));
+    const { user, onSaved } = mount(); await prepare(user); await user.click(screen.getByRole('button', { name: "Mark selected as attended" }));
     await user.click(screen.getByRole('button', { name: 'Переключить панель' }));
     await user.click(screen.getByRole('button', { name: 'Переключить панель' }));
-    expect(screen.getByLabelText('Результат команды: Участник 1')).toHaveValue('present');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить присутствие команды' }));
+    expect(screen.getByLabelText("Attendance outcome: Участник 1")).toHaveValue('present');
+    await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(attempts).toBe(1));
-    expect(screen.getByRole('button', { name: 'Подготовить присутствие команды' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: "Select team members" })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Переключить панель' })); await act(async () => gate.lose());
     await user.click(screen.getByRole('button', { name: 'Переключить панель' }));
-    expect(screen.getByText(/Повторяется только исходная отправка/)).toBeInTheDocument();
-    expect(screen.queryByLabelText('Результат команды: Участник 1')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Повторить командное присутствие' }));
+    expect(screen.getByText(/Retry sends the original request only/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Attendance outcome: Участник 1")).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: "Retry original team attendance" }));
     await waitFor(() => expect(attempts).toBe(2));
     expect(calls[1]?.body).toEqual(calls[0]?.body);
     expect(calls[1]?.headers.get('Idempotency-Key')).toBe(calls[0]?.headers.get('Idempotency-Key'));
@@ -175,15 +175,15 @@ describe('controlled team attendance review and command boundary', () => {
     const { user } = mount(); await prepare(user);
     await user.click(screen.getByRole('button', { name: 'Личная отправка' }));
     await waitFor(() => expect(calls).toHaveLength(1)); await act(async () => gate.lose());
-    expect(screen.queryByRole('button', { name: 'Повторить командное присутствие' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Подготовить присутствие команды' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Подтвердить присутствие команды' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: "Retry original team attendance" })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: "Select team members" })).toBeDisabled();
+    expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
     expect(calls).toHaveLength(1);
   });
 
   it.each([{ writable: false }, { blocked: true }])('cannot prepare or send with denied permission/another held command: %j', async props => {
     const { calls } = installFakeApi({}); const { user } = mount(props);
-    const prepareButton = screen.getByRole('button', { name: 'Подготовить присутствие команды' });
+    const prepareButton = screen.getByRole('button', { name: "Select team members" });
     expect(prepareButton).toBeDisabled(); await user.click(prepareButton); expect(calls).toHaveLength(0);
   });
 
@@ -192,8 +192,8 @@ describe('controlled team attendance review and command boundary', () => {
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: [] }) });
     const { user } = mount({ rows, current: meeting({ actualStartAt, recordingUrl: 'https://example.com/recording' }) });
     await prepare(user);
-    const submit = screen.getByRole('button', { name: 'Подтвердить присутствие команды' });
-    if (needsReason) { expect(submit).toBeDisabled(); await user.type(screen.getByLabelText('Причина команды: Участник 1'), 'Уточнили фактическое начало'); }
+    const submit = screen.getByRole('button', { name: "Confirm team attendance" });
+    if (needsReason) { expect(submit).toBeDisabled(); await user.type(screen.getByLabelText("Attendance reason: Участник 1"), 'Уточнили фактическое начало'); }
     expect(submit).toBeEnabled(); await user.click(submit);
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toMatchObject({ expectedMeetingRevision: 3, rows: [{ expectedAttendanceRevision: 4, expectedWorkLogRevision: 9, status: 'present', reason: needsReason ? 'Уточнили фактическое начало' : null }] });
@@ -201,9 +201,9 @@ describe('controlled team attendance review and command boundary', () => {
 
   it('retains the pending immutable snapshot without a second send on repeat clicks', async () => {
     const gate = deferred<Response>(); const { calls } = installFakeApi({ [path]: () => gate.promise });
-    const { user } = mount(); await prepare(user); await user.click(screen.getByRole('button', { name: 'Все выбранные присутствовали' }));
-    const submit = screen.getByRole('button', { name: 'Подтвердить присутствие команды' }); await user.dblClick(submit);
-    await waitFor(() => expect(calls).toHaveLength(1)); expect(screen.getByText(/Отправленные строки закреплены/)).toBeInTheDocument();
+    const { user } = mount(); await prepare(user); await user.click(screen.getByRole('button', { name: "Mark selected as attended" }));
+    const submit = screen.getByRole('button', { name: "Confirm team attendance" }); await user.dblClick(submit);
+    await waitFor(() => expect(calls).toHaveLength(1)); expect(screen.getByText(/Submitted rows are locked/)).toBeInTheDocument();
     await act(async () => gate.resolve(ok({ meeting: meeting(), attendances: [] })));
   });
 });

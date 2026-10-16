@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../i18n';
 import { CircleHelp, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { describeError, type ErrorSubject } from '../lib/errors';
@@ -6,10 +7,10 @@ import { PendingCommandError, UncertainCommandError } from '../lib/idempotency';
 /** Fixed copy for a write refused on the client, before anything was sent. */
 function refusedCopy(error: Error): string | null {
   if (error instanceof UncertainCommandError) {
-    return 'Изменение не отправлено: результат предыдущей отправки ещё неизвестен. Сначала повторите её без изменений.';
+    return t('common.blockedUncertain');
   }
   if (error instanceof PendingCommandError) {
-    return 'Изменение не отправлено: предыдущая отправка ещё ждёт ответа сервера. Дождитесь результата и повторите.';
+    return t('common.blockedPending');
   }
   return null;
 }
@@ -23,6 +24,7 @@ export interface SaveErrorProps {
 
 /** A confirmed save failure, in fixed copy; server text is never shown. */
 export function SaveError({ error, subject, action }: SaveErrorProps) {
+  useTranslation();
   const described = describeError(error, subject);
   const refused = refusedCopy(error);
   return (
@@ -33,7 +35,8 @@ export function SaveError({ error, subject, action }: SaveErrorProps) {
         <p className="leading-relaxed text-red-800/90">{refused ?? described.description}</p>
         {described.requestId ? (
           <p className="text-xs text-red-800/70">
-            Код запроса: <code className="font-mono">{described.requestId}</code>
+
+            {t('common.requestId')} <code className="font-mono">{described.requestId}</code>
           </p>
         ) : null}
         {action ? <div className="pt-1.5">{action}</div> : null}
@@ -56,6 +59,7 @@ export interface UncertainCommandNoticeProps {
  * the only way forward is resending it unchanged, with the same Idempotency-Key.
  */
 export function UncertainCommandNotice({ error, subject, blocked = false, action }: UncertainCommandNoticeProps) {
+  useTranslation();
   const described = describeError(error, subject);
   return (
     <div role="alert" className="flex gap-2.5 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-sm">
@@ -64,13 +68,14 @@ export function UncertainCommandNotice({ error, subject, blocked = false, action
         <p className="font-medium text-amber-950">{described.title}</p>
         <p className="leading-relaxed text-amber-900">{described.description}</p>
         <p className="leading-relaxed text-amber-900">
-          Неизвестно, успел ли сервер сохранить изменение. Отправленные данные закреплены в форме до подтверждения:
-          повторите отправку без изменений — повтор не создаст дубль. Форма сохранится, пока вы не уйдёте со страницы.
+
+          {t('common.uncertainHelp')}
         </p>
-        {blocked ? <p className="font-medium text-amber-950">Другие данные не отправлены.</p> : null}
+        {blocked ? <p className="font-medium text-amber-950">{t('common.otherNotSent')}</p> : null}
         {described.requestId ? (
           <p className="text-xs text-amber-900/70">
-            Код запроса: <code className="font-mono">{described.requestId}</code>
+
+            {t('common.requestId')} <code className="font-mono">{described.requestId}</code>
           </p>
         ) : null}
         {action ? <div className="pt-1.5">{action}</div> : null}
@@ -90,6 +95,7 @@ export interface SaveFeedbackProps {
 
 /** One alert at a time: an uncertain command outranks the latest error. */
 export function SaveFeedback({ error, uncertainError, subject, action }: SaveFeedbackProps) {
+  useTranslation();
   if (uncertainError) {
     return (
       <UncertainCommandNotice

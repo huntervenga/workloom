@@ -41,17 +41,17 @@ it('cannot save a prior reset while automatic layout is loading, then saves ever
   const view = render(<QueryClientProvider client={client}><Host /></QueryClientProvider>);
   const user = userEvent.setup();
   try {
-    const reset = await screen.findByRole('button', { name: 'Сбросить все мои позиции' });
+    const reset = await screen.findByRole('button', { name: "Reset all my positions" });
     await waitFor(() => expect(reset).toBeEnabled());
     await user.click(reset);
-    const save = screen.getByRole('button', { name: 'Сохранить мою раскладку' });
+    const save = screen.getByRole('button', { name: "Save my layout" });
     expect(save).toBeEnabled();
-    const arrange = screen.getByRole('button', { name: 'Применить автоматическую раскладку' });
+    const arrange = screen.getByRole('button', { name: "Apply automatic layout" });
     await user.click(arrange);
     expect(arrange).toBeDisabled();
     expect(save).toBeDisabled();
     expect(reset).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Отменить перемещения' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: "Discard moves" })).toBeDisabled();
     await user.click(save);
     expect(calls.filter(call => call.method === 'PUT')).toHaveLength(0);
     await act(async () => { loaded.resolve(); });

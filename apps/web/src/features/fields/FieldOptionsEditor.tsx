@@ -1,3 +1,5 @@
+import { message, type TranslationMessage } from '../../i18n';
+import { useTranslation } from '../../i18n';
 import type { TaskFieldDefinitionDto, TaskFieldOptionDto } from '@workloom/contracts';
 import { Badge, Button, TextInput, cn } from '@workloom/ui';
 import { Archive, ArchiveRestore, Pencil, Plus } from 'lucide-react';
@@ -17,6 +19,7 @@ function orderOptions(options: readonly TaskFieldOptionDto[]): TaskFieldOptionDt
 }
 
 function OptionSwatch({ color }: { color: string | null }) {
+  useTranslation();
   return (
     <span
       aria-hidden="true"
@@ -52,6 +55,7 @@ export function FieldOptionsEditor({
   reloadAction,
   onSaved,
 }: FieldOptionsEditorProps) {
+  const { t } = useTranslation();
   const createCommand = sentCommand(createMutation);
   const updateCommand = sentCommand(updateMutation);
   const ownCreate = createCommand !== null && createCommand.variables.fieldId === field.id ? createCommand : null;
@@ -71,9 +75,9 @@ export function FieldOptionsEditor({
     const failedName = failed?.input.name;
     return failed && failedName !== undefined ? { optionId: failed.optionId, name: failedName } : null;
   });
-  const [addError, setAddError] = useState<string | null>(null);
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [announcement, setAnnouncement] = useState('');
+  const [addError, setAddError] = useState<TranslationMessage | null>(null);
+  const [renameError, setRenameError] = useState<TranslationMessage | null>(null);
+  const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   const addRef = useRef<HTMLInputElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const ids = { add: useId(), addError: useId(), rename: useId(), renameError: useId(), hint: useId() };
@@ -94,13 +98,13 @@ export function FieldOptionsEditor({
   const elsewhere = createElsewhere ? createCommand : updateElsewhere ? updateCommand : null;
   const notice = elsewhere
     ? elsewhere.pending
-      ? 'Сохраняется вариант другой колонки. Варианты этой колонки можно будет изменить после ответа сервера.'
-      : 'Изменение варианта другой колонки не подтверждено. Сначала откройте ту колонку и повторите отправку.'
+      ? t('fields.fieldOptionsEditor.anOptionInAnotherColumnIsBeingSaved')
+      : t('fields.fieldOptionsEditor.anOptionChangeInAnotherColumnIsUnconfirmed')
     : definitionBusy
-      ? 'Варианты можно будет изменить после подтверждения изменений колонки.'
+      ? t('fields.fieldOptionsEditor.editOptionsAfterTheColumnChangeIsConfirmed')
       : null;
 
-  const saved = (message: string) => (result: TaskFieldDefinitionDto) => {
+  const saved = (message: TranslationMessage) => (result: TaskFieldDefinitionDto) => {
     onSaved(result);
     setAnnouncement(message);
   };
@@ -113,7 +117,7 @@ export function FieldOptionsEditor({
       createMutation.retryUncertain({
         onSuccess: (result) => {
           setNewName('');
-          saved('Вариант добавлен.')(result);
+          saved(message('fields.fieldOptionsEditor.optionAdded'))(result);
         },
       });
       return;
@@ -132,7 +136,7 @@ export function FieldOptionsEditor({
       {
         onSuccess: (result) => {
           setNewName('');
-          saved(`Вариант «${name}» добавлен.`)(result);
+          saved(message('fields.fieldOptionsEditor.optionValueAdded', { p0: name }))(result);
         },
       },
     );
@@ -146,7 +150,7 @@ export function FieldOptionsEditor({
       updateMutation.retryUncertain({
         onSuccess: (result) => {
           setRenaming(null);
-          saved('Вариант сохранён.')(result);
+          saved(message('fields.fieldOptionsEditor.optionSaved'))(result);
         },
       });
       return;
@@ -169,7 +173,7 @@ export function FieldOptionsEditor({
       {
         onSuccess: (result) => {
           setRenaming(null);
-          saved(`Вариант «${name}» сохранён.`)(result);
+          saved(message('fields.fieldOptionsEditor.optionValueSaved', { p0: name }))(result);
         },
       },
     );
@@ -180,7 +184,7 @@ export function FieldOptionsEditor({
     setRenaming(null);
     updateMutation.mutate(
       { fieldId: field.id, optionId: option.id, input: { expectedRevision: field.revision, archived } },
-      { onSuccess: saved(archived ? `Вариант «${option.name}» в архиве.` : `Вариант «${option.name}» возвращён.`) },
+      { onSuccess: saved(archived ? message('fields.fieldOptionsEditor.optionValueArchived', { p0: option.name }) : message('fields.fieldOptionsEditor.optionValueRestored', { p0: option.name })) },
     );
   };
 
@@ -189,19 +193,18 @@ export function FieldOptionsEditor({
   const shownNewName = ownCreate ? ownCreate.variables.input.name : newName;
 
   return (
-    <section aria-label="Варианты" className="space-y-3">
-      <h3 className="text-sm font-medium text-ink">Варианты</h3>
+    <section aria-label={t('fields.fieldOptionsEditor.options')} className="space-y-3">
+      <h3 className="text-sm font-medium text-ink">{t('fields.fieldOptionsEditor.options')}</h3>
       <p role="status" className="sr-only">
-        {announcement}
+        {announcement ? t(announcement.key, announcement.params) : null}
       </p>
       <p id={ids.hint} className="text-xs leading-relaxed text-subtle">
-        Архивный вариант нельзя выбрать для новых значений, но задачи и история сохраняют его. Вариант можно вернуть.
-      </p>
+        {t('fields.fieldOptionsEditor.archivedOptionsCannotBeSelectedForNewValues')}</p>
 
       {options.length === 0 ? (
-        <p className="text-sm text-muted">Вариантов пока нет.</p>
+        <p className="text-sm text-muted">{t('fields.fieldOptionsEditor.noOptionsYet')}</p>
       ) : (
-        <ul aria-label="Варианты колонки" className="divide-y divide-line rounded-xl border border-line">
+        <ul aria-label={t('fields.fieldOptionsEditor.columnOptions')} className="divide-y divide-line rounded-xl border border-line">
           {options.map((option) => {
             const archived = option.archivedAt !== null;
             const editing = activeRename?.optionId === option.id;
@@ -212,8 +215,7 @@ export function FieldOptionsEditor({
                 <li key={option.id} className="px-3 py-2">
                   <form noValidate onSubmit={(event) => rename(event, option)} className="space-y-2">
                     <label htmlFor={ids.rename} className="sr-only">
-                      Название варианта
-                    </label>
+                      {t('fields.fieldOptionsEditor.optionName')}</label>
                     <TextInput
                       ref={renameRef}
                       id={ids.rename}
@@ -230,14 +232,13 @@ export function FieldOptionsEditor({
                     />
                     {renameError ? (
                       <p id={ids.renameError} className="text-sm text-red-700">
-                        {renameError}
+                        {t(renameError.key, renameError.params)}
                       </p>
                     ) : null}
                     <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                       {own ? null : (
                         <Button size="sm" onClick={() => setRenaming(null)}>
-                          Отмена
-                        </Button>
+                          {t('fields.fieldOptionsEditor.cancel')}</Button>
                       )}
                       <Button
                         size="sm"
@@ -245,7 +246,7 @@ export function FieldOptionsEditor({
                         variant="primary"
                         aria-disabled={(own && ownUpdate?.pending) || (!own && busy) || updateElsewhere || undefined}
                       >
-                        {own && ownUpdate?.pending ? 'Сохраняем…' : own ? 'Повторить отправку' : 'Сохранить вариант'}
+                        {own && ownUpdate?.pending ? t('fields.fieldOptionsEditor.saving') : own ? t('fields.fieldOptionsEditor.retrySubmission') : t('fields.fieldOptionsEditor.saveOption')}
                       </Button>
                     </div>
                   </form>
@@ -261,23 +262,22 @@ export function FieldOptionsEditor({
                 >
                   {option.name}
                 </span>
-                {archived ? <Badge tone="muted">В архиве</Badge> : null}
+                {archived ? <Badge tone="muted">{t('fields.fieldOptionsEditor.archived')}</Badge> : null}
                 {archiving?.pending ? (
-                  <Badge tone="warning">Сохраняем…</Badge>
+                  <Badge tone="warning">{t('fields.fieldOptionsEditor.saving')}</Badge>
                 ) : archiving ? (
                   <Button
                     size="sm"
-                    onClick={() => updateMutation.retryUncertain({ onSuccess: saved('Вариант сохранён.') })}
+                    onClick={() => updateMutation.retryUncertain({ onSuccess: saved(message('fields.fieldOptionsEditor.optionSaved')) })}
                   >
-                    Повторить отправку
-                  </Button>
+                    {t('fields.fieldOptionsEditor.retrySubmission')}</Button>
                 ) : (
                   <>
                     <Button
                       size="sm"
                       variant="ghost"
                       className="px-2"
-                      aria-label={`Переименовать вариант «${option.name}»`}
+                      aria-label={t('fields.fieldOptionsEditor.renameOptionValue', { p0: option.name })}
                       disabled={busy || updateElsewhere}
                       onClick={() => {
                         setRenameError(null);
@@ -290,7 +290,7 @@ export function FieldOptionsEditor({
                       size="sm"
                       variant="ghost"
                       className="px-2"
-                      aria-label={archived ? `Вернуть вариант «${option.name}»` : `Архивировать вариант «${option.name}»`}
+                      aria-label={archived ? t('fields.fieldOptionsEditor.restoreOptionValue', { p0: option.name }) : t('fields.fieldOptionsEditor.archiveOptionValue', { p0: option.name })}
                       aria-describedby={ids.hint}
                       disabled={busy || updateElsewhere}
                       onClick={() => setArchived(option, !archived)}
@@ -311,8 +311,7 @@ export function FieldOptionsEditor({
 
       <form noValidate onSubmit={add} className="space-y-2">
         <label htmlFor={ids.add} className="text-sm text-ink-soft">
-          Новый вариант
-        </label>
+          {t('fields.fieldOptionsEditor.newOption')}</label>
         <div className="flex gap-2">
           <TextInput
             ref={addRef}
@@ -333,20 +332,19 @@ export function FieldOptionsEditor({
             aria-disabled={(ownCreate?.pending ?? false) || (!ownCreate && busy) || createElsewhere || undefined}
           >
             {ownCreate?.pending ? (
-              'Сохраняем…'
+              t('fields.fieldOptionsEditor.saving')
             ) : ownCreate ? (
-              'Повторить отправку'
+              t('fields.fieldOptionsEditor.retrySubmission')
             ) : (
               <>
                 <Plus size={16} aria-hidden="true" />
-                Добавить вариант
-              </>
+                {t('fields.fieldOptionsEditor.addOption')}</>
             )}
           </Button>
         </div>
         {addError ? (
           <p id={ids.addError} className="text-sm text-red-700">
-            {addError}
+            {t(addError.key, addError.params)}
           </p>
         ) : null}
       </form>

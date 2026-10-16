@@ -1,0 +1,14 @@
+{
+  "currentUser": "Current user",
+  "you": "You",
+  "loading": "Loading workspaces",
+  "listFailed": "Unable to load workspaces",
+  "noneAvailable": "No workspaces available",
+  "label": "Workspace",
+  "choose": "Choose a workspace",
+  "available": "Available workspaces",
+  "owner": "Owner",
+  "admin": "Admin",
+  "member": "Member",
+  "viewer": "Viewer"
+}

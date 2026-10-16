@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../../i18n';
 import { useQueryClient } from '@tanstack/react-query';
 import { Logomark, Skeleton } from '@workloom/ui';
 import { useEffect, useRef } from 'react';
@@ -12,6 +13,7 @@ import { SwitchErrorNotice } from './SwitchErrorNotice';
 import { Topbar } from './Topbar';
 
 export function AppShell() {
+  useTranslation();
   const me = useMeQuery();
   useResetOnActorChange(me.isSuccess ? me.data.actor.id : null);
 
@@ -23,7 +25,7 @@ export function AppShell() {
         <div className="w-full max-w-md">
           <div className="mb-6 flex items-center justify-center gap-2.5">
             <Logomark className="size-7" />
-            <span className="text-[15px] font-semibold tracking-tight">Workloom</span>
+            <span className="text-[15px] font-semibold tracking-tight">{t('common.brand')}</span>
           </div>
           <QueryErrorState
             error={me.error}
@@ -79,6 +81,7 @@ function useDiscardPreviousWorkspace(actorId: string, workspaceId: string | null
 }
 
 function ShellFrame() {
+  useTranslation();
   const me = useMe();
   const actorId = me.actor.id;
   const workspaceId = useMatch('/w/:workspaceId/*')?.params.workspaceId ?? null;
@@ -96,10 +99,11 @@ function ShellFrame() {
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg"
       >
-        Перейти к содержимому
+
+        {t('shell.skipToContent')}
       </a>
       <aside
-        aria-label="Боковая панель"
+        aria-label={t('shell.sidebar')}
         className="fixed inset-y-0 left-0 z-20 hidden w-60 flex-col border-r border-line bg-surface lg:flex"
       >
         {sidebar()}
@@ -114,7 +118,7 @@ function ShellFrame() {
         <main
           id="main"
           tabIndex={-1}
-          className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-6 outline-none sm:px-6 sm:py-8 lg:px-10 lg:py-10"
+          className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-4 outline-none sm:px-6 sm:py-5 lg:px-8 lg:py-6"
         >
           <SwitchErrorNotice />
           <Outlet />
@@ -125,9 +129,10 @@ function ShellFrame() {
 }
 
 function ShellLoading() {
+  useTranslation();
   return (
     <div role="status" className="min-h-dvh lg:pl-60">
-      <span className="sr-only">Загрузка Workloom</span>
+      <span className="sr-only">{t('shell.loadingApp')}</span>
       <div aria-hidden="true" className="fixed inset-y-0 left-0 hidden w-60 flex-col gap-6 border-r border-line bg-surface p-5 lg:flex">
         <Skeleton className="h-7 w-32" />
         <Skeleton className="h-[3.25rem] w-full rounded-xl" />

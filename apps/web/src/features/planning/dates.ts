@@ -1,3 +1,4 @@
+import { formatDate } from '../../i18n';
 /** Browser-local datetime input. No guessed offset for another IANA zone. */
 export function localDateTimeInput(date: Date): string {
   const two = (value: number) => String(value).padStart(2, '0');
@@ -13,7 +14,7 @@ export function parseLocalDateTime(raw: string): Date | null {
 
 /** The period card uses its own labelled IANA zone, independently of the browser/input zone. */
 export function formatPeriodCutoff(timestamp: string, timezone: string): string {
-  return new Intl.DateTimeFormat('ru-RU', {
+  return formatDate(new Date(timestamp), {
     dateStyle: 'short', timeStyle: 'short', timeZone: timezone,
-  }).format(new Date(timestamp));
+  });
 }

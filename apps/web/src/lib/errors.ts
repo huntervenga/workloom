@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { ApiError, type ApiErrorKind } from './api';
 
 export type ErrorSubject =
@@ -45,53 +46,53 @@ export interface ErrorDescription {
 }
 
 const subjectTitles: Record<ErrorSubject, string> = {
-  identity: 'Не удалось определить пользователя',
-  workspaces: 'Не удалось загрузить пространства',
-  workspace: 'Не удалось открыть пространство',
-  members: 'Не удалось загрузить участников',
-  actorSwitch: 'Не удалось сменить тестового пользователя',
-  projects: 'Не удалось загрузить проекты',
-  project: 'Не удалось открыть проект',
-  projectSave: 'Не удалось сохранить проект',
-  sections: 'Не удалось загрузить секции',
-  sectionSave: 'Не удалось сохранить раздел',
-  statuses: 'Не удалось загрузить статусы',
-  tags: 'Не удалось загрузить теги',
-  tagSave: 'Не удалось сохранить тег',
-  tasks: 'Не удалось загрузить задачи',
-  task: 'Не удалось открыть задачу',
-  taskSave: 'Не удалось сохранить задачу',
-  fields: 'Не удалось загрузить поля',
-  fieldSave: 'Не удалось сохранить поле',
-  columns: 'Не удалось загрузить настройки колонок',
-  columnsSave: 'Не удалось сохранить настройки колонок',
-  fieldValues: 'Не удалось загрузить значения полей',
-  fieldValueSave: 'Не удалось сохранить значение поля',
-  fieldHistory: 'Не удалось загрузить историю значения',
-  planning: 'Не удалось загрузить неделю',
-  planSave: 'Не удалось сохранить недельный план',
-  freeze: 'Не удалось зафиксировать план',
-  factSave: 'Не удалось сохранить факт за неделю',
-  report: 'Не удалось открыть отчёт',
-  workCategory: 'Не удалось загрузить типы работы',
-  workCategorySave: 'Не удалось сохранить поле типа работы',
-  recategorize: 'Не удалось изменить тип записанной работы',
-  workTypeReport: 'Не удалось открыть распределение часов',
-  taskTime: 'Не удалось загрузить недельные часы',
+  get identity() { return t('errors.subject.identity'); },
+  get workspaces() { return t('errors.subject.workspaces'); },
+  get workspace() { return t('errors.subject.workspace'); },
+  get members() { return t('errors.subject.members'); },
+  get actorSwitch() { return t('errors.subject.actorSwitch'); },
+  get projects() { return t('errors.subject.projects'); },
+  get project() { return t('errors.subject.project'); },
+  get projectSave() { return t('errors.subject.projectSave'); },
+  get sections() { return t('errors.subject.sections'); },
+  get sectionSave() { return t('errors.subject.sectionSave'); },
+  get statuses() { return t('errors.subject.statuses'); },
+  get tags() { return t('errors.subject.tags'); },
+  get tagSave() { return t('errors.subject.tagSave'); },
+  get tasks() { return t('errors.subject.tasks'); },
+  get task() { return t('errors.subject.task'); },
+  get taskSave() { return t('errors.subject.taskSave'); },
+  get fields() { return t('errors.subject.fields'); },
+  get fieldSave() { return t('errors.subject.fieldSave'); },
+  get columns() { return t('errors.subject.columns'); },
+  get columnsSave() { return t('errors.subject.columnsSave'); },
+  get fieldValues() { return t('errors.subject.fieldValues'); },
+  get fieldValueSave() { return t('errors.subject.fieldValueSave'); },
+  get fieldHistory() { return t('errors.subject.fieldHistory'); },
+  get planning() { return t('errors.subject.planning'); },
+  get planSave() { return t('errors.subject.planSave'); },
+  get freeze() { return t('errors.subject.freeze'); },
+  get factSave() { return t('errors.subject.factSave'); },
+  get report() { return t('errors.subject.report'); },
+  get workCategory() { return t('errors.subject.workCategory'); },
+  get workCategorySave() { return t('errors.subject.workCategorySave'); },
+  get recategorize() { return t('errors.subject.recategorize'); },
+  get workTypeReport() { return t('errors.subject.workTypeReport'); },
+  get taskTime() { return t('errors.subject.taskTime'); },
 };
 
 const kindDescriptions: Record<ApiErrorKind, string> = {
-  network: 'Нет связи с сервером. Проверьте, что локальный сервер запущен, и повторите попытку.',
-  unauthenticated: 'Сервер не определил текущего пользователя. Повторите попытку или перезапустите локальный сервер.',
-  forbidden: 'У текущего пользователя нет доступа к этим данным.',
-  not_found: 'Данные не найдены или недоступны текущему пользователю.',
-  validation: 'Сервер отклонил запрос.',
-  conflict: 'Данные успели измениться. Повторите попытку.',
-  rate_limited: 'Слишком много запросов. Подождите немного и повторите.',
-  unavailable: 'Сервис временно недоступен. Повторите попытку чуть позже.',
-  server: 'На сервере произошла ошибка. Повторите попытку позже.',
-  invalid_response: 'Сервер вернул ответ в неожиданном формате.',
-  invalid_input: 'Данные не прошли проверку и не были отправлены.',
+  get network() { return t('errors.kind.network'); },
+  get unauthenticated() { return t('errors.kind.unauthenticated'); },
+  get forbidden() { return t('errors.kind.forbidden'); },
+  get not_found() { return t('errors.kind.not_found'); },
+  get validation() { return t('errors.kind.validation'); },
+  get conflict() { return t('errors.kind.conflict'); },
+  get rate_limited() { return t('errors.kind.rate_limited'); },
+  get unavailable() { return t('errors.kind.unavailable'); },
+  get server() { return t('errors.kind.server'); },
+  get invalid_response() { return t('errors.kind.invalid_response'); },
+  get invalid_input() { return t('errors.kind.invalid_input'); },
 };
 
 const retryableKinds: ReadonlySet<ApiErrorKind> = new Set([
@@ -107,16 +108,16 @@ const retryableKinds: ReadonlySet<ApiErrorKind> = new Set([
 /** Objects whose denial and absence look the same, so their existence is not revealed. */
 const unavailableCopy: Partial<Record<ErrorSubject, { title: string; description: string }>> = {
   workspace: {
-    title: 'Пространство недоступно',
-    description: 'Такого пространства нет или у текущего пользователя нет к нему доступа.',
+    get title() { return t('errors.hidden.workspace.title'); },
+    get description() { return t('errors.hidden.workspace.description'); },
   },
   project: {
-    title: 'Проект недоступен',
-    description: 'Такого проекта нет или у текущего пользователя нет к нему доступа.',
+    get title() { return t('errors.hidden.project.title'); },
+    get description() { return t('errors.hidden.project.description'); },
   },
   task: {
-    title: 'Задача недоступна',
-    description: 'Такой задачи нет или у текущего пользователя нет к ней доступа.',
+    get title() { return t('errors.hidden.task.title'); },
+    get description() { return t('errors.hidden.task.description'); },
   },
 };
 
@@ -140,15 +141,15 @@ const saveSubjects: ReadonlySet<ErrorSubject> = new Set([
 ]);
 
 /** A value write to a locked field; reloading and resending would be refused again. */
-const fieldLockedDescription = 'Поле заблокировано: его значения сейчас нельзя изменить.';
+const fieldLockedDescription = () => t('errors.fieldLocked');
 
 const saveDescriptions: Partial<Record<ApiErrorKind, string>> = {
-  network: 'Нет связи с сервером. Введённые данные остались в форме — отправьте их ещё раз.',
-  forbidden: 'У вашей роли нет прав на это изменение.',
-  not_found: 'Объект не найден или больше недоступен текущему пользователю.',
-  validation: 'Сервер не принял данные. Проверьте поля и попробуйте снова.',
-  conflict: 'Данные успели измениться в другом месте. Загрузите актуальную версию и сохраните снова.',
-  invalid_input: 'Проверьте заполненные поля.',
+  get network() { return t('errors.save.network'); },
+  get forbidden() { return t('errors.save.forbidden'); },
+  get not_found() { return t('errors.save.not_found'); },
+  get validation() { return t('errors.save.validation'); },
+  get conflict() { return t('errors.save.conflict'); },
+  get invalid_input() { return t('errors.save.invalid_input'); },
 };
 
 /** Maps an error to fixed, user-safe copy. Server-provided text is never used. */
@@ -156,7 +157,7 @@ export function describeError(error: unknown, subject: ErrorSubject): ErrorDescr
   if (!(error instanceof ApiError)) {
     return {
       title: subjectTitles[subject],
-      description: 'Произошла непредвиденная ошибка. Повторите попытку.',
+      description: t('errors.unexpected'),
       retryable: true,
       unavailable: false,
       requestId: null,
@@ -169,17 +170,17 @@ export function describeError(error: unknown, subject: ErrorSubject): ErrorDescr
   }
 
   if (error.code === 'DEPENDENCY_CYCLE') {
-    return { title: 'Связь создаёт цикл', description: 'Эта связь замкнёт цепочку задач. Выберите другое направление или другую задачу.', retryable: false, unavailable: false, requestId: error.requestId };
+    return { title: t('errors.dependencyCycleTitle'), description: t('errors.dependencyCycleDescription'), retryable: false, unavailable: false, requestId: error.requestId };
   }
 
   if (error.kind === 'conflict' && error.code === 'PREVIEW_STALE') {
-    return { title: subjectTitles[subject], description: 'План изменился после предпросмотра. Загрузите свежий предпросмотр и подтвердите фиксацию ещё раз.', retryable: false, unavailable: false, requestId: error.requestId };
+    return { title: subjectTitles[subject], description: t('errors.previewStale'), retryable: false, unavailable: false, requestId: error.requestId };
   }
 
   if (error.kind === 'conflict' && error.code === 'FIELD_LOCKED') {
     return {
       title: subjectTitles[subject],
-      description: subject === 'planSave' ? 'Исходный план уже зафиксирован. Его нельзя переписать; новую работу можно добавить отдельной строкой.' : fieldLockedDescription,
+      description: subject === 'planSave' ? t('errors.planLocked') : fieldLockedDescription(),
       retryable: false,
       unavailable: false,
       requestId: error.requestId,

@@ -75,7 +75,7 @@ describe('schedule command boundaries', () => {
     await waitFor(() => expect(c().mutation.uncertain?.variables.draftId).toBe(idA));
     await act(async () => { await c().preview(active(c())); });
     expect(calls.filter(call => call.path === applyPath)).toHaveLength(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Повторить исходную отправку сроков' }));
+    fireEvent.click(screen.getByRole('button', { name: "Retry original date submission" }));
     await waitFor(() => expect(c().drafts[idA]).toBeUndefined());
     expect(c().activeId).toBe(idB);
     expect(c().drafts[idB]?.rows[0]).toMatchObject({ startDate: '2026-11-02', dueDate: '2026-11-06' });
@@ -157,7 +157,7 @@ describe('mounted schedule current access', () => {
   for (const source of ['read', 'write'] as const) it(`hides cached dates and overlay on ${source} denial until every authoritative recovery read succeeds`, async () => {
     const view = mounted();
     await waitFor(() => expect(screen.getByRole('button', { name: view.a.title })).toBeInTheDocument());
-    expect(screen.getByText(/Дата начала не сохранялась в этом плане/)).toBeInTheDocument();
+    expect(screen.getByText(/Start date was not captured in this plan/)).toBeInTheDocument();
     act(() => open(view.current(), view.a));
     const id = active(view.current()).id;
     act(() => view.current().change(id, view.a.id, { startDate: '2026-11-02', dueDate: '2026-11-06' }));
@@ -170,22 +170,22 @@ describe('mounted schedule current access', () => {
       act(() => view.current().apply(active(view.current())));
     }
     await waitFor(() => expect(screen.queryByRole('button', { name: view.a.title })).not.toBeInTheDocument());
-    expect(screen.queryByText(/Дата начала не сохранялась в этом плане/)).not.toBeInTheDocument();
-    expect(screen.queryByLabelText('Дата начала')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Start date was not captured in this plan/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Start date")).not.toBeInTheDocument();
     expect(view.current().drafts[id]?.rows[0]?.startDate).toBe('2026-11-02');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Закрыть' })[0] as HTMLButtonElement);
+    fireEvent.click(screen.getAllByRole('button', { name: "Close" })[0] as HTMLButtonElement);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     // One successful context read must not clear denial while the baseline read is still denied.
     view.state.readDenied = false; view.state.baselinesDenied = true;
-    fireEvent.click(screen.getByRole('button', { name: 'Проверить доступ к срокам' }));
+    fireEvent.click(screen.getByRole('button', { name: "Check timeline access" }));
     await waitFor(() => expect(view.calls.filter(call => call.path.endsWith('/baselines')).length).toBeGreaterThan(1));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Проверить доступ к срокам' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: "Check timeline access" })).toBeEnabled());
     expect(screen.queryByRole('button', { name: view.a.title })).not.toBeInTheDocument();
     view.state.baselinesDenied = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Проверить доступ к срокам' }));
+    fireEvent.click(screen.getByRole('button', { name: "Check timeline access" }));
     await waitFor(() => expect(screen.getByRole('button', { name: view.a.title })).toBeInTheDocument());
     act(() => view.current().setActiveId(id));
-    expect(screen.getByLabelText('Дата начала')).toHaveValue('2026-11-02');
+    expect(screen.getByLabelText("Start date")).toHaveValue('2026-11-02');
     expect(view.current().drafts[id]?.rows[0]?.startDate).toBe('2026-11-02');
     expect(view.calls.filter(call => call.path === applyPath)).toHaveLength(source === 'write' ? 1 : 0);
     expect(view.client.getQueryData(planningKeys.baselines(anna.id, alpha.id, PERIOD_A))).toBeDefined();
@@ -231,12 +231,12 @@ describe('multiple schedule context batches', () => {
     render(<Host />, { wrapper: Wrapper });
     act(() => { current?.setBaselinePeriodId(PERIOD_A); current?.setBaselineId(BASELINE_ID); });
     await waitFor(() => expect(screen.getByRole('button', { name: first.title })).toBeInTheDocument());
-    expect(screen.getAllByText(/Дата начала не сохранялась в этом плане/)).toHaveLength(101);
+    expect(screen.getAllByText(/Start date was not captured in this plan/)).toHaveLength(101);
     rejectReads = true;
     await act(async () => { await client.invalidateQueries({ queryKey: scheduleKeys.root(anna.id, alpha.id) }); });
     await waitFor(() => expect(screen.queryByRole('button', { name: first.title })).not.toBeInTheDocument());
-    expect(screen.queryAllByText(/Дата начала не сохранялась в этом плане/)).toHaveLength(0);
-    expect(screen.getByRole('button', { name: 'Проверить доступ к срокам' })).toBeInTheDocument();
+    expect(screen.queryAllByText(/Start date was not captured in this plan/)).toHaveLength(0);
+    expect(screen.getByRole('button', { name: "Check timeline access" })).toBeInTheDocument();
     expect(calls.filter(call => call.method === 'POST')).toHaveLength(0);
   });
 });

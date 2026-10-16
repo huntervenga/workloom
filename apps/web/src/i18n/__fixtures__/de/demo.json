@@ -1,0 +1,6 @@
+{
+  "greeting": "Hallo, {{name}}",
+  "tasks": { "one": "{{count}} Aufgabe", "other": "{{count}} Aufgaben" },
+  "title": "{{title}} · Beispiel",
+  "emptyValue": "Wert: {{value}}"
+}

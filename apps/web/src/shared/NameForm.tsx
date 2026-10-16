@@ -1,3 +1,4 @@
+import { useTranslation } from '../i18n';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Button, TextInput } from '@workloom/ui';
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -45,9 +46,12 @@ export function NameForm({
   notice,
   onSubmit,
 }: NameFormProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(sentName ?? initialName);
   const frozen = pending || locked || blocked || sentName !== null;
   const [fieldError, setFieldError] = useState<string | null>(null);
+  // Validation is pure: recompute visible copy after a locale switch without changing the draft.
+  const visibleFieldError = fieldError === null ? null : validate(name);
   const inputRef = useRef<HTMLInputElement>(null);
   const inputId = useId();
   const hintId = useId();
@@ -91,20 +95,20 @@ export function NameForm({
           maxLength={maxLength}
           readOnly={frozen}
           autoComplete="off"
-          aria-invalid={fieldError ? true : undefined}
-          aria-describedby={fieldError ? `${errorId} ${hintId}` : hintId}
+          aria-invalid={visibleFieldError ? true : undefined}
+          aria-describedby={visibleFieldError ? `${errorId} ${hintId}` : hintId}
           onChange={(event) => {
             setName(event.target.value);
             if (fieldError) setFieldError(null);
           }}
         />
-        {fieldError ? (
+        {visibleFieldError ? (
           <p id={errorId} className="mt-1.5 text-sm text-red-700">
-            {fieldError}
+            {visibleFieldError}
           </p>
         ) : null}
         <p id={hintId} className="mt-1.5 text-xs text-subtle">
-          До {maxLength} символов.
+          {t('common.nameLengthHint', { count: maxLength })}
         </p>
       </div>
 
@@ -117,10 +121,10 @@ export function NameForm({
 
       <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
         <Dialog.Close asChild>
-          <Button>{locked ? 'Скрыть' : 'Отмена'}</Button>
+          <Button>{locked ? t('common.hide') : t('common.cancel')}</Button>
         </Dialog.Close>
         <Button type="submit" variant="primary" aria-disabled={pending || blocked || undefined}>
-          {pending ? 'Сохраняем…' : locked ? 'Повторить отправку' : submitLabel}
+          {pending ? t('common.saving') : locked ? t('common.resend') : submitLabel}
         </Button>
       </div>
     </form>

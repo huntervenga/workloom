@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
 import { Badge, Button, Skeleton } from '@workloom/ui';
 import { Lock, Pencil } from 'lucide-react';
@@ -48,6 +49,7 @@ function withoutKey(sessions: Sessions, key: string): Sessions {
 export function TaskCustomFields({
   actorId, workspaceId, task, members, writable, mutation, onOpenTask, draftStore,
 }: TaskCustomFieldsProps) {
+  const { t } = useTranslation();
   const headingId = useId();
   const fieldsQuery = useTaskFieldsQuery(actorId, workspaceId, task.projectId);
   const fields = useMemo(() => fieldsQuery.data ?? [], [fieldsQuery.data]);
@@ -111,13 +113,13 @@ export function TaskCustomFields({
   };
 
   const reloadField = async (fieldId: string): Promise<FreshFieldData> => {
-    if (!isUuid(valuesTaskId)) throw new Error('Field values are not requested.');
+    if (!isUuid(valuesTaskId)) throw new Error(t('fields.taskCustomFields.fieldValuesNotRequested'));
     const [freshFields, freshValues] = await Promise.all([fieldsQuery.refetch(), valuesQuery.refetch()]);
     if (freshFields.isError || freshValues.isError || !freshFields.data || !freshValues.data) {
-      throw new Error('Field data could not be reloaded.');
+      throw new Error(t('fields.taskCustomFields.fieldDataReloadFailed'));
     }
     const field = freshFields.data.find((candidate) => sameId(candidate.id, fieldId));
-    if (!field) throw new Error('The field is no longer listed.');
+    if (!field) throw new Error(t('fields.taskCustomFields.fieldNoLongerListed'));
     return { field, value: freshValues.data.find((candidate) => sameId(candidate.fieldId, fieldId)) ?? null };
   };
 
@@ -165,12 +167,11 @@ export function TaskCustomFields({
   return (
     <section aria-labelledby={headingId} className="space-y-3">
       <h3 id={headingId} className="text-sm font-semibold text-ink">
-        Дополнительные поля
-      </h3>
+        {t('fields.taskCustomFields.customFields')}</h3>
       <div role="status">
         {confirmedFieldId !== null ? (
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
-            {confirmedField ? `Значение поля «${confirmedField.name}» сохранено.` : 'Значение поля сохранено.'}
+            {confirmedField ? t('fields.taskCustomFields.valueOfValueSaved', { p0: confirmedField.name }) : t('fields.taskCustomFields.fieldValueSaved')}
           </p>
         ) : null}
       </div>
@@ -178,7 +179,7 @@ export function TaskCustomFields({
 
       {fieldsQuery.isPending ? (
         <div role="status" className="space-y-2">
-          <span className="sr-only">Загрузка дополнительных полей</span>
+          <span className="sr-only">{t('fields.taskCustomFields.loadingCustomFields')}</span>
           <Skeleton className="h-10" />
           <Skeleton className="h-10" />
         </div>
@@ -193,13 +194,13 @@ export function TaskCustomFields({
       ) : (
         <>
           {fieldsQuery.isRefetchError ? (
-            <StaleNotice text="Не удалось обновить поля. Показана последняя загруженная версия." onRetry={() => void fieldsQuery.refetch()} />
+            <StaleNotice text={t('fields.taskCustomFields.couldNotRefreshFieldsShowingTheLastLoaded')} onRetry={() => void fieldsQuery.refetch()} />
           ) : null}
           {activeFields.length === 0 ? (
-            <p className="text-sm text-muted">В проекте нет дополнительных полей.</p>
+            <p className="text-sm text-muted">{t('fields.taskCustomFields.noCustomFieldsInThisProject')}</p>
           ) : valuesQuery.isPending ? (
             <div role="status" className="space-y-2">
-              <span className="sr-only">Загрузка значений полей</span>
+              <span className="sr-only">{t('fields.taskCustomFields.loadingFieldValues')}</span>
               <Skeleton className="h-10" />
               <Skeleton className="h-10" />
             </div>
@@ -215,7 +216,7 @@ export function TaskCustomFields({
             <>
               {valuesQuery.isRefetchError ? (
                 <StaleNotice
-                  text="Не удалось обновить значения полей. Показаны последние загруженные."
+                  text={t('fields.taskCustomFields.couldNotRefreshFieldValuesShowingTheLast')}
                   onRetry={() => void valuesQuery.refetch()}
                 />
               ) : null}
@@ -224,8 +225,8 @@ export function TaskCustomFields({
           )}
           {archivedFields.length > 0 ? (
             <details className="rounded-lg border border-line px-3 py-2 text-sm">
-              <summary className="cursor-pointer text-ink-soft">Поля в архиве ({archivedFields.length})</summary>
-              <p className="mt-2 text-xs text-muted">Новые значения не принимаются; сохранённые значения и история остаются.</p>
+              <summary className="cursor-pointer text-ink-soft">{t('fields.taskCustomFields.archivedFields')}{archivedFields.length})</summary>
+              <p className="mt-2 text-xs text-muted">{t('fields.taskCustomFields.newValuesAreNotAcceptedSavedValuesAnd')}</p>
               <ul className="mt-1 divide-y divide-line">{archivedFields.map(rowFor)}</ul>
             </details>
           ) : null}
@@ -277,32 +278,32 @@ interface FieldRowProps {
 }
 
 function FieldRow({ field, value, members, heldState, onEdit, history }: FieldRowProps) {
+  const { t } = useTranslation();
   return (
     <li className="flex flex-wrap items-start gap-x-3 gap-y-1 px-3 py-2.5">
       <div className="min-w-0 flex-1 space-y-0.5">
         <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium [overflow-wrap:anywhere] text-ink-soft">
           {field.name}
           {field.locked ? <Lock size={14} aria-hidden="true" className="shrink-0 text-muted" /> : null}
-          {field.archivedAt !== null ? <Badge tone="muted">В архиве</Badge> : null}
+          {field.archivedAt !== null ? <Badge tone="muted">{t('fields.taskCustomFields.archived')}</Badge> : null}
         </p>
         {value !== undefined ? (
           <div className="text-sm [overflow-wrap:anywhere] text-ink">
             <StoredValue field={field} value={value} members={members} />
           </div>
         ) : null}
-        {field.locked ? <p className="text-xs text-muted">Поле заблокировано: его значения сейчас нельзя изменить.</p> : null}
+        {field.locked ? <p className="text-xs text-muted">{t('fields.taskCustomFields.thisFieldIsLockedItsValuesCannotBe')}</p> : null}
         {heldState ? (
           <p className="text-xs font-medium text-amber-800">
-            {heldState === 'pending' ? 'Новое значение отправляется…' : 'Отправка нового значения не подтверждена.'}
+            {heldState === 'pending' ? t('fields.taskCustomFields.submittingANewValue') : t('fields.taskCustomFields.theNewValueSubmissionIsUnconfirmed')}
           </p>
         ) : null}
       </div>
       <div className="flex shrink-0 flex-wrap gap-1">
         {onEdit ? (
-          <Button size="sm" aria-label={`Изменить «${field.name}»`} onClick={onEdit}>
+          <Button size="sm" aria-label={t('fields.taskCustomFields.editValue', { p0: field.name })} onClick={onEdit}>
             <Pencil size={14} aria-hidden="true" />
-            Изменить
-          </Button>
+            {t('fields.taskCustomFields.edit')}</Button>
         ) : null}
         {history}
       </div>
@@ -311,12 +312,12 @@ function FieldRow({ field, value, members, heldState, onEdit, history }: FieldRo
 }
 
 function StaleNotice({ text, onRetry }: { text: string; onRetry: () => void }) {
+  const { t } = useTranslation();
   return (
     <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
       <span className="min-w-0 flex-1">{text}</span>
       <Button size="sm" onClick={onRetry}>
-        Повторить
-      </Button>
+        {t('fields.taskCustomFields.retry')}</Button>
     </div>
   );
 }
@@ -335,30 +336,26 @@ interface HeldCommandNoticeProps {
 
 /** The one unresolved value write; until it is resolved no other value is sent. */
 function HeldCommandNotice({ held, onTask, pending, field, onOpenField, onOpenTask, onRetry }: HeldCommandNoticeProps) {
-  const state = pending ? 'ещё отправляется' : 'ещё не подтверждено';
-  const subject = !onTask
-    ? 'Значение поля в другой задаче'
-    : field
-      ? `Значение поля «${field.name}»`
-      : 'Значение поля этой задачи';
+  const { t } = useTranslation();
+  const message = !onTask
+    ? pending ? 'fields.taskCustomFields.otherTaskPending' : 'fields.taskCustomFields.otherTaskUnconfirmed'
+    : field ? pending ? 'fields.taskCustomFields.namedFieldPending' : 'fields.taskCustomFields.namedFieldUnconfirmed'
+    : pending ? 'fields.taskCustomFields.taskFieldPending' : 'fields.taskCustomFields.taskFieldUnconfirmed';
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
       <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-        {subject} {state}. Пока его результат неизвестен, другие значения полей не отправляются.
-      </span>
+        {t(message, { fieldName: field?.name ?? '' })}</span>
       {!onTask ? (
         <Button size="sm" onClick={() => onOpenTask(held.taskId)}>
-          Открыть ту задачу
-        </Button>
+          {t('fields.taskCustomFields.openThatTask')}</Button>
       ) : field ? (
         <Button size="sm" onClick={() => onOpenField(field)}>
-          {`Открыть «${field.name}»`}
+          {t('fields.taskCustomFields.openValue', { p0: field.name })}
         </Button>
       ) : !pending ? (
         // The field is no longer listed, so the frozen value cannot be shown; the resend is unchanged.
         <Button size="sm" onClick={onRetry}>
-          Повторить отправку
-        </Button>
+          {t('fields.taskCustomFields.retrySubmission')}</Button>
       ) : null}
     </div>
   );

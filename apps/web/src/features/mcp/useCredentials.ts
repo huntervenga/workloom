@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { IssueLocalCredentialInput, LocalCredentialDto, LocalMcpScope } from '@workloom/contracts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -12,6 +13,7 @@ import { generateCredentialSecret, type CredentialSecret } from './secret';
 interface IssueVariables extends IdempotentVariables { input: IssueLocalCredentialInput }
 interface RevokeVariables extends IdempotentVariables { credentialId: string; input: { expectedRevision: number } }
 export function useCredentials(actorId: string, workspaceId: string) {
+  const { t } = useTranslation();
   const client = useQueryClient();
   const key = [...queryKeys.workspace(actorId, workspaceId), 'local-mcp-credentials'];
   const list = useQuery({ queryKey: key, queryFn: ({ signal }) => fetchLocalCredentials(actorId, workspaceId, signal), retry: false });
@@ -55,7 +57,7 @@ export function useCredentials(actorId: string, workspaceId: string) {
       materialRef.current = next; setMaterial(next);
       const prepared = preparedRef.current ?? { idempotencyKey: crypto.randomUUID(), input: { id: next.id, name: inputName, secretHash: next.secretHash, hashVersion: 1 as const, scopes: inputScopes, expiresInSeconds } };
       preparedRef.current = prepared; issue.mutate(prepared);
-    } catch { if (mounted.current) setLocalError('Безопасное создание ключа недоступно в этом браузере. Используйте современный браузер на localhost.'); }
+    } catch { if (mounted.current) setLocalError(t('mcp.secureCredentialGenerationIsUnavailableInThisBrowserUse')); }
     finally { generation.current = false; if (mounted.current) setGenerating(false); }
   }
   async function recover() {

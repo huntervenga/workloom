@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../i18n';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { useQuery } from '@tanstack/react-query';
 import { devActorListResponseSchema, meResponseSchema } from '@workloom/contracts';
@@ -27,6 +28,7 @@ async function startDevSession(actorId: string): Promise<void> {
 }
 
 export default function DevActorSwitcher({ currentActorId }: { currentActorId: string }) {
+  useTranslation();
   const { switchActor } = useSession();
   const actors = useQuery({
     queryKey: queryKeys.devActors,
@@ -44,7 +46,8 @@ export default function DevActorSwitcher({ currentActorId }: { currentActorId: s
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
         <Button variant="ghost" size="sm" className="mt-2 w-full justify-between text-amber-900 hover:bg-amber-100/70 hover:text-amber-950">
-          Сменить пользователя
+
+          {t('shell.switchUser')}
           <ChevronsUpDown size={16} aria-hidden="true" />
         </Button>
       </DropdownMenu.Trigger>
@@ -57,7 +60,8 @@ export default function DevActorSwitcher({ currentActorId }: { currentActorId: s
           className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-64 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-lg shadow-slate-900/5"
         >
           <DropdownMenu.Label className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-subtle uppercase">
-            Тестовые пользователи
+
+            {t('shell.testUsers')}
           </DropdownMenu.Label>
           <DropdownMenu.RadioGroup
             value={currentActorId}
@@ -80,7 +84,7 @@ export default function DevActorSwitcher({ currentActorId }: { currentActorId: s
               </DropdownMenu.RadioItem>
             ))}
           </DropdownMenu.RadioGroup>
-          <p className="px-2 pt-2 pb-1 text-[11px] leading-snug text-subtle">Доступно только при локальной разработке.</p>
+          <p className="px-2 pt-2 pb-1 text-[11px] leading-snug text-subtle">{t('shell.devOnly')}</p>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

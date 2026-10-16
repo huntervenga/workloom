@@ -16,7 +16,7 @@ describe('local cutoff entry', () => {
 describe('period cutoff display', () => {
   it('uses the named period zone, including its calendar date across a UTC midnight boundary', () => {
     const timestamp = '2026-10-19T22:30:00.000Z';
-    expect(formatPeriodCutoff(timestamp, 'Asia/Nicosia')).toMatch(/20.*10.*01:30/);
-    expect(formatPeriodCutoff(timestamp, 'Europe/Berlin')).toMatch(/20.*10.*00:30/);
+    expect(formatPeriodCutoff(timestamp, 'Asia/Nicosia')).toMatch(/10\/20\/26.*1:30 AM/);
+    expect(formatPeriodCutoff(timestamp, 'Europe/Berlin')).toMatch(/10\/20\/26.*12:30 AM/);
   });
 });

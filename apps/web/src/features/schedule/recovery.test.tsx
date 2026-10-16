@@ -28,9 +28,9 @@ it('resolves an explicitly opened recovery period to its authorized other-projec
   }
   const view = render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`/w/${alpha.id}/projects/${PROJECT_ID}?view=gantt`]}><Host /></MemoryRouter></QueryClientProvider>);
   try {
-    const dialog = await screen.findByRole('dialog', { name: 'Изменить сроки задач' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Проверить изменения' }));
-    const recovery = await within(dialog).findByRole('button', { name: 'Открыть период: период 1' });
+    const dialog = await screen.findByRole('dialog', { name: "Edit task dates" });
+    fireEvent.click(within(dialog).getByRole('button', { name: "Preview changes" }));
+    const recovery = await within(dialog).findByRole('button', { name: 'Open period: period 1' });
     expect(calls.filter(call => call.path.includes('/periods/'))).toHaveLength(0);
     fireEvent.click(recovery);
     await waitFor(() => expect(screen.getByLabelText('Текущий маршрут')).toHaveTextContent(`/w/${alpha.id}/projects/${PROJECT_B}/week?period=${PERIOD_B}`));

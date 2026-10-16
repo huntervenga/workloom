@@ -1,3 +1,5 @@
+import { message, type TranslationMessage } from '../../i18n';
+import { useTranslation } from '../../i18n';
 import type { ProjectColumnsDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, Skeleton } from '@workloom/ui';
 import { Columns3, Plus, RefreshCw } from 'lucide-react';
@@ -64,6 +66,7 @@ export interface FieldManagerDialogProps {
  * the dialog keeps a pending or unconfirmed write, its frozen form and the navigation guard.
  */
 export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage }: FieldManagerDialogProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const fields = useTaskFieldsQuery(actorId, workspaceId, projectId);
   const columns = useProjectColumnsQuery(actorId, workspaceId, projectId);
@@ -74,7 +77,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage 
   const updateColumns = useUpdateProjectColumnsMutation(actorId, workspaceId);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [announcement, setAnnouncement] = useState('');
+  const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
 
   const projectFields = fields.data ?? [];
   const activeFields = projectFields.filter((field) => field.archivedAt === null);
@@ -115,7 +118,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage 
 
   const onCreated = (field: TaskFieldDefinitionDto) => {
     setCreating(false);
-    setAnnouncement(`Колонка «${field.name}» добавлена.`);
+    setAnnouncement(message('fields.fieldManagerDialog.columnValueAdded', { p0: field.name }));
   };
   // A confirmed rejection that arrives after closing reopens with the sent values to correct.
   const createCallbacks = { onSuccess: onCreated, onError: () => setCreating(true) };
@@ -153,29 +156,25 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage 
 
   return (
     <DialogShell
-      title="Колонки проекта"
-      description="Дополнительные колонки таблицы задач этого проекта."
+      title={t('fields.fieldManagerDialog.projectColumns')}
+      description={t('fields.fieldManagerDialog.customColumnsForThisProjectSTaskTable')}
       trigger={
         <Button>
           <Columns3 size={16} aria-hidden="true" />
-          Колонки
-        </Button>
+          {t('fields.fieldManagerDialog.columns')}</Button>
       }
       open={open}
       onOpenChange={changeOpen}
     >
       <div className="mt-5 space-y-4">
         <p role="status" className="sr-only">
-          {announcement}
+          {announcement ? t(announcement.key, announcement.params) : null}
         </p>
         <p className="rounded-lg bg-canvas px-3 py-2.5 text-sm leading-relaxed text-ink-soft">
-          Порядок и видимость колонок общие для проекта. Изменения увидит вся команда.
-        </p>
+          {t('fields.fieldManagerDialog.columnOrderAndVisibilityAreSharedWithThe')}</p>
         {canManage ? null : (
           <p className="text-sm text-muted">
-            Менять колонки проекта могут владелец и администраторы пространства. Ваша роль позволяет только
-            просматривать их.
-          </p>
+            {t('fields.fieldManagerDialog.workspaceOwnersAndAdminsCanManageColumnsYou')}</p>
         )}
 
         {loadError ? (
@@ -191,19 +190,19 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage 
           />
         ) : !fields.data || !columns.data ? (
           <div role="status" className="space-y-2">
-            <span className="sr-only">Загрузка колонок</span>
+            <span className="sr-only">{t('fields.fieldManagerDialog.loadingColumns')}</span>
             <Skeleton className="h-8" />
             <Skeleton className="h-8" />
           </div>
         ) : (
           <>
             {retainedChanges.map((change) => (
-              <section key={change.key} aria-label="Неподтверждённое изменение колонки" className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-950">
-                <p>Колонка больше не отображается среди активных. Отправленное изменение сохранено для безопасного повтора.</p>
+              <section key={change.key} aria-label={t('fields.fieldManagerDialog.unconfirmedColumnChange')} className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-950">
+                <p>{t('fields.fieldManagerDialog.thisColumnIsNoLongerActiveTheSubmitted')}</p>
                 {change.command.pending ? (
-                  <p role="status">Дожидаемся ответа сервера…</p>
+                  <p role="status">{t('fields.fieldManagerDialog.waitingForTheServer')}</p>
                 ) : (
-                  <Button size="sm" onClick={change.retry}>Повторить отправку изменения колонки</Button>
+                  <Button size="sm" onClick={change.retry}>{t('fields.fieldManagerDialog.retryColumnChange')}</Button>
                 )}
               </section>
             ))}
@@ -220,7 +219,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage 
             />
 
             {editedField ? (
-              <section aria-label={`Колонка «${editedField.name}»`} className="rounded-xl border border-line p-3">
+              <section aria-label={t('fields.fieldManagerDialog.columnValue', { p0: editedField.name })} className="rounded-xl border border-line p-3">
                 <EditFieldPanel
                   key={editedField.id}
                   field={editedField}
@@ -231,18 +230,18 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage 
                   onRejected={() => setEditingId(editedField.id)}
                   onDone={(saved) => {
                     closeEdit();
-                    if (saved) setAnnouncement(`Колонка «${saved.name}» сохранена.`);
+                    if (saved) setAnnouncement(message('fields.fieldManagerDialog.columnValueSaved', { p0: saved.name }));
                   }}
                 />
               </section>
             ) : null}
 
             {showCreate ? (
-              <section aria-label="Новая колонка" className="rounded-xl border border-line p-3">
+              <section aria-label={t('fields.fieldManagerDialog.newColumn')} className="rounded-xl border border-line p-3">
                 <FieldDefinitionForm
                   mode="create"
                   initial={createError && createField.variables ? createValue(createField.variables) : EMPTY_FIELD}
-                  submitLabel="Добавить колонку"
+                  submitLabel={t('fields.fieldManagerDialog.addColumn')}
                   pending={ownCreate?.pending ?? false}
                   uncertain={ownCreate !== null && !ownCreate.pending}
                   sent={ownCreate ? createValue(ownCreate.variables) : null}
@@ -282,13 +281,12 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage 
                   }}
                 >
                   <Plus size={16} aria-hidden="true" />
-                  Добавить колонку
-                </Button>
+                  {t('fields.fieldManagerDialog.addColumn')}</Button>
                 {createElsewhere ? (
                   <p role="status" className="text-sm text-muted">
                     {create.pending
-                      ? 'Сохраняется новая колонка другого проекта. Добавить колонку здесь можно будет после ответа сервера.'
-                      : 'Новая колонка другого проекта не подтверждена. Сначала откройте тот проект и повторите отправку.'}
+                      ? t('fields.fieldManagerDialog.aColumnIsBeingCreatedInAnotherProject')
+                      : t('fields.fieldManagerDialog.aNewColumnInAnotherProjectIsUnconfirmed')}
                   </p>
                 ) : null}
               </div>
@@ -324,6 +322,7 @@ function EditFieldPanel({
   onRejected,
   onDone,
 }: EditFieldPanelProps) {
+  const { t } = useTranslation();
   const [base, setBase] = useState(field);
   const [reload, setReload] = useState<'idle' | 'loading' | 'done' | 'failed' | 'missing'>('idle');
 
@@ -359,22 +358,21 @@ function EditFieldPanel({
   const reloadAction = (
     <Button size="sm" aria-disabled={reload === 'loading' || undefined} onClick={() => void loadLatest()}>
       <RefreshCw size={16} aria-hidden="true" className={reload === 'loading' ? 'motion-safe:animate-spin' : undefined} />
-      Загрузить актуальную версию
-    </Button>
+      {t('fields.fieldManagerDialog.loadLatestVersion')}</Button>
   );
 
   const notice = otherTarget
     ? command.pending
-      ? 'Сохраняется изменение другой колонки. Эту колонку можно будет изменить после ответа сервера.'
-      : 'Изменение другой колонки не подтверждено. Сначала откройте ту колонку и повторите отправку.'
+      ? t('fields.fieldManagerDialog.anotherColumnIsBeingChangedWaitForThe')
+      : t('fields.fieldManagerDialog.anotherColumnChangeIsUnconfirmedOpenThatColumn')
     : optionBusy
-      ? 'Название и настройки можно будет сохранить после подтверждения изменения вариантов.'
+      ? t('fields.fieldManagerDialog.saveTheNameAndSettingsAfterTheOption')
       : reload === 'done'
-        ? `Загружена актуальная версия колонки «${base.name}». Ваши значения остались в полях — сохраните их, если они всё ещё нужны.`
+        ? t('fields.fieldManagerDialog.latestVersionOfValueLoadedYourValuesRemain', { p0: base.name })
         : reload === 'failed'
-          ? 'Не удалось загрузить актуальную версию колонки. Повторите попытку.'
+          ? t('fields.fieldManagerDialog.couldNotLoadTheLatestColumnTryAgain')
           : reload === 'missing'
-            ? 'Колонка больше недоступна.'
+            ? t('fields.fieldManagerDialog.thisColumnIsNoLongerAvailable')
             : null;
 
   const callbacks = { onSuccess: (saved: TaskFieldDefinitionDto) => onDone(saved), onError: onRejected };
@@ -388,7 +386,7 @@ function EditFieldPanel({
             ? updateValue(failed, base)
             : { name: base.name, type: base.type, historyEnabled: base.historyEnabled, locked: base.locked, options: [] }
         }
-        submitLabel="Сохранить"
+        submitLabel={t('fields.fieldManagerDialog.save')}
         pending={own?.pending ?? false}
         uncertain={own !== null && !own.pending}
         sent={own ? updateValue(own.variables, base) : null}

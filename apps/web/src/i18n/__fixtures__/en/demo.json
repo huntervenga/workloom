@@ -1,0 +1,8 @@
+{
+  "greeting": "Hello, {{name}}",
+  "tasks": { "one": "{{count}} task", "other": "{{count}} tasks" },
+  "fallbackTasks": { "one": "{{count}} task", "other": "{{count}} tasks" },
+  "onlyEnglish": "English fallback",
+  "title": "{{title}} · Demo",
+  "emptyValue": "Value: {{value}}"
+}

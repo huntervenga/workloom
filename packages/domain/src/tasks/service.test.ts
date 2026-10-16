@@ -277,11 +277,38 @@ describe('projects', () => {
     const statuses = await app.listStatuses(ctx(users.viewer), project.id);
 
     expect(statuses.map((status) => [status.name, status.group, status.position, status.revision])).toEqual([
-      ['К выполнению', 'todo', 0, 1],
-      ['В работе', 'in_progress', 1, 1],
-      ['Готово', 'done', 2, 1],
-      ['Отменено', 'cancelled', 3, 1],
+      ['To do', 'todo', 0, 1],
+      ['In progress', 'in_progress', 1, 1],
+      ['Done', 'done', 2, 1],
+      ['Cancelled', 'cancelled', 3, 1],
     ]);
+  });
+
+  it('replays an existing project receipt exactly and preserves its stored status names', async () => {
+    const h = harness();
+    const key = h.key();
+    const input = { name: 'Existing project' };
+    const original = await h.app.createProject(h.ctx(users.owner, key), input);
+    // This fixture represents rows created with the previous template or renamed by their owner.
+    const names = ['К выполнению', 'Research', 'Готово', 'Отменено'];
+    const statuses = await h.app.listStatuses(h.ctx(users.owner), original.id);
+    for (const [index, status] of statuses.entries()) {
+      h.db.state.statuses.set(status.id, { ...status, name: names[index] as string });
+    }
+    const storedBefore = JSON.stringify([...h.db.state.idempotency]);
+    const statusesBefore = JSON.stringify([...h.db.state.statuses]);
+    const eventCount = h.events.length;
+
+    const replay = await h.app.createProject(h.ctx(users.owner, key), input);
+
+    expect(JSON.stringify(replay)).toBe(JSON.stringify(original));
+    expect(JSON.stringify([...h.db.state.idempotency])).toBe(storedBefore);
+    expect(JSON.stringify([...h.db.state.statuses])).toBe(statusesBefore);
+    expect(h.events).toHaveLength(eventCount);
+    expect(h.db.state.projects.size).toBe(1);
+    const next = await h.app.createProject(h.owner(), { name: 'New project' });
+    expect((await h.app.listStatuses(h.ctx(users.owner), next.id)).map(status => status.name)).toEqual(['To do', 'In progress', 'Done', 'Cancelled']);
+    expect((await h.app.listStatuses(h.ctx(users.owner), original.id)).map(status => status.name)).toEqual(names);
   });
 
   it('rejects new tasks in an archived project', async () => {

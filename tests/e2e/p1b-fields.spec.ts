@@ -10,6 +10,7 @@ import {
   type TaskFieldDefinitionDto, type TaskFieldType,
 } from '@workloom/contracts';
 
+import { openProjectActions, showAllColumns } from './support/disclosures.js';
 import { loadLiveData } from './support/live-api.js';
 
 function isCall(response: Response, method: string, path: string) {
@@ -22,7 +23,7 @@ async function parsed<T>(response: Response, status: number, schema: { parse(val
 }
 
 async function closeDialog(dialog: Locator) {
-  await dialog.getByRole('button', { name: 'Закрыть', exact: true }).first().click();
+  await dialog.getByRole('button', { name: "Close", exact: true }).first().click();
   await expect(dialog).toHaveCount(0);
 }
 
@@ -53,20 +54,21 @@ async function setup(request: APIRequestContext, baseURL: string | undefined, la
 }
 
 async function openManager(page: Page) {
-  await page.getByRole('main').getByRole('button', { name: 'Колонки', exact: true }).click();
-  const manager = page.getByRole('dialog', { name: 'Колонки проекта', exact: true });
+  await openProjectActions(page);
+  await page.getByRole('main').getByRole('button', { name: "Columns", exact: true }).click();
+  const manager = page.getByRole('dialog', { name: "Project columns", exact: true });
   await expect(manager).toBeVisible();
   return manager;
 }
 
 async function createFieldUI(page: Page, manager: Locator, prefix: string, name: string, type: TaskFieldType) {
-  await manager.getByRole('button', { name: 'Добавить колонку', exact: true }).click();
-  const form = manager.getByRole('region', { name: 'Новая колонка', exact: true });
-  await form.getByLabel('Название колонки', { exact: true }).fill(name);
-  await form.getByLabel('Тип поля', { exact: true }).selectOption(type);
-  await expect(form.getByRole('checkbox', { name: 'Записывать историю', exact: true })).toBeChecked();
+  await manager.getByRole('button', { name: "Add column", exact: true }).click();
+  const form = manager.getByRole('region', { name: "New column", exact: true });
+  await form.getByLabel("Column name", { exact: true }).fill(name);
+  await form.getByLabel("Field type", { exact: true }).selectOption(type);
+  await expect(form.getByRole('checkbox', { name: "Record history", exact: true })).toBeChecked();
   const response = page.waitForResponse((item) => isCall(item, 'POST', `${prefix}/fields`));
-  await form.getByRole('button', { name: 'Добавить колонку', exact: true }).click();
+  await form.getByRole('button', { name: "Add column", exact: true }).click();
   const field = (await parsed(await response, 201, taskFieldDefinitionResponseSchema)).data;
   expect(field).toMatchObject({ name, type, historyEnabled: true, locked: false });
   await expect(form).toHaveCount(0);
@@ -75,13 +77,13 @@ async function createFieldUI(page: Page, manager: Locator, prefix: string, name:
 }
 
 async function editValue(page: Page, drawer: Locator, prefix: string, taskId: string, field: TaskFieldDefinitionDto, value: string) {
-  await drawer.getByRole('button', { name: `Изменить «${field.name}»`, exact: true }).click();
-  const editor = page.getByRole('dialog', { name: `Значение поля «${field.name}»`, exact: true });
+  await drawer.getByRole('button', { name: `Edit “${field.name}”`, exact: true }).click();
+  const editor = page.getByRole('dialog', { name: `Value of “${field.name}”`, exact: true });
   const control = editor.getByLabel(field.name, { exact: true });
   if (field.type === 'boolean') await control.selectOption(value);
   else await control.fill(value);
   const response = page.waitForResponse((item) => isCall(item, 'PUT', `${prefix}/tasks/${taskId}/field-values/${field.id}`));
-  await editor.getByRole('button', { name: 'Сохранить значение', exact: true }).click();
+  await editor.getByRole('button', { name: "Save value", exact: true }).click();
   const result = (await parsed(await response, 200, taskFieldValueResponseSchema)).data;
   await expect(editor).toHaveCount(0);
   return result;
@@ -129,8 +131,8 @@ async function expectNestedOverlay(page: Page, topDialog: Locator) {
 }
 
 async function expectHistoryCloseSeparated(editor: Locator, field: TaskFieldDefinitionDto) {
-  const history = await editor.getByRole('button', { name: `История «${field.name}»`, exact: true }).boundingBox();
-  const close = await editor.getByRole('button', { name: 'Закрыть', exact: true }).last().boundingBox();
+  const history = await editor.getByRole('button', { name: `“${field.name}” history`, exact: true }).boundingBox();
+  const close = await editor.getByRole('button', { name: "Close", exact: true }).last().boundingBox();
   if (!history || !close) throw new Error('History and Close actions must have visible boxes.');
   expect(
     history.x + history.width <= close.x || close.x + close.width <= history.x ||
@@ -150,12 +152,13 @@ test.describe('P1b desktop 1440', () => {
     const number = await createFieldUI(page, manager, fixture.prefix, 'Число проверок', 'number');
     const boolean = await createFieldUI(page, manager, fixture.prefix, 'Готово к запуску', 'boolean');
     await writeFile(info.outputPath('p1b-preview.json'), JSON.stringify({ path: fixture.path, taskId: fixture.task.id, projectId: fixture.project.id, fields: [text, number, boolean].map((field) => ({ id: field.id, name: field.name })) }, null, 2));
-    await manager.getByRole('button', { name: `Изменить колонку «${text.name}»`, exact: true }).click();
-    const settings = manager.getByRole('region', { name: `Колонка «${text.name}»`, exact: true });
-    await expect(settings.getByRole('checkbox', { name: 'Записывать историю', exact: true })).toBeChecked();
-    await expect(settings.getByRole('checkbox', { name: 'Заблокировать значения', exact: true })).not.toBeChecked();
+    await manager.getByRole('button', { name: `Edit column “${text.name}”`, exact: true }).click();
+    const settings = manager.getByRole('region', { name: `Column “${text.name}”`, exact: true });
+    await expect(settings.getByRole('checkbox', { name: "Record history", exact: true })).toBeChecked();
+    await expect(settings.getByRole('checkbox', { name: "Lock values", exact: true })).not.toBeChecked();
     await page.screenshot({ path: info.outputPath('p1b-desktop-column-manager.png') });
     await closeDialog(manager);
+    await showAllColumns(page);
 
     await page.goto(`${fixture.path}?task=${fixture.task.id}`);
     const drawer = page.getByRole('dialog', { name: fixture.task.title, exact: true });
@@ -169,9 +172,9 @@ test.describe('P1b desktop 1440', () => {
     expect(second.revision).toBe(first.revision + 1);
     await page.reload();
     await expect(drawer.getByText('Команда проверила пилот', { exact: true })).toBeVisible();
-    await drawer.getByRole('button', { name: `История «${text.name}»`, exact: true }).click();
-    const history = page.getByRole('dialog', { name: `История поля «${text.name}»`, exact: true });
-    await expect(history.getByRole('list', { name: `Изменения поля «${text.name}»`, exact: true }).getByRole('listitem')).toHaveCount(2);
+    await drawer.getByRole('button', { name: `“${text.name}” history`, exact: true }).click();
+    const history = page.getByRole('dialog', { name: `History of “${text.name}”`, exact: true });
+    await expect(history.getByRole('list', { name: `Changes to “${text.name}”`, exact: true }).getByRole('listitem')).toHaveCount(2);
     await expect(history).toContainText('Проверить совместную работу');
     await expect(history).toContainText('Команда проверила пилот');
     await expectNestedOverlay(page, history);
@@ -180,7 +183,7 @@ test.describe('P1b desktop 1440', () => {
     await closeDialog(drawer);
 
     const table = page.getByRole('main').getByRole('table');
-    const estimate = table.getByRole('columnheader', { name: 'Оценка задачи', exact: true });
+    const estimate = table.getByRole('columnheader', { name: "Team estimate", exact: true });
     await expectInsideTableViewport(estimate);
     await expectInsideTableViewport(table.locator('tfoot').getByRole('cell').last());
     await table.evaluate((element) => { if (element.parentElement) element.parentElement.scrollLeft = element.parentElement.scrollWidth; });
@@ -197,8 +200,8 @@ test.describe('P1b desktop 1440', () => {
     // The editor has an old, still-unlocked definition. Another real UI page locks it while
     // this unsent draft stays open. A genuine PUT must be refused by current server policy.
     await page.goto(`${fixture.path}?task=${fixture.task.id}`);
-    await drawer.getByRole('button', { name: `Изменить «${text.name}»`, exact: true }).click();
-    const editor = page.getByRole('dialog', { name: `Значение поля «${text.name}»`, exact: true });
+    await drawer.getByRole('button', { name: `Edit “${text.name}”`, exact: true }).click();
+    const editor = page.getByRole('dialog', { name: `Value of “${text.name}”`, exact: true });
     await editor.getByLabel(text.name, { exact: true }).fill('Эта правка заблокирована');
     await expectHistoryCloseSeparated(editor, text);
     await expectNestedOverlay(page, editor);
@@ -206,19 +209,19 @@ test.describe('P1b desktop 1440', () => {
     const other = await page.context().newPage();
     await other.goto(fixture.path);
     const otherManager = await openManager(other);
-    await otherManager.getByRole('button', { name: `Изменить колонку «${text.name}»`, exact: true }).click();
-    const otherSettings = otherManager.getByRole('region', { name: `Колонка «${text.name}»`, exact: true });
-    await otherSettings.getByRole('checkbox', { name: 'Заблокировать значения', exact: true }).check();
+    await otherManager.getByRole('button', { name: `Edit column “${text.name}”`, exact: true }).click();
+    const otherSettings = otherManager.getByRole('region', { name: `Column “${text.name}”`, exact: true });
+    await otherSettings.getByRole('checkbox', { name: "Lock values", exact: true }).check();
     const lockedResponse = other.waitForResponse((item) => isCall(item, 'PATCH', `${fixture.prefix}/fields/${text.id}`));
-    await otherSettings.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await otherSettings.getByRole('button', { name: "Save", exact: true }).click();
     expect((await parsed(await lockedResponse, 200, taskFieldDefinitionResponseSchema)).data.locked).toBe(true);
     await other.close();
     const refused = page.waitForResponse((item) => isCall(item, 'PUT', `${fixture.prefix}/tasks/${fixture.task.id}/field-values/${text.id}`));
-    await editor.getByRole('button', { name: 'Сохранить значение', exact: true }).click();
+    await editor.getByRole('button', { name: "Save value", exact: true }).click();
     const refusal = await refused;
     expect(refusal.status(), await refusal.text()).toBe(409);
     expect((await refusal.json() as { error: { code: string } }).error.code).toBe('FIELD_LOCKED');
-    await expect(editor).toContainText('заблокировано');
+    await expect(editor).toContainText('locked');
     await page.screenshot({ path: info.outputPath('p1b-desktop-lock-refusal.png') });
     const persistedResponse = await request.get(`${fixture.prefix}/tasks/${fixture.task.id}/field-values`);
     expect(persistedResponse.status()).toBe(200);
@@ -244,18 +247,19 @@ test.describe('P1b mobile 390', () => {
     if (!number) throw new Error('Number field missing.');
     await page.goto(fixture.path);
     const manager = await openManager(page);
-    await manager.getByRole('button', { name: `Изменить колонку «${number.name}»`, exact: true }).click();
-    const settings = manager.getByRole('region', { name: `Колонка «${number.name}»`, exact: true });
-    await settings.getByRole('checkbox', { name: 'Заблокировать значения', exact: true }).scrollIntoViewIfNeeded();
-    await expect(settings.getByRole('checkbox', { name: 'Записывать историю', exact: true })).toBeVisible();
+    await manager.getByRole('button', { name: `Edit column “${number.name}”`, exact: true }).click();
+    const settings = manager.getByRole('region', { name: `Column “${number.name}”`, exact: true });
+    await settings.getByRole('checkbox', { name: "Lock values", exact: true }).scrollIntoViewIfNeeded();
+    await expect(settings.getByRole('checkbox', { name: "Record history", exact: true })).toBeVisible();
     await noPageOverflow(page);
     await page.screenshot({ path: info.outputPath('p1b-mobile-column-manager.png') });
     await closeDialog(manager);
+    await showAllColumns(page);
     await page.goto(`${fixture.path}?task=${fixture.task.id}`);
     const drawer = page.getByRole('dialog', { name: fixture.task.title, exact: true });
-    const fieldButton = drawer.getByRole('button', { name: `Изменить «${number.name}»`, exact: true });
+    const fieldButton = drawer.getByRole('button', { name: `Edit “${number.name}”`, exact: true });
     await fieldButton.scrollIntoViewIfNeeded();
-    const save = drawer.getByRole('button', { name: 'Сохранить', exact: true });
+    const save = drawer.getByRole('button', { name: "Save", exact: true });
     const footer = save.locator('xpath=..');
     const geometry = await fieldButton.evaluate((button) => {
       const rect = button.getBoundingClientRect();
@@ -271,9 +275,9 @@ test.describe('P1b mobile 390', () => {
     const value = await editValue(page, drawer, fixture.prefix, fixture.task.id, number, '7');
     expect(value.value).toEqual({ type: 'number', value: 7 });
     await page.reload();
-    await drawer.getByRole('button', { name: `История «${number.name}»`, exact: true }).click();
-    const history = page.getByRole('dialog', { name: `История поля «${number.name}»`, exact: true });
-    await expect(history.getByRole('list', { name: `Изменения поля «${number.name}»`, exact: true }).getByRole('listitem')).toHaveCount(1);
+    await drawer.getByRole('button', { name: `“${number.name}” history`, exact: true }).click();
+    const history = page.getByRole('dialog', { name: `History of “${number.name}”`, exact: true });
+    await expect(history.getByRole('list', { name: `Changes to “${number.name}”`, exact: true }).getByRole('listitem')).toHaveCount(1);
     await expect(history).toContainText('7');
     await expectNestedOverlay(page, history);
     await noPageOverflow(page);

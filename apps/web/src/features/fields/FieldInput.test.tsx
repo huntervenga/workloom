@@ -21,7 +21,7 @@ function option(id: string, name: string, position: number, archived = false): T
   return { id, name, color: '#3366ff', position, revision: 1, archivedAt: archived ? '2026-10-02T00:00:00.000Z' : null };
 }
 
-function makeField(type: TaskFieldType, name = 'Поле', options: TaskFieldOptionDto[] = []): TaskFieldDefinitionDto {
+function makeField(type: TaskFieldType, name = "Field", options: TaskFieldOptionDto[] = []): TaskFieldDefinitionDto {
   return {
     id: '5f0c2c1e-7a1b-4c3d-8e9f-000000000001',
     workspaceId: WORKSPACE,
@@ -83,8 +83,8 @@ describe('FieldInput', () => {
 
     expect(screen.getByRole('group', { name: 'Метки' })).toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: /Гамма/ })).not.toBeInTheDocument();
-    const archived = screen.getByRole('checkbox', { name: 'Бета (в архиве)' });
-    const unknown = screen.getByRole('checkbox', { name: 'Вариант недоступен' });
+    const archived = screen.getByRole('checkbox', { name: "Бета (archived)" });
+    const unknown = screen.getByRole('checkbox', { name: "Option unavailable" });
     expect(archived).toBeChecked();
     expect(unknown).toBeChecked();
 
@@ -96,7 +96,7 @@ describe('FieldInput', () => {
     await user.click(unknown);
     expect(lastParsed(tagsField, onDraft)).toEqual({ ok: true, value: { type: 'multi_select', value: [ALPHA, BETA] } });
 
-    await user.click(screen.getByRole('button', { name: 'Очистить: Метки' }));
+    await user.click(screen.getByRole('button', { name: "Clear: Метки" }));
     expect(lastParsed(tagsField, onDraft)).toEqual({ ok: true, value: { type: 'multi_select', value: null } });
   });
 
@@ -105,10 +105,10 @@ describe('FieldInput', () => {
     const onDraft = vi.fn<(draft: FieldDraft) => void>();
     render(<Harness field={tagsField} initial={{ type: 'multi_select', value: [BETA] }} onDraft={onDraft} />);
 
-    const archived = screen.getByRole('checkbox', { name: 'Бета (в архиве)' });
+    const archived = screen.getByRole('checkbox', { name: "Бета (archived)" });
     await user.click(archived);
     expect(lastParsed(tagsField, onDraft)).toEqual({ ok: true, value: { type: 'multi_select', value: [] } });
-    expect(screen.queryByRole('checkbox', { name: 'Бета (в архиве)' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: "Бета (archived)" })).not.toBeInTheDocument();
   });
 
   it('keeps a person who left the workspace until explicitly unchecked', async () => {
@@ -118,7 +118,7 @@ describe('FieldInput', () => {
     const saved: TaskFieldData = { type: 'person', value: [ANNA, GONE] };
     render(<Harness field={field} initial={draftFromFieldValue(field, saved)} originalValue={saved} onDraft={onDraft} />);
 
-    const gone = screen.getByRole('checkbox', { name: 'Участник недоступен' });
+    const gone = screen.getByRole('checkbox', { name: "Member unavailable" });
     expect(gone).toBeChecked();
     await user.click(gone);
     expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'person', value: [ANNA] } });
@@ -130,13 +130,13 @@ describe('FieldInput', () => {
     const field = makeField('duration', 'Время на ревью');
     render(<Harness field={field} initial={draftFromFieldValue(field, null)} error="Проверьте значение." onDraft={onDraft} />);
 
-    const input = screen.getByRole('textbox', { name: 'Время на ревью, часы' });
+    const input = screen.getByRole('textbox', { name: "Время на ревью, hours" });
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(input).toHaveAccessibleDescription(/Проверьте значение\./);
     await user.type(input, '1,5');
     expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'duration', value: 90 } });
 
-    await user.click(screen.getByRole('button', { name: 'Очистить: Время на ревью, часы' }));
+    await user.click(screen.getByRole('button', { name: "Clear: Время на ревью, hours" }));
     expect(input).toHaveValue('');
     expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'duration', value: null } });
   });
@@ -149,13 +149,13 @@ describe('FieldValueDisplay', () => {
 
   it('tells a cleared value apart from false, 0 and an empty choice', () => {
     show(makeField('boolean'), { type: 'boolean', value: false });
-    expect(screen.getByText('Нет')).toBeInTheDocument();
+    expect(screen.getByText("No")).toBeInTheDocument();
     show(makeField('number'), { type: 'number', value: 0 });
     expect(screen.getByText('0')).toBeInTheDocument();
     show(tagsField, { type: 'multi_select', value: [] });
-    expect(screen.getByText('Ничего не выбрано')).toBeInTheDocument();
+    expect(screen.getByText("Nothing selected")).toBeInTheDocument();
     show(makeField('boolean'), null, true);
-    expect(screen.getByText('Не задано')).toBeInTheDocument();
+    expect(screen.getByText("Not set")).toBeInTheDocument();
     expect(screen.getByText('—')).toHaveAttribute('aria-hidden', 'true');
   });
 
@@ -163,8 +163,8 @@ describe('FieldValueDisplay', () => {
     show(makeField('date'), { type: 'date', value: '2026-01-01' });
     expect(screen.getByText('01.01.2026')).toHaveAttribute('dateTime', '2026-01-01');
     show(tagsField, { type: 'multi_select', value: [BETA, MISSING] });
-    expect(screen.getByText('Бета (в архиве)')).toBeInTheDocument();
-    expect(screen.getByText('Вариант недоступен')).toBeInTheDocument();
+    expect(screen.getByText("Бета (archived)")).toBeInTheDocument();
+    expect(screen.getByText("Option unavailable")).toBeInTheDocument();
   });
 
   it('links only safe http(s) addresses, even for hostile stored data', () => {

@@ -27,4 +27,16 @@ describe('upload selection identity', () => {
     expect(view.result.current.upload.file).toBeNull();
     view.unmount(); client.clear();
   });
+  it('keeps unknown native file failures out of user copy and cannot stage the failed selection', async () => {
+    const { calls } = installFakeApi({}); const client = createQueryClient({ retry: false });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const view = renderHook(() => useImportWorkspace(anna.id, alpha.id, PROJECT_ID, '', vi.fn()), { wrapper });
+    await act(async () => { await view.result.current.chooseFile({ name: 'unreadable.csv', size: 20, arrayBuffer: async () => { throw new Error('native diagnostic containing private path'); } }); });
+    expect(view.result.current.fileError).toBe('Could not read the file.');
+    expect(view.result.current.upload.file).toBeNull();
+    act(() => view.result.current.stage());
+    expect(calls).toHaveLength(0);
+    view.unmount(); client.clear();
+  });
+
 });

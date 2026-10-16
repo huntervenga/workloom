@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../i18n';
 import { Button, StateCard } from '@workloom/ui';
 import { RefreshCw, TriangleAlert } from 'lucide-react';
 import { describeError, type ErrorSubject } from '../lib/errors';
@@ -12,6 +13,7 @@ export interface QueryErrorStateProps {
 }
 
 export function QueryErrorState({ error, subject, onRetry, retrying = false, headingLevel, className }: QueryErrorStateProps) {
+  useTranslation();
   const described = describeError(error, subject);
   return (
     <StateCard
@@ -31,14 +33,15 @@ export function QueryErrorState({ error, subject, onRetry, retrying = false, hea
             }}
           >
             <RefreshCw size={16} aria-hidden="true" className={retrying ? 'motion-safe:animate-spin' : undefined} />
-            {retrying ? 'Повторяем…' : 'Повторить'}
+            {retrying ? t('common.retrying') : t('common.retry')}
           </Button>
         ) : null
       }
       footnote={
         described.requestId ? (
           <>
-            Код запроса: <code className="font-mono">{described.requestId}</code>
+
+            {t('common.requestId')} <code className="font-mono">{described.requestId}</code>
           </>
         ) : null
       }

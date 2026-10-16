@@ -77,41 +77,41 @@ describe('pending and uncertain name forms', () => {
       },
     });
     const { user } = renderApp(`/w/${alpha.id}/projects`);
-    expect(await screen.findByRole('heading', { name: 'Проектов пока нет' })).toBeInTheDocument();
-    const opener = screen.getByRole('button', { name: 'Новый проект' });
-    const dialog = () => screen.getByRole('dialog', { name: 'Новый проект' });
-    const field = () => within(dialog()).getByLabelText('Название проекта');
+    expect(await screen.findByRole('heading', { name: "No projects yet" })).toBeInTheDocument();
+    const opener = screen.getByRole('button', { name: "New project" });
+    const dialog = () => screen.getByRole('dialog', { name: "New project" });
+    const field = () => within(dialog()).getByLabelText("Project name");
 
     await user.click(opener);
-    await user.type(await screen.findByLabelText('Название проекта'), '  Запуск сайта ');
-    await user.click(within(dialog()).getByRole('button', { name: 'Создать проект' }));
-    expect(await within(dialog()).findByRole('button', { name: 'Сохраняем…' })).toBeInTheDocument();
+    await user.type(await screen.findByLabelText("Project name"), '  Запуск сайта ');
+    await user.click(within(dialog()).getByRole('button', { name: "Create project" }));
+    expect(await within(dialog()).findByRole('button', { name: "Saving…" })).toBeInTheDocument();
     expect(field()).toHaveValue('Запуск сайта');
     expect(field()).toHaveAttribute('readonly');
 
     await user.type(field(), ' и блог');
-    await user.click(within(dialog()).getByRole('button', { name: 'Сохраняем…' }));
+    await user.click(within(dialog()).getByRole('button', { name: "Saving…" }));
     expect(field()).toHaveValue('Запуск сайта');
     expect(writesOf(calls, 'POST').bodies).toHaveLength(1);
 
     // Closing keeps the pending command; reopening shows what was sent.
-    await user.click(within(dialog()).getByRole('button', { name: 'Отмена' }));
+    await user.click(within(dialog()).getByRole('button', { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await user.click(opener);
-    expect(await screen.findByLabelText('Название проекта')).toHaveValue('Запуск сайта');
+    expect(await screen.findByLabelText("Project name")).toHaveValue('Запуск сайта');
     expect(field()).toHaveAttribute('readonly');
 
     answer.lose();
-    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Нет связи с сервером');
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Cannot reach the server');
     expect(field()).toHaveValue('Запуск сайта');
     expect(field()).toHaveAttribute('readonly');
 
-    await user.click(within(dialog()).getByRole('button', { name: 'Скрыть' }));
+    await user.click(within(dialog()).getByRole('button', { name: "Hide" }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await user.click(opener);
-    expect(await screen.findByLabelText('Название проекта')).toHaveValue('Запуск сайта');
+    expect(await screen.findByLabelText("Project name")).toHaveValue('Запуск сайта');
 
-    await user.click(within(dialog()).getByRole('button', { name: 'Повторить отправку' }));
+    await user.click(within(dialog()).getByRole('button', { name: "Retry same change" }));
     expect(await screen.findByRole('link', { name: 'Запуск сайта' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
@@ -155,13 +155,13 @@ describe('pending and uncertain name forms', () => {
       );
     }
     const { user } = renderWithClient(<Page />);
-    const dialog = () => screen.getByRole('dialog', { name: 'Переименовать раздел' });
-    const field = () => within(dialog()).getByLabelText('Название раздела');
+    const dialog = () => screen.getByRole('dialog', { name: "Rename section" });
+    const field = () => within(dialog()).getByLabelText("Section name");
     const open = async (name: string) => {
       await user.click(screen.getByRole('button', { name: `Открыть «${name}»` }));
-      return screen.findByRole('dialog', { name: 'Переименовать раздел' });
+      return screen.findByRole('dialog', { name: "Rename section" });
     };
-    const close = async (label: 'Отмена' | 'Скрыть') => {
+    const close = async (label: "Cancel" | "Hide") => {
       await user.click(within(dialog()).getByRole('button', { name: label }));
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     };
@@ -169,38 +169,38 @@ describe('pending and uncertain name forms', () => {
     await open('Дизайн');
     await user.clear(field());
     await user.type(field(), ' Дизайн и вёрстка  ');
-    await user.click(within(dialog()).getByRole('button', { name: 'Сохранить' }));
-    expect(await within(dialog()).findByRole('button', { name: 'Сохраняем…' })).toBeInTheDocument();
+    await user.click(within(dialog()).getByRole('button', { name: "Save" }));
+    expect(await within(dialog()).findByRole('button', { name: "Saving…" })).toBeInTheDocument();
     expect(field()).toHaveValue('Дизайн и вёрстка');
     expect(field()).toHaveAttribute('readonly');
-    await close('Отмена');
+    await close("Cancel");
 
     // Another section is not shown with the pending name and cannot be sent.
     await open('Аналитика');
     expect(field()).toHaveValue('Аналитика');
     expect(field()).toHaveAttribute('readonly');
-    expect(within(dialog()).getByRole('status')).toHaveTextContent('Сохраняется переименование другого раздела');
-    await user.click(within(dialog()).getByRole('button', { name: 'Сохранить' }));
-    await close('Отмена');
+    expect(within(dialog()).getByRole('status')).toHaveTextContent('Another section is being renamed');
+    await user.click(within(dialog()).getByRole('button', { name: "Save" }));
+    await close("Cancel");
 
     await open('Дизайн');
     expect(field()).toHaveValue('Дизайн и вёрстка');
     expect(field()).toHaveAttribute('readonly');
 
     answer.lose();
-    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Нет связи с сервером');
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Cannot reach the server');
     expect(field()).toHaveValue('Дизайн и вёрстка');
     expect(field()).toHaveAttribute('readonly');
-    await close('Скрыть');
+    await close("Hide");
 
     await open('Аналитика');
     expect(field()).toHaveValue('Аналитика');
-    expect(within(dialog()).getByRole('status')).toHaveTextContent('Переименование другого раздела не подтверждено');
-    await close('Отмена');
+    expect(within(dialog()).getByRole('status')).toHaveTextContent('Another section rename is unconfirmed');
+    await close("Cancel");
 
     await open('Дизайн');
     expect(field()).toHaveValue('Дизайн и вёрстка');
-    await user.click(within(dialog()).getByRole('button', { name: 'Повторить отправку' }));
+    await user.click(within(dialog()).getByRole('button', { name: "Retry same change" }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
     const { bodies, keys } = writesOf(calls, 'PATCH');
@@ -228,43 +228,43 @@ describe('pending and uncertain name forms', () => {
       },
     });
     const { user } = renderWithClient(<TagManagerDialog actorId={anna.id} workspaceId={alpha.id} canEdit />);
-    const dialog = () => screen.getByRole('dialog', { name: 'Теги пространства' });
-    const form = () => within(within(dialog()).getByRole('region', { name: 'Новый тег' }));
+    const dialog = () => screen.getByRole('dialog', { name: "Workspace tags" });
+    const form = () => within(within(dialog()).getByRole('region', { name: "New tag" }));
     const expectSent = () => {
-      expect(form().getByLabelText('Название тега')).toHaveValue('Срочно');
-      expect(form().getByLabelText('Название тега')).toHaveAttribute('readonly');
-      expect(form().getByLabelText('Цвет')).toBeChecked();
-      expect(form().getByLabelText('Цвет')).toBeDisabled();
-      expect(form().getByLabelText('Цвет тега')).toHaveValue('#ff0000');
-      expect(form().getByLabelText('Цвет тега')).toBeDisabled();
+      expect(form().getByLabelText("Tag name")).toHaveValue('Срочно');
+      expect(form().getByLabelText("Tag name")).toHaveAttribute('readonly');
+      expect(form().getByLabelText("Color")).toBeChecked();
+      expect(form().getByLabelText("Color")).toBeDisabled();
+      expect(form().getByLabelText("Tag color")).toHaveValue('#ff0000');
+      expect(form().getByLabelText("Tag color")).toBeDisabled();
     };
 
-    await user.click(screen.getByRole('button', { name: 'Теги' }));
-    expect(await within(dialog()).findByText('Тегов пока нет.')).toBeInTheDocument();
-    await user.click(within(dialog()).getByRole('button', { name: 'Новый тег' }));
-    await user.type(form().getByLabelText('Название тега'), '  Срочно ');
-    await user.click(form().getByLabelText('Цвет'));
-    fireEvent.change(form().getByLabelText('Цвет тега'), { target: { value: '#ff0000' } });
-    await user.click(form().getByRole('button', { name: 'Создать тег' }));
-    expect(await form().findByRole('button', { name: 'Сохраняем…' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: "Tags" }));
+    expect(await within(dialog()).findByText("No tags yet.")).toBeInTheDocument();
+    await user.click(within(dialog()).getByRole('button', { name: "New tag" }));
+    await user.type(form().getByLabelText("Tag name"), '  Срочно ');
+    await user.click(form().getByLabelText("Color"));
+    fireEvent.change(form().getByLabelText("Tag color"), { target: { value: '#ff0000' } });
+    await user.click(form().getByRole('button', { name: "Create tag" }));
+    expect(await form().findByRole('button', { name: "Saving…" })).toBeInTheDocument();
     expectSent();
 
-    await user.click(form().getByRole('button', { name: 'Отмена' }));
-    await user.click(within(dialog()).getByRole('button', { name: 'Новый тег' }));
+    await user.click(form().getByRole('button', { name: "Cancel" }));
+    await user.click(within(dialog()).getByRole('button', { name: "New tag" }));
     expectSent();
 
     answer.lose();
-    expect(await form().findByRole('alert')).toHaveTextContent('Нет связи с сервером');
+    expect(await form().findByRole('alert')).toHaveTextContent('Cannot reach the server');
     expectSent();
 
-    await user.click(within(dialog()).getByRole('button', { name: 'Закрыть' }));
+    await user.click(within(dialog()).getByRole('button', { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: 'Теги' }));
-    await screen.findByRole('dialog', { name: 'Теги пространства' });
+    await user.click(screen.getByRole('button', { name: "Tags" }));
+    await screen.findByRole('dialog', { name: "Workspace tags" });
     expectSent();
 
-    await user.click(form().getByRole('button', { name: 'Повторить отправку' }));
-    await waitFor(() => expect(within(dialog()).queryByRole('region', { name: 'Новый тег' })).not.toBeInTheDocument());
+    await user.click(form().getByRole('button', { name: "Retry submission" }));
+    await waitFor(() => expect(within(dialog()).queryByRole('region', { name: "New tag" })).not.toBeInTheDocument());
 
     const { bodies, keys } = writesOf(calls, 'POST');
     expect(bodies).toEqual([
@@ -289,44 +289,44 @@ describe('pending and uncertain name forms', () => {
       },
     });
     const { queryClient, user } = renderWithClient(<TagManagerDialog actorId={anna.id} workspaceId={alpha.id} canEdit />);
-    const dialog = () => screen.getByRole('dialog', { name: 'Теги пространства' });
-    const name = () => within(dialog()).getByLabelText('Название тега');
-    const color = () => within(dialog()).getByLabelText('Цвет тега');
+    const dialog = () => screen.getByRole('dialog', { name: "Workspace tags" });
+    const name = () => within(dialog()).getByLabelText("Tag name");
+    const color = () => within(dialog()).getByLabelText("Tag color");
     const button = (label: string) => within(dialog()).getByRole('button', { name: label });
 
-    await user.click(screen.getByRole('button', { name: 'Теги' }));
-    await user.click(await within(dialog()).findByRole('button', { name: 'Изменить тег «Срочно»' }));
+    await user.click(screen.getByRole('button', { name: "Tags" }));
+    await user.click(await within(dialog()).findByRole('button', { name: "Edit tag “Срочно”" }));
     await user.clear(name());
     await user.type(name(), 'Очень срочно');
-    await user.click(button('Сохранить'));
-    expect(await within(dialog()).findByRole('button', { name: 'Сохраняем…' })).toBeInTheDocument();
+    await user.click(button("Save"));
+    expect(await within(dialog()).findByRole('button', { name: "Saving…" })).toBeInTheDocument();
     expect(name()).toHaveValue('Очень срочно');
     expect(name()).toHaveAttribute('readonly');
 
     // A colleague changes the color, which the pending command does not send.
     tags = [{ ...urgent, color: '#00ff00', revision: 2 }, later];
     await act(() => queryClient.invalidateQueries());
-    await user.click(button('Отмена'));
+    await user.click(button("Cancel"));
 
-    await user.click(button('Изменить тег «Позже»'));
+    await user.click(button("Edit tag “Позже”"));
     expect(name()).toHaveValue('Позже');
     expect(name()).toHaveAttribute('readonly');
-    expect(within(dialog()).getByText(/^Сохраняется изменение другого тега/)).toBeInTheDocument();
-    await user.click(button('Сохранить'));
-    await user.click(button('Отмена'));
+    expect(within(dialog()).getByText(/^Another tag is being saved/)).toBeInTheDocument();
+    await user.click(button("Save"));
+    await user.click(button("Cancel"));
 
-    await user.click(button('Изменить тег «Срочно»'));
+    await user.click(button("Edit tag “Срочно”"));
     expect(name()).toHaveValue('Очень срочно');
     expect(color()).toHaveValue('#ff0000');
     expect(color()).toBeDisabled();
 
     answer.lose();
-    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Нет связи с сервером');
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Cannot reach the server');
     expect(name()).toHaveValue('Очень срочно');
     expect(color()).toHaveValue('#ff0000');
 
-    await user.click(button('Повторить отправку'));
-    await waitFor(() => expect(within(dialog()).queryByLabelText('Название тега')).not.toBeInTheDocument());
+    await user.click(button("Retry submission"));
+    await waitFor(() => expect(within(dialog()).queryByLabelText("Tag name")).not.toBeInTheDocument());
 
     const { bodies, keys } = writesOf(calls, 'PATCH');
     expect(bodies).toEqual([

@@ -1,3 +1,5 @@
+import { message, type TranslationMessage } from '../i18n';
+import { useTranslation } from '../i18n';
 import { ImportView, ImportNotices } from '../features/imports/ImportView';
 import { useImportWorkspace } from '../features/imports/useImportWorkspace';
 import { GanttView } from '../features/schedule/GanttView';
@@ -23,7 +25,7 @@ import type {
   WorkspaceDto,
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
-import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CalendarDays, FolderPlus, Lock, MoreHorizontal, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import {
@@ -99,34 +101,37 @@ function fieldValueKey(taskId: string, fieldId: string): string {
 }
 
 function ValueLoadingCell() {
+  const { t } = useTranslation();
   return (
     <>
       <span aria-hidden="true" className="text-subtle">
         …
       </span>
-      <span className="sr-only">Значение загружается</span>
+      <span className="sr-only">{t('projects.projectPage.loadingValue')}</span>
     </>
   );
 }
 
 function ValueUnavailableCell() {
-  return <span className="text-xs text-amber-800">Не загружено</span>;
+  const { t } = useTranslation();
+  return <span className="text-xs text-amber-800">{t('projects.projectPage.notLoaded')}</span>;
 }
 
 /** Fetches the project with the route guard; the loaded content owns every other query. */
 export function ProjectPage() {
+  const { t } = useTranslation();
   const { actorId, workspace } = useWorkspaceContext();
   const { projectId = '' } = useParams();
   const project = useProjectQuery(actorId, workspace.id, projectId);
   const projectsHref = `/w/${workspace.id}/projects`;
-  useDocumentTitle(project.isSuccess ? `${project.data.name} · ${workspace.name}` : `Проект · ${workspace.name}`);
+  useDocumentTitle(project.isSuccess ? `${project.data.name} · ${workspace.name}` : t('projects.projectPage.projectValue', { p0: workspace.name }));
 
   if (!isUuid(projectId)) return <ProjectUnavailable projectsHref={projectsHref} />;
 
   if (project.isPending) {
     return (
       <div role="status" className="space-y-4">
-        <span className="sr-only">Загрузка проекта</span>
+        <span className="sr-only">{t('projects.projectPage.loadingProject')}</span>
         <Skeleton className="h-4 w-28" />
         <Skeleton className="h-8 w-72 max-w-full" />
         <Skeleton className="h-48 rounded-2xl" />
@@ -167,6 +172,7 @@ interface ProjectContentProps {
 }
 
 function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectContentProps) {
+  const { t } = useTranslation();
   const sections = useSectionsQuery(actorId, workspace.id, project.id);
   const statuses = useStatusesQuery(actorId, workspace.id, project.id);
   const members = useMembershipsQuery(actorId, workspace.id);
@@ -201,11 +207,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const renameSectionMutation = useUpdateSectionMutation(actorId, workspace.id);
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
-  const [announcement, setAnnouncement] = useState('');
+  const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   const [filters, setFilters] = useState<TaskFilterValue>(emptyTaskFilters);
   const search = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
   const [searchParams, setSearchParams] = useSearchParams();
   const taskId = searchParams.get('task');
+  const columnPreset = searchParams.get('columns') === 'all' ? 'expanded' : 'compact';
   const graphMode = searchParams.get('view') === 'graph';
   const ganttMode = searchParams.get('view') === 'gantt';
   const importMode = searchParams.get('view') === 'import';
@@ -345,57 +352,28 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setRenamingSection(sections.data?.find((item) => item.id === heldSectionId) ?? section);
 
   return (
-    <div className="space-y-6">
-      <BackToProjects href={projectsHref} />
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight [overflow-wrap:anywhere] text-ink sm:text-[1.75rem]">
-              {project.name}
-            </h1>
-            {project.archivedAt ? <Badge tone="muted">В архиве</Badge> : null}
+    <div className="min-w-0 space-y-3">
+      <header className="flex min-w-0 items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <BackToProjects href={projectsHref} />
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 title={project.name} className="min-w-0 truncate text-xl font-semibold tracking-tight text-ink">{project.name}</h1>
+            {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
           </div>
-          <p className="text-[15px] text-muted">Проект пространства «{workspace.name}».</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {writable&&metadataReady?<Button onClick={()=>meetingController.setCreateOpen(true)}>Новая встреча</Button>:null}
-          {canEdit ? (
-            <RenameProjectDialog
-              actorId={actorId}
-              workspaceId={workspace.id}
-              project={project}
-              trigger={
-                <Button>
-                  <Pencil size={16} aria-hidden="true" />
-                  Переименовать
-                </Button>
-              }
-            />
-          ) : null}
-          <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
-          <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
-          <FieldManagerDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
-          {writable ? (
-            <CreateSectionDialog
-              actorId={actorId}
-              workspaceId={workspace.id}
-              projectId={project.id}
-              trigger={
-                <Button>
-                  <FolderPlus size={16} aria-hidden="true" />
-                  Новый раздел
-                </Button>
-              }
-              onCreated={(section) => setAnnouncement(`Раздел «${section.name}» создан.`)}
-            />
-          ) : null}
-          {writable && metadataReady ? (
-            <Button variant="primary" onClick={() => startCreate({ sectionId: null, parent: null })}>
-              <Plus size={16} aria-hidden="true" />
-              Новая задача
-            </Button>
-          ) : null}
-        </div>
+        {writable && metadataReady ? <Button size="sm" variant="primary" onClick={() => startCreate({ sectionId: null, parent: null })}><Plus size={16} aria-hidden="true" />{t('projects.projectPage.newTask')}</Button> : null}
+        <details className="relative shrink-0" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
+          <summary aria-label={t('projects.projectPage.projectActions')} title={t('projects.projectPage.projectActions')} className="flex size-8 cursor-pointer list-none items-center justify-center rounded-lg border border-line bg-surface text-muted hover:bg-canvas [&::-webkit-details-marker]:hidden"><MoreHorizontal size={18} aria-hidden="true" /></summary>
+          <div aria-label={t('projects.projectPage.projectActions')} className="absolute right-0 z-30 mt-2 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-line bg-surface p-2 shadow-lg [&_button]:w-full [&_button]:justify-start">
+            <p className="px-2 py-1 text-xs font-medium text-muted">{t('projects.projectPage.projectActions')}</p>
+            {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
+            {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
+            <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
+            <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
+            <FieldManagerDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
+            {writable ? <CreateSectionDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} trigger={<Button size="sm" variant="ghost"><FolderPlus size={16} aria-hidden="true" />{t('projects.projectPage.newSection')}</Button>} onCreated={section => setAnnouncement(message('projects.projectPage.sectionValueCreated', { p0: section.name }))} /> : null}
+          </div>
+        </details>
       </header>
 
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
@@ -404,20 +382,19 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       <DependencyNotices controller={dependencies} />
       <EdgeDialog controller={dependencies} actorId={actorId} workspaceId={workspace.id} project={project} writable={writable} />
       <MeetingCommandNotices controller={meetingController} onOpen={(id,tab,selection)=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;})}/>
-      {meetingController.commands.create.pendingCommand||meetingController.commands.create.uncertain?<div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">Создание встречи ещё не подтверждено. <Button size="sm" onClick={()=>meetingController.setCreateOpen(true)}>Открыть создание встречи</Button></div>:null}
+      {meetingController.commands.create.pendingCommand||meetingController.commands.create.uncertain?<div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">{t('projects.projectPage.meetingCreationIsUnconfirmed')}<Button size="sm" onClick={()=>meetingController.setCreateOpen(true)}>{t('projects.projectPage.openMeetingCreation')}</Button></div>:null}
       <CreateMeetingDialog accessDenied={[members.error,sections.error,statuses.error,meetingPeriods.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={meetingPeriods.data??[]} statuses={statuses.data??[]} sections={sections.data??[]} ownMembershipId={members.data?.find(m=>m.userId===actorId)?.id??''} timezone={workspace.timezone} onCreated={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab','plan');return next;})}/>
-      <nav aria-label="Представления проекта" className="flex flex-wrap gap-2">
-        <Button variant={graphMode || ganttMode || importMode ? 'ghost' : 'primary'} aria-current={!graphMode && !ganttMode && !importMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>Задачи</Button>
-        <Button variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? `Граф выбранных (${selectedTaskIds.length})` : 'Граф'}</Button>
-        <Button variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>Сроки</Button>
-        {canManageImports ? <Button variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>Импорт CSV</Button> : null}
-        <Link to={`/w/${workspace.id}/projects/${project.id}/week`} className={buttonClassName({ variant: 'ghost' })}>
-          <CalendarDays size={16} aria-hidden="true" />Неделя
-        </Link>
+      <nav aria-label={t('projects.projectPage.projectViews')} className="flex min-w-0 flex-nowrap gap-1 overflow-x-auto border-b border-line pb-2">
+        <Button size="sm" variant={graphMode || ganttMode || importMode ? 'ghost' : 'primary'} aria-current={!graphMode && !ganttMode && !importMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>{t('projects.projectPage.tasks')}</Button>
+        <Button size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
+        <Button size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
+        {canManageImports ? <Button size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
+        <Link to={`/w/${workspace.id}/projects/${project.id}/week`} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>
+          <CalendarDays size={16} aria-hidden="true" />{t('projects.projectPage.week')}</Link>
       </nav>
 
       <div role="status" aria-live="polite" className="sr-only">
-        {announcement}
+        {announcement ? t(announcement.key, announcement.params) : null}
       </div>
 
       {metadataError ? (
@@ -437,8 +414,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             >
               <span className="min-w-0 flex-1">
                 {fieldValueMutation.pendingCommand
-                  ? 'Значение поля задачи ещё отправляется.'
-                  : 'Значение поля задачи не подтверждено. Пока его результат неизвестен, другие значения полей не отправляются.'}
+                  ? t('projects.projectPage.aTaskFieldValueIsBeingSubmitted')
+                  : t('projects.projectPage.aTaskFieldValueIsUnconfirmedOtherField')}
               </span>
               <Button
                 size="sm"
@@ -446,12 +423,21 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                   if (heldFieldTaskId !== null) openTask(heldFieldTaskId);
                 }}
               >
-                Открыть отправку
-              </Button>
+                {t('projects.projectPage.openSubmission')}</Button>
             </div>
           ) : null}
           {taskTime.controls}
-          <TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} />
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0 flex-1"><TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} /></div>
+            <details className="relative shrink-0" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
+              <summary className="flex h-9 cursor-pointer list-none items-center rounded-lg border border-line bg-surface px-3 text-sm font-medium text-ink-soft hover:bg-canvas [&::-webkit-details-marker]:hidden">{t('projects.projectPage.viewSummary', { view: t(columnPreset === 'expanded' ? 'projects.projectPage.allColumns' : 'projects.projectPage.dailyView') })}</summary>
+              <fieldset className="absolute right-0 z-20 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-2 rounded-xl border border-line bg-surface p-4 shadow-lg">
+                <legend className="sr-only">{t('projects.projectPage.tableColumns')}</legend>
+                {(['compact', 'expanded'] as const).map(preset => <label key={preset} className="flex items-center gap-2 text-sm text-ink"><input type="radio" name="task-column-preset" checked={columnPreset === preset} onChange={() => setSearchParams(before => { const next = new URLSearchParams(before); if (preset === 'expanded') next.set('columns', 'all'); else next.delete('columns'); return next; })} />{t(preset === 'expanded' ? 'projects.projectPage.allColumns' : 'projects.projectPage.dailyView')}</label>)}
+                <p className="text-xs leading-relaxed text-muted">{t('projects.projectPage.columnPresetHelp', { count: customColumns.length })}</p>
+              </fieldset>
+            </details>
+          </div>
           {/* A custom field failure never hides the built-in table. */}
           {fieldsError ? (
             <QueryErrorState
@@ -462,7 +448,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               onRetry={() => void fieldsError.query.refetch()}
             />
           ) : null}
-          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Загружено больше 100 задач. Выберите до 100 исходных задач в списке ниже; граф не сокращает набор автоматически.</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : <TaskList
+          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : <TaskList
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
             query={tasks}
@@ -472,7 +458,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             sections={sections.data}
             statuses={statuses.data}
             members={members.data}
-            customColumns={[...taskTime.columns, ...customColumns]}
+            columnPreset={columnPreset}
+            customColumns={[...taskTime.columns, ...(columnPreset === 'expanded' ? customColumns : [])]}
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startCreate({ sectionId: sectionId ?? null, parent: null })}
@@ -505,7 +492,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onResumeCreate={() => startCreate({ sectionId: null, parent: null })}
             onCreated={(task) => {
               closeDrawer();
-              setAnnouncement(`Задача «${task.title}» создана.`);
+              setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }));
             }}
             onAnnounce={setAnnouncement}
           />
@@ -516,12 +503,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             section={renamingSection}
             mutation={renameSectionMutation}
             onClose={() => setRenamingSection(null)}
-            onRenamed={(section) => setAnnouncement(`Раздел переименован в «${section.name}».`)}
+            onRenamed={(section) => setAnnouncement(message('projects.projectPage.sectionRenamedToValue', { p0: section.name }))}
           />
         </>
       ) : (
         <div role="status" className="space-y-3">
-          <span className="sr-only">Загрузка задач проекта</span>
+          <span className="sr-only">{t('projects.projectPage.loadingProjectTasks')}</span>
           <Skeleton className="h-10 rounded-xl" />
           <Skeleton className="h-64 rounded-2xl" />
         </div>
@@ -541,6 +528,7 @@ interface TaskListProps {
   statuses: readonly TaskStatusDto[];
   members: readonly MembershipDto[];
   customColumns: readonly TaskTableCustomColumn[];
+  columnPreset: 'compact' | 'expanded';
   writable: boolean;
   onOpenTask: (taskId: string) => void;
   onCreateTask: (sectionId?: string | null) => void;
@@ -549,10 +537,11 @@ interface TaskListProps {
 }
 
 function TaskList({ query, filtered, project, workspace, ...table }: TaskListProps) {
+  const { t } = useTranslation();
   if (query.isPending) {
     return (
       <div role="status" className="space-y-3">
-        <span className="sr-only">Загрузка задач</span>
+        <span className="sr-only">{t('projects.projectPage.loadingTasks')}</span>
         <Skeleton className="h-64 rounded-2xl" />
       </div>
     );
@@ -579,7 +568,7 @@ function TaskList({ query, filtered, project, workspace, ...table }: TaskListPro
         tasks={dedupeTasks(scope.tasks)}
         partial={filtered || !scope.complete}
         today={todayIn(workspace.timezone)}
-        caption={`Задачи проекта «${project.name}»`}
+        caption={t('projects.projectPage.tasksInValue', { p0: project.name })}
       />
       {query.isFetchNextPageError ? (
         <QueryErrorState
@@ -603,9 +592,9 @@ function TaskList({ query, filtered, project, workspace, ...table }: TaskListPro
               aria-hidden="true"
               className={query.isFetchingNextPage ? 'motion-safe:animate-spin' : undefined}
             />
-            {query.isFetchingNextPage ? 'Загружаем…' : 'Загрузить ещё задачи'}
+            {query.isFetchingNextPage ? t('projects.projectPage.loading') : t('projects.projectPage.loadMoreTasks')}
           </Button>
-          <span className="text-sm text-muted">Загружена часть задач проекта.</span>
+          <span className="text-sm text-muted">{t('projects.projectPage.moreProjectTasksAreAvailable')}</span>
         </div>
       ) : null}
     </div>
@@ -613,29 +602,29 @@ function TaskList({ query, filtered, project, workspace, ...table }: TaskListPro
 }
 
 function BackToProjects({ href }: { href: string }) {
+  const { t } = useTranslation();
   return (
     <Link
       to={href}
-      className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-accent-ink hover:text-accent-strong"
+      className="inline-flex items-center gap-1 rounded-md text-xs font-medium text-muted hover:text-accent-strong"
     >
       <ArrowLeft size={16} aria-hidden="true" />
-      Все проекты
-    </Link>
+      {t('projects.projectPage.allProjects')}</Link>
   );
 }
 
 function ProjectUnavailable({ projectsHref }: { projectsHref: string }) {
+  const { t } = useTranslation();
   return (
     <StateCard
       headingLevel={1}
       icon={<Lock size={18} aria-hidden="true" />}
-      title="Проект недоступен"
-      description="Такого проекта нет или у текущего пользователя нет к нему доступа."
+      title={t('projects.projectPage.projectUnavailable')}
+      description={t('projects.projectPage.thisProjectDoesNotExistOrYouDo')}
       actions={
         <Link to={projectsHref} className={buttonClassName({ variant: 'primary' })}>
           <ArrowLeft size={16} aria-hidden="true" />
-          К списку проектов
-        </Link>
+          {t('projects.projectPage.backToProjects')}</Link>
       }
     />
   );

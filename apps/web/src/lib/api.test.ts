@@ -168,6 +168,6 @@ describe('describeError', () => {
     const forbidden = describeError(new ApiError({ kind: 'forbidden', status: 403 }), 'workspace');
 
     expect(notFound).toEqual(forbidden);
-    expect(notFound).toMatchObject({ title: 'Пространство недоступно', unavailable: true, retryable: false });
+    expect(notFound).toMatchObject({ title: 'Workspace unavailable', unavailable: true, retryable: false });
   });
 });

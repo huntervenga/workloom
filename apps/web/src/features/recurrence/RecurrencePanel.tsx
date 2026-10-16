@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../../i18n';
 import {
   RECURRENCE_LIMITS,
   type MembershipDto,
@@ -50,17 +51,17 @@ export interface RecurrencePanelProps {
 const CHUNK_LIMIT = RECURRENCE_LIMITS.maxRealCreatesPerChunk;
 
 const seriesStateLabels: Record<RecurrenceSeriesDto['state'], string> = {
-  active: 'Активна',
-  paused: 'Фоновая подготовка приостановлена',
+  get active() { return t('recurrence.active'); },
+  get paused() { return t('recurrence.backgroundPreparationPaused'); },
 };
 
 /** Fixed labels for commands whose management UI is not part of this pass. */
 const otherCommandLabels = {
-  edit: 'Изменение серии',
-  state: 'Изменение состояния серии',
-  addPeriods: 'Добавление периодов серии',
-  authorize: 'Разрешение подготовки встреч',
-  exception: 'Изменение одной встречи серии',
+  get edit() { return t('recurrence.seriesChange'); },
+  get state() { return t('recurrence.seriesStateChange'); },
+  get addPeriods() { return t('recurrence.addingSeriesPeriods'); },
+  get authorize() { return t('recurrence.meetingPreparationAuthorization'); },
+  get exception() { return t('recurrence.oneSeriesMeetingChange'); },
 } as const;
 type OtherCommandKind = keyof typeof otherCommandLabels;
 const otherCommandKinds = Object.keys(otherCommandLabels) as OtherCommandKind[];
@@ -72,7 +73,7 @@ function sameId(a: string, b: string): boolean {
 }
 
 function seriesOptionLabel(series: RecurrenceSeriesDto): string {
-  return `${series.currentVersion.template.title} — ${seriesStateLabels[series.state]} · периодов в серии: ${series.boundPeriodCount}`;
+  return t('recurrence.periodsInSeries', { title: series.currentVersion.template.title, state: seriesStateLabels[series.state], boundPeriodCount: series.boundPeriodCount });
 }
 
 /** First "to do" status by board position; empty when the project has none, so the form asks. */
@@ -100,6 +101,7 @@ export function RecurrencePanel({
   onSelectSeries,
   onOpenMeeting,
 }: RecurrencePanelProps) {
+  const { t } = useTranslation();
   const headingId = useId();
   const selectId = useId();
   // Every user selection goes through one path, so a page-held URL never goes stale.
@@ -139,9 +141,9 @@ export function RecurrencePanel({
     selectSeries(seriesId);
   };
   const retained = [
-    ...Object.values(management.edits).filter(recurrenceEditSessionDirty).map(draft => ({ id: draft.id, seriesId: draft.base.id, label: 'Продолжить черновик изменения серии', open: () => management.openEdit(draft.base) })),
-    ...Object.values(management.periodSessions).filter(recurrencePeriodSessionDirty).map(draft => ({ id: draft.id, seriesId: draft.base.id, label: 'Продолжить выбор периодов серии', open: () => management.openPeriods(draft.base) })),
-    ...Object.values(management.exceptions).filter(recurrenceExceptionSessionDirty).map(draft => ({ id: draft.id, seriesId: draft.baseSeries.id, label: `Продолжить изменение встречи ${draft.baseInstance.occurrenceKey}`, open: () => management.openException(draft.baseSeries, draft.baseInstance, draft.kind) })),
+    ...Object.values(management.edits).filter(recurrenceEditSessionDirty).map(draft => ({ id: draft.id, seriesId: draft.base.id, label: t('recurrence.resumeSeriesChangeDraft'), open: () => management.openEdit(draft.base) })),
+    ...Object.values(management.periodSessions).filter(recurrencePeriodSessionDirty).map(draft => ({ id: draft.id, seriesId: draft.base.id, label: t('recurrence.resumeSeriesPeriodSelection'), open: () => management.openPeriods(draft.base) })),
+    ...Object.values(management.exceptions).filter(recurrenceExceptionSessionDirty).map(draft => ({ id: draft.id, seriesId: draft.baseSeries.id, label: t('recurrence.resumeChangeForMeeting', { seriesDate: draft.baseInstance.occurrenceKey }), open: () => management.openException(draft.baseSeries, draft.baseInstance, draft.kind) })),
   ];
 
   const create = c.commands.create;
@@ -206,7 +208,7 @@ export function RecurrencePanel({
 
   const heldPeriodName =
     heldMaterialize !== null && !denied ? periods.find((item) => sameId(item.id, heldMaterialize.periodId))?.name : undefined;
-  const heldMaterializeLabel = heldPeriodName ? `Подготовка встреч периода «${heldPeriodName}»` : 'Подготовка встреч исходного периода';
+  const heldMaterializeLabel = heldPeriodName ? t('recurrence.preparingMeetingsFor', { heldPeriodName: heldPeriodName }) : t('recurrence.preparingOriginalPeriodMeetings');
 
   const series = (seriesList.data ?? []).filter(item => !selectedDenied || selectedId === null || !sameId(item.id, selectedId));
   const options = visibleSeries !== undefined && listed === undefined ? [visibleSeries, ...series] : series;
@@ -216,38 +218,32 @@ export function RecurrencePanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 id={headingId} className="text-lg font-semibold">
-            Повторяющиеся встречи
-          </h2>
+            {t('recurrence.recurringMeetings')}</h2>
           <p className={`mt-1 ${hintClass}`}>
-            Серия резервирует даты встреч только в явно выбранных периодах. Сами встречи появляются после подготовки периода; личные
-            планы и присутствие подтверждаются отдельно.
-          </p>
+            {t('recurrence.aSeriesReservesMeetingDatesOnlyInExplicitlySelected')}</p>
         </div>
         {writable && !denied ? (
           <Button disabled={createHeld || statuses.length === 0 || members.length === 0} onClick={openCreate}>
-            Новая серия встреч
-          </Button>
+            {t('recurrence.newMeetingSeries')}</Button>
         ) : null}
       </div>
 
       {create.pendingCommand ? (
         <HeldBox
-          text="Создание серии встреч: ждём ответа сервера. Отправленные данные закреплены."
-          actions={<Button size="sm" onClick={() => c.setCreateOpen(true)}>Открыть отправку</Button>}
+          text={t('recurrence.creatingSeriesWaitingForServerResponseSubmittedDataIs')}
+          actions={<Button size="sm" onClick={() => c.setCreateOpen(true)}>{t('recurrence.openSubmittedRequest')}</Button>}
         />
       ) : create.uncertain ? (
         <UncertainHeld
-          label="Создание серии встреч"
+          label={t('recurrence.creatingMeetingSeries')}
           error={create.uncertain.error}
           subject="taskSave"
           actions={
             <>
               <Button size="sm" variant="primary" onClick={() => create.retryUncertain()}>
-                Повторить создание серии
-              </Button>
+                {t('recurrence.retryOriginalSeriesCreation')}</Button>
               <Button size="sm" onClick={() => c.setCreateOpen(true)}>
-                Открыть отправку
-              </Button>
+                {t('recurrence.openSubmittedRequest')}</Button>
             </>
           }
         />
@@ -256,12 +252,11 @@ export function RecurrencePanel({
       {heldMaterialize !== null ? (
         materialize.pendingCommand ? (
           <HeldBox
-            text={`${heldMaterializeLabel}: ждём ответа сервера. Запрос относится к исходному периоду.`}
+            text={t('recurrence.waitingForServerResponseTheRequestBelongsToIts', { heldMaterializeLabel: heldMaterializeLabel })}
             actions={
               heldHere ? null : (
                 <Button size="sm" onClick={() => onSelectPeriod(heldMaterialize.periodId)}>
-                  Открыть исходный период
-                </Button>
+                  {t('recurrence.openOriginalPeriod')}</Button>
               )
             }
           />
@@ -273,12 +268,10 @@ export function RecurrencePanel({
             actions={
               <>
                 <Button size="sm" variant="primary" onClick={() => materialize.retryUncertain()}>
-                  Повторить подготовку без изменений
-                </Button>
+                  {t('recurrence.retryOriginalPreparation')}</Button>
                 {heldHere ? null : (
                   <Button size="sm" onClick={() => onSelectPeriod(heldMaterialize.periodId)}>
-                    Открыть исходный период
-                  </Button>
+                    {t('recurrence.openOriginalPeriod')}</Button>
                 )}
               </>
             }
@@ -288,7 +281,7 @@ export function RecurrencePanel({
 
       {otherHeld.map((command) =>
         command.pending ? (
-          <HeldBox key={command.key} text={`${otherCommandLabels[command.kind]}: ждём ответа сервера.`} actions={!denied && !selectedDenied ? <Button size="sm" onClick={() => reopenCommand(command.kind, command.draftId, command.seriesId)}>Открыть исходную отправку</Button> : undefined} />
+          <HeldBox key={command.key} text={t('recurrence.waitingForServerResponse', { action: otherCommandLabels[command.kind] })} actions={!denied && !selectedDenied ? <Button size="sm" onClick={() => reopenCommand(command.kind, command.draftId, command.seriesId)}>{t('recurrence.openOriginalRequest')}</Button> : undefined} />
         ) : command.error ? (
           <UncertainHeld
             key={command.key}
@@ -298,12 +291,10 @@ export function RecurrencePanel({
             actions={
               <>
                 <Button size="sm" variant="primary" onClick={command.retry}>
-                  Повторить отправку без изменений
-                </Button>
+                  {t('recurrence.retryOriginalRequest')}</Button>
                 {denied || selectedDenied ? null : (
                   <Button size="sm" onClick={() => reopenCommand(command.kind, command.draftId, command.seriesId)}>
-                    Открыть исходную отправку
-                  </Button>
+                    {t('recurrence.openOriginalRequest')}</Button>
                 )}
               </>
             }
@@ -314,23 +305,20 @@ export function RecurrencePanel({
       {created !== null && createdUnseen ? (
         <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-canvas px-3 py-2 text-sm">
           <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-            {denied || selectedDenied ? 'Серия встреч создана.' : `Серия «${created.currentVersion.template.title}» создана.`}
+            {denied || selectedDenied ? t('recurrence.meetingSeriesCreated') : t('recurrence.seriesCreated', { title: created.currentVersion.template.title })}
           </span>
           {denied ? null : (
             <Button size="sm" onClick={() => selectCreated(created.id)}>
-              Открыть серию
-            </Button>
+              {t('recurrence.openSeries')}</Button>
           )}
           <Button size="sm" variant="ghost" onClick={c.clearLastCreatedSeries}>
-            Скрыть
-          </Button>
+            {t('recurrence.hide')}</Button>
         </div>
       ) : null}
 
       {denied ? (
         <p role="status" className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">
-          Повторяющиеся встречи сейчас недоступны текущему пользователю.
-        </p>
+          {t('recurrence.recurringMeetingsAreUnavailableToTheCurrentUser')}</p>
       ) : (
         <>
           {seriesList.isError ? (
@@ -343,22 +331,20 @@ export function RecurrencePanel({
             />
           ) : seriesList.isPending ? (
             <p role="status" className="text-sm text-muted">
-              Загрузка серий встреч…
-            </p>
+              {t('recurrence.loadingMeetingSeries')}</p>
           ) : options.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">В проекте пока нет серий встреч.</p>
+            <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">{t('recurrence.noMeetingSeriesInThisProjectYet')}</p>
           ) : (
             <div className="space-y-2">
               <label htmlFor={selectId} className="text-sm font-medium">
-                Серия встреч
-              </label>
+                {t('recurrence.meetingSeries')}</label>
               <select
                 id={selectId}
                 className={inputClassName()}
                 value={visibleSeries?.id ?? ''}
                 onChange={(event) => selectSeries(event.target.value || null)}
               >
-                <option value="">Не выбрана</option>
+                <option value="">{t('recurrence.noneSelected')}</option>
                 {options.map((item) => (
                   <option key={item.id} value={item.id}>
                     {seriesOptionLabel(item)}
@@ -370,10 +356,9 @@ export function RecurrencePanel({
 
           {selectedId !== null && selectedDenied ? (
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-line p-4 text-sm text-muted">
-              <span className="min-w-0 flex-1">Выбранная серия недоступна текущему пользователю.</span>
+              <span className="min-w-0 flex-1">{t('recurrence.theSelectedSeriesIsUnavailableToTheCurrentUser')}</span>
               <Button size="sm" onClick={() => selectSeries(null)}>
-                Снять выбор
-              </Button>
+                {t('recurrence.clearSelection')}</Button>
             </div>
           ) : selectedId !== null && shownSeries === undefined && detail.isError ? (
             <QueryErrorState
@@ -387,22 +372,22 @@ export function RecurrencePanel({
             <div className="space-y-3">
               <SeriesSummary series={visibleSeries} />
               {writable ? <div className="flex flex-wrap gap-2">
-                <Button disabled={heldMutation('edit')} onClick={() => management.openEdit(visibleSeries)}>Изменить серию с даты</Button>
-                <Button disabled={heldMutation('addPeriods')} onClick={() => management.openPeriods(visibleSeries)}>Добавить периоды серии</Button>
-                <Button disabled={heldMutation('state')} onClick={() => c.commands.state.mutate({ seriesId: visibleSeries.id, input: { expectedRevision: visibleSeries.revision, state: visibleSeries.state === 'active' ? 'paused' : 'active' } })}>{visibleSeries.state === 'active' ? 'Приостановить фоновую подготовку' : 'Возобновить фоновую подготовку'}</Button>
-                {visibleSeries.generation.state === 'blocked' ? <div className="space-y-2 rounded-lg border border-line p-3 text-sm"><p>Разрешите подготовку встреч от своего имени. При каждом запуске будут проверяться ваши текущие права.</p><Button disabled={heldMutation('authorize')} onClick={() => c.commands.authorize.mutate({ seriesId: visibleSeries.id, input: { expectedRevision: visibleSeries.revision, expectedAuthorizationRevision: visibleSeries.generation.authorizationRevision } })}>Разрешить подготовку от моего имени</Button></div> : null}
+                <Button disabled={heldMutation('edit')} onClick={() => management.openEdit(visibleSeries)}>{t('recurrence.changeSeriesFromADate')}</Button>
+                <Button disabled={heldMutation('addPeriods')} onClick={() => management.openPeriods(visibleSeries)}>{t('recurrence.addSeriesPeriods')}</Button>
+                <Button disabled={heldMutation('state')} onClick={() => c.commands.state.mutate({ seriesId: visibleSeries.id, input: { expectedRevision: visibleSeries.revision, state: visibleSeries.state === 'active' ? 'paused' : 'active' } })}>{visibleSeries.state === 'active' ? t('recurrence.pauseBackgroundPreparation') : t('recurrence.resumeBackgroundPreparation')}</Button>
+                {visibleSeries.generation.state === 'blocked' ? <div className="space-y-2 rounded-lg border border-line p-3 text-sm"><p>{t('recurrence.authorizeMeetingPreparationOnYourBehalfYourCurrentPermissions')}</p><Button disabled={heldMutation('authorize')} onClick={() => c.commands.authorize.mutate({ seriesId: visibleSeries.id, input: { expectedRevision: visibleSeries.revision, expectedAuthorizationRevision: visibleSeries.generation.authorizationRevision } })}>{t('recurrence.authorizePreparationOnMyBehalf')}</Button></div> : null}
               </div> : null}
               {(['state', 'authorize'] as const).map(kind => c.commands[kind].variables?.seriesId === visibleSeries.id && !heldMutation(kind) ? <SaveFeedback key={kind} error={c.commands[kind].error} uncertainError={null} subject="taskSave" /> : null)}
             </div>
           ) : null}
 
-          {retained.filter(draft => !selectedDenied || selectedId === null || !sameId(draft.seriesId, selectedId)).map(draft => <div key={draft.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas p-3 text-sm"><span className="min-w-0 flex-1">Несохранённый черновик серии остаётся на этой странице.</span><Button size="sm" onClick={draft.open}>{draft.label}</Button></div>)}
+          {retained.filter(draft => !selectedDenied || selectedId === null || !sameId(draft.seriesId, selectedId)).map(draft => <div key={draft.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas p-3 text-sm"><span className="min-w-0 flex-1">{t('recurrence.yourUnsavedSeriesDraftStaysOnThisPage')}</span><Button size="sm" onClick={draft.open}>{draft.label}</Button></div>)}
 
           {period === null ? (
             <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">
               {periods.length === 0
-                ? 'Серии встреч привязываются к существующим периодам. Сначала создайте недельный период.'
-                : 'Выберите неделю в списке «Период», чтобы увидеть подготовку встреч серий и встречи выбранной серии.'}
+                ? t('recurrence.meetingSeriesUseExistingPeriodsCreateAWeeklyPeriod')
+                : t('recurrence.chooseAWeekInPeriodToViewPreparationAnd')}
             </p>
           ) : (
             <>
@@ -425,17 +410,14 @@ export function RecurrencePanel({
                   <SaveFeedback error={ownError} uncertainError={null} subject="planSave" />
                   {cursorRejected ? (
                     <p className={hintClass}>
-                      Продолжение прошлой подготовки устарело. Следующий запуск начнёт подготовку периода с начала; уже подготовленные
-                      встречи повторно не создаются.
-                    </p>
+                      {t('recurrence.thePreviousPreparationContinuationIsOutdatedTheNextRun')}</p>
                   ) : null}
                 </div>
               ) : null}
 
               {visibleSeries === undefined ? null : !bound ? (
                 <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">
-                  Выбранная неделя не входит в периоды этой серии.
-                </p>
+                  {t('recurrence.theSelectedWeekIsNotIncludedInThisSeries')}</p>
               ) : instances.isError ? (
                 <QueryErrorState
                   error={instances.error}
@@ -446,8 +428,7 @@ export function RecurrencePanel({
                 />
               ) : instances.isPending ? (
                 <p role="status" className="text-sm text-muted">
-                  Загрузка встреч серии…
-                </p>
+                  {t('recurrence.loadingSeriesMeetings')}</p>
               ) : (
                 <RecurrenceInstancesTable instances={instances.data} onOpenMeeting={onOpenMeeting} writable={writable} onSelectException={instance => management.openException(visibleSeries, instance, instance.calendarState === 'cancelled' ? 'restore' : 'skip')} />
               )}
@@ -474,6 +455,7 @@ export function RecurrencePanel({
 }
 
 function SeriesSummary({ series }: { series: RecurrenceSeriesDto }) {
+  const { t } = useTranslation();
   const paused = series.state === 'paused';
   return (
     <div className="space-y-2 rounded-xl border border-line bg-surface p-4">
@@ -481,12 +463,10 @@ function SeriesSummary({ series }: { series: RecurrenceSeriesDto }) {
         <p className="min-w-0 font-medium [overflow-wrap:anywhere]">{series.currentVersion.template.title}</p>
         <Badge tone={paused ? 'warning' : 'muted'}>{seriesStateLabels[series.state]}</Badge>
       </div>
-      <p className={hintClass}>Периодов в серии: {series.boundPeriodCount}.</p>
+      <p className={hintClass}>{t('recurrence.periodsInSeries3', { boundPeriodCount: series.boundPeriodCount })}</p>
       {paused ? (
         <p className={hintClass}>
-          Серия не отменена: остановлена только фоновая подготовка. Встречи выбранных периодов остаются в их календаре, и период
-          можно подготовить вручную.
-        </p>
+          {t('recurrence.theSeriesIsStillScheduledOnlyBackgroundPreparationIs')}</p>
       ) : null}
     </div>
   );

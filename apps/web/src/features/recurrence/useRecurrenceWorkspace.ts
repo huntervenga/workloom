@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import {
   recurrenceCreatePreviewInputSchema,
   type RecurrenceCreatePreviewDto,
@@ -47,28 +48,28 @@ export type RecurrenceCreateBuild =
   | { ok: false; problems: string[] };
 
 /** Fixed copy per schema path; the most specific prefix comes first. Schema messages are never shown. */
-const problemCopy: readonly (readonly [string, string])[] = [
-  ['schedule.startDate', 'Укажите дату начала серии.'],
-  ['schedule.localTime', 'Укажите время серии в формате ЧЧ:ММ.'],
-  ['schedule.timezone', 'Укажите часовой пояс IANA, например Asia/Nicosia.'],
-  ['schedule.weekdays', 'Выберите хотя бы один день недели.'],
-  ['schedule.plannedDurationMinutes', 'Длительность — целое число минут от 1 до 1440.'],
-  ['schedule.end.endDate', 'Последняя дата серии должна быть не раньше даты начала и не дальше 366 дней от неё.'],
-  ['schedule.end.count', 'Число встреч — целое число от 1 до 366.'],
-  ['schedule.end', 'Проверьте окончание серии.'],
-  ['schedule', 'Проверьте расписание серии.'],
-  ['template.title', 'Введите название встречи.'],
-  ['template.statusId', 'Выберите статус встречи.'],
-  ['template.sectionId', 'Выберите раздел из списка или «Без раздела».'],
-  ['template.organizerMembershipId', 'Выберите организатора.'],
-  ['template.attendeeMembershipIds', 'Отметьте от 1 до 100 участников встреч серии.'],
-  ['template.joinUrl', 'Ссылка на встречу должна начинаться с http:// или https://.'],
-  ['template', 'Проверьте поля встречи.'],
-  ['targetPeriodIds', 'Отметьте от 1 до 52 периодов серии.'],
+const problemCopy: readonly (readonly [string, `recurrence.${string}`])[] = [
+  ['schedule.startDate', 'recurrence.enterTheSeriesStartDate'],
+  ['schedule.localTime', 'recurrence.enterTheSeriesTimeAsHhMm'],
+  ['schedule.timezone', 'recurrence.enterAnIanaTimeZoneSuchAsAsiaNicosia'],
+  ['schedule.weekdays', 'recurrence.chooseAtLeastOneWeekday'],
+  ['schedule.plannedDurationMinutes', 'recurrence.durationMustBeAWholeNumberOfMinutesFrom'],
+  ['schedule.end.endDate', 'recurrence.theLastDateMustBeOnOrAfterThe'],
+  ['schedule.end.count', 'recurrence.meetingCountMustBeAWholeNumberFrom1'],
+  ['schedule.end', 'recurrence.checkTheSeriesEnd'],
+  ['schedule', 'recurrence.checkTheSeriesSchedule'],
+  ['template.title', 'recurrence.enterAMeetingTitle'],
+  ['template.statusId', 'recurrence.chooseAMeetingStatus'],
+  ['template.sectionId', 'recurrence.chooseASectionFromTheListOrNoSection'],
+  ['template.organizerMembershipId', 'recurrence.chooseAnOrganizer2'],
+  ['template.attendeeMembershipIds', 'recurrence.select1100SeriesParticipants'],
+  ['template.joinUrl', 'recurrence.meetingLinkMustBeginWithHttpOrHttps'],
+  ['template', 'recurrence.checkTheMeetingFields'],
+  ['targetPeriodIds', 'recurrence.select152SeriesPeriods'],
 ];
 
 function describeProblem(path: string): string {
-  return problemCopy.find(([prefix]) => path === prefix || path.startsWith(`${prefix}.`))?.[1] ?? 'Проверьте поля серии.';
+  return t(problemCopy.find(([prefix]) => path === prefix || path.startsWith(`${prefix}.`))?.[1] ?? 'recurrence.checkTheSeriesFields');
 }
 
 /** Whole numbers only: "1.5", "1e2" or a blank stay invalid instead of being rounded. */

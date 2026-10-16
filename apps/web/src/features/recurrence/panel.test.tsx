@@ -101,7 +101,7 @@ function writesOf(calls: FakeRequest[]): FakeRequest[] {
 
 // Radix has both a top close icon and a visible close action. Target its labelled top button.
 async function close(user: ReturnType<typeof renderApp>['user'], name: string) {
-  const buttons = within(screen.getByRole('dialog', { name })).getAllByRole('button', { name: 'Закрыть' });
+  const buttons = within(screen.getByRole('dialog', { name })).getAllByRole('button', { name: "Close" });
   const topClose = buttons.find((button) => button.hasAttribute('aria-label'));
   if (!topClose) throw new Error('Expected accessible close button');
   await user.click(topClose);
@@ -145,33 +145,33 @@ describe('weekly page recurrence panel', () => {
     const previews = () => calls.filter((call) => call.path === createPreviewPath);
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}`);
 
-    const panel = await screen.findByRole('region', { name: 'Повторяющиеся встречи' }, { timeout: 5000 });
-    const newSeries = within(panel).getByRole('button', { name: 'Новая серия встреч' });
+    const panel = await screen.findByRole('region', { name: "Recurring meetings" }, { timeout: 5000 });
+    const newSeries = within(panel).getByRole('button', { name: "New meeting series" });
     await waitFor(() => expect(newSeries).toBeEnabled());
     await user.click(newSeries);
-    let dialog = await screen.findByRole('dialog', { name: 'Новая серия встреч' });
+    let dialog = await screen.findByRole('dialog', { name: "New meeting series" });
 
     // Nothing is chosen for the user: no start date, attendee or period, and nothing to create yet.
-    expect(within(dialog).getByLabelText('Дата начала серии')).toHaveValue('');
+    expect(within(dialog).getByLabelText("Series start date")).toHaveValue('');
     for (const member of alphaMembers) expect(within(dialog).getByRole('checkbox', { name: member.displayName })).not.toBeChecked();
     for (const id of [PERIOD_A, PERIOD_B]) expect(within(dialog).getByRole('checkbox', { name: periodChoice(id) })).not.toBeChecked();
-    expect(within(dialog).getByRole('button', { name: 'Создать серию' })).toBeDisabled();
-    await user.click(within(dialog).getByRole('button', { name: 'Проверить расписание' }));
+    expect(within(dialog).getByRole('button', { name: "Create series" })).toBeDisabled();
+    await user.click(within(dialog).getByRole('button', { name: "Preview schedule" }));
     expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
     expect(previews()).toEqual([]);
 
     // Explicit Mon/Wed rule, attendees and one period.
-    for (const day of ['Вторник', 'Четверг', 'Пятница']) await user.click(within(dialog).getByRole('checkbox', { name: day }));
-    fireEvent.change(within(dialog).getByLabelText('Дата начала серии'), { target: { value: schedule.startDate } });
-    const count = within(dialog).getByLabelText('Число встреч в серии');
+    for (const day of ["Tuesday", "Thursday", "Friday"]) await user.click(within(dialog).getByRole('checkbox', { name: day }));
+    fireEvent.change(within(dialog).getByLabelText("Series start date"), { target: { value: schedule.startDate } });
+    const count = within(dialog).getByLabelText("Number of meetings in series");
     await user.clear(count);
     await user.type(count, schedule.end.kind === 'after_count' ? String(schedule.end.count) : '');
-    await user.type(within(dialog).getByLabelText('Название встречи'), template.title);
+    await user.type(within(dialog).getByLabelText("Meeting title"), template.title);
     for (const member of attendees) await user.click(within(dialog).getByRole('checkbox', { name: member.displayName }));
     await user.click(within(dialog).getByRole('checkbox', { name: periodChoice(PERIOD_A) }));
 
-    await user.click(within(dialog).getByRole('button', { name: 'Проверить расписание' }));
-    const createButton = within(dialog).getByRole('button', { name: 'Создать серию' });
+    await user.click(within(dialog).getByRole('button', { name: "Preview schedule" }));
+    const createButton = within(dialog).getByRole('button', { name: "Create series" });
     await waitFor(() => expect(createButton).toBeEnabled());
     expect(previews()).toHaveLength(1);
     expect(previews()[0]?.headers.get('Idempotency-Key')).toBeNull();
@@ -184,21 +184,21 @@ describe('weekly page recurrence panel', () => {
     await act(async () => {
       lostCreate.resolve(undefined);
     });
-    await within(dialog).findByRole('button', { name: 'Повторить создание серии' });
-    await close(user, 'Новая серия встреч');
-    await user.click(await within(panel).findByRole('button', { name: 'Открыть отправку' }));
-    dialog = await screen.findByRole('dialog', { name: 'Новая серия встреч' });
-    const title = within(dialog).getByLabelText('Название встречи');
+    await within(dialog).findByRole('button', { name: "Retry original series creation" });
+    await close(user, "New meeting series");
+    await user.click(await within(panel).findByRole('button', { name: "Open submitted request" }));
+    dialog = await screen.findByRole('dialog', { name: "New meeting series" });
+    const title = within(dialog).getByLabelText("Meeting title");
     expect(title).toHaveValue(template.title);
     expect(title).toBeDisabled();
     const chosenPeriod = within(dialog).getByRole('checkbox', { name: periodChoice(PERIOD_A) });
     expect(chosenPeriod).toBeChecked();
     expect(chosenPeriod).toBeDisabled();
     expect(within(dialog).getByRole('checkbox', { name: periodChoice(PERIOD_B) })).not.toBeChecked();
-    expect(within(dialog).getByRole('checkbox', { name: 'Вторник' })).not.toBeChecked();
+    expect(within(dialog).getByRole('checkbox', { name: "Tuesday" })).not.toBeChecked();
 
-    await user.click(within(dialog).getByRole('button', { name: 'Повторить создание серии' }));
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Новая серия встреч' })).not.toBeInTheDocument());
+    await user.click(within(dialog).getByRole('button', { name: "Retry original series creation" }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: "New meeting series" })).not.toBeInTheDocument());
     const creates = writes();
     expect(creates).toHaveLength(2);
     const createKey = creates[0]?.headers.get('Idempotency-Key') ?? '';
@@ -210,18 +210,18 @@ describe('weekly page recurrence panel', () => {
     }
 
     // Reserved headers have no meeting identity, so nothing can be opened yet.
-    let table = await within(panel).findByRole('table', { name: 'Встречи серии в периоде' }, { timeout: 5000 });
+    let table = await within(panel).findByRole('table', { name: "Series meetings in period" }, { timeout: 5000 });
     expect(within(table).getAllByRole('row')).toHaveLength(3);
-    expect(within(table).queryAllByRole('button', { name: /^Открыть встречу/ })).toEqual([]);
+    expect(within(table).queryAllByRole('button', { name: /^Open meeting/ })).toEqual([]);
 
     // One explicit chunk for the selected period; the authoritative reread shows the prepared occurrence.
-    const prepare = await within(panel).findByRole('button', { name: 'Подготовить встречи периода' });
+    const prepare = await within(panel).findByRole('button', { name: "Prepare period meetings" });
     expect(writes()).toHaveLength(2);
     await user.click(prepare);
-    const open = await within(panel).findByRole('button', { name: `Открыть встречу ${preparedHeader.occurrenceKey}` });
-    table = within(panel).getByRole('table', { name: 'Встречи серии в периоде' });
-    expect(within(table).getAllByRole('button', { name: /^Открыть встречу/ })).toEqual([open]);
-    await waitFor(() => expect(within(panel).queryByRole('button', { name: 'Подготовить встречи периода' })).not.toBeInTheDocument());
+    const open = await within(panel).findByRole('button', { name: `Open meeting ${preparedHeader.occurrenceKey}` });
+    table = within(panel).getByRole('table', { name: "Series meetings in period" });
+    expect(within(table).getAllByRole('button', { name: /^Open meeting/ })).toEqual([open]);
+    await waitFor(() => expect(within(panel).queryByRole('button', { name: "Prepare period meetings" })).not.toBeInTheDocument());
     const sent = writes();
     expect(sent.map((call) => `${call.method} ${call.path}`)).toEqual([
       `POST ${seriesListPath}`,
@@ -237,8 +237,8 @@ describe('weekly page recurrence panel', () => {
     // The prepared meeting opens in its original period, from the real locator the server returned.
     await user.click(open);
     const drawer = await screen.findByRole('dialog', { name: meetingTask.title });
-    expect(await within(drawer).findByRole('tab', { name: 'Встреча' })).toBeInTheDocument();
-    expect(within(drawer).queryByRole('heading', { name: 'Встреча относится к другому периоду' })).not.toBeInTheDocument();
+    expect(await within(drawer).findByRole('tab', { name: "Meeting" })).toBeInTheDocument();
+    expect(within(drawer).queryByRole('heading', { name: "This meeting belongs to another period" })).not.toBeInTheDocument();
     expect(calls.some((call) => call.method === 'GET' && call.path === `${rootPath}/tasks/${MEETING_TASK_ID}/meeting`)).toBe(true);
     expect(writes()).toHaveLength(3);
   });
@@ -258,16 +258,16 @@ describe('weekly page recurrence panel', () => {
       },
     });
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&series=${SERIES_ID}`);
-    const panel = await screen.findByRole('region', { name: 'Повторяющиеся встречи' });
-    await user.click(await within(panel).findByRole('button', { name: 'Подготовить встречи периода' }));
-    await user.click(await within(panel).findByRole('button', { name: 'Продолжить подготовку встреч' }));
-    await within(panel).findByText(/Продолжение прошлой подготовки устарело/);
-    await user.click(within(panel).getByRole('button', { name: 'Подготовить встречи периода' }));
+    const panel = await screen.findByRole('region', { name: "Recurring meetings" });
+    await user.click(await within(panel).findByRole('button', { name: "Prepare period meetings" }));
+    await user.click(await within(panel).findByRole('button', { name: "Continue preparing meetings" }));
+    await within(panel).findByText(/The previous preparation continuation is outdated/);
+    await user.click(within(panel).getByRole('button', { name: "Prepare period meetings" }));
     await waitFor(() => expect(attempts).toBe(3));
     const writes = calls.filter(call => call.method === 'POST' && call.path === materializePath(PERIOD_A));
     expect(writes.map(call => call.body)).toEqual([{ limit: 100 }, { limit: 100, cursor: 'old-process-signed-cursor' }, { limit: 100 }]);
     expect(writes[2]?.headers.get('Idempotency-Key')).not.toBe(writes[1]?.headers.get('Idempotency-Key'));
-    await waitFor(() => expect(within(panel).queryByRole('button', { name: 'Подготовить встречи периода' })).not.toBeInTheDocument());
+    await waitFor(() => expect(within(panel).queryByRole('button', { name: "Prepare period meetings" })).not.toBeInTheDocument());
   });
 
   it('previews and applies skip and restore to the stable reserved instance without inventing a task', async () => {
@@ -289,23 +289,23 @@ describe('weekly page recurrence panel', () => {
       },
     });
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&series=${SERIES_ID}`);
-    const panel = await screen.findByRole('region', { name: 'Повторяющиеся встречи' });
+    const panel = await screen.findByRole('region', { name: "Recurring meetings" });
     for (const [kind, reason, revision] of [['skip', 'Не проводим в праздник', 1], ['restore', 'Возвращаем дату в расписание', 2]] as const) {
-      await user.click(await within(panel).findByRole('button', { name: `Изменить встречу ${current.occurrenceKey}` }));
-      const dialog = await screen.findByRole('dialog', { name: 'Изменить одну встречу' });
-      expect(within(dialog).getByLabelText('Действие со встречей')).toHaveValue(kind);
-      expect(within(dialog).getByRole('button', { name: 'Применить изменение' })).toBeDisabled();
-      await user.type(within(dialog).getByLabelText('Причина изменения'), reason);
-      await user.click(within(dialog).getByRole('button', { name: 'Проверить изменение' }));
-      const apply = within(dialog).getByRole('button', { name: 'Применить изменение' });
+      await user.click(await within(panel).findByRole('button', { name: `Change meeting ${current.occurrenceKey}` }));
+      const dialog = await screen.findByRole('dialog', { name: "Change one meeting" });
+      expect(within(dialog).getByLabelText("Meeting action")).toHaveValue(kind);
+      expect(within(dialog).getByRole('button', { name: "Apply change" })).toBeDisabled();
+      await user.type(within(dialog).getByLabelText("Reason for change"), reason);
+      await user.click(within(dialog).getByRole('button', { name: "Preview change" }));
+      const apply = within(dialog).getByRole('button', { name: "Apply change" });
       await waitFor(() => expect(apply).toBeEnabled());
       await user.click(apply);
-      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Изменить одну встречу' })).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: "Change one meeting" })).not.toBeInTheDocument());
       const command = calls.filter(call => call.path.endsWith('/exception')).at(-1);
       expect(command?.body).toEqual({ expectedSeriesRevision: 1, expectedInstanceRevision: revision, reason, kind, previewHash: HASH_A });
       expect(isUuid(command?.headers.get('Idempotency-Key') ?? '')).toBe(true);
       expect(current.taskId).toBeNull();
-      await within(panel).findByText(kind === 'skip' ? 'Отменена до подготовки' : 'Ещё не подготовлена');
+      await within(panel).findByText(kind === 'skip' ? "Cancelled before preparation" : "Not prepared yet");
     }
     expect(calls.filter(call => call.method === 'POST').map(call => call.path.split('/').at(-1))).toEqual(['exception-preview', 'exception', 'exception-preview', 'exception']);
   });
@@ -323,10 +323,10 @@ describe('weekly page recurrence panel', () => {
     });
     const { queryClient } = renderApp(`${weekPath}?period=${PERIOD_A}&series=${SERIES_ID}`);
 
-    const panel = await screen.findByRole('region', { name: 'Повторяющиеся встречи' }, { timeout: 5000 });
-    await within(panel).findByRole('table', { name: 'Встречи серии в периоде' }, { timeout: 5000 });
-    const card = within(panel).getByRole('region', { name: 'Встречи серий в периоде' });
-    await within(card).findByRole('button', { name: 'Подготовить встречи периода' });
+    const panel = await screen.findByRole('region', { name: "Recurring meetings" }, { timeout: 5000 });
+    await within(panel).findByRole('table', { name: "Series meetings in period" }, { timeout: 5000 });
+    const card = within(panel).getByRole('region', { name: "Recurring meetings in period" });
+    await within(card).findByRole('button', { name: "Prepare period meetings" });
     expect(within(panel).getByText(shown.currentVersion.template.title)).toBeInTheDocument();
     expect(within(card).getAllByRole('term').length).toBeGreaterThan(0);
 
@@ -339,14 +339,14 @@ describe('weekly page recurrence panel', () => {
       await waitFor(() => expect(within(panel).queryByText(shown.currentVersion.template.title)).not.toBeInTheDocument());
       expect(within(panel).queryByRole('combobox')).not.toBeInTheDocument();
       expect(within(panel).queryByRole('table')).not.toBeInTheDocument();
-      expect(within(panel).queryByRole('region', { name: 'Встречи серий в периоде' })).not.toBeInTheDocument();
+      expect(within(panel).queryByRole('region', { name: "Recurring meetings in period" })).not.toBeInTheDocument();
     } else {
-      await waitFor(() => expect(within(panel).queryByRole('button', { name: 'Подготовить встречи периода' })).not.toBeInTheDocument());
-      const deniedCard = within(panel).getByRole('region', { name: 'Встречи серий в периоде' });
+      await waitFor(() => expect(within(panel).queryByRole('button', { name: "Prepare period meetings" })).not.toBeInTheDocument());
+      const deniedCard = within(panel).getByRole('region', { name: "Recurring meetings in period" });
       expect(within(deniedCard).queryAllByRole('term')).toEqual([]);
       expect(within(deniedCard).queryAllByRole('listitem')).toEqual([]);
     }
-    expect(within(panel).queryByRole('button', { name: 'Подготовить встречи периода' })).not.toBeInTheDocument();
+    expect(within(panel).queryByRole('button', { name: "Prepare period meetings" })).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('Sensitive server text');
     expect(writesOf(calls)).toEqual([]);
   });

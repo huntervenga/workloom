@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../../i18n';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Avatar, Button, Skeleton } from '@workloom/ui';
 import { Check, ChevronsUpDown, RefreshCw } from 'lucide-react';
@@ -15,6 +16,7 @@ export interface WorkspaceChooserProps {
 }
 
 export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: WorkspaceChooserProps) {
+  useTranslation();
   const workspaces = useWorkspacesQuery(actorId);
   const navigate = useNavigate();
   const labelId = useId();
@@ -23,7 +25,7 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
   if (workspaces.isPending) {
     return (
       <div role="status">
-        <span className="sr-only">Загрузка пространств</span>
+        <span className="sr-only">{t('workspace.loading')}</span>
         <Skeleton className="h-[3.25rem] w-full rounded-xl" />
       </div>
     );
@@ -32,7 +34,7 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
   if (workspaces.isError) {
     return (
       <div role="alert" className="rounded-xl border border-red-200 bg-red-50/60 p-3">
-        <p className="text-xs font-medium text-red-800">Список пространств не загрузился</p>
+        <p className="text-xs font-medium text-red-800">{t('workspace.listFailed')}</p>
         <Button
           size="sm"
           variant="ghost"
@@ -43,7 +45,8 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
           }}
         >
           <RefreshCw size={16} aria-hidden="true" className={workspaces.isFetching ? 'motion-safe:animate-spin' : undefined} />
-          Повторить
+
+          {t('common.retry')}
         </Button>
       </div>
     );
@@ -52,7 +55,8 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
   if (workspaces.data.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-line-strong px-3 py-2.5 text-xs text-muted">
-        Нет доступных пространств
+
+        {t('workspace.noneAvailable')}
       </p>
     );
   }
@@ -62,7 +66,8 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
   return (
     <div>
       <p id={labelId} className={sectionLabel}>
-        Пространство
+
+        {t('workspace.label')}
       </p>
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
@@ -78,7 +83,7 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
             )}
             <span id={valueId} className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold text-ink">
-                {current ? current.name : 'Выберите пространство'}
+                {current ? current.name : t('workspace.choose')}
               </span>
               {current ? <span className="block truncate text-xs text-muted">{roleLabels[current.role]}</span> : null}
             </span>
@@ -93,7 +98,8 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
             className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-lg shadow-slate-900/5"
           >
             <DropdownMenu.Label className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-subtle uppercase">
-              Доступные пространства
+
+              {t('workspace.available')}
             </DropdownMenu.Label>
             <DropdownMenu.RadioGroup
               value={current?.id ?? ''}

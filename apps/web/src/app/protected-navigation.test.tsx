@@ -34,7 +34,7 @@ function WritePage() {
   const [, setSearchParams] = useSearchParams();
   return (
     <>
-      <h1>Проекты</h1>
+      <h1>Projects</h1>
       <button type="button" onClick={() => probe.write?.mutate(sent)}>
         Отправить
       </button>
@@ -124,7 +124,7 @@ async function sendAndLose(user: ReturnType<typeof userEvent.setup>, lose: () =>
 
 async function stayOn(user: ReturnType<typeof userEvent.setup>, dialogName: string) {
   const dialog = await screen.findByRole('dialog', { name: dialogName });
-  await user.click(within(dialog).getByRole('button', { name: 'Остаться' }));
+  await user.click(within(dialog).getByRole('button', { name: "Stay" }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 }
 
@@ -132,7 +132,7 @@ describe('departing with a pending or uncertain write', () => {
   it('blocks links, navigate() and back while pending or lost, and keeps the command retryable with its key', async () => {
     const { sends, lose } = server();
     const { router, user } = renderGuarded();
-    expect(await screen.findByRole('heading', { name: 'Проекты' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "Projects" })).toBeInTheDocument();
     expect(unloadPrevented()).toBe(false);
 
     await user.click(screen.getByRole('button', { name: 'Отправить' }));
@@ -153,8 +153,8 @@ describe('departing with a pending or uncertain write', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Уйти по ссылке' }));
-    expect(await screen.findByRole('dialog', { name: 'Уйти со страницы?' })).toHaveTextContent('Сервер мог уже сохранить');
-    await stayOn(user, 'Уйти со страницы?');
+    expect(await screen.findByRole('dialog', { name: "Leave this page?" })).toHaveTextContent('The server may have saved');
+    await stayOn(user, "Leave this page?");
     expect(router.state.location.pathname).toBe(PAGE);
 
     lose();
@@ -165,7 +165,7 @@ describe('departing with a pending or uncertain write', () => {
     await act(async () => {
       await router.navigate('/elsewhere');
     });
-    await stayOn(user, 'Уйти со страницы?');
+    await stayOn(user, "Leave this page?");
     expect(router.state.location.pathname).toBe(PAGE);
 
     // Browser back over the query-only entry stays on the page: no prompt.
@@ -180,7 +180,7 @@ describe('departing with a pending or uncertain write', () => {
     await act(async () => {
       await router.navigate(-1);
     });
-    await stayOn(user, 'Уйти со страницы?');
+    await stayOn(user, "Leave this page?");
     expect(router.state.location.pathname).toBe(PAGE);
     expect(screen.queryByRole('heading', { name: 'Начало' })).not.toBeInTheDocument();
 
@@ -202,11 +202,11 @@ describe('departing with a pending or uncertain write', () => {
     await sendAndLose(user, lose);
 
     await user.click(screen.getByRole('link', { name: 'Уйти по ссылке' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Уйти со страницы?' });
-    expect(dialog).toHaveTextContent('Сервер мог уже сохранить');
-    expect(dialog).toHaveTextContent('данные для повторной отправки будут сброшены');
-    expect(dialog).toHaveTextContent('проверьте, что уже сохранено');
-    await user.click(within(dialog).getByRole('button', { name: 'Уйти без подтверждения' }));
+    const dialog = await screen.findByRole('dialog', { name: "Leave this page?" });
+    expect(dialog).toHaveTextContent('The server may have saved');
+    expect(dialog).toHaveTextContent('clear the values needed to retry');
+    expect(dialog).toHaveTextContent('check what the server already saved');
+    await user.click(within(dialog).getByRole('button', { name: "Leave without confirmation" }));
 
     expect(await screen.findByRole('heading', { name: 'Другая страница' })).toBeInTheDocument();
     expect(unloadPrevented()).toBe(false);
@@ -215,7 +215,7 @@ describe('departing with a pending or uncertain write', () => {
     await act(async () => {
       await router.navigate(-1);
     });
-    expect(await screen.findByRole('heading', { name: 'Проекты' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "Projects" })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(probe.write?.uncertain).toBeNull();
     expect(sends).toHaveLength(1);
@@ -231,7 +231,7 @@ describe('departing with a pending or uncertain write', () => {
     act(() => {
       switching = probe.session?.switchActor(changeSession);
     });
-    await stayOn(user, 'Сменить пользователя?');
+    await stayOn(user, "Switch user?");
     await act(async () => {
       await switching;
     });
@@ -242,8 +242,8 @@ describe('departing with a pending or uncertain write', () => {
     act(() => {
       switching = probe.session?.switchActor(changeSession);
     });
-    const dialog = await screen.findByRole('dialog', { name: 'Сменить пользователя?' });
-    await user.click(within(dialog).getByRole('button', { name: 'Сменить без подтверждения' }));
+    const dialog = await screen.findByRole('dialog', { name: "Switch user?" });
+    await user.click(within(dialog).getByRole('button', { name: "Switch without confirmation" }));
     await act(async () => {
       await switching;
     });

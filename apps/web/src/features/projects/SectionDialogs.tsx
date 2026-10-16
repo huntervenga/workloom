@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../../i18n';
 import { createSectionInputSchema, type SectionDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
 import { RefreshCw } from 'lucide-react';
@@ -13,8 +14,8 @@ const SECTION_NAME_MAX = 160;
 
 function sectionNameProblem(name: string): string | null {
   if (createSectionInputSchema.safeParse({ name }).success) return null;
-  if (name.trim() === '') return 'Введите название раздела.';
-  return `Название должно быть не длиннее ${SECTION_NAME_MAX} символов.`;
+  if (name.trim() === '') return t('projects.sectionDialogs.enterASectionName');
+  return t('projects.sectionDialogs.nameMustBeValueCharactersOrFewer', { p0: SECTION_NAME_MAX });
 }
 
 export interface CreateSectionDialogProps {
@@ -27,6 +28,7 @@ export interface CreateSectionDialogProps {
 
 /** Keeps its mutation while closed, so an uncertain create survives reopening. */
 export function CreateSectionDialog({ actorId, workspaceId, projectId, trigger, onCreated }: CreateSectionDialogProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const mutation = useCreateSectionMutation(actorId, workspaceId);
   const sent = mutation.isPending ? mutation.variables : mutation.uncertain?.variables;
@@ -41,18 +43,18 @@ export function CreateSectionDialog({ actorId, workspaceId, projectId, trigger, 
 
   return (
     <DialogShell
-      title="Новый раздел"
-      description="Раздел группирует задачи проекта. Название можно изменить позже."
+      title={t('projects.sectionDialogs.newSection')}
+      description={t('projects.sectionDialogs.groupRelatedProjectTasksInASectionYou')}
       trigger={trigger}
       open={open}
       onOpenChange={changeOpen}
     >
       <NameForm
-        label="Название раздела"
+        label={t('projects.sectionDialogs.sectionName')}
         initialName=""
         maxLength={SECTION_NAME_MAX}
         validate={sectionNameProblem}
-        submitLabel="Создать раздел"
+        submitLabel={t('projects.sectionDialogs.createSection')}
         pending={mutation.isPending}
         locked={mutation.uncertain !== null}
         sentName={sent?.input.name}
@@ -79,6 +81,7 @@ export interface RenameSectionDialogProps {
 
 /** Opened from the task table; focus returns to the control that opened it. */
 export function RenameSectionDialog({ actorId, workspaceId, section, mutation, onClose, onRenamed }: RenameSectionDialogProps) {
+  const { t } = useTranslation();
   const changeOpen = (next: boolean) => {
     if (next) return;
     onClose();
@@ -87,8 +90,8 @@ export function RenameSectionDialog({ actorId, workspaceId, section, mutation, o
 
   return (
     <DialogShell
-      title="Переименовать раздел"
-      description={section ? `Раздел «${section.name}». Новое название увидят все участники пространства.` : ''}
+      title={t('projects.sectionDialogs.renameSection')}
+      description={section ? t('projects.sectionDialogs.sectionValueAllWorkspaceMembersWillSeeThe', { p0: section.name }) : ''}
       open={section !== null}
       onOpenChange={changeOpen}
     >
@@ -122,6 +125,7 @@ interface RenameSectionFormProps {
  * by all sections, so while it carries another section's command this form is blocked.
  */
 function RenameSectionForm({ actorId, workspaceId, section, mutation, onDone }: RenameSectionFormProps) {
+  const { t } = useTranslation();
   const reloadSections = useReloadSections(actorId, workspaceId);
   const [base, setBase] = useState({ revision: section.revision, name: section.name });
   const [reload, setReload] = useState<'idle' | 'loading' | 'done' | 'failed' | 'missing'>('idle');
@@ -134,8 +138,8 @@ function RenameSectionForm({ actorId, workspaceId, section, mutation, onDone }: 
   const otherNotice = !otherTarget
     ? null
     : mutation.isPending
-      ? 'Сохраняется переименование другого раздела. Этот раздел можно будет переименовать после ответа сервера.'
-      : 'Переименование другого раздела не подтверждено. Сначала откройте тот раздел и повторите отправку.';
+      ? t('projects.sectionDialogs.anotherSectionIsBeingRenamedWaitForThe')
+      : t('projects.sectionDialogs.anotherSectionRenameIsUnconfirmedOpenThatSection');
 
   const loadLatest = async () => {
     if (reload === 'loading') return;
@@ -156,11 +160,11 @@ function RenameSectionForm({ actorId, workspaceId, section, mutation, onDone }: 
 
   return (
     <NameForm
-      label="Название раздела"
+      label={t('projects.sectionDialogs.sectionName')}
       initialName={section.name}
       maxLength={SECTION_NAME_MAX}
       validate={sectionNameProblem}
-      submitLabel="Сохранить"
+      submitLabel={t('projects.sectionDialogs.save')}
       pending={mutation.isPending && own}
       locked={uncertain !== null}
       sentName={own ? command?.input.name : null}
@@ -175,8 +179,7 @@ function RenameSectionForm({ actorId, workspaceId, section, mutation, onDone }: 
             conflict ? (
               <Button size="sm" aria-disabled={reload === 'loading' || undefined} onClick={() => void loadLatest()}>
                 <RefreshCw size={16} aria-hidden="true" className={reload === 'loading' ? 'motion-safe:animate-spin' : undefined} />
-                Загрузить актуальную версию
-              </Button>
+                {t('projects.sectionDialogs.loadLatestVersion')}</Button>
             ) : null
           }
         />
@@ -184,11 +187,11 @@ function RenameSectionForm({ actorId, workspaceId, section, mutation, onDone }: 
       notice={
         otherNotice ??
         (reload === 'done'
-          ? `Загружена актуальная версия: «${base.name}». Ваше название осталось в поле — сохраните его, если оно всё ещё нужно.`
+          ? t('projects.sectionDialogs.latestVersionLoadedValueYourNameRemainsIn', { p0: base.name })
           : reload === 'failed'
-            ? 'Не удалось загрузить актуальную версию раздела. Повторите попытку.'
+            ? t('projects.sectionDialogs.couldNotLoadTheLatestSectionTryAgain')
             : reload === 'missing'
-              ? 'Раздел больше недоступен.'
+              ? t('projects.sectionDialogs.thisSectionIsNoLongerAvailable')
               : null)
       }
       onSubmit={(name) => {

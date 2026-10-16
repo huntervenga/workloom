@@ -10,13 +10,13 @@ function manager() {
 }
 
 async function open(user: ReturnType<typeof renderFieldUi>['user']) {
-  await user.click(screen.getByRole('button', { name: 'Колонки' }));
-  return screen.findByRole('dialog', { name: 'Колонки проекта' });
+  await user.click(screen.getByRole('button', { name: "Columns" }));
+  return screen.findByRole('dialog', { name: "Project columns" });
 }
 
 async function close(user: ReturnType<typeof renderFieldUi>['user']) {
-  const dialog = screen.getByRole('dialog', { name: 'Колонки проекта' });
-  await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }));
+  const dialog = screen.getByRole('dialog', { name: "Project columns" });
+  await user.click(within(dialog).getByRole('button', { name: "Close" }));
 }
 
 function expectExactRetry(writes: { body: unknown; headers: Headers }[]) {
@@ -44,21 +44,21 @@ describe('column manager command boundaries', () => {
     });
     const { user } = renderFieldUi(manager());
     let dialog = await open(user);
-    await user.click(await within(dialog).findByRole('button', { name: 'Добавить колонку' }));
-    await user.type(within(dialog).getByLabelText('Название колонки'), 'Согласование');
-    await user.click(within(dialog).getByRole('button', { name: 'Добавить колонку' }));
+    await user.click(await within(dialog).findByRole('button', { name: "Add column" }));
+    await user.type(within(dialog).getByLabelText("Column name"), 'Согласование');
+    await user.click(within(dialog).getByRole('button', { name: "Add column" }));
     await waitFor(() => expect(attempts).toBe(1));
     await close(user);
     dialog = await open(user);
-    expect(within(dialog).getByLabelText('Название колонки')).toHaveValue('Согласование');
-    expect(within(dialog).getByLabelText('Название колонки')).toHaveAttribute('readonly');
+    expect(within(dialog).getByLabelText("Column name")).toHaveValue('Согласование');
+    expect(within(dialog).getByLabelText("Column name")).toHaveAttribute('readonly');
     await act(async () => gate.lose());
-    await within(dialog).findByRole('button', { name: 'Повторить отправку' });
+    await within(dialog).findByRole('button', { name: "Retry submission" });
     await close(user);
     dialog = await open(user);
-    expect(within(dialog).getByLabelText('Название колонки')).toHaveValue('Согласование');
-    await user.click(within(dialog).getByRole('button', { name: 'Повторить отправку' }));
-    await waitFor(() => expect(within(dialog).queryByLabelText('Название колонки')).not.toBeInTheDocument());
+    expect(within(dialog).getByLabelText("Column name")).toHaveValue('Согласование');
+    await user.click(within(dialog).getByRole('button', { name: "Retry submission" }));
+    await waitFor(() => expect(within(dialog).queryByLabelText("Column name")).not.toBeInTheDocument());
     expectExactRetry(calls.filter((call) => call.method === 'POST'));
   });
 
@@ -82,19 +82,19 @@ describe('column manager command boundaries', () => {
     const { user } = renderFieldUi(manager());
     let dialog = await open(user);
     await user.click(await within(dialog).findByRole('checkbox', { name: 'Заметка' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Поднять колонку «Число»' }));
-    await user.click(within(dialog).getByRole('button', { name: 'Сохранить расположение' }));
+    await user.click(within(dialog).getByRole('button', { name: "Move column “Число” up" }));
+    await user.click(within(dialog).getByRole('button', { name: "Save layout" }));
     await waitFor(() => expect(attempts).toBe(1));
     await close(user);
     dialog = await open(user);
     expect(within(dialog).getByRole('checkbox', { name: 'Заметка' })).not.toBeChecked();
     expect(within(dialog).getByRole('checkbox', { name: 'Заметка' })).toBeDisabled();
     await act(async () => gate.lose());
-    await within(dialog).findByRole('button', { name: 'Повторить отправку' });
+    await within(dialog).findByRole('button', { name: "Retry submission" });
     await close(user);
     dialog = await open(user);
-    await user.click(within(dialog).getByRole('button', { name: 'Повторить отправку' }));
-    await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Повторить отправку' })).not.toBeInTheDocument());
+    await user.click(within(dialog).getByRole('button', { name: "Retry submission" }));
+    await waitFor(() => expect(within(dialog).queryByRole('button', { name: "Retry submission" })).not.toBeInTheDocument());
     const writes = calls.filter((call) => call.method === 'PATCH');
     expectExactRetry(writes);
     expect(writes[0]?.body).toEqual({
@@ -123,18 +123,18 @@ describe('column manager command boundaries', () => {
     });
     const { user } = renderFieldUi(manager());
     let dialog = await open(user);
-    await user.click(await within(dialog).findByRole('button', { name: 'Изменить колонку «Тип работы»' }));
-    await user.type(within(dialog).getByLabelText('Новый вариант'), 'Встреча');
-    await user.click(within(dialog).getByRole('button', { name: 'Добавить вариант' }));
+    await user.click(await within(dialog).findByRole('button', { name: "Edit column “Тип работы”" }));
+    await user.type(within(dialog).getByLabelText("New option"), 'Встреча');
+    await user.click(within(dialog).getByRole('button', { name: "Add option" }));
     await waitFor(() => expect(attempts).toBe(1));
-    await user.click(within(dialog).getByRole('button', { name: 'Изменить колонку «Подробности»' }));
-    expect(within(dialog).getByLabelText('Новый вариант')).toHaveValue('Встреча');
+    await user.click(within(dialog).getByRole('button', { name: "Edit column “Подробности”" }));
+    expect(within(dialog).getByLabelText("New option")).toHaveValue('Встреча');
     await close(user);
     dialog = await open(user);
-    expect(within(dialog).getByLabelText('Новый вариант')).toHaveValue('Встреча');
-    expect(within(dialog).getByLabelText('Новый вариант')).toHaveAttribute('readonly');
+    expect(within(dialog).getByLabelText("New option")).toHaveValue('Встреча');
+    expect(within(dialog).getByLabelText("New option")).toHaveAttribute('readonly');
     await act(async () => gate.lose());
-    await user.click(await within(dialog).findByRole('button', { name: 'Повторить отправку' }));
+    await user.click(await within(dialog).findByRole('button', { name: "Retry submission" }));
     await waitFor(() => expect(attempts).toBe(2));
     expectExactRetry(calls.filter((call) => call.method === 'POST'));
   });
@@ -148,14 +148,14 @@ describe('column manager command boundaries', () => {
     });
     const { user, client } = renderFieldUi(manager());
     const dialog = await open(user);
-    await user.click(await within(dialog).findByRole('button', { name: 'Изменить колонку «Скрытая колонка»' }));
-    expect(within(dialog).getByLabelText('Название колонки')).toHaveValue(secret.name);
+    await user.click(await within(dialog).findByRole('button', { name: "Edit column “Скрытая колонка”" }));
+    expect(within(dialog).getByLabelText("Column name")).toHaveValue(secret.name);
     allowed = false;
     await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.fieldDefinitions(anna.id, alpha.id, PROJECT_ID) }); });
     await within(dialog).findByRole('alert');
     expect(within(dialog).queryByText(secret.name)).not.toBeInTheDocument();
-    expect(within(dialog).queryByLabelText('Название колонки')).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: 'Сохранить' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Column name")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: "Save" })).not.toBeInTheDocument();
   });
 
   it('offers exact-key retry when another actor archives the target of an uncertain definition edit', async () => {
@@ -173,20 +173,20 @@ describe('column manager command boundaries', () => {
     });
     const { user, client } = renderFieldUi(manager());
     let dialog = await open(user);
-    await user.click(await within(dialog).findByRole('button', { name: 'Изменить колонку «Заметка»' }));
-    const input = within(dialog).getByLabelText('Название колонки');
+    await user.click(await within(dialog).findByRole('button', { name: "Edit column “Заметка”" }));
+    const input = within(dialog).getByLabelText("Column name");
     await user.clear(input);
     await user.type(input, 'Новая заметка');
-    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    await user.click(within(dialog).getByRole('button', { name: "Save" }));
     await waitFor(() => expect(attempts).toBe(1));
     await act(async () => gate.lose());
     remote = { ...original, revision: 3, archivedAt: STAMP };
     await act(async () => { await client.invalidateQueries({ queryKey: queryKeys.fields(anna.id, alpha.id) }); });
-    await within(dialog).findByRole('button', { name: 'Повторить отправку изменения колонки' });
+    await within(dialog).findByRole('button', { name: "Retry column change" });
     await close(user);
     dialog = await open(user);
-    await user.click(within(dialog).getByRole('button', { name: 'Повторить отправку изменения колонки' }));
-    await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Повторить отправку изменения колонки' })).not.toBeInTheDocument());
+    await user.click(within(dialog).getByRole('button', { name: "Retry column change" }));
+    await waitFor(() => expect(within(dialog).queryByRole('button', { name: "Retry column change" })).not.toBeInTheDocument());
     expectExactRetry(calls.filter((call) => call.method === 'PATCH'));
   });
 });

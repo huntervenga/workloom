@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../i18n';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@workloom/ui';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
@@ -14,6 +15,7 @@ import { DialogShell } from '../shared/DialogShell';
  * command kept by a closed dialog is covered too. Needs a data router for `useBlocker`.
  */
 export function ProtectedNavigationGuard() {
+  useTranslation();
   const client=useQueryClient();
   const registry = protectedCommandsFor(client);
   const drafts=protectedDraftsFor(client);
@@ -62,25 +64,25 @@ export function ProtectedNavigationGuard() {
 
   return (
     <DialogShell
-      title={asking === 'switch' ? 'Сменить пользователя?' : 'Уйти со страницы?'}
-      description={protecting?"Отправленное изменение ещё не подтверждено сервером.":"На странице есть несохранённый черновик."}
+      title={asking === 'switch' ? t('shell.switchQuestion') : t('shell.leaveQuestion')}
+      description={protecting?t('shell.unconfirmed'):t('shell.unsaved')}
       open={asking !== null}
       onOpenChange={(next) => {
         if (!next) stay();
       }}
     >
       <div className="mt-4 space-y-2 text-sm leading-relaxed text-ink-soft">
-        {protecting?<><p>Сервер мог уже сохранить это изменение, а мог и не получить его.</p>
+        {protecting?<><p>{t('shell.mayHaveSaved')}</p>
         <p>
-          Если {asking === 'switch' ? 'сменить пользователя' : 'уйти'}, данные для повторной отправки будут сброшены и
-          повторить её без риска дубля не получится. Прежде чем создавать что-то заново, проверьте, что уже сохранено.
+          {t(asking === 'switch' ? 'shell.switchRetryHelp' : 'shell.leaveRetryHelp')}
         </p>
-        <p>Чтобы ничего не потерять, останьтесь и дождитесь ответа или повторите отправку.</p></>:<p>Если уйти или сменить пользователя, несохранённые данные будут потеряны. Останьтесь, чтобы сохранить их или явно сбросить черновик.</p>}
+        <p>{t('shell.stayToRetry')}</p></>:<p>{t('shell.draftLeaveHelp')}</p>}
       </div>
       <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button onClick={leave}>{asking === 'switch' ? protecting?'Сменить без подтверждения':'Сменить и сбросить черновик' : protecting?'Уйти без подтверждения':'Уйти без сохранения'}</Button>
+        <Button onClick={leave}>{asking === 'switch' ? protecting?t('shell.switchUnconfirmed'):t('shell.switchDiscard') : protecting?t('shell.leaveUnconfirmed'):t('shell.leaveUnsaved')}</Button>
         <Button variant="primary" onClick={stay}>
-          Остаться
+
+          {t('shell.stay')}
         </Button>
       </div>
     </DialogShell>

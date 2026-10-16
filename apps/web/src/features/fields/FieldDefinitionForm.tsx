@@ -1,3 +1,5 @@
+import { message, type TranslationMessage } from '../../i18n';
+import { t, useTranslation } from '../../i18n';
 import {
   createTaskFieldInputSchema,
   createTaskFieldOptionInputSchema,
@@ -18,31 +20,31 @@ export const FIELDS_LOAD_SUBJECT: ErrorSubject = 'fields';
 export const FIELDS_SAVE_SUBJECT: ErrorSubject = 'fieldSave';
 
 export const fieldTypeLabels: Record<TaskFieldType, string> = {
-  text: 'Текст',
-  number: 'Число',
-  duration: 'Длительность',
-  date: 'Дата',
-  single_select: 'Один вариант из списка',
-  multi_select: 'Несколько вариантов из списка',
-  person: 'Участники',
-  boolean: 'Да или нет',
-  url: 'Ссылка',
+  get text() { return t('fields.fieldDefinitionForm.text'); },
+  get number() { return t('fields.fieldDefinitionForm.number'); },
+  get duration() { return t('fields.fieldDefinitionForm.duration'); },
+  get date() { return t('fields.fieldDefinitionForm.date'); },
+  get single_select() { return t('fields.fieldDefinitionForm.singleSelect'); },
+  get multi_select() { return t('fields.fieldDefinitionForm.multiSelect'); },
+  get person() { return t('fields.fieldDefinitionForm.people'); },
+  get boolean() { return t('fields.fieldDefinitionForm.yesOrNo'); },
+  get url() { return t('fields.fieldDefinitionForm.link'); },
 };
 
 export function isSelectType(type: TaskFieldType): boolean {
   return type === 'single_select' || type === 'multi_select';
 }
 
-export function fieldNameProblem(name: string): string | null {
+export function fieldNameProblem(name: string): TranslationMessage | null {
   if (createTaskFieldInputSchema.shape.name.safeParse(name).success) return null;
-  if (name.trim() === '') return 'Введите название колонки.';
-  return `Название должно быть не длиннее ${FIELD_NAME_MAX} символов.`;
+  if (name.trim() === '') return message('fields.fieldDefinitionForm.enterAColumnName');
+  return message('fields.fieldDefinitionForm.nameMustBeValueCharactersOrFewer', { p0: FIELD_NAME_MAX });
 }
 
-export function optionNameProblem(name: string): string | null {
+export function optionNameProblem(name: string): TranslationMessage | null {
   if (createTaskFieldOptionInputSchema.shape.name.safeParse(name).success) return null;
-  if (name.trim() === '') return 'Введите название варианта.';
-  return `Название варианта должно быть не длиннее ${OPTION_NAME_MAX} символов.`;
+  if (name.trim() === '') return message('fields.fieldDefinitionForm.enterAnOptionName');
+  return message('fields.fieldDefinitionForm.optionNameMustBeValueCharactersOrFewer', { p0: OPTION_NAME_MAX });
 }
 
 interface TrackedCommand<TVariables> {
@@ -113,6 +115,7 @@ export function FieldDefinitionForm({
   onSubmit,
   onCancel,
 }: FieldDefinitionFormProps) {
+  const { t } = useTranslation();
   const start = sent ?? initial;
   const [name, setName] = useState(start.name);
   const [type, setType] = useState<TaskFieldType>(start.type);
@@ -120,8 +123,8 @@ export function FieldDefinitionForm({
   const [locked, setLocked] = useState(start.locked);
   const [options, setOptions] = useState<string[]>(start.options);
   const [newOption, setNewOption] = useState('');
-  const [nameError, setNameError] = useState<string | null>(null);
-  const [optionError, setOptionError] = useState<string | null>(null);
+  const [nameError, setNameError] = useState<TranslationMessage | null>(null);
+  const [optionError, setOptionError] = useState<TranslationMessage | null>(null);
   const frozen = pending || uncertain || blocked || sent !== null;
   const shown: FieldFormValue = sent ?? { name, type, historyEnabled, locked, options };
   const nameRef = useRef<HTMLInputElement>(null);
@@ -152,7 +155,7 @@ export function FieldDefinitionForm({
     const trimmed = newOption.trim();
     const problem =
       optionNameProblem(trimmed) ??
-      (options.length >= INITIAL_OPTIONS_MAX ? `Не больше ${INITIAL_OPTIONS_MAX} вариантов.` : null);
+      (options.length >= INITIAL_OPTIONS_MAX ? message('fields.fieldDefinitionForm.useUpToValueOptions', { p0: INITIAL_OPTIONS_MAX }) : null);
     setOptionError(problem);
     if (problem) {
       optionRef.current?.focus();
@@ -193,7 +196,7 @@ export function FieldDefinitionForm({
       return;
     }
     if (showOptions && newOption.trim() !== '') {
-      setOptionError('Добавьте вариант кнопкой «Добавить вариант» или очистите поле.');
+      setOptionError(message('fields.fieldDefinitionForm.useAddOptionToKeepThisOptionOr'));
       optionRef.current?.focus();
       return;
     }
@@ -206,8 +209,7 @@ export function FieldDefinitionForm({
     <form noValidate onSubmit={submit} className="space-y-4">
       <div>
         <label htmlFor={ids.name} className={labelClassName}>
-          Название колонки
-        </label>
+          {t('fields.fieldDefinitionForm.columnName')}</label>
         <TextInput
           ref={nameRef}
           id={ids.name}
@@ -225,18 +227,16 @@ export function FieldDefinitionForm({
         />
         {nameError ? (
           <p id={ids.nameError} className={errorClassName}>
-            {nameError}
+            {t(nameError.key, nameError.params)}
           </p>
         ) : null}
         <p id={ids.nameHint} className={hintClassName}>
-          До {FIELD_NAME_MAX} символов.
-        </p>
+          {t('fields.fieldDefinitionForm.characterLimit', { count: FIELD_NAME_MAX })}</p>
       </div>
 
       <div>
         <label htmlFor={ids.type} className={labelClassName}>
-          Тип поля
-        </label>
+          {t('fields.fieldDefinitionForm.fieldType')}</label>
         {mode === 'create' ? (
           <select
             id={ids.type}
@@ -263,16 +263,16 @@ export function FieldDefinitionForm({
         )}
         <p id={ids.typeHint} className={hintClassName}>
           {mode === 'create'
-            ? 'Тип нельзя будет изменить после создания.'
-            : 'Тип нельзя изменить: значения и история колонки записаны в этом типе и не преобразуются. Если нужен другой тип, добавьте новую колонку.'}
+            ? t('fields.fieldDefinitionForm.typeCannotChangeAfterCreation')
+            : t('fields.fieldDefinitionForm.typeIsFixedBecauseValuesAndHistoryUse')}
         </p>
       </div>
 
       {showOptions ? (
         <fieldset className="space-y-2">
-          <legend className={labelClassName}>Варианты</legend>
+          <legend className={labelClassName}>{t('fields.fieldDefinitionForm.options')}</legend>
           {shown.options.length > 0 ? (
-            <ul aria-label="Варианты новой колонки" className="divide-y divide-line rounded-lg border border-line">
+            <ul aria-label={t('fields.fieldDefinitionForm.newColumnOptions')} className="divide-y divide-line rounded-lg border border-line">
               {shown.options.map((option, index) => (
                 <li key={`${index}:${option}`} className="flex min-w-0 items-center gap-2 px-3 py-1.5">
                   <span className="min-w-0 flex-1 truncate text-sm text-ink" title={option}>
@@ -283,7 +283,7 @@ export function FieldDefinitionForm({
                       size="sm"
                       variant="ghost"
                       className="px-2"
-                      aria-label={`Убрать вариант «${option}»`}
+                      aria-label={t('fields.fieldDefinitionForm.removeOptionValue', { p0: option })}
                       onClick={() => setOptions(options.filter((_, at) => at !== index))}
                     >
                       <X size={14} aria-hidden="true" />
@@ -296,15 +296,14 @@ export function FieldDefinitionForm({
           {frozen ? null : (
             <>
               <label htmlFor={ids.option} className="sr-only">
-                Новый вариант
-              </label>
+                {t('fields.fieldDefinitionForm.newOption')}</label>
               <div className="flex gap-2">
                 <TextInput
                   ref={optionRef}
                   id={ids.option}
                   value={newOption}
                   maxLength={OPTION_NAME_MAX}
-                  placeholder="Новый вариант"
+                  placeholder={t('fields.fieldDefinitionForm.newOption')}
                   autoComplete="off"
                   aria-invalid={optionError ? true : undefined}
                   aria-describedby={optionError ? `${ids.optionError} ${ids.optionHint}` : ids.optionHint}
@@ -316,20 +315,17 @@ export function FieldDefinitionForm({
                 />
                 <Button onClick={addOption}>
                   <Plus size={16} aria-hidden="true" />
-                  Добавить вариант
-                </Button>
+                  {t('fields.fieldDefinitionForm.addOption')}</Button>
               </div>
             </>
           )}
           {optionError ? (
             <p id={ids.optionError} className={errorClassName}>
-              {optionError}
+              {t(optionError.key, optionError.params)}
             </p>
           ) : null}
           <p id={ids.optionHint} className={hintClassName}>
-            Варианты можно добавить и позже. Задачи хранят ссылку на вариант, а не его текст, поэтому переименование
-            ничего не теряет.
-          </p>
+            {t('fields.fieldDefinitionForm.youCanAddOptionsLaterRenamingAnOption')}</p>
         </fieldset>
       ) : null}
 
@@ -344,12 +340,9 @@ export function FieldDefinitionForm({
             aria-describedby={ids.historyHint}
             onChange={(event) => setHistoryEnabled(event.target.checked)}
           />
-          Записывать историю
-        </label>
+          {t('fields.fieldDefinitionForm.recordHistory')}</label>
         <p id={ids.historyHint} className={hintClassName}>
-          История записывается только для изменений после включения. Если выключить запись, уже записанная история
-          сохранится; при повторном включении пропущенные изменения не восстанавливаются.
-        </p>
+          {t('fields.fieldDefinitionForm.recordsFutureChangesWhileEnabledDisablingPreservesExisting')}</p>
       </div>
 
       <div>
@@ -363,12 +356,9 @@ export function FieldDefinitionForm({
             aria-describedby={ids.lockHint}
             onChange={(event) => setLocked(event.target.checked)}
           />
-          Заблокировать значения
-        </label>
+          {t('fields.fieldDefinitionForm.lockValues')}</label>
         <p id={ids.lockHint} className={hintClassName}>
-          Пока блокировка включена, значения этой колонки нельзя изменить ни в интерфейсе, ни через API. Действует
-          только на эту колонку.
-        </p>
+          {t('fields.fieldDefinitionForm.preventsChangesToThisColumnSValuesIn')}</p>
       </div>
 
       {feedback}
@@ -380,9 +370,9 @@ export function FieldDefinitionForm({
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         {/* A pending or unconfirmed command stays on screen until it is answered or resent. */}
-        {pending || uncertain || !cancelable ? null : <Button onClick={onCancel}>Отмена</Button>}
+        {pending || uncertain || !cancelable ? null : <Button onClick={onCancel}>{t('fields.fieldDefinitionForm.cancel')}</Button>}
         <Button type="submit" variant="primary" aria-disabled={pending || blocked || undefined}>
-          {pending ? 'Сохраняем…' : uncertain ? 'Повторить отправку' : submitLabel}
+          {pending ? t('fields.fieldDefinitionForm.saving') : uncertain ? t('fields.fieldDefinitionForm.retrySubmission') : submitLabel}
         </Button>
       </div>
     </form>

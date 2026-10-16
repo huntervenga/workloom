@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../../i18n';
 import type {
   CreateRecurrenceSeriesInput,
   MembershipDto,
@@ -31,9 +32,9 @@ export interface RecurrenceCreateDialogProps {
   onCreated?: ((seriesId: string) => void) | undefined;
 }
 
-const title = 'Новая серия встреч';
-const description =
-  'Серия резервирует даты встреч в отмеченных периодах. Сами встречи появляются при подготовке периода, личные планы и присутствие подтверждаются отдельно.';
+const title = () => t('recurrence.newMeetingSeries');
+const description = () =>
+  t('recurrence.aSeriesReservesDatesInSelectedPeriodsMeetingsAre');
 const body = '-mx-1 min-h-0 flex-1 scroll-py-4 space-y-6 overflow-y-auto px-1 pt-4 pb-6';
 const footer = 'flex shrink-0 flex-wrap justify-end gap-2 border-t border-line bg-surface pt-4';
 
@@ -84,10 +85,11 @@ function Alert({ tone, heading, children }: { tone: 'error' | 'uncertain'; headi
 }
 
 function RequestCode({ error }: { error: Error }) {
+  const { t } = useTranslation();
   const requestId = error instanceof ApiError ? error.requestId : null;
   return requestId ? (
     <p className="text-xs opacity-70">
-      Код запроса: <code className="font-mono">{requestId}</code>
+      {t('recurrence.requestCode')}<code className="font-mono">{requestId}</code>
     </p>
   ) : null;
 }
@@ -97,6 +99,7 @@ function RequestCode({ error }: { error: Error }) {
  * All draft state lives in the page controller; this dialog only renders and dispatches.
  */
 export function RecurrenceCreateDialog(props: RecurrenceCreateDialogProps) {
+  const { t } = useTranslation();
   const { controller: c } = props;
   const mutation = c.commands.create;
   const session = c.createSession;
@@ -114,7 +117,7 @@ export function RecurrenceCreateDialog(props: RecurrenceCreateDialogProps) {
       : null;
   const previewPending = request?.pending === true;
   const previewError = request && !request.pending ? request.error : null;
-  const shownProblems = session && problems?.sessionId === session.id ? problems.messages : [];
+  const shownProblems = session && problems?.sessionId === session.id && built && !built.ok ? built.problems : [];
 
   // A confirmed failure of this draft's command; an uncertain one is shown separately.
   const createError =
@@ -182,24 +185,20 @@ export function RecurrenceCreateDialog(props: RecurrenceCreateDialogProps) {
   // A confirmed 403/404 from this draft's preview or create hides cached fields before parent queries refetch.
   if (props.accessDenied || isAccessDenied(previewError) || isAccessDenied(createError)) {
     return (
-      <DialogShell variant="drawer" title={title} description="Данные проекта сейчас недоступны текущему пользователю." open={c.createOpen} onOpenChange={c.setCreateOpen}>
+      <DialogShell variant="drawer" title={title()} description={t('recurrence.projectDataIsUnavailableToTheCurrentUser')} open={c.createOpen} onOpenChange={c.setCreateOpen}>
         <div className={body}>
-          <p role="status" className="text-sm text-muted">
-            Поля серии и расписание скрыты, пока сервер не подтвердит доступ.{' '}
-            {mutation.pendingCommand
-              ? 'Отправленная серия ждёт ответа сервера.'
+          <p role="status" className="text-sm text-muted">{t('recurrence.seriesFieldsAndScheduleStayHiddenUntilAccessIs2', { saveState: mutation.pendingCommand
+              ? t('recurrence.theSubmittedSeriesIsWaitingForAServerResponse')
               : mutation.uncertain
-                ? 'Результат отправленной серии неизвестен: её можно повторить без изменений.'
-                : 'Черновик сохранён на этой странице.'}
-          </p>
+                ? t('recurrence.theSeriesCreationResultIsUnknownRetryTheUnchanged')
+                : t('recurrence.yourDraftIsPreservedOnThisPage') })}</p>
         </div>
         <div className={footer}>
-          {held === null && session ? <Button onClick={c.discardCreate}>Сбросить черновик серии</Button> : null}
-          <Button onClick={close}>Закрыть</Button>
+          {held === null && session ? <Button onClick={c.discardCreate}>{t('recurrence.discardSeriesDraft')}</Button> : null}
+          <Button onClick={close}>{t('recurrence.close')}</Button>
           {mutation.uncertain ? (
             <Button variant="primary" disabled={mutation.pendingCommand !== null} onClick={retry}>
-              Повторить создание серии
-            </Button>
+              {t('recurrence.retryOriginalSeriesCreation')}</Button>
           ) : null}
         </div>
       </DialogShell>
@@ -207,22 +206,22 @@ export function RecurrenceCreateDialog(props: RecurrenceCreateDialogProps) {
   }
 
   return (
-    <DialogShell variant="drawer" title={title} description={description} open={c.createOpen} onOpenChange={c.setCreateOpen}>
+    <DialogShell variant="drawer" title={title()} description={description()} open={c.createOpen} onOpenChange={c.setCreateOpen}>
       <form className="flex min-h-0 flex-1 flex-col" onSubmit={check}>
         <div className={body}>
           {!shownRule || !shownTemplate ? (
-            <p role="status" className="text-sm text-muted">Черновик серии не подготовлен. Закройте окно и начните создание серии заново.</p>
+            <p role="status" className="text-sm text-muted">{t('recurrence.noSeriesDraftIsReadyCloseThisDialogAnd')}</p>
           ) : (
             <>
               {!props.writable ? (
-                <p className="text-sm text-muted">Только просмотр: у текущего пользователя нет прав на создание серий в этом проекте.</p>
+                <p className="text-sm text-muted">{t('recurrence.viewOnlyYouDoNotHavePermissionToCreate')}</p>
               ) : null}
               <section aria-labelledby={ruleHeadingId} className="min-w-0 space-y-3">
-                <h3 id={ruleHeadingId} className="text-sm font-semibold">Расписание</h3>
+                <h3 id={ruleHeadingId} className="text-sm font-semibold">{t('recurrence.schedule')}</h3>
                 <RecurrenceRuleFields value={shownRule} onChange={changeRule} periods={props.periods} disabled={locked} />
               </section>
               <section aria-labelledby={templateHeadingId} className="min-w-0 space-y-3 border-t border-line pt-5">
-                <h3 id={templateHeadingId} className="text-sm font-semibold">Встреча</h3>
+                <h3 id={templateHeadingId} className="text-sm font-semibold">{t('recurrence.meeting')}</h3>
                 <RecurrenceTemplateFields
                   value={shownTemplate}
                   onChange={changeTemplate}
@@ -235,7 +234,7 @@ export function RecurrenceCreateDialog(props: RecurrenceCreateDialogProps) {
 
               <div className="min-w-0 space-y-4 border-t border-line pt-5">
                 {shownProblems.length > 0 ? (
-                  <Alert tone="error" heading="Проверьте поля серии">
+                  <Alert tone="error" heading={t('recurrence.checkSeriesFields')}>
                     <ul className="list-disc space-y-0.5 pl-4">
                       {shownProblems.map((message) => (
                         <li key={message}>{message}</li>
@@ -245,47 +244,43 @@ export function RecurrenceCreateDialog(props: RecurrenceCreateDialogProps) {
                 ) : null}
 
                 {previewError ? (
-                  <Alert tone="error" heading="Не удалось проверить расписание">
-                    <p>{describeError(previewError, 'planning').description} Черновик сохранён.</p>
+                  <Alert tone="error" heading={t('recurrence.couldNotPreviewSchedule')}>
+                    <p>{t('recurrence.yourDraftIsPreserved3', { description: describeError(previewError, 'planning').description })}</p>
                     <RequestCode error={previewError} />
                   </Alert>
                 ) : null}
 
                 {mutation.uncertain ? (
-                  <Alert tone="uncertain" heading="Результат создания серии неизвестен">
+                  <Alert tone="uncertain" heading={t('recurrence.seriesCreationResultUnknown')}>
                     <p>{describeError(mutation.uncertain.error, 'taskSave').description}</p>
                     <p>
-                      Неизвестно, успел ли сервер создать серию. Отправленные данные закреплены в форме: повторите создание без
-                      изменений — повтор не создаст вторую серию, даже если проверка расписания уже устарела.
-                    </p>
+                      {t('recurrence.theServerMayHaveCreatedTheSeriesSubmittedData')}</p>
                     <RequestCode error={mutation.uncertain.error} />
                   </Alert>
                 ) : null}
 
                 {createError ? (
-                  <Alert tone="error" heading="Не удалось создать серию встреч">
+                  <Alert tone="error" heading={t('recurrence.couldNotCreateMeetingSeries')}>
                     <p>
                       {previewRejected
-                        ? 'Данные изменились после проверки расписания. Черновик сохранён — проверьте расписание заново.'
-                        : `${describeError(createError, 'taskSave').description} Черновик сохранён.`}
+                        ? t('recurrence.dataChangedAfterTheSchedulePreviewYourDraftIs')
+                        : t('recurrence.yourDraftIsPreserved2', { description: describeError(createError, 'taskSave').description })}
                     </p>
                     <RequestCode error={createError} />
                   </Alert>
                 ) : null}
 
                 {mutation.pendingCommand ? (
-                  <p role="status" className="text-sm text-muted">Создаём серию… Отправленные данные закреплены до ответа сервера.</p>
+                  <p role="status" className="text-sm text-muted">{t('recurrence.creatingSeriesSubmittedDataIsLockedUntilTheServer')}</p>
                 ) : previewPending ? (
-                  <p role="status" className="text-sm text-muted">Проверяем расписание…</p>
+                  <p role="status" className="text-sm text-muted">{t('recurrence.checkingSchedule')}</p>
                 ) : null}
 
                 {shownPreview ? (
                   <RecurrenceCreatePreview preview={shownPreview} periods={props.periods} />
                 ) : held === null && !previewPending ? (
                   <p className="text-sm text-muted">
-                    Перед созданием проверьте расписание: сервер покажет все даты серии, их периоды и переводы часов. После любого
-                    изменения расписание нужно проверить снова.
-                  </p>
+                    {t('recurrence.previewBeforeCreatingAllSeriesDatesPeriodsAndDaylight')}</p>
                 ) : null}
               </div>
             </>
@@ -294,22 +289,18 @@ export function RecurrenceCreateDialog(props: RecurrenceCreateDialogProps) {
 
         <div className={footer}>
           <Button variant="ghost" disabled={held !== null || !session} onClick={c.discardCreate}>
-            Сбросить черновик серии
-          </Button>
-          <Button onClick={close}>Закрыть</Button>
+            {t('recurrence.discardSeriesDraft')}</Button>
+          <Button onClick={close}>{t('recurrence.close')}</Button>
           {held === null ? (
             <Button type="submit" disabled={locked || !session || previewPending}>
-              Проверить расписание
-            </Button>
+              {t('recurrence.previewSchedule')}</Button>
           ) : null}
           {mutation.uncertain ? (
             <Button variant="primary" disabled={mutation.pendingCommand !== null} onClick={retry}>
-              Повторить создание серии
-            </Button>
+              {t('recurrence.retryOriginalSeriesCreation')}</Button>
           ) : (
             <Button variant="primary" disabled={!canCreate} aria-busy={mutation.pendingCommand !== null || undefined} onClick={create}>
-              Создать серию
-            </Button>
+              {t('recurrence.createSeries')}</Button>
           )}
         </div>
       </form>

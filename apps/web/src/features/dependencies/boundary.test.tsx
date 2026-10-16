@@ -213,7 +213,7 @@ describe('current edge-write denial over cached reads', () => {
         await waitFor(() => expect(view.current().commands[command].error).not.toBeNull());
         await waitFor(() => expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument());
         expect(view.current().drafts[a.id]?.id).toBe(variables.draftId);
-        const recovery = card ? 'Проверить доступ к связям' : 'Проверить доступ к графу';
+        const recovery = card ? "Check dependency access" : "Check graph access";
         readDenied = true;
         fireEvent.click(screen.getByRole('button', { name: recovery }));
         await waitFor(() => expect(view.calls.filter(call => call.method === 'GET' && call.path === (card ? `${rootPath}/tasks/${a.id}/blocking` : `${projectPath}/graph`)).length).toBeGreaterThan(1));

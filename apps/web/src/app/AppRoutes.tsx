@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../i18n';
 import { LoaderCircle } from 'lucide-react';
 import { Route, Routes } from 'react-router';
 import { HomeRedirect } from '../routes/HomeRedirect';
@@ -10,11 +11,12 @@ import { useSession } from './session';
 import { AppShell } from './shell/AppShell';
 import { createAsyncRoute } from './AsyncRoute';
 
-const ProjectPage = createAsyncRoute(() => import('../routes/ProjectPage').then(module => ({ default: module.ProjectPage })), 'Загрузка проекта');
-const WeeklyPage = createAsyncRoute(() => import('../routes/WeeklyPage').then(module => ({ default: module.WeeklyPage })), 'Загрузка недели');
-const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPage').then(module => ({ default: module.IntegrationsPage })), 'Загрузка интеграций');
+const ProjectPage = createAsyncRoute(() => import('../routes/ProjectPage').then(module => ({ default: module.ProjectPage })), 'shell.loadingProject');
+const WeeklyPage = createAsyncRoute(() => import('../routes/WeeklyPage').then(module => ({ default: module.WeeklyPage })), 'shell.loadingWeek');
+const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPage').then(module => ({ default: module.IntegrationsPage })), 'shell.loadingIntegrations');
 
 export function AppRoutes() {
+  useTranslation();
   const { switching } = useSession();
   if (switching) return <SwitchingScreen />;
 
@@ -37,11 +39,13 @@ export function AppRoutes() {
 }
 
 function SwitchingScreen() {
+  useTranslation();
   return (
     <div role="status" className="grid min-h-dvh place-items-center px-4">
       <p className="flex items-center gap-2.5 text-sm text-muted">
         <LoaderCircle size={18} aria-hidden="true" className="text-accent motion-safe:animate-spin" />
-        Переключаем тестового пользователя…
+
+        {t('shell.switchingActor')}
       </p>
     </div>
   );

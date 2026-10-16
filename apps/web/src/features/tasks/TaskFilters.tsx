@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskStatusDto } from '@workloom/contracts';
 import { Button, TextInput, inputClassName } from '@workloom/ui';
 import { X } from 'lucide-react';
@@ -24,6 +25,7 @@ export function hasActiveTaskFilters(value: TaskFilterValue): boolean {
 
 /** `value` once it has stayed the same for `delayMs`; clearing applies at once. */
 export function useDebouncedValue(value: string, delayMs: number): string {
+  useTranslation();
   const [settled, setSettled] = useState(value);
   useEffect(() => {
     const timer = setTimeout(() => setSettled(value), delayMs);
@@ -43,91 +45,46 @@ const selectClassName = inputClassName('mt-1.5 pr-8');
 const labelClassName = 'text-sm font-medium text-ink';
 
 export function TaskFilters({ value, onChange, statuses, members }: TaskFiltersProps) {
+  const { t, locale } = useTranslation();
   const ids = { search: useId(), status: useId(), participant: useId(), archived: useId(), hint: useId() };
   const orderedStatuses = useMemo(() => [...statuses].sort((a, b) => a.position - b.position), [statuses]);
   const orderedMembers = useMemo(
-    () => [...members].sort((a, b) => a.displayName.localeCompare(b.displayName, 'ru')),
-    [members],
+    () => [...members].sort((a, b) => a.displayName.localeCompare(b.displayName, locale)),
+    [members, locale],
   );
   const set = (patch: Partial<TaskFilterValue>) => onChange({ ...value, ...patch });
 
+  const activeCount = Number(value.statusId !== '') + Number(value.participantMembershipId !== '') + Number(value.includeArchived);
   return (
-    <div className="space-y-2">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-        <div>
-          <label htmlFor={ids.search} className={labelClassName}>
-            Поиск задач
-          </label>
-          <TextInput
-            id={ids.search}
-            type="search"
-            className="mt-1.5"
-            value={value.search}
-            autoComplete="off"
-            onChange={(event) => set({ search: event.target.value })}
-          />
-        </div>
-        <div>
-          <label htmlFor={ids.status} className={labelClassName}>
-            Статус задач
-          </label>
-          <select
-            id={ids.status}
-            className={selectClassName}
-            value={value.statusId}
-            onChange={(event) => set({ statusId: event.target.value })}
-          >
-            <option value="">Все статусы</option>
-            {orderedStatuses.map((status) => (
-              <option key={status.id} value={status.id}>
-                {status.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label htmlFor={ids.participant} className={labelClassName}>
-            Участник задач
-          </label>
-          <select
-            id={ids.participant}
-            className={selectClassName}
-            aria-describedby={ids.hint}
-            value={value.participantMembershipId}
-            onChange={(event) => set({ participantMembershipId: event.target.value })}
-          >
-            <option value="">Все участники</option>
-            {orderedMembers.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.displayName}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2 pb-2">
-          <input
-            id={ids.archived}
-            type="checkbox"
-            className="size-4 rounded border-line accent-accent"
-            checked={value.includeArchived}
-            onChange={(event) => set({ includeArchived: event.target.checked })}
-          />
-          <label htmlFor={ids.archived} className="text-sm text-ink-soft">
-            Показывать архивные задачи
-          </label>
-        </div>
+    <div className="flex min-w-0 items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <label htmlFor={ids.search} className="sr-only">{t('tasks.taskFilters.searchTasks')}</label>
+        <TextInput id={ids.search} type="search" placeholder={t('tasks.taskFilters.searchTasks')} value={value.search} autoComplete="off" onChange={event => set({ search: event.target.value })} />
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p id={ids.hint} className="text-sm text-muted">
-          Оценки показывают общий объём работы команды.
-        </p>
-        {hasActiveTaskFilters(value) ? (
-          <Button size="sm" onClick={() => onChange(emptyTaskFilters)}>
-            <X size={16} aria-hidden="true" />
-            Сбросить фильтры
-          </Button>
-        ) : null}
-      </div>
+      <details className="relative shrink-0" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
+        <summary className="flex h-9 cursor-pointer list-none items-center rounded-lg border border-line bg-surface px-3 text-sm font-medium text-ink-soft hover:bg-canvas [&::-webkit-details-marker]:hidden">{activeCount ? t('tasks.taskFilters.filterCount', { count: activeCount }) : t('tasks.taskFilters.filters')}</summary>
+        <div className="absolute right-0 z-20 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-3 rounded-xl border border-line bg-surface p-4 shadow-lg">
+          <div>
+            <label htmlFor={ids.status} className={labelClassName}>{t('tasks.taskFilters.taskStatus')}</label>
+            <select id={ids.status} className={selectClassName} value={value.statusId} onChange={event => set({ statusId: event.target.value })}>
+              <option value="">{t('tasks.taskFilters.allStatuses')}</option>
+              {orderedStatuses.map(status => <option key={status.id} value={status.id}>{status.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={ids.participant} className={labelClassName}>{t('tasks.taskFilters.taskParticipant')}</label>
+            <select id={ids.participant} className={selectClassName} value={value.participantMembershipId} onChange={event => set({ participantMembershipId: event.target.value })}>
+              <option value="">{t('tasks.taskFilters.allParticipants')}</option>
+              {orderedMembers.map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-ink-soft" htmlFor={ids.archived}>
+            <input id={ids.archived} type="checkbox" className="size-4 rounded border-line accent-accent" checked={value.includeArchived} onChange={event => set({ includeArchived: event.target.checked })} />
+            {t('tasks.taskFilters.showArchivedTasks')}
+          </label>
+        </div>
+      </details>
+      {hasActiveTaskFilters(value) ? <Button size="sm" variant="ghost" aria-label={t('tasks.taskFilters.clearFilters')} title={t('tasks.taskFilters.clearFilters')} onClick={() => onChange(emptyTaskFilters)}><X size={16} aria-hidden="true" /></Button> : null}
     </div>
   );
 }

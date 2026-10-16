@@ -1,3 +1,4 @@
+import { t, formatNumber, localization } from '../../i18n';
 /**
  * Editable drafts for typed custom field values. A draft keeps what the person typed or picked;
  * `parseFieldDraft` turns it into a `TaskFieldData` through the shared contract schema. An
@@ -14,10 +15,10 @@ import {
 import { formatEstimateInput, parseEstimateInput } from '../task-table/estimate';
 
 /** Same copy as the task form uses for memberships no longer in the workspace. */
-export const UNAVAILABLE_MEMBER = 'Участник недоступен';
-export const UNAVAILABLE_OPTION = 'Вариант недоступен';
-export const NOT_SET = 'Не задано';
-export const NOTHING_SELECTED = 'Ничего не выбрано';
+export const UNAVAILABLE_MEMBER = () => t('fields.valueDraft.memberUnavailable');
+export const UNAVAILABLE_OPTION = () => t('fields.valueDraft.optionUnavailable');
+export const NOT_SET = () => t('fields.valueDraft.notSet');
+export const NOTHING_SELECTED = () => t('fields.valueDraft.nothingSelected');
 
 export type FieldDraft =
   /** `null` is a cleared value; `''` is an empty text, kept as typed. */
@@ -34,16 +35,16 @@ export type FieldDraftResult = { ok: true; value: TaskFieldData } | { ok: false;
 const DECIMAL_NUMBER = /^([-−–]?)(\d+)(?:[.,](\d+))?$/;
 
 const messages = {
-  stale: 'Поле изменилось. Обновите страницу и введите значение заново.',
-  text: 'Текст слишком длинный: не больше 10 000 символов.',
-  number: 'Введите число, например 12 или 3,5.',
-  numberRange: 'Число должно быть от −1 000 000 000 000 до 1 000 000 000 000.',
+  get stale() { return t('fields.valueDraft.thisFieldChangedRefreshThePageAndEnter'); },
+  get text() { return t('fields.valueDraft.textMustBe10000CharactersOrFewer'); },
+  get number() { return t('fields.valueDraft.enterANumberSuchAs12Or3'); },
+  get numberRange() { return t('fields.valueDraft.numberMustBeBetween1000000000'); },
   // The shared hours parser speaks about task estimates; custom durations get neutral copy.
-  duration: 'Введите длительность в часах, например 1,5 или 1:30. Значение должно быть в целых минутах.',
-  date: 'Введите существующую дату.',
-  url: 'Введите адрес, начинающийся с http:// или https://.',
-  reference: 'Выбор недоступен. Обновите страницу и попробуйте снова.',
-  boolean: 'Выберите «Да», «Нет» или «Не задано».',
+  get duration() { return t('fields.valueDraft.enterHoursAs15Or130'); },
+  get date() { return t('fields.valueDraft.enterAValidDate'); },
+  get url() { return t('fields.valueDraft.enterAURLStartingWithHttpOrHttps'); },
+  get reference() { return t('fields.valueDraft.selectionUnavailableRefreshThePageAndTryAgain'); },
+  get boolean() { return t('fields.valueDraft.chooseYesNoOrNotSet'); },
 } as const;
 
 function fail(message: string): FieldDraftResult {
@@ -83,14 +84,15 @@ function plainDecimal(value: number): string {
   return sign + digits.slice(0, point) + '.' + digits.slice(point);
 }
 
-const integerFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
+const integerFormat = { format: (value: number) => formatNumber(value, { maximumFractionDigits: 0 }) };
 
-/** Russian number text that shows every stored decimal: `1234.5` → «1 234,5». */
+/** Localized number text that preserves every stored decimal without rounding. */
 export function formatFieldNumber(value: number): string {
   const [whole = '0', fraction] = plainDecimal(value).split('.');
   const negative = whole.startsWith('-');
   const grouped = integerFormat.format(Number(negative ? whole.slice(1) : whole));
-  return `${negative ? '−' : ''}${grouped}${fraction ? `,${fraction}` : ''}`;
+  const decimal = new Intl.NumberFormat(localization.getLocale()).formatToParts(1.1).find(part => part.type === 'decimal')?.value ?? '.';
+  return `${negative ? '−' : ''}${grouped}${fraction ? `${decimal}${fraction}` : ''}`;
 }
 
 function parseNumberText(text: string): { ok: true; value: number } | { ok: false; message: string } {
@@ -109,7 +111,7 @@ export function draftFromFieldValue(field: TaskFieldDefinitionDto, value: TaskFi
     case 'text':
       return { type: 'text', value: data?.type === 'text' ? data.value : null };
     case 'number':
-      return { type: 'number', text: data?.type === 'number' && data.value !== null ? plainDecimal(data.value).replace('.', ',') : '' };
+      return { type: 'number', text: data?.type === 'number' && data.value !== null ? plainDecimal(data.value) : '' };
     case 'duration':
       return { type: 'duration', text: data?.type === 'duration' && isMinutes(data.value) ? formatEstimateInput(data.value) : '' };
     case 'date':
@@ -238,7 +240,7 @@ export function referenceLabels(
       ? !members.some((member) => sameId(member.id, id))
       : !field.options.some((option) => sameId(option.id, id)),
   );
-  const unavailable = field.type === 'person' ? UNAVAILABLE_MEMBER : UNAVAILABLE_OPTION;
+  const unavailable = field.type === 'person' ? UNAVAILABLE_MEMBER() : UNAVAILABLE_OPTION();
   return ids.map((id) => {
     const unknownIndex = unknownIds.findIndex((unknown) => sameId(unknown, id));
     if (unknownIndex >= 0) {
@@ -253,7 +255,7 @@ export function referenceLabels(
     const archived = option !== undefined && option.archivedAt !== null;
     return {
       id,
-      label: archived ? `${option?.name ?? ''} (в архиве)` : (option?.name ?? unavailable),
+      label: archived ? t('fields.valueDraft.valueArchived', { p0: option?.name ?? '' }) : (option?.name ?? unavailable),
       state: archived ? 'archived' : 'active',
       color: option?.color ?? null,
     };

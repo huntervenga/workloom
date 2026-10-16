@@ -19,6 +19,7 @@ import {
 } from '@workloom/contracts';
 
 import { loadLiveData, type LiveData } from './support/live-api.js';
+import { revealTaskDetails, revealTaskFilters, showAllColumns } from './support/disclosures.js';
 
 const RESPONSE_TIMEOUT = 15_000;
 
@@ -149,8 +150,8 @@ async function expectEstimateInView(page: Page, title: string): Promise<void> {
   const row = taskRow(page, title);
   const targets: [string, Locator][] = [
     [`title of «${title}»`, row.getByRole('button', { name: title, exact: true })],
-    ['estimate column header', table.getByRole('columnheader', { name: 'Оценка задачи', exact: true })],
-    [`estimate cell of «${title}»`, row.getByRole('cell').nth(7)],
+    ['estimate column header', table.getByRole('columnheader', { name: "Team estimate", exact: true })],
+    [`estimate cell of «${title}»`, row.getByRole('cell').nth(await table.getByRole('columnheader', { name: 'Team estimate', exact: true }).evaluate(element => Array.from(element.parentElement?.children ?? []).indexOf(element)))],
     ['estimate total', table.locator('tfoot').getByRole('cell').last()],
   ];
   for (const [name, target] of targets) {
@@ -283,14 +284,14 @@ test.describe('desktop 1440', () => {
     // Project through the Projects route dialog.
     await page.goto(`/w/${workspaceId}/projects`);
     const main = page.getByRole('main');
-    await expect(main.getByRole('heading', { level: 1, name: 'Проекты' })).toBeVisible();
-    await main.getByRole('button', { name: 'Новый проект' }).click();
-    const projectDialog = page.getByRole('dialog', { name: 'Новый проект' });
-    await projectDialog.getByLabel('Название проекта', { exact: true }).fill(projectName);
+    await expect(main.getByRole('heading', { level: 1, name: "Projects" })).toBeVisible();
+    await main.getByRole('button', { name: "New project" }).click();
+    const projectDialog = page.getByRole('dialog', { name: "New project" });
+    await projectDialog.getByLabel("Project name", { exact: true }).fill(projectName);
     const projectCreated = page.waitForResponse((response) => isApiCall(response, 'POST', workspaceApi('/projects')), {
       timeout: RESPONSE_TIMEOUT,
     });
-    await projectDialog.getByRole('button', { name: 'Создать проект', exact: true }).click();
+    await projectDialog.getByRole('button', { name: "Create project", exact: true }).click();
     const project: ProjectDto = projectResponseSchema.parse(await jsonOf(await projectCreated, 201)).data;
     expect(project.name).toBe(projectName);
     expect(project.workspaceId).toBe(workspaceId);
@@ -303,20 +304,21 @@ test.describe('desktop 1440', () => {
     await expect(taskTable(page)).toBeVisible();
 
     // Task through the table action and the create drawer.
-    await taskTable(page).getByRole('button', { name: 'Добавить задачу без раздела', exact: true }).click();
-    const createDrawer = page.getByRole('dialog', { name: 'Новая задача' });
-    await createDrawer.getByLabel('Название', { exact: true }).fill(title);
-    await createDrawer.getByLabel('Описание', { exact: true }).fill(description);
-    await createDrawer.getByLabel('Оценка задачи, часы', { exact: true }).fill('1,5');
-    await createDrawer.getByLabel('Ответственный', { exact: true }).selectOption(responsible.id);
-    const createParticipants = createDrawer.getByRole('group', { name: 'Участники', exact: true });
+    await taskTable(page).getByRole('button', { name: "Add task without a section", exact: true }).click();
+    const createDrawer = page.getByRole('dialog', { name: "New task" });
+    await createDrawer.getByLabel("Task name", { exact: true }).fill(title);
+    await createDrawer.getByLabel("Description", { exact: true }).fill(description);
+    await revealTaskDetails(createDrawer);
+    await createDrawer.getByLabel("Team estimate, hours", { exact: true }).fill('1,5');
+    await createDrawer.getByLabel("Assignee", { exact: true }).selectOption(responsible.id);
+    const createParticipants = createDrawer.getByRole('group', { name: "Participants", exact: true });
     await createParticipants.getByRole('checkbox', { name: responsible.displayName, exact: true }).check();
     await createParticipants.getByRole('checkbox', { name: other.displayName, exact: true }).check();
 
     const taskCreated = page.waitForResponse((response) => isApiCall(response, 'POST', workspaceApi('/tasks')), {
       timeout: RESPONSE_TIMEOUT,
     });
-    await createDrawer.getByRole('button', { name: 'Создать задачу', exact: true }).click();
+    await createDrawer.getByRole('button', { name: "Create task", exact: true }).click();
     const createResponse = await taskCreated;
     const createBody = createTaskInputSchema.parse(createResponse.request().postDataJSON());
     expect(createBody.estimateMinutes).toBe(90);
@@ -335,13 +337,14 @@ test.describe('desktop 1440', () => {
     await page.goto(`${projectPath}?task=${created.id}`);
     const drawer = page.getByRole('dialog');
     await expect(drawer).toHaveAccessibleName(title);
-    const titleInput = drawer.getByLabel('Название', { exact: true });
-    const estimateInput = drawer.getByLabel('Оценка задачи, часы', { exact: true });
-    const editParticipants = drawer.getByRole('group', { name: 'Участники', exact: true });
+    const titleInput = drawer.getByLabel("Task name", { exact: true });
+    await revealTaskDetails(drawer);
+    const estimateInput = drawer.getByLabel("Team estimate, hours", { exact: true });
+    const editParticipants = drawer.getByRole('group', { name: "Participants", exact: true });
     await expect(titleInput).toHaveValue(title);
-    await expect(drawer.getByLabel('Описание', { exact: true })).toHaveValue(description);
+    await expect(drawer.getByLabel("Description", { exact: true })).toHaveValue(description);
     await expect(estimateInput).toHaveValue('1:30');
-    await expect(drawer.getByLabel('Ответственный', { exact: true })).toHaveValue(responsible.id);
+    await expect(drawer.getByLabel("Assignee", { exact: true })).toHaveValue(responsible.id);
     await expect(editParticipants.getByRole('checkbox', { name: responsible.displayName, exact: true })).toBeChecked();
     await expect(editParticipants.getByRole('checkbox', { name: other.displayName, exact: true })).toBeChecked();
 
@@ -352,7 +355,7 @@ test.describe('desktop 1440', () => {
       (response) => isApiCall(response, 'PATCH', workspaceApi(`/tasks/${created.id}`)),
       { timeout: RESPONSE_TIMEOUT },
     );
-    await drawer.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await drawer.getByRole('button', { name: "Save", exact: true }).click();
     const patchResponse = await taskPatched;
     const patchBody = updateTaskInputSchema.parse(patchResponse.request().postDataJSON());
     expect(patchBody).toEqual({
@@ -373,37 +376,39 @@ test.describe('desktop 1440', () => {
     expect(inactiveIds(patched)).toEqual([other.id]);
     await expect(drawer).toHaveAccessibleName(renamed);
 
-    await drawer.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await drawer.getByRole('button', { name: "Close", exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
     const expectEditedRow = async () => {
+      await showAllColumns(page);
       const row = taskRow(page, renamed);
       await expect(row).toHaveCount(1);
       const cells = row.getByRole('cell');
       await expect(cells.nth(2)).toContainText(responsible.displayName);
       await expect(cells.nth(3)).toContainText(responsible.displayName);
       await expect(cells.nth(3)).not.toContainText(other.displayName);
-      await expect(cells.nth(7)).toContainText('2 ч');
+      await expect(cells.nth(7)).toContainText("2h");
       await expectEstimateInView(page, renamed);
     };
     await expectEditedRow();
 
     // Detail subtask through the row action: it joins the parent's work package and estimate.
     const childTitle = `E2E детализация ${suffix}`;
-    await taskTable(page).getByRole('button', { name: `Добавить подзадачу к «${renamed}»`, exact: true }).click();
-    const childDrawer = page.getByRole('dialog', { name: 'Новая подзадача' });
-    await childDrawer.getByLabel('Название', { exact: true }).fill(childTitle);
-    const scope = childDrawer.getByRole('group', { name: 'Объём подзадачи', exact: true });
+    await taskTable(page).getByRole('button', { name: `Add subtask to “${renamed}”`, exact: true }).click();
+    const childDrawer = page.getByRole('dialog', { name: "New subtask" });
+    await childDrawer.getByLabel("Task name", { exact: true }).fill(childTitle);
+    const scope = childDrawer.getByRole('group', { name: "Subtask scope", exact: true });
     await expect(
-      scope.getByRole('radio', { name: 'Детализация — входит в оценку родительской задачи', exact: true }),
+      scope.getByRole('radio', { name: "Detail — included in the parent estimate", exact: true }),
     ).toBeChecked();
-    const childEstimate = childDrawer.getByLabel('Оценка задачи, часы', { exact: true });
+    await revealTaskDetails(childDrawer);
+    const childEstimate = childDrawer.getByLabel("Team estimate, hours", { exact: true });
     await expect(childEstimate).toHaveAttribute('readonly', '');
     await expect(childEstimate).toHaveValue('2:00');
     const childCreated = page.waitForResponse((response) => isApiCall(response, 'POST', workspaceApi('/tasks')), {
       timeout: RESPONSE_TIMEOUT,
     });
-    await childDrawer.getByRole('button', { name: 'Создать задачу', exact: true }).click();
+    await childDrawer.getByRole('button', { name: "Create task", exact: true }).click();
     const childResponse = await childCreated;
     const childRawBody: unknown = childResponse.request().postDataJSON();
     expect(childRawBody).not.toHaveProperty('estimateMinutes');
@@ -464,11 +469,12 @@ test.describe('desktop 1440', () => {
         new URL(response.url()).searchParams.get('participantMembershipId') === responsible.id,
       { timeout: RESPONSE_TIMEOUT },
     );
-    await main.getByLabel('Участник задач', { exact: true }).selectOption(responsible.id);
+    await revealTaskFilters(page);
+    await main.getByLabel("Task participant", { exact: true }).selectOption(responsible.id);
     await jsonOf(await byParticipant, 200);
     await expect(taskRow(page, renamed)).toHaveCount(1);
     await expect(taskRow(page, filterTitle)).toHaveCount(0);
-    await main.getByRole('button', { name: 'Сбросить фильтры', exact: true }).click();
+    await main.getByRole('button', { name: "Clear filters", exact: true }).click();
     await expect(taskRow(page, renamed)).toHaveCount(1);
     await expect(taskRow(page, filterTitle)).toHaveCount(1);
 
@@ -477,22 +483,23 @@ test.describe('desktop 1440', () => {
         isApiCall(response, 'GET', tasksPath) && new URL(response.url()).searchParams.get('search') === filterTitle,
       { timeout: RESPONSE_TIMEOUT },
     );
-    await main.getByRole('searchbox', { name: 'Поиск задач' }).fill(filterTitle);
+    await main.getByRole('searchbox', { name: "Search tasks" }).fill(filterTitle);
     await jsonOf(await bySearch, 200);
     await expect(taskRow(page, filterTitle)).toHaveCount(1);
     await expect(taskRow(page, renamed)).toHaveCount(0);
-    await main.getByRole('button', { name: 'Сбросить фильтры', exact: true }).click();
+    await main.getByRole('button', { name: "Clear filters", exact: true }).click();
     await expect(taskRow(page, renamed)).toHaveCount(1);
 
     // Reopen the persisted task from the table title.
     await taskTable(page).getByRole('button', { name: renamed, exact: true }).click();
     const reopened = page.getByRole('dialog');
     await expect(reopened).toHaveAccessibleName(renamed);
-    await expect(reopened.getByLabel('Название', { exact: true })).toHaveValue(renamed);
-    await expect(reopened.getByLabel('Описание', { exact: true })).toHaveValue(description);
-    await expect(reopened.getByLabel('Оценка задачи, часы', { exact: true })).toHaveValue('2:00');
-    await expect(reopened.getByLabel('Ответственный', { exact: true })).toHaveValue(responsible.id);
-    const reopenedParticipants = reopened.getByRole('group', { name: 'Участники', exact: true });
+    await expect(reopened.getByLabel("Task name", { exact: true })).toHaveValue(renamed);
+    await expect(reopened.getByLabel("Description", { exact: true })).toHaveValue(description);
+    await revealTaskDetails(reopened);
+    await expect(reopened.getByLabel("Team estimate, hours", { exact: true })).toHaveValue('2:00');
+    await expect(reopened.getByLabel("Assignee", { exact: true })).toHaveValue(responsible.id);
+    const reopenedParticipants = reopened.getByRole('group', { name: "Participants", exact: true });
     await expect(reopenedParticipants.getByRole('checkbox', { name: responsible.displayName, exact: true })).toBeChecked();
     await expect(reopenedParticipants.getByRole('checkbox', { name: other.displayName, exact: true })).not.toBeChecked();
     await page.screenshot({ path: testInfo.outputPath('p1a-desktop-task-detail.png') });
@@ -551,18 +558,19 @@ test.describe('mobile 390x844', () => {
     await titleButton.click();
     const drawer = page.getByRole('dialog');
     await expect(drawer).toHaveAccessibleName(title);
-    await expect(drawer.getByLabel('Название', { exact: true })).toHaveValue(title);
-    await expect(drawer.getByLabel('Описание', { exact: true })).toHaveValue(description);
-    await expect(drawer.getByLabel('Оценка задачи, часы', { exact: true })).toHaveValue('1:30');
-    await expect(drawer.getByLabel('Ответственный', { exact: true })).toHaveValue(responsible.id);
-    const participants = drawer.getByRole('group', { name: 'Участники', exact: true });
+    await expect(drawer.getByLabel("Task name", { exact: true })).toHaveValue(title);
+    await expect(drawer.getByLabel("Description", { exact: true })).toHaveValue(description);
+    await revealTaskDetails(drawer);
+    await expect(drawer.getByLabel("Team estimate, hours", { exact: true })).toHaveValue('1:30');
+    await expect(drawer.getByLabel("Assignee", { exact: true })).toHaveValue(responsible.id);
+    const participants = drawer.getByRole('group', { name: "Participants", exact: true });
     await expect(participants.getByRole('checkbox', { name: responsible.displayName, exact: true })).toBeChecked();
     await expect(participants.getByRole('checkbox', { name: other.displayName, exact: true })).toBeChecked();
     await expectNoHorizontalOverflow(page);
     await page.screenshot({ path: testInfo.outputPath('p1a-mobile-task-drawer.png') });
 
     // Late fields scroll inside the form body, above an anchored opaque action panel with Save.
-    const saveButton = drawer.getByRole('button', { name: 'Сохранить', exact: true });
+    const saveButton = drawer.getByRole('button', { name: "Save", exact: true });
     await expect(saveButton).toBeVisible();
     // TaskDrawer's action panel is the Save button's wrapper.
     const actionPanel = saveButton.locator('xpath=..');
@@ -573,10 +581,10 @@ test.describe('mobile 390x844', () => {
     const backdrop = await backgroundAlpha(actionPanel);
     expect(backdrop.alpha, `action panel background ${backdrop.color} is opaque`).toBe(1);
     const lateFields: [string, Locator][] = [
-      ['Срок', drawer.getByLabel('Срок', { exact: true })],
-      ['Оценка задачи, часы', drawer.getByLabel('Оценка задачи, часы', { exact: true })],
-      ['Участники', participants],
-      ['Теги', drawer.getByRole('group', { name: 'Теги', exact: true })],
+      ["Due date", drawer.getByLabel("Due date", { exact: true })],
+      ["Team estimate, hours", drawer.getByLabel("Team estimate, hours", { exact: true })],
+      ["Participants", participants],
+      ["Tags", drawer.getByRole('group', { name: "Tags", exact: true })],
     ];
     let formBody: { scrollTop: number; scrollable: boolean } | null = null;
     for (const [name, field] of lateFields) {

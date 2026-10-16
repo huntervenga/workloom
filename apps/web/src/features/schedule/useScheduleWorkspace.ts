@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import { taskScheduleBatchInputSchema, type TaskDto, type TaskScheduleContextRowDto, type TaskSchedulePreviewDto, type TaskScheduleBatchInput } from '@workloom/contracts';
 import { useCallback, useRef, useState } from 'react';
 import { ApiError, isAccessDenied } from '../../lib/api';
@@ -15,6 +16,7 @@ export function scheduleDraftInput(draft: ScheduleDraft): TaskScheduleBatchInput
   return parsed.success ? parsed.data : null;
 }
 export function useScheduleWorkspace(actorId: string, workspaceId: string, projectId: string, timezone: string) {
+  const { t } = useTranslation();
   const [drafts, setDrafts] = useState<Record<string, ScheduleDraft>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
   const [readDenied, setReadDenied] = useState(false);
@@ -42,7 +44,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
     if (previous) { setActiveId(previous.id); return; }
     const draft: ScheduleDraft = { id: crypto.randomUUID(), preview: null, previewFingerprint: null, error: null, rows: tasks.map(task => {
       const context = contexts.get(task.id);
-      if (!context) throw new Error('Missing authorized context');
+      if (!context) throw new Error(t('schedule.useScheduleWorkspace.authorizedContextMissing'));
       return { taskId: task.id, title: task.title, expectedRevision: context.taskRevision, startDate: context.current.startDate ?? '', dueDate: context.current.dueDate ?? '', baseStart: context.current.startDate ?? '', baseDue: context.current.dueDate ?? '', editable: context.editableDates };
     }) };
     setDrafts(current => ({ ...current, [draft.id]: draft })); setActiveId(draft.id);
@@ -56,7 +58,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
     setDrafts(current => {
       const draft = current[id]; if (!draft) return current;
       const rows = draft.rows.map(row => ({ ...row, startDate: row.startDate ? shiftDay(row.startDate, amount) : '', dueDate: row.dueDate ? shiftDay(row.dueDate, amount) : '' }));
-      if (rows.some(row => row.startDate === null || row.dueDate === null)) return { ...current, [id]: { ...draft, error: new Error('Сдвиг выходит за допустимые календарные даты.') } };
+      if (rows.some(row => row.startDate === null || row.dueDate === null)) return { ...current, [id]: { ...draft, error: new Error(t('schedule.useScheduleWorkspace.theMoveExceedsTheAllowedCalendarDateRange')) } };
       return { ...current, [id]: { ...draft, rows: rows.map(row => ({ ...row, startDate: row.startDate ?? '', dueDate: row.dueDate ?? '' })), preview: null, previewFingerprint: null, error: null } };
     });
   };
@@ -70,7 +72,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
     try {
       const result = await previewSchedule(workspaceId, projectId, input);
       setDrafts(current => { const now = current[draft.id]; const parsed = now ? scheduleDraftInput(now) : null; return now && parsed && requests.current[draft.id] === stamp && fingerprint(parsed) === source ? { ...current, [draft.id]: { ...now, preview: result, previewFingerprint: source, error: null } } : current; });
-    } catch (error) { if (isAccessDenied(error)) noteReadDenied(); setDrafts(current => { const now = current[draft.id]; const parsed = now ? scheduleDraftInput(now) : null; return now && parsed && requests.current[draft.id] === stamp && fingerprint(parsed) === source ? { ...current, [draft.id]: { ...now, error: error instanceof Error ? error : new Error('Не удалось проверить сроки.') } } : current; }); }
+    } catch (error) { if (isAccessDenied(error)) noteReadDenied(); setDrafts(current => { const now = current[draft.id]; const parsed = now ? scheduleDraftInput(now) : null; return now && parsed && requests.current[draft.id] === stamp && fingerprint(parsed) === source ? { ...current, [draft.id]: { ...now, error: error instanceof Error ? error : new Error(t('schedule.useScheduleWorkspace.couldNotPreviewDates')) } } : current; }); }
     finally { setPreviewing(current => current === draft.id ? null : current); }
   };
   const rebase = async (draft: ScheduleDraft) => {
@@ -80,7 +82,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
       const result = await fetchScheduleContext(workspaceId, projectId, { taskIds: draft.rows.map(row => row.taskId) });
       setDrafts(current => { const now = current[draft.id]; return now ? { ...current, [draft.id]: { ...now, rows: now.rows.map(row => { const fresh = result.rows.find(item => item.taskId === row.taskId); return fresh ? { ...row, expectedRevision: fresh.taskRevision, baseStart: fresh.current.startDate ?? '', baseDue: fresh.current.dueDate ?? '', editable: fresh.editableDates } : row; }), preview: null, previewFingerprint: null, error: null } } : current; });
       mutation.reset();
-    } catch (error) { if (isAccessDenied(error)) noteReadDenied(); setDrafts(current => current[draft.id] ? { ...current, [draft.id]: { ...current[draft.id], error: error instanceof Error ? error : new Error('Не удалось обновить сроки.') } } : current); }
+    } catch (error) { if (isAccessDenied(error)) noteReadDenied(); setDrafts(current => current[draft.id] ? { ...current, [draft.id]: { ...current[draft.id], error: error instanceof Error ? error : new Error(t('schedule.useScheduleWorkspace.couldNotRefreshDates')) } } : current); }
     finally { setRebasing(null); }
   };
   const apply = (draft: ScheduleDraft) => {
@@ -115,7 +117,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
       return `/w/${workspaceId}/projects/${period.projectId}/week?period=${period.id}`;
     } catch (error) {
       if (isAccessDenied(error)) noteReadDenied();
-      setDrafts(current => current[draft.id] ? { ...current, [draft.id]: { ...current[draft.id], error: error instanceof Error ? error : new Error('Не удалось открыть период.') } } : current);
+      setDrafts(current => current[draft.id] ? { ...current, [draft.id]: { ...current[draft.id], error: error instanceof Error ? error : new Error(t('schedule.useScheduleWorkspace.couldNotOpenThePeriod')) } } : current);
       return null;
     } finally { setOpeningRecovery(null); }
   };

@@ -1,3 +1,5 @@
+import { message, type TranslationMessage } from '../../i18n';
+import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
 import { Archive, Lock, RefreshCw } from 'lucide-react';
@@ -63,7 +65,8 @@ export interface StoredValueProps {
 }
 
 export function StoredValue({ field, value, members }: StoredValueProps) {
-  if (value === null) return <span className="text-muted">Значение не задавалось</span>;
+  const { t } = useTranslation();
+  if (value === null) return <span className="text-muted">{t('fields.fieldValueForm.valueHasNotBeenSet')}</span>;
   return <FieldValueDisplay field={field} value={value.value} members={members} />;
 }
 
@@ -99,13 +102,14 @@ export interface FieldValueFormProps {
 
 /** One field's value editor in a centered dialog over the task drawer. */
 export function FieldValueForm(props: FieldValueFormProps) {
+  const { t } = useTranslation();
   const { actorId, workspaceId, taskId, taskTitle, session, currentField, currentValue, members, writable, mutation } = props;
   const { blockedNotice, onSessionChange, onDiscard, onReload, onFieldLocked, onClose } = props;
   const field = session.field;
   const latestField = currentField ?? field;
 
-  const [parseError, setParseError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [hasParseError, setParseError] = useState(false);
+  const [notice, setNotice] = useState<TranslationMessage | null>(null);
   const [reloading, setReloading] = useState<'idle' | 'loading' | 'failed'>('idle');
 
   const held = heldFieldCommand(mutation);
@@ -122,6 +126,8 @@ export function FieldValueForm(props: FieldValueFormProps) {
 
   // A held command shows exactly what was sent, never the kept draft or the cache.
   const shownDraft = heldHere ? draftFromFieldValue(field, heldHere.input.value) : session.draft;
+  const currentValidation = hasParseError ? parseFieldDraft(field, shownDraft) : null;
+  const parseError = currentValidation && !currentValidation.ok ? currentValidation.message : null;
   const originalValue: TaskFieldData | null = heldHere ? heldHere.input.value : (session.value?.value ?? null);
 
   const ownError =
@@ -154,13 +160,13 @@ export function FieldValueForm(props: FieldValueFormProps) {
     if (!canSend) return;
     const parsed = parseFieldDraft(field, session.draft);
     if (!parsed.ok) {
-      setParseError(parsed.message);
+      setParseError(true);
       return;
     }
-    setParseError(null);
+    setParseError(false);
     const original = session.value?.value ?? null;
     if (original === null ? parsed.value.value === null : sameJson(original, parsed.value)) {
-      setNotice(original === null ? 'Поле и так не заполнено — сохранять нечего.' : 'Значение не изменилось — сохранять нечего.');
+      setNotice(original === null ? message('fields.fieldValueForm.theFieldIsAlreadyEmptyNothingToSave') : message('fields.fieldValueForm.theValueHasNotChangedNothingToSave'));
       return;
     }
     setNotice(null);
@@ -204,14 +210,13 @@ export function FieldValueForm(props: FieldValueFormProps) {
   const reloadButton = (
     <Button size="sm" aria-disabled={reloading === 'loading' || undefined} onClick={() => void reload()}>
       <RefreshCw size={16} aria-hidden="true" className={reloading === 'loading' ? 'motion-safe:animate-spin' : undefined} />
-      Загрузить актуальные данные
-    </Button>
+      {t('fields.fieldValueForm.loadLatestData')}</Button>
   );
 
   return (
     <DialogShell
-      title={`Значение поля «${field.name}»`}
-      description={`Задача «${taskTitle}».`}
+      title={t('fields.fieldValueForm.valueOfValue', { p0: field.name })}
+      description={t('fields.fieldValueForm.taskValue', { p0: taskTitle })}
       open
       onOpenChange={(next) => {
         if (!next) onClose();
@@ -224,24 +229,23 @@ export function FieldValueForm(props: FieldValueFormProps) {
           <p className="flex gap-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
             <Lock size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
             <span>
-              Поле заблокировано: его значения сейчас нельзя изменить.
-              {heldHere ? ' Неподтверждённую отправку можно повторить, но сервер может её отклонить.' : null}
+              {t('fields.fieldValueForm.thisFieldIsLockedItsValuesCannotBe')}{heldHere ? t('fields.fieldValueForm.youCanRetryTheUnconfirmedSubmissionButThe') : null}
             </span>
           </p>
         ) : null}
         {archived ? (
           <p className="flex gap-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
             <Archive size={16} aria-hidden="true" className="mt-0.5 shrink-0" />
-            <span>Поле в архиве: новые значения не принимаются.</span>
+            <span>{t('fields.fieldValueForm.thisFieldIsArchivedNewValuesAreNot')}</span>
           </p>
         ) : null}
         {!writable && heldHere === null ? (
-          <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">Значение доступно только для просмотра.</p>
+          <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">{t('fields.fieldValueForm.thisValueIsReadOnly')}</p>
         ) : null}
 
         {changedSinceOpen ? (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-ink-soft">
-            <span className="min-w-0 flex-1">Поле или его значение изменились после того, как вы открыли форму.</span>
+            <span className="min-w-0 flex-1">{t('fields.fieldValueForm.theFieldOrItsValueChangedAfterYou')}</span>
             {reloadButton}
           </div>
         ) : null}
@@ -257,8 +261,8 @@ export function FieldValueForm(props: FieldValueFormProps) {
                 draft: draftFromFieldValue(current.field, current.value?.value ?? null),
                 previous: null,
               }));
-              setParseError(null);
-              setNotice('Форма показывает значение с сервера.');
+              setParseError(false);
+              setNotice(message('fields.fieldValueForm.theFormNowShowsTheServerValue'));
             }}
             onDismiss={() => onSessionChange((current) => ({ ...current, previous: null }))}
           />
@@ -271,7 +275,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
             draft={shownDraft}
             onChange={(draft) => {
               onSessionChange((current) => ({ ...current, draft }));
-              setParseError(null);
+              setParseError(false);
               setNotice(null);
             }}
             members={members}
@@ -281,7 +285,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
           />
         </fieldset>
         {heldHere ? (
-          <p className="text-xs text-muted">Показано отправленное значение — оно закреплено до ответа сервера.</p>
+          <p className="text-xs text-muted">{t('fields.fieldValueForm.showingTheSubmittedValueItStaysFixedUntil')}</p>
         ) : null}
 
         <SaveFeedback
@@ -292,44 +296,40 @@ export function FieldValueForm(props: FieldValueFormProps) {
         />
         {reloading === 'failed' ? (
           <p role="alert" className="text-sm text-red-700">
-            Не удалось загрузить актуальные данные поля. Повторите попытку.
-          </p>
+            {t('fields.fieldValueForm.couldNotLoadTheLatestFieldDataTry')}</p>
         ) : null}
         {notice ? (
           <p role="status" className="rounded-lg bg-canvas px-3 py-2.5 text-sm leading-relaxed text-ink-soft">
-            {notice}
+            {t(notice.key, notice.params)}
           </p>
         ) : null}
 
-        <div role="group" aria-label="Действия со значением" className="space-y-3 border-t border-line pt-4">
+        <div role="group" aria-label={t('fields.fieldValueForm.valueActions')} className="space-y-3 border-t border-line pt-4">
           <div className="flex flex-wrap items-center gap-2">
             {heldHere ? (
               <Button type="submit" variant="primary" aria-disabled={pending || undefined}>
-                {pending ? 'Отправляем…' : 'Повторить отправку'}
+                {pending ? t('fields.fieldValueForm.submitting') : t('fields.fieldValueForm.retrySubmission')}
               </Button>
             ) : editable ? (
               <Button type="submit" variant="primary" aria-disabled={!canSend || undefined}>
-                Сохранить значение
-              </Button>
+                {t('fields.fieldValueForm.saveValue')}</Button>
             ) : null}
             {dirty ? (
               <Button
                 variant="ghost"
                 onClick={() => {
                   onDiscard();
-                  setParseError(null);
+                  setParseError(false);
                   setNotice(null);
                 }}
               >
-                Сбросить черновик
-              </Button>
+                {t('fields.fieldValueForm.discardDraft')}</Button>
             ) : null}
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <FieldHistoryDialog actorId={actorId} workspaceId={workspaceId} taskId={taskId} field={latestField} members={members} />
             <Button variant="ghost" onClick={onClose}>
-              Закрыть
-            </Button>
+              {t('fields.fieldValueForm.close')}</Button>
           </div>
         </div>
       </form>
@@ -347,21 +347,21 @@ interface FreshDataPanelProps {
 
 /** Fresh server data after an explicit reload, next to the base the draft was started from. */
 function FreshDataPanel({ session, previous, members, onTakeServer, onDismiss }: FreshDataPanelProps) {
+  const { t } = useTranslation();
   const headingId = useId();
   const { field, value } = session;
   const previousRevision = previous.value?.revision ?? 0;
   const currentRevision = value?.revision ?? 0;
   const changes = [
-    previous.field.name === field.name ? null : `Поле переименовано: «${previous.field.name}» → «${field.name}».`,
-    previous.field.revision === field.revision ? null : `Версия настроек поля: ${previous.field.revision} → ${field.revision}.`,
-    previousRevision === currentRevision ? null : `Версия значения: ${previousRevision} → ${currentRevision}.`,
+    previous.field.name === field.name ? null : t('fields.fieldValueForm.fieldRenamedValueValue', { p0: previous.field.name, p1: field.name }),
+    previous.field.revision === field.revision ? null : t('fields.fieldValueForm.fieldSettingsVersionValueValue', { p0: previous.field.revision, p1: field.revision }),
+    previousRevision === currentRevision ? null : t('fields.fieldValueForm.valueVersionValueValue', { p0: previousRevision, p1: currentRevision }),
   ].filter((line) => line !== null);
 
   return (
     <section aria-labelledby={headingId} className="space-y-2 rounded-xl border border-line-strong bg-canvas p-3 text-sm">
       <h3 id={headingId} className="font-semibold text-ink">
-        Актуальные данные загружены
-      </h3>
+        {t('fields.fieldValueForm.latestDataLoaded')}</h3>
       {changes.length > 0 ? (
         <ul className="space-y-0.5 text-xs [overflow-wrap:anywhere] text-muted">
           {changes.map((line) => (
@@ -369,26 +369,24 @@ function FreshDataPanel({ session, previous, members, onTakeServer, onDismiss }:
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-muted">Версии поля и значения не изменились.</p>
+        <p className="text-xs text-muted">{t('fields.fieldValueForm.fieldAndValueVersionsAreUnchanged')}</p>
       )}
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
-        <dt className="text-muted">Было</dt>
+        <dt className="text-muted">{t('fields.fieldValueForm.before')}</dt>
         <dd className="[overflow-wrap:anywhere] text-ink">
           <StoredValue field={previous.field} value={previous.value} members={members} />
         </dd>
-        <dt className="text-muted">Сейчас</dt>
+        <dt className="text-muted">{t('fields.fieldValueForm.now')}</dt>
         <dd className="[overflow-wrap:anywhere] text-ink">
           <StoredValue field={field} value={value} members={members} />
         </dd>
       </dl>
-      <p className="text-ink-soft">Ваш черновик остался в форме. Проверьте его и сохраните снова.</p>
+      <p className="text-ink-soft">{t('fields.fieldValueForm.yourDraftRemainsInTheFormReviewIt')}</p>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" onClick={onTakeServer}>
-          Взять значение с сервера
-        </Button>
+          {t('fields.fieldValueForm.useServerValue')}</Button>
         <Button size="sm" variant="ghost" onClick={onDismiss}>
-          Скрыть
-        </Button>
+          {t('fields.fieldValueForm.hide')}</Button>
       </div>
     </section>
   );

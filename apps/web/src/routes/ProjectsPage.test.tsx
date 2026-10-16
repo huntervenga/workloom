@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { screen, waitFor, within } from '@testing-library/react';
 import type { ProjectDto, WorkspaceDto } from '@workloom/contracts';
 import { describe, expect, it } from 'vitest';
@@ -36,21 +37,21 @@ describe('projects', () => {
       },
     });
     const { user } = renderApp(`/w/${alpha.id}/projects`);
-    expect(await screen.findByRole('heading', { name: 'Проектов пока нет' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: "No projects yet" })).toBeInTheDocument();
 
-    const openButton = screen.getByRole('button', { name: 'Новый проект' });
+    const openButton = screen.getByRole('button', { name: "New project" });
     await user.click(openButton);
-    const dialog = await screen.findByRole('dialog', { name: 'Новый проект' });
-    const nameInput = within(dialog).getByLabelText('Название проекта');
-    const submit = within(dialog).getByRole('button', { name: 'Создать проект' });
+    const dialog = await screen.findByRole('dialog', { name: "New project" });
+    const nameInput = within(dialog).getByLabelText("Project name");
+    const submit = within(dialog).getByRole('button', { name: "Create project" });
 
     await user.click(submit);
-    expect(within(dialog).getByText('Введите название проекта.')).toBeInTheDocument();
+    expect(within(dialog).getByText("Enter a project name.")).toBeInTheDocument();
     expect(nameInput).toHaveAttribute('aria-invalid', 'true');
 
     await user.type(nameInput, '  Запуск сайта ');
     await user.click(submit);
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Нет связи с сервером');
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Cannot reach the server');
     expect(nameInput).toHaveValue('Запуск сайта');
 
     await user.click(submit);
@@ -60,8 +61,8 @@ describe('projects', () => {
 
     // Creating another project with the same name is a new operation.
     await user.click(openButton);
-    await user.type(await screen.findByLabelText('Название проекта'), 'Запуск сайта');
-    await user.click(screen.getByRole('button', { name: 'Создать проект' }));
+    await user.type(await screen.findByLabelText("Project name"), 'Запуск сайта');
+    await user.click(screen.getByRole('button', { name: "Create project" }));
     await waitFor(() => expect(screen.getAllByRole('link', { name: 'Запуск сайта' })).toHaveLength(2));
 
     const writes = calls.filter((call) => call.method === 'POST');
@@ -89,26 +90,26 @@ describe('projects', () => {
     });
     const { user } = renderApp(`/w/${alpha.id}/projects`);
 
-    await user.click(await screen.findByRole('button', { name: `Переименовать проект «${launch.name}»` }));
-    const dialog = await screen.findByRole('dialog', { name: 'Переименовать проект' });
-    const nameInput = within(dialog).getByLabelText('Название проекта');
+    await user.click(await screen.findByRole('button', { name: t('routes.renameProject', { name: launch.name }) }));
+    const dialog = await screen.findByRole('dialog', { name: "Rename project" });
+    const nameInput = within(dialog).getByLabelText("Project name");
     expect(nameInput).toHaveValue(launch.name);
 
     await user.clear(nameInput);
     await user.type(nameInput, 'Запуск лендинга');
-    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    await user.click(within(dialog).getByRole('button', { name: "Save" }));
 
     const alert = await within(dialog).findByRole('alert');
-    expect(alert).toHaveTextContent('Данные успели измениться');
+    expect(alert).toHaveTextContent('This data changed elsewhere');
     expect(document.body).not.toHaveTextContent('hunter2');
-    expect(within(alert).queryByRole('button', { name: 'Повторить' })).not.toBeInTheDocument();
+    expect(within(alert).queryByRole('button', { name: "Try again" })).not.toBeInTheDocument();
     expect(nameInput).toHaveValue('Запуск лендинга');
 
-    await user.click(within(alert).getByRole('button', { name: 'Загрузить актуальную версию' }));
-    expect(await within(dialog).findByRole('status')).toHaveTextContent('«Запуск (правка коллеги)»');
+    await user.click(within(alert).getByRole('button', { name: "Load latest version" }));
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('“Запуск (правка коллеги)”');
     expect(nameInput).toHaveValue('Запуск лендинга');
 
-    await user.click(within(dialog).getByRole('button', { name: 'Сохранить' }));
+    await user.click(within(dialog).getByRole('button', { name: "Save" }));
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
     const writes = calls.filter((call) => call.method === 'PATCH');
@@ -128,8 +129,8 @@ describe('projects', () => {
     renderApp(`/w/${watched.id}/projects`);
 
     expect(await screen.findByRole('link', { name: 'Отчёт за квартал' })).toBeInTheDocument();
-    expect(screen.getByText('Роль «Наблюдатель» позволяет только просматривать проекты.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Новый проект|Переименовать/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Your Viewer role allows you to view projects.")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /New project|Rename/ })).not.toBeInTheDocument();
   });
 
   it('opens a project by its real name without inventing tasks', async () => {
@@ -145,12 +146,12 @@ describe('projects', () => {
     const { user } = renderApp(`/w/${alpha.id}/projects/${launch.id}`);
 
     expect(await screen.findByRole('heading', { level: 1, name: launch.name })).toBeInTheDocument();
-    expect(await screen.findByRole('table', { name: `Задачи проекта «${launch.name}»` })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Новая задача' })).toBeInTheDocument();
+    expect(await screen.findByRole('table', { name: t('projects.projectPage.tasksInValue', { p0: launch.name }) })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: t('projects.projectPage.newTask') })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Таблица задач готовится' })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: 'Все проекты' }));
-    expect(await screen.findByRole('heading', { level: 1, name: 'Проекты' })).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: "All projects" }));
+    expect(await screen.findByRole('heading', { level: 1, name: "Projects" })).toBeInTheDocument();
   });
 
   it('does not reveal a project the actor cannot see', async () => {
@@ -161,8 +162,8 @@ describe('projects', () => {
     });
     renderApp(`/w/${alpha.id}/projects/${hidden}`);
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Проект недоступен' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'К списку проектов' })).toHaveAttribute('href', `/w/${alpha.id}/projects`);
+    expect(await screen.findByRole('heading', { level: 1, name: "Project unavailable" })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: "Back to projects" })).toHaveAttribute('href', `/w/${alpha.id}/projects`);
     expect(document.body).not.toHaveTextContent(/Секретный|hunter2/);
   });
 });

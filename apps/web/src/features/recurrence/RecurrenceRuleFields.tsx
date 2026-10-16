@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import type { PlanningPeriodDto } from '@workloom/contracts';
 import { TextInput } from '@workloom/ui';
 import { useId } from 'react';
@@ -30,14 +31,14 @@ export interface RecurrenceRuleFieldsProps {
   immutableCadence?: boolean | undefined;
 }
 
-const weekdayNames: readonly (readonly [number, string])[] = [
-  [1, 'Понедельник'],
-  [2, 'Вторник'],
-  [3, 'Среда'],
-  [4, 'Четверг'],
-  [5, 'Пятница'],
-  [6, 'Суббота'],
-  [7, 'Воскресенье'],
+const weekdayNames: readonly (readonly [number, `recurrence.${string}`])[] = [
+  [1, 'recurrence.monday'],
+  [2, 'recurrence.tuesday'],
+  [3, 'recurrence.wednesday'],
+  [4, 'recurrence.thursday'],
+  [5, 'recurrence.friday'],
+  [6, 'recurrence.saturday'],
+  [7, 'recurrence.sunday'],
 ];
 
 const labelClass = 'text-sm font-medium';
@@ -48,6 +49,7 @@ function toggled(list: readonly string[], id: string, checked: boolean): string[
 }
 
 export function RecurrenceRuleFields({ value, onChange, periods, disabled = false, showPeriods = true, editMode = false, immutableCadence = false }: RecurrenceRuleFieldsProps) {
+  const { t } = useTranslation();
   const id = useId();
   const set = <K extends keyof RecurrenceRuleDraft>(key: K, next: RecurrenceRuleDraft[K]) => onChange({ ...value, [key]: next });
   const toggleWeekday = (day: number, checked: boolean) =>
@@ -58,56 +60,54 @@ export function RecurrenceRuleFields({ value, onChange, periods, disabled = fals
   return (
     <fieldset disabled={disabled} className="min-w-0 space-y-4">
       <fieldset disabled={immutableCadence} className="min-w-0 space-y-2">
-        <legend className={`mb-2 ${labelClass}`}>Повторение</legend>
+        <legend className={`mb-2 ${labelClass}`}>{t('recurrence.repeat')}</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           <label className="flex items-center gap-2 text-sm">
             <input type="radio" name={`${id}-frequency`} checked={value.frequency === 'daily'} onChange={() => set('frequency', 'daily')} />
-            Каждый день
-          </label>
+            {t('recurrence.everyDay')}</label>
           <label className="flex items-center gap-2 text-sm">
             <input type="radio" name={`${id}-frequency`} checked={value.frequency === 'weekly'} onChange={() => set('frequency', 'weekly')} />
-            По дням недели
-          </label>
+            {t('recurrence.onWeekdays')}</label>
         </div>
       </fieldset>
 
       {value.frequency === 'weekly' ? (
         <fieldset disabled={immutableCadence} className="min-w-0 space-y-2">
-          <legend className={`mb-2 ${labelClass}`}>Дни недели</legend>
+          <legend className={`mb-2 ${labelClass}`}>{t('recurrence.daysOfTheWeek')}</legend>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {weekdayNames.map(([day, name]) => (
               <label key={day} className="flex min-w-0 items-center gap-2 text-sm">
                 <input type="checkbox" checked={value.weekdays.includes(day)} onChange={(e) => toggleWeekday(day, e.target.checked)} />
-                {name}
+                {t(name)}
               </label>
             ))}
           </div>
-          {value.weekdays.length === 0 ? <p className={hintClass}>Выберите хотя бы один день недели.</p> : null}
+          {value.weekdays.length === 0 ? <p className={hintClass}>{t('recurrence.chooseAtLeastOneWeekday')}</p> : null}
         </fieldset>
       ) : null}
 
       <div className="grid min-w-0 gap-4 sm:grid-cols-2">
         <div className="min-w-0 space-y-1.5">
-          <label htmlFor={`${id}-start`} className={labelClass}>Дата начала серии</label>
+          <label htmlFor={`${id}-start`} className={labelClass}>{t('recurrence.seriesStartDate')}</label>
           <TextInput id={`${id}-start`} type="date" disabled={editMode} value={value.startDate} onChange={(e) => set('startDate', e.target.value)} />
         </div>
         <div className="min-w-0 space-y-1.5">
-          <label htmlFor={`${id}-time`} className={labelClass}>Время серии</label>
+          <label htmlFor={`${id}-time`} className={labelClass}>{t('recurrence.seriesTime')}</label>
           <TextInput id={`${id}-time`} type="time" step={60} value={value.localTime} onChange={(e) => set('localTime', e.target.value)} />
         </div>
         <div className="min-w-0 space-y-1.5">
-          <label htmlFor={`${id}-zone`} className={labelClass}>Часовой пояс серии</label>
+          <label htmlFor={`${id}-zone`} className={labelClass}>{t('recurrence.seriesTimeZone')}</label>
           <TextInput
             id={`${id}-zone`}
             value={value.timezone}
-            placeholder="Asia/Nicosia"
+            placeholder={t('recurrence.timeZoneExample')}
             aria-describedby={`${id}-zone-hint`}
             onChange={(e) => set('timezone', e.target.value)}
           />
-          <p id={`${id}-zone-hint`} className={hintClass}>Название пояса IANA. Пояс браузера не подставляется.</p>
+          <p id={`${id}-zone-hint`} className={hintClass}>{t('recurrence.ianaTimeZoneNameYourBrowsersTimeZoneIs')}</p>
         </div>
         <div className="min-w-0 space-y-1.5">
-          <label htmlFor={`${id}-duration`} className={labelClass}>Длительность, минуты</label>
+          <label htmlFor={`${id}-duration`} className={labelClass}>{t('recurrence.durationMinutes')}</label>
           <TextInput
             id={`${id}-duration`}
             type="number"
@@ -119,36 +119,31 @@ export function RecurrenceRuleFields({ value, onChange, periods, disabled = fals
             onChange={(e) => set('durationMinutes', e.target.value)}
           />
           <p id={`${id}-duration-hint`} className={hintClass}>
-            Продолжительность по обычным минутам, от 1 до 1440, даже при переводе часов.
-          </p>
+            {t('recurrence.elapsedDurationOf11440MinutesIncludingDuring')}</p>
         </div>
       </div>
 
       <p className={hintClass}>
-        При переводе часов встреча начнётся в первое существующее время после пропущенного интервала, а если время повторяется —
-        в более раннее из двух. Запланированные даты и время всех встреч будут показаны перед созданием серии.
-      </p>
+        {t('recurrence.duringADaylightSavingGapAMeetingStartsAt')}</p>
 
       <fieldset className="min-w-0 space-y-3">
-        <legend className={`mb-2 ${labelClass}`}>Окончание серии</legend>
+        <legend className={`mb-2 ${labelClass}`}>{t('recurrence.seriesEnds')}</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           <label className="flex items-center gap-2 text-sm">
             <input type="radio" disabled={editMode} name={`${id}-end`} checked={value.endKind === 'on_date'} onChange={() => set('endKind', 'on_date')} />
-            До даты
-          </label>
+            {t('recurrence.onADate')}</label>
           <label className="flex items-center gap-2 text-sm">
             <input type="radio" disabled={editMode} name={`${id}-end`} checked={value.endKind === 'after_count'} onChange={() => set('endKind', 'after_count')} />
-            Число встреч
-          </label>
+            {t('recurrence.afterANumberOfMeetings')}</label>
         </div>
         {value.endKind === 'on_date' ? (
           <div className="min-w-0 space-y-1.5">
-            <label htmlFor={`${id}-end-date`} className={labelClass}>Последняя дата серии, включительно</label>
+            <label htmlFor={`${id}-end-date`} className={labelClass}>{t('recurrence.lastSeriesDateInclusive')}</label>
             <TextInput id={`${id}-end-date`} type="date" value={value.endDate} onChange={(e) => set('endDate', e.target.value)} />
           </div>
         ) : (
           <div className="min-w-0 space-y-1.5">
-            <label htmlFor={`${id}-count`} className={labelClass}>Число встреч в серии</label>
+            <label htmlFor={`${id}-count`} className={labelClass}>{t('recurrence.numberOfMeetingsInSeries')}</label>
             <TextInput
               id={`${id}-count`}
               disabled={immutableCadence}
@@ -161,20 +156,17 @@ export function RecurrenceRuleFields({ value, onChange, periods, disabled = fals
               onChange={(e) => set('count', e.target.value)}
             />
             <p id={`${id}-count-hint`} className={hintClass}>
-              Общее число встреч всей серии с даты начала, а не число оставшихся. Пропущенные встречи тоже входят в это число.
-            </p>
+              {t('recurrence.totalMeetingsFromTheSeriesStartNotTheNumber')}</p>
           </div>
         )}
       </fieldset>
 
       {showPeriods ? <fieldset className="min-w-0 space-y-2">
-        <legend className={`mb-2 ${labelClass}`}>Периоды серии</legend>
+        <legend className={`mb-2 ${labelClass}`}>{t('recurrence.seriesPeriods')}</legend>
         <p className={hintClass}>
-          Встречи готовятся только в отмеченных периодах. Даты вне отмеченных периодов остаются неподготовленными, текущая неделя
-          не подставляется.
-        </p>
+          {t('recurrence.meetingsArePreparedOnlyInSelectedPeriodsOtherDates')}</p>
         {periods.length === 0 && missingPeriodIds.length === 0 ? (
-          <p className="text-sm text-muted">В проекте нет доступных периодов. Без периода встречи серии не будут подготовлены.</p>
+          <p className="text-sm text-muted">{t('recurrence.noAvailablePeriodsInThisProjectSeriesMeetingsCannot')}</p>
         ) : null}
         {periods.map((period) => (
           <label key={period.id} className="flex min-w-0 items-start gap-2 text-sm">
@@ -186,9 +178,7 @@ export function RecurrenceRuleFields({ value, onChange, periods, disabled = fals
             />
             <span className="min-w-0 [overflow-wrap:anywhere]">
               {period.name}
-              <span className="block text-xs text-muted">
-                с {period.localStart} до {period.localEndExclusive} (не включая) · {period.timezone}
-              </span>
+              <span className="block text-xs text-muted">{t('recurrence.fromToEndExcluded', { localStart: period.localStart, localEndExclusive: period.localEndExclusive, timezone: period.timezone })}</span>
             </span>
           </label>
         ))}
@@ -200,10 +190,10 @@ export function RecurrenceRuleFields({ value, onChange, periods, disabled = fals
               checked
               onChange={(e) => set('targetPeriodIds', toggled(value.targetPeriodIds, periodId, e.target.checked))}
             />
-            <span className="min-w-0 [overflow-wrap:anywhere]">Сохранённый период, нет в текущем списке</span>
+            <span className="min-w-0 [overflow-wrap:anywhere]">{t('recurrence.savedPeriodMissingFromCurrentList')}</span>
           </label>
         ))}
-        {periods.length > 0 && value.targetPeriodIds.length === 0 ? <p className={hintClass}>Период не выбран.</p> : null}
+        {periods.length > 0 && value.targetPeriodIds.length === 0 ? <p className={hintClass}>{t('recurrence.noPeriodSelected2')}</p> : null}
       </fieldset> : null}
     </fieldset>
   );

@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../i18n';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { createContext, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode } from 'react';
@@ -56,6 +57,7 @@ const contentClasses = {
 
 /** Radix dialog with a title, description and a visible close button; Escape also closes it. */
 export function DialogShell({ title, description, trigger, open, onOpenChange, variant = 'center', children }: DialogShellProps) {
+  useTranslation();
   const openerRef = useRef<HTMLElement | null>(null);
   const parentLayer = useContext(DialogLayerContext);
   const [layer] = useState<DialogLayer>(() => ({ parent: parentLayer }));
@@ -91,7 +93,7 @@ export function DialogShell({ title, description, trigger, open, onOpenChange, v
                 <Dialog.Description className="mt-1 text-sm leading-relaxed text-muted">{description}</Dialog.Description>
               </div>
               <Dialog.Close
-                aria-label="Закрыть"
+                aria-label={t('common.close')}
                 className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:bg-slate-100 hover:text-ink"
               >
                 <X size={16} aria-hidden="true" />

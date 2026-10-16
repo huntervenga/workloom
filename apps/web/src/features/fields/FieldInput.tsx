@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, TextInput, cn, inputClassName } from '@workloom/ui';
 import { useId, type ReactNode } from 'react';
@@ -74,6 +75,7 @@ export function FieldInput({
   error = null,
   originalValue = null,
 }: FieldInputProps) {
+  const { t } = useTranslation();
   const id = useId();
   const inputId = `${id}-input`;
   const hintId = `${id}-hint`;
@@ -96,7 +98,7 @@ export function FieldInput({
           className={inputClassName('h-auto min-h-10 py-2 leading-relaxed')}
           rows={2}
           value={draft.value ?? ''}
-          placeholder={NOT_SET}
+          placeholder={NOT_SET()}
           disabled={disabled}
           {...linkage()}
           onChange={(event) => onChange({ type: 'text', value: event.target.value })}
@@ -108,14 +110,14 @@ export function FieldInput({
     case 'date':
     case 'url': {
       const kind = draft.type;
-      if (kind === 'duration') hint = 'Например: 1,5 или 1:30. Пустое поле — не задано, 0 — ноль.';
+      if (kind === 'duration') hint = t('fields.fieldInput.enter15Or130BlankMeans');
       control = (
         <TextInput
           id={inputId}
           type={kind === 'date' ? 'date' : kind === 'url' ? 'url' : 'text'}
           inputMode={kind === 'number' || kind === 'duration' ? 'decimal' : kind === 'url' ? 'url' : undefined}
           autoComplete="off"
-          placeholder={kind === 'url' ? 'https://…' : NOT_SET}
+          placeholder={kind === 'url' ? t('fields.fieldInput.urlPlaceholder') : NOT_SET()}
           value={draft.text}
           disabled={disabled}
           {...linkage()}
@@ -136,9 +138,9 @@ export function FieldInput({
             onChange({ type: 'boolean', value: event.target.value === '' ? null : event.target.value === 'true' })
           }
         >
-          <option value="">{NOT_SET}</option>
-          <option value="true">Да</option>
-          <option value="false">Нет</option>
+          <option value="">{NOT_SET()}</option>
+          <option value="true">{t('fields.fieldInput.yes')}</option>
+          <option value="false">{t('fields.fieldInput.no')}</option>
         </select>
       );
       break;
@@ -146,7 +148,7 @@ export function FieldInput({
       const current = draft.value;
       const choices = referenceChoices(field, members, current === null ? [] : [current], original);
       if (choices.some((choice) => choice.state !== 'active')) {
-        hint = 'Вариант из архива или недоступный остаётся, пока вы его не смените; выбрать его заново для другой задачи нельзя.';
+        hint = t('fields.fieldInput.anArchivedOrUnavailableOptionStaysUntilYou');
       }
       control = (
         <select
@@ -157,7 +159,7 @@ export function FieldInput({
           {...linkage()}
           onChange={(event) => onChange({ type: 'single_select', value: event.target.value === '' ? null : event.target.value })}
         >
-          <option value="">{NOT_SET}</option>
+          <option value="">{NOT_SET()}</option>
           {choices.map((choice) => (
             <option
               key={choice.id}
@@ -180,12 +182,12 @@ export function FieldInput({
       if (choices.some((choice) => choice.state !== 'active')) {
         hint =
           kind === 'person'
-            ? 'Недоступный участник остаётся в значении, пока вы не снимете отметку; заново его выбрать нельзя.'
-            : 'Варианты из архива и недоступные остаются, пока вы не снимете отметку; заново их выбрать нельзя.';
+            ? t('fields.fieldInput.anUnavailableMemberStaysUntilYouUncheckThem')
+            : t('fields.fieldInput.archivedAndUnavailableOptionsStayUntilYouUncheck');
       }
       control =
         choices.length === 0 ? (
-          <p className="text-sm text-muted">{kind === 'person' ? 'В пространстве нет участников.' : 'Вариантов пока нет.'}</p>
+          <p className="text-sm text-muted">{kind === 'person' ? t('fields.fieldInput.noWorkspaceMembers') : t('fields.fieldInput.noOptionsYet')}</p>
         ) : (
           <ul className="grid gap-1 sm:grid-cols-2">
             {choices.map((choice) => {
@@ -217,18 +219,17 @@ export function FieldInput({
     }
   }
 
-  const label = draft.type === 'duration' ? `${field.name}, часы` : field.name;
+  const label = draft.type === 'duration' ? t('fields.fieldInput.valueHours', { p0: field.name }) : field.name;
   const clearable = draft.type !== 'boolean' && draft.type !== 'single_select';
   const clearButton = clearable ? (
     <Button
       variant="ghost"
       size="sm"
-      aria-label={`Очистить: ${label}`}
+      aria-label={t('fields.fieldInput.clearValue', { p0: label })}
       disabled={disabled || isClearedDraft(draft)}
       onClick={() => onChange(clearedFieldDraft(field))}
     >
-      Очистить
-    </Button>
+      {t('fields.fieldInput.clear')}</Button>
   ) : null;
   const footer = (
     <>

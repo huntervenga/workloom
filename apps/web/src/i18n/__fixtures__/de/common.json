@@ -1,0 +1,7 @@
+{
+  "cancel": "Abbrechen",
+  "hide": "Ausblenden",
+  "saving": "Speichern…",
+  "resend": "Dieselbe Änderung erneut senden",
+  "nameLengthHint": "Bis zu {{count}} Zeichen."
+}

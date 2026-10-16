@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../i18n';
 import { StateCard } from '@workloom/ui';
 import { Inbox } from 'lucide-react';
 import { Navigate } from 'react-router';
@@ -9,11 +10,12 @@ import { QueryErrorState } from '../shared/QueryErrorState';
 
 /** Opens the first workspace the server lists for the current actor. */
 export function HomeRedirect() {
+  useTranslation();
   const me = useMe();
   const workspaces = useWorkspacesQuery(me.actor.id);
   useDocumentTitle(null);
 
-  if (workspaces.isPending) return <PageSkeleton label="Загрузка пространств" />;
+  if (workspaces.isPending) return <PageSkeleton label={t('workspace.loading')} />;
 
   if (workspaces.isError) {
     return (
@@ -33,8 +35,8 @@ export function HomeRedirect() {
       <StateCard
         headingLevel={1}
         icon={<Inbox size={18} aria-hidden="true" />}
-        title="Нет доступных пространств"
-        description={`${me.actor.displayName} пока не состоит ни в одном пространстве. Пространство появится здесь, когда пользователя добавят в команду.`}
+        title={t('workspace.noneAvailable')}
+        description={t('routes.notInWorkspace', { name: me.actor.displayName })}
       />
     );
   }

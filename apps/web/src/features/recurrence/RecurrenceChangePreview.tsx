@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../../i18n';
 import type {
   PlanningPeriodDto,
   MembershipDto,
@@ -24,11 +25,11 @@ import {
 
 /** Fixed explanations of why the server protects an occurrence from a change. */
 export const recurrenceProtectedReasonCopy: Record<RecurrenceProtectedReason, string> = {
-  past: 'Встреча уже прошла',
-  done: 'Встреча отмечена выполненной',
-  posted_attendance: 'По встрече уже вносили присутствие',
-  schedule_frozen: 'Расписание встречи зафиксировано в плане периода',
-  cross_period: 'Новое время выходит за границы периода, к которому относится встреча',
+  get past() { return t('recurrence.meetingHasAlreadyTakenPlace'); },
+  get done() { return t('recurrence.meetingIsMarkedComplete'); },
+  get posted_attendance() { return t('recurrence.attendanceHasAlreadyBeenRecorded'); },
+  get schedule_frozen() { return t('recurrence.meetingScheduleIsLockedInThePeriodBaseline'); },
+  get cross_period() { return t('recurrence.newTimeIsOutsideTheMeetingsOriginalPeriod'); },
 };
 
 /** Friendly reason labels in server order, each once. */
@@ -37,26 +38,27 @@ export function recurrenceProtectedReasonLabels(reasons: readonly RecurrenceProt
 }
 
 const impactActionCopy: Record<RecurrenceEditImpactDto['action'], { label: string; tone: BadgeTone }> = {
-  update: { label: 'Изменится', tone: 'accent' },
-  create: { label: 'Добавится', tone: 'accent' },
-  cancel: { label: 'Будет отменена', tone: 'warning' },
-  retain: { label: 'Без изменений', tone: 'muted' },
+  update: { get label() { return t('recurrence.willChange'); }, tone: 'accent' },
+  create: { get label() { return t('recurrence.willAdd'); }, tone: 'accent' },
+  cancel: { get label() { return t('recurrence.willCancel'); }, tone: 'warning' },
+  retain: { get label() { return t('recurrence.unchanged'); }, tone: 'muted' },
 };
 
 const exceptionKindCopy: Record<RecurrenceExceptionKind, string> = {
-  skip: 'Отменить только эту встречу',
-  move: 'Перенести только эту встречу',
-  restore: 'Восстановить встречу',
-  reset: 'Вернуть встречу к правилу серии',
+  get skip() { return t('recurrence.cancelOnlyThisMeeting'); },
+  get move() { return t('recurrence.moveOnlyThisMeeting'); },
+  get restore() { return t('recurrence.restoreMeeting'); },
+  get reset() { return t('recurrence.resetMeetingToSeriesRule'); },
 };
 
 const calendarStateAfterCopy: Record<RecurrenceCalendarState, { label: string; tone: BadgeTone }> = {
-  scheduled: { label: 'Будет запланирована', tone: 'neutral' },
-  cancelled: { label: 'Будет отменена', tone: 'warning' },
+  scheduled: { get label() { return t('recurrence.willSchedule'); }, tone: 'neutral' },
+  cancelled: { get label() { return t('recurrence.willCancel'); }, tone: 'warning' },
 };
 
 /** Server-resolved planned start with its zone, plus the rule time when the start was shifted. */
 function PlannedResolution({ resolution, emptyLabel, showDuration = true }: { resolution: RecurrenceResolutionDto | null; emptyLabel: string; showDuration?: boolean }) {
+  const { t } = useTranslation();
   if (resolution === null) return <span className="text-muted">{emptyLabel}</span>;
   const shifted =
     resolution.resolvedLocalDate !== resolution.intendedLocalDate || resolution.resolvedLocalTime !== resolution.intendedLocalTime;
@@ -66,12 +68,10 @@ function PlannedResolution({ resolution, emptyLabel, showDuration = true }: { re
         {formatRecurrenceDate(resolution.resolvedLocalDate)}, <span className="tabular-nums">{resolution.resolvedLocalTime}</span>
       </time>
       <span className="block text-xs text-muted [overflow-wrap:anywhere]">
-        UTC{resolution.resolvedOffset} · {resolution.provenance.timezone}{showDuration ? ` · ${resolution.plannedDurationMinutes} мин` : null}
+        {showDuration ? t('recurrence.utcOffsetZoneDuration', { offset: resolution.resolvedOffset, timezone: resolution.provenance.timezone, minutes: resolution.plannedDurationMinutes }) : t('recurrence.utcOffsetZone', { offset: resolution.resolvedOffset, timezone: resolution.provenance.timezone })}
       </span>
       {shifted ? (
-        <span className="block text-xs text-muted">
-          По правилу: {formatRecurrenceDate(resolution.intendedLocalDate)}, {resolution.intendedLocalTime}
-        </span>
+        <span className="block text-xs text-muted">{t('recurrence.byRule3', { ruleDate: formatRecurrenceDate(resolution.intendedLocalDate), intendedLocalTime: resolution.intendedLocalTime })}</span>
       ) : null}
       {resolution.warning !== null ? (
         <p className="text-xs text-amber-800">{recurrenceWarningCopy[resolution.warning].description}</p>
@@ -81,13 +81,14 @@ function PlannedResolution({ resolution, emptyLabel, showDuration = true }: { re
 }
 
 function CountsSummary({ counts }: { counts: RecurrenceNominalCountsDto }) {
-  const summary: (readonly [string, string])[] = [['Встреч по правилу', String(counts.nominalCount)]];
+  const { t } = useTranslation();
+  const summary: (readonly [string, string])[] = [[t('recurrence.meetingsByRule'), String(counts.nominalCount)]];
   if (counts.consumedNominalCount > 0 || counts.remainingNominalCount !== counts.nominalCount) {
-    summary.push(['До даты изменения', String(counts.consumedNominalCount)]);
-    summary.push(['С даты изменения', String(counts.remainingNominalCount)]);
+    summary.push([t('recurrence.beforeChangeDate'), String(counts.consumedNominalCount)]);
+    summary.push([t('recurrence.fromChangeDate'), String(counts.remainingNominalCount)]);
   }
-  if (counts.skippedCount > 0) summary.push(['Пропущено', String(counts.skippedCount)]);
-  if (counts.cancelledCount > 0) summary.push(['Отменено', String(counts.cancelledCount)]);
+  if (counts.skippedCount > 0) summary.push([t('recurrence.skipped'), String(counts.skippedCount)]);
+  if (counts.cancelledCount > 0) summary.push([t('recurrence.cancelled'), String(counts.cancelledCount)]);
   return (
     <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
       {summary.map(([label, value]) => (
@@ -118,26 +119,22 @@ export interface RecurrenceEditPreviewProps {
 
 /** Read-only server preview of a series edit: counts, every affected date and protected occurrences. */
 export function RecurrenceEditPreview({ preview, periods }: RecurrenceEditPreviewProps) {
+  const { t } = useTranslation();
   const headingId = useId();
   const captionId = useId();
   const blocked = preview.protectedTargets.length > 0;
 
   return (
     <section aria-labelledby={headingId} className="min-w-0 space-y-4">
-      <h3 id={headingId} className="text-sm font-semibold">Проверка изменения серии</h3>
-      <p className="text-sm text-muted">
-        Изменение действует с даты серии {formatRecurrenceDate(preview.effectiveFromNominalDate)}. Показано только плановое время
-        встреч; личные планы и присутствие этим изменением не подтверждаются.
-      </p>
+      <h3 id={headingId} className="text-sm font-semibold">{t('recurrence.reviewSeriesChange')}</h3>
+      <p className="text-sm text-muted">{t('recurrence.changeStartsOnSeriesDateOnlyPlannedMeetingTimes', { seriesDate: formatRecurrenceDate(preview.effectiveFromNominalDate) })}</p>
 
       <CountsSummary counts={preview.counts} />
 
       {blocked ? (
-        <ProtectedNotice title="Изменение серии нельзя применить">
+        <ProtectedNotice title={t('recurrence.seriesChangeCannotBeApplied')}>
           <p>
-            Среди затронутых встреч есть защищённые, поэтому изменение не будет применено целиком — ни к одной встрече. Выберите
-            более позднюю дату начала изменения.
-          </p>
+            {t('recurrence.someAffectedMeetingsAreProtectedSoNoMeetingsWill')}</p>
           <ul className="space-y-1.5">
             {preview.protectedTargets.map((target) => (
               <li key={target.occurrenceKey} className="[overflow-wrap:anywhere]">
@@ -150,25 +147,23 @@ export function RecurrenceEditPreview({ preview, periods }: RecurrenceEditPrevie
               </li>
             ))}
           </ul>
-          <p className="text-xs">Перечислены только встречи, которые вам доступны.</p>
+          <p className="text-xs">{t('recurrence.onlyMeetingsYouCanAccessAreListed')}</p>
         </ProtectedNotice>
       ) : null}
 
       {preview.impacts.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-line p-3 text-sm text-muted">Изменение не затрагивает встречи серии.</p>
+        <p className="rounded-lg border border-dashed border-line p-3 text-sm text-muted">{t('recurrence.thisChangeDoesNotAffectAnySeriesMeetings')}</p>
       ) : (
         <div role="region" aria-labelledby={captionId} tabIndex={0} className="-mx-1 overflow-x-auto px-1">
           <table className="w-full min-w-[48rem] border-collapse text-left text-sm">
-            <caption id={captionId} className="mb-2 text-left text-sm font-medium">
-              Затронутые даты серии: {preview.impacts.length}
-            </caption>
+            <caption id={captionId} className="mb-2 text-left text-sm font-medium">{t('recurrence.affectedSeriesDates2', { length: preview.impacts.length })}</caption>
             <thead>
               <tr className="border-b border-line text-xs text-muted">
-                <th scope="col" className="px-2 py-2 font-medium">Дата серии</th>
-                <th scope="col" className="px-2 py-2 font-medium">Изменение</th>
-                <th scope="col" className="px-2 py-2 font-medium">Было по плану</th>
-                <th scope="col" className="px-2 py-2 font-medium">Станет по плану</th>
-                <th scope="col" className="px-2 py-2 font-medium">Период</th>
+                <th scope="col" className="px-2 py-2 font-medium">{t('recurrence.seriesDate')}</th>
+                <th scope="col" className="px-2 py-2 font-medium">{t('recurrence.change')}</th>
+                <th scope="col" className="px-2 py-2 font-medium">{t('recurrence.currentPlan')}</th>
+                <th scope="col" className="px-2 py-2 font-medium">{t('recurrence.newPlan')}</th>
+                <th scope="col" className="px-2 py-2 font-medium">{t('recurrence.period')}</th>
               </tr>
             </thead>
             <tbody>
@@ -181,10 +176,10 @@ export function RecurrenceEditPreview({ preview, periods }: RecurrenceEditPrevie
                     <Badge tone={impactActionCopy[impact.action].tone}>{impactActionCopy[impact.action].label}</Badge>
                   </td>
                   <td className="px-2 py-2 align-top">
-                    <PlannedResolution resolution={impact.before} emptyLabel="Встречи не было" />
+                    <PlannedResolution resolution={impact.before} emptyLabel={t('recurrence.noExistingMeeting')} />
                   </td>
                   <td className="px-2 py-2 align-top">
-                    <PlannedResolution resolution={impact.after} emptyLabel="Встречи не будет" />
+                    <PlannedResolution resolution={impact.after} emptyLabel={t('recurrence.noMeetingAfterwards')} />
                   </td>
                   <td className={`px-2 py-2 align-top ${impact.periodId === null ? 'text-muted' : ''}`}>
                     {recurrencePeriodName(impact.periodId, periods)}
@@ -206,18 +201,17 @@ export interface RecurrencePeriodsPreviewProps {
 
 /** Read-only server preview of newly bound periods: per-period counts and the candidates they would own. */
 export function RecurrencePeriodsPreview({ preview, periods }: RecurrencePeriodsPreviewProps) {
+  const { t } = useTranslation();
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="min-w-0 space-y-4">
-      <h3 id={headingId} className="text-sm font-semibold">Проверка периодов серии</h3>
+      <h3 id={headingId} className="text-sm font-semibold">{t('recurrence.reviewSeriesPeriods')}</h3>
       <p className="text-sm text-muted">
-        Добавление периодов только резервирует даты серии в них. Сами встречи появятся при подготовке периода, а личные планы и
-        присутствие по-прежнему подтверждаются отдельно.
-      </p>
+        {t('recurrence.addingPeriodsReservesSeriesDatesOnlyMeetingsAreCreated')}</p>
 
       {preview.periods.length > 0 ? (
         <div className="min-w-0 space-y-1">
-          <p className="text-sm font-medium">Выбранные периоды</p>
+          <p className="text-sm font-medium">{t('recurrence.selectedPeriods')}</p>
           <ul className="space-y-1 text-sm">
             {preview.periods.map((ownership) => (
               <li key={ownership.periodId} className="[overflow-wrap:anywhere]">
@@ -229,12 +223,12 @@ export function RecurrencePeriodsPreview({ preview, periods }: RecurrencePeriods
       ) : null}
 
       {preview.candidates.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-line p-3 text-sm text-muted">В выбранных периодах нет дат серии.</p>
+        <p className="rounded-lg border border-dashed border-line p-3 text-sm text-muted">{t('recurrence.noSeriesDatesFallWithinTheSelectedPeriods')}</p>
       ) : (
         <RecurrenceCandidateTable
           candidates={preview.candidates}
           periods={periods}
-          caption={`Даты серии в выбранных периодах: ${formatMeetingCount(preview.candidates.length)}`}
+          caption={t('recurrence.seriesDatesInSelectedPeriods', { meetings: formatMeetingCount(preview.candidates.length) })}
         />
       )}
     </section>
@@ -248,62 +242,63 @@ export interface RecurrenceExceptionPreviewProps {
 
 /** Read-only server preview of a single-occurrence change; the series date never changes. */
 export function RecurrenceExceptionPreview({ preview, members }: RecurrenceExceptionPreviewProps) {
+  const { t } = useTranslation();
   const headingId = useId();
   const stateAfter = calendarStateAfterCopy[preview.calendarStateAfter];
   const protectedLabels = recurrenceProtectedReasonLabels(preview.protectedReasons);
 
   return (
     <section aria-labelledby={headingId} className="min-w-0 space-y-4">
-      <h3 id={headingId} className="text-sm font-semibold">Проверка изменения одной встречи</h3>
+      <h3 id={headingId} className="text-sm font-semibold">{t('recurrence.reviewOneMeetingChange')}</h3>
 
       <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2">
         <div className="min-w-0 rounded-lg bg-canvas px-3 py-2">
-          <dt className="text-muted">Дата серии</dt>
+          <dt className="text-muted">{t('recurrence.seriesDate')}</dt>
           <dd className="font-medium">{formatRecurrenceDate(preview.occurrenceKey)}</dd>
-          <dd className="text-xs text-muted">Остаётся прежней при любом изменении</dd>
+          <dd className="text-xs text-muted">{t('recurrence.staysTheSameThroughAnyChange')}</dd>
         </div>
         <div className="min-w-0 rounded-lg bg-canvas px-3 py-2">
-          <dt className="text-muted">Действие</dt>
+          <dt className="text-muted">{t('recurrence.action')}</dt>
           <dd className="font-medium">{exceptionKindCopy[preview.kind]}</dd>
           <dd className="mt-1">
             <Badge tone={stateAfter.tone}>{stateAfter.label}</Badge>
           </dd>
         </div>
         <div className="min-w-0 rounded-lg bg-canvas px-3 py-2">
-          <dt className="text-muted">Сейчас в календаре</dt>
+          <dt className="text-muted">{t('recurrence.currentlyScheduled')}</dt>
           <dd className="mt-1">
-            <PlannedResolution resolution={preview.before} emptyLabel="Время не назначено" showDuration={false} />
+            <PlannedResolution resolution={preview.before} emptyLabel={t('recurrence.noTimeAssigned')} showDuration={false} />
           </dd>
         </div>
         <div className="min-w-0 rounded-lg bg-canvas px-3 py-2">
-          <dt className="text-muted">После изменения в календаре</dt>
+          <dt className="text-muted">{t('recurrence.scheduledAfterChange')}</dt>
           <dd className="mt-1">
             <PlannedResolution
               resolution={preview.after}
               showDuration={false}
-              emptyLabel={preview.calendarStateAfter === 'cancelled' ? 'Встреча не состоится' : 'Время не назначено'}
+              emptyLabel={preview.calendarStateAfter === 'cancelled' ? t('recurrence.meetingWillNotTakePlace') : t('recurrence.noTimeAssigned')}
             />
           </dd>
         </div>
       </dl>
 
-      <section aria-label="Плановое расписание и состав встречи" className="space-y-3">
-        <h4 className="text-sm font-semibold">Плановое расписание и состав</h4>
-        {preview.kind === 'reset' || preview.kind === 'restore' ? <p className="text-xs leading-relaxed text-muted">Расписание и состав берутся из действующего правила серии для этой даты. Название, статус, материалы и внесённый факт сохраняются.</p> : null}
+      <section aria-label={t('recurrence.plannedScheduleAndPeople')} className="space-y-3">
+        <h4 className="text-sm font-semibold">{t('recurrence.plannedScheduleAndRoster')}</h4>
+        {preview.kind === 'reset' || preview.kind === 'restore' ? <p className="text-xs leading-relaxed text-muted">{t('recurrence.scheduleAndPeopleUseTheCurrentSeriesRuleFor')}</p> : null}
         <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-          <PlannedCalendarReview title="Сейчас" calendar={preview.beforePlannedCalendar} other={preview.afterPlannedCalendar} members={members} after={false} />
-          <PlannedCalendarReview title="После изменения" calendar={preview.afterPlannedCalendar} other={preview.beforePlannedCalendar} members={members} after />
+          <PlannedCalendarReview title={t('recurrence.current')} calendar={preview.beforePlannedCalendar} other={preview.afterPlannedCalendar} members={members} after={false} />
+          <PlannedCalendarReview title={t('recurrence.afterChange')} calendar={preview.afterPlannedCalendar} other={preview.beforePlannedCalendar} members={members} after />
         </div>
       </section>
 
       {protectedLabels.length > 0 ? (
-        <ProtectedNotice title="Изменение встречи нельзя применить">
+        <ProtectedNotice title={t('recurrence.meetingChangeCannotBeApplied')}>
           <ul className="ml-4 list-disc">
             {protectedLabels.map((label) => (
               <li key={label}>{label}</li>
             ))}
           </ul>
-          <p className="text-xs">Пока действует хотя бы одна из этих причин, изменение будет отклонено целиком.</p>
+          <p className="text-xs">{t('recurrence.theWholeChangeWillBeRejectedWhileAnyOf')}</p>
         </ProtectedNotice>
       ) : null}
     </section>
@@ -318,20 +313,21 @@ function PlannedCalendarReview({ title, calendar, other, members, after }: {
   members: readonly MembershipDto[];
   after: boolean;
 }) {
+  const { t } = useTranslation();
   const headingId = useId();
-  const name = (id: string) => members.find(member => member.id.toLowerCase() === id.toLowerCase())?.displayName ?? 'Сохранённый недоступный участник';
+  const name = (id: string) => members.find(member => member.id.toLowerCase() === id.toLowerCase())?.displayName ?? t('recurrence.savedPersonUnavailable');
   const otherIds = new Set(other.attendeeMembershipIds.map(id => id.toLowerCase()));
   return <section aria-labelledby={headingId} className="min-w-0 space-y-3 rounded-lg border border-line bg-canvas p-3">
     <h5 id={headingId} className="text-sm font-semibold">{title}</h5>
     <dl className="space-y-2 text-sm">
-      <div><dt className="text-xs text-muted">Часовой пояс</dt><dd className="[overflow-wrap:anywhere]">{calendar.timezone}</dd></div>
-      <div><dt className="text-xs text-muted">Плановая длительность</dt><dd>{calendar.plannedDurationMinutes} мин</dd></div>
-      <div><dt className="text-xs text-muted">Организатор</dt><dd className="[overflow-wrap:anywhere]">{name(calendar.organizerMembershipId)}</dd></div>
+      <div><dt className="text-xs text-muted">{t('recurrence.timeZone')}</dt><dd className="[overflow-wrap:anywhere]">{calendar.timezone}</dd></div>
+      <div><dt className="text-xs text-muted">{t('recurrence.plannedDuration')}</dt><dd>{t('recurrence.min3', { plannedDurationMinutes: calendar.plannedDurationMinutes })}</dd></div>
+      <div><dt className="text-xs text-muted">{t('recurrence.organizer')}</dt><dd className="[overflow-wrap:anywhere]">{name(calendar.organizerMembershipId)}</dd></div>
     </dl>
-    <div className="space-y-1.5"><p className="text-xs text-muted">Участники встречи</p>
+    <div className="space-y-1.5"><p className="text-xs text-muted">{t('recurrence.meetingParticipants')}</p>
       <ul className="space-y-1.5 text-sm">{calendar.attendeeMembershipIds.map((id, index) => <li key={id} className="flex flex-wrap items-center gap-1.5 [overflow-wrap:anywhere]">
         <span>{name(id)}{!members.some(member => member.id.toLowerCase() === id.toLowerCase()) ? ` ${index + 1}` : ''}</span>
-        {!otherIds.has(id.toLowerCase()) ? <Badge tone={after ? 'accent' : 'warning'}>{after ? 'Добавится' : 'Не войдёт в новый состав'}</Badge> : null}
+        {!otherIds.has(id.toLowerCase()) ? <Badge tone={after ? 'accent' : 'warning'}>{after ? t('recurrence.willAdd') : t('recurrence.excludedFromNewRoster')}</Badge> : null}
       </li>)}</ul>
     </div>
   </section>;

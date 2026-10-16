@@ -1,3 +1,5 @@
+import { t, localization } from '../i18n';
+
 const pluralRules = new Intl.PluralRules('ru-RU');
 
 export function pluralizeRu(count: number, forms: { one: string; few: string; many: string }): string {
@@ -7,17 +9,17 @@ export function pluralizeRu(count: number, forms: { one: string; few: string; ma
 }
 
 export function formatMemberCount(count: number): string {
-  return pluralizeRu(count, { one: 'участник', few: 'участника', many: 'участников' });
+  return t('common.membersCount', { count });
 }
 
 export function formatProjectCount(count: number): string {
-  return pluralizeRu(count, { one: 'проект', few: 'проекта', many: 'проектов' });
+  return t('common.projectsCount', { count });
 }
 
 /** "GMT+3" style offset for an IANA zone, or null if the zone is unknown to the browser. */
 export function formatUtcOffset(timeZone: string, at: Date = new Date()): string | null {
   try {
-    const parts = new Intl.DateTimeFormat('ru-RU', { timeZone, timeZoneName: 'shortOffset' }).formatToParts(at);
+    const parts = new Intl.DateTimeFormat(localization.getLocale(), { timeZone, timeZoneName: 'shortOffset' }).formatToParts(at);
     return parts.find((part) => part.type === 'timeZoneName')?.value ?? null;
   } catch {
     return null;

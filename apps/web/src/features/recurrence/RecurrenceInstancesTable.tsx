@@ -1,3 +1,4 @@
+import { t, useTranslation, formatDate } from '../../i18n';
 import type { RecurrenceExceptionKind, RecurrenceInstanceDto, RecurrenceResolutionWarning } from '@workloom/contracts';
 import { Badge, Button } from '@workloom/ui';
 
@@ -11,31 +12,23 @@ export interface RecurrenceInstancesTableProps {
 }
 
 const warningCopy: Record<RecurrenceResolutionWarning, string> = {
-  gap_first_valid:
-    'Этого времени нет из-за перевода часов: встреча начнётся в первое существующее время после пропущенного интервала.',
-  ambiguous_earlier: 'Это время повторяется из-за перевода часов: выбрано более раннее из двух.',
-  skipped_local_date:
-    'Этой даты нет в часовом поясе серии: встреча начнётся в первое существующее время после пропущенного дня.',
+  get gap_first_valid() { return t('recurrence.thisTimeFallsInADaylightSavingGapThe'); },
+  get ambiguous_earlier() { return t('recurrence.thisTimeOccursTwiceDuringADaylightSavingChange'); },
+  get skipped_local_date() { return t('recurrence.thisDateDoesNotExistInTheSeriesTime'); },
 };
 
 const exceptionCopy: Record<RecurrenceExceptionKind, string> = {
-  skip: 'Только эта встреча отменена',
-  move: 'Только эта встреча перенесена',
-  restore: 'Встреча восстановлена',
-  reset: 'Возвращена к правилу серии',
+  get skip() { return t('recurrence.onlyThisMeetingCancelled'); },
+  get move() { return t('recurrence.onlyThisMeetingMoved'); },
+  get restore() { return t('recurrence.meetingRestored'); },
+  get reset() { return t('recurrence.resetToSeriesRule'); },
 };
 
-const dateFormat = new Intl.DateTimeFormat('ru-RU', {
-  weekday: 'short',
-  day: 'numeric',
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
+
 
 /** Formats a calendar date as-is; the UTC zone only keeps the day from shifting. */
 function calendarDate(value: string): string {
-  return dateFormat.format(new Date(`${value}T00:00:00Z`));
+  return formatDate(new Date(`${value}T00:00:00Z`), { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
 function isReserved(instance: RecurrenceInstanceDto): boolean {
@@ -43,11 +36,11 @@ function isReserved(instance: RecurrenceInstanceDto): boolean {
 }
 
 export function RecurrenceInstancesTable({ instances, onOpenMeeting, onSelectException, writable = false }: RecurrenceInstancesTableProps) {
+  const { t } = useTranslation();
   if (instances.length === 0) {
     return (
       <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">
-        В этом периоде нет встреч серии.
-      </p>
+        {t('recurrence.noSeriesMeetingsInThisPeriod')}</p>
     );
   }
 
@@ -56,21 +49,19 @@ export function RecurrenceInstancesTable({ instances, onOpenMeeting, onSelectExc
   return (
     <div className="space-y-2">
       <p className="text-xs leading-relaxed text-muted">
-        Дата серии — исходная дата встречи по правилу. Она остаётся постоянной, даже если встречу перенесли или время сдвинулось
-        из-за перевода часов. Время по правилу и запланированное начало показаны отдельно.
-      </p>
+        {t('recurrence.theSeriesDateIsTheOriginalDateFromThe')}</p>
       <div className="relative max-w-full overflow-x-auto rounded-xl border border-line bg-surface">
         <table className="w-full min-w-[880px] text-left text-sm">
-          <caption className="px-4 py-3 text-left text-sm font-semibold">Встречи серии в периоде</caption>
+          <caption className="px-4 py-3 text-left text-sm font-semibold">{t('recurrence.seriesMeetingsInPeriod')}</caption>
           <thead className="border-y border-line bg-canvas text-xs text-muted">
             <tr>
-              <th scope="col" className="px-4 py-3">Дата серии</th>
-              <th scope="col" className="px-3 py-3">По правилу</th>
-              <th scope="col" className="px-3 py-3">Начало</th>
-              <th scope="col" className="px-3 py-3">Состояние</th>
-              <th scope="col" className="px-3 py-3">Подготовка</th>
+              <th scope="col" className="px-4 py-3">{t('recurrence.seriesDate')}</th>
+              <th scope="col" className="px-3 py-3">{t('recurrence.byRule2')}</th>
+              <th scope="col" className="px-3 py-3">{t('recurrence.start')}</th>
+              <th scope="col" className="px-3 py-3">{t('recurrence.state')}</th>
+              <th scope="col" className="px-3 py-3">{t('recurrence.preparation')}</th>
               <th scope="col" className="px-3 py-3">
-                <span className="sr-only">Действия</span>
+                <span className="sr-only">{t('recurrence.actions')}</span>
               </th>
             </tr>
           </thead>
@@ -99,6 +90,7 @@ function InstanceRow({
   onOpenMeeting: (taskId: string, periodId: string) => void;
   onSelectException: ((instance: RecurrenceInstanceDto) => void) | undefined;
 }) {
+  const { t } = useTranslation();
   const { resolution, exception, occurrenceKey } = instance;
   const cancelled = instance.calendarState === 'cancelled';
   const reserved = isReserved(instance);
@@ -112,7 +104,7 @@ function InstanceRow({
         <span className="block whitespace-nowrap">{calendarDate(occurrenceKey)}</span>
         <span className="mt-1 block text-xs font-normal text-muted">
           {occurrenceKey}
-          {instance.nominalSequence !== null ? ` · встреча ${instance.nominalSequence} серии` : null}
+          {instance.nominalSequence !== null ? t('recurrence.meetingInSeries', { nominalSequence: instance.nominalSequence }) : null}
         </span>
       </th>
       <td className="px-3 py-3">
@@ -123,44 +115,38 @@ function InstanceRow({
         <span className="block whitespace-nowrap">
           {calendarDate(resolution.resolvedLocalDate)}, <span className="tabular-nums">{resolution.resolvedLocalTime}</span>
         </span>
-        <span className="mt-1 block text-xs text-muted [overflow-wrap:anywhere]">
-          UTC{resolution.resolvedOffset} · {resolution.provenance.timezone} · {resolution.plannedDurationMinutes} мин
-        </span>
+        <span className="mt-1 block text-xs text-muted [overflow-wrap:anywhere]">{t('recurrence.utcMin', { resolvedOffset: resolution.resolvedOffset, timezone: resolution.provenance.timezone, plannedDurationMinutes: resolution.plannedDurationMinutes })}</span>
         {resolution.warning !== null ? (
           <p className="mt-1.5 text-xs leading-relaxed text-amber-800">{warningCopy[resolution.warning]}</p>
         ) : shifted ? (
-          <p className="mt-1.5 text-xs leading-relaxed text-muted">Время начала отличается от времени по правилу.</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted">{t('recurrence.startDiffersFromTheRuleTime')}</p>
         ) : null}
       </td>
       <td className="max-w-xs px-3 py-3">
-        <Badge tone={cancelled ? 'warning' : 'neutral'}>{cancelled ? 'Отменена' : 'Запланирована'}</Badge>
+        <Badge tone={cancelled ? 'warning' : 'neutral'}>{cancelled ? t('recurrence.cancelled') : t('recurrence.scheduled')}</Badge>
         {exception !== null ? (
           <span className="mt-1.5 block text-xs text-muted">
             {exceptionCopy[exception.kind]}
-            {exception.kind === 'move' ? ` · дата серии ${occurrenceKey} не меняется` : null}
-            <span className="mt-0.5 block [overflow-wrap:anywhere]">Причина: {exception.reason}</span>
+            {exception.kind === 'move' ? t('recurrence.seriesDateStaysUnchanged', { occurrenceKey: occurrenceKey }) : null}
+            <span className="mt-0.5 block [overflow-wrap:anywhere]">{t('recurrence.reason2', { reason: exception.reason })}</span>
           </span>
         ) : null}
       </td>
       <td className="px-3 py-3">
         {reserved ? (
-          <span className="text-sm text-muted">{cancelled ? 'Отменена до подготовки' : 'Ещё не подготовлена'}</span>
+          <span className="text-sm text-muted">{cancelled ? t('recurrence.cancelledBeforePreparation') : t('recurrence.notPreparedYet')}</span>
         ) : (
-          <span className="text-sm">Подготовлена</span>
+          <span className="text-sm">{t('recurrence.prepared')}</span>
         )}
       </td>
       <td className="px-3 py-3">
         <div className="flex flex-wrap justify-end gap-2">
           {taskId !== null ? (
-            <Button size="sm" onClick={() => onOpenMeeting(taskId, instance.plannedPeriodId)}>
-              Открыть встречу {occurrenceKey}
-            </Button>
+            <Button size="sm" onClick={() => onOpenMeeting(taskId, instance.plannedPeriodId)}>{t('recurrence.openMeeting2', { occurrenceKey: occurrenceKey })}</Button>
           ) : null}
           {/* Offered for reserved headers too: an exception addresses the stable header, never a task. */}
           {onSelectException ? (
-            <Button size="sm" variant="ghost" onClick={() => onSelectException(instance)}>
-              Изменить встречу {occurrenceKey}
-            </Button>
+            <Button size="sm" variant="ghost" onClick={() => onSelectException(instance)}>{t('recurrence.changeMeeting2', { occurrenceKey: occurrenceKey })}</Button>
           ) : null}
         </div>
       </td>

@@ -1,8 +1,10 @@
+import { t, useTranslation } from '../../i18n';
 import { useIsFetching, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button } from '@workloom/ui';
 import { FlaskConical, RefreshCw } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useMatch } from 'react-router';
+import { LanguageSelector } from './LanguageSelector';
 import { isActorKey, queryKeys } from '../../lib/queryKeys';
 
 export interface TopbarProps {
@@ -13,12 +15,13 @@ export interface TopbarProps {
 }
 
 export function Topbar({ actorId, workspaceId, workspaceName, menu }: TopbarProps) {
+  useTranslation();
   const queryClient = useQueryClient();
   const onOverview = useMatch('/w/:workspaceId') !== null;
   const onMembers = useMatch('/w/:workspaceId/members') !== null;
   const onProjects = useMatch('/w/:workspaceId/projects') !== null;
   const onProject = useMatch('/w/:workspaceId/projects/:projectId') !== null;
-  const section = onMembers ? 'Участники' : onProjects || onProject ? 'Проекты' : onOverview ? 'Обзор' : null;
+  const section = onMembers ? t('routes.members') : onProjects || onProject ? t('routes.projects') : onOverview ? t('shell.overview') : null;
   // Inside a project the section is a way back, not the current page.
   const sectionHref = onProject && workspaceId ? `/w/${workspaceId}/projects` : null;
   const fetching =
@@ -34,10 +37,10 @@ export function Topbar({ actorId, workspaceId, workspaceName, menu }: TopbarProp
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-canvas/90 px-4 backdrop-blur-sm sm:gap-3 sm:px-6 lg:px-10">
       {menu}
-      <nav aria-label="Навигационная цепочка" className="min-w-0 flex-1">
+      <nav aria-label={t('shell.breadcrumbs')} className="min-w-0 flex-1">
         <ol className="flex min-w-0 items-center gap-1.5 text-sm">
           <li className={section ? 'min-w-0 truncate text-muted' : 'min-w-0 truncate font-medium text-ink'}>
-            {workspaceName ?? 'Workloom'}
+            {workspaceName ?? t('common.brand')}
           </li>
           {section ? (
             <>
@@ -59,14 +62,15 @@ export function Topbar({ actorId, workspaceId, workspaceName, menu }: TopbarProp
           ) : null}
         </ol>
       </nav>
-      <Badge tone="warning" title="Локальный режим с синтетическими данными">
+      <LanguageSelector />
+      <Badge tone="warning" title={t('shell.localModeTitle')}>
         <FlaskConical size={14} aria-hidden="true" />
-        <span className="sm:hidden">Тест</span>
-        <span className="hidden sm:inline">Тестовые данные</span>
+        <span className="sm:hidden">{t('shell.testShort')}</span>
+        <span className="hidden sm:inline">{t('shell.localDemo')}</span>
       </Badge>
       <Button size="sm" onClick={refresh} aria-disabled={fetching || undefined}>
         <RefreshCw size={16} aria-hidden="true" className={fetching ? 'motion-safe:animate-spin' : undefined} />
-        <span className="sr-only sm:not-sr-only">Обновить</span>
+        <span className="sr-only sm:not-sr-only">{t('shell.refresh')}</span>
       </Button>
     </header>
   );

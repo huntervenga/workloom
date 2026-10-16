@@ -73,8 +73,8 @@ describe('field value drafts', () => {
     expect(parse('number', { type: 'number', text: '1000000000001' }).ok).toBe(false);
     // Tiny stored numbers come back as plain digits, not exponent notation the input rejects.
     expect(roundTrip({ type: 'number', value: 1.5e-7 })).toEqual({ ok: true, value: { type: 'number', value: 1.5e-7 } });
-    expect(formatFieldNumber(-1234567.5)).toMatch(/^−1\s234\s567,5$/);
-    expect(formatFieldNumber(0.1 + 0.2)).toBe('0,30000000000000004');
+    expect(formatFieldNumber(-1234567.5)).toBe('−1,234,567.5');
+    expect(formatFieldNumber(0.1 + 0.2)).toBe('0.30000000000000004');
     for (const value of [0.1 + 0.2, 1.0000000000000002, Number.MIN_VALUE]) {
       expect(roundTrip({ type: 'number', value })).toEqual({ ok: true, value: { type: 'number', value } });
     }

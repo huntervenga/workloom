@@ -1,3 +1,4 @@
+import { useTranslation , type TranslationKey } from '../../i18n';
 import type { MembershipDto, PeriodCommitmentDto, PlanningPackageDto, PlanningPeriodDto, TaskDto } from '@workloom/contracts';
 import { Badge, Button, TextInput, inputClassName } from '@workloom/ui';
 import { useId, useState, type FormEvent } from 'react';
@@ -51,8 +52,9 @@ interface Props {
 }
 
 export function CommitmentDialog(props: Props) {
+  const { t } = useTranslation();
   const id = useId();
-  const [validation, setValidation] = useState<string | null>(null);
+  const [validation, setValidation] = useState<TranslationKey | null>(null);
   const [reloading, setReloading] = useState(false);
   const [reloadFailed, setReloadFailed] = useState(false);
   const { session, commands } = props;
@@ -69,7 +71,7 @@ export function CommitmentDialog(props: Props) {
   const packageTasks = props.tasks.filter((task) => task.workPackageId === session.packageId);
   const taskChoices = new Map(packageTasks.map((task) => [task.id, { id: task.id, title: task.title }]));
   for (const taskId of Object.keys(shownAllocations)) {
-    if (!taskChoices.has(taskId)) taskChoices.set(taskId, { id: taskId, title: 'Сохранённое распределение · задача не загружена' });
+    if (!taskChoices.has(taskId)) taskChoices.set(taskId, { id: taskId, title: t('planning.savedAllocationTaskNotLoaded') });
   }
   const editableMember = props.writable && (props.canWriteOthers || session.membershipId === props.ownMembershipId);
   const knownMember = props.members.some((member) => member.id === session.membershipId);
@@ -83,17 +85,17 @@ export function CommitmentDialog(props: Props) {
       return;
     }
     if (locked || session.stale || !editableMember) return;
-    if (!session.packageId || !session.membershipId) { setValidation('Выберите задачу и участника.'); return; }
+    if (!session.packageId || !session.membershipId) { setValidation('planning.chooseATaskAndAPerson'); return; }
     const planned = parseEstimateInput(session.hours);
-    if (!planned.valid) { setValidation(planned.message.replaceAll('Оценка', 'План').replaceAll('оценка', 'план')); return; }
+    if (!planned.valid) { setValidation('planning.invalidPlannedHours'); return; }
     const allocations: { taskId: string; minutes: number }[] = [];
     for (const [taskId, raw] of Object.entries(session.allocations)) {
       if (!raw.trim()) continue;
       const value = parseEstimateInput(raw);
-      if (!value.valid || value.minutes === null) { setValidation('Проверьте часы распределения: например, 1,5 или 1:30.'); return; }
+      if (!value.valid || value.minutes === null) { setValidation('planning.checkAllocatedHoursForExample15Or1'); return; }
       allocations.push({ taskId, minutes: value.minutes });
     }
-    if (allocations.reduce((sum, item) => sum + item.minutes, 0) > (planned.minutes ?? 0)) { setValidation('Распределённые часы не могут превышать личный план. При неизвестном плане допустимы только нулевые распределения.'); return; }
+    if (allocations.reduce((sum, item) => sum + item.minutes, 0) > (planned.minutes ?? 0)) { setValidation('planning.allocatedHoursCannotExceedThePersonalPlanAnUnknown'); return; }
     setValidation(null);
     const callbacks = {
       onSuccess: () => props.onSaved(session.key),
@@ -119,22 +121,22 @@ export function CommitmentDialog(props: Props) {
   };
 
   return (
-    <DialogShell title={session.base ? 'Личный план на неделю' : 'Добавить в недельный план'} description={`${session.period.name} · ${session.period.localStart} — ${session.period.localEndExclusive} (конец не включён).`} open={props.open} onOpenChange={(next) => { if (!next) props.onClose(); }}>
+    <DialogShell title={session.base ? t('planning.personalWeeklyPlan') : t('planning.addToWeeklyPlan')} description={t('planning.endExcluded', { periodName: session.period.name, startDate: session.period.localStart, endDate: session.period.localEndExclusive })} open={props.open} onOpenChange={(next) => { if (!next) props.onClose(); }}>
       <form className="mt-5 space-y-4" onSubmit={submit} noValidate>
-        {session.base?.baselineIds.length ? <p className="rounded-lg bg-canvas p-3 text-sm">Исходный план зафиксирован. Новая работа добавляется отдельной строкой.</p> : null}
-        {blocked ? <p role="status" className="text-sm text-amber-800">Другой план ещё отправляется или не подтверждён. Сначала разрешите его отправку.</p> : null}
-        {session.base?.classification === 'added' ? <Badge tone="muted">Добавлено после фиксации</Badge> : null}
+        {session.base?.baselineIds.length ? <p className="rounded-lg bg-canvas p-3 text-sm">{t('planning.theBaselineIsSavedNewWorkIsAddedSeparately')}</p> : null}
+        {blocked ? <p role="status" className="text-sm text-amber-800">{t('planning.anotherPlanIsStillSavingOrItsResultIs')}</p> : null}
+        {session.base?.classification === 'added' ? <Badge tone="muted">{t('planning.addedAfterBaseline')}</Badge> : null}
         <fieldset disabled={locked || !editableMember} className="min-w-0 space-y-4">
-          <div className="space-y-1.5"><label htmlFor={`${id}-package`} className="text-sm font-medium">Задача целиком</label><select id={`${id}-package`} className={inputClassName()} value={session.packageId} disabled={session.base !== null || props.fixedContext} onChange={(event) => { props.onChange({ ...session, packageId: event.target.value, allocations: {} }); setValidation(null); }}><option value="">Выберите работу</option>{props.packages.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}{session.packageId && !selectedPackage ? <option value={session.packageId}>Сохранённая работа · недоступна для выбора</option> : null}</select>{selectedPackage ? <p className="text-xs text-muted">Вся работа: {selectedPackage.estimateMinutes === null ? 'оценка не задана' : formatEstimate(selectedPackage.estimateMinutes)}. Это отдельный общий бюджет, а не личный недельный план.</p> : null}</div>
-          <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">Чей личный план</label><select id={`${id}-member`} className={inputClassName()} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers || props.fixedContext} onChange={(event) => props.onChange({ ...session, membershipId: event.target.value })}><option value="">Выберите участника</option>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}{!knownMember && session.membershipId ? <option value={session.membershipId}>Сохранённый участник · нет в текущем списке</option> : null}</select></div>
-          <div className="space-y-1.5"><label htmlFor={`${id}-hours`} className="text-sm font-medium">Личный план, часы</label><TextInput id={`${id}-hours`} autoFocus={props.fixedContext} value={shownHours} onChange={(event) => props.onChange({ ...session, hours: event.target.value })} inputMode="decimal" placeholder="Например, 6 или 1:30" /><p className="text-xs text-muted">Пусто — план пока неизвестен. 0 — явный нулевой план.</p></div>
-          <fieldset className="space-y-2"><legend className="mb-2 text-sm font-medium">Распределение по задачам, часы</legend><p className="text-xs text-muted">Необязательно. Остаток остаётся нераспределённым. Родитель и его дочерняя задача не получают один бюджет дважды.</p>{[...taskChoices.values()].map((task) => <div key={task.id} className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3"><label htmlFor={`${id}-${task.id}`} className="text-sm [overflow-wrap:anywhere]">{task.title}</label><TextInput id={`${id}-${task.id}`} aria-label={`Распределение: ${task.title}`} inputMode="decimal" value={shownAllocations[task.id] ?? ''} onChange={(event) => props.onChange({ ...session, allocations: { ...session.allocations, [task.id]: event.target.value } })} /></div>)}{props.hasMoreTasks ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>Загрузить ещё задачи для распределения</Button> : null}</fieldset>
-          {session.base ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={heldHere && 'state' in heldHere.input ? heldHere.input.state === 'removed' : session.state === 'removed'} onChange={(event) => props.onChange({ ...session, state: event.target.checked ? 'removed' : 'active' })} />Убрать из текущего плана</label> : null}
+          <div className="space-y-1.5"><label htmlFor={`${id}-package`} className="text-sm font-medium">{t('planning.wholeTask')}</label><select id={`${id}-package`} className={inputClassName()} value={session.packageId} disabled={session.base !== null || props.fixedContext} onChange={(event) => { props.onChange({ ...session, packageId: event.target.value, allocations: {} }); setValidation(null); }}><option value="">{t('planning.chooseWork')}</option>{props.packages.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}{session.packageId && !selectedPackage ? <option value={session.packageId}>{t('planning.savedWorkUnavailableForSelection')}</option> : null}</select>{selectedPackage ? <p className="text-xs text-muted">{t('planning.totalWorkThisIsASharedWorkBudgetSeparate', { hours: selectedPackage.estimateMinutes === null ? t('planning.estimateNotSet') : formatEstimate(selectedPackage.estimateMinutes) })}</p> : null}</div>
+          <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">{t('planning.whosePlan')}</label><select id={`${id}-member`} className={inputClassName()} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers || props.fixedContext} onChange={(event) => props.onChange({ ...session, membershipId: event.target.value })}><option value="">{t('planning.chooseAPerson')}</option>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}{!knownMember && session.membershipId ? <option value={session.membershipId}>{t('planning.savedPersonMissingFromCurrentList')}</option> : null}</select></div>
+          <div className="space-y-1.5"><label htmlFor={`${id}-hours`} className="text-sm font-medium">{t('planning.plannedHours')}</label><TextInput id={`${id}-hours`} autoFocus={props.fixedContext} value={shownHours} onChange={(event) => props.onChange({ ...session, hours: event.target.value })} inputMode="decimal" placeholder={t('planning.forExample6Or130')} /><p className="text-xs text-muted">{t('planning.leaveBlankForAnUnknownPlanEnter0To')}</p></div>
+          <fieldset className="space-y-2"><legend className="mb-2 text-sm font-medium">{t('planning.allocateHoursToTasks')}</legend><p className="text-xs text-muted">{t('planning.optionalRemainingHoursStayUnallocatedAParentAndIts')}</p>{[...taskChoices.values()].map((task) => <div key={task.id} className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3"><label htmlFor={`${id}-${task.id}`} className="text-sm [overflow-wrap:anywhere]">{task.title}</label><TextInput id={`${id}-${task.id}`} aria-label={t('planning.allocation', { taskTitle: task.title })} inputMode="decimal" value={shownAllocations[task.id] ?? ''} onChange={(event) => props.onChange({ ...session, allocations: { ...session.allocations, [task.id]: event.target.value } })} /></div>)}{props.hasMoreTasks ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>{t('planning.loadMoreTasksToAllocate')}</Button> : null}</fieldset>
+          {session.base ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={heldHere && 'state' in heldHere.input ? heldHere.input.state === 'removed' : session.state === 'removed'} onChange={(event) => props.onChange({ ...session, state: event.target.checked ? 'removed' : 'active' })} />{t('planning.removeFromCurrentPlan')}</label> : null}
         </fieldset>
-        {validation ? <p role="alert" className="text-sm text-red-700">{validation}</p> : null}
-        <SaveFeedback subject="planSave" error={confirmedError} uncertainError={heldHere ? mutation.uncertain?.error ?? null : null} action={session.stale ? <Button size="sm" disabled={reloading} onClick={() => void reload()}>Загрузить актуальный план</Button> : null} />
-        {reloadFailed ? <p role="alert" className="text-sm text-red-700">Не удалось обновить план. Черновик сохранён.</p> : null}
-        <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4"><Button onClick={props.onClose}>Закрыть</Button>{editableMember ? <Button type="submit" variant="primary" disabled={mutation.pendingCommand !== null || blocked || session.stale || (locked && heldHere === null)}>{heldHere ? mutation.pendingCommand ? 'Отправляем…' : 'Повторить отправку' : 'Сохранить личный план'}</Button> : null}</div>
+        {validation ? <p role="alert" className="text-sm text-red-700">{t(validation)}</p> : null}
+        <SaveFeedback subject="planSave" error={confirmedError} uncertainError={heldHere ? mutation.uncertain?.error ?? null : null} action={session.stale ? <Button size="sm" disabled={reloading} onClick={() => void reload()}>{t('planning.reloadCurrentPlan')}</Button> : null} />
+        {reloadFailed ? <p role="alert" className="text-sm text-red-700">{t('planning.couldNotRefreshThePlanYourDraftIsSaved')}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4"><Button onClick={props.onClose}>{t('planning.close')}</Button>{editableMember ? <Button type="submit" variant="primary" disabled={mutation.pendingCommand !== null || blocked || session.stale || (locked && heldHere === null)}>{heldHere ? mutation.pendingCommand ? t('planning.saving') : t('planning.retryOriginalSave') : t('planning.savePersonalPlan')}</Button> : null}</div>
       </form>
     </DialogShell>
   );

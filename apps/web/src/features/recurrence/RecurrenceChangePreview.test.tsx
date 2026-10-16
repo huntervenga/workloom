@@ -26,15 +26,15 @@ describe('exception planned-calendar review', () => {
       afterPlannedCalendar: plannedCalendar({ timezone: 'Asia/Nicosia', plannedDurationMinutes: 90, organizerMembershipId: gleb.id, attendeeMembershipIds: [vera.id, gleb.id] }),
     });
     render(<RecurrenceExceptionPreview preview={preview} members={alphaMembers} />);
-    const review = screen.getByRole('region', { name: 'Плановое расписание и состав встречи' });
-    const before = within(review).getByRole('region', { name: 'Сейчас' });
-    const after = within(review).getByRole('region', { name: 'После изменения' });
+    const review = screen.getByRole('region', { name: "Planned schedule and people" });
+    const before = within(review).getByRole('region', { name: "Current" });
+    const after = within(review).getByRole('region', { name: "After change" });
     expect(before).toHaveTextContent('Europe/Berlin');
-    expect(before).toHaveTextContent('45 мин');
+    expect(before).toHaveTextContent("45 min");
     expect(after).toHaveTextContent('Asia/Nicosia');
-    expect(after).toHaveTextContent('90 мин');
-    const beforeOrganizer = within(before).getByText('Организатор').nextElementSibling;
-    const afterOrganizer = within(after).getByText('Организатор').nextElementSibling;
+    expect(after).toHaveTextContent("90 min");
+    const beforeOrganizer = within(before).getByText("Organizer").nextElementSibling;
+    const afterOrganizer = within(after).getByText("Organizer").nextElementSibling;
     expect(beforeOrganizer).toHaveTextContent(anna.displayName);
     expect(afterOrganizer).toHaveTextContent(gleb.displayName);
     const beforeRoster = within(before).getByRole('list');
@@ -44,9 +44,9 @@ describe('exception planned-calendar review', () => {
     expect(afterRoster).not.toHaveTextContent(anna.displayName);
     expect(afterRoster).toHaveTextContent(vera.displayName);
     expect(afterRoster).toHaveTextContent(gleb.displayName);
-    expect(within(beforeRoster).getByText('Не войдёт в новый состав').closest('li')).toHaveTextContent(anna.displayName);
-    expect(within(afterRoster).getByText('Добавится').closest('li')).toHaveTextContent(gleb.displayName);
-    expect(review).toHaveTextContent('Название, статус, материалы и внесённый факт сохраняются.');
+    expect(within(beforeRoster).getByText("Excluded from new roster").closest('li')).toHaveTextContent(anna.displayName);
+    expect(within(afterRoster).getByText("Will add").closest('li')).toHaveTextContent(gleb.displayName);
+    expect(review).toHaveTextContent("Title, status, materials, and recorded hours are preserved.");
     for (const member of alphaMembers) expect(document.body).not.toHaveTextContent(member.id);
   });
 });

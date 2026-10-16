@@ -1,3 +1,4 @@
+import { useTranslation } from '../../i18n';
 import { MATERIALIZATION_REQUIRED, type FreezePreviewDto, type FreezeScope, type PlanningPeriodDto } from '@workloom/contracts';
 import { Badge, Button } from '@workloom/ui';
 import { RefreshCw } from 'lucide-react';
@@ -29,6 +30,7 @@ function needsMeetings(error: Error | null): boolean {
 
 /** Preview is a full server snapshot. Confirm sends its hash, never a reconstructed client manifest. */
 export function FreezeDialog({ workspaceId, request, open, mutation, onClose, onFrozen, onMaterializationRequired }: Props) {
+  const { t } = useTranslation();
   const [preview, setPreview] = useState<FreezePreviewDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -55,7 +57,7 @@ export function FreezeDialog({ workspaceId, request, open, mutation, onClose, on
   const confirmNeedsMeetings = held === null && needsMeetings(ownError);
   // Always the original request's period; preparing never freezes, so a fresh preview follows it.
   const prepareMeetings = onMaterializationRequired && (needsMeetings(error) || confirmNeedsMeetings)
-    ? <Button size="sm" variant="primary" onClick={() => onMaterializationRequired(request.period.id)}>Подготовить встречи периода</Button>
+    ? <Button size="sm" variant="primary" onClick={() => onMaterializationRequired(request.period.id)}>{t('planning.preparePeriodMeetings')}</Button>
     : null;
   const confirm = () => {
     const success = (baseline: { periodId: string; id: string }) => onFrozen(baseline.periodId, baseline.id);
@@ -70,32 +72,32 @@ export function FreezeDialog({ workspaceId, request, open, mutation, onClose, on
     });
   };
   return (
-    <DialogShell title={request.scope === 'self' ? 'Зафиксировать мой план' : 'Зафиксировать план проекта'} description={`${request.period.name}. Исходный снимок сохранится отдельно от последующей работы.`} open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+    <DialogShell title={request.scope === 'self' ? t('planning.saveMyBaseline') : t('planning.saveProjectBaseline')} description={t('planning.theBaselineIsSavedSeparatelyFromLaterWork', { periodName: request.period.name })} open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
       <div className="mt-5 space-y-4">
-        {loading ? <p role="status" className="text-sm text-muted">Загружаем свежий серверный предпросмотр…</p> : null}
-        {error && needsMeetings(error) ? <div role="alert" className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-900"><p className="font-medium text-amber-950">Сначала подготовьте встречи периода</p><p className="leading-relaxed">Не все встречи серий этого периода подготовлены, поэтому исходный план пока нельзя зафиксировать. После подготовки запросите свежий предпросмотр.</p><div className="flex flex-wrap gap-2">{prepareMeetings}<Button size="sm" disabled={loading} onClick={refresh}><RefreshCw size={14} aria-hidden="true" />Обновить предпросмотр</Button></div></div> : error ? <QueryErrorState error={error} subject="freeze" headingLevel={3} retrying={loading} onRetry={refresh} /> : null}
-        {blocked ? <p role="status" className="text-sm text-amber-800">Другая фиксация ещё не подтверждена. Сначала разрешите её отправку.</p> : null}
+        {loading ? <p role="status" className="text-sm text-muted">{t('planning.loadingAFreshPreview')}</p> : null}
+        {error && needsMeetings(error) ? <div role="alert" className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-900"><p className="font-medium text-amber-950">{t('planning.preparePeriodMeetingsFirst')}</p><p className="leading-relaxed">{t('planning.someRecurringMeetingsInThisPeriodAreNotReady')}</p><div className="flex flex-wrap gap-2">{prepareMeetings}<Button size="sm" disabled={loading} onClick={refresh}><RefreshCw size={14} aria-hidden="true" />{t('planning.refreshPreview')}</Button></div></div> : error ? <QueryErrorState error={error} subject="freeze" headingLevel={3} retrying={loading} onRetry={refresh} /> : null}
+        {blocked ? <p role="status" className="text-sm text-amber-800">{t('planning.anotherBaselineSaveIsUnresolvedResolveItFirst')}</p> : null}
         {preview ? <>
-          <p className="text-sm text-ink-soft">Сервер проверит этот полный снимок ещё раз при подтверждении. Изменившиеся задачи, часы, поля или участники потребуют нового предпросмотра.</p>
-          {preview.existingBaselineId ? <Badge tone="muted">Этот план уже зафиксирован</Badge> : null}
-          <section aria-label="Серверный предпросмотр плана" className="space-y-3 rounded-xl border border-line bg-canvas p-3">
-            {preview.snapshot.commitments.length === 0 ? <p className="text-sm text-muted">В исходном плане пока нет личных обязательств.</p> : preview.snapshot.commitments.map((item) => {
+          <p className="text-sm text-ink-soft">{t('planning.theServerChecksThisCompleteSnapshotAgainWhenYou')}</p>
+          {preview.existingBaselineId ? <Badge tone="muted">{t('planning.thisBaselineIsAlreadySaved')}</Badge> : null}
+          <section aria-label={t('planning.baselinePreview')} className="space-y-3 rounded-xl border border-line bg-canvas p-3">
+            {preview.snapshot.commitments.length === 0 ? <p className="text-sm text-muted">{t('planning.thereAreNoPersonalCommitmentsInThisBaselineYet')}</p> : preview.snapshot.commitments.map((item) => {
               const member = preview.snapshot.memberships.find((value) => value.id === item.membershipId);
               const work = preview.snapshot.packages.find((value) => value.id === item.workPackageId);
-              return <div key={item.id} className="space-y-1 border-b border-line pb-3 last:border-0 last:pb-0"><p className="text-sm font-medium [overflow-wrap:anywhere]">{work?.title ?? 'Задача'}</p><p className="text-xs text-muted">{member?.displayName ?? 'Участник'} · личный план: {item.plannedMinutes === null ? 'не задан' : formatEstimate(item.plannedMinutes)}{item.state === 'removed' ? ' · убрано из плана' : ''}{item.classification === 'added' ? ' · добавленная работа' : ''}</p>{work ? <p className="text-xs text-muted">Вся работа: {work.estimateMinutes === null ? 'оценка неизвестна' : formatEstimate(work.estimateMinutes)}</p> : null}</div>;
+              return <div key={item.id} className="space-y-1 border-b border-line pb-3 last:border-0 last:pb-0"><p className="text-sm font-medium [overflow-wrap:anywhere]">{work?.title ?? t('planning.task')}</p><p className="text-xs text-muted">{t('planning.plannedHours3', { person: member?.displayName ?? t('planning.person'), hours: item.plannedMinutes === null ? t('planning.notSet') : formatEstimate(item.plannedMinutes), status: item.state === 'removed' ? t('planning.removedFromPlan') : '', classification: item.classification === 'added' ? t('planning.addedWork') : '' })}</p>{work ? <p className="text-xs text-muted">{t('planning.totalWork2', { hours: work.estimateMinutes === null ? t('planning.estimateUnknown') : formatEstimate(work.estimateMinutes) })}</p> : null}</div>;
             })}
           </section>
-          {preview.snapshot.recurrence ? <section aria-label="Расписание серий в исходном плане" className="space-y-2 rounded-xl border border-line bg-canvas p-3">
-            <h3 className="text-sm font-semibold">Расписание серий</h3>
-            <p className="text-sm">Запланировано: {preview.snapshot.recurrence.census.filter(item => item.calendarState === 'scheduled').length}. Отменено: {preview.snapshot.recurrence.census.filter(item => item.calendarState === 'cancelled').length}.</p>
-            <p className="text-xs leading-relaxed text-muted">В снимке сохраняется календарь встреч, включая отменённые даты и серии с приостановленной фоновой подготовкой. Это отдельно от личных часов: календарная запись сама по себе не добавляет личный план и не фиксирует общую оценку задачи.</p>
-            {preview.snapshot.recurrence.census.length > 0 ? <details className="text-sm"><summary className="cursor-pointer font-medium">Посмотреть даты серий</summary><ul className="mt-2 space-y-2">{preview.snapshot.recurrence.census.slice(0, 20).map(item => <li key={item.instanceId} className="text-xs [overflow-wrap:anywhere]">Дата серии {item.occurrenceKey} · {item.resolution.resolvedLocalDate} {item.resolution.resolvedLocalTime} · {item.resolution.provenance.timezone} (UTC{item.resolution.resolvedOffset}) · {item.calendarState === 'cancelled' ? 'отменена' : 'запланирована'}</li>)}</ul>{preview.snapshot.recurrence.census.length > 20 ? <p className="mt-2 text-xs text-muted">Показаны первые 20 из {preview.snapshot.recurrence.census.length} дат. Снимок сохраняет весь календарь периода.</p> : null}</details> : null}
+          {preview.snapshot.recurrence ? <section aria-label={t('planning.recurringScheduleInBaseline')} className="space-y-2 rounded-xl border border-line bg-canvas p-3">
+            <h3 className="text-sm font-semibold">{t('planning.recurringSchedule')}</h3>
+            <p className="text-sm">{t('planning.scheduledCancelled', { scheduledCount: preview.snapshot.recurrence.census.filter(item => item.calendarState === 'scheduled').length, cancelledCount: preview.snapshot.recurrence.census.filter(item => item.calendarState === 'cancelled').length })}</p>
+            <p className="text-xs leading-relaxed text-muted">{t('planning.theSnapshotPreservesTheMeetingCalendarIncludingCancelledDates')}</p>
+            {preview.snapshot.recurrence.census.length > 0 ? <details className="text-sm"><summary className="cursor-pointer font-medium">{t('planning.viewSeriesDates')}</summary><ul className="mt-2 space-y-2">{preview.snapshot.recurrence.census.slice(0, 20).map(item => <li key={item.instanceId} className="text-xs [overflow-wrap:anywhere]">{t('planning.seriesDateUtc', { occurrenceKey: item.occurrenceKey, resolvedLocalDate: item.resolution.resolvedLocalDate, resolvedLocalTime: item.resolution.resolvedLocalTime, timezone: item.resolution.provenance.timezone, resolvedOffset: item.resolution.resolvedOffset, state: item.calendarState === 'cancelled' ? t('planning.cancelled2') : t('planning.scheduled2') })}</li>)}</ul>{preview.snapshot.recurrence.census.length > 20 ? <p className="mt-2 text-xs text-muted">{t('planning.showingTheFirst20OfDatesTheSnapshotPreserves', { total: preview.snapshot.recurrence.census.length })}</p> : null}</details> : null}
           </section> : null}
-          <p className="text-xs leading-relaxed text-muted">{preview.snapshot.period.protectEstimate ? 'Общая оценка включённых задач будет защищена. ' : ''}{preview.snapshot.period.protectedFieldIds.length > 0 ? 'Выбранные дополнительные поля тоже будут защищены. ' : ''}После фиксации можно добавлять новую работу; сервер отметит её отдельно.</p>
+          <div className="space-y-1 text-xs leading-relaxed text-muted">{preview.snapshot.period.protectEstimate ? <p>{t('planning.sharedEstimatesForIncludedTasksWillBeProtected')}</p> : null}{preview.snapshot.period.protectedFieldIds.length > 0 ? <p>{t('planning.selectedCustomFieldsWillAlsoBeProtected')}</p> : null}<p>{t('planning.youCanAddNewWorkAfterSavingTheBaseline')}</p></div>
         </> : null}
-        <SaveFeedback subject="freeze" error={ownError} uncertainError={heldHere ? mutation.uncertain?.error ?? null : null} action={stale ? <div className="flex flex-wrap gap-2">{confirmNeedsMeetings ? prepareMeetings : null}<Button size="sm" onClick={refresh}><RefreshCw size={14} aria-hidden="true" />Обновить предпросмотр</Button></div> : null} />
-        {confirmNeedsMeetings ? <p className="text-xs leading-relaxed text-muted">Не все встречи серий этого периода подготовлены. Подготовьте их, затем запросите свежий предпросмотр и подтвердите фиксацию заново.</p> : null}
-        <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4"><Button onClick={onClose}>Закрыть</Button>{held === null && preview && !stale ? <Button onClick={refresh} disabled={loading}>Обновить предпросмотр</Button> : null}{heldHere || preview?.existingBaselineId === null ? <Button variant="primary" disabled={mutation.pendingCommand !== null || blocked || loading || stale || (!preview && heldHere === null)} onClick={confirm}>{heldHere ? mutation.pendingCommand ? 'Фиксируем…' : 'Повторить отправку' : 'Подтвердить фиксацию'}</Button> : null}</div>
+        <SaveFeedback subject="freeze" error={ownError} uncertainError={heldHere ? mutation.uncertain?.error ?? null : null} action={stale ? <div className="flex flex-wrap gap-2">{confirmNeedsMeetings ? prepareMeetings : null}<Button size="sm" onClick={refresh}><RefreshCw size={14} aria-hidden="true" />{t('planning.refreshPreview')}</Button></div> : null} />
+        {confirmNeedsMeetings ? <p className="text-xs leading-relaxed text-muted">{t('planning.someRecurringMeetingsAreNotReadyPrepareThemThen')}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4"><Button onClick={onClose}>{t('planning.close')}</Button>{held === null && preview && !stale ? <Button onClick={refresh} disabled={loading}>{t('planning.refreshPreview')}</Button> : null}{heldHere || preview?.existingBaselineId === null ? <Button variant="primary" disabled={mutation.pendingCommand !== null || blocked || loading || stale || (!preview && heldHere === null)} onClick={confirm}>{heldHere ? mutation.pendingCommand ? t('planning.savingBaseline') : t('planning.retryOriginalSave') : t('planning.confirmBaseline')}</Button> : null}</div>
       </div>
     </DialogShell>
   );

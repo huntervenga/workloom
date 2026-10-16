@@ -49,11 +49,13 @@ const MAX_POSITION = 2_147_483_647;
 /** Same rule as the HTTP adapter: visible ASCII, 1–128 characters. */
 const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]{1,128}$/;
 
+// Persisted template data for NEW projects, not localized UI labels. Existing statuses and
+// exact idempotent outcomes are never renamed or rewritten when this template changes.
 const DEFAULT_STATUSES = [
-  { name: 'К выполнению', group: 'todo' },
-  { name: 'В работе', group: 'in_progress' },
-  { name: 'Готово', group: 'done' },
-  { name: 'Отменено', group: 'cancelled' },
+  { name: 'To do', group: 'todo' },
+  { name: 'In progress', group: 'in_progress' },
+  { name: 'Done', group: 'done' },
+  { name: 'Cancelled', group: 'cancelled' },
 ] as const;
 
 /** Task columns whose change bumps the task `revision` (tag joins count too). */

@@ -19,7 +19,7 @@
     "build:libs": "node scripts/run-workspaces.mjs build --libs",
     "start": "node --env-file-if-exists=.env scripts/with-env.mjs run start --workspace @workloom/api",
     "typecheck": "npm run build:libs && node scripts/run-workspaces.mjs typecheck && tsc -p tsconfig.json",
-    "lint": "eslint . --max-warnings=0 && npm run check:boundaries",
+    "lint": "eslint . --max-warnings=0 && npm run check:boundaries && npm run check:localization",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check": "npm run lint && npm run typecheck",
     "test:unit": "npm run build:libs && vitest run --project unit && npm run test --workspace @workloom/web",
@@ -31,7 +31,8 @@
     "db:generate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:generate --workspace @workloom/db",
     "db:migrate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:migrate --workspace @workloom/db",
     "db:queue:migrate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:queue:migrate --workspace @workloom/db",
-    "db:seed:demo": "node --env-file-if-exists=.env scripts/with-env.mjs run db:seed:demo --workspace @workloom/db"
+    "db:seed:demo": "node --env-file-if-exists=.env scripts/with-env.mjs run db:seed:demo --workspace @workloom/db",
+    "check:localization": "node scripts/check-localization.mjs"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",

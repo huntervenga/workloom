@@ -30,7 +30,7 @@ function rowOf(title: string): HTMLElement {
 }
 
 function summaryRow(): HTMLElement {
-  const row = screen.getByText('Оценка загруженных задач').closest('tr');
+  const row = screen.getByText("Loaded team budget").closest('tr');
   if (row === null) throw new Error('No summary row');
   return row;
 }
@@ -68,33 +68,33 @@ describe('TaskTable hierarchy', () => {
     renderTable({ tasks: [copy, launch, layout] });
 
     // A child stays under its parent even though it belongs to another section.
-    expect(within(rowOf('Вёрстка')).getByText('Раздел: Дизайн')).toBeInTheDocument();
-    expect(within(summaryRow()).getByText('10 ч')).toBeInTheDocument();
+    expect(within(rowOf('Вёрстка')).getByText("Section: Дизайн")).toBeInTheDocument();
+    expect(within(summaryRow()).getByText("10h")).toBeInTheDocument();
 
-    const collapse = screen.getByRole('button', { name: 'Свернуть подзадачи «Запуск сайта»' });
+    const collapse = screen.getByRole('button', { name: "Collapse subtasks of “Запуск сайта”" });
     expect(collapse).toHaveAttribute('aria-expanded', 'true');
     await user.click(collapse);
 
     expect(screen.queryByRole('button', { name: 'Вёрстка' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Тексты' })).not.toBeInTheDocument();
-    const expand = screen.getByRole('button', { name: 'Развернуть подзадачи «Запуск сайта»' });
+    const expand = screen.getByRole('button', { name: "Expand subtasks of “Запуск сайта”" });
     expect(expand).toHaveAttribute('aria-expanded', 'false');
     expect(expand).toHaveFocus();
-    expect(within(summaryRow()).getByText('10 ч')).toBeInTheDocument();
-    expect(within(summaryRow()).getByText(/Загружено: 3 задачи/)).toBeInTheDocument();
+    expect(within(summaryRow()).getByText("10h")).toBeInTheDocument();
+    expect(within(summaryRow()).getByText(/Loaded: 3 tasks/)).toBeInTheDocument();
 
     await user.keyboard('{Enter}');
     expect(screen.getByRole('button', { name: 'Вёрстка' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Свернуть подзадачи «Запуск сайта»' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: "Collapse subtasks of “Запуск сайта”" })).toHaveFocus();
   });
 
   it('marks rows sharing one work package and counts that budget once', () => {
     renderTable({ tasks: [launch, layout, copy] });
 
     for (const title of ['Запуск сайта', 'Вёрстка', 'Тексты']) {
-      expect(within(rowOf(title)).getByText('общая')).toBeInTheDocument();
+      expect(within(rowOf(title)).getByText("shared")).toBeInTheDocument();
     }
-    expect(within(summaryRow()).getByText('10 ч')).toBeInTheDocument();
+    expect(within(summaryRow()).getByText("10h")).toBeInTheDocument();
   });
 
   it('groups root tasks by section position, then «Без раздела»', () => {
@@ -118,7 +118,7 @@ describe('TaskTable hierarchy', () => {
     expect(headers).toHaveLength(3);
     expect(headers[0]).toMatch(/^Аналитика/);
     expect(headers[1]).toMatch(/^Дизайн/);
-    expect(headers[2]).toMatch(/^Без раздела/);
+    expect(headers[2]).toMatch(/^No section/);
   });
 
   it('shows a subtask whose parent was filtered out instead of dropping it', () => {
@@ -127,9 +127,9 @@ describe('TaskTable hierarchy', () => {
       partial: true,
     });
 
-    expect(within(rowOf('Проверить формы')).getByText('Подзадача')).toBeInTheDocument();
-    expect(within(summaryRow()).getByText('45 мин')).toBeInTheDocument();
-    expect(within(summaryRow()).getByText(/часть задач проекта/)).toBeInTheDocument();
+    expect(within(rowOf('Проверить формы')).getByText("Subtask")).toBeInTheDocument();
+    expect(within(summaryRow()).getByText("45m")).toBeInTheDocument();
+    expect(within(summaryRow()).getByText(/Partial project/)).toBeInTheDocument();
   });
 
   it('renders every task of a parent cycle once without looping', () => {
@@ -144,7 +144,7 @@ describe('TaskTable hierarchy', () => {
     for (const title of ['Цикл А', 'Цикл Б', 'Потомок']) {
       expect(screen.getAllByRole('button', { name: title })).toHaveLength(1);
     }
-    expect(screen.getAllByText('Цикл в иерархии')).toHaveLength(1);
+    expect(screen.getAllByText("Hierarchy cycle")).toHaveLength(1);
   });
 });
 
@@ -163,7 +163,7 @@ describe('TaskTable people, tags and budget', () => {
     });
 
     const row = rowOf('Согласовать бриф');
-    expect(within(row).getByText('Участник недоступен')).toBeInTheDocument();
+    expect(within(row).getByText("Member unavailable")).toBeInTheDocument();
     expect(within(row).getByText('Анна Ковалёва')).toBeInTheDocument();
     expect(within(row).queryByText('Борис Петров')).not.toBeInTheDocument();
   });
@@ -181,7 +181,7 @@ describe('TaskTable people, tags and budget', () => {
 
     const row = rowOf('Обновить прайс');
     expect(within(row).getByText('Акция-2025')).toBeInTheDocument();
-    expect(within(row).getByText('· архив')).toBeInTheDocument();
+    expect(within(row).getByText("· archived")).toBeInTheDocument();
   });
 
   it('withholds the total when loaded copies of one package disagree', () => {
@@ -199,9 +199,9 @@ describe('TaskTable people, tags and budget', () => {
       ],
     });
 
-    expect(within(summaryRow()).getByText('Итог недоступен')).toBeInTheDocument();
-    expect(within(summaryRow()).getByText(/обновите данные/)).toBeInTheDocument();
-    expect(within(summaryRow()).queryByText('3 ч')).not.toBeInTheDocument();
+    expect(within(summaryRow()).getByText("Total unavailable")).toBeInTheDocument();
+    expect(within(summaryRow()).getByText(/Refresh data/)).toBeInTheDocument();
+    expect(within(summaryRow()).queryByText("3h")).not.toBeInTheDocument();
   });
 });
 
@@ -209,8 +209,8 @@ describe('TaskTable actions', () => {
   it('offers create actions only when writable', () => {
     renderTable({ tasks: [launch], onRenameSection: vi.fn() });
 
-    expect(screen.queryByRole('button', { name: /Добавить/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Переименовать/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Rename/ })).not.toBeInTheDocument();
   });
 
   it('passes the real task and section to the parent callbacks', async () => {
@@ -218,13 +218,13 @@ describe('TaskTable actions', () => {
     const onRenameSection = vi.fn();
     const handlers = renderTable({ tasks: [launch, layout], writable: true, onRenameSection });
 
-    await user.click(screen.getByRole('button', { name: 'Добавить подзадачу к «Запуск сайта»' }));
+    await user.click(screen.getByRole('button', { name: "Add subtask to “Запуск сайта”" }));
     expect(handlers.onCreateChild).toHaveBeenCalledWith(launch);
 
-    await user.click(screen.getByRole('button', { name: 'Добавить задачу в раздел «Дизайн»' }));
+    await user.click(screen.getByRole('button', { name: "Add task to “Дизайн”" }));
     expect(handlers.onCreateTask).toHaveBeenCalledWith(design.id);
 
-    await user.click(screen.getByRole('button', { name: 'Переименовать раздел «Аналитика»' }));
+    await user.click(screen.getByRole('button', { name: "Rename section “Аналитика”" }));
     expect(onRenameSection).toHaveBeenCalledWith(analytics);
 
     screen.getByRole('button', { name: 'Вёрстка' }).focus();
@@ -236,7 +236,28 @@ describe('TaskTable actions', () => {
     const archived = makeTask({ id: 'old', title: 'Старый запуск', archivedAt: '2026-10-05T09:00:00Z' });
     renderTable({ tasks: [launch, archived], writable: true });
 
-    expect(screen.getByRole('button', { name: 'Добавить подзадачу к «Запуск сайта»' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Добавить подзадачу к «Старый запуск»' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: "Add subtask to “Запуск сайта”" })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "Add subtask to “Старый запуск”" })).not.toBeInTheDocument();
+  });
+});
+
+describe('TaskTable everyday columns', () => {
+  it('preserves task identity, budget totals and supplied weekly columns across compact and expanded views', () => {
+    const task = makeTask({ id: 'daily-row', title: 'Daily task', estimateMinutes: 90, tags: [makeTag({ id: 'daily-tag', name: 'Stored label' })] });
+    const props: TaskTableProps = {
+      tasks: [task], sections: [], statuses, members: [anna], onOpenTask: vi.fn(), onCreateTask: vi.fn(), onCreateChild: vi.fn(),
+      customColumns: [{ id: 'weekly-plan', label: 'Personal weekly plan', width: 140, renderCell: () => '45m' }],
+    };
+    const view = render(<TaskTable {...props} columnPreset="compact" />);
+    expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Task', 'Status', 'Assignee', 'Due date', 'Personal weekly plan', 'Team estimate']);
+    expect(within(rowOf('Daily task')).getByText('45m')).toBeInTheDocument();
+    expect(within(summaryRow()).getByText('1h 30m')).toBeInTheDocument();
+    expect(screen.queryByText('Stored label')).not.toBeInTheDocument();
+    view.rerender(<TaskTable {...props} columnPreset="expanded" />);
+    expect(screen.getByRole('columnheader', { name: 'Participants' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Tags' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Priority' })).toBeInTheDocument();
+    expect(within(rowOf('Daily task')).getByText('Stored label')).toBeInTheDocument();
+    expect(within(summaryRow()).getByText('1h 30m')).toBeInTheDocument();
   });
 });

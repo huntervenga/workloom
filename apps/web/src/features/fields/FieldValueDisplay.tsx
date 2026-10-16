@@ -1,3 +1,4 @@
+import { t, useTranslation } from '../../i18n';
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { cn } from '@workloom/ui';
 import { formatEstimate } from '../task-table/estimate';
@@ -19,15 +20,17 @@ export interface FieldValueDisplayProps {
   compact?: boolean | undefined;
 }
 
-const UNREADABLE = 'Значение недоступно';
+const UNREADABLE = () => t('fields.fieldValueDisplay.valueUnavailable');
 const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const SWATCH_COLOR = /^#[0-9a-f]{6}$/i;
 
 function Muted({ text, compact }: { text: string; compact: boolean }) {
+  useTranslation();
   return <span className={cn('text-muted', compact && 'block truncate')}>{text}</span>;
 }
 
 function Plain({ text, compact, className }: { text: string; compact: boolean; className?: string }) {
+  useTranslation();
   return (
     <span
       className={cn(compact ? 'block truncate' : 'whitespace-pre-wrap [overflow-wrap:anywhere]', className)}
@@ -39,6 +42,7 @@ function Plain({ text, compact, className }: { text: string; compact: boolean; c
 }
 
 function References({ labels, compact }: { labels: readonly ReferenceLabel[]; compact: boolean }) {
+  useTranslation();
   return (
     <span
       className={cn(compact ? 'block truncate' : 'flex flex-wrap gap-x-2 gap-y-1')}
@@ -63,37 +67,38 @@ function References({ labels, compact }: { labels: readonly ReferenceLabel[]; co
 
 /** Read-only value of a custom field. Handles cleared, unknown and hostile values without guessing. */
 export function FieldValueDisplay({ field, value, members, compact = false }: FieldValueDisplayProps) {
+  const { t } = useTranslation();
   if (value === null || value === undefined || value.value === null) {
     return compact ? (
-      <span title={NOT_SET} className="text-muted">
+      <span title={NOT_SET()} className="text-muted">
         <span aria-hidden="true">—</span>
-        <span className="sr-only">{NOT_SET}</span>
+        <span className="sr-only">{NOT_SET()}</span>
       </span>
     ) : (
-      <Muted text={NOT_SET} compact={false} />
+      <Muted text={NOT_SET()} compact={false} />
     );
   }
-  if (value.type !== field.type) return <Muted text={UNREADABLE} compact={compact} />;
+  if (value.type !== field.type) return <Muted text={UNREADABLE()} compact={compact} />;
 
   switch (value.type) {
     case 'text':
-      return value.value === '' ? <Muted text="Пустой текст" compact={compact} /> : <Plain text={value.value} compact={compact} />;
+      return value.value === '' ? <Muted text={t('fields.fieldValueDisplay.emptyText')} compact={compact} /> : <Plain text={value.value} compact={compact} />;
     case 'number':
       return Number.isFinite(value.value) ? (
         <Plain text={formatFieldNumber(value.value)} compact={compact} className="tabular-nums" />
       ) : (
-        <Muted text={UNREADABLE} compact={compact} />
+        <Muted text={UNREADABLE()} compact={compact} />
       );
     case 'duration':
       return isMinutes(value.value) ? (
         <Plain text={formatEstimate(value.value)} compact={compact} className="tabular-nums" />
       ) : (
-        <Muted text={UNREADABLE} compact={compact} />
+        <Muted text={UNREADABLE()} compact={compact} />
       );
     case 'date': {
       // A calendar date has no time zone: show its own digits, never through `Date`.
       const match = CALENDAR_DATE.exec(value.value);
-      if (!match) return <Muted text={UNREADABLE} compact={compact} />;
+      if (!match) return <Muted text={UNREADABLE()} compact={compact} />;
       const [, year, month, day] = match;
       return (
         <time dateTime={value.value} className={cn('tabular-nums', compact && 'block truncate')}>
@@ -102,7 +107,7 @@ export function FieldValueDisplay({ field, value, members, compact = false }: Fi
       );
     }
     case 'boolean':
-      return <Plain text={value.value ? 'Да' : 'Нет'} compact={compact} />;
+      return <Plain text={value.value ? t('fields.fieldValueDisplay.yes') : t('fields.fieldValueDisplay.no')} compact={compact} />;
     case 'url':
       return isSafeLink(value.value) ? (
         <a
@@ -126,7 +131,7 @@ export function FieldValueDisplay({ field, value, members, compact = false }: Fi
     case 'multi_select':
     case 'person':
       return value.value.length === 0 ? (
-        <Muted text={NOTHING_SELECTED} compact={compact} />
+        <Muted text={NOTHING_SELECTED()} compact={compact} />
       ) : (
         <References labels={referenceLabels(field, value.value, members)} compact={compact} />
       );
