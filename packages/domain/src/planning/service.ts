@@ -1,3 +1,4 @@
+import { canonicalWorkCategory } from '../categories/resolver.js';
 import {
   createPlanningPeriodInputSchema,createPeriodCommitmentInputSchema,createWeeklyPlanFactReportInputSchema,
   freezePlanInputSchema,freezePreviewInputSchema,idSchema,manualPeriodWorkLogSchema,periodCommitmentListQuerySchema,
@@ -14,7 +15,7 @@ import { capabilityRequiredError,DomainError,notFoundError,unauthenticatedError 
 import { canonicalJson } from '../tasks/service.js';
 import type { PlanningApplication,PlanningPage } from './application.js';
 import { captureFreezeSnapshot,createPlanningMutationGuard,freezePreviewHash,isCommittedPlanningRejection,performFreeze,unwrapPlanningOutcome } from './freeze.js';
-import type { PlanningApplicationDependencies,PlanningMutationCommand,PlanningRepository,PlanningWriteScope } from './ports.js';
+import type { PlanningApplicationDependencies,PlanningApplicationWriteScope,PlanningMutationCommand,PlanningRepository,PlanningWriteScope } from './ports.js';
 
 interface Parser<T> {safeParse(value:unknown):{success:true;data:T}|{success:false;error:{issues:readonly {path:readonly PropertyKey[]}[]}}}
 function parse<T>(schema:Parser<T>,value:unknown):T {const p=schema.safeParse(value);if(p.success)return p.data;throw new DomainError('VALIDATION_FAILED','The input is invalid.',{details:{fields:p.error.issues.map(i=>i.path.join('.'))}});}
@@ -55,7 +56,7 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
     const items=ordered.slice(0,query.limit),last=items.at(-1);
     return {items,nextCursor:ordered.length>query.limit&&last?tools.encodeCursor({version:1,workspaceId:ctx.workspaceId,actorUserId:ctx.actor.userId,permissionEpoch:epoch,queryHash:hash,afterId:last.id}):null};
   }
-  async function mutate<R>(context:CommandContext,cap:Capability,command:PlanningMutationCommand,target:unknown,input:unknown,resultSchema:Parser<R>,work:(scope:PlanningWriteScope,now:string)=>Promise<R>,authorize?:(scope:PlanningWriteScope)=>Promise<void>):Promise<R> {
+  async function mutate<R>(context:CommandContext,cap:Capability,command:PlanningMutationCommand,target:unknown,input:unknown,resultSchema:Parser<R>,work:(scope:PlanningApplicationWriteScope,now:string)=>Promise<R>,authorize?:(scope:PlanningWriteScope)=>Promise<void>):Promise<R> {
     const ctx=normalize(context),key=ctx.idempotencyKey;
     if(key===undefined||!/^[\x21-\x7e]{1,128}$/.test(key))throw new DomainError('VALIDATION_FAILED','A valid Idempotency-Key is required.');
     const payloadHash=digest({command,target,input});
@@ -187,7 +188,7 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
         const sources=await repo.captureProject(ws,period.projectId);if(old===null&&!sources.activeMembershipIds.includes(mid))throw notFoundError();
         const id=old?.id??newId(),rev=(old?.revision??0)+1;
         const change=await scope.recordChange({entityType:'work_log',entityId:id,action:old?'revised':'created',entityRevision:rev,diff:{taskId:tid,workPackageId:task.workPackageId,membershipId:mid,periodId:pid,before:old?{minutes:old.minutes,state:old.state,revision:old.revision}:null,after:{minutes:p.minutes,state:p.state,revision:rev}},...(p.reason===null?{}:{reason:p.reason}),outbox:{type:'work_log.revised',payload:{workLogId:id,periodId:pid,revision:rev}}});
-        const row:ManualPeriodWorkLogDto={id,workspaceId:ws,projectId:period.projectId,taskId:tid,workPackageId:old?.workPackageId??task.workPackageId,membershipId:mid,periodId:pid,sourceKind:'manual_period',sourceKey:`${tid}:${mid}:${pid}`,precision:'period',revision:rev,revisionId:newId(),minutes:p.minutes,state:p.state,reason:p.reason,actorUserId:scope.context.actor.userId,recordedAt:now,changeSeq:change.changeSeq.toString()};
+        const row:ManualPeriodWorkLogDto={id,workspaceId:ws,projectId:period.projectId,taskId:tid,workPackageId:old?.workPackageId??task.workPackageId,membershipId:mid,periodId:pid,sourceKind:'manual_period',sourceKey:`${tid}:${mid}:${pid}`,precision:'period',revision:rev,revisionId:newId(),minutes:p.minutes,state:p.state,reason:p.reason,actorUserId:scope.context.actor.userId,recordedAt:now,changeSeq:change.changeSeq.toString(),category:old===null?await scope.categoryResolver.resolve(tid):canonicalWorkCategory(old)};
         await repo.saveManualWork(row);await repo.insertWorkRevision(row);return row;
       },scope=>authorizeMember(scope,mid,'time'));
     },

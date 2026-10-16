@@ -29,6 +29,13 @@
       "when": 1792109654014,
       "tag": "0003_p2a_planning",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792111838483,
+      "tag": "0004_p2b_work_categories",
+      "breakpoints": true
     }
   ]
 }

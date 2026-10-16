@@ -1,8 +1,8 @@
-# P2b: категории работы и быстрый ввод недели — проект контракта
+# P2b: категории работы и быстрый ввод недели — ограниченный контракт
 
-Статус: **проект для ревью, 16 октября 2026 года**. Направление одобрено координатором после подготовки P2a; каталог и DTO ниже предложены к фиксации. Этот документ не утверждает готовность реализации, миграции или проверок. P2a-код остаётся замороженным на время его QA. Автор проекта — Codex gpt-6.1-sol high в согласованном fallback после фактического лимита Claude; новых Claude-запросов нет.
+Статус: **ограниченный P2b реализован и принят координатором, 16 октября 2026 года**, после принятого P2a source checkpoint `fd69f3748a8538ad45e9480c0cfecd70ad7e2c9c`. Контракт, domain, PostgreSQL, API и UI прошли отдельную приёмку; точные результаты, browser-сценарии и визуальные проверки находятся в [журнале 11](11-implementation-progress.md). Это не завершение всего P2 или MVP. Добавлена миграция 0004; применённые 0000–0003 и прежние work.set input/hash сохранены. Автор core — Codex gpt-6.1-sol high в согласованном fallback после фактического лимита Claude; новых Claude-запросов в этом срезе нет.
 
-Основания: [простой факт и доли типов](01-product-spec.md), [история полей и worklogs](03-domain-and-data.md), [этапы P2/P3](06-implementation-plan.md), [контракт P2a](13-p2a-contract.md). Имена будущих экспортов ниже пока не означают наличие этих экспортов в коде.
+Основания: [простой факт и доли типов](01-product-spec.md), [история полей и worklogs](03-domain-and-data.md), [этапы P2/P3](06-implementation-plan.md), [контракт P2a](13-p2a-contract.md). Точные публичные схемы и порт находятся в packages/contracts/src/categories.ts и packages/domain/src/categories/application.ts. Фактическую приёмку и её границы фиксирует журнал 11, а не наличие экспортов.
 
 ## 1. Ограниченный результат
 
@@ -27,9 +27,9 @@
 | GET `/work-type-report-runs/:runId/rows` | `planningPageQuerySchema` | `workTypeReportRowListResponseSchema` / listReportRows(ctx,runId,query) |
 | GET `/projects/:projectId/periods/:periodId/task-time-summary` | `taskTimeSummaryQuerySchema` | `taskTimeSummaryResponseSchema` / getTaskTimeSummary(ctx,projectId,periodId,query) |
 
-Последний маршрут — принятая в этом проекте одна ограниченная read projection для видимых строк таблицы. Он не заменяет task query: не возвращает titles, statuses, tags или дерево. UI продолжает использовать существующую пагинацию задач. Каталог из восьми маршрутов сохраняется для финальной фиксации после ревью владельцев.
+Последний маршрут — принятая в этом проекте одна ограниченная read projection для видимых строк таблицы. Он не заменяет task query: не возвращает titles, statuses, tags или дерево. UI продолжает использовать существующую пагинацию задач. Зафиксированный каталог содержит восемь реализованных маршрутов.
 
-Composition-предложение: `@workloom/db createWorkCategoryApplication(source, options?) : WorkCategoryApplication`, порт в `@workloom/domain`, ctx первым аргументом, все методы Promise. Реальный `PlanningApplication` использует тот же category resolver при создании ревизий времени. Нет optional no-op bypass в production composition. Чтения проходят согласованную read transaction; записи — текущие ACL, idempotent replay и общий workspace barrier/cutoff guard, состояние + audit + outbox + revision + stored outcome атомарны.
+Composition: `@workloom/db createWorkCategoryApplication(source, options?) : WorkCategoryApplication`, порт в `@workloom/domain`, ctx первым аргументом, все методы Promise. Реальный `PlanningApplication` использует тот же category resolver при создании ревизий времени. Нет optional no-op bypass в production composition. Чтения проходят согласованную read transaction; записи — текущие ACL, idempotent replay и общий workspace barrier/cutoff guard, состояние + audit + outbox + revision + stored outcome атомарны.
 
 ## 3. Версионируемая привязка проекта
 
@@ -49,7 +49,7 @@ UI получает варианты через существующий GET fie
 
 ## 4. Снимок категории в фактической ревизии
 
-Предлагаемый `WorkCategorySnapshot` — discriminated union:
+`WorkCategorySnapshot` — discriminated union:
 
 ```ts
 type WorkCategorySnapshot =
@@ -103,7 +103,7 @@ Replay hash включает workLogId и канонический input. Пов
 
 ## 6. Отдельный pinned work-type report
 
-`CreateWorkTypeReportRunInput = {periodId, membershipIds?: UUID[]}`; default selection — все разрешённые worker identities этого периода, explicit list 1–100 unique IDs либо omitted/empty для all. Нет baselineId, knownEstimatesOnly, клиентских percentages/labels, category filter или произвольного groupBy. Он работает **до фиксации плана**. Initial scope — один период/проект; источник периода всегда явный.
+`CreateWorkTypeReportRunInput = {periodId, membershipIds?: UUID[]}`; default selection — разрешённые worker identities с фактическими source этого периода, включая zero/void sources; людей без источников сервер не добавляет. Explicit selected member без sources получает нулевую summary/пустые buckets, проценты null, без заявления полноты.  explicit list 1–100 unique IDs либо omitted/empty для all. Нет baselineId, knownEstimatesOnly, клиентских percentages/labels, category filter или произвольного groupBy. Он работает **до фиксации плана**. Initial scope — один период/проект; источник периода всегда явный.
 
 `WorkTypeReportRunListQuery = {periodId,limit?,cursor?}`. Получение summary/rows требует `reports.read`, актуального workspace/task access до суммирования и при каждом последующем чтении pinned run. Сохранённый snapshot не выдаёт исторических прав. Новый read-only viewer может смотреть только доступный ему набор; скрытые строки, counts и разность totals не раскрываются.
 
@@ -153,9 +153,9 @@ Void revisions сохраняются в pinned revision manifest/diagnostic dri
 
 `TaskTimeSummaryDto = {workspaceId,projectId,periodId,subjectMembershipId,asOfChangeSeq,tasks:TaskTimeRowDto[],packages:PackageTimeRowDto[]}`. Одна согласованная read transaction; cache key включает actor/workspace/period/subject/набор ID. Полные task DTO здесь не возвращаются.
 
-`TaskTimeRowDto = {taskId,workPackageId,currentAllocationMinutes:number|null,ownManualWork:CategorizedWorkLogDto|null,subjectActualMinutes,taskActualMinutes,activeSourceCount,hasOtherSources}`. Null allocation — связи нет, 0 — явное распределение0. ownManualWork — только stable manual source выбранного worker/периода на данной task, включая void для точной revision; subjectActualMinutes включает все active источники этого worker, taskActualMinutes — всех разрешённых workers данной task. activeSourceCount в task row считает active источники выбранного worker; package row считает все active источники, участвующие в его totalActualMinutes. `hasOtherSources` означает наличие active source выбранного worker, отличного от own manual source; для absent/void-only набора activeSourceCount=0 и hasOtherSources=false, хотя ownManualWork сохраняет void head для корректной expectedRevision. UI решает safe edit/breakdown по серверной проекции, не по догадке.
+`TaskTimeRowDto = {taskId,workPackageId,currentAllocationMinutes:number|null,ownManualWork:CategorizedWorkLogDto|null,subjectActualMinutes,taskActualMinutes,subjectActiveSourceCount,taskActiveSourceCount,hasOtherSources}`. Null allocation — связи нет, 0 — явное распределение0. ownManualWork — только stable manual source выбранного worker/периода на данной task, включая void для точной revision; subjectActualMinutes включает все active источники этого worker, taskActualMinutes — всех разрешённых workers данной task. activeSourceCount в task row считает active источники выбранного worker; package row считает все active источники, участвующие в его totalActualMinutes. `hasOtherSources` означает наличие active source выбранного worker, отличного от own manual source; для absent/void-only набора activeSourceCount=0 и hasOtherSources=false, хотя ownManualWork сохраняет void head для корректной expectedRevision. UI решает safe edit/breakdown по серверной проекции, не по догадке.
 
-`PackageTimeRowDto = {workPackageId,commitment:PeriodCommitmentDto|null,subjectActualMinutes,totalActualMinutes,activeSourceCount}`. По одной строке на package среди запрошенных task IDs, но actual считается по **всем доступным source tasks пакета этого периода**, включая незагруженных детей. При выводе package итог не прибавляется к detail task rows ещё раз. Ни task nor package subtotal не объявляется итогом всего периода.
+`PackageTimeRowDto = {workPackageId,commitment:PeriodCommitmentDto|null,subjectActualMinutes,totalActualMinutes,subjectActiveSourceCount,totalActiveSourceCount}`. По одной строке на package среди запрошенных task IDs, но actual считается по **всем доступным source tasks пакета этого периода**, включая незагруженных детей. При выводе package итог не прибавляется к detail task rows ещё раз. Ни task nor package subtotal не объявляется итогом всего периода.
 
 Состояние active0/void/absent различается через source/state/count. Для archived task сохранённый source читается; обычная правка его часов следует P2a current rights/revision, новая категория не получается через подмену task identity. Ручная запись никогда не заменяет прочие источники.
 
@@ -169,7 +169,7 @@ Void revisions сохраняются в pinned revision manifest/diagnostic dri
 6. Новые command intents явно добавляются в exhaustive planning guard: binding changes/recategorization/report creation сначала выполняют due freeze, но не меняют исходный baseline. Ошибка откатывает все новые эффекты; replay после current ACL не создаёт ни второй revision, ни второй run.
 7. Tags пока не добавляют взаимоисключающие buckets/клиентскую арифметику. Category report не применяет known-estimate cohort filter P2a: знаменатель — весь разрешённый факт выбранного периода/людей.
 
-## 10. Проверки и передача в реализацию
+## 10. Проверки и границы приёмки
 
 Обязательные fixtures:
 
@@ -180,7 +180,15 @@ Void revisions сохраняются в pinned revision manifest/diagnostic dri
 - Populated P2a upgrade сохраняет старые колонковые проекции/JSON documents и старый `work.set` replay hash/result. Новые отчёты считают старые active часы uncategorized. Старые report clients не получают новый metric в прежней collection.
 - Root/detail tasks, несколько участников и несколько tags не размножают фактические минуты. Проекция по ≤100 видимым ID возвращает полный package subtotal с незагруженными детьми; итог периода/диаграмма не зависят от task/rows pagination.
 - Quick entry: periodA/taskA отправлен → смена периода/сортировки/строки → pending/uncertain snapshot/key сохраняются; попытка другой записи не стирает первую; точный retry использует A. Manager не заменяет чужие/командные суммы. Denied refetch/actor switch не показывают cached category/fact/plan.
-- Absent/void-only проекция даёт activeSourceCount=0/hasOtherSources=false и сохраняет void head; active0 остаётся recorded source. Пределы 1000 people/buckets дают явный422 без truncation. UI показывает recorded source count без заявления о полноте учёта.
+- Absent/void-only проекция даёт нулевые соответствующие subject/task/package counts и hasOtherSources=false и сохраняет void head; active0 остаётся recorded source. Пределы 1000 people/buckets дают явный422 без truncation. UI показывает recorded source count без заявления о полноте учёта.
 - Один category report можно создать без baseline до freeze. Новый fact revision меняет новый run, но не прежний. Current access проверяется также при чтении старого run и rows.
 
-Порядок: после P2a checkpoint review этого файла всеми владельцами → финальная фиксация DTO/ports → contracts/DB/domain → тонкий API → table/report UI → реальные PostgreSQL и browser gates. До фиксации этого проекта никакой P2b код этим документом не разрешается. Required-fact-on-Done остаётся отдельным решением: глобальный task status пока не определяет единственный период, worker и источник факта.
+Порядок принят после checkpoint P2a: review всеми владельцами → фиксация DTO/ports → contracts/DB/domain → тонкий API → table/report UI → реальные PostgreSQL и browser gates. Контракт зафиксирован; источником статуса завершения и фактических проверок остаётся журнал 11. Required-fact-on-Done остаётся отдельным решением: глобальный task status пока не определяет единственный период, worker и источник факта.
+
+## 11. Точные экспорты замороженного контракта
+
+`common/work-category.ts` содержит standalone `workCategorySnapshotSchema`/`WorkCategorySnapshot` без runtime import planning/categories. Старый `manualPeriodWorkLogSchema` добавляет только optional category без default; `setManualPeriodWorkInputSchema` не меняется. `categories.ts` экспортирует lowerCamel Schema и соответствующие PascalCase Dto/Input/Query из таблицы маршрутов; `categorizedWorkLogSchema` требует canonical category. Порт `WorkCategoryApplication` экспортируется из domain; factory `createWorkCategoryApplication(source:Database|WorkloomExecutor,options?:WorkCategoryApplicationOptions extends WorkspaceWriteOptions {cursorSecret?:string})`.
+
+В byPerson также есть activeSourceCount. Для проекции counts разделены на subjectActiveSourceCount/taskActiveSourceCount и subjectActiveSourceCount/totalActiveSourceCount у package. Absent или void-only source означает active count0 и hasOtherSources=false, но ownManualWork сохраняет void head. hasOtherSources относится только к выбранному worker. Явный выбор недели обязателен для table writes; автоматический default отдельной weekly-route не используется. Batch >100 IDs разделяется, одинаковые package IDs не суммируются повторно; различный numeric asOfChangeSeq требует согласования/refetch.
+
+Split/replace/transfer/carryover, close/corrections и принятие позднего unknown estimate остаются более поздним P2; этот P2b срез их не обещает. Приёмка этого среза не означает готовность всего продукта; следующие этапы требуют собственных проверок.

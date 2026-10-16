@@ -37,7 +37,9 @@ import {
 } from '../features/tasks/TaskFilters';
 import { loadedTaskScope, useTagsQuery, useTaskListQuery } from '../features/tasks/queries';
 import { useTaskCommands, type CreateRequest } from '../features/tasks/useTaskCommands';
+import { WorkCategorySettings, useTaskTimeTable } from '../features/work-categories';
 import { useMembershipsQuery } from '../features/workspace/queries';
+import { isAccessDenied } from '../lib/api';
 import { describeError } from '../lib/errors';
 import { isUuid } from '../lib/format';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
@@ -135,7 +137,7 @@ export function ProjectPage() {
 
   return (
     <ProjectContent
-      key={project.data.id}
+      key={`${actorId}:${workspace.id}:${project.data.id}`}
       actorId={actorId}
       workspace={workspace}
       project={project.data}
@@ -207,6 +209,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // Values are requested, in batches, only for the tasks the table shows and only while a custom column is visible.
   const shownTasks =
     tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [];
+  const taskTime = useTaskTimeTable({
+    actorId, workspace, project, members: members.isSuccess ? members.data : [], tasks: dedupeTasks(shownTasks),
+    hasMoreTasks: tasks.hasNextPage, loadingMoreTasks: tasks.isFetchingNextPage,
+    onLoadTasks: () => void tasks.fetchNextPage(), accessDenied: isAccessDenied(members.error) || isAccessDenied(tasks.error),
+  });
   const fieldValues = useProjectFieldValuesQuery(
     actorId,
     workspace.id,
@@ -311,6 +318,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               }
             />
           ) : null}
+          <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
           <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
           <FieldManagerDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
           {writable ? (
@@ -377,6 +385,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               </Button>
             </div>
           ) : null}
+          {taskTime.controls}
           <TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} />
           {/* A custom field failure never hides the built-in table. */}
           {fieldsError ? (
@@ -396,7 +405,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             sections={sections.data}
             statuses={statuses.data}
             members={members.data}
-            customColumns={customColumns}
+            customColumns={[...taskTime.columns, ...customColumns]}
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startCreate({ sectionId: sectionId ?? null, parent: null })}
@@ -426,6 +435,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             }}
             onAnnounce={setAnnouncement}
           />
+          {taskTime.dialogs}
           <RenameSectionDialog
             actorId={actorId}
             workspaceId={workspace.id}

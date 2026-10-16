@@ -31,6 +31,10 @@ export const queryKeys = {
     ['actor', actorId, 'workspace', workspaceId, 'tasks', 'list', projectId, params] as const,
   task: (actorId: string, workspaceId: string, taskId: string) =>
     ['actor', actorId, 'workspace', workspaceId, 'tasks', 'detail', taskId] as const,
+  workCategoryBinding: (actorId: string, workspaceId: string, projectId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'workCategoryBinding', canonicalId(projectId)] as const,
+  timeSummaries: (actorId: string, workspaceId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'timeSummaries'] as const,
   /**
    * Prefix of custom field definitions, column settings, values and value history. Field keys
    * lowercase their project, task and field IDs, so a read keyed by a mixed-case ID is

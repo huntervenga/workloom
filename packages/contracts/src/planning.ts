@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
+import { workCategorySnapshotSchema } from './common/work-category.js';
 import { taskFieldDefinitionSchema, taskFieldValueSchema } from './fields.js';
 import { calendarDateSchema, minutesSchema, revisionSchema, taskSchema, utcTimestampSchema } from './tasks.js';
 import { membershipSchema } from './workspaces.js';
@@ -119,6 +120,8 @@ export const manualPeriodWorkLogSchema = z.object({
   minutes: minutesSchema, state: z.enum(['active', 'void']), reason: reasonSchema.nullable(),
   actorUserId: idSchema, recordedAt: utcTimestampSchema,
   changeSeq: z.string().regex(/^[1-9][0-9]*$/),
+  /** Optional without a default: historical stored responses must replay unchanged. */
+  category: workCategorySnapshotSchema.optional(),
 });
 export const setManualPeriodWorkInputSchema = z.strictObject({
   expectedRevision: revisionSchema.nullable(), minutes: minutesSchema,

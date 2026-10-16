@@ -1,0 +1,157 @@
+# P3a: разовые общие встречи и подтверждение присутствия — проект контракта
+
+Статус: **проект для ревью, 16 октября 2026 года; не разрешение на реализацию**. Координатор одобрил последовательность P3a (разовые встречи/присутствие) → P3b (серии/worker). P2b API заморожен и передан в QA; этот файл не утверждает готовность P2b или P3. Владение этим новым проектом документа — API lane; исходники других владельцев не менялись. Автор — Codex gpt-6.1-sol high в согласованном fallback после фактического лимита Claude; новых Claude-запросов нет.
+
+Основания: [продукт, общие встречи](01-product-spec.md), [attendance/recurrence/worklogs](03-domain-and-data.md), [команды и интеграции](04-api-and-integrations.md), [этап P3](06-implementation-plan.md), [P2a](13-p2a-contract.md), [P2b](14-p2b-contract.md). Имена экспортов ниже предложены, пока не существуют в коде. Перед реализацией contracts/DB/domain/API/web/QA должны согласовать точный freeze.
+
+## 1. Полный ограниченный результат
+
+Организатор создаёт одну датированную общую встречу с одной Task и одним WorkPackage, выбранным периодом, UTC instant начала, IANA timezone, длительностью и attendee membership IDs. В таблице и личном lens отображаются те же сущности. Приглашение не начисляет часы и не пишет чужой план. Отдельное действие предлагает персональные планы; отдельное атомарное действие подтверждает присутствие. Исправление собственного присутствия меняет тот же attendance source.
+
+В P3a нет recurrence/series, generation worker, cron, pg-boss, внешних OAuth-календарей, рассылки приглашений, видео/transcription, дневного manual-факта, split/transfer, закрытия периода или required-fact-on-Done. Все встречи **видны workspace согласно текущему task access**. Private grants пока отсутствуют: переключателя «Приватная» и заявления о приватности нет. Ссылки на join/recording/summary доступны тем же текущим читателям; внешний провайдер отдельно управляет самим видео.
+
+Все cross-period moves отложены: plannedPeriodId неизменяем в P3a, explicit periodId при подтверждении обязан совпадать с ним независимо от actual/planned-absence attribution. Встречу нельзя перепривязать к другому period даже до факта. Если бизнес-сценарий требует переноса между неделями, UI честно сообщает об ограничении; не отменяет/создаёт замену скрыто и не переносит baseline или worklog header. Позднее нужен отдельный атомарный transfer/correction с двумя периодами и ревизиями.
+
+## 2. Каталог и порт
+
+Prefix `/api/v1/workspaces/:workspaceId`; прежние envelopes/errors. UUID canonical lowercase; строгие input/query. Все записи требуют Idempotency-Key; actor/source/requestId/workspace — только trusted context. Read-only POST preview не требует key, но требует Origin. List envelopes используют data массива и meta.nextCursor; подписанный cursor связан с actor/workspace/permission epoch/фильтрами.
+
+| Метод/путь | Предложенный вход | Ответ / `MeetingApplication` |
+| --- | --- | --- |
+| GET `/projects/:projectId/meetings` | `meetingListQuerySchema`: plannedPeriodId, state scheduled/cancelled/all (default scheduled), limit/cursor | `meetingListResponseSchema` data MeetingListItemDto[], listMeetings(ctx,projectId,query) |
+| POST `/projects/:projectId/meetings` | `createMeetingInputSchema` | `meetingCreationResponseSchema`, createMeeting(ctx,projectId,input), 201 |
+| GET `/tasks/:taskId/meeting` | без query | `meetingResponseSchema`, getMeeting(ctx,taskId) |
+| PATCH `/tasks/:taskId/meeting` | `updateMeetingInputSchema` | meeting response, updateMeeting(ctx,taskId,input), 200 |
+| GET `/tasks/:taskId/attendance` | planningPageQuerySchema | `meetingAttendanceListResponseSchema`, listAttendance(ctx,taskId,query) |
+| POST `/tasks/:taskId/attendance/confirm` | `confirmAttendanceInputSchema` | `attendancePostingResponseSchema`, confirmAttendance(ctx,taskId,input), 200 |
+| GET `/recorded-work` | `recordedWorkListQuerySchema`: periodId, taskId?/membershipId?, limit/cursor | `recordedWorkListResponseSchema`, listRecordedWork(ctx,query) |
+| GET `/tasks/:taskId/attendance/:attendanceId/history` | planningPageQuerySchema | `attendanceHistoryListResponseSchema`, listAttendanceHistory(ctx,taskId,attendanceId,query) |
+| POST `/tasks/:taskId/meeting-plan-preview` | `meetingPlanPreviewInputSchema` | `meetingPlanPreviewResponseSchema`, previewMeetingPlan(ctx,taskId,input), 200, read-only |
+| POST `/tasks/:taskId/meeting-plan` | `applyMeetingPlanInputSchema` | `meetingPlanResultResponseSchema`, applyMeetingPlan(ctx,taskId,input), 200 |
+
+Порт ctx-first/Promise в domain; DB composition `createMeetingApplication(source,options?)` использует тот же pool/barrier/transactions и существующие task/planning/category repositories. DTO meeting возвращает ссылку taskId, а не независимую копию title/status/tags. MeetingListItemDto = `{task:TaskDto,meeting:MeetingDto}`: авторизованный current join с одним источником Task, чтобы список unloaded meetings не вызывал N+1 task reads и не хранил вторую копию label. Create response возвращает `{task:TaskDto,meeting:MeetingDto,attendances:AttendanceDto[],planProposals:MeetingPlanProposalDto[]}`. Персональные proposals — предложения, не сохранённые commitments.
+
+Для новой страницы не создаётся второй task query/filter engine. Meetings list — ограниченная проекция по явно выбранному plannedPeriodId. Attendance/history — paginated, limit1–100/default50. Batch/список attendees ограничен 1–100 уникальными membership IDs; больший ввод явно отклоняется, а не усекается.
+
+## 3. Данные и создание
+
+`MeetingDto`:
+
+- id (стабильный meeting ID), workspaceId/projectId/taskId/workPackageId;
+- revision, participantsRevision, plannedPeriodId;
+- plannedStartAt (UTC), timezone (IANA), plannedDurationMinutes (integer1–1440);
+- organizerMembershipId, state scheduled|cancelled;
+- actualStartAt:UTC|null, actualDurationMinutes:integer1–1440|null;
+- joinUrl/recordingUrl/summaryUrl:string|null, summaryText:string|null;
+- createdAt/updatedAt, `scheduleFrozen:boolean`, `hasPostedAttendance:boolean` — ever-created attendance source, включая текущий void (серверные признаки для UI, не замена command guards).
+
+`CreateMeetingInput = {title,statusId,sectionId?:UUID|null,plannedPeriodId,plannedStartAt,timezone,plannedDurationMinutes,organizerMembershipId,attendeeMembershipIds:UUID[],joinUrl?:string|null}`. Project берётся из path. Task, package, MeetingDetails, attendee rows, audit/outbox и idempotent result создаются атомарно. Missing/foreign reference —404; видимый иной project/incompatible target —422. Нужен task.edit. Organizer/attendees — активные Membership данного workspace. Organizer не добавляется ещё одним attendee автоматически; observer/reader не attendee.
+
+Каждый attendee становится участником одной Task. Номинальный initial package estimate = duration × число attendees; это общий бюджет встречи, не длительность и не commitment. Поле task estimate остаётся одним shared package budget. Creation response предлагает каждому duration как персональный план, но не вызывает plan/write либо time/write. Продолжительность60 ×5 attendees = initial budget300 и пять предложений60, **ноль часов факта**.
+
+Current task reads и task-time rows получают server-owned `meetingId:UUID|null` locator **до первого attendance source**. Для сохранённых старых TaskDto/snapshot/idempotent branches marker additive optional **без default**; свежие GET task/list/task-time возвращают actual UUID либо explicit null. Old replay без marker остаётся byte-compatible: cache сохраняет уже известный locator либо инвалидирует/refetch, но не считает absence поля доказательством ordinary task. Input schemas не принимают client-written marker. UI выбирает meeting editor/защищённые controls по canonical locator, не по title/participants и не через GET meeting404 probe. Missing/denied canonical read скрывает controls до recovery. Relational one-to-one task↔meeting enforcement определяет DB owner при freeze.
+
+Контракт не превращает существующую ordinary task в meeting и обратно. Meeting создаётся отдельной командой; generic createTask не принимает клиентский meeting marker. Подготовка может быть отдельной ordinary task с собственным package; это явно предлагаемое пользователю действие, не автоматический дополнительный факт.
+
+## 4. Время и выбранный период
+
+API принимает только точный UTC ISO instant `plannedStartAt`/`actualStartAt`, без bare local date-time и без доверия browser timezone. IANA timezone хранится для intended display; локальные дата/время и offset вычисляются из сохранённого instant. Не допускаются произвольные fixed-offset строки вместо IANA/UTC timezone identifier.
+
+UI показывает точный выбранный timezone и resolved instant. Если UI предоставляет ввод локального времени, перед отправкой он обязан показать/подтвердить конкретный instant при DST ambiguity и явно обработать gap; не использовать молчаливый browser Date parse. P3a может ограничить такой ввод точным instant вместо собственной реализации IANA resolver. Ни зависимость, ни timezone resolver этим draft не устанавливаются.
+
+Для выбранного plannedPeriodId валидируется, что plannedStartAt попадает в `[localStart,localEndExclusive)` **в timezone самого периода**, не браузера и не timezone встречи. При actual_meeting подтверждении actualStartAt аналогично попадает в explicit periodId; planned_absence использует snapshot plannedStartAt. В P3a input periodId=plannedPeriodId; даже если несколько периодов перекрываются, выбран ровно один ID. Нельзя найти «первый подходящий period» и автоматически начислить во все совпавшие.
+
+Длительность — elapsed minutes: конец = start instant + minutes, включая DST transition. Встреча, начинающаяся в периоде и заканчивающаяся после его границы, в P3a целиком относится к явно выбранному периоду начала; автоматического split нет, UI показывает правило. Planned baseline period и original schedule сохраняются независимо от будущего расширения transfer.
+
+## 5. Изменение встречи и обычные task команды
+
+`UpdateMeetingInput` содержит expectedMeetingRevision и хотя бы одно изменяемое поле: plannedStartAt/timezone/plannedDurationMinutes/organizerMembershipId, attendeeMembershipIds, actualStartAt/actualDurationMinutes, state, ссылки или summaryText. PlannedPeriodId/projectId/taskId/packageId не принимаются. Для смены attendees нужны также expectedParticipantsRevision и expectedWorkPackageRevision; для смены plannedDuration нужен expectedWorkPackageRevision. Лишние expected guards не подменяют реальные guards; revision conflict —409.
+
+До первого source-containing personal/project freeze можно явно менять schedule/attendees; подтверждённого attendance при смене состава быть не должно. Перед такой сменой показывается предупреждение о существующем текущем плане. P3a **не переносит и не удаляет автоматически старые commitments**: изменения персонального плана делаются только отдельной plan-командой. Current package estimate при разрешённой смене duration/attendees меняется явно в той же команде с expectedWorkPackageRevision. После freeze исходный schedule/состав/бюджет защищены; изменение planned полей —409 FIELD_LOCKED, без переписывания snapshot.
+
+ActualStartAt/actualDuration и материалы можно менять с текущими правами и revision guards, пока actualStart остаётся в выбранном периоде. Изменение actual duration **не исправляет уже подтверждённые часы автоматически**. UI показывает старые recorded minutes и предлагает явное подтверждение корректировки. Cancelled meeting остаётся сущностью; отмена не удаляет личный факт, original plan или history. Если встреча не состоялась, нельзя изобретать actualStart/duration ради нулевого факта: предусмотрен reasoned absent с planned_absence attribution. Повторное scheduled требует явного restore, но не создаёт второй Task/package.
+
+Обязательный общий guard matrix — HTTP, MCP, jobs и imports не могут выбрать обходной endpoint:
+
+| Generic команда | Meeting правило |
+| --- | --- |
+| updateTask title/description/status/priority/tags | Обычные права/revisions; status Done не подтверждает присутствие и не начисляет время |
+| updateTask participantMembershipIds/responsibleMembershipId | Для meeting отклонить, направить в guarded updateMeeting; organizer и attendee roster не меняются двумя независимыми путями |
+| generic task dueDate/parent/work scope либо shared-package estimate | Для meeting scheduling/package изменений отклонить; использовать meeting command. Schedule-derived дата не может расходиться из-за обычного dueDate PATCH |
+| archiveTask/restoreTask | Для meeting отклонить, использовать state change meeting; attendance/history не стираются |
+| createTask detail child shared with meeting package | Отклонить implicit shared meeting budget; отдельная подготовка создаётся явным added_scope/new package, без автоматического факта |
+| PUT manual-period-work на meeting task | Без явной подготовки не принимать как коррекцию присутствия; UI направляет в attendance. Для P3a новая manual запись на meeting task отклоняется, подготовка — отдельная ordinary task |
+| task/field/planning mutations после cutoff | Те же mandatory due-freeze/barrier guards; meeting source manifest материализуется и фиксируется согласованно |
+
+Старый идемпотентный ответ ранее допустимой ordinary команды остаётся replay-compatible после проверки текущих прав. Meeting guards добавляются для новых командных намерений, не переписывают прежние request hashes/result JSON. Cross-target key reuse всегда409.
+
+## 6. Явное применение персонального плана
+
+`MeetingPlanProposalDto = {membershipId,proposedMinutes,workPackageId,plannedPeriodId}`. Proposal creation не требует plan.write_others, поскольку не пишет план. Apply требует plan.write_self для себя и plan.write_others для каждого другого выбранного worker; organizer не получает эти capability автоматически. Member может применить своё предложение, owner/admin — разрешённый список.
+
+Preview input: `{expectedMeetingRevision,rows:[{membershipId,plannedMinutes:number|null}]}`. Выбранные IDs уникальны, входят в текущих attendees; no-op/0/null различаются. Preview возвращает полный desired plan и текущие commitment IDs/revisions/expectedAbsent, allocations/unallocated, источник meeting/participants/package/period revisions и server previewHash. Hash включает desired rows и полный актуальный source manifest, а не одну meeting revision. GET/preview ничего не создаёт и не freeze.
+
+Apply input: `{expectedMeetingRevision,previewHash,rows:[{membershipId,plannedMinutes,expectedCommitmentRevision:number|null}]}`. Null revision означает только отсутствие commitment; removed retained commitment требует actual revision. Recompute hash под workspace barrier; источник изменился —409 PREVIEW_STALE до proposed writes. Текущие capabilities каждого worker проверяются до replay. Все выбранные rows применяются одной transaction через те же invariants, что P2a commitments; ни частичного успеха, ни nested transaction обхода.
+
+Для нового meeting package allocation указывает meeting task, не копии task на каждого человека. Existing commitment никогда не заменяется неявно: preview показывает старый и новый персональный итог/allocations, apply требует его actual revision. Protected original commitment —409 FIELD_LOCKED. New post-freeze meeting/package — added scope по существующему server census; его новое commitment не маскируется как original. Package estimate не пересчитывается вслед за произвольным изменением личных plannedMinutes.
+
+## 7. Attendance и одно начисление
+
+`AttendanceDto = {id,workspaceId,meetingId,taskId,membershipId,revision,rosterActive:boolean,status:'unknown'|'present'|'partial'|'absent',postingState:'unconfirmed'|'active'|'void',minutes:number|null,confirmedMeetingRevision:number|null,workLog:AttendanceWorkLogDto|null}`. Пара `(workspace,meetingId,membershipId)` уникальна и стабильна; TaskParticipant role не заменяет attendance. Удаление приглашённого и отзыв доступа — разные действия; после когда-либо созданного attendance source roster не переписывается в P3a, даже если все источники сейчас void. При разрешённом удалении attendee до факта unknown row сохраняется с rosterActive=false и стабильным ID; повторное добавление переиспользует этот ID/ревизию. Confirm отклоняет rosterActive=false; вывод истории не оживляет участие.
+
+- unknown/unconfirmed: minutes=null, workLog=null, fact missing;
+- present/active: подтверждённая actualDuration; minutes omitted либо равны ей; один source;
+- partial/active: явные integer minutes>0 и <=подтверждённой длительности;
+- absent/active: подтверждённый0, записанный source, а не missing;
+- postingState void: log/head существует, минуты исключены из actual; прежний attendance status виден в истории. Нельзя превратить опубликованный source в unknown без явной void-команды/причины.
+
+`ConfirmAttendanceInput = {expectedMeetingRevision,periodId,rows:[AttendancePostingInput]}`. PeriodId явный и в P3a равен plannedPeriodId; semantics actual/planned задаёт attribution basis каждой row. Каждая row содержит attendanceId, expectedAttendanceRevision, expectedWorkLogRevision:number|null и discriminated action:
+
+- `{kind:'confirm',status:'present'|'partial',attributionBasis:'actual_meeting',minutes?:number,reason?:string|null}` либо `{kind:'confirm',status:'absent',attributionBasis:'actual_meeting'|'planned_absence',minutes?:0,reason?:string|null}`;
+- `{kind:'void',reason:string}`.
+
+Null worklog revision допускается только до первого начисления. Present/partial требуют сохранённые actualStartAt и actualDuration: UI сначала явно сохраняет их отдельным keyed/recoverable meeting PATCH. Time-only command никогда не угадывает planned duration и не меняет общую длительность. Present minutes omitted либо равны actualDuration; partial требует minutes>0 и <=actualDuration. Absent принимает только0/omitted и **явный** attributionBasis: actual_meeting проверяет сохранённые actual details, planned_absence сохраняет planned timestamp при actualStartAt=null и не требует выдуманной actual duration. Нет автоматического fallback basis. UI пишет «Ноль для запланированной отменённой/пропущенной встречи», а не «Подтверждено фактическое присутствие». Void существующего source сохраняет его прежнюю attribution. Коррекция/void/restore требует meaningful reason; initial confirmation и настоящий no-op могут обходиться без неё. Настоящий no-op сравнивает attendance status, source state/minutes, сохраняемый current category snapshot и effective attribution basis/start/period snapshot. Category сравнивается с актуальным worklog head; stale attendance posting reference не откатывает независимую recategorization. Одна лишь большая Meeting.revision из-за recording/join/summary metadata не создаёт новый факт и не меняет подтверждённые snapshot/revisions. Новый actualStartAt в пределах периода не меняет старый факт через metadata PATCH; явная reconfirmation с причиной создаёт новую WorkLogRevision даже при тех же minutes. expectedMeetingRevision всё равно должен быть актуален: это concurrency guard, не условие автоматического repost. Batch rows1–100 уникальны по attendance/member; foreign row404; несовместимое meeting/period422; stale любой row409 отклоняет **весь** batch. Cancelled meeting не допускает новых present/partial; допускает reasoned absent0 с явным planned_absence и void существующего source по current rights. Исправление прежнего реального факта не превращается скрыто в новое присутствие отменённой встречи; при необходимости restore meeting — отдельное keyed действие.
+
+Каждый source — `(workspace,sourceKind:'meeting_attendance',sourceKey:attendanceId)`; period не включается в source key и не создаёт вторую идентичность. Actor не worker. Проверяются time.write_self/others для всех rows до replay, активное membership actor, текущее task access. Затем workspace barrier/due freeze, все guards и только потом atomic AttendanceRevision + WorkLogRevision/head + audit/outbox + stored outcome. Lost response/retry не создаёт дубликатов. Изменение meeting metadata не вызывает этот command фоново.
+
+AttendanceWorkLogDto имеет exact `sourceKind:meeting_attendance`, `precision:occurrence`, attendanceId/meetingId, periodId и confirmedMeetingRevision. **Каждая WorkLogRevision** сохраняет immutable attribution union: `{basis:'actual_meeting',plannedStartAt:UTC,actualStartAt:UTC}` либо `{basis:'planned_absence',plannedStartAt:UTC,actualStartAt:null}`. Во второй ветке minutes=0; это явная запись отсутствия для запланированного occurrence, не доказательство проведённой встречи. Первый факт снимает соответствующие текущие meeting details под barrier. Изменение basis/effective start/period требует явной reasoned revision, даже при тех же minutes; смещение metadata само старый факт не меняет. Не связанная с attribution ссылка/summary и сама новая Meeting.revision не создают source revision. Recategorization переносит прежний attribution/period/meeting-revision snapshot и меняет только category. Metadata PATCH сам не переписывает ни одну source revision.
+
+Attendance хранит stable workLogId; его собственная immutable revision может ссылаться на workLogRevisionId, созданную конкретным posting. Current AttendanceDto.workLog читается из **актуального head** того source. Независимая recategorization может поднять worklog revision без изменения attendance status/revision. Confirm сравнивает expectedWorkLogRevision с этим последним head, а не с устаревшей posting-ссылкой; stale category/head даёт409 целиком. Новая attendance correction переносит текущий category snapshot и не откатывает переклассификацию.
+
+Attendance history endpoint возвращает только immutable presence/posting history и соответствующую **тогда созданную** WorkLogRevision, label UI — «История присутствия». Это не полная история независимых category revisions; UI прямо различает их, а current source panel использует latest head. Presence history нельзя выдавать за полный журнал переклассификации. Права на current task/worker проверяются при каждом чтении истории; историческая posting link не даёт старые права.
+
+Личная коррекция идёт через ту же ConfirmAttendance для своего attendanceId; quick-fact cell с attendance source открывает attendance editor, а не manual PUT. Явная подготовка — отдельная ordinary task/manual source с собственным смыслом; не создаётся автоматически рядом с confirmation. Organizer, уже входящий в attendees, не получает вторую запись. Watcher не получает часов.
+
+## 8. Совместимость источников, отчётов и baseline
+
+Текущий `ManualPeriodWorkLogDto` имеет literal manual_period, precision period и уникальную task/member/period identity. Его schema, старый work.set parsed input/defaults/hash и старые successful/committed-rejection outcomes сохраняются. Новые meeting DTO не выдаются из старого manual-specific command или GET worklogs: этот старый endpoint продолжает возвращать только manual-period rows. Новый GET recorded-work — paginated canonical source-union read по explicit periodId и optional task/member filters, без второго fact storage. UI недельного списка мигрирует на него, когда должен показывать оба вида факта; старый manual list не называется полным списком всех трудозатрат. Старые category-less DTO остаются валидными; canonical legacy category появляется только в новой read projection, не в переписанном cached result.
+
+Во всех source branches публичное поле периода называется **periodId**; existing list/cache keys используют его одинаково. В attendance это тот же явно выбранный фиксированный P3a source period, сохраняемый вместе с immutable attribution revision; второго расходящегося actualPeriodId нет. PlannedPeriodId остаётся meeting/baseline provenance. В planned_absence periodId не означает, что встреча фактически прошла.
+
+Новый общий `RecordedWorkLogDto` — union прежнего manual source и `AttendanceWorkLogDto` (meeting/attendance identity, explicit periodId, precision occurrence, immutable actual_meeting/planned_absence attribution snapshot каждой revision, current revision/category snapshot). Режим precision источника явно отличает attendance occurrence от period total. DB меняет global manual-only source CHECK на исчерпывающие scoped ветки и делает task/member/period unique **partial для manual_period**, сохраняя global unique workspace/sourceKind/sourceKey. Scoped attendance↔meeting/task/member/period FK, revision/head guards и immutable history обязательны. Просто ослабить CHECK до произвольной строки нельзя.
+
+Repository добавляет отдельный listRecordedWork, не расширяет скрыто старый listWorkLogs manual-only. Новые reports/read projections читают общий source union и включают attendance ровно один раз: original/added/unplanned, archived/open/Done не исключают фактические минуты. Manual и attendance могут сосуществовать только как явно разные источники; generic meeting manual PUT закрыт, чтобы коррекция не стала вторым source. Category снимается в первой attendance revision с source meeting task; corrections копируют snapshot, reasoned recategorization работает с тем же stable log. До source union расширения нельзя выпускать attendance, которое отчёт незаметно проигнорирует.
+
+Принята стратегия **эволюции схем локального unreleased monorepo без дублирования report collections**. Старые pinned report JSON/manifest/labels не обновляются; их manual rows остаются валидной manual branch расширенного source union. Existing report-row и recategorize output schemas расширяются до union, текущие потребители обновляются вместе: P2a plan/fact row workLogs, P2b work-type row workLog, общий source-aware breakdown и recategorize response. Old recategorize input/hash/command не меняются, старые stored responses остаются валидны. TaskTimeSummary.ownManualWork остаётся только manual branch; attendance влияет на общие minutes/source counts и открывает source breakdown. Formulas/metric IDs остаются прежними, пока математический смысл тот же; новые runs включают оба source kinds, нет отдельного v2 storage/accounting или ручного исключения attendance. Если позже меняется сама формула, это отдельная metric version.
+
+**Старый P2b browser bundle не сертифицирован против P3a API.** Это локальная предрелизная разработка без обещанной внешней client compatibility. Byte-for-byte сохранность stored JSON и work.set replay не равна old-tab pass. Controlled old-tab upgrade является отдельным P6 release gate; этот draft не заявляет его пройденным.
+
+Freeze snapshot получает additive optional meeting snapshot section **без default для старых JSON**: exact meeting revision, schedule/period/duration, attendee revisions и связанные personal commitments. Preview hash включает все новые источники; lock/invariant matrix защищает shared schedule до первого personal/project freeze. Existing old snapshots/replay сохраняют byte-semantic identity; новые признаки не backfill из нынешнего meeting. P3a не имеет virtual/unmaterialized occurrences, поэтому worker не нужен для completeness.
+
+## 9. Отложенный P3b и критерии приёмки P3a
+
+P3b добавит series/immutable schedule versions, nominal local-date occurrence key, exceptions/cancel/restore, bounded generation horizon, outbox relay и pg-boss. До любого freeze недельные экземпляры materialize синхронно тем же domain path, даже если worker отстал. Исследованные кандидаты: [pg-boss](https://github.com/timgit/pg-boss), [temporal-polyfill](https://github.com/fullcalendar/temporal-polyfill); новых зависимостей или worker launch сейчас нет. DST gap «первое допустимое время» отличается от Temporal compatible сдвига на размер gap; policy freeze и отдельные DST tests нужны до recurrence.
+
+Обязательные P3a проверки:
+
+1. Одна встреча60min ×5 attendees создаёт одну Task/package, пять proposals, ни одного commitment/fact автоматически. Organizer дубликатом не становится; ordinary shared task не получает meeting multiplication.
+2. Member может применить только свой plan, organizer без plan.write_others не пишет коллегам. Owner/admin explicit batch записывает нужные commitments атомарно; stale/locked row откатывает все proposed changes, due-freeze committed rejection сохраняется по общему протоколу.
+3. Три present60, один partial30, один absent0 →210min/team,5 active sources; unknown остаётся missing, void исключается,0 остаётся recorded. Never-held cancelled meeting допускает reasoned planned_absence0 с actualStartAt=null, без вымышленной длительности; present/partial без actual details отклоняются. Retry/double click/lost response и concurrent exact key не меняют сумму.
+4. Personal correction/restore/void меняет тот же attendance source; metadata duration/start edit не меняет прежние source snapshots. Recategorization поднимает worklog head без изменения attendance status; stale confirm отклоняется, свежий confirm сохраняет новую категорию. Чужой worker/time rights, отозванный actor, другой workspace, stale row дают корректные403/404/409 и никакого частичного posting.
+5. Два перекрывающихся period не дают двойного начисления/автовыбора. Planned/actual period явны; все cross-period move attempts отклоняются. Frozen old schedule/commitments/estimate/snapshots неизменны; new post-freeze meeting считается added.
+6. Generic task participant/remove/archive/estimate/dueDate/child commands не обходят meeting guards; Done не подтверждает attendance. Explicit preparation — отдельный новый source только по пользовательскому действию.
+7. Populated upgrade сохраняет старые колонковые проекции, old work.set input/hash/replay result и pinned JSON. Новые reports включают оба source kinds и старые legacy категории; общие participants/tags/task presentations не размножают минуты.
+8. True no-op после recording-link edit не создаёт source revision; explicit reasoned reconfirmation после actual-start change создаёт её даже при тех же minutes. UTC instants по обе стороны осеннего overlap остаются разными точными моментами; bare local/gap input отклоняется; duration через DST — elapsed minutes. UI всегда показывает timezone и выбранный период.
+9. Browser: meeting locator до первого факта открывает attendance controls вместо manual PUT; old cached DTO без marker не сбрасывает известный locator/не считается ordinary. Create meeting → preview/apply own/others plan → attendance batch → personal correction/history → report совпадает; pending/uncertain commands живут выше drawer/week/row selectors, denied refetch скрывает cache до recovery controls. Все заявления относятся к workspace-visible fixture workflows, не Auth/private access.
+
+После review этого draft — решение координатора по точным DTO/guards/period ограничению → shared contract freeze → одна последовательная migration/domain implementation → тонкий API/UI → реальный PostgreSQL и browser gate. Этот файл не разрешает P3-код, установку dependencies или запуск jobs.

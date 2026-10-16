@@ -165,6 +165,7 @@ export function useUpdateTaskFieldMutation(actorId: string, workspaceId: string)
       void invalidateFieldDefinitions(queryClient, actorId, workspaceId, field.projectId);
       void invalidateProjectColumns(queryClient, actorId, workspaceId, field.projectId);
       if (input.archived !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.workCategoryBinding(actorId, workspaceId, field.projectId), exact: true });
         void queryClient.invalidateQueries({ queryKey: queryKeys.fieldValues(actorId, workspaceId) });
       }
     },

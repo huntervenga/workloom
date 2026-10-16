@@ -8,18 +8,20 @@ import {
   createReadinessProbe,
   createTaskApplication,
   createTaskFieldApplication,
+  createWorkCategoryApplication,
   describeErrorForLog,
   FIXTURE_ACTOR_IDS,
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { AccessRepository, PlanningApplication, TaskApplication, TaskFieldApplication } from '@workloom/domain';
+import type { AccessRepository, PlanningApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
 import { createDevSessionStore, type DevSessionStore } from './identity/dev-sessions.js';
 import { createDevIdentityAdapter, type IdentityAdapter } from './identity/identity-adapter.js';
 import { mapError } from './http/errors.js';
+import { registerCategoryRoutes } from './http/category-routes.js';
 import { registerFieldRoutes } from './http/field-routes.js';
 import { registerPlanningRoutes } from './http/planning-routes.js';
 import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from './http/request-guards.js';
@@ -46,6 +48,8 @@ export interface AppDependencies {
   readonly taskFieldApplication?: TaskFieldApplication;
   /** Shared planning service, or an injected transport-test port; uses the existing pool. */
   readonly planningApplication?: PlanningApplication;
+  /** Category binding, reasoned recategorization and work-type reporting; same existing pool. */
+  readonly workCategoryApplication?: WorkCategoryApplication;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
   /** Web dist directory; null disables static serving. Default: apps/web/dist when config.serveWeb. */
@@ -78,6 +82,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.taskFieldApplication ?? (database === undefined ? undefined : createTaskFieldApplication(database));
   const planningApplication =
     dependencies.planningApplication ?? (database === undefined ? undefined : createPlanningApplication(database));
+  const workCategoryApplication =
+    dependencies.workCategoryApplication ?? (database === undefined ? undefined : createWorkCategoryApplication(database));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
   const identity =
     dependencies.identityAdapter ??
@@ -166,6 +172,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   if (planningApplication !== undefined) {
     registerPlanningRoutes(app, { identity, planning: planningApplication });
+  }
+  if (workCategoryApplication !== undefined) {
+    registerCategoryRoutes(app, { identity, categories: workCategoryApplication });
   }
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);

@@ -1,6 +1,6 @@
 import type { ManualPeriodWorkLogDto, MembershipDto, PlanningPeriodDto, TaskDto } from '@workloom/contracts';
 import { Badge, Button, TextInput, inputClassName } from '@workloom/ui';
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';
@@ -29,6 +29,8 @@ interface Props {
   ownMembershipId: string | null;
   canWriteOthers: boolean;
   writable: boolean;
+  fixedContext?: boolean;
+  contextNote?: ReactNode;
   mutation: PlanningCommands['setFact'];
   hasMoreTasks: boolean;
   loadingMoreTasks: boolean;
@@ -85,11 +87,12 @@ export function FactDialog(props: Props) {
     <DialogShell title={session.base ? 'Изменить факт за неделю' : 'Внести факт за неделю'} description={`${session.period.name}. Это личная запись за весь период, без распределения по дням.`} open={props.open} onOpenChange={(next) => { if (!next) props.onClose(); }}>
       <form className="mt-5 space-y-4" onSubmit={submit} noValidate>
         <Badge tone="muted">За неделю</Badge>
+        {props.contextNote}
         {blocked ? <p role="status" className="text-sm text-amber-800">Другая запись факта ещё отправляется или не подтверждена. Сначала разрешите её отправку.</p> : null}
         <fieldset disabled={locked || !editable} className="min-w-0 space-y-4">
-          <div className="space-y-1.5"><label htmlFor={`${id}-task`} className="text-sm font-medium">Задача для факта</label><select id={`${id}-task`} className={inputClassName()} value={session.taskId} disabled={session.base !== null} onChange={(event) => props.onChange({ ...session, taskId: event.target.value })}><option value="">Выберите задачу</option>{props.tasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}{missingTask ? <option value={session.taskId}>Сохранённая задача · не загружена</option> : null}</select>{props.hasMoreTasks ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>Загрузить ещё задачи для факта</Button> : null}</div>
-          <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">Чьи часы</label><select id={`${id}-member`} className={inputClassName()} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers} onChange={(event) => props.onChange({ ...session, membershipId: event.target.value })}><option value="">Выберите участника</option>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}{missingMember ? <option value={session.membershipId}>Сохранённый участник · нет в текущем списке</option> : null}</select></div>
-          <div className="space-y-1.5"><label htmlFor={`${id}-hours`} className="text-sm font-medium">Факт за неделю, часы</label><TextInput id={`${id}-hours`} value={shownHours} onChange={(event) => props.onChange({ ...session, hours: event.target.value })} inputMode="decimal" placeholder="Например, 5 или 1:30" /><p className="text-xs text-muted">0 подтверждает отсутствие затрат. Пустое поле не заменяется нулём. Эта запись не переписывает часы коллег или другие источники.</p></div>
+          <div className="space-y-1.5"><label htmlFor={`${id}-task`} className="text-sm font-medium">Задача для факта</label><select id={`${id}-task`} className={inputClassName()} value={session.taskId} disabled={session.base !== null || props.fixedContext} onChange={(event) => props.onChange({ ...session, taskId: event.target.value })}><option value="">Выберите задачу</option>{props.tasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}{missingTask ? <option value={session.taskId}>Сохранённая задача · не загружена</option> : null}</select>{props.hasMoreTasks ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>Загрузить ещё задачи для факта</Button> : null}</div>
+          <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">Чьи часы</label><select id={`${id}-member`} className={inputClassName()} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers || props.fixedContext} onChange={(event) => props.onChange({ ...session, membershipId: event.target.value })}><option value="">Выберите участника</option>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}{missingMember ? <option value={session.membershipId}>Сохранённый участник · нет в текущем списке</option> : null}</select></div>
+          <div className="space-y-1.5"><label htmlFor={`${id}-hours`} className="text-sm font-medium">Факт за неделю, часы</label><TextInput id={`${id}-hours`} autoFocus={props.fixedContext} value={shownHours} onChange={(event) => props.onChange({ ...session, hours: event.target.value })} inputMode="decimal" placeholder="Например, 5 или 1:30" /><p className="text-xs text-muted">0 подтверждает отсутствие затрат. Пустое поле не заменяется нулём. Эта запись не переписывает часы коллег или другие источники.</p></div>
           {session.base ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={shownState === 'void'} onChange={(event) => props.onChange({ ...session, state: event.target.checked ? 'void' : 'active' })} />Отменить эту запись</label> : null}
           <div className="space-y-1.5"><label htmlFor={`${id}-reason`} className="text-sm font-medium">{session.base ? 'Причина исправления' : 'Комментарий, необязательно'}</label><TextInput id={`${id}-reason`} value={shownReason} onChange={(event) => props.onChange({ ...session, reason: event.target.value })} maxLength={1000} /></div>
         </fieldset>

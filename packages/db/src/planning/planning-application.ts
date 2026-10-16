@@ -1,6 +1,7 @@
+import {createWorkCategoryRepository} from '../repositories/work-category-repository.js';
 import {createHash,randomUUID} from 'node:crypto';
 import {
-  authorizeWorkspace,createPlanningApplication as createDomainPlanningApplication,
+  authorizeWorkspace,createWorkCategoryResolver,createPlanningApplication as createDomainPlanningApplication,
   isDomainError,temporarilyUnavailableError,
   type PlanningApplication,type PlanningTools,type PlanningUnitOfWork,
 } from '@workloom/domain';
@@ -17,7 +18,7 @@ export function createPlanningApplication(source:Database|WorkloomExecutor,optio
   const codec=createPlanningCursorCodec(cursorSecret===undefined?{}:{secret:cursorSecret});
   const tools:PlanningTools={newId:()=>randomUUID(),digest:v=>createHash('sha256').update(v,'utf8').digest('hex'),encodeCursor:v=>codec.encode(v),decodeCursor:v=>codec.decode(v)};
   const writer:PlanningUnitOfWork={
-    run(ctx,cap,work) {return runner.run(ctx,cap,scope=>work({...scope,repository:createPlanningRepository(scope.tx)}));},
+    run(ctx,cap,work) {return runner.run(ctx,cap,scope=>work({...scope,repository:createPlanningRepository(scope.tx),categoryResolver:createWorkCategoryResolver(createWorkCategoryRepository(scope.tx),ctx.workspaceId)}));},
     async read(ctx,cap,work) {
       try {
         return await db.transaction(async tx=>{

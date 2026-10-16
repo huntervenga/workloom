@@ -66,6 +66,7 @@ export function failure(status: number, code: string, message: string): Response
 export interface FakeRequest {
   method: string;
   path: string;
+  searchParams: URLSearchParams;
   body: unknown;
   headers: Headers;
   credentials: RequestCredentials | undefined;
@@ -83,6 +84,10 @@ function defaultFieldRoute(request: FakeRequest): Response | null {
   if (request.method !== 'GET') return null;
   const workspaces = '^/api/v1/workspaces/';
   if (new RegExp(`${workspaces}${segment}/fields$`).test(request.path)) return ok([]);
+  const categoryBinding = new RegExp(`${workspaces}${segment}/projects/${segment}/work-category-binding$`).exec(request.path);
+  if (categoryBinding) return ok({ workspaceId: categoryBinding[1], projectId: categoryBinding[2], revision: 1, versionId: null, fieldId: null, availability: 'unbound' });
+  if (new RegExp(`${workspaces}${segment}/work-type-report-runs$`).test(request.path)) return ok([]);
+
   const columns = new RegExp(`${workspaces}${segment}/projects/${segment}/columns$`).exec(request.path);
   if (columns) {
     const [, workspaceId = '', projectId = ''] = columns;
@@ -105,6 +110,7 @@ export function installFakeApi(table: RouteTable): { calls: FakeRequest[] } {
     const request: FakeRequest = {
       method: init.method ?? 'GET',
       path: new URL(href, 'http://127.0.0.1:4311').pathname,
+      searchParams: new URL(href, 'http://127.0.0.1:4311').searchParams,
       body: typeof init.body === 'string' ? JSON.parse(init.body) : undefined,
       headers: new Headers(init.headers),
       credentials: init.credentials,

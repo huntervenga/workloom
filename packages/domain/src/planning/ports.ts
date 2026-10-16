@@ -1,3 +1,4 @@
+import type { WorkCategoryResolver, WorkCategoryMutationCommand } from '../categories/ports.js';
 import type {
   ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
   PlanningPackageDto, PlanningPeriodDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto,
@@ -59,8 +60,10 @@ export interface PlanningRepository {
   insertReportRun(run:WeeklyPlanFactReportRunDto,rows:WeeklyPlanFactRowDto[]):Promise<void>;
 }
 export interface PlanningWriteScope extends WorkspaceWriteScope { readonly repository:PlanningRepository }
+/** The time-writing application must always resolve first-source categories under its TX. */
+export interface PlanningApplicationWriteScope extends PlanningWriteScope {readonly categoryResolver:WorkCategoryResolver}
 export interface PlanningUnitOfWork {
-  run<T>(ctx:CommandContext,capability:Capability,work:(scope:PlanningWriteScope)=>Promise<T>):Promise<T>;
+  run<T>(ctx:CommandContext,capability:Capability,work:(scope:PlanningApplicationWriteScope)=>Promise<T>):Promise<T>;
   /** Repeatable-read snapshot for preview/read projections. No mutation or automatic freeze. */
   read<T>(ctx:CommandContext,capability:Capability,work:(repository:PlanningRepository)=>Promise<T>):Promise<T>;
 }
@@ -83,7 +86,8 @@ export type PlanningMutationCommand = 'period.create'|'period.update'|'commitmen
 export type PlanningMutationIntent =
  | {readonly family:'task';readonly command:TaskMutationCommand;readonly target:string|null;readonly input:unknown}
  | {readonly family:'field';readonly command:FieldMutationCommand;readonly target:unknown;readonly input:unknown}
- | {readonly family:'planning';readonly command:PlanningMutationCommand;readonly target:unknown;readonly input:unknown};
+ | {readonly family:'planning';readonly command:PlanningMutationCommand;readonly target:unknown;readonly input:unknown}
+ | {readonly family:'category';readonly command:WorkCategoryMutationCommand;readonly target:unknown;readonly input:unknown};
 export interface CommittedPlanningRejection {
   readonly __workloomPlanningOutcome:'rejected';readonly code:'FIELD_LOCKED';
   readonly details:{readonly committed:true;readonly baselineIds:string[]};

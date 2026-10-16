@@ -112,6 +112,7 @@ export function usePlanningCommands(actorId: string, workspaceId: string, projec
   };
   const invalidatePeriod = (periodId: string) => {
     invalidatePeriods();
+    void client.invalidateQueries({ queryKey: queryKeys.timeSummaries(actorId, workspaceId) });
     void client.invalidateQueries({ queryKey: planningKeys.period(actorId, workspaceId, periodId) });
   };
   const createPeriod = useIdempotentMutation({

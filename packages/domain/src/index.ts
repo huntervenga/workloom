@@ -83,3 +83,8 @@ export type { PlanningApplication, PlanningPage } from './planning/application.j
 export type { ProjectPlanningSources, PackageFreezeObservation, PlanningLock, PlanningRepository, PlanningWriteScope, PlanningUnitOfWork, PlanningCursor, PlanningTools, PlanningApplicationDependencies, TaskMutationCommand, FieldMutationCommand, PlanningMutationCommand, PlanningMutationIntent, CommittedPlanningRejection, PlanningMutationGuard } from './planning/ports.js';
 export { captureFreezeSnapshot, freezePreviewHash, performFreeze, createPlanningMutationGuard, isCommittedPlanningRejection, unwrapPlanningOutcome } from './planning/freeze.js';
 export { createPlanningApplication } from './planning/service.js';
+export type { WorkCategoryApplication } from './categories/application.js';
+export type { WorkCategoryRepository, WorkCategoryBindingRecord, WorkCategoryBindingVersion, WorkCategoryWriteScope, WorkCategoryUnitOfWork, WorkCategoryApplicationDependencies, WorkCategoryResolver, WorkCategoryMutationCommand } from './categories/ports.js';
+export { legacyWorkCategory, canonicalWorkCategory, readWorkCategoryBinding, createWorkCategoryResolver } from './categories/resolver.js';
+export type { PlanningApplicationWriteScope } from './planning/ports.js';
+export { createWorkCategoryApplication, workTypeBuckets } from './categories/service.js';

@@ -3,7 +3,7 @@ import type {
   PackageBaselineDto, PlanBaselineDto,
   PlanningPeriodDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto,
 } from '@workloom/contracts';
-import { notFoundError, type PackageFreezeObservation, type PlanningLock, type PlanningRepository } from '@workloom/domain';
+import { legacyWorkCategory, notFoundError, type PackageFreezeObservation, type PlanningLock, type PlanningRepository } from '@workloom/domain';
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
 import {
   commitmentAllocations, memberships, packageBaselines, packageFreezeObservations,
@@ -102,7 +102,7 @@ export function createPlanningRepository(source:Database|WorkloomExecutor):Plann
     async insertLocks(rows:PlanningLock[]) {if(rows.length)await db.insert(planningLocks).values(rows);},
     async listWorkLogs(ws,periodId) {
       const rows=await db.select({log:workLogs,version:workLogRevisions}).from(workLogs).innerJoin(workLogRevisions,and(eq(workLogRevisions.workspaceId,workLogs.workspaceId),eq(workLogRevisions.workLogId,workLogs.id),eq(workLogRevisions.id,workLogs.revisionId),eq(workLogRevisions.revision,workLogs.revision))).where(and(eq(workLogs.workspaceId,ws),eq(workLogs.periodId,periodId))).orderBy(asc(workLogs.id));
-      return rows.map(({log:l,version:v})=>({id:l.id,workspaceId:l.workspaceId,projectId:l.projectId,taskId:l.taskId,workPackageId:l.workPackageId,membershipId:l.membershipId,periodId:l.periodId,sourceKind:'manual_period',sourceKey:l.sourceKey,precision:'period',revision:l.revision,revisionId:v.id,minutes:v.minutes,state:v.state,reason:v.reason,actorUserId:v.actorUserId,recordedAt:iso(v.recordedAt),changeSeq:v.changeSeq.toString()}));
+      return rows.map(({log:l,version:v})=>({id:l.id,workspaceId:l.workspaceId,projectId:l.projectId,taskId:l.taskId,workPackageId:l.workPackageId,membershipId:l.membershipId,periodId:l.periodId,sourceKind:'manual_period',sourceKey:l.sourceKey,precision:'period',revision:l.revision,revisionId:v.id,minutes:v.minutes,state:v.state,reason:v.reason,actorUserId:v.actorUserId,recordedAt:iso(v.recordedAt),changeSeq:v.changeSeq.toString(),category:v.category??legacyWorkCategory()}));
     },
     async findManualWork(ws,taskId,periodId,memberId) {return (await repo.listWorkLogs(ws,periodId)).find(w=>w.taskId===taskId&&w.membershipId===memberId)??null;},
     async saveManualWork(row) {
@@ -112,7 +112,7 @@ export function createPlanningRepository(source:Database|WorkloomExecutor):Plann
       const saved=await db.update(workLogs).set({revision:row.revision,revisionId:row.revisionId}).where(and(eq(workLogs.id,row.id),eq(workLogs.workspaceId,row.workspaceId),eq(workLogs.projectId,row.projectId),eq(workLogs.taskId,row.taskId),eq(workLogs.workPackageId,row.workPackageId),eq(workLogs.membershipId,row.membershipId),eq(workLogs.periodId,row.periodId),eq(workLogs.sourceKind,row.sourceKind),eq(workLogs.sourceKey,row.sourceKey),eq(workLogs.revision,row.revision-1))).returning({id:workLogs.id});
       if(saved.length===0)throw notFoundError();
     },
-    async insertWorkRevision(row) {await db.insert(workLogRevisions).values({id:row.revisionId,workspaceId:row.workspaceId,workLogId:row.id,revision:row.revision,minutes:row.minutes,state:row.state,reason:row.reason,actorUserId:row.actorUserId,recordedAt:new Date(row.recordedAt),changeSeq:BigInt(row.changeSeq)});},
+    async insertWorkRevision(row) {await db.insert(workLogRevisions).values({id:row.revisionId,workspaceId:row.workspaceId,workLogId:row.id,revision:row.revision,minutes:row.minutes,state:row.state,reason:row.reason,actorUserId:row.actorUserId,recordedAt:new Date(row.recordedAt),changeSeq:BigInt(row.changeSeq),category:row.category??null,categoryProjectId:row.category?row.projectId:null,categoryBindingVersionId:row.category?.bindingVersionId??null,categoryBindingRevision:row.category?.bindingRevision??null,categoryFieldId:row.category?.fieldId??null,categoryDefinitionVersionId:row.category?.kind==='categorized'?row.category.fieldDefinitionVersionId:null,categoryOptionId:row.category?.kind==='categorized'?row.category.optionId:null,categoryOptionRevision:row.category?.kind==='categorized'?row.category.optionRevision:null});},
     async listReportRuns(ws,periodId) {return (await db.select({document:weeklyReportRuns.document}).from(weeklyReportRuns).where(and(eq(weeklyReportRuns.workspaceId,ws),eq(weeklyReportRuns.periodId,periodId))).orderBy(asc(weeklyReportRuns.id))).map(r=>r.document);},
     async findReportRun(ws,id) {if(!valid(id))return null;const [r]=await db.select().from(weeklyReportRuns).where(and(eq(weeklyReportRuns.workspaceId,ws),eq(weeklyReportRuns.id,id)));return r?{run:r.document,rows:r.rows}:null;},
     async insertReportRun(run:WeeklyPlanFactReportRunDto,rows:WeeklyPlanFactRowDto[]) {await db.insert(weeklyReportRuns).values({id:run.id,workspaceId:run.workspaceId,projectId:run.projectId,periodId:run.periodId,baselineId:run.baselineId,document:run,rows,createdAt:new Date(run.createdAt)});},

@@ -28,7 +28,12 @@ export type ErrorSubject =
   | 'planSave'
   | 'freeze'
   | 'factSave'
-  | 'report';
+  | 'report'
+  | 'workCategory'
+  | 'workCategorySave'
+  | 'recategorize'
+  | 'workTypeReport'
+  | 'taskTime';
 
 export interface ErrorDescription {
   title: string;
@@ -68,6 +73,11 @@ const subjectTitles: Record<ErrorSubject, string> = {
   freeze: 'Не удалось зафиксировать план',
   factSave: 'Не удалось сохранить факт за неделю',
   report: 'Не удалось открыть отчёт',
+  workCategory: 'Не удалось загрузить типы работы',
+  workCategorySave: 'Не удалось сохранить поле типа работы',
+  recategorize: 'Не удалось изменить тип записанной работы',
+  workTypeReport: 'Не удалось открыть распределение часов',
+  taskTime: 'Не удалось загрузить недельные часы',
 };
 
 const kindDescriptions: Record<ApiErrorKind, string> = {
@@ -125,6 +135,8 @@ const saveSubjects: ReadonlySet<ErrorSubject> = new Set([
   'planSave',
   'freeze',
   'factSave',
+  'workCategorySave',
+  'recategorize',
 ]);
 
 /** A value write to a locked field; reloading and resending would be refused again. */

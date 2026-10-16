@@ -6,6 +6,9 @@ import { parseDatabaseUrl, type DatabaseUrlInfo } from './database-url.js';
 import {
   auditEvents,
   planningPeriods,
+  projectWorkCategoryBindings,
+  projectWorkCategoryBindingVersions,
+  workTypeReportRuns,
   packageFreezeObservations,
   periodCommitments,
   commitmentAllocations,
@@ -40,6 +43,9 @@ import {
 
 export const tables = {
   planningPeriods,
+  projectWorkCategoryBindings,
+  projectWorkCategoryBindingVersions,
+  workTypeReportRuns,
   packageFreezeObservations,
   periodCommitments,
   commitmentAllocations,

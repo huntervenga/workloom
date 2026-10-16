@@ -74,3 +74,5 @@ export { REQUIRED_TABLES } from './schema.js';
 export { createPlanningApplication, type PlanningApplicationOptions } from './planning/planning-application.js';
 export { createPlanningRepository } from './repositories/planning-repository.js';
 export { createPlanningCursorCodec, type PlanningCursorCodec, type PlanningCursorCodecOptions } from './planning/cursor.js';
+export { createWorkCategoryApplication, type WorkCategoryApplicationOptions } from './categories/work-category-application.js';
+export { createWorkCategoryRepository } from './repositories/work-category-repository.js';

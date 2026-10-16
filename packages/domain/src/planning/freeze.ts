@@ -151,6 +151,12 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
           default:never(intent);
         }
         break;
+      case 'category':
+        switch(intent.command) {
+          case 'category.binding.update':case 'work.recategorize':case 'work_type_report.create':break;
+          default:never(intent);
+        }
+        break;
       default:never(intent);
     }
     return blocked.length?{__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[...new Set([...blocked,...newlyFrozen])].sort()}}:null;

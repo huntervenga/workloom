@@ -3,7 +3,7 @@
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
  * produce no diff). Immutability triggers live only in SQL.
  */
-import type { TaskFieldData, TaskFieldDefinitionDto, PlanningSnapshotDto, PeriodCommitmentDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto } from '@workloom/contracts';
+import type { TaskFieldData, TaskFieldDefinitionDto, PlanningSnapshotDto, PeriodCommitmentDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto, WorkCategorySnapshot, WorkTypeReportRunDto, WorkTypeReportRowDto } from '@workloom/contracts';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
@@ -835,6 +835,9 @@ export const REQUIRED_TABLES = [
   'work_logs',
   'work_log_revisions',
   'weekly_report_runs',
+  'project_work_category_bindings',
+  'project_work_category_binding_versions',
+  'work_type_report_runs',
 ] as const;
 
 
@@ -945,6 +948,7 @@ export const workLogs = pgTable('work_logs',{
   membershipId:uuid('membership_id').notNull(),periodId:uuid('period_id').notNull(),sourceKind:text('source_kind').notNull().default('manual_period'),sourceKey:text('source_key').notNull(),
   revision:integer('revision').notNull(),revisionId:uuid('revision_id').notNull(),
 },t=>[
+  unique('work_logs_project_id_unique').on(t.workspaceId,t.id,t.projectId),
   unique('work_logs_workspace_id_unique').on(t.workspaceId,t.id),unique('work_logs_manual_source_unique').on(t.workspaceId,t.taskId,t.membershipId,t.periodId),
   unique('work_logs_source_key_unique').on(t.workspaceId,t.sourceKind,t.sourceKey),
   foreignKey({name:'work_logs_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
@@ -958,10 +962,27 @@ export const workLogRevisions = pgTable('work_log_revisions',{
   id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),workLogId:uuid('work_log_id').notNull(),revision:integer('revision').notNull(),
   minutes:integer('minutes').notNull(),state:workLogStateEnum('state').notNull(),reason:text('reason'),actorUserId:uuid('actor_user_id').notNull(),
   recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+  category:jsonb('category').$type<WorkCategorySnapshot>(),categoryProjectId:uuid('category_project_id'),categoryBindingVersionId:uuid('category_binding_version_id'),categoryBindingRevision:integer('category_binding_revision'),categoryFieldId:uuid('category_field_id'),categoryDefinitionVersionId:uuid('category_definition_version_id'),categoryOptionId:uuid('category_option_id'),categoryOptionRevision:integer('category_option_revision'),
 },t=>[
   unique('work_log_revisions_workspace_id_unique').on(t.workspaceId,t.id),unique('work_log_revisions_source_unique').on(t.workspaceId,t.workLogId,t.revision),
   foreignKey({name:'work_log_revisions_log_fk',columns:[t.workspaceId,t.workLogId],foreignColumns:[workLogs.workspaceId,workLogs.id]}),
   foreignKey({name:'work_log_revisions_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),
+  foreignKey({name:'work_log_revisions_category_source_project_fk',columns:[t.workspaceId,t.workLogId,t.categoryProjectId],foreignColumns:[workLogs.workspaceId,workLogs.id,workLogs.projectId]}),
+  foreignKey({name:'work_log_revisions_category_binding_fk',columns:[t.workspaceId,t.categoryProjectId,t.categoryBindingVersionId],foreignColumns:[projectWorkCategoryBindingVersions.workspaceId,projectWorkCategoryBindingVersions.projectId,projectWorkCategoryBindingVersions.id]}),
+  foreignKey({name:'work_log_revisions_category_field_fk',columns:[t.workspaceId,t.categoryProjectId,t.categoryFieldId],foreignColumns:[taskFieldDefinitions.workspaceId,taskFieldDefinitions.projectId,taskFieldDefinitions.id]}),
+  foreignKey({name:'work_log_revisions_category_definition_fk',columns:[t.workspaceId,t.categoryProjectId,t.categoryFieldId,t.categoryDefinitionVersionId],foreignColumns:[taskFieldDefinitionVersions.workspaceId,taskFieldDefinitionVersions.projectId,taskFieldDefinitionVersions.fieldId,taskFieldDefinitionVersions.id]}),
+  foreignKey({name:'work_log_revisions_category_option_fk',columns:[t.workspaceId,t.categoryProjectId,t.categoryFieldId,t.categoryOptionId],foreignColumns:[taskFieldOptions.workspaceId,taskFieldOptions.projectId,taskFieldOptions.fieldId,taskFieldOptions.id]}),
+  check('work_log_revisions_category_snapshot',sql`(
+    (category is null and category_project_id is null and category_binding_version_id is null and category_binding_revision is null and category_field_id is null and category_definition_version_id is null and category_option_id is null and category_option_revision is null)
+    or (category is not null and category_project_id is not null and (category_binding_revision is null or category_binding_revision >= 1) and jsonb_typeof(category) = 'object' and (
+      (category->>'kind' = 'categorized' and category ?& array['bindingVersionId','bindingRevision','fieldId','fieldDefinitionVersionId','fieldLabel','optionId','optionRevision','optionLabel','color','optionArchivedAt']
+       and category_binding_version_id is not null and category_binding_revision >= 2 and category_field_id is not null and category_definition_version_id is not null and category_option_id is not null and category_option_revision >= 1
+       and category->>'bindingVersionId' = category_binding_version_id::text and category->>'bindingRevision' = category_binding_revision::text and category->>'fieldId' = category_field_id::text and category->>'fieldDefinitionVersionId' = category_definition_version_id::text and category->>'optionId' = category_option_id::text and category->>'optionRevision' = category_option_revision::text
+       and jsonb_typeof(category->'fieldLabel') = 'string' and jsonb_typeof(category->'optionLabel') = 'string')
+      or (category->>'kind' = 'uncategorized' and category ?& array['reason','bindingVersionId','bindingRevision','fieldId'] and category->>'reason' in ('legacy','unbound','field_unavailable','unset','explicit_clear')
+       and (category->>'bindingVersionId') is not distinct from category_binding_version_id::text and (category->>'bindingRevision') is not distinct from category_binding_revision::text and (category->>'fieldId') is not distinct from category_field_id::text
+       and category_definition_version_id is null and category_option_id is null and category_option_revision is null)
+    ))) is true`),
   check('work_log_revisions_values',sql`minutes >= 0 and revision >= 1 and change_seq >= 1`),
   check('work_log_revisions_reason',sql`((revision = 1 and state = 'active') or char_length(btrim(reason)) between 1 and 1000) is true`),
 ]);
@@ -984,4 +1005,36 @@ export const packageFreezeObservations = pgTable('package_freeze_observations',{
   foreignKey({name:'package_freeze_observations_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
   foreignKey({name:'package_freeze_observations_baseline_fk',columns:[t.workspaceId,t.projectId,t.baselineId],foreignColumns:[planBaselines.workspaceId,planBaselines.projectId,planBaselines.id]}),
   check('package_freeze_observations_values',sql`(estimate_minutes is null or estimate_minutes >= 0) and package_revision >= 1`),
+]);
+
+
+// P2b: project-owned taxonomy binding and independent pinned work-type reports.
+export const projectWorkCategoryBindings=pgTable('project_work_category_bindings',{
+ workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),revision:integer('revision').notNull(),versionId:uuid('version_id').notNull(),fieldId:uuid('field_id'),
+},t=>[
+ primaryKey({name:'project_work_category_bindings_pk',columns:[t.workspaceId,t.projectId]}),
+ foreignKey({name:'project_work_category_bindings_version_fk',columns:[t.workspaceId,t.projectId,t.versionId,t.revision],foreignColumns:[projectWorkCategoryBindingVersions.workspaceId,projectWorkCategoryBindingVersions.projectId,projectWorkCategoryBindingVersions.id,projectWorkCategoryBindingVersions.revision]}),
+ foreignKey({name:'project_work_category_bindings_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
+ foreignKey({name:'project_work_category_bindings_field_fk',columns:[t.workspaceId,t.projectId,t.fieldId],foreignColumns:[taskFieldDefinitions.workspaceId,taskFieldDefinitions.projectId,taskFieldDefinitions.id]}),
+ check('project_work_category_bindings_revision',sql`revision >= 2`),
+]);
+export const projectWorkCategoryBindingVersions=pgTable('project_work_category_binding_versions',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),revision:integer('revision').notNull(),fieldId:uuid('field_id'),
+ actorUserId:uuid('actor_user_id').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+},t=>[
+ unique('project_work_category_binding_versions_scope_unique').on(t.workspaceId,t.projectId,t.id),
+ unique('project_work_category_binding_versions_head_unique').on(t.workspaceId,t.projectId,t.id,t.revision),
+ unique('project_work_category_binding_versions_revision_unique').on(t.workspaceId,t.projectId,t.revision),
+ foreignKey({name:'project_work_category_binding_versions_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
+ foreignKey({name:'project_work_category_binding_versions_field_fk',columns:[t.workspaceId,t.projectId,t.fieldId],foreignColumns:[taskFieldDefinitions.workspaceId,taskFieldDefinitions.projectId,taskFieldDefinitions.id]}),
+ foreignKey({name:'project_work_category_binding_versions_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),
+ check('project_work_category_binding_versions_values',sql`revision >= 2 and change_seq >= 1`),
+]);
+export const workTypeReportRuns=pgTable('work_type_report_runs',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),periodId:uuid('period_id').notNull(),
+ document:jsonb('document').$type<WorkTypeReportRunDto>().notNull(),rows:jsonb('rows').$type<WorkTypeReportRowDto[]>().notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
+},t=>[
+ unique('work_type_report_runs_workspace_id_unique').on(t.workspaceId,t.id),
+ foreignKey({name:'work_type_report_runs_period_fk',columns:[t.workspaceId,t.projectId,t.periodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
+ check('work_type_report_runs_document_identity',sql`(jsonb_typeof(document) = 'object' and document->>'id' = id::text and document->>'workspaceId' = workspace_id::text and document->>'projectId' = project_id::text and document->>'periodId' = period_id::text and document->>'metricVersion' = 'weekly_work_type_v1' and jsonb_typeof(rows) = 'array' and jsonb_array_length(rows) = (document->>'rowCount')::integer and jsonb_typeof(document->'workLogRevisionIds') = 'array' and jsonb_array_length(document->'workLogRevisionIds') = jsonb_array_length(rows)) is true`),
 ]);

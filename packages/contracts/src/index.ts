@@ -5,3 +5,5 @@ export * from './identity.js';
 export * from './tasks.js';
 export * from './workspaces.js';
 export * from './planning.js';
+export * from './common/work-category.js';
+export * from './categories.js';
