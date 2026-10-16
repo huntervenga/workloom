@@ -253,7 +253,13 @@ function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnTyp
 }
 
 /** Resolve only the explicit immediate parent, then navigate after current authorization. */
-function ParentTaskAction({actorId,workspaceId,projectId,sourceId,parentId,onOpenTask,beforeOpen,intent,back=false,disabled=false}:{actorId:string;workspaceId:string;projectId:string;sourceId:string|null;parentId:string;onOpenTask:(id:string)=>void;beforeOpen:()=>void;intent:object;back?:boolean;disabled?:boolean}) {
+interface ParentTaskActionProps {actorId:string;workspaceId:string;projectId:string;sourceId:string|null;parentId:string;onOpenTask:(id:string)=>void;beforeOpen:()=>void;intent:object;back?:boolean;disabled?:boolean}
+function ParentTaskAction(props:ParentTaskActionProps) {
+  const context=`${props.actorId}:${props.workspaceId}:${props.projectId}:${props.sourceId??''}:${props.parentId}`;
+  // A context change owns fresh request flags; old callbacks keep their unmounted instance.
+  return <ParentTaskActionForContext key={context} {...props}/>;
+}
+function ParentTaskActionForContext({actorId,workspaceId,projectId,sourceId,parentId,onOpenTask,beforeOpen,intent,back=false,disabled=false}:ParentTaskActionProps) {
   const {t}=useTranslation();
   const reload=useReloadTask(actorId,workspaceId);
   const [loading,setLoading]=useState(false);
