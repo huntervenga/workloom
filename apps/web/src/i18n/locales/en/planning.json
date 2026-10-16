@@ -272,5 +272,15 @@
     "hide": "Hide report setup",
     "dirty": "Report settings have unsaved changes.",
     "unconfirmed": "These settings stay visible until the calculation is confirmed."
+  },
+  "planList": {
+    "workAndPerson": "Work and person",
+    "hours": "Hours",
+    "status": "Status",
+    "details": "Plan details",
+    "plan": "Plan",
+    "unallocated": "Unallocated",
+    "notSet": "Not set",
+    "removed": "Removed from current plan"
   }
 }

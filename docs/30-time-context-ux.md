@@ -59,3 +59,14 @@ Fake-API checks cover clean open/close without writes, selected results with ini
 
 
 A confirmed calculation refreshes its original period without replacing navigation chosen while it was pending. Its result is selected automatically only if the latest URL still shows the submitted period, corresponding report view, and same saved-run selection as at submission. Explicit saved-report selection and original-command Resume remain navigation actions. Page-level regressions cover a late acknowledgement after choosing another period, another view, or another saved result; exact Resume/retry still opens the confirmed result when the resumed context remains selected.
+
+
+## Compact personal plans
+
+Personal plans now use one [responsive table](../apps/web/src/features/planning/PersonalPlanList.tsx). At desktop widths the columns show work/person, separately labeled planned and unallocated hours, state, and the existing edit/view action. On small screens each same row becomes a compact grid: work and person, the two hour values, any state badges, and one action. Native table roles, row headers, a caption, and contextual action descriptions remain available; there is no duplicate desktop/mobile control tree. Row height follows content, so long titles and status labels may wrap rather than clip.
+
+Planned hours remain **Not set** when unknown; confirmed zero remains an explicit zero. Unallocated hours use their server value and remain unknown when null. Removed, added-after-baseline, and baseline-saved badges stay separate and can coexist. No list total is calculated and no server entry is hidden, reordered, or filtered by the page's time-entry person. Missing current lookup names retain the existing safe work/person fallbacks.
+
+Each action receives the original commitment DTO. The page still owns its plan sessions, permissions, locks, commands, and exact retries. The current Edit/View predicate is unchanged; a baseline-pinned row remains view-only, and opening another person's saved row does not retarget the page's new-entry person. The section's Add action and empty state remain on the page.
+
+Source regressions cover unknown versus zero values, combined removed/added/baseline states, owner/member/viewer/archived action labels, keyboard activation and action descriptions, sixteen entries in server order with one action each, missing lookups, and the exact other-person/pinned view targets without mutations. Desktop52–64px and mobile76–96px are layout targets for typical content, not fixed heights or claimed browser measurements; compiled viewport verification is recorded separately by the run owner.
