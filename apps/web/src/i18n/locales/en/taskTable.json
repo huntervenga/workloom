@@ -135,5 +135,11 @@
     "unavailableView": "Column settings are unavailable with your current access.",
     "saved": "Columns saved. Current settings refreshed.",
     "resumeSave": "Resume column save"
+  },
+  "sections": {
+    "collapse": "Collapse section “{{section}}”",
+    "expand": "Expand section “{{section}}”",
+    "collapseNumbered": "Collapse section {{position}} “{{section}}”",
+    "expandNumbered": "Expand section {{position}} “{{section}}”"
   }
 }

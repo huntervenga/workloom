@@ -296,3 +296,57 @@ it('keeps a one-column personal view usable without forcing the old full table w
   expect(within(summaryRow()).getByRole('cell')).toHaveAttribute('colspan', '1');
   expect(within(summaryRow()).getByText('Loaded team budget')).toBeInTheDocument();
 });
+
+describe('section disclosure', () => {
+  it('uses one native keyboard disclosure and hides the complete root group without changing loaded totals or callbacks', async () => {
+    const user = userEvent.setup();
+    const onSelectTask = vi.fn();
+    const complete = vi.fn();
+    renderTable({ tasks: [launch, layout, copy], partial: true, writable: true, onSelectTask, renderCompletionAction: task => <button onClick={complete}>Complete QA {task.title}</button> });
+    const toggle = screen.getByRole('button', { name: 'Collapse section “Аналитика”' });
+    const header = toggle.closest('th'); if (!header) throw new Error('Missing section header');
+    expect(header).toHaveTextContent('loaded: 3 tasks');
+    toggle.focus(); await user.keyboard('{Enter}');
+    expect(screen.queryByRole('button', { name: launch.title })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: layout.title })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: copy.title })).not.toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'false'); expect(toggle).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Add task to “Аналитика”' })).toBeVisible();
+    expect(header).toHaveTextContent('loaded: 3 tasks'); expect(summaryRow()).toHaveTextContent('10h'); expect(summaryRow()).toHaveTextContent('Loaded: 3 tasks');
+    expect(onSelectTask).not.toHaveBeenCalled(); expect(complete).not.toHaveBeenCalled();
+    await user.keyboard(' '); expect(screen.getByRole('button', { name: layout.title })).toBeInTheDocument();
+    expect(toggle).toHaveAttribute('aria-expanded', 'true'); expect(toggle).toHaveFocus();
+  });
+
+  it('keeps descendant collapse separate and expands a standalone section on Add task', async () => {
+    const user = userEvent.setup(); const handlers = renderTable({ tasks: [launch, layout, copy], writable: true });
+    await user.click(screen.getByRole('button', { name: 'Collapse subtasks of “Запуск сайта”' }));
+    await user.click(screen.getByRole('button', { name: 'Collapse section “Аналитика”' }));
+    await user.click(screen.getByRole('button', { name: 'Add task to “Аналитика”' }));
+    expect(handlers.onCreateTask).toHaveBeenCalledWith(analytics.id);
+    expect(screen.getByRole('button', { name: 'Expand subtasks of “Запуск сайта”' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: layout.title })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Expand subtasks of “Запуск сайта”' }));
+    expect(screen.getByRole('button', { name: layout.title })).toBeInTheDocument();
+  });
+
+  it('supports unavailable, unsectioned, archived and empty groups without enabling forbidden actions', async () => {
+    const user = userEvent.setup();
+    const archived = makeSection({ id: 'archived', name: 'Old section', archivedAt: '2026-10-01T00:00:00Z' });
+    renderTable({ tasks: [makeTask({ id: 'missing-root', title: 'Unknown section task', sectionId: 'missing-a' }), makeTask({ id: 'loose', title: 'Loose task' }), makeTask({ id: 'old', title: 'Old task', sectionId: archived.id })], sections: [design, archived], writable: true });
+    for (const name of ['Section unavailable', 'No section', 'Old section', design.name]) {
+      const toggle = screen.getByRole('button', { name: `Collapse section “${name}”` }); await user.click(toggle); expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    }
+    expect(screen.queryByRole('button', { name: 'Unknown section task' })).not.toBeInTheDocument(); expect(screen.queryByRole('button', { name: 'Loose task' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add task to “Old section”' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add task to “Section unavailable”' })).not.toBeInTheDocument();
+    expect(screen.queryByText('No tasks yet')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: `Expand section “${design.name}”` })); expect(screen.getByText('No tasks yet')).toBeVisible();
+  });
+
+  it('distinguishes duplicate section names and multiple unavailable groups without exposing IDs', () => {
+    renderTable({ tasks: [makeTask({ id: 'a', sectionId: 'unknown-a' }), makeTask({ id: 'b', sectionId: 'unknown-b' })], sections: [makeSection({ id: 'one', name: 'Same section' }), makeSection({ id: 'two', name: 'Same section' })] });
+    for (const [index, name] of ['Same section', 'Same section', 'Section unavailable', 'Section unavailable'].entries()) expect(screen.getByRole('button', { name: `Collapse section ${index + 1} “${name}”` })).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent('unknown-a'); expect(document.body).not.toHaveTextContent('unknown-b');
+  });
+});

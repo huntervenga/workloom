@@ -67,6 +67,9 @@ export interface TaskTableProps {
   renderTaskFieldEditor?: ((task: TaskDto, field: TaskInlineField) => ReactNode) | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
   quickAdd?: { sectionId: string | null; content: ReactNode } | undefined;
+  /** Controlled section disclosure state; project pages retain it across view switches. */
+  collapsedGroupKeys?: ReadonlySet<string> | undefined;
+  onGroupCollapsedChange?: ((groupKey: string, collapsed: boolean) => void) | undefined;
   className?: string | undefined;
 }
 
@@ -451,6 +454,10 @@ function groupTitle(group: TaskGroup): string {
 
 function GroupHeader({
   group,
+  disclosureTitle,
+  disclosurePosition,
+  collapsed,
+  onToggle,
   writable,
   partial,
   columnCount,
@@ -458,6 +465,10 @@ function GroupHeader({
   onRenameSection,
 }: {
   group: TaskGroup;
+  disclosureTitle: string;
+  disclosurePosition: number | undefined;
+  collapsed: boolean;
+  onToggle: () => void;
   writable: boolean;
   partial: boolean;
   columnCount: number;
@@ -465,17 +476,28 @@ function GroupHeader({
   onRenameSection: ((section: SectionDto) => void) | undefined;
 }) {
   const { t } = useTranslation();
-  const title = groupTitle(group);
   const { section } = group;
   const archived = section !== null && section.archivedAt !== null;
   const canCreate = writable && group.kind !== 'missing_section' && !archived;
   const countText = partial ? t('taskTable.taskTable.loadedValue2', { p0: formatTaskCount(group.taskCount) }) : formatTaskCount(group.taskCount);
+  const disclosureLabel = disclosurePosition === undefined
+    ? collapsed ? t('taskTable.sections.expand', { section: disclosureTitle }) : t('taskTable.sections.collapse', { section: disclosureTitle })
+    : collapsed ? t('taskTable.sections.expandNumbered', { section: disclosureTitle, position: disclosurePosition }) : t('taskTable.sections.collapseNumbered', { section: disclosureTitle, position: disclosurePosition });
 
   return (
     <tr className="h-10 border-t border-line bg-canvas">
       <th scope="rowgroup" colSpan={columnCount} className="px-3 py-1 text-left font-normal">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[13px] font-semibold text-ink">{title}</span>
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            aria-label={disclosureLabel}
+            onClick={onToggle}
+            className="flex min-h-8 min-w-0 items-center gap-1 rounded text-left text-[13px] font-semibold text-ink hover:text-accent-ink"
+          >
+            {collapsed ? <ChevronRight size={16} className="shrink-0" aria-hidden="true" /> : <ChevronDown size={16} className="shrink-0" aria-hidden="true" />}
+            <span className="truncate" title={disclosureTitle}>{disclosureTitle}</span>
+          </button>
           <span className="shrink-0 text-xs text-muted tabular-nums">
             <span aria-hidden="true">{group.taskCount}</span>
             <span className="sr-only">, {countText}</span>
@@ -553,6 +575,8 @@ export function TaskTable({
   columnPreset = 'expanded',
   columnIds,
   onEditTaskField, renderTaskFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd,
+  collapsedGroupKeys,
+  onGroupCollapsedChange,
   className,
 }: TaskTableProps) {
   const { t, locale } = useTranslation();
@@ -580,6 +604,20 @@ export function TaskTable({
   const memberById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const sectionById = useMemo(() => new Map(sections.map((section) => [section.id, section])), [sections]);
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [localCollapsedGroups, setLocalCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  const collapsedGroups = collapsedGroupKeys ?? localCollapsedGroups;
+  const changeGroup = (key: string, collapsed: boolean) => {
+    if (onGroupCollapsedChange) { onGroupCollapsedChange(key, collapsed); return; }
+    setLocalCollapsedGroups(before => {
+      const next = new Set(before);
+      if (collapsed) next.add(key); else next.delete(key);
+      return next;
+    });
+  };
+  // Duplicate stored names (including unavailable sections) need distinct disclosure names.
+  const titles = groups.map(groupTitle);
+  const titleCounts = new Map<string, number>();
+  for (const title of titles) titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
 
   const onToggle = useCallback((taskId: string) => {
     setCollapsedIds((previous) => {
@@ -615,20 +653,29 @@ export function TaskTable({
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={column.id === 'title' ? undefined : { width: column.width }} />)}</colgroup>
         <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('px-3 font-medium', column.id === 'title' && 'lg:sticky lg:left-0 lg:z-[1] lg:bg-surface', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && onSelectTask ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 border-r border-line pr-1 text-center text-[10px] text-subtle">{t('tasks.completion.graph')}</span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
-        {groups.map((group) => {
+        {groups.map((group, index) => {
+          const collapsed = collapsedGroups.has(group.key);
           const rows = visibleTaskRows(group.roots, collapsedIds);
           return (
             <tbody key={group.key}>
               <GroupHeader
                 group={group}
+                disclosureTitle={titles[index] ?? groupTitle(group)}
+                disclosurePosition={(titleCounts.get(titles[index] ?? '') ?? 0) > 1 ? index + 1 : undefined}
+                collapsed={collapsed}
+                onToggle={() => changeGroup(group.key, !collapsed)}
                 writable={writable}
                 partial={partial}
                 columnCount={columnCount}
-                onCreateTask={onCreateTask}
+                onCreateTask={sectionId => {
+                  // A controlled page expands its actual retained quick-create target itself.
+                  if (collapsedGroupKeys === undefined) changeGroup(group.key, false);
+                  onCreateTask(sectionId);
+                }}
                 onRenameSection={onRenameSection}
               />
-              {quickAdd?.sectionId === group.sectionId ? <tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr> : null}
-              {rows.length === 0 ? (
+              {!collapsed && quickAdd?.sectionId === group.sectionId ? <tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr> : null}
+              {collapsed ? null : rows.length === 0 ? (
                 <tr className="h-11 border-t border-line">
                   <td colSpan={columnCount} className="py-1 pr-3 pl-[42px] text-sm text-muted">
                     {partial ? t('taskTable.taskTable.noLoadedTasksInThisSection') : t('taskTable.taskTable.noTasksYet')}

@@ -54,7 +54,7 @@ import {
 import { RenameProjectDialog } from '../features/projects/ProjectDialogs';
 import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMutation } from '../features/projects/queries';
 import { CreateSectionDialog, RenameSectionDialog } from '../features/projects/SectionDialogs';
-import { TaskTable, dedupeTasks, type TaskTableCustomColumn } from '../features/task-table';
+import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, type TaskTableCustomColumn } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
 import { TaskDrawer } from '../features/tasks/TaskDrawer';
 import {
@@ -173,7 +173,7 @@ interface ProjectContentProps {
 }
 
 function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectContentProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const sections = useSectionsQuery(actorId, workspace.id, project.id);
   const statuses = useStatusesQuery(actorId, workspace.id, project.id);
   const members = useMembershipsQuery(actorId, workspace.id);
@@ -212,6 +212,15 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
   const [quickAddSection, setQuickAddSection] = useState<string | null | undefined>(undefined);
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const changeGroupCollapsed = useCallback((key: string, collapsed: boolean) => {
+    setCollapsedGroupKeys(before => {
+      if (before.has(key) === collapsed) return before;
+      const next = new Set(before);
+      if (collapsed) next.add(key); else next.delete(key);
+      return next;
+    });
+  }, []);
   const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean } } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   const [filters, setFilters] = useState<TaskFilterValue>(emptyTaskFilters);
@@ -245,6 +254,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const shownTasks = useMemo(() =>
     tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [],
     [tasks.data, tasks.isError, tasks.isFetchNextPageError]);
+  // Use the same root hierarchy as the table: a child can belong to another section's group.
+  const taskGroups = useMemo(() => buildTaskGroups(shownTasks, sections.data ?? [], locale), [shownTasks, sections.data, locale]);
+  const sectionHiddenTaskIds = useMemo(() => new Set(taskGroups
+    .filter(group => collapsedGroupKeys.has(group.key))
+    .flatMap(group => visibleTaskRows(group.roots, new Set()).map(node => node.task.id))), [taskGroups, collapsedGroupKeys]);
   const { roots: graphRoots, setRoots: setGraphRoots, setRootOrigin: setGraphRootOrigin } = dependencies;
   useEffect(() => {
     if (!graphMode || graphRoots !== null || !tasks.isSuccess) return;
@@ -358,6 +372,15 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     }
     setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'graph'); return next; });
   };
+  const expandQuickSection = (sectionId: string | null) => {
+    setCollapsedGroupKeys(before => {
+      const next = new Set(before);
+      for (const group of taskGroups) if (group.sectionId === sectionId) next.delete(group.key);
+      // A filtered empty No section group may reappear only after creation.
+      if (sectionId === null) next.delete('no-section');
+      return next;
+    });
+  };
   const startCreate = (request: CreateRequest) => {
     if (!writable || request.parent?.archivedAt) return;
     const kept = commands.createSession.current;
@@ -365,6 +388,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setTaskParam(null);
     if (kept?.origin === 'quick' && (commands.create.pendingCommand || commands.create.uncertain)) {
       setCreating(null);
+      expandQuickSection(kept.request.sectionId);
       setQuickAddSection(kept.request.sectionId);
       setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); next.delete('task'); return next; });
       return;
@@ -382,7 +406,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setCreating(null);
     setActiveInline(null);
     const kept = commands.createSession.current;
-    setQuickAddSection(kept?.origin === 'quick' ? kept.request.sectionId : sectionId);
+    const targetSection = kept?.origin === 'quick' ? kept.request.sectionId : sectionId;
+    expandQuickSection(targetSection);
+    setQuickAddSection(targetSection);
   };
   const startInline = (task: TaskDto, field: TaskInlineField) => {
     if (!writable || !canEditTaskInline(task)) return;
@@ -401,6 +427,13 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setCreating(null);
     if (taskId !== null) setTaskParam(null);
   };
+  const quickEditorHidden = quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode
+    || taskGroups.some(group => group.sectionId === quickAddSection && collapsedGroupKeys.has(group.key));
+  const inlineEditorHidden = activeInline === null || personalColumns.denied || graphMode || ganttMode || importMode
+    || !shownTasks.some(task => task.id === activeInline.taskId)
+    || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(taskInlineColumn(activeInline.field)) || sectionHiddenTaskIds.has(activeInline.taskId));
+  const showTaskRecovery = taskId === null && creating === null && quickEditorHidden && inlineEditorHidden;
+
   // A rename still being sent or unconfirmed keeps its section: reopening shows that one.
   const heldSectionId =
     renameSectionMutation.pendingCommand?.variables.sectionId ?? renameSectionMutation.uncertain?.variables.sectionId ?? null;
@@ -430,7 +463,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 
       <TaskCompletionFeedback controller={completion} onReview={openTask} />
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
-      {taskId === null && creating === null && (quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode) && (!activeInline || personalColumns.denied || graphMode || ganttMode || importMode || !shownTasks.some(task => task.id === activeInline.taskId) || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(taskInlineColumn(activeInline.field)))) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
+      {showTaskRecovery ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
       <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable} />
@@ -501,6 +534,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
             renderCompletionAction={completionAction}
             boardMode={boardMode}
+            collapsedGroupKeys={collapsedGroupKeys}
+            onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
             draftTaskIds={new Set(commands.editSessions.current.keys())}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
@@ -579,6 +614,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 interface TaskListProps {
   renderCompletionAction: NonNullable<ComponentProps<typeof TaskTable>['renderCompletionAction']>;
   boardMode: boolean;
+  collapsedGroupKeys: ReadonlySet<string>;
+  onGroupCollapsedChange: NonNullable<ComponentProps<typeof TaskTable>['onGroupCollapsedChange']>;
   selectedTaskIds: readonly string[];
   onSelectTask: (id: string, selected: boolean) => void;
   query: ReturnType<typeof useTaskListQuery>;
