@@ -4,7 +4,7 @@ Status: active. This is a new run; [12](12-active-run.md) and [11](11-implementa
 
 The authorized window is **2026-10-16 07:36:38–15:36:38 UTC**, ending **18:36:38 Asia/Nicosia**. The objective is a polished everyday task and weekly workflow, English UI copy held in JSON localization catalogs, and durable local synthetic users/tasks and database startup. This is local synthetic use. Existing domain safety rules, unknown-outcome retries, current authorization and immutable accounting remain in force.
 
-Model policy: **Codex gpt-6.1-sol, high**. No Claude calls or probes are authorized for this run. The source checkpoint at handoff is `7e1c6da`.
+Initial model policy: **Codex gpt-6.1-sol, high**, with no Claude calls or probes authorized at handoff `7e1c6da`. A later explicit user instruction allowed Claude for separate work; the attempted separate CLI review failed OAuth before a model call, so no Claude review is claimed. QA work here remains Codex.
 
 ## Ownership and change windows
 
@@ -62,6 +62,20 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 10:17:30.136–10:17:34.459 | Extended GET-only rapid navigation | Close→Board/Graph and both picker orders preserve currentroute/hash, zero writes/errors/overflow |
 | 10:18:43.944–10:18:48.848 | Final settled five frames | Board12tasks/fourlanes +storedmeetingDiscussion; actualmobileStudioBoard284pxoverflow found, notallvisualPASS |
 | 10:21:30.599 | Fifth runtime window released | All14assets unchanged/readinessok; ownedservicesready; mobileBoardcontainment fix nextsourcegate, oldtabuntested |
+| 10:27:45.326–10:27:45.548 | Read-only worker backlog inventory | No runnable stored jobs;22 subscribed pending events, all original QA, current census complete; Studio recurrence/job scope zero; worker remains OFF |
+| 10:48:12.221–10:50:24.848 | Genuine retained old-tab build transition | Original9460856 page retained across build; unloaded old Weekly chunk404, route fails; zero writes, explicit upgrade limitation |
+| 10:49:54.408–10:49:55.671 | Fresh BEFORE0013 backup and actual restore | All56tables/20,280rows +13migrationrows match restored copy; exact owned copy removed, main0013 still unauthorized at this gate |
+| 10:52:53.760–10:52:54.376 | Reviewed MAIN0013 | Old56tables/20,280rows +13migrationprefix unchanged; exactlyfournewemptycutofftables and14threceipt |
+| 10:53:02.864–10:53:42.101 | Sixth controlled restart | All60tables/20,280rows exact; newcutoffAPIstrictGET200,14assetsfrozen, workerOFF |
+| 10:58:51.218–10:58:55.461 | Compiled populated Board geometry | Five settled Studio GET-onlyframes; oldmobile284pxoverflow→0, laterDone2tasks/duelabels preserved |
+| 10:59:26.453–10:59:51.760 | Complete completion/cutoff/My tasks browser gate | Final8/8PASS25.0s; priorharnessfailures preserved separately, exact logtimestamps in25 |
+| 11:01:19.557 | Browser asset comparison | All14assets unchanged, readinessok; oldtabfailure remains separate |
+| 11:02:00.630–11:02:19.857 | Explicit cutoff queue registration | Two→fourqueues; oldregistrations/7jobs/7receipts and60publictables/21,416rows exact |
+| 11:02:42.849–11:02:43.172 | Fresh read-only worker inventory |22recurrencepending+12supersededcutoffpending, noactivecutoffgrant; Studioinvolvement0, workerOFF |
+| 11:05:16.274–11:06:22.540 | Normal worker start/backlog proof |22recurrenceACK/receipts,6stalecutoffACK+6futuredeferred;57domain tables exact, Studioeffects0 |
+| 11:08:27.398–11:10:00.915 | Real worker deadline/browser observation | Lastenable thenGET-onlydualviewport; deadline11:09:57.204, jobfrozen11:09:59.005,90planned/180estimated,1testPASS |
+| 11:10:20.465–11:10:20.671 | Normal worker SIGTERM/drain/stop | Clean15msruntime drain, exactownedprocessabsent;6futurejobs preserved, workerOFF |
+| 11:12:07.164 | Final PhaseB asset/readiness comparison | All14assets unchanged, APIready/ownedserviceshealthy; oldtablimitation separate |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 
@@ -70,3 +84,7 @@ Initial audit evidence and ranked findings are in [25](25-ux-verification.md). R
 GET inventory at the initial audit found one accessible workspace, **183 active projects**, and six synthetic memberships (owner, admin, three members, viewer). Many projects are prior E2E/compatibility fixtures. Do not delete or archive them to make screenshots cleaner. The approved additive **Workloom Studio** workspace now contains two English projects and 18 purposeful tasks, using the existing six actors. Its exact repeatable setup and stable entry links are in [27](27-synthetic-demo.md). The original workspace and historical fixtures remain intact.
 
 The existing reference project is `f477730b-57dc-418f-a46b-0eeab30f8212` in workspace `5eed0000-0000-4000-8000-000000000201`. [21](21-local-pilot-handoff.md) contains its preserved walkthrough. Its Russian user-authored names are existing data, separate from UI localization completeness.
+
+## Worker observation acceptance and current limits
+
+The compiled completion/cutoff-control/My tasks eight-case gate passed. A separately authorized real worker run drained the known metadata-only backlog, then froze one explicitly armed new QA period after its actual deadline. One browser test retained desktop/mobile views, unsent second-person plan and independent personal-baseline report choices, refreshing only GET projections. Immutable request receipt, baseline/audit `source: job`, real queue start-after/acknowledgement and clean normal stop are recorded in [25](25-ux-verification.md). The worker is now OFF; automatic processing is not currently operating. Six future stale jobs remain stored. The genuine old-tab build transition failed separately; later explicit-refresh/new-entry recovery needs a later coordinated build. No continuous-worker or OS-reboot claim follows from this bounded run.
