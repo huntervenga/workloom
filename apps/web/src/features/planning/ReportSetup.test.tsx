@@ -22,12 +22,19 @@ describe('results-first saved reports', () => {
     { view: 'report', parameter: `run=${RUN_ID}`, result: 'Saved report' },
     { view: 'work-types', parameter: `typeRun=${TYPE_RUN}`, result: 'Saved breakdown' },
   ])('keeps $view results visible and setup collapsed until an explicit action, without calculating', async ({ view, parameter, result }) => {
-    const { calls } = installFakeApi(reportRoutes());
+    const savedRun = deferred<Response>();
+    const readPath = view === 'report' ? `${rootPath}/report-runs/${RUN_ID}` : `${rootPath}/work-type-report-runs/${TYPE_RUN}`;
+    const { calls } = installFakeApi({ ...reportRoutes(), [`GET ${readPath}`]: () => savedRun.promise });
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&view=${view}&${parameter}`);
-    expect(await screen.findByRole('region', { name: result })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'New report settings' })).not.toBeInTheDocument();
-    const button = screen.getByRole('button', { name: 'Set up new report' });
+    // Wait for the weekly route before testing the independently loaded pinned result.
+    const button = await screen.findByRole('button', { name: 'Set up new report' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('region', { name: 'New report settings' })).not.toBeInTheDocument();
+    expect(screen.getByText(view === 'report' ? 'Loading saved report…' : 'Loading saved breakdown…')).toBeInTheDocument();
+    expect(calls.filter(call => call.path === readPath && call.method === 'GET')).toHaveLength(1);
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+    await act(async () => savedRun.resolve(ok(view === 'report' ? report() : categoryReport())));
+    expect(await screen.findByRole('region', { name: result })).toBeInTheDocument();
     await user.click(button);
     expect(screen.getByRole('region', { name: 'New report settings' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Hide report setup' }));
