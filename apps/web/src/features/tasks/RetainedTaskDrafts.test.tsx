@@ -57,7 +57,7 @@ it('does not warn after clean quick creation opens More details in its original 
  await ui.user.click(await screen.findByRole('button',{name:'Add task to “Original section”'}));expect(unload()).toBe(false);expect(protectedDraftsFor(ui.client).protecting).toBe(false);
  await ui.user.click(screen.getByRole('button',{name:'More details'}));const dialog=await screen.findByRole('dialog',{name:'New task'});
  const toggle=within(dialog).getByText('More details',{selector:'summary'});await ui.user.click(toggle);
- expect(within(dialog).getByLabelText('Section')).toHaveValue(sectionId);expect(unload()).toBe(false);expect(protectedDraftsFor(ui.client).protecting).toBe(false);
+ expect(within(dialog).getByRole('combobox',{name:'Section'})).toHaveTextContent('Original section');expect(unload()).toBe(false);expect(protectedDraftsFor(ui.client).protecting).toBe(false);
  await ui.user.keyboard('{Escape}');await act(async()=>{await ui.router.navigate('/outside-repro');});expect(ui.router.state.location.pathname).toBe('/outside-repro');expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(ui.calls.filter(c=>c.method!=='GET')).toHaveLength(0);
 });
 
@@ -65,10 +65,10 @@ it('protects an explicit status-only new-task choice even while its title is sti
  const other='f6000000-0000-4000-8000-000000000008';
  const ui=setup(tablePath,{[`GET ${rootPath}/projects/${task.projectId}/statuses`]:()=>ok([{id:task.statusId,workspaceId:task.workspaceId,projectId:task.projectId,name:'Original status',group:'todo',position:0,revision:1},{id:other,workspaceId:task.workspaceId,projectId:task.projectId,name:'Chosen status',group:'in_progress',position:1,revision:1}])});
  await ui.user.click(await screen.findByRole('button',{name:'Add task'}));await screen.findByRole('dialog',{name:'New task'});
- await ui.user.selectOptions(screen.getByLabelText('Status'),other);expect(screen.getByLabelText('Task name')).toHaveValue('');await ui.user.keyboard('{Escape}');await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+ await ui.user.click(screen.getByRole('combobox',{name:'Status'}));await ui.user.click(screen.getByRole('option',{name:'Chosen status'}));expect(screen.getByLabelText('Task name')).toHaveValue('');await ui.user.keyboard('{Escape}');await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
  expect(unload()).toBe(true);expect(protectedCommandsFor(ui.client).protecting).toBe(false);
  await act(async()=>{await ui.router.navigate('/outside-repro');});const guard=await screen.findByRole('dialog',{name:'Leave this page?'});await ui.user.click(within(guard).getByRole('button',{name:'Stay'}));
- await ui.user.click(screen.getByRole('button',{name:'Resume original editor'}));expect(await screen.findByLabelText('Status')).toHaveValue(other);expect(ui.calls.filter(c=>c.method!=='GET')).toHaveLength(0);
+ await ui.user.click(screen.getByRole('button',{name:'Resume original editor'}));expect(await screen.findByRole('combobox',{name:'Status'})).toHaveTextContent('Chosen status');expect(ui.calls.filter(c=>c.method!=='GET')).toHaveLength(0);
 });
 
 it('releases a reverted or explicitly discarded draft and disposes protection after explicit departure', async () => {
