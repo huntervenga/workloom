@@ -204,15 +204,20 @@ describe('switching context', () => {
       'POST /api/v1/dev/session': () => failure(403, 'FORBIDDEN', leakyMessage),
     });
 
-    const { user } = renderApp('/');
+    const { user, queryClient } = renderApp('/');
     expect(await screen.findByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
 
     (await screen.findByRole('button', { name: /Сменить пользователя/ })).focus();
     await user.keyboard('{Enter}');
     await user.click(await screen.findByRole('menuitemradio', { name: /Борис/ }));
 
-    expect(await screen.findByText('Не удалось сменить тестового пользователя')).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
+    // Session recovery navigates through '/' and remounts the overview. Query the current DOM
+    // inside one retrying assertion instead of retaining a node across that transition.
+    await waitFor(() => {
+      expect(screen.getByText('Не удалось сменить тестового пользователя')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: alpha.name })).toBeInTheDocument();
+      expect(queryClient.getQueryData(queryKeys.me)).toMatchObject({ actor: { id: anna.id } });
+    });
     expect(document.body).not.toHaveTextContent('hunter2');
   });
 });

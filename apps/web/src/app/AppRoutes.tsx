@@ -1,16 +1,18 @@
 import { LoaderCircle } from 'lucide-react';
 import { Route, Routes } from 'react-router';
-import { IntegrationsPage } from '../routes/IntegrationsPage';
 import { HomeRedirect } from '../routes/HomeRedirect';
 import { MembersPage } from '../routes/MembersPage';
 import { NotFoundPage } from '../routes/NotFoundPage';
 import { OverviewPage } from '../routes/OverviewPage';
-import { ProjectPage } from '../routes/ProjectPage';
 import { ProjectsPage } from '../routes/ProjectsPage';
-import { WeeklyPage } from '../routes/WeeklyPage';
 import { WorkspaceLayout } from '../routes/WorkspaceLayout';
 import { useSession } from './session';
 import { AppShell } from './shell/AppShell';
+import { createAsyncRoute } from './AsyncRoute';
+
+const ProjectPage = createAsyncRoute(() => import('../routes/ProjectPage').then(module => ({ default: module.ProjectPage })), 'Загрузка проекта');
+const WeeklyPage = createAsyncRoute(() => import('../routes/WeeklyPage').then(module => ({ default: module.WeeklyPage })), 'Загрузка недели');
+const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPage').then(module => ({ default: module.IntegrationsPage })), 'Загрузка интеграций');
 
 export function AppRoutes() {
   const { switching } = useSession();
