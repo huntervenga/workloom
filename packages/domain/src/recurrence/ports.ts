@@ -1,3 +1,4 @@
+import type { CutoffRequestSink } from '../cutoff/ports.js';
 import type {
  CreateMeetingInput,MeetingCreationDto,PlanningPeriodDto,FreezeScope,RecurrenceBindingProgressDto,RecurrenceBlockedCode,RecurrenceCalendarState,
  RecurrenceExceptionKind,RecurrenceMaterializationJob,RecurrenceMaterializationRequestedEvent,RecurrenceMaterializationRequestedPayload,
@@ -136,7 +137,7 @@ export interface RecurrenceRepository {
  listCalendarLocks(workspaceId:string,instanceId:string):Promise<RecurrenceCalendarLock[]>;
  insertCalendarLocks(rows:readonly RecurrenceCalendarLock[]):Promise<void>;
 }
-export interface RecurrenceWriteScope extends MeetingWriteScope {readonly recurrence:RecurrenceRepository}
+export interface RecurrenceWriteScope extends MeetingWriteScope {readonly recurrence:RecurrenceRepository; readonly cutoffRequests:CutoffRequestSink}
 export interface RecurrenceUnitOfWork {
  run<T>(ctx:CommandContext,cap:Capability,work:(scope:RecurrenceWriteScope)=>Promise<T>):Promise<T>;
  /** Repeatable read: no materialization, header reservation or entity-ID invention. */

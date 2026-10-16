@@ -1,3 +1,4 @@
+import { CutoffPanel, CutoffRecovery, useCutoffWorkspace } from '../features/cutoff';
 import { useTaskCommentsWorkspace, CommentCommandRecovery } from '../features/task-comments';
 import { message, useTranslation, type TranslationMessage } from '../i18n';
 import { EdgeDialog } from '../features/dependencies/EdgeDialog';
@@ -15,7 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSectionsQuery, useStatusesQuery } from '../features/projects/queries';
 import { RecordedWorkLabel } from '../shared/RecordedWorkLabel';
 import type { PeriodCommitmentDto, ProjectDto, WorkspaceDto } from '@workloom/contracts';
-import { Badge, Button, Skeleton, StateCard, inputClassName } from '@workloom/ui';
+import { Button, Skeleton, StateCard, inputClassName } from '@workloom/ui';
 import { ArrowLeft, CalendarDays, Lock, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router';
@@ -33,7 +34,6 @@ import {
   usePeriodCommitmentsQuery, usePlanBaselinesQuery, useReportRunsQuery,
 } from '../features/planning/queries';
 import { fetchPeriodCommitments, fetchPeriodWorkLogs } from '../features/planning/api';
-import { formatPeriodCutoff } from '../features/planning/dates';
 import { projectTimeHref } from '../features/planning/navigation';
 import { selectPlanningPeriodId, sortPlanningPeriods } from '../features/planning/periodSelection';
 import { WorkTypeReport, useWorkCategoryCommands, type WorkTypeReportSelection } from '../features/work-categories';
@@ -73,6 +73,7 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   // Every command and draft outlives period query changes and hidden dialogs.
   const commands = usePlanningCommands(actorId, workspace.id, project.id);
   const categoryCommands = useWorkCategoryCommands(actorId, workspace.id, project.id);
+  const cutoffController = useCutoffWorkspace(actorId, workspace.id, project.id);
   const dependencies = useDependencyWorkspace(actorId, workspace.id, project.id);
   const recurrenceController = useRecurrenceWorkspace(actorId, workspace.id, project.id);
   const recurrenceRef = useRef<HTMLDivElement>(null);
@@ -226,6 +227,7 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
       <Link to={projectTimeHref(workspace.id, project.id, { periodId, workerId: params.has('worker') ? entryMembershipId : undefined })} className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-accent-ink"><ArrowLeft size={16} aria-hidden="true" />{t('planning.backToTaskTable')}</Link>
       <header className="flex items-center justify-between gap-3"><div className="min-w-0"><h1 className="text-xl font-semibold tracking-tight">{t('planning.weeklyPlan')}</h1><p className="mt-0.5 truncate text-xs text-muted">{project.name}</p></div>{canManage && !project.archivedAt ? <Button size="sm" onClick={() => setPeriodOpen(true)}><CalendarDays size={14} aria-hidden="true" />{t('planning.newPeriod')}</Button> : null}</header>
       <div role="status" aria-live="polite" className="sr-only">{announcement ? t(announcement.key, announcement.params) : null}</div>
+      <CutoffRecovery controller={cutoffController} canManage={canManage&&canWrite} onOpen={id=>selectPeriod(id)}/>
       <DependencyNotices controller={dependencies} />
       <EdgeDialog controller={dependencies} actorId={actorId} workspaceId={workspace.id} project={project} writable={canWrite} />
       <MeetingCommandNotices controller={meetingController} onOpen={(taskId,tab,selection)=>meetingController.setTarget({taskId,tab,...selection})}/>
@@ -237,17 +239,14 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
         <div className="flex items-center gap-3"><label htmlFor="weekly-period" className="shrink-0 text-sm font-medium">{t('planning.period')}</label><select id="weekly-period" className={inputClassName('min-w-0 flex-1')} value={periodId} onChange={(event) => selectPeriod(event.target.value)}><option value="">{t('planning.chooseWeek')}</option>{orderedPeriods.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.localStart} — {lastIncludedDate(item.localEndExclusive)}</option>)}</select></div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5"><label htmlFor="weekly-person" className="shrink-0 text-xs font-medium">{t('planning.timeEntryFor')}</label><select id="weekly-person" aria-describedby="weekly-person-scope" className={inputClassName('h-9 min-w-0 flex-1 text-xs')} value={entryMembershipId} onChange={event => setParams(before => { const next = new URLSearchParams(before); next.set('worker', event.target.value); return next; })}><option value="">{t('planning.chooseAPerson')}</option>{(members.data ?? []).map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}{entryMembershipId && !entryMember ? <option value={entryMembershipId}>{t('planning.selectedPersonUnavailable')}</option> : null}</select><p id="weekly-person-scope" className="sr-only">{t('planning.timeEntryPersonScope')}</p>{!canEnterForMember && canWrite ? <p role="status" className="basis-full text-xs text-muted">{entryMember ? t('planning.selectedPersonReadOnly') : t('planning.chooseAvailablePerson')}</p> : null}</div>
         {!periodId ? <StateCard headingLevel={2} title={t('planning.chooseWeek')} description={t('planning.chooseWeekBeforeHours')} /> : detailError ? <QueryErrorState error={detailError.error} subject="planning" headingLevel={2} retrying={detailError.isFetching} onRetry={() => void detailError.refetch()} /> : !validProject ? <StateCard headingLevel={2} title={t('planning.thisPeriodBelongsToAnotherProject')} description={t('planning.chooseAPeriodFromThisProjectsList')} /> : !loaded ? <p role="status" className="text-sm text-muted">{t('planning.loadingSelectedWeek')}</p> : <>
-          <section aria-label={t('planning.periodContext')} className="rounded-lg border border-line bg-surface px-3 py-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-              <p className="text-xs text-muted">{t('planning.baselineDeadlineInZone', { timezone: period.data.timezone, cutoff: formatPeriodCutoff(period.data.cutoffAt, period.data.timezone) })}</p>
-              <Badge tone="muted">{period.data.state === 'frozen' ? t('planning.projectBaselineSaved') : t('planning.planning')}</Badge>
-            </div>
+          <section aria-label={t('planning.periodContext')} className="space-y-2">
+            <CutoffPanel actorId={actorId} workspaceId={workspace.id} periodId={periodId} timezone={period.data.timezone} canManage={canManage&&canWrite} controller={cutoffController} onFreeze={()=>startFreeze('project')} onManageCalendar={seriesId=>{if(seriesId)selectSeries(seriesId);recurrenceRef.current?.scrollIntoView({block:'start'});recurrenceRef.current?.focus({preventScroll:true});}}/>
             <details className="mt-2 text-xs text-muted">
               <summary className="w-fit cursor-pointer rounded font-medium text-accent-ink">{t('planning.baselineOptionsAndHelp')}</summary>
               <div className="space-y-3 pt-3">
                 <p>{t('planning.savingABaselinePreservesTheOriginalPlanYouCan')}</p>
                 <p>{t('planning.periodsAreNewestFirstSwitchingWeeksPreservesDraftsAnd')}</p>
-                <div className="flex flex-wrap gap-2">{canWrite && ownMembershipId ? <Button size="sm" onClick={() => startFreeze('self')}><Lock size={14} aria-hidden="true" />{t('planning.saveMyBaseline')}</Button> : null}{canManage && canWrite ? <Button size="sm" onClick={() => startFreeze('project')}><Lock size={14} aria-hidden="true" />{t('planning.saveProjectBaseline')}</Button> : null}</div>
+                <div className="flex flex-wrap gap-2">{canWrite && ownMembershipId ? <Button size="sm" onClick={() => startFreeze('self')}><Lock size={14} aria-hidden="true" />{t('planning.saveMyBaseline')}</Button> : null}</div>
               </div>
             </details>
           </section>
@@ -270,7 +269,7 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
         <PeriodDialog projectId={project.id} timezone={workspace.timezone} fields={fields.isSuccess ? fields.data : []} mutation={commands.createPeriod} open={periodOpen && !denied} onOpenChange={setPeriodOpen} onCreated={(id) => { setPeriodOpen(false); selectPeriod(id); setAnnouncement(message('planning.weeklyPeriodCreated')); }} />
         <CommitmentDialog session={selectedPlan} open={planOpen && !denied} packages={packages.isSuccess ? packages.data : []} tasks={taskItems} members={members.isSuccess ? members.data : []} ownMembershipId={ownMembershipId} canWriteOthers={canManage} writable={canWrite} fixedMember commands={commands} hasMoreTasks={tasks.hasNextPage} loadingMoreTasks={tasks.isFetchingNextPage} onLoadTasks={() => void tasks.fetchNextPage()} onChange={(session) => setPlanDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setPlanOpen(false)} onSaved={savePlan} onReload={async (session) => { const fresh = await fetchPeriodCommitments(workspace.id, session.period.id); return fresh.find((item) => session.base ? item.id === session.base.id : item.workPackageId === session.packageId && item.membershipId === session.membershipId) ?? null; }} />
         <FactDialog session={selectedFact} open={factOpen && !denied} tasks={taskItems} members={members.isSuccess ? members.data : []} ownMembershipId={ownMembershipId} canWriteOthers={canManage} writable={canWrite} fixedMember mutation={commands.setFact} hasMoreTasks={tasks.hasNextPage} loadingMoreTasks={tasks.isFetchingNextPage} onLoadTasks={() => void tasks.fetchNextPage()} onChange={(session) => setFactDrafts((before) => ({ ...before, [session.key]: session }))} onClose={() => setFactOpen(false)} onSaved={saveFact} onReload={async (session) => { const fresh = await fetchPeriodWorkLogs(workspace.id, session.period.id); return fresh.find((item) => item.taskId === session.taskId && item.membershipId === session.membershipId) ?? null; }} />
-        <FreezeDialog workspaceId={workspace.id} request={freezeRequest} open={freezeOpen && !denied} mutation={commands.freeze} onClose={() => setFreezeOpen(false)} onMaterializationRequired={revealRecurrence} onFrozen={(target, baselineId) => { setFreezeOpen(false); selectPeriod(target); setAnnouncement(message('planning.baselineSavedSnapshot', { snapshotId: baselineId.slice(0, 8) })); }} />
+        <FreezeDialog workspaceId={workspace.id} request={freezeRequest} open={freezeOpen && !denied} mutation={commands.freeze} onClose={() => setFreezeOpen(false)} onMaterializationRequired={revealRecurrence} onFrozen={(target, baselineId) => { void cutoffController.refresh(target); setFreezeOpen(false); selectPeriod(target); setAnnouncement(message('planning.baselineSavedSnapshot', { snapshotId: baselineId.slice(0, 8) })); }} />
       </>
     </div>
   );

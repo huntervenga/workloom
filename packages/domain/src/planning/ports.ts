@@ -1,3 +1,4 @@
+import type { CutoffRequestSink } from '../cutoff/ports.js';
 import type {DependencyMutationCommand,TaskStatusTransitionPolicy} from '../dependencies/ports.js';
 import type {MeetingMutationCommand} from '../meetings/ports.js';
 import type { WorkCategoryResolver, WorkCategoryMutationCommand } from '../categories/ports.js';
@@ -80,7 +81,7 @@ export interface PlanningWriteScope extends WorkspaceWriteScope {
   readonly recurrenceCensus:RecurrenceScopedMaterializer;
 }
 /** The time-writing application must always resolve first-source categories under its TX. */
-export interface PlanningApplicationWriteScope extends PlanningWriteScope {readonly categoryResolver:WorkCategoryResolver}
+export interface PlanningApplicationWriteScope extends PlanningWriteScope {readonly categoryResolver:WorkCategoryResolver; readonly cutoffRequests:CutoffRequestSink}
 export interface PlanningUnitOfWork {
   run<T>(ctx:CommandContext,capability:Capability,work:(scope:PlanningApplicationWriteScope)=>Promise<T>):Promise<T>;
   /** Repeatable-read snapshot for preview/read projections. No mutation or automatic freeze. */
@@ -103,6 +104,7 @@ export type TaskMutationCommand = 'project.create'|'project.update'|'section.cre
 export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set';
 export type PlanningMutationCommand = 'period.create'|'period.update'|'commitment.create'|'commitment.update'|'plan.freeze'|'work.set'|'report.create';
 export type PlanningMutationIntent =
+ | {readonly family:'cutoff';readonly command:'cutoff.configure'|'cutoff.retry';readonly target:{readonly periodId:string};readonly input:unknown}
  | {readonly family:'table_preference';readonly command:'table.preference.set';readonly target:{readonly projectId:string};readonly input:unknown}
  | {readonly family:'comment';readonly command:'task.comment.create';readonly target:{readonly taskId:string};readonly input:unknown}
  | {readonly family:'import';readonly command:'import.csv.stage';readonly target:{readonly projectId:string};readonly input:unknown}

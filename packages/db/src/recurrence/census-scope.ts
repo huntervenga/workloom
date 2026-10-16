@@ -1,3 +1,4 @@
+import { createCutoffRepository } from '../cutoff/repository.js';
 import {createDependencyRepository} from '../repositories/dependency-repository.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
@@ -5,7 +6,8 @@ import {
   createRecurrenceOccurrenceComposer,
   createRecurrenceOccurrenceResolver,
   createRecurrenceScopedMaterializer,
-  createWorkCategoryResolver,
+  createWorkCategoryResolver, requestCutoffForPeriod,
+  type CutoffWriteScope,
   type RecurrenceCensusScope,
   type RecurrenceOccurrenceComposer,
   type RecurrenceScopedMaterializer,
@@ -38,7 +40,7 @@ export interface RecurrenceRuntimeOptions {
   readonly cursorSecret?: string;
 }
 
-export type DbRecurrenceCensusScope = RecurrenceWriteScope &
+export type DbRecurrenceCensusScope = CutoffWriteScope & RecurrenceWriteScope &
   RecurrenceCensusScope & {
     /** The open transaction the whole composition is bound to. */
     readonly tx: WorkloomTransaction;
@@ -86,6 +88,8 @@ export function composeRecurrenceCensusScope(scope: DbWorkspaceWriteScope, runti
     statusTransitions:createTaskStatusTransitionPolicy(createDependencyRepository(scope.tx)),
     meetings,
     categoryResolver: createWorkCategoryResolver(createWorkCategoryRepository(scope.tx), scope.context.workspaceId),
+    cutoff: createCutoffRepository(scope.tx),
+    cutoffRequests: { requestPeriod: (period, reason, force) => requestCutoffForPeriod(composed, period, reason, runtime.tools, force) },
     recurrence: createRecurrenceRepository(scope.tx, {
       planning: meetings.planning,
       source: scope.context.source,

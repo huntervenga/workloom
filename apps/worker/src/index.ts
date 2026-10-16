@@ -54,6 +54,8 @@ export {
   MaterializationEventRejectedError,
   createMaterializationEnqueue,
   createRelayPoller,
+  createBatchPoller,
+  type BatchPollerOptions,
   materializationRequestId,
   type RelayPoller,
   type RelayPollerOptions,
@@ -98,3 +100,7 @@ export {
 export { WORKER_DB_APPLICATION_NAME, createWorkerFromConfig } from './bootstrap.js';
 
 export { HEALTH_OBSERVATION_INTERVAL_MS, createHealthMonitor, logHealthReport, type HealthMonitor, type HealthMonitorOptions, type HealthSchedule } from './health-monitor.js';
+
+export { CUTOFF_JOB_RETRY, CutoffEventRejectedError, CutoffJobFailedError, InvalidCutoffJobError, InvalidCutoffOutcomeError, createCutoffEnqueue, createCutoffHandler, type CutoffHandler, type CutoffJobCounters } from './cutoff.js';
+export { createCutoffDiscoveryPoller } from './discovery.js';
+export { createJobLimiter } from './limiter.js';

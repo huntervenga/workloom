@@ -91,7 +91,7 @@ const defaultSchedule: RelaySchedule = (run, ms) => {
 };
 
 export interface RelayPollerOptions<Tx> {
-  readonly relay: RecurrenceOutboxRelay<Tx>;
+  readonly relay: Pick<RecurrenceOutboxRelay<Tx>, 'relayBatch'>;
   readonly enqueue: RecurrenceRelayEnqueue<Tx>;
   readonly intervalMs: number;
   /** Rows per relay transaction, 1..100. */
@@ -131,6 +131,18 @@ export interface RelayPoller {
  * batches.
  */
 export function createRelayPoller<Tx>(options: RelayPollerOptions<Tx>): RelayPoller {
+  return createBatchPoller({
+    ...options,
+    batch: limit => options.relay.relayBatch(options.enqueue, limit),
+  });
+}
+
+/** Shared timer lifecycle for exact relays and durable discovery; each operation remains independently typed. */
+export interface BatchPollerOptions extends Omit<RelayPollerOptions<never>, 'relay' | 'enqueue'> {
+  readonly batch: (limit: number) => Promise<RecurrenceRelayBatchResult>;
+}
+
+export function createBatchPoller(options: BatchPollerOptions): RelayPoller {
   const batchLimit = options.batchLimit ?? DEFAULT_RELAY_BATCH;
   if (!Number.isInteger(batchLimit) || batchLimit < 1 || batchLimit > MAX_RELAY_BATCH) {
     throw new RangeError(`Relay batch limit must be an integer from 1 to ${MAX_RELAY_BATCH}.`);
@@ -162,7 +174,7 @@ export function createRelayPoller<Tx>(options: RelayPollerOptions<Tx>): RelayPol
   async function runBatch(): Promise<void> {
     const startedAt = now();
     try {
-      const result = await options.relay.relayBatch(options.enqueue, batchLimit);
+      const result = await options.batch(batchLimit);
       lastBatch = result;
       lastSuccessAt = now();
       consecutiveFailures = 0;

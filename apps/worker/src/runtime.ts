@@ -1,14 +1,17 @@
-import { RECURRENCE_MATERIALIZE_QUEUE, RECURRENCE_QUEUE_REGISTRATIONS, type ReadinessProbe } from '@workloom/db';
-import type { RecurrenceOutboxRelay, RecurrenceRelayHealth, RecurrenceWorkerFacade } from '@workloom/domain';
+import { CUTOFF_QUEUE, RECURRENCE_MATERIALIZE_QUEUE, WORKLOOM_QUEUE_REGISTRATIONS, type ReadinessProbe } from '@workloom/db';
+import type { CutoffDiscovery, CutoffOutboxRelay, CutoffWorkerFacade, RecurrenceOutboxRelay, RecurrenceRelayHealth, RecurrenceWorkerFacade } from '@workloom/domain';
 import type { DrizzleTransactionLike } from 'pg-boss';
 
+import { createCutoffHandler, createCutoffEnqueue } from './cutoff.js';
+import { createCutoffDiscoveryPoller } from './discovery.js';
+import { createJobLimiter } from './limiter.js';
 import type { WorkerConfig } from './config.js';
 import { assessQueueRegistration, buildHealthReport, type WorkerHealthReport, type WorkerLifecycle } from './health.js';
 import { createHealthMonitor, type HealthSchedule } from './health-monitor.js';
 import type { WorkerLogger } from './logging.js';
 import { createMaterializationHandler } from './materialize.js';
 import type { QueueRegistration, QueueWorkOptions, WorkerQueueClient } from './queue.js';
-import { MAX_RELAY_BACKOFF_MS, createMaterializationEnqueue, createRelayPoller, type RelaySchedule } from './relay.js';
+import { MAX_RELAY_BACKOFF_MS, createMaterializationEnqueue, createRelayPoller, createBatchPoller, type RelaySchedule } from './relay.js';
 import { createShutdown, type ShutdownController, type ShutdownResult, type ShutdownStep } from './shutdown.js';
 
 /** A queue row is absent or differs from the approved registration of `db:queue:migrate`. */
@@ -76,6 +79,10 @@ export interface WorkerRuntimeDependencies<Tx extends DrizzleTransactionLike> {
   readonly queue: WorkerQueueClient;
   readonly facade: RecurrenceWorkerFacade;
   readonly relay: RecurrenceOutboxRelay<Tx>;
+  readonly cutoffFacade: CutoffWorkerFacade;
+  readonly cutoffRelay: CutoffOutboxRelay<Tx>;
+  readonly cutoffDiscovery: CutoffDiscovery;
+  readonly discoverySchedule?: RelaySchedule;
   /** Closed after the queue, in order, once. Resources the caller keeps must not be listed. */
   readonly ownedResources?: readonly OwnedResource[];
   readonly relayBatchLimit?: number;
@@ -88,8 +95,8 @@ export interface WorkerRuntimeDependencies<Tx extends DrizzleTransactionLike> {
 
 export interface WorkerRuntime {
   /**
-   * Checks application schema readiness, starts the queue client, verifies both
-   * approved queue rows, then registers the consumer, starts relay polling and
+   * Checks application schema readiness, starts the queue client, verifies all four
+   * approved queue rows, then registers both consumers, starts relay/discovery polling and
    * logs the first health observation (then one per interval).
    * On any failure everything owned is closed and the error is rethrown.
    */
@@ -126,6 +133,20 @@ export function createWorkerRuntime<Tx extends DrizzleTransactionLike>(deps: Wor
     ...(deps.relayBatchLimit === undefined ? {} : { batchLimit: deps.relayBatchLimit }),
     ...(deps.relaySchedule === undefined ? {} : { schedule: deps.relaySchedule }),
   });
+  const limiter = createJobLimiter(config.jobConcurrency);
+  const cutoffHandler = createCutoffHandler({ facade: deps.cutoffFacade, logger, now });
+  const cutoffEnqueue = createCutoffEnqueue<Tx>(queue);
+  const cutoffPoller = createBatchPoller({
+    batch: limit => deps.cutoffRelay.relayBatch(cutoffEnqueue, limit),
+    intervalMs: config.pollIntervalMs, logger: logger.child({ jobName: CUTOFF_QUEUE }), now,
+    ...(deps.relayBatchLimit === undefined ? {} : { batchLimit: deps.relayBatchLimit }),
+    ...(deps.relaySchedule === undefined ? {} : { schedule: deps.relaySchedule }),
+  });
+  const discovery = createCutoffDiscoveryPoller({
+    discovery: deps.cutoffDiscovery, intervalMs: config.pollIntervalMs,
+    logger: logger.child({ jobName: CUTOFF_QUEUE, phase: 'discovery' }), now,
+    ...(deps.discoverySchedule === undefined ? {} : { schedule: deps.discoverySchedule }),
+  });
   const workOptions: QueueWorkOptions = {
     batchSize: 1,
     localConcurrency: config.jobConcurrency,
@@ -139,7 +160,7 @@ export function createWorkerRuntime<Tx extends DrizzleTransactionLike>(deps: Wor
   /** Set before calling start(): a stop must also cover a start that is still in flight. */
   let queueStartAttempted = false;
   /** Set before calling work(): a worker registered late must still be stopped. */
-  let workAttempted = false;
+  const workAttempted: string[] = [];
   /** True between a settled start() and the queue close; health reads the queue only then. */
   let queueReadable = false;
   let queueErrors = 0;
@@ -163,21 +184,24 @@ export function createWorkerRuntime<Tx extends DrizzleTransactionLike>(deps: Wor
   async function health(): Promise<WorkerHealthReport> {
     const queues = new Map<string, QueueRegistration | null | 'unavailable'>();
     let relayHealth: RecurrenceRelayHealth | 'unavailable' = 'unavailable';
+    let cutoffRelayHealth: RecurrenceRelayHealth | 'unavailable' = 'unavailable';
     if (queueReadable && lifecycle !== 'stopped') {
-      const [readings, relayReading] = await Promise.all([
+      const [readings, relayReading, cutoffRelayReading] = await Promise.all([
         Promise.all(
-          RECURRENCE_QUEUE_REGISTRATIONS.map((approved) =>
+          WORKLOOM_QUEUE_REGISTRATIONS.map((approved) =>
             queue.getQueue(approved.name).catch((): 'unavailable' => 'unavailable'),
           ),
         ),
         deps.relay.getHealth().catch((): 'unavailable' => 'unavailable'),
+        deps.cutoffRelay.getHealth().catch((): 'unavailable' => 'unavailable'),
       ]);
-      RECURRENCE_QUEUE_REGISTRATIONS.forEach((approved, index) => {
+      WORKLOOM_QUEUE_REGISTRATIONS.forEach((approved, index) => {
         // null is a real reading (queue absent), so only a missing slot becomes unavailable.
         const reading = readings[index];
         queues.set(approved.name, reading === undefined ? 'unavailable' : reading);
       });
       relayHealth = relayReading;
+      cutoffRelayHealth = cutoffRelayReading;
     }
     return buildHealthReport({
       now: now(),
@@ -191,6 +215,8 @@ export function createWorkerRuntime<Tx extends DrizzleTransactionLike>(deps: Wor
       relayHealth,
       poller: poller.snapshot(),
       jobs: handler.counters(),
+      cutoff: { relayHealth: cutoffRelayHealth, poller: cutoffPoller.snapshot(), jobs: cutoffHandler.counters(), discovery: discovery.snapshot() },
+      concurrency: limiter.snapshot(),
     });
   }
 
@@ -203,15 +229,17 @@ export function createWorkerRuntime<Tx extends DrizzleTransactionLike>(deps: Wor
 
   const steps = {
     healthStop: { name: 'health.stop', run: () => monitor.stop() },
-    relayStop: { name: 'relay.stop', run: () => poller.stop() },
+    relayStop: { name: 'relay.stop', run: () => { poller.stop(); cutoffPoller.stop(); discovery.stop(); } },
     queueStopFetching: {
       name: 'queue.stop_fetching',
       run: async () => {
         await queueCall;
-        if (workAttempted) await queue.stopFetching(RECURRENCE_MATERIALIZE_QUEUE);
+        const stopped = await Promise.allSettled(workAttempted.map(name => queue.stopFetching(name)));
+        const failed = stopped.find(result => result.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
       },
     },
-    relayDrain: { name: 'relay.drain', run: () => poller.drain() },
+    relayDrain: { name: 'relay.drain', run: async () => { await Promise.all([poller.drain(), cutoffPoller.drain(), discovery.drain()]); } },
     queueDrain: {
       name: 'queue.drain',
       run: async () => {
@@ -302,8 +330,8 @@ export function createWorkerRuntime<Tx extends DrizzleTransactionLike>(deps: Wor
       assertNotStopping();
       queueReadable = true;
 
-      // Dead-letter queue first, then materialization: both must match before any handler exists.
-      for (const approved of RECURRENCE_QUEUE_REGISTRATIONS) {
+      // All four approved queues must match before either handler exists.
+      for (const approved of WORKLOOM_QUEUE_REGISTRATIONS) {
         const reading = await queue.getQueue(approved.name);
         assertNotStopping();
         const assessment = assessQueueRegistration(approved, reading);
@@ -316,11 +344,16 @@ export function createWorkerRuntime<Tx extends DrizzleTransactionLike>(deps: Wor
       }
       assertNotStopping();
 
-      workAttempted = true;
-      await trackQueueCall(queue.work(RECURRENCE_MATERIALIZE_QUEUE, workOptions, handler.handle));
+      workAttempted.push(RECURRENCE_MATERIALIZE_QUEUE);
+      await trackQueueCall(queue.work(RECURRENCE_MATERIALIZE_QUEUE, workOptions, limiter.wrap(handler.handle)));
+      assertNotStopping();
+      workAttempted.push(CUTOFF_QUEUE);
+      await trackQueueCall(queue.work(CUTOFF_QUEUE, workOptions, limiter.wrap(cutoffHandler.handle)));
       assertNotStopping();
 
       poller.start();
+      cutoffPoller.start();
+      discovery.start();
       lifecycle = 'running';
       runningSince = now();
       logger.info('worker.started', { jobName: RECURRENCE_MATERIALIZE_QUEUE, count: workOptions.localConcurrency });

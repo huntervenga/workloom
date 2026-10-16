@@ -1,9 +1,11 @@
 import {
+  CUTOFF_QUEUE, CUTOFF_DEAD_LETTER_QUEUE, WORKLOOM_QUEUE_REGISTRATIONS,
   RECURRENCE_DEAD_LETTER_QUEUE,
   RECURRENCE_MATERIALIZE_QUEUE,
   RECURRENCE_QUEUE_REGISTRATIONS,
   type ReadinessReport,
 } from '@workloom/db';
+import type { CutoffWorkerOutcome } from '@workloom/contracts';
 import type {
   RecurrenceOutboxRelay,
   RecurrenceRelayBatchResult,
@@ -73,10 +75,7 @@ function registered(approved: ApprovedQueueRegistration, overrides: Partial<Queu
 const [DEAD_LETTER, MATERIALIZE] = RECURRENCE_QUEUE_REGISTRATIONS;
 
 function approvedQueues(): Map<string, QueueRegistration | null | Error> {
-  return new Map<string, QueueRegistration | null | Error>([
-    [DEAD_LETTER.name, registered(DEAD_LETTER)],
-    [MATERIALIZE.name, registered(MATERIALIZE)],
-  ]);
+  return new Map<string, QueueRegistration | null | Error>(WORKLOOM_QUEUE_REGISTRATIONS.map(item => [item.name, registered(item)]));
 }
 
 const READY: ReadinessReport = { ready: true, checks: { database: 'ok', schema: 'ok' } };
@@ -89,6 +88,11 @@ interface HarnessOptions {
   readonly relayBatch?: () => Promise<RecurrenceRelayBatchResult>;
   readonly relayHealth?: () => Promise<RecurrenceRelayHealth>;
   readonly outcome?: () => Promise<RecurrenceWorkerOutcome>;
+  readonly cutoffOutcome?: () => Promise<CutoffWorkerOutcome>;
+  readonly discoveryBatch?: () => Promise<{ selectedCount: number; requestedCount: number; blockedCount: number; cycleComplete: boolean; leased: boolean }>;
+  readonly cutoffHealth?: () => Promise<RecurrenceRelayHealth>;
+  readonly cutoffBatch?: () => Promise<RecurrenceRelayBatchResult>;
+  readonly stopFetching?: (name: string) => Promise<void>;
 }
 
 function harness(options: HarnessOptions = {}) {
@@ -100,6 +104,7 @@ function harness(options: HarnessOptions = {}) {
   const clock = { value: 1_000_000 };
   let errorListener: ((error: unknown) => void) | undefined;
   let handler: QueueJobHandler | undefined;
+  let cutoffHandler: QueueJobHandler | undefined;
   let workOptions: QueueWorkOptions | undefined;
 
   const queue: WorkerQueueClient = {
@@ -123,12 +128,14 @@ function harness(options: HarnessOptions = {}) {
     },
     async work(name, opts, handle) {
       calls.push(`queue.work:${name}`);
-      handler = handle;
+      if (name === CUTOFF_QUEUE) cutoffHandler = handle;
+      else handler = handle;
       workOptions = opts;
       await options.queueWork?.();
     },
     async stopFetching(name) {
       calls.push(`queue.stop_fetching:${name}`);
+      await options.stopFetching?.(name);
     },
     async stop(opts) {
       calls.push(opts.close ? 'queue.close' : 'queue.drain');
@@ -170,6 +177,13 @@ function harness(options: HarnessOptions = {}) {
     queue,
     facade,
     relay,
+    cutoffFacade: { freezeDuePeriod: () => {
+      calls.push('facade.freezeDuePeriod');
+      return options.cutoffOutcome?.() ?? Promise.resolve(cutoffOutcome('frozen'));
+    } },
+    cutoffRelay: { relayBatch: () => options.cutoffBatch?.() ?? Promise.resolve({ selectedCount: 0, enqueuedCount: 0, unsupportedRetainedCount: 0 }), getHealth: () => options.cutoffHealth?.() ?? relay.getHealth() },
+    cutoffDiscovery: { discoverBatch: () => options.discoveryBatch?.() ?? Promise.resolve({ selectedCount: 0, requestedCount: 0, blockedCount: 0, cycleComplete: true, leased: true }) },
+    discoverySchedule: () => () => undefined,
     ownedResources: [
       {
         name: 'database.close',
@@ -194,6 +208,7 @@ function harness(options: HarnessOptions = {}) {
     clock,
     emitQueueError: (error: unknown) => errorListener?.(error),
     handler: () => handler,
+    cutoffHandler: () => cutoffHandler,
     workOptions: () => workOptions,
     count: (call: string) => calls.filter((entry) => entry === call).length,
   };
@@ -217,10 +232,15 @@ describe('worker runtime startup', () => {
       'queue.start',
       `queue.getQueue:${RECURRENCE_DEAD_LETTER_QUEUE}`,
       `queue.getQueue:${RECURRENCE_MATERIALIZE_QUEUE}`,
+      `queue.getQueue:${CUTOFF_DEAD_LETTER_QUEUE}`,
+      `queue.getQueue:${CUTOFF_QUEUE}`,
       `queue.work:${RECURRENCE_MATERIALIZE_QUEUE}`,
+      `queue.work:${CUTOFF_QUEUE}`,
       'relay.batch',
       `queue.getQueue:${RECURRENCE_DEAD_LETTER_QUEUE}`,
       `queue.getQueue:${RECURRENCE_MATERIALIZE_QUEUE}`,
+      `queue.getQueue:${CUTOFF_DEAD_LETTER_QUEUE}`,
+      `queue.getQueue:${CUTOFF_QUEUE}`,
     ]);
     expect(h.workOptions()).toStrictEqual({
       batchSize: 1,
@@ -269,6 +289,10 @@ describe('worker runtime startup', () => {
     ['materialize without dead letter', MATERIALIZE.name, registered(MATERIALIZE, { deadLetter: null }), 'QUEUE_INCOMPATIBLE'],
     ['materialize partitioned', MATERIALIZE.name, registered(MATERIALIZE, { partition: true }), 'QUEUE_INCOMPATIBLE'],
     ['materialize short policy', MATERIALIZE.name, registered(MATERIALIZE, { policy: 'short' }), 'QUEUE_INCOMPATIBLE'],
+    ['cutoff queue missing', CUTOFF_QUEUE, null, 'QUEUE_MISSING'],
+    ['cutoff dead-letter missing', CUTOFF_DEAD_LETTER_QUEUE, null, 'QUEUE_MISSING'],
+    ['cutoff dead-letter drift', CUTOFF_DEAD_LETTER_QUEUE, registered(WORKLOOM_QUEUE_REGISTRATIONS[2], { retryLimit: 1 }), 'QUEUE_INCOMPATIBLE'],
+    ['cutoff no dead letter', CUTOFF_QUEUE, registered(WORKLOOM_QUEUE_REGISTRATIONS[3], { deadLetter: null }), 'QUEUE_INCOMPATIBLE'],
   ] as const)('refuses to register any handler when %s', async (_label, name, reading, code) => {
     const queues = approvedQueues();
     queues.set(name, reading);
@@ -406,6 +430,7 @@ describe('worker runtime jobs and shutdown', () => {
     expect(result).toMatchObject({ status: 'clean', reason: 'SIGTERM' });
     expect(h.calls.slice(h.calls.indexOf(`queue.stop_fetching:${RECURRENCE_MATERIALIZE_QUEUE}`))).toEqual([
       `queue.stop_fetching:${RECURRENCE_MATERIALIZE_QUEUE}`,
+      `queue.stop_fetching:${CUTOFF_QUEUE}`,
       'queue.drain',
       'queue.close',
       'database.close',
@@ -446,6 +471,8 @@ describe('worker runtime health', () => {
     expect(report.queues.map((queue) => [queue.name, queue.state])).toEqual([
       [RECURRENCE_DEAD_LETTER_QUEUE, 'ready'],
       [RECURRENCE_MATERIALIZE_QUEUE, 'ready'],
+      [CUTOFF_DEAD_LETTER_QUEUE, 'ready'],
+      [CUTOFF_QUEUE, 'ready'],
     ]);
     expect(report.reportedDeadLetterCount).toBe(0);
   });
@@ -515,3 +542,86 @@ describe('worker runtime health', () => {
     expect(h.calls.filter((call) => call.startsWith('queue.getQueue')).length).toBe(reads);
   });
 });
+
+const cutoffJob = {
+  schemaVersion: 1, requestId: JOB_ID, workspaceId: WORKSPACE_ID, projectId: '00000000-0000-4000-8000-000000000005',
+  periodId: PERIOD_ID, grantId: '00000000-0000-4000-8000-000000000006', grantRevision: 1, periodRevision: 1,
+  cutoffAt: '2026-10-15T09:00:00.000Z', sourceManifestHash: 'a'.repeat(64),
+};
+function cutoffOutcome(status: CutoffWorkerOutcome['status']): CutoffWorkerOutcome {
+  return { schemaVersion: 1, requestId: JOB_ID, periodId: PERIOD_ID, status, processedAt: '2026-10-16T09:00:00.000Z', createdCount: 0, remainingCount: 0, baselineId: null, frozenAt: null, nextRequestId: null, blockedCode: null };
+}
+
+describe('cutoff runtime lifecycle', () => {
+  it('shares the process concurrency limit across recurrence and cutoff, releasing it after failures', async () => {
+    const gate = deferred<undefined>();
+    let active = 0; let high = 0;
+    const enter = async () => { active += 1; high = Math.max(high, active); await gate.promise; active -= 1; };
+    const h = harness({ outcome: async () => { await enter(); throw new Error(CANARY); }, cutoffOutcome: async () => { await enter(); return cutoffOutcome('pending'); } });
+    await h.runtime.start();
+    const recurrence = { workspaceId: WORKSPACE_ID, seriesId: '00000000-0000-4000-8000-000000000002', bindingId: BINDING_ID, sourceManifestHash: 'a'.repeat(64), authorizationRevision: 1, requestId: `outbox:${JOB_ID}` };
+    const first = rejectionOf(required(h.handler())([{ id: JOB_ID, data: recurrence, retryCount: 0 }]));
+    const second = required(h.cutoffHandler())([{ id: JOB_ID, data: cutoffJob, retryCount: 0 }]);
+    const third = required(h.cutoffHandler())([{ id: JOB_ID, data: cutoffJob, retryCount: 0 }]);
+    const fourth = rejectionOf(required(h.handler())([{ id: JOB_ID, data: recurrence, retryCount: 0 }]));
+    await flush();
+    expect(active).toBe(2);
+    expect((await h.runtime.health()).concurrency).toEqual({ active: 2, waiting: 2, concurrency: 2 });
+    gate.resolve(undefined);
+    await Promise.all([first, second, third, fourth]);
+    expect(high).toBe(2);
+    expect((await h.runtime.health()).concurrency).toEqual({ active: 0, waiting: 0, concurrency: 2 });
+    expect(h.lines.join('')).not.toContain('canary');
+    await h.runtime.shutdown('SIGTERM');
+  });
+
+  it.each(['pending', 'stale', 'not_due', 'blocked'] as const)('acknowledges durable %s without direct enqueue or retry', async status => {
+    const h = harness({ cutoffOutcome: async () => cutoffOutcome(status) });
+    await h.runtime.start();
+    await expect(required(h.cutoffHandler())([{ id: JOB_ID, data: cutoffJob, retryCount: 0 }])).resolves.toMatchObject({ status });
+    expect(h.sends).toEqual([]);
+    const report = await h.runtime.health();
+    expect(report.cutoff?.jobs.outcomes[status]).toBe(1);
+    expect(report.cutoff?.jobs.failed).toBe(0);
+    await h.runtime.shutdown('SIGTERM');
+  });
+
+  it('drains in-flight discovery before closing either pool and stops both consumers', async () => {
+    const batch = deferred<{ selectedCount: number; requestedCount: number; blockedCount: number; cycleComplete: boolean; leased: boolean }>();
+    const h = harness({ discoveryBatch: () => batch.promise });
+    await h.runtime.start();
+    const stopping = h.runtime.shutdown('SIGTERM');
+    await flush();
+    expect(h.calls).toContain(`queue.stop_fetching:${CUTOFF_QUEUE}`);
+    expect(h.calls).not.toContain('queue.close');
+    batch.resolve({ selectedCount: 1, requestedCount: 1, blockedCount: 0, cycleComplete: true, leased: true });
+    expect((await stopping).status).toBe('clean');
+    expect(h.count('database.close')).toBe(1);
+  });
+
+  it('attempts both consumers when one stop-fetch fails and still closes resources once', async () => {
+    const h = harness({ stopFetching: async name => { if (name === RECURRENCE_MATERIALIZE_QUEUE) throw new Error(CANARY); } });
+    await h.runtime.start();
+    const stopped = await h.runtime.shutdown('SIGTERM');
+    expect(stopped.status).toBe('failed');
+    expect(h.calls).toContain(`queue.stop_fetching:${CUTOFF_QUEUE}`);
+    expect(h.count('queue.close')).toBe(1);
+    expect(h.count('database.close')).toBe(1);
+    expect(h.lines.join('')).not.toContain('canary');
+  });
+
+  it('reports cutoff unsupported versions, relay/discovery failure and cutoff DLQ counts separately', async () => {
+    const h = harness({ cutoffHealth: async () => ({ pendingSubscribedCount: 3, oldestSubscribedAt: null, oldestSubscribedAgeMs: null, unsupportedSubscribedCount: 2 }), discoveryBatch: async () => { throw new Error(CANARY); } });
+    await h.runtime.start(); await flush();
+    h.queues.set(CUTOFF_DEAD_LETTER_QUEUE, registered(WORKLOOM_QUEUE_REGISTRATIONS[2], { queuedCount: 4 }));
+    const report = await h.runtime.health();
+    expect(report.status).toBe('degraded');
+    expect(report.reasons).toEqual(expect.arrayContaining(['cutoff_relay_unsupported_events', 'cutoff_discovery_failing', 'dead_letter_jobs']));
+    expect(report.cutoff?.relay.unsupportedSubscribedCount).toBe(2);
+    expect(report.reportedDeadLetterCount).toBe(4);
+    expect(JSON.stringify(report)).not.toContain('canary');
+    await h.runtime.shutdown('SIGTERM');
+  });
+});
+
+function required<T>(value: T | undefined | null): T { if (value === undefined || value === null) throw new Error('Expected test fixture value.'); return value; }

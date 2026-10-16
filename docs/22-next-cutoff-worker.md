@@ -1,6 +1,6 @@
 # P2c next slice: deadline freeze worker and truthful overdue UI
 
-**PLANNED / NOT IMPLEMENTED.** Handoff drafted16October2026; no source, DDL, dependency, queue registration or worker start is authorized by this document.
+**IMPLEMENTATION IN PROGRESS / NOT ACCEPTED.** The root coordinator approved the bounded backend contract on 16 October 2026. This document itself does not authorize production deployment, main-database migration, queue installation or worker startup; those remain separate verified gates.
 The accepted application ends at bounded P5b plus local UI follow-ups; see [current journal](11-implementation-progress.md) and [handoff](21-local-pilot-handoff.md).
 
 ## Current behavior and precise gap
@@ -33,7 +33,7 @@ No new plan/fact arithmetic, personal-plan allocation policy, package completion
 
 ## Authorization decision before implementation
 
-**Proposal:** explicit per-period cutoff delegation, issued/replaced/revoked by a CURRENT owner/admin with `plan.freeze_project`.
+**Approved policy:** explicit per-period cutoff delegation, issued/replaced/revoked by a CURRENT owner/admin with `plan.freeze_project`.
 There is NO such grant on today's period.create command/table. Do not treat an old creator ID, last editor or recurrence grant as an existing delegation.
 Existing periods start `automation_not_configured`; an authorized person must explicitly enable them. New-period opt-in must also be explicit.
 Persist immutable grant revisions with workspace/project/period, authorizer user+membership, scope `project_cutoff`, revision, state and activation time.
@@ -45,7 +45,7 @@ If a service principal is desired instead, approve its identity/capability/revoc
 
 ## Job / transaction protocol
 
-1. Proposed internal `freezeDuePeriod(job)` opens ONE real workspace UOW; no public freeze command nested in another runner.
+1. Internal `freezeDuePeriod(job)` opens ONE real workspace UOW; no public freeze command nested in another runner.
 2. After the lock, use `scope.barrierAt` from `clock_timestamp()`. Re-read target period, project, current grant and current capability.
 3. Validate current tenant/scope/access AND that the job names the CURRENT grant revision before any receipt. Old-grant delivery is denied/stale; it cannot borrow replacement authority.
 4. Receipt key is workspace+request ID, independent of the execution actor. The request ID is stable only for the SAME immutable job; replacement grant/cutoff requests get fresh IDs and hashes.
@@ -63,9 +63,9 @@ Pure worker progress has its own typed outcome, not a fake successful user mutat
 ## Recurrence and bounded recovery
 
 - Reuse stable instance identity, cancelled header-only census, current materialized roster/self semantics and immutable calendar locks from P3b.
-- The cutoff grant does NOT replace generation grants. Missing/revoked recurrence authority blocks readiness without borrowing the cutoff administrator's rights.
-- Proposed policy: paused pre-generation is not cancellation; required cutoff census may prepare registered occurrences under STILL-current generation grants.
-- Confirm that policy explicitly in UI/contracts before GO; ordinary recurrence background jobs must retain their accepted paused/no-hot-retry behavior.
+- The cutoff grant does NOT replace generation grants. Current generation authority is required only when registered occurrences still need actual materialization. Missing/revoked authority blocks that preparation without borrowing the cutoff administrator's rights. Already persisted complete census and cancelled header-only sources may freeze without reauthorizing future generation; existing manual/ordinary semantics remain unchanged.
+- Approved policy: paused pre-generation is not cancellation; required cutoff census may prepare registered occurrences under STILL-current generation grants.
+- The coordinator approved that policy for this implementation; UI/contracts must state it explicitly. Ordinary recurrence background jobs retain their accepted paused/no-hot-retry behavior.
 - At most100 actual entity creates per chunk. Reserved/cancelled null-locator headers do not consume that budget or become fake missing tasks.
 - Pending chunk commits only approved target census progress + durable continuation + receipt; NO partial baseline or unrelated proposed edit.
 - Final complete chunk freezes ONLY its overdue target period atomically. Two overdue periods each exceeding100 must progress independently without A↔B recovery loops.
@@ -74,7 +74,7 @@ Pure worker progress has its own typed outcome, not a fake successful user mutat
 
 ## Discovery, queues and health
 
-Propose an exact versioned event `planning.cutoff_requested` v1 and a separately registered queue/DLQ; these exports/subscriptions do NOT exist yet.
+The source implementation adds exact versioned event `planning.cutoff_requested` v1 and a separately registered queue/DLQ. See [the frozen additive backend contract](38-cutoff-automation-contract.md); this source work is not deployment or worker-start authorization.
 Period opt-in/cutoff changes/reauthorization enqueue in the SAME transaction; queue relay enqueue+dispatch receipt uses the same DB transaction.
 Initial delivery must be durably scheduled NOT BEFORE stored cutoffAt; an early `not_due` receipt is not completion of the cutoff.
 Catch-up after that instant emits a FRESH due request ID if needed, never reuses a cached early request forever; deduplicate active pending requests per target/grant/cutoff.

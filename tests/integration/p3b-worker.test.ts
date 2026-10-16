@@ -29,6 +29,8 @@ import {
   type TaskStatusDto,
 } from '@workloom/contracts';
 import {
+  CUTOFF_QUEUE, CUTOFF_DEAD_LETTER_QUEUE, WORKLOOM_QUEUE_REGISTRATIONS,
+  createCutoffWorkerFacade, createCutoffOutboxRelay, createCutoffDiscovery,
   PG_BOSS_SCHEMA_VERSION,
   RECURRENCE_DEAD_LETTER_QUEUE,
   RECURRENCE_MATERIALIZE_QUEUE,
@@ -359,7 +361,7 @@ describe('P3b worker: real relay, pg-boss delivery and stored-authorizer materia
 
   it('relays exactly the subscribed v1 request of an API-created binding into one real job and its receipt, leaving every other outbox row untouched', async () => {
     expect(RECURRENCE_QUEUE_REGISTRATIONS.map((registration) => registration.name)).toEqual([DLQ, QUEUE]);
-    for (const { name, expected } of RECURRENCE_QUEUE_REGISTRATIONS) {
+    for (const { name, expected } of WORKLOOM_QUEUE_REGISTRATIONS) {
       expect(findQueueOptionMismatches(expected, (await queue().getQueue(name)) ?? {}), name).toEqual([]);
     }
     expect(MATERIALIZE_JOB_RETRY).toEqual({ retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300 });
@@ -772,12 +774,13 @@ describe('P3b worker: real relay, pg-boss delivery and stored-authorizer materia
       config: { jobConcurrency: 1, pollIntervalMs: 500, shutdownTimeoutMs: 5_000 },
       logger, readiness: createReadinessProbe(database), queue: wrapPgBoss(new PgBoss(workerBossOptions())),
       facade, relay, relayBatchLimit: 10,
+      cutoffFacade: createCutoffWorkerFacade(database), cutoffRelay: createCutoffOutboxRelay(database), cutoffDiscovery: createCutoffDiscovery(database),
     });
     try {
       await runtime.start();
       expect(runtime.lifecycle).toBe('running');
       const started = await runtime.health();
-      expect(started.queues.map((item) => [item.name, item.state])).toEqual([[DLQ, 'ready'], [QUEUE, 'ready']]);
+      expect(started.queues.map((item) => [item.name, item.state])).toEqual([[DLQ, 'ready'], [QUEUE, 'ready'], [CUTOFF_DEAD_LETTER_QUEUE, 'ready'], [CUTOFF_QUEUE, 'ready']]);
       expect(started.relay).toMatchObject({ state: 'ok', pendingSubscribedCount: 0, unsupportedSubscribedCount: 0 });
 
       // A job carrying an actor and private text is not a materialization job. Only this isolated job
@@ -808,7 +811,7 @@ describe('P3b worker: real relay, pg-boss delivery and stored-authorizer materia
       expect(report.status).toBe('degraded');
       expect(report.lifecycle).toBe('running');
       expect(report.reasons).toContain('job_failures_recent');
-      expect(report.queues.map((item) => [item.name, item.state, item.mismatchedProperties])).toEqual([[DLQ, 'ready', []], [QUEUE, 'ready', []]]);
+      expect(report.queues.map((item) => [item.name, item.state, item.mismatchedProperties])).toEqual([[DLQ, 'ready', []], [QUEUE, 'ready', []], [CUTOFF_DEAD_LETTER_QUEUE, 'ready', []], [CUTOFF_QUEUE, 'ready', []]]);
       expect(report.reportedDeadLetterCount).toBeGreaterThanOrEqual(1);
       expect(report.jobs).toMatchObject({ rejected: 1, failed: 0 });
       expect(report.relay).toMatchObject({ state: 'ok', pendingSubscribedCount: 0, unsupportedSubscribedCount: 0 });
@@ -821,7 +824,7 @@ describe('P3b worker: real relay, pg-boss delivery and stored-authorizer materia
       await runtime.shutdown('test_complete');
     }
     expect(runtime.lifecycle).toBe('stopped');
-    for (const { name, expected } of RECURRENCE_QUEUE_REGISTRATIONS) {
+    for (const { name, expected } of WORKLOOM_QUEUE_REGISTRATIONS) {
       expect(findQueueOptionMismatches(expected, (await queue().getQueue(name)) ?? {}), name).toEqual([]);
     }
     expect(bossErrors).toEqual([]);

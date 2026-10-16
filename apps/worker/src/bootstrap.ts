@@ -1,6 +1,9 @@
 import {
   WORKLOOM_QUEUE_SCHEMA,
   createDatabase,
+  createCutoffWorkerFacade,
+  createCutoffOutboxRelay,
+  createCutoffDiscovery,
   createReadinessProbe,
   createRecurrenceOutboxRelay,
   createRecurrenceWorkerFacade,
@@ -40,6 +43,9 @@ export async function createWorkerFromConfig(config: WorkerConfig, logger: Worke
       queue,
       facade,
       relay,
+      cutoffFacade: createCutoffWorkerFacade(database),
+      cutoffRelay: createCutoffOutboxRelay(database),
+      cutoffDiscovery: createCutoffDiscovery(database),
       ownedResources: [{ name: 'database.close', close: () => database.close() }],
     });
   } catch (error) {

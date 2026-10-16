@@ -48,6 +48,8 @@ export interface QueueSendOptions {
   readonly db: Db;
   /** Deterministic job ID; a second send with the same ID inserts nothing and resolves null. */
   readonly id: string;
+  /** Absolute stored UTC deadline; pg-boss persists it as start_after on this same transaction. */
+  readonly startAfter?: string;
   /** Fairness hint for groupConcurrency; correctness never depends on it. */
   readonly group: { readonly id: string };
   readonly retryLimit: number;
@@ -167,6 +169,7 @@ export function wrapPgBoss(boss: PgBoss): WorkerQueueClient {
       const sendOptions: SendOptions = {
         db: options.db,
         id: options.id,
+        ...(options.startAfter === undefined ? {} : { startAfter: options.startAfter }),
         group: { id: options.group.id },
         retryLimit: options.retryLimit,
         retryDelay: options.retryDelay,

@@ -65,7 +65,7 @@ describe('own personal columns on an isolated PostgreSQL database', () => {
   }, 60_000);
   afterAll(async () => { await target?.drop(); });
 
-  it('upgrades populated pre-0012 data/history without backfill and gates readiness', () => { expect(upgrade).toEqual({ applied: ['0012_personal_table_preferences'], oldRowsUnchanged: true, oldHistoryUnchanged: true, pendingNotReady: true, ready: true }); });
+  it('upgrades populated pre-0012 data/history without backfill and gates readiness', () => { expect(upgrade).toEqual({ applied: ['0012_personal_table_preferences', '0013_planning_cutoff_automation'], oldRowsUnchanged: true, oldHistoryUnchanged: true, pendingNotReady: true, ready: true }); });
 
   it('returns own revision-zero/default state without any GET writes or row synthesis', async () => {
     const before = await snapshot(target);

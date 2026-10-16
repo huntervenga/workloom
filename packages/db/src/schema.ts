@@ -1,4 +1,4 @@
-import type { ColumnChoice } from '@workloom/contracts';
+import type { ColumnChoice, CutoffWorkerOutcome } from '@workloom/contracts';
 /**
  * Drizzle description of the P0, P1a and P1b schema. The executable source of truth is the
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
@@ -831,6 +831,7 @@ export const REQUIRED_TABLES = [
   'command_idempotency',
   'task_comments',
   'personal_table_preferences',
+  'planning_cutoff_automations', 'planning_cutoff_grant_versions', 'planning_cutoff_requests', 'planning_cutoff_discovery_state',
   'task_field_definitions',
   'task_field_definition_versions',
   'task_field_options',
@@ -880,6 +881,7 @@ export const planningPeriods = pgTable('planning_periods', {
   unique('planning_periods_workspace_id_unique').on(t.workspaceId,t.id),
   unique('planning_periods_project_week_unique').on(t.workspaceId,t.projectId,t.localStart),
   foreignKey({name:'planning_periods_project_fk', columns:[t.workspaceId,t.projectId], foreignColumns:[projects.workspaceId,projects.id]}),
+  index('planning_periods_due_cutoff_idx').on(t.cutoffAt, t.id).where(sql`${t.state}='planning'`),
   check('planning_periods_week',sql`local_end_exclusive = local_start + 7`),
   check('planning_periods_revision',sql`revision >= 1`),
   check('planning_periods_name',sql`char_length(btrim(name)) between 1 and 160`),
@@ -1367,4 +1369,61 @@ export const personalTablePreferences = pgTable('personal_table_preferences', {
   check('personal_table_preferences_revision', sql`revision >= 1`),
   check('personal_table_preferences_time', sql`isfinite(updated_at)`),
   check('personal_table_preferences_columns', sql`columns is null or public.workloom_valid_personal_table_columns(columns)`),
+]);
+
+/** Immutable explicit delegation; old periods have no automation head. */
+export const planningCutoffGrantVersions = pgTable('planning_cutoff_grant_versions', {
+  workspaceId: uuid('workspace_id').notNull(), projectId: uuid('project_id').notNull(), periodId: uuid('period_id').notNull(),
+  grantId: uuid('grant_id').notNull(), revision: integer('revision').notNull(),
+  scope: text('scope').$type<'project_cutoff'>().notNull(), state: text('state').$type<'active' | 'revoked'>().notNull(),
+  authorizerUserId: uuid('authorizer_user_id').notNull(), authorizerMembershipId: uuid('authorizer_membership_id').notNull(),
+  activatedAt: timestamp('activated_at', { withTimezone: true }), recordedAt: timestamp('recorded_at', { withTimezone: true }).notNull(),
+  actorUserId: uuid('actor_user_id').notNull(), actorMembershipId: uuid('actor_membership_id').notNull(), source: commandSourceEnum('source').notNull(),
+  changeSeq: bigint('change_seq', { mode: 'bigint' }).notNull(),
+}, t => [
+  primaryKey({ name: 'planning_cutoff_grant_versions_pk', columns: [t.workspaceId, t.grantId, t.revision] }),
+  unique('planning_cutoff_grant_versions_scope_unique').on(t.workspaceId, t.projectId, t.periodId, t.grantId, t.revision),
+  foreignKey({ name: 'planning_cutoff_grant_versions_period_fk', columns: [t.workspaceId, t.projectId, t.periodId], foreignColumns: [planningPeriods.workspaceId, planningPeriods.projectId, planningPeriods.id] }),
+  foreignKey({ name: 'planning_cutoff_grant_versions_authorizer_fk', columns: [t.workspaceId, t.authorizerMembershipId, t.authorizerUserId], foreignColumns: [memberships.workspaceId, memberships.id, memberships.userId] }),
+  foreignKey({ name: 'planning_cutoff_grant_versions_actor_fk', columns: [t.workspaceId, t.actorMembershipId, t.actorUserId], foreignColumns: [memberships.workspaceId, memberships.id, memberships.userId] }),
+  check('planning_cutoff_grant_versions_values', sql`${t.revision} >= 1 and ${t.changeSeq} >= 1 and ${t.scope} = 'project_cutoff' and ${t.state} in ('active','revoked') and (${t.state} <> 'active' or ${t.activatedAt} is not null)`),
+  check('planning_cutoff_grant_versions_times', sql`isfinite(${t.recordedAt}) and (${t.activatedAt} is null or (isfinite(${t.activatedAt}) and ${t.activatedAt} <= ${t.recordedAt}))`),
+]);
+export const planningCutoffAutomations = pgTable('planning_cutoff_automations', {
+  workspaceId: uuid('workspace_id').notNull(), projectId: uuid('project_id').notNull(), periodId: uuid('period_id').notNull(),
+  grantId: uuid('grant_id').notNull(), currentRevision: integer('current_revision').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+}, t => [
+  primaryKey({ name: 'planning_cutoff_automations_pk', columns: [t.workspaceId, t.periodId] }),
+  foreignKey({ name: 'planning_cutoff_automations_current_grant_fk', columns: [t.workspaceId, t.projectId, t.periodId, t.grantId, t.currentRevision], foreignColumns: [planningCutoffGrantVersions.workspaceId, planningCutoffGrantVersions.projectId, planningCutoffGrantVersions.periodId, planningCutoffGrantVersions.grantId, planningCutoffGrantVersions.revision] }),
+  check('planning_cutoff_automations_revision', sql`${t.currentRevision} >= 1`),
+  check('planning_cutoff_automations_times', sql`isfinite(${t.createdAt}) and isfinite(${t.updatedAt}) and ${t.updatedAt} >= ${t.createdAt}`),
+]);
+/** Job inputs are immutable. The nullable result becomes a write-once receipt independent of actor. */
+export const planningCutoffRequests = pgTable('planning_cutoff_requests', {
+  workspaceId: uuid('workspace_id').notNull(), id: uuid('id').notNull(), projectId: uuid('project_id').notNull(), periodId: uuid('period_id').notNull(),
+  grantId: uuid('grant_id').notNull(), grantRevision: integer('grant_revision').notNull(), periodRevision: integer('period_revision').notNull(),
+  cutoffAt: timestamp('cutoff_at', { withTimezone: true }).notNull(), sourceManifestHash: text('source_manifest_hash').notNull(), payloadHash: text('payload_hash').notNull(),
+  reason: text('reason').notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull(), requestedByUserId: uuid('requested_by_user_id').notNull(),
+  source: commandSourceEnum('source').notNull(), changeSeq: bigint('change_seq', { mode: 'bigint' }).notNull(),
+  supersededAt: timestamp('superseded_at', { withTimezone: true }), processedAt: timestamp('processed_at', { withTimezone: true }),
+  processedActorUserId: uuid('processed_actor_user_id'), processedMembershipId: uuid('processed_membership_id'), result: jsonb('result').$type<CutoffWorkerOutcome>(),
+}, t => [
+  primaryKey({ name: 'planning_cutoff_requests_pk', columns: [t.workspaceId, t.id] }),
+  foreignKey({ name: 'planning_cutoff_requests_grant_fk', columns: [t.workspaceId, t.projectId, t.periodId, t.grantId, t.grantRevision], foreignColumns: [planningCutoffGrantVersions.workspaceId, planningCutoffGrantVersions.projectId, planningCutoffGrantVersions.periodId, planningCutoffGrantVersions.grantId, planningCutoffGrantVersions.revision] }),
+  foreignKey({ name: 'planning_cutoff_requests_requester_fk', columns: [t.requestedByUserId], foreignColumns: [users.id] }),
+  foreignKey({ name: 'planning_cutoff_requests_processor_fk', columns: [t.workspaceId, t.processedMembershipId, t.processedActorUserId], foreignColumns: [memberships.workspaceId, memberships.id, memberships.userId] }),
+  uniqueIndex('planning_cutoff_requests_one_live_idx').on(t.workspaceId, t.periodId).where(sql`${t.processedAt} is null and ${t.supersededAt} is null`),
+  index('planning_cutoff_requests_period_idx').on(t.workspaceId, t.periodId, t.createdAt, t.id),
+  check('planning_cutoff_requests_values', sql`${t.grantRevision} >= 1 and ${t.periodRevision} >= 1 and ${t.changeSeq} >= 1 and ${t.sourceManifestHash} ~ '^[a-f0-9]{64}$' and ${t.payloadHash} ~ '^[a-f0-9]{64}$' and char_length(${t.reason}) between 1 and 80`),
+  check('planning_cutoff_requests_receipt', sql`(${t.processedAt} is null and ${t.result} is null and ${t.processedActorUserId} is null and ${t.processedMembershipId} is null) or (${t.processedAt} is not null and ${t.result} is not null and ${t.processedActorUserId} is not null and ${t.processedMembershipId} is not null and jsonb_typeof(${t.result})='object')`),
+  check('planning_cutoff_requests_times', sql`isfinite(${t.cutoffAt}) and isfinite(${t.createdAt}) and (${t.processedAt} is null or isfinite(${t.processedAt})) and (${t.supersededAt} is null or isfinite(${t.supersededAt}))`),
+]);
+/** Operational cursor; requests must commit before advancing the leased checkpoint. */
+export const planningCutoffDiscoveryState = pgTable('planning_cutoff_discovery_state', {
+  key: text('key').primaryKey(), revision: integer('revision').notNull(), cycleAt: timestamp('cycle_at', { withTimezone: true }).notNull(),
+  afterCutoffAt: timestamp('after_cutoff_at', { withTimezone: true }), afterPeriodId: uuid('after_period_id'),
+  leaseOwner: uuid('lease_owner'), leaseUntil: timestamp('lease_until', { withTimezone: true }), completedAt: timestamp('completed_at', { withTimezone: true }),
+}, t => [
+  check('planning_cutoff_discovery_state_values', sql`${t.key}='project_cutoff.v1' and ${t.revision} >= 1 and isfinite(${t.cycleAt}) and ((${t.afterCutoffAt} is null) = (${t.afterPeriodId} is null)) and ((${t.leaseOwner} is null) = (${t.leaseUntil} is null)) and (${t.afterCutoffAt} is null or isfinite(${t.afterCutoffAt})) and (${t.leaseUntil} is null or isfinite(${t.leaseUntil})) and (${t.completedAt} is null or isfinite(${t.completedAt}))`),
 ]);

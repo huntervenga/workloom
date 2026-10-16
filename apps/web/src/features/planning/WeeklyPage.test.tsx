@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { created, failure, installFakeApi, json, ok, renderApp } from '../../test/fakeApi';
 import { planningKeys } from './queries';
 import { alpha, alphaMembers, anna } from '../../test/fakeApi';
-import { BASELINE_ID, MEMBER_ID, PROJECT_ID, PERIOD_A, PERIOD_B, PERSONAL_BASELINE_ID, RUN_ID, TASK_ID, baseline, commitment, log, lostResponse, period, report, rootPath, routes, snapshot, weekPath } from './test/fixtures';
+import { BASELINE_ID, MEMBER_ID, PROJECT_ID, PERIOD_A, PERIOD_B, PERSONAL_BASELINE_ID, RUN_ID, TASK_ID, baseline, cutoffReadiness, commitment, log, lostResponse, period, report, rootPath, routes, snapshot, weekPath } from './test/fixtures';
 
 beforeAll(async () => { await import('../../routes/WeeklyPage'); });
 
@@ -23,7 +23,8 @@ async function openPlan(user: ReturnType<typeof renderApp>['user']) {
 
 describe('weekly planning lifecycle', () => {
   it('labels the deadline in the period zone instead of silently using the browser zone', async () => {
-    installFakeApi({ ...routes(), [`GET ${rootPath}/periods/${PERIOD_A}`]: () => ok({ ...period(), timezone: 'Asia/Nicosia', cutoffAt: '2026-10-19T22:30:00.000Z' }) });
+    const selected={...period(),timezone:'Asia/Nicosia',cutoffAt:'2026-10-19T22:30:00.000Z'};
+    installFakeApi({ ...routes(), [`GET ${rootPath}/periods/${PERIOD_A}`]: () => ok(selected), [`GET ${rootPath}/periods/${PERIOD_A}/cutoff-readiness`]: () => ok(cutoffReadiness(selected)) });
     renderApp(`${weekPath}?period=${PERIOD_A}`);
     const deadline = await screen.findByText(/^Baseline deadline:/);
     expect(deadline).toHaveTextContent(/10\/20\/26.*1:30 AM/);

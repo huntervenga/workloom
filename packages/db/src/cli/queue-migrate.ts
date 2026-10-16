@@ -19,7 +19,7 @@ async function main(): Promise<void> {
     result.action === 'current'
       ? `schema ${result.schema} is up to date (pg-boss schema ${result.version})`
       : `${result.action} schema ${result.schema} at pg-boss schema ${result.version}`;
-  process.stdout.write(`db:queue:migrate: ${schemaState} on ${result.target}; queue ${result.queueName} is ready.\n`);
+  process.stdout.write(`db:queue:migrate: ${schemaState} on ${result.target}; queues ${result.queueNames.join(', ')} are ready.\n`);
 }
 
 main().catch((error: unknown) => {

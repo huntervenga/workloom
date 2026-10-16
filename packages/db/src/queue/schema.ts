@@ -14,13 +14,15 @@ import { describeErrorForLog } from '../database-errors.js';
 export const WORKLOOM_QUEUE_SCHEMA = 'workloom_queue';
 export const RECURRENCE_MATERIALIZE_QUEUE = 'workloom.recurrence.materialize.v1';
 export const RECURRENCE_DEAD_LETTER_QUEUE = 'workloom.recurrence.dead_letter.v1';
+export const CUTOFF_QUEUE = 'workloom.planning.cutoff.v1';
+export const CUTOFF_DEAD_LETTER_QUEUE = 'workloom.planning.cutoff.dead_letter.v1';
 /** Root-approved pinned pg-boss release and the schema version its package.json declares. */
 export const PG_BOSS_VERSION = '12.38.0';
 export const PG_BOSS_SCHEMA_VERSION = 46;
 /**
  * Approved queue configurations. `db:queue:migrate` creates each queue with exactly
  * these options and never updates an existing queue; workers compare their runtime
- * `getQueue()` results against `RECURRENCE_QUEUE_REGISTRATIONS`.
+ * `getQueue()` results against `WORKLOOM_QUEUE_REGISTRATIONS`.
  */
 export const RECURRENCE_DEAD_LETTER_QUEUE_OPTIONS = {
   policy: 'standard',
@@ -60,6 +62,16 @@ export const RECURRENCE_QUEUE_REGISTRATIONS = [
     expected: RECURRENCE_MATERIALIZE_QUEUE_OPTIONS,
   },
 ] as const;
+
+/** Additive cutoff queues retain the approved recurrence retry/retention policy. */
+export const CUTOFF_DEAD_LETTER_QUEUE_OPTIONS = { ...RECURRENCE_DEAD_LETTER_QUEUE_OPTIONS } as const;
+export const CUTOFF_QUEUE_OPTIONS = { ...RECURRENCE_MATERIALIZE_QUEUE_OPTIONS, deadLetter: CUTOFF_DEAD_LETTER_QUEUE } as const;
+export const CUTOFF_QUEUE_REGISTRATIONS = [
+  { name: CUTOFF_DEAD_LETTER_QUEUE, options: CUTOFF_DEAD_LETTER_QUEUE_OPTIONS, expected: { ...CUTOFF_DEAD_LETTER_QUEUE_OPTIONS, deadLetter: null } },
+  { name: CUTOFF_QUEUE, options: CUTOFF_QUEUE_OPTIONS, expected: CUTOFF_QUEUE_OPTIONS },
+] as const;
+/** Every registration must verify before either consumer starts. Existing queues are never updated. */
+export const WORKLOOM_QUEUE_REGISTRATIONS = [...RECURRENCE_QUEUE_REGISTRATIONS, ...CUTOFF_QUEUE_REGISTRATIONS] as const;
 
 export interface QueueOptionMismatch {
   readonly property: string;
@@ -102,7 +114,8 @@ export interface WorkloomQueueMigrationResult {
   readonly version: number;
   readonly action: 'installed' | 'upgraded' | 'current';
   readonly queueName: typeof RECURRENCE_MATERIALIZE_QUEUE;
-  /** Only returned after the dead-letter and materialization queue rows were read back with every approved option; any other state throws. */
+  readonly queueNames: readonly string[];
+  /** Only returned after all four approved queue rows were read back with every approved option; any other state throws. */
   readonly queueReady: true;
   /** Credential-free target description. */
   readonly target: string;
@@ -263,7 +276,7 @@ async function registerKnownQueues(databaseUrl: string): Promise<void> {
     }
 
     // Sequential: each queue is read back and verified before the next one may reference it.
-    for (const { name, options, expected } of RECURRENCE_QUEUE_REGISTRATIONS) {
+    for (const { name, options, expected } of WORKLOOM_QUEUE_REGISTRATIONS) {
       const existing = await boss.getQueue(name);
       if (existing === null) {
         await boss.createQueue(name, options);
@@ -351,6 +364,7 @@ export async function migrateWorkloomQueue(
         version: after,
         action,
         queueName: RECURRENCE_MATERIALIZE_QUEUE,
+        queueNames: WORKLOOM_QUEUE_REGISTRATIONS.map(({ name }) => name),
         queueReady: true,
         target: info.description,
       };

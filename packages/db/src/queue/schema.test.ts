@@ -2,6 +2,7 @@ import { getConstructionPlans, getMigrationPlans } from 'pg-boss';
 import { describe, expect, it } from 'vitest';
 
 import {
+  CUTOFF_QUEUE, CUTOFF_DEAD_LETTER_QUEUE, CUTOFF_QUEUE_REGISTRATIONS, WORKLOOM_QUEUE_REGISTRATIONS,
   QueueSchemaStateError,
   RECURRENCE_DEAD_LETTER_QUEUE,
   RECURRENCE_DEAD_LETTER_QUEUE_OPTIONS,
@@ -108,5 +109,22 @@ describe('RECURRENCE_QUEUE_REGISTRATIONS', () => {
     expect(findQueueOptionMismatches(deadLetter.expected, withoutDeadLetter)).toEqual([
       { property: 'deadLetter', expected: null, actual: undefined },
     ]);
+  });
+});
+
+
+describe('additive cutoff queue registrations', () => {
+  it('keeps both recurrence registrations and adds a separate cutoff queue/DLQ with the same finite policy', () => {
+    expect(WORKLOOM_QUEUE_REGISTRATIONS).toHaveLength(4);
+    expect(WORKLOOM_QUEUE_REGISTRATIONS.slice(0, 2)).toEqual(RECURRENCE_QUEUE_REGISTRATIONS);
+    const [dead, cutoff] = CUTOFF_QUEUE_REGISTRATIONS;
+    expect(dead.name).toBe(CUTOFF_DEAD_LETTER_QUEUE);
+    expect(cutoff.name).toBe(CUTOFF_QUEUE);
+    expect(cutoff.expected).toEqual({ ...RECURRENCE_MATERIALIZE_QUEUE_OPTIONS, deadLetter: dead.name });
+    expect(dead.expected).toEqual({ ...RECURRENCE_DEAD_LETTER_QUEUE_OPTIONS, deadLetter: null });
+    for (const queue of WORKLOOM_QUEUE_REGISTRATIONS) {
+      expect(findQueueOptionMismatches(queue.expected, { ...queue.expected })).toEqual([]);
+      expect(queue.expected.retentionSeconds).toBe(604800);
+    }
   });
 });

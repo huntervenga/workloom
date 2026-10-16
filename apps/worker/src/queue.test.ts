@@ -1,4 +1,4 @@
-import { RECURRENCE_MATERIALIZE_QUEUE, RECURRENCE_QUEUE_REGISTRATIONS, WORKLOOM_QUEUE_SCHEMA } from '@workloom/db';
+import { CUTOFF_QUEUE, RECURRENCE_MATERIALIZE_QUEUE, RECURRENCE_QUEUE_REGISTRATIONS, WORKLOOM_QUEUE_REGISTRATIONS, WORKLOOM_QUEUE_SCHEMA } from '@workloom/db';
 import type { RecurrenceOutboxRelay } from '@workloom/domain';
 import { PgBoss, type DrizzleTransactionLike, type QueueResult } from 'pg-boss';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -103,11 +103,8 @@ describe('wrapPgBoss', () => {
     expect(absent).toHaveProperty('retentionSeconds');
   });
 
-  it('starts a runtime that only reads queue rows and registers one bounded non-transactional consumer', async () => {
-    const rows = new Map([
-      [DEAD_LETTER.name, queueRow(DEAD_LETTER, { deadLetter: null })],
-      [MATERIALIZE.name, queueRow(MATERIALIZE)],
-    ]);
+  it('starts a runtime that only reads queue rows and registers both bounded non-transactional consumers', async () => {
+    const rows = new Map(WORKLOOM_QUEUE_REGISTRATIONS.map(item => [item.name, queueRow(item, item.expected.deadLetter === null ? { deadLetter: null } : {})]));
     const { boss, spies } = spiedBoss(rows);
     const relay: RecurrenceOutboxRelay<DrizzleTransactionLike> = {
       relayBatch: async () => ({ selectedCount: 0, enqueuedCount: 0, unsupportedRetainedCount: 0 }),
@@ -120,14 +117,19 @@ describe('wrapPgBoss', () => {
       queue: wrapPgBoss(boss),
       facade: { materializeBinding: () => Promise.reject(new Error('not called')) },
       relay,
+      cutoffFacade: { freezeDuePeriod: () => Promise.reject(new Error('not called')) },
+      cutoffRelay: { relayBatch: async () => ({ selectedCount: 0, enqueuedCount: 0, unsupportedRetainedCount: 0 }), getHealth: () => relay.getHealth() },
+      cutoffDiscovery: { discoverBatch: async () => ({ selectedCount: 0, requestedCount: 0, blockedCount: 0, cycleComplete: true, leased: true }) },
+      discoverySchedule: () => () => undefined,
       relaySchedule: () => () => undefined,
       healthSchedule: () => () => undefined,
     });
 
     await runtime.start();
 
-    expect(spies.getQueue.mock.calls.map(([name]) => name)).toEqual([DEAD_LETTER.name, MATERIALIZE.name, DEAD_LETTER.name, MATERIALIZE.name]);
-    expect(spies.work).toHaveBeenCalledTimes(1);
+    expect(spies.getQueue.mock.calls.map(([name]) => name)).toEqual([...WORKLOOM_QUEUE_REGISTRATIONS, ...WORKLOOM_QUEUE_REGISTRATIONS].map(item => item.name));
+    expect(spies.work).toHaveBeenCalledTimes(2);
+    expect(spies.work.mock.calls[1]?.[0]).toBe(CUTOFF_QUEUE);
     const [name, options] = spies.work.mock.calls[0] ?? [];
     expect(name).toBe(RECURRENCE_MATERIALIZE_QUEUE);
     expect(options).toStrictEqual({
@@ -148,6 +150,16 @@ describe('wrapPgBoss', () => {
     for (const forbidden of spies.forbidden) expect(forbidden).not.toHaveBeenCalled();
   });
 
+  it('forwards an absolute startAfter to installed pg-boss without adding scheduling to ordinary sends', async () => {
+    const { boss, spies } = spiedBoss(new Map());
+    const queue = wrapPgBoss(boss);
+    const options = { db: { executeSql: async () => ({ rows: [] }) }, id: '00000000-0000-4000-8000-000000000001', group: { id: '00000000-0000-4000-8000-000000000002' }, retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300 };
+    await queue.send(CUTOFF_QUEUE, {}, { ...options, startAfter: '2026-10-25T01:30:00.000Z' });
+    expect(spies.send.mock.calls[0]?.[2]).toMatchObject({ startAfter: '2026-10-25T01:30:00.000Z', db: options.db });
+    await queue.send(RECURRENCE_MATERIALIZE_QUEUE, {}, options);
+    expect(spies.send.mock.calls[1]?.[2]).not.toHaveProperty('startAfter');
+  });
+
   it('does not repair an incompatible registration', async () => {
     const rows = new Map([
       [DEAD_LETTER.name, queueRow(DEAD_LETTER, { deadLetter: null })],
@@ -160,6 +172,9 @@ describe('wrapPgBoss', () => {
       readiness: { check: async () => ({ ready: true, checks: { database: 'ok', schema: 'ok' } }) },
       queue: wrapPgBoss(boss),
       facade: { materializeBinding: () => Promise.reject(new Error('not called')) },
+      cutoffFacade: { freezeDuePeriod: () => Promise.reject(new Error('not called')) },
+      cutoffRelay: { relayBatch: async () => ({ selectedCount: 0, enqueuedCount: 0, unsupportedRetainedCount: 0 }), getHealth: () => Promise.reject(new Error('not called')) },
+      cutoffDiscovery: { discoverBatch: () => Promise.reject(new Error('not called')) },
       relay: {
         relayBatch: () => Promise.reject(new Error('not called')),
         getHealth: () => Promise.reject(new Error('not called')),

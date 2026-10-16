@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import {
   createAccessRepository,
   createDatabase,
+  createCutoffApplication,
   createDependencyApplication,
   createMeetingApplication,
   createMyTasksApplication,
@@ -24,13 +25,14 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
 import { createDevSessionStore, type DevSessionStore } from './identity/dev-sessions.js';
 import { createDevIdentityAdapter, type IdentityAdapter } from './identity/identity-adapter.js';
 import { mapError } from './http/errors.js';
+import { registerCutoffRoutes } from './http/cutoff-routes.js';
 import { registerCategoryRoutes } from './http/category-routes.js';
 import { registerFieldRoutes } from './http/field-routes.js';
 import { registerDependencyRoutes } from './http/dependency-routes.js';
@@ -71,6 +73,7 @@ export interface AppDependencies {
   readonly taskFieldApplication?: TaskFieldApplication;
   /** Shared planning service, or an injected transport-test port; uses the existing pool. */
   readonly planningApplication?: PlanningApplication;
+  readonly cutoffApplication?: CutoffApplication;
   /** Category binding, reasoned recategorization and work-type reporting; same existing pool. */
   readonly workCategoryApplication?: WorkCategoryApplication;
   /** Shared dated-meeting service; current ACL and attendance guards stay in domain. */
@@ -121,6 +124,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.taskFieldApplication ?? (database === undefined ? undefined : createTaskFieldApplication(database));
   const planningApplication =
     dependencies.planningApplication ?? (database === undefined ? undefined : createPlanningApplication(database));
+  const cutoffApplication = dependencies.cutoffApplication ?? (database === undefined ? undefined : createCutoffApplication(database));
   const workCategoryApplication =
     dependencies.workCategoryApplication ?? (database === undefined ? undefined : createWorkCategoryApplication(database));
   const meetingApplication =
@@ -229,6 +233,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (planningApplication !== undefined) {
     registerPlanningRoutes(app, { identity, planning: planningApplication });
   }
+  if (cutoffApplication !== undefined) registerCutoffRoutes(app, { identity, cutoff: cutoffApplication });
   if (workCategoryApplication !== undefined) {
     registerCategoryRoutes(app, { identity, categories: workCategoryApplication });
   }

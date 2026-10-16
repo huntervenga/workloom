@@ -1,12 +1,13 @@
-import { RECURRENCE_DEAD_LETTER_QUEUE, RECURRENCE_QUEUE_REGISTRATIONS, findQueueOptionMismatches } from '@workloom/db';
+import { CUTOFF_DEAD_LETTER_QUEUE, RECURRENCE_DEAD_LETTER_QUEUE, RECURRENCE_QUEUE_REGISTRATIONS, WORKLOOM_QUEUE_REGISTRATIONS, findQueueOptionMismatches } from '@workloom/db';
 import type { RecurrenceRelayHealth, RecurrenceWorkerStatus } from '@workloom/domain';
 
+import type { CutoffJobCounters } from './cutoff.js';
 import type { MaterializationJobCounters } from './materialize.js';
 import type { QueueRegistration } from './queue.js';
 import type { RelayPollerSnapshot } from './relay.js';
 
 /** One approved queue (dead-letter first, then materialization), exactly as `db:queue:migrate` registers it. */
-export type ApprovedQueueRegistration = (typeof RECURRENCE_QUEUE_REGISTRATIONS)[number];
+export type ApprovedQueueRegistration = (typeof WORKLOOM_QUEUE_REGISTRATIONS)[number];
 
 export type QueueRegistrationState = 'ready' | 'missing' | 'incompatible';
 
@@ -46,7 +47,13 @@ export type WorkerHealthReason =
   | 'job_failures_recent'
   | 'relay_unavailable'
   | 'relay_failing'
-  | 'relay_unsupported_events';
+  | 'relay_unsupported_events'
+  | 'cutoff_relay_unavailable'
+  | 'cutoff_relay_failing'
+  | 'cutoff_relay_unsupported_events'
+  | 'cutoff_heartbeat_stale'
+  | 'cutoff_discovery_failing'
+  | 'cutoff_discovery_stale';
 
 /** Reasons that mean the worker cannot make progress or cannot keep failed jobs. */
 const DOWN_REASONS: ReadonlySet<WorkerHealthReason> = new Set([
@@ -74,7 +81,21 @@ export interface QueueHealth {
   } | null;
 }
 
+export interface CutoffHealthInputs {
+  readonly relayHealth: RecurrenceRelayHealth | 'unavailable';
+  readonly poller: RelayPollerSnapshot;
+  readonly jobs: CutoffJobCounters;
+  readonly discovery: RelayPollerSnapshot & { readonly discoveryBatch: { readonly selectedCount: number; readonly requestedCount: number; readonly blockedCount: number; readonly cycleComplete: boolean; readonly leased: boolean } | null };
+}
+
 export interface WorkerHealthReport {
+  readonly cutoff?: {
+    readonly relay: WorkerHealthReport['relay'];
+    readonly heartbeat: WorkerHealthReport['heartbeat'];
+    readonly jobs: Omit<CutoffJobCounters, 'lastFailureAt'>;
+    readonly discovery: CutoffHealthInputs['discovery'];
+  };
+  readonly concurrency?: { readonly active: number; readonly waiting: number; readonly concurrency: number };
   readonly status: 'ok' | 'degraded' | 'down';
   readonly reasons: readonly WorkerHealthReason[];
   readonly checkedAt: string;
@@ -121,6 +142,8 @@ export interface HealthInputs {
   readonly relayHealth: RecurrenceRelayHealth | 'unavailable';
   readonly poller: RelayPollerSnapshot;
   readonly jobs: MaterializationJobCounters;
+  readonly cutoff?: CutoffHealthInputs;
+  readonly concurrency?: WorkerHealthReport['concurrency'];
 }
 
 const within = (at: number | null, now: number, windowMs: number): boolean => at !== null && now - at <= windowMs;
@@ -159,10 +182,11 @@ export function buildHealthReport(input: HealthInputs): WorkerHealthReport {
   const stale = input.lifecycle === 'running' && (ageMs === null || ageMs > input.staleAfterMs);
   if (stale) reasons.push('heartbeat_stale');
 
-  const queues = RECURRENCE_QUEUE_REGISTRATIONS.map((approved) => queueHealth(approved, input.queues.get(approved.name)));
+  const registrations = input.cutoff === undefined ? RECURRENCE_QUEUE_REGISTRATIONS : WORKLOOM_QUEUE_REGISTRATIONS;
+  const queues = registrations.map((approved) => queueHealth(approved, input.queues.get(approved.name)));
   let reportedDeadLetterCount: number | null = null;
   for (const queue of queues) {
-    const deadLetter = queue.name === RECURRENCE_DEAD_LETTER_QUEUE;
+    const deadLetter = (queue.name === RECURRENCE_DEAD_LETTER_QUEUE || queue.name === CUTOFF_DEAD_LETTER_QUEUE);
     if (queue.state !== 'ready') {
       const prefix = deadLetter ? 'dead_letter' : 'queue';
       reasons.push(`${prefix}_${queue.state}` as const);
@@ -171,12 +195,14 @@ export function buildHealthReport(input: HealthInputs): WorkerHealthReport {
     if (queue.reported === null) continue;
     if (deadLetter) {
       const deadLetterCount = queue.reported.queuedCount + queue.reported.activeCount + queue.reported.failedCount;
-      reportedDeadLetterCount = deadLetterCount;
+      reportedDeadLetterCount = (reportedDeadLetterCount ?? 0) + deadLetterCount;
       if (deadLetterCount > 0) reasons.push('dead_letter_jobs');
     } else if (queue.reported.failedCount > 0) {
       reasons.push('queue_failed_jobs');
     }
   }
+  // A combined DLQ count is unavailable if any registered DLQ could not be read.
+  if (queues.some(queue => (queue.name === RECURRENCE_DEAD_LETTER_QUEUE || queue.name === CUTOFF_DEAD_LETTER_QUEUE) && queue.state !== 'ready')) reportedDeadLetterCount = null;
   if (within(input.lastQueueErrorAt, now, input.recentWindowMs)) reasons.push('queue_errors_recent');
   if (within(input.jobs.lastFailureAt, now, input.recentWindowMs)) reasons.push('job_failures_recent');
 
@@ -185,10 +211,40 @@ export function buildHealthReport(input: HealthInputs): WorkerHealthReport {
   if (input.poller.consecutiveFailures > 0) reasons.push('relay_failing');
   if (relayHealth !== null && relayHealth.unsupportedSubscribedCount > 0) reasons.push('relay_unsupported_events');
 
+  let cutoff: WorkerHealthReport['cutoff'];
+  if (input.cutoff !== undefined) {
+    const current = input.cutoff;
+    const relay = current.relayHealth === 'unavailable' ? null : current.relayHealth;
+    const at = current.poller.lastCompletedAt ?? input.runningSince;
+    const cutoffAge = at === null ? null : Math.max(0, now - at);
+    const cutoffStale = input.lifecycle === 'running' && (cutoffAge === null || cutoffAge > input.staleAfterMs);
+    if (cutoffStale) reasons.push('cutoff_heartbeat_stale');
+    if (relay === null) reasons.push('cutoff_relay_unavailable');
+    if (current.poller.consecutiveFailures > 0) reasons.push('cutoff_relay_failing');
+    if (relay !== null && relay.unsupportedSubscribedCount > 0) reasons.push('cutoff_relay_unsupported_events');
+    if (current.discovery.consecutiveFailures > 0) reasons.push('cutoff_discovery_failing');
+    const discoveryAt = current.discovery.lastCompletedAt ?? input.runningSince;
+    if (input.lifecycle === 'running' && (discoveryAt === null || now - discoveryAt > input.staleAfterMs)) reasons.push('cutoff_discovery_stale');
+    if (within(current.jobs.lastFailureAt, now, input.recentWindowMs)) reasons.push('job_failures_recent');
+    cutoff = {
+      heartbeat: { lastRelayCycleAt: at === null ? null : new Date(at).toISOString(), ageMs: cutoffAge, stale: cutoffStale },
+      relay: {
+        state: relay === null ? 'unavailable' : 'ok', pendingSubscribedCount: relay?.pendingSubscribedCount ?? null,
+        oldestSubscribedAt: relay?.oldestSubscribedAt ?? null, oldestSubscribedAgeMs: relay?.oldestSubscribedAgeMs ?? null,
+        unsupportedSubscribedCount: relay?.unsupportedSubscribedCount ?? null,
+        consecutiveFailures: current.poller.consecutiveFailures, failedBatches: current.poller.failedBatches,
+      },
+      jobs: { outcomes: current.jobs.outcomes, rejected: current.jobs.rejected, failed: current.jobs.failed },
+      discovery: current.discovery,
+    };
+  }
+
   const status = reasons.some((reason) => DOWN_REASONS.has(reason)) ? 'down' : reasons.length > 0 ? 'degraded' : 'ok';
   return {
     status,
-    reasons,
+    reasons: [...new Set(reasons)],
+    ...(cutoff === undefined ? {} : { cutoff }),
+    ...(input.concurrency === undefined ? {} : { concurrency: input.concurrency }),
     checkedAt: new Date(now).toISOString(),
     lifecycle: input.lifecycle,
     heartbeat: { lastRelayCycleAt: heartbeatAt === null ? null : new Date(heartbeatAt).toISOString(), ageMs, stale },

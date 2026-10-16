@@ -122,7 +122,7 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
         const row=found(await scope.repository.findPeriod(scope.context.workspaceId,target));revision(row.revision,p.expectedRevision);
         for(const fieldId of p.protectedFieldIds??row.protectedFieldIds) {const f=found(await scope.repository.fields.findField(row.workspaceId,fieldId));if(f.projectId!==row.projectId||f.archivedAt!==null)throw rule('A protected field must be active in this project.');}
         const next:PlanningPeriodDto={...row,name:p.name??row.name,cutoffAt:p.cutoffAt??row.cutoffAt,protectedFieldIds:p.protectedFieldIds??row.protectedFieldIds,protectEstimate:p.protectEstimate??row.protectEstimate,revision:row.revision+1,updatedAt:now};
-        await scope.repository.savePeriod(next);await scope.recordChange({entityType:'planning_period',entityId:row.id,action:'updated',entityRevision:next.revision,diff:{before:row,after:next},outbox:{type:'planning_period.updated',payload:{periodId:row.id,revision:next.revision}}});return next;
+        await scope.repository.savePeriod(next);await scope.recordChange({entityType:'planning_period',entityId:row.id,action:'updated',entityRevision:next.revision,diff:{before:row,after:next},outbox:{type:'planning_period.updated',payload:{periodId:row.id,revision:next.revision}}});await scope.cutoffRequests.requestPeriod(next,'period_changed');return next;
       });
     },
     async listPackages(ctx,input) {const q=parse(planningPackageListQuerySchema,input);return read(ctx,async(repo,c)=>{found(await repo.tasks.findProject(c.workspaceId,q.projectId));return page(repo,c,(await repo.captureProject(c.workspaceId,q.projectId)).packages,q,{kind:'packages',projectId:q.projectId});});},

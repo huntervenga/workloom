@@ -139,3 +139,9 @@ export type { TaskCommentAnchor, TaskActivityAnchor, TaskTimelineCursor, Comment
 export { createPersonalTablePreferenceApplication } from './table-preferences/service.js';
 export type { PersonalTablePreferenceApplication } from './table-preferences/application.js';
 export type { PersonalTablePreferenceRepository, PersonalTablePreferenceWriteScope, PersonalTablePreferenceUnitOfWork, PersonalTablePreferenceTools } from './table-preferences/ports.js';
+
+export * from './cutoff/application.js';
+export * from './cutoff/ports.js';
+export {createCutoffApplication, cutoffAuthority, cutoffSources, requireCutoffPeriod, requestCutoffForPeriod} from './cutoff/service.js';
+
+export {createCutoffWorkerFacade,cutoffOutcome,blockedCutoffOutcome} from './cutoff/worker.js';

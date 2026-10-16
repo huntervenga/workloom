@@ -47,6 +47,11 @@ const literalExemptions = new Map([
 ]);
 const readSource = path => readFileSync(join(root, path), 'utf8');
 const dynamicKeys = new Map([
+  ['apps/web/src/features/cutoff/CutoffPanel.tsx', new Map([
+    ['readinessKeys[data.readiness]', { keys: tableTranslationKeys(readSource('apps/web/src/features/cutoff/CutoffPanel.tsx'), 'readinessKeys'), reason: 'Exhaustive finite cutoff readiness enum maps to literal catalog keys; persisted frozen/baseline consistency is validated by the response schema.' }],
+    ['blockerKeys[blocker.code]', { keys: tableTranslationKeys(readSource('apps/web/src/features/cutoff/CutoffPanel.tsx'), 'blockerKeys'), reason: 'Exhaustive finite public cutoff/recurrence blocker codes map to safe literal copy, never server messages.' }],
+    ['automationKeys[data.automation.state]', { keys: tableTranslationKeys(readSource('apps/web/src/features/cutoff/CutoffPanel.tsx'), 'automationKeys'), reason: 'Three finite persisted automation states map to literal catalog keys.' }],
+  ])],
   ['apps/web/src/features/task-table/PersonalColumnsDialog.tsx', new Map([['builtinLabels[ref.key]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-table/PersonalColumnsDialog.tsx'), 'builtinLabels'), reason: 'Exhaustive finite ten built-in table-column IDs map to literal localization keys.' }]])],
   ['apps/web/src/features/task-comments/TaskDiscussion.tsx', new Map([
     ['activityKeys[event.kind]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-comments/TaskDiscussion.tsx'), 'activityKeys'), reason: 'Exhaustive finite public activity kind dictionary; all values are literal localization keys.' }],

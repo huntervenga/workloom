@@ -131,6 +131,8 @@ export function createRecurrenceApplication(deps:RecurrenceApplicationDependenci
    const next=h===b.sourceManifestHash?b:{...b,revision:b.revision+1,sourceManifestHash:h};
    if(next!==b)await scope.recurrence.saveBinding(next,true);
    if(reason)await requestMaterialization(scope,next,h,context.series.authorizationRevision,reason);
+   const cutoffPeriod=await scope.repository.findPeriod(scope.context.workspaceId,next.periodId);
+   if(cutoffPeriod)await scope.cutoffRequests.requestPeriod(cutoffPeriod,reason==='generation_authorized'?'generation_authorized':reason==='series_resumed'?'series_resumed':'recurrence_changed',reason==='generation_authorized'||reason==='series_resumed');
    out.push(next);
   }
   return out;
@@ -276,7 +278,7 @@ export function createRecurrenceApplication(deps:RecurrenceApplicationDependenci
    for(const b of bindings)await repo.saveBinding(b,false);
    const headers=preview.candidates.flatMap(c=>{const b=bindings.find(x=>x.periodId===c.periodId);return b?[headerFromDraft(tools,b,{occurrenceKey:c.occurrenceKey,nominalSequence:c.nominalSequence,sourceVersionId:versionId,resolution:c.resolution},now)]:[];});
    if(headers.length)await repo.reserveInstanceHeaders(headers);
-   for(const b of bindings)await requestMaterialization(scope,b,b.sourceManifestHash,series.authorizationRevision,'series_created');
+   for(const b of bindings){await requestMaterialization(scope,b,b.sourceManifestHash,series.authorizationRevision,'series_created');const period=await repo.planning.findPeriod(ws,b.periodId);if(period)await scope.cutoffRequests.requestPeriod(period,'recurrence_changed');}
    return seriesDto(repo,series,scope.barrierAt);
   });},
   async getSeries(ctx,id){const seriesId=parse(idSchema,id);return read(ctx,'task.read',async(repo,c)=>seriesDto(repo,found(await repo.findSeries(c.workspaceId,seriesId)),new Date()));},
@@ -329,7 +331,7 @@ export function createRecurrenceApplication(deps:RecurrenceApplicationDependenci
    for(const b of created)await repo.saveBinding(b,false);
    const headers=built.dto.candidates.flatMap(c=>{if(context.headers.some(h=>h.occurrenceKey===c.occurrenceKey))return [];const b=created.find(x=>x.periodId===c.periodId);const planned=must(built.planned.find(x=>x.occurrenceKey===c.occurrenceKey),'candidate');return b?[headerFromDraft(tools,b,planned,now)]:[];});
    if(headers.length)await repo.reserveInstanceHeaders(headers);
-   for(const b of created)await requestMaterialization(scope,b,b.sourceManifestHash,nextSeries.authorizationRevision,'periods_added');
+   for(const b of created){await requestMaterialization(scope,b,b.sourceManifestHash,nextSeries.authorizationRevision,'periods_added');const period=await repo.planning.findPeriod(ws,b.periodId);if(period)await scope.cutoffRequests.requestPeriod(period,'recurrence_changed');}
    const bindings:RecurrencePeriodBindingDto[]=[];
    for(const b of created)for(const e of await evaluatePeriodCensus(repo,tools,must(added.find(x=>x.id===b.periodId),'period'),scope.barrierAt,b.id))bindings.push(bindingDto(e));
    return {series:await seriesDto(repo,nextSeries,scope.barrierAt),bindings};

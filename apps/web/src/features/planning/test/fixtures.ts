@@ -1,4 +1,4 @@
-import type { ManualPeriodWorkLogDto, PeriodCommitmentDto, PlanBaselineDto, PlanningPackageDto, PlanningPeriodDto, PlanningSnapshotDto, TaskDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactSummaryDto } from '@workloom/contracts';
+import type { CutoffReadinessDto, ManualPeriodWorkLogDto, PeriodCommitmentDto, PlanBaselineDto, PlanningPackageDto, PlanningPeriodDto, PlanningSnapshotDto, TaskDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactSummaryDto } from '@workloom/contracts';
 import { alpha, alphaMembers, anna, ok, project, singleActorRoutes, type RouteTable } from '../../../test/fakeApi';
 
 export const PROJECT_ID = 'e0000000-0000-4000-8000-000000000001';
@@ -33,6 +33,7 @@ export function routes(): RouteTable {
   };
   for (const id of [PERIOD_A, PERIOD_B]) {
     result[`GET ${rootPath}/periods/${id}`] = () => ok(period(id));
+    result[`GET ${rootPath}/periods/${id}/cutoff-readiness`] = () => ok(cutoffReadiness(period(id)));
     for (const suffix of ['commitments', 'baselines']) result[`GET ${rootPath}/periods/${id}/${suffix}`] = () => ok([]);
   }
   result[`GET ${rootPath}/worklogs`] = () => ok([]);
@@ -40,6 +41,11 @@ export function routes(): RouteTable {
   result[`GET ${rootPath}/projects/${PROJECT_ID}/meetings`] = () => ok([]);
   result[`GET ${rootPath}/report-runs`] = () => ok([]);
   return result;
+}
+/** Explicit unconfigured readiness fixture; frozen cases must provide their real test baseline. */
+export function cutoffReadiness(target:PlanningPeriodDto=period(),saved:CutoffReadinessDto['baseline']=null):CutoffReadinessDto {
+ if(target.state==='frozen'&&!saved)throw new Error('A frozen readiness fixture needs explicit baseline timestamps.');
+ return {periodId:target.id,periodRevision:target.revision,persistedState:saved?'frozen':'planning',serverNow:STAMP,cutoffAt:target.cutoffAt,baseline:saved,automation:{state:'not_configured',grant:null},readiness:saved?'frozen':'planning',missingCount:0,blockedCount:0,blockers:[],truncated:false,latestRequest:null,latestOutcome:null,actions:{canConfigure:true,canRetry:false,canFreezeProject:!saved}};
 }
 export function lostResponse() {
   let lose: () => void = () => undefined;

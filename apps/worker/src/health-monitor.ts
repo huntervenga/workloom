@@ -62,6 +62,21 @@ export function logHealthReport(logger: WorkerLogger, report: WorkerHealthReport
     jobsFailed: report.jobs.failed,
     jobsRejected: report.jobs.rejected,
   });
+  if (report.cutoff !== undefined) {
+    const cutoff = report.cutoff;
+    logger.log(SEVERITY[report.status], 'worker.health_cutoff', {
+      status: report.status, ...present('ageMs', cutoff.heartbeat.ageMs),
+      ...present('pendingCount', cutoff.relay.pendingSubscribedCount),
+      ...present('unsupportedCount', cutoff.relay.unsupportedSubscribedCount),
+      consecutiveFailures: cutoff.relay.consecutiveFailures, failedBatches: cutoff.relay.failedBatches,
+      jobsFailed: cutoff.jobs.failed, jobsRejected: cutoff.jobs.rejected,
+    });
+    for (const [result, count] of Object.entries(cutoff.jobs.outcomes)) logger.info('worker.health_cutoff_outcome', { result, count });
+    logger.log(cutoff.discovery.consecutiveFailures > 0 ? 'warn' : 'info', 'worker.health_discovery', {
+      consecutiveFailures: cutoff.discovery.consecutiveFailures, failedBatches: cutoff.discovery.failedBatches,
+      ...(cutoff.discovery.discoveryBatch === null ? {} : { count: cutoff.discovery.discoveryBatch.requestedCount }),
+    });
+  }
   for (const queue of report.queues) {
     logger.log(queue.state === 'ready' ? 'info' : 'error', 'worker.health_queue', {
       jobName: queue.name,
