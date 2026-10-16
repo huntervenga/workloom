@@ -6,6 +6,7 @@ import { NotFoundPage } from '../routes/NotFoundPage';
 import { OverviewPage } from '../routes/OverviewPage';
 import { ProjectPage } from '../routes/ProjectPage';
 import { ProjectsPage } from '../routes/ProjectsPage';
+import { WeeklyPage } from '../routes/WeeklyPage';
 import { WorkspaceLayout } from '../routes/WorkspaceLayout';
 import { useSession } from './session';
 import { AppShell } from './shell/AppShell';
@@ -23,6 +24,7 @@ export function AppRoutes() {
           <Route path="members" element={<MembersPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
+          <Route path="projects/:projectId/week" element={<WeeklyPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>

@@ -10,7 +10,7 @@ import type {
   WorkspaceDto,
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
-import { ArrowLeft, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import {
@@ -335,6 +335,13 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           ) : null}
         </div>
       </header>
+
+      <nav aria-label="Представления проекта" className="flex flex-wrap gap-2">
+        <span className="inline-flex items-center rounded-lg bg-accent-soft px-3 py-2 text-sm font-medium text-accent-ink" aria-current="page">Задачи</span>
+        <Link to={`/w/${workspace.id}/projects/${project.id}/week`} className={buttonClassName({ variant: 'ghost' })}>
+          <CalendarDays size={16} aria-hidden="true" />Неделя
+        </Link>
+      </nav>
 
       <div role="status" aria-live="polite" className="sr-only">
         {announcement}

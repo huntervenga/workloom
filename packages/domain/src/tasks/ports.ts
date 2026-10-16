@@ -1,3 +1,4 @@
+import type { PlanningMutationGuard } from '../planning/ports.js';
 import type {
   ProjectDto,
   SectionDto,
@@ -136,6 +137,8 @@ export interface TaskRepository {
 }
 
 export interface TaskWriteScope extends WorkspaceWriteScope {
+  /** Required by every real composition; tests must inject an explicit policy fake. */
+  readonly planningGuard: PlanningMutationGuard;
   readonly repository: TaskRepository;
 }
 

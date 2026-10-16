@@ -70,3 +70,7 @@ export { seedDemoData, type DemoSeedResult, type SeedTableResult } from './seed/
 export * from './fixtures.js';
 export * as schema from './schema.js';
 export { REQUIRED_TABLES } from './schema.js';
+
+export { createPlanningApplication, type PlanningApplicationOptions } from './planning/planning-application.js';
+export { createPlanningRepository } from './repositories/planning-repository.js';
+export { createPlanningCursorCodec, type PlanningCursorCodec, type PlanningCursorCodecOptions } from './planning/cursor.js';

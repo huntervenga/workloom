@@ -1,3 +1,5 @@
+import type { FieldMutationCommand } from '../planning/ports.js';
+import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
 import {
   createTaskFieldInputSchema,
   createTaskFieldOptionInputSchema,
@@ -96,7 +98,7 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
   async function mutate<R>(
     context: CommandContext,
     capability: Capability,
-    command: string,
+    command: FieldMutationCommand,
     target: unknown,
     input: unknown,
     resultSchema: SafeParser<R>,
@@ -111,19 +113,21 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
     const { workspaceId } = ctx;
     const actorUserId = ctx.actor.userId;
 
-    return writer.run(ctx, capability, async (scope) => {
+    const outcome = await writer.run(ctx, capability, async (scope) => {
       const idempotency = scope.repository.tasks;
       const existing = await idempotency.findIdempotency(workspaceId, actorUserId, command, key);
       if (existing !== null) {
         if (existing.payloadHash !== payloadHash) {
           throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This Idempotency-Key was already used for a different request.');
         }
+        if (isCommittedPlanningRejection(existing.result)) return existing.result;
         const stored = resultSchema.safeParse(existing.result);
         if (!stored.success) throw new Error('Stored idempotent result does not match its contract.');
         return stored.data;
       }
       const now = scope.barrierAt.toISOString();
-      const result = await work(scope, workspaceId, now);
+      const rejected = await scope.planningGuard.check({ family: 'field', command, target, input });
+      const result = rejected ?? await work(scope, workspaceId, now);
       await idempotency.insertIdempotency({
         workspaceId,
         actorUserId,
@@ -135,6 +139,7 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
       });
       return result;
     });
+    return unwrapPlanningOutcome(outcome);
   }
 
   /** Every meaningful definition or option change: revision + 1 and a new immutable version. */

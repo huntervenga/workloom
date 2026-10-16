@@ -3,7 +3,7 @@
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
  * produce no diff). Immutability triggers live only in SQL.
  */
-import type { TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
+import type { TaskFieldData, TaskFieldDefinitionDto, PlanningSnapshotDto, PeriodCommitmentDto, WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto } from '@workloom/contracts';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
@@ -824,4 +824,164 @@ export const REQUIRED_TABLES = [
   'project_columns',
   'task_field_values',
   'task_field_value_history',
+  'planning_periods',
+  'period_commitments',
+  'commitment_allocations',
+  'period_commitment_revisions',
+  'plan_baselines',
+  'package_baselines',
+  'package_freeze_observations',
+  'planning_locks',
+  'work_logs',
+  'work_log_revisions',
+  'weekly_report_runs',
 ] as const;
+
+
+// P2a: weekly planning, immutable source snapshots, period work and pinned report runs.
+export const planningPeriodStateEnum = pgEnum('planning_period_state', ['planning', 'frozen']);
+export const commitmentStateEnum = pgEnum('commitment_state', ['active', 'removed']);
+export const baselineScopeEnum = pgEnum('baseline_scope', ['self', 'project']);
+export const baselineModeEnum = pgEnum('baseline_mode', ['manual', 'cutoff']);
+export const planningLockKindEnum = pgEnum('planning_lock_kind', ['estimate', 'custom_value', 'commitment']);
+export const workLogStateEnum = pgEnum('work_log_state', ['active', 'void']);
+
+export const planningPeriods = pgTable('planning_periods', {
+  id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull(), projectId: uuid('project_id').notNull(),
+  name: text('name').notNull(), localStart: date('local_start').notNull(), localEndExclusive: date('local_end_exclusive').notNull(),
+  timezone: text('timezone').notNull(), cutoffAt: timestamp('cutoff_at', {withTimezone:true}).notNull(),
+  state: planningPeriodStateEnum('state').notNull().default('planning'), revision: integer('revision').notNull().default(1),
+  protectedFieldIds: jsonb('protected_field_ids').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  protectEstimate: boolean('protect_estimate').notNull().default(true), projectBaselineId: uuid('project_baseline_id'),
+  createdAt: timestamp('created_at', {withTimezone:true}).notNull(), updatedAt: timestamp('updated_at', {withTimezone:true}).notNull(),
+}, t=>[
+  unique('planning_periods_scope_id_unique').on(t.workspaceId,t.projectId,t.id),
+  unique('planning_periods_workspace_id_unique').on(t.workspaceId,t.id),
+  unique('planning_periods_project_week_unique').on(t.workspaceId,t.projectId,t.localStart),
+  foreignKey({name:'planning_periods_project_fk', columns:[t.workspaceId,t.projectId], foreignColumns:[projects.workspaceId,projects.id]}),
+  check('planning_periods_week',sql`local_end_exclusive = local_start + 7`),
+  check('planning_periods_revision',sql`revision >= 1`),
+  check('planning_periods_name',sql`char_length(btrim(name)) between 1 and 160`),
+  check('planning_periods_field_ids_array',sql`jsonb_typeof(protected_field_ids) = 'array'`),
+  check('planning_periods_state_baseline',sql`(state = 'frozen') = (project_baseline_id is not null)`),
+]);
+
+export const periodCommitments = pgTable('period_commitments', {
+  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),
+  periodId:uuid('period_id').notNull(),workPackageId:uuid('work_package_id').notNull(),membershipId:uuid('membership_id').notNull(),
+  plannedMinutes:integer('planned_minutes'),state:commitmentStateEnum('state').notNull().default('active'),revision:integer('revision').notNull(),
+  added:boolean('added').notNull().default(false),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[
+  unique('period_commitments_workspace_id_unique').on(t.workspaceId,t.id),
+  unique('period_commitments_scope_id_unique').on(t.workspaceId,t.projectId,t.id),
+  unique('period_commitments_source_unique').on(t.workspaceId,t.periodId,t.workPackageId,t.membershipId),
+  foreignKey({name:'period_commitments_period_fk',columns:[t.workspaceId,t.projectId,t.periodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
+  foreignKey({name:'period_commitments_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
+  foreignKey({name:'period_commitments_member_fk',columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),
+  check('period_commitments_minutes',sql`planned_minutes is null or planned_minutes >= 0`),check('period_commitments_revision',sql`revision >= 1`),
+]);
+export const commitmentAllocations = pgTable('commitment_allocations', {
+  workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),commitmentId:uuid('commitment_id').notNull(),taskId:uuid('task_id').notNull(),minutes:integer('minutes').notNull(),
+},t=>[
+  primaryKey({name:'commitment_allocations_pk',columns:[t.workspaceId,t.commitmentId,t.taskId]}),
+  foreignKey({name:'commitment_allocations_commitment_fk',columns:[t.workspaceId,t.projectId,t.commitmentId],foreignColumns:[periodCommitments.workspaceId,periodCommitments.projectId,periodCommitments.id]}),
+  foreignKey({name:'commitment_allocations_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+  check('commitment_allocations_minutes',sql`minutes >= 0`),
+]);
+export const periodCommitmentRevisions = pgTable('period_commitment_revisions',{
+  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),commitmentId:uuid('commitment_id').notNull(),revision:integer('revision').notNull(),
+  snapshot:jsonb('snapshot').$type<PeriodCommitmentDto>().notNull(),actorUserId:uuid('actor_user_id').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+},t=>[
+  unique('period_commitment_revisions_source_unique').on(t.workspaceId,t.commitmentId,t.revision),
+  foreignKey({name:'period_commitment_revisions_source_fk',columns:[t.workspaceId,t.commitmentId],foreignColumns:[periodCommitments.workspaceId,periodCommitments.id]}),
+  foreignKey({name:'period_commitment_revisions_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),
+  check('period_commitment_revisions_snapshot',sql`(jsonb_typeof(snapshot) = 'object' and snapshot->>'id' = commitment_id::text and (snapshot->>'revision')::integer = revision) is true`),
+  check('period_commitment_revisions_positive',sql`revision >= 1 and change_seq >= 1`),
+]);
+export const planBaselines = pgTable('plan_baselines',{
+  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),periodId:uuid('period_id').notNull(),
+  scope:baselineScopeEnum('scope').notNull(),membershipId:uuid('membership_id'),mode:baselineModeEnum('mode').notNull(),
+  requestedCutoffAt:timestamp('requested_cutoff_at',{withTimezone:true}).notNull(),frozenAt:timestamp('frozen_at',{withTimezone:true}).notNull(),
+  actorUserId:uuid('actor_user_id').notNull(),source:commandSourceEnum('source').notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+  snapshot:jsonb('snapshot').$type<PlanningSnapshotDto>().notNull(),
+},t=>[
+  unique('plan_baselines_workspace_id_unique').on(t.workspaceId,t.id),
+  unique('plan_baselines_scope_id_unique').on(t.workspaceId,t.projectId,t.id),
+  uniqueIndex('plan_baselines_personal_unique').on(t.workspaceId,t.periodId,t.membershipId).where(sql`scope = 'self'`),
+  uniqueIndex('plan_baselines_project_unique').on(t.workspaceId,t.periodId).where(sql`scope = 'project'`),
+  foreignKey({name:'plan_baselines_period_fk',columns:[t.workspaceId,t.projectId,t.periodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
+  foreignKey({name:'plan_baselines_member_fk',columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),
+  foreignKey({name:'plan_baselines_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),
+  check('plan_baselines_scope_member',sql`(scope = 'self') = (membership_id is not null)`),
+  check('plan_baselines_seq',sql`change_seq >= 1`),
+  check('plan_baselines_snapshot_scope',sql`(jsonb_typeof(snapshot) = 'object' and snapshot->>'schemaVersion' = '1' and snapshot#>>'{period,id}' = period_id::text and snapshot#>>'{period,workspaceId}' = workspace_id::text and snapshot#>>'{period,projectId}' = project_id::text) is true`),
+]);
+export const packageBaselines = pgTable('package_baselines',{
+  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),workPackageId:uuid('work_package_id').notNull(),
+  estimateMinutes:integer('estimate_minutes').notNull(),sourcePackageRevision:integer('source_package_revision').notNull(),
+  sourceBaselineId:uuid('source_baseline_id').notNull(),acceptedAt:timestamp('accepted_at',{withTimezone:true}).notNull(),
+},t=>[
+  unique('package_baselines_workspace_id_unique').on(t.workspaceId,t.id),unique('package_baselines_package_unique').on(t.workspaceId,t.workPackageId),
+  foreignKey({name:'package_baselines_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
+  foreignKey({name:'package_baselines_source_fk',columns:[t.workspaceId,t.projectId,t.sourceBaselineId],foreignColumns:[planBaselines.workspaceId,planBaselines.projectId,planBaselines.id]}),
+  check('package_baselines_values',sql`estimate_minutes >= 0 and source_package_revision >= 1`),
+]);
+export const planningLocks = pgTable('planning_locks',{
+  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),baselineId:uuid('baseline_id').notNull(),
+  kind:planningLockKindEnum('kind').notNull(),workPackageId:uuid('work_package_id'),taskId:uuid('task_id'),fieldId:uuid('field_id'),commitmentId:uuid('commitment_id'),
+},t=>[
+  foreignKey({name:'planning_locks_baseline_fk',columns:[t.workspaceId,t.projectId,t.baselineId],foreignColumns:[planBaselines.workspaceId,planBaselines.projectId,planBaselines.id]}),
+  foreignKey({name:'planning_locks_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
+  foreignKey({name:'planning_locks_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+  foreignKey({name:'planning_locks_field_fk',columns:[t.workspaceId,t.projectId,t.fieldId],foreignColumns:[taskFieldDefinitions.workspaceId,taskFieldDefinitions.projectId,taskFieldDefinitions.id]}),
+  foreignKey({name:'planning_locks_commitment_fk',columns:[t.workspaceId,t.projectId,t.commitmentId],foreignColumns:[periodCommitments.workspaceId,periodCommitments.projectId,periodCommitments.id]}),
+  uniqueIndex('planning_locks_estimate_unique').on(t.workspaceId,t.baselineId,t.workPackageId).where(sql`kind = 'estimate'`),
+  uniqueIndex('planning_locks_value_unique').on(t.workspaceId,t.baselineId,t.taskId,t.fieldId).where(sql`kind = 'custom_value'`),
+  uniqueIndex('planning_locks_commitment_unique').on(t.workspaceId,t.baselineId,t.commitmentId).where(sql`kind = 'commitment'`),
+  check('planning_locks_shape',sql`(kind = 'estimate' and work_package_id is not null and task_id is null and field_id is null and commitment_id is null) or (kind = 'custom_value' and task_id is not null and field_id is not null and work_package_id is null and commitment_id is null) or (kind = 'commitment' and commitment_id is not null and work_package_id is null and task_id is null and field_id is null)`),
+]);
+export const workLogs = pgTable('work_logs',{
+  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),taskId:uuid('task_id').notNull(),workPackageId:uuid('work_package_id').notNull(),
+  membershipId:uuid('membership_id').notNull(),periodId:uuid('period_id').notNull(),sourceKind:text('source_kind').notNull().default('manual_period'),sourceKey:text('source_key').notNull(),
+  revision:integer('revision').notNull(),revisionId:uuid('revision_id').notNull(),
+},t=>[
+  unique('work_logs_workspace_id_unique').on(t.workspaceId,t.id),unique('work_logs_manual_source_unique').on(t.workspaceId,t.taskId,t.membershipId,t.periodId),
+  unique('work_logs_source_key_unique').on(t.workspaceId,t.sourceKind,t.sourceKey),
+  foreignKey({name:'work_logs_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+  foreignKey({name:'work_logs_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
+  foreignKey({name:'work_logs_period_fk',columns:[t.workspaceId,t.projectId,t.periodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
+  foreignKey({name:'work_logs_member_fk',columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),
+  check('work_logs_source_identity',sql`source_kind = 'manual_period' and source_key = task_id::text || ':' || membership_id::text || ':' || period_id::text`),
+  check('work_logs_revision',sql`revision >= 1`),
+]);
+export const workLogRevisions = pgTable('work_log_revisions',{
+  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),workLogId:uuid('work_log_id').notNull(),revision:integer('revision').notNull(),
+  minutes:integer('minutes').notNull(),state:workLogStateEnum('state').notNull(),reason:text('reason'),actorUserId:uuid('actor_user_id').notNull(),
+  recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),
+},t=>[
+  unique('work_log_revisions_workspace_id_unique').on(t.workspaceId,t.id),unique('work_log_revisions_source_unique').on(t.workspaceId,t.workLogId,t.revision),
+  foreignKey({name:'work_log_revisions_log_fk',columns:[t.workspaceId,t.workLogId],foreignColumns:[workLogs.workspaceId,workLogs.id]}),
+  foreignKey({name:'work_log_revisions_actor_fk',columns:[t.actorUserId],foreignColumns:[users.id]}),
+  check('work_log_revisions_values',sql`minutes >= 0 and revision >= 1 and change_seq >= 1`),
+  check('work_log_revisions_reason',sql`((revision = 1 and state = 'active') or char_length(btrim(reason)) between 1 and 1000) is true`),
+]);
+export const weeklyReportRuns = pgTable('weekly_report_runs',{
+  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),periodId:uuid('period_id').notNull(),baselineId:uuid('baseline_id').notNull(),
+  document:jsonb('document').$type<WeeklyPlanFactReportRunDto>().notNull(),rows:jsonb('rows').$type<WeeklyPlanFactRowDto[]>().notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
+},t=>[
+  unique('weekly_report_runs_workspace_id_unique').on(t.workspaceId,t.id),
+  foreignKey({name:'weekly_report_runs_period_fk',columns:[t.workspaceId,t.projectId,t.periodId],foreignColumns:[planningPeriods.workspaceId,planningPeriods.projectId,planningPeriods.id]}),
+  foreignKey({name:'weekly_report_runs_baseline_fk',columns:[t.workspaceId,t.projectId,t.baselineId],foreignColumns:[planBaselines.workspaceId,planBaselines.projectId,planBaselines.id]}),
+  check('weekly_report_runs_document_identity',sql`(jsonb_typeof(document) = 'object' and document->>'id' = id::text and document->>'workspaceId' = workspace_id::text and document->>'projectId' = project_id::text and document->>'periodId' = period_id::text and document->>'baselineId' = baseline_id::text and document->>'metricVersion' = 'weekly_plan_fact_v1' and jsonb_typeof(rows) = 'array' and jsonb_array_length(rows) = (document->>'rowCount')::integer) is true`),
+]);
+
+/** First related freeze is recorded even if the estimate was unknown and not protected. */
+export const packageFreezeObservations = pgTable('package_freeze_observations',{
+  workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),workPackageId:uuid('work_package_id').notNull(),
+  estimateMinutes:integer('estimate_minutes'),packageRevision:integer('package_revision').notNull(),baselineId:uuid('baseline_id').notNull(),
+},t=>[
+  primaryKey({name:'package_freeze_observations_pk',columns:[t.workspaceId,t.workPackageId]}),
+  foreignKey({name:'package_freeze_observations_package_fk',columns:[t.workspaceId,t.projectId,t.workPackageId],foreignColumns:[workPackages.workspaceId,workPackages.projectId,workPackages.id]}),
+  foreignKey({name:'package_freeze_observations_baseline_fk',columns:[t.workspaceId,t.projectId,t.baselineId],foreignColumns:[planBaselines.workspaceId,planBaselines.projectId,planBaselines.id]}),
+  check('package_freeze_observations_values',sql`(estimate_minutes is null or estimate_minutes >= 0) and package_revision >= 1`),
+]);

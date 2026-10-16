@@ -1,3 +1,5 @@
+import type { TaskMutationCommand } from '../planning/ports.js';
+import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
 import {
   archiveTaskInputSchema,
   createProjectInputSchema,
@@ -98,7 +100,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
   async function mutate<R>(
     context: CommandContext,
     capability: Capability,
-    command: string,
+    command: TaskMutationCommand,
     target: string | null,
     input: unknown,
     resultSchema: SafeParser<R>,
@@ -113,18 +115,20 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
     const { workspaceId } = ctx;
     const actorUserId = ctx.actor.userId;
 
-    return writer.run(ctx, capability, async (scope) => {
+    const outcome = await writer.run(ctx, capability, async (scope) => {
       const existing = await scope.repository.findIdempotency(workspaceId, actorUserId, command, key);
       if (existing !== null) {
         if (existing.payloadHash !== payloadHash) {
           throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This Idempotency-Key was already used for a different request.');
         }
+        if (isCommittedPlanningRejection(existing.result)) return existing.result;
         const stored = resultSchema.safeParse(existing.result);
         if (!stored.success) throw new Error('Stored idempotent result does not match its contract.');
         return stored.data;
       }
       const now = scope.barrierAt.toISOString();
-      const result = await work(scope, workspaceId, now);
+      const rejected = await scope.planningGuard.check({ family: 'task', command, target, input });
+      const result = rejected ?? await work(scope, workspaceId, now);
       await scope.repository.insertIdempotency({
         workspaceId,
         actorUserId,
@@ -136,6 +140,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
       });
       return result;
     });
+    return unwrapPlanningOutcome(outcome);
   }
 
   return {

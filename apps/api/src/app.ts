@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import {
   createAccessRepository,
   createDatabase,
+  createPlanningApplication,
   createReadinessProbe,
   createTaskApplication,
   createTaskFieldApplication,
@@ -12,7 +13,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { AccessRepository, TaskApplication, TaskFieldApplication } from '@workloom/domain';
+import type { AccessRepository, PlanningApplication, TaskApplication, TaskFieldApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
@@ -20,6 +21,7 @@ import { createDevSessionStore, type DevSessionStore } from './identity/dev-sess
 import { createDevIdentityAdapter, type IdentityAdapter } from './identity/identity-adapter.js';
 import { mapError } from './http/errors.js';
 import { registerFieldRoutes } from './http/field-routes.js';
+import { registerPlanningRoutes } from './http/planning-routes.js';
 import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from './http/request-guards.js';
 import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './http/routes.js';
 import { registerTaskRoutes } from './http/task-routes.js';
@@ -42,6 +44,8 @@ export interface AppDependencies {
    * without a database (P0/P1a HTTP tests), the P1b field routes are not registered.
    */
   readonly taskFieldApplication?: TaskFieldApplication;
+  /** Shared planning service, or an injected transport-test port; uses the existing pool. */
+  readonly planningApplication?: PlanningApplication;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
   /** Web dist directory; null disables static serving. Default: apps/web/dist when config.serveWeb. */
@@ -72,6 +76,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
   const taskFieldApplication =
     dependencies.taskFieldApplication ?? (database === undefined ? undefined : createTaskFieldApplication(database));
+  const planningApplication =
+    dependencies.planningApplication ?? (database === undefined ? undefined : createPlanningApplication(database));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
   const identity =
     dependencies.identityAdapter ??
@@ -157,6 +163,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   if (taskFieldApplication !== undefined) {
     registerFieldRoutes(app, { identity, fields: taskFieldApplication });
+  }
+  if (planningApplication !== undefined) {
+    registerPlanningRoutes(app, { identity, planning: planningApplication });
   }
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);

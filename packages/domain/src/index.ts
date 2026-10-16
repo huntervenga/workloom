@@ -79,3 +79,7 @@ export type {
   WorkspaceWriteRunner,
   WorkspaceWriteScope,
 } from './transactions/ports.js';
+export type { PlanningApplication, PlanningPage } from './planning/application.js';
+export type { ProjectPlanningSources, PackageFreezeObservation, PlanningLock, PlanningRepository, PlanningWriteScope, PlanningUnitOfWork, PlanningCursor, PlanningTools, PlanningApplicationDependencies, TaskMutationCommand, FieldMutationCommand, PlanningMutationCommand, PlanningMutationIntent, CommittedPlanningRejection, PlanningMutationGuard } from './planning/ports.js';
+export { captureFreezeSnapshot, freezePreviewHash, performFreeze, createPlanningMutationGuard, isCommittedPlanningRejection, unwrapPlanningOutcome } from './planning/freeze.js';
+export { createPlanningApplication } from './planning/service.js';

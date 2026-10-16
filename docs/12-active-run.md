@@ -34,7 +34,7 @@
 - API `4310` — текущая скомпилированная сборка с локальной dev identity, `NODE_ENV=production`; Vite — `4311`. Demo-проект «Запуск команды Workloom» сохранять; migration, drop и seed на посторонней БД не выполнять.
 - Перезапуск runtime и заморозку кода не предполагать до согласованного gate.
 
-## Текущий срез: ограниченный P1b принят локально
+## Текущий checkpoint и следующая работа
 
 | Зона | Владелец |
 | --- | --- |
@@ -47,14 +47,17 @@
 - Принятый bounded scope: 9 типов custom fields ([06 P1.4–P1.5](06-implementation-plan.md#p1-таблица-задач-и-дополнительные-поля)), настройки полей проекта, ревизии значений и выборочная история; ручная блокировка custom field (`locked`) подтверждена в контракте; она отдельна от недельного baseline P2.
 - Приёмка, реальный PostgreSQL: persist, rollback, replay, tenant safety; стабильные IDs options и сохранение при архиве; валидация типа; null отличается от 0; история с момента включения, отключение не удаляет записанное; блокировка действует во всех каналах; конфликт параллельных ревизий.
 - Приёмка, реальный browser: создание поля, правка, перезагрузка, история — desktop и mobile.
-- Статус: bounded P1b принят root после исправления 3 визуальных findings. Source checkpoint `dee59bae06be4505b4a60e0bf469d31c8816aeda` создан root, дерево после коммита чистое; раздельные факты широкого и последнего targeted gate — только в [11](11-implementation-progress.md#текущий-статус-по-областям). Полный P1/MVP не завершён.
+- Bounded P1b принят root после исправления 3 визуальных findings. Source checkpoint `dee59bae06be4505b4a60e0bf469d31c8816aeda`; отдельный docs-only provenance commit `67ca7d47ca8ca456300c5d85550d2b5a01efa47d`, после каждого дерево было чистым. Раздельные факты gate — только в [11](11-implementation-progress.md#текущий-статус-по-областям). Полный P1/MVP не завершён.
+- Root выпустил P2a: foundation сначала фиксирует DTO/ports/routes и `docs/13`; QA пишет приёмку после frozen shape, frontend/backend работают по тому же контракту. Контракт [13](13-p2a-contract.md) заморожен; Ограниченный P2a реализован и принят локально. Core/API, реальный PostgreSQL и финальный web/browser gate завершены; точные раздельные результаты — в11. Координатор принял bounded P2a после timezone correction и просмотра4 текущих кадров; source checkpoint ожидается. Runtime/build изменения только в согласованном окне.
+- P2a acceptance: исходный vs недельный план, Worklog revisions и weekly precision, self/project freeze с source freshness, identity locks при missing rows и removal участников, auto-freeze commit+409 против неожиданного SQL rollback, current ACL при replay/чтении pinned reports и tenant isolation, дедупликация tags/participants. Split/transfer/carryover/close сверх согласованного P2a остаются P2b, не pass.
 
-## Подготовка P2 (параллельно, только read-only)
+## Матрица P2a и оставшиеся границы
 
-Следующий срез назначает root; до frozen контракта P2 — только подготовка ограниченной приёмки по [06](06-implementation-plan.md#p2-недельный-план-факт-и-первые-отчёты) и [07](07-verification-and-pilot.md#инварианты-модели-и-истории): immutable baseline против факта, added scope, carryover, allocations, missing отличается от 0, недельная точность, без смещения к завершённой когорте. Только план: кода и pass P2 нет. Post-freeze новая работа остаётся разрешена, но server-derived added/unplanned относительно immutable personal/project baseline; detail child суммируется по тому же package, added_scope отдельно. Выбранное missing value/estimate блокирует identity даже без строки значения, позднее заполнение не становится original.
+Срез назначил root, замороженный контракт — [13](13-p2a-contract.md). Ограниченная приёмка по [06](06-implementation-plan.md#p2-недельный-план-факт-и-первые-отчёты) и [07](07-verification-and-pilot.md#инварианты-модели-и-истории): immutable baseline против факта, added scope, carryover, allocations, missing отличается от 0, недельная точность, без смещения к завершённой когорте. Core/API, реальный PG и web/browser gate выполнены; bounded P2a принят координатором, source checkpoint ожидается. Carryover/transfer/close и explicit late acceptance остаются P2b, не pass. Post-freeze новая работа остаётся разрешена, но server-derived added/unplanned относительно immutable personal/project baseline; detail child суммируется по тому же package, added_scope отдельно. Выбранное missing value/estimate блокирует identity даже без строки значения, позднее заполнение не становится original.
 
 ## Журнал checkpoints прогона
 
 | Время UTC | Срез | Статус | Ссылка на доказательство в 11 |
 | --- | --- | --- | --- |
 | после root visual acceptance (16 октября local) | bounded P1b | принят локально; source `dee59bae06be4505b4a60e0bf469d31c8816aeda`, дерево после коммита чистое | [11](11-implementation-progress.md#p1b--targeted-gate-после-визуальных-исправлений) |
+| после root visual acceptance (16 октября local) | bounded P2a | принят локально; source checkpoint ещё не создан | [11](11-implementation-progress.md#p2a--targeted-gate-после-timezone-finding) |

@@ -1,5 +1,7 @@
+import { createPlanningRepository } from '../repositories/planning-repository.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  createPlanningMutationGuard,
   createTaskApplication as createDomainTaskApplication,
   type TaskApplication,
   type TaskTools,
@@ -41,6 +43,7 @@ export function createTaskApplication(
           barrierAt: scope.barrierAt,
           recordChange: scope.recordChange,
           repository: createTaskRepository(scope.tx),
+          planningGuard: createPlanningMutationGuard({ ...scope, repository: createPlanningRepository(scope.tx) }, tools),
         }),
       );
     },

@@ -5,6 +5,17 @@ import postgres from 'postgres';
 import { parseDatabaseUrl, type DatabaseUrlInfo } from './database-url.js';
 import {
   auditEvents,
+  planningPeriods,
+  packageFreezeObservations,
+  periodCommitments,
+  commitmentAllocations,
+  periodCommitmentRevisions,
+  planBaselines,
+  packageBaselines,
+  planningLocks,
+  workLogs,
+  workLogRevisions,
+  weeklyReportRuns,
   commandIdempotency,
   memberships,
   outboxEvents,
@@ -28,6 +39,17 @@ import {
 } from './schema.js';
 
 export const tables = {
+  planningPeriods,
+  packageFreezeObservations,
+  periodCommitments,
+  commitmentAllocations,
+  periodCommitmentRevisions,
+  planBaselines,
+  packageBaselines,
+  planningLocks,
+  workLogs,
+  workLogRevisions,
+  weeklyReportRuns,
   users,
   workspaces,
   memberships,

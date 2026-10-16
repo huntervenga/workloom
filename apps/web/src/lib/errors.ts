@@ -23,7 +23,12 @@ export type ErrorSubject =
   | 'columnsSave'
   | 'fieldValues'
   | 'fieldValueSave'
-  | 'fieldHistory';
+  | 'fieldHistory'
+  | 'planning'
+  | 'planSave'
+  | 'freeze'
+  | 'factSave'
+  | 'report';
 
 export interface ErrorDescription {
   title: string;
@@ -58,6 +63,11 @@ const subjectTitles: Record<ErrorSubject, string> = {
   fieldValues: 'Не удалось загрузить значения полей',
   fieldValueSave: 'Не удалось сохранить значение поля',
   fieldHistory: 'Не удалось загрузить историю значения',
+  planning: 'Не удалось загрузить неделю',
+  planSave: 'Не удалось сохранить недельный план',
+  freeze: 'Не удалось зафиксировать план',
+  factSave: 'Не удалось сохранить факт за неделю',
+  report: 'Не удалось открыть отчёт',
 };
 
 const kindDescriptions: Record<ApiErrorKind, string> = {
@@ -112,6 +122,9 @@ const saveSubjects: ReadonlySet<ErrorSubject> = new Set([
   'fieldSave',
   'columnsSave',
   'fieldValueSave',
+  'planSave',
+  'freeze',
+  'factSave',
 ]);
 
 /** A value write to a locked field; reloading and resending would be refused again. */
@@ -143,10 +156,14 @@ export function describeError(error: unknown, subject: ErrorSubject): ErrorDescr
     return { ...hidden, retryable: false, unavailable: true, requestId: error.requestId };
   }
 
+  if (error.kind === 'conflict' && error.code === 'PREVIEW_STALE') {
+    return { title: subjectTitles[subject], description: 'План изменился после предпросмотра. Загрузите свежий предпросмотр и подтвердите фиксацию ещё раз.', retryable: false, unavailable: false, requestId: error.requestId };
+  }
+
   if (error.kind === 'conflict' && error.code === 'FIELD_LOCKED') {
     return {
       title: subjectTitles[subject],
-      description: fieldLockedDescription,
+      description: subject === 'planSave' ? 'Исходный план уже зафиксирован. Его нельзя переписать; новую работу можно добавить отдельной строкой.' : fieldLockedDescription,
       retryable: false,
       unavailable: false,
       requestId: error.requestId,

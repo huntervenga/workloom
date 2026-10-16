@@ -1,6 +1,6 @@
 # Журнал доказательств реализации
 
-Снимок от 16 октября 2026 года. **Ограниченный P1b локально принят координатором** после широкого gate, трёх визуальных исправлений и targeted web/browser gate ниже. Статус: **локальный P0 проверен**; **ограниченный P1a проверен и принят координатором локально** после широкого gate, исправления найденных визуальных проблем и последнего targeted gate (разделы P1a ниже). Полный P1 сверх принятых срезов (приватные ACL, сохранённые представления, массовые правки), P2–P6, общий Auth, worker, календарные connectors, production и обновление старых вкладок — будущие и не проверены. Полный MVP и пилот не достигнуты. Задание и приёмка P0 — в [09](09-first-implementation-task.md), этапы — в [06](06-implementation-plan.md), формат проверок — в [07](07-verification-and-pilot.md), локальный quickstart — в корневом [README](../README.md).
+Снимок от 16 октября 2026 года. **Ограниченные P1b и P2a локально приняты координатором** после широкого gate, трёх визуальных исправлений и targeted web/browser gate ниже. Статус: **локальный P0 проверен**; **ограниченный P1a проверен и принят координатором локально** после широкого gate, исправления найденных визуальных проблем и последнего targeted gate (разделы P1a ниже). Полный P1 сверх принятых срезов (приватные ACL, сохранённые представления, массовые правки), полный P2 сверх ограниченного P2a, P3–P6, общий Auth, worker, календарные connectors, production и обновление старых вкладок — будущие и не проверены. P2a прошёл функциональный gate, ограниченную правку deadline timezone и текущий targeted web/browser/визуальный gate ниже. Полный MVP и пилот не достигнуты. Задание и приёмка P0 — в [09](09-first-implementation-task.md), этапы — в [06](06-implementation-plan.md), формат проверок — в [07](07-verification-and-pilot.md), локальный quickstart — в корневом [README](../README.md).
 
 ## Происхождение
 
@@ -290,14 +290,15 @@ Web Claude passes: data `163997aa-7d33-4fb8-8045-d03299cd0cec`, editors `4a4b6ae
 
 | Область | Статус | Примечание |
 | --- | --- | --- |
-| P0: workspace, участники, health, dev identity | pass (локально, синтетическая identity) | Исторический checkpoint и регрессии в integration 83 / последнем browser 10 |
-| P1a: API и PostgreSQL | pass (локально, dev identity) | Исторический gate P1a и регрессии в P1b integration 83; последняя core/API область unit 423 |
-| P1a: web и browser UI | pass (локально, синтетическая identity) | Исторический gate и прежние функциональные/геометрические регрессии в последнем browser 10; component suite 102 отдельно от PostgreSQL-интеграции |
-| Оптимизированный dist и runtime | pass (локально) | Definitive postvisual P1b HTML/JS/CSS byte-identical dist, ready database/schemaOK; `4310` session 55735 / PID 27474. `NODE_ENV=production` при `APP_ENV=local`, `AUTH_MODE=dev` |
+| P0: workspace, участники, health, dev identity | pass (локально, синтетическая identity) | Исторический checkpoint; текущие регрессии в integration96 и browser12 |
+| P1a: API и PostgreSQL | pass (локально, dev identity) | Исторический gate P1a; текущие регрессии integration96 и core/API unit509 |
+| P1a: web и browser UI | pass (локально, синтетическая identity) | Исторический gate; текущие функциональные/геометрические регрессии в browser12; web119 отдельно от PostgreSQL-интеграции |
+| Оптимизированный dist и runtime | pass (локально) | Definitive post-zone P2a HTML/JS/CSS byte-identical dist, ready database/schemaOK; `4310` session13923 / PID39599. `NODE_ENV=production` при `APP_ENV=local`, `AUTH_MODE=dev` |
 | Docker Compose PostgreSQL | не исполнялся | Docker недоступен на хосте |
 | P1b: typed custom columns, значения, выборочная история, custom lock | pass, локально принят координатором | Integration 83 и core/API 423 до 3 visual files; current owner web 102, browser 10, root visual 4. Полный P1 не заявляется |
+| P2a: недельный план, freeze, manual fact, pinned report | pass, локально принят координатором | Core/API509, realPG96, current web119/browser12; подробности ниже. Полный P2 не заявляется |
 | Полный P1: приватные ACL, сохранённые представления, массовые правки | не реализовано | Будущее, приёмка P1 в [06](06-implementation-plan.md) не изменена |
-| P2–P6, полный MVP, пилот | не реализовано | P2 пока только read-only acceptance matrix, без кода/pass |
+| Полный P2, P3–P6, полный MVP, пилот | не завершено | Ограниченный P2a проходит отдельный gate ниже; split/transfer/carryover/close и daily work logs остаются будущими |
 | Общий Auth, приватные встречи | не реализовано | — |
 | Старая вкладка / обновление | не реализовано | — |
 | Worker и фоновые jobs | не реализовано | — |
@@ -314,3 +315,81 @@ Web Claude passes: data `163997aa-7d33-4fb8-8045-d03299cd0cec`, editors `4a4b6ae
 5. Сохранять фактическое происхождение: кто выполнил проверку, какая модель и с какими параметрами.
 6. Объявлять этап принятым только после pass всех его проверок; строки будущих этапов при этом не меняются.
 7. После первого коммита записать его hash и перепроверить затронутые строки.
+
+
+## P2a — текущий gate, 16 октября 2026
+
+Кандидат после принятого P1b source `dee59bae06be4505b4a60e0bf469d31c8816aeda` и docs-only `67ca7d47ca8ca456300c5d85550d2b5a01efa47d`; нового checkpoint пока нет. Точный ограниченный каталог — [13](13-p2a-contract.md). Реализованы недельные периоды, личные commitments/allocations, source-fresh self/project freeze, identity locks, ревизии ручного недельного факта и закреплённые отчёты. Ограниченный P2a принят координатором после targeted timezone correction и просмотра4 текущих кадров ниже. Полный P2 и P2b не приняты.
+
+**Авторство.** Весь новый P2a код core/API/web, acceptance и документация написаны разрешённым Codex `gpt-6.1-sol` high fallback после фактического Claude quota rejection. Новых Claude-сессий или проб не было. SQL/snapshot0003 создал установленный Drizzle generator; immutable/identity guards добавлены в SQL под тем же fallback. Команды запускали владельцы и QA, происхождение P0/P1a/P1b не переатрибутируется.
+
+| Проверка | Кто / команда | Фактический результат |
+| --- | --- | --- |
+| Первый focused HTTP/PG | QA: два новых integration файла | fail: 9 pass / 4 fail из 13, 15,55 с, local03:18:35; `/tmp/workloom-p2a-focused.log`. Три настоящих500 на correction/void: BEFORE INSERT revision1 guard срабатывал до ON CONFLICT UPDATE. Foundation заменил upsert на INSERT только первой revision и scoped UPDATE существующей, сохранив строгий trigger. Четвёртое падение — слишком строгое QA ожидание: 3 новых locked команды должны сохранить 3 tagged idempotent rejection rows, остальные таблицы неизменны |
+| Focused HTTP/PG после исправления | QA: те же 2 файла | pass: 13/13, 14,16 с, local03:20:48; `/tmp/workloom-p2a-focused-fixed.log`. Оба cutoff случая были зелёными уже в первом прогоне; exact constraint message у500 не сохранён, выдуманное диагностическое сообщение не приводится |
+| Полная сборка кандидата | QA: `npm run build` | pass: 6 workspaces и SPA; `/tmp/workloom-p2a-final-build.log`. Это сборка до bounded week-selector UI correction; окончательная web сборка ниже после неё. Nonfatal large chunk warning не является performance budget pass |
+| Полный lint / typecheck | QA: `npm run lint`, `npm run typecheck` | pass: 126 browser boundaries, 6 workspace types + QA/config; `/tmp/workloom-p2a-final-lint.log`, `/tmp/workloom-p2a-final-typecheck.log`. До week-selector correction; новый P2 browser файл отдельно прошёл ESLint и root QA `tsc -p tsconfig.json` |
+| Корневые core/API unit | QA: `vitest run --project unit` | pass: 509 тестов / 24 файла, 2,13 с, local03:29:12; `/tmp/workloom-p2a-final-unit.log`. Web suite отдельно, counts не суммировать |
+| Полная реальная интеграция | QA: `vitest run --project integration`, явная test БД | pass: 96 тестов / 10 файлов, 34,69 с, local03:29:31; `/tmp/workloom-p2a-final-integration.log`. Включает focused13 выше, counts не суммировать. Отдельные реальные API процессы и одноразовые PostgreSQL БД |
+| Заполненная dev-БД P1b → P2a | foundation: quiet window, migrator и повтор | pass: whole-row SHA256/counts всех21 прежних таблиц неизменны; применена только0003, current4; повтор[];6 старых SQL/snapshot файлов0000–0002 и первые3 journal entries неизменны. `/tmp/workloom-p2a-upgrade-preservation.json` без credentials. Drizzle32 tables/no schema changes pass в изолированной копии |
+| Runtime | QA после quiet release | Прежний P1b API55735/PID27474 остановлен корректно; новый compiled API13923/PID39599, Node24.19.0, loopback4310, та же synthetic local identity. Actual readiness200 database/schemaok; actual periods[] и planning-packages3 schema-valid в сохранённом прежнем demo. Оптимизированные assets после окончательной web сборки проверяются отдельно |
+
+**Реальные инварианты.** 480 недельного плана и180+420 факта root/detail дают600, +120/+25%; общая оценка detail package и tags/participants не умножают строки. Новый объём240 отдельно, старый пакет без исходного обязательства — unplanned. Общая оценка1200 / недельный план360 / факт300 дают−60; исходная package estimate не подменяет недельную. Missing/typed null/zero/void различаются. Report сохраняет source revisions и полные серверные totals при pagination; correction текущего факта не меняет старый run. Self default строго self, чужой explicit member422, актуальные ACL проверены при replay/чтении и tenant404 не раскрывает данные.
+
+Source freshness проверена при title, selected field, составе packages и отзыве неacting member. Locks действуют на отсутствующую строку значения/unknown estimate и переживают удаление участника. Первый unknown original остаётся unknown при protectEstimate:false и позднем заполнении/следующей неделе. Две реальные записи одной fact revision дают200/409. Prospective reparent allocated siblings в ancestor/child отклонён422 без частичных изменений; retained archived allocations разрешены без нового/увеличенного назначения. Removed-before-freeze commitment восстанавливается тем же ID как server-derived added и виден до факта. Legacy P1b plain-DTO idempotency rows воспроизведены в реальном PG и успешно replay после freeze без повторной мутации.
+
+**Cutoff и rollback.** Независимая SQL transaction держит workspace barrier; реальный HTTP write ждёт, PostgreSQL clock пересекает cutoff, после release сохраняется старый self/project snapshot и committed409 с уникальными resolvable baseline IDs. Точный retry возвращает то же тело без новых событий. Late synthetic SQL fault на сохранении idempotency result после freeze откатывает все public tables и change_seq; после удаления fault тот же ключ сохраняет ровно один rejection. Это настоящая транзакция/часы PostgreSQL, не mocked clock.
+
+
+### P2a — окончательный web/browser gate
+
+Перед browser координатор нашёл ограниченный UX-дефект: список периодов из API упорядочен по UUID, а default UI выбирал первый. Frontend изменил только helper выбора/сортировки, его тест и два места WeeklyPage: явный `?period` сохраняется, default выбирает текущую неделю в её IANA zone, затем ближайшую будущую/последнюю прошлую, варианты упорядочены детерминированно по дате. Owner focused10, typecheck, scoped lint/build pass. Core/API не изменены; 509/96 ради этой web-правки не повторялись.
+
+| Проверка | Кто / команда | Фактический результат |
+| --- | --- | --- |
+| Текущий полный web unit | QA: `npm run test --workspace @workloom/web` | pass: 117 тестов / 20 файлов, 5,14 с, local03:31:08; `/tmp/workloom-p2a-final-web-unit.log`. Это фактический count после helper, не предварительное ожидание113 |
+| Текущий web build | QA: `npm run build --workspace @workloom/web` | pass: `/tmp/workloom-p2a-current-web-build.log`; JS845,39 KB/gzip253,23 KB, CSS51,40 KB/gzip9,59 KB. Nonfatal chunk warning; performance budget не проверялся |
+| Текущий browser | QA: `npm run test:e2e` | pass: 12/12, 26,8 с; `/tmp/workloom-p2a-final-e2e.log`. Сохраняет6 P0 +2 P1a +2 P1b и добавляет2 P2a. Прежние mocked UI-state P0 случаи остаются отдельно обозначенными в именах; новые P2a без route mocks |
+| Optimized runtime | backend: только GET, actual bodies и exact disk parity | pass: ready200 database/schemaok; HTML551 байт text/html, SHA256 `06822da18b22e12d0ccd240107157ff3eada8b65e93a2dfc06fab002119b4c32`; JS `index-B36_VMQV.js`845385 байт200 application/javascript; CSS `index-BpOzwoWg.css`51403 байт200 text/css. Все3 тела byte-identical текущему dist, без restart/source/data writes при smoke |
+| Первый визуальный просмотр | координатор | просмотрены все6 кадров: layout приемлем, но period card показывал deadline в browser zone рядом с period zone без обозначения. Запрошена bounded zone/label correction; final pass пока нет. FullPage fixed-header artifact исправляется только способом capture, не продуктом |
+
+**Реальный browser.** Desktop1440: API setup только project/root/detail tasks; UI создаёт период с отдельным часовым поясом недели, план480 и allocation480, свежий server freeze-preview и project freeze, факты180 root/420 detail и report600/+120/+25%. Невозможное browser-local время Europe/Berlin `2027-03-28T02:30` отклонено до любого POST periods (observer настоящих request). Затем валидное время сохраняется. После API correction текущего root факта old pinned run после hard reload неизменен; новый UI report660, dropdown возвращает старый600. Mobile390: API setup периода/плана/freeze явно обозначен; UI вводит300 факта против360 недельного плана при1200 whole estimate, получает−60, показывает chart и после reload тот же сохранённый run. Desktop/mobile без page-level overflow; локальный table overflow допустим. Прежние pinned task name/estimate, nested backdrop, spacing и opaque action panel assertions P1a/P1b сохранены.
+
+Preview: `http://127.0.0.1:4311/w/5eed0000-0000-4000-8000-000000000201/projects/225ea5a2-1cce-45aa-879c-a34c60eadaf8/week?period=dbd3e2bc-fde9-440a-9c12-a4618b93573d&view=report&run=82d7a39b-558b-4bca-8c85-391bc1b74c78`. Старые P1a/P1b demo сохранены. Первые6 screenshots просмотрены координатором и сохранены в `p2a-before-zone-fix/`. Ссылки ниже — исторические кадры до правки; это модельный просмотр координатором, не человеком:
+
+- [p2a-desktop-week-plan.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-before-zone-fix/p2a-desktop-week-plan.png)
+- [p2a-desktop-freeze-preview.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-before-zone-fix/p2a-desktop-freeze-preview.png)
+- [p2a-desktop-fact-dialog.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-before-zone-fix/p2a-desktop-fact-dialog.png)
+- [p2a-desktop-week-report.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-before-zone-fix/p2a-desktop-week-report.png)
+- [p2a-mobile-week-plan.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-before-zone-fix/p2a-mobile-week-plan.png)
+- [p2a-mobile-week-report.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-before-zone-fix/p2a-mobile-week-report.png)
+
+P2b split/replace/transfer/carryover/close, full-package completion accuracy, explicit late estimate acceptance и daily sources не исполнялись и не заявляются как pass. Общий Auth, worker, календари, production и старые вкладки остаются вне текущей проверки.
+
+
+### P2a — targeted gate после timezone finding
+
+Frontend изменил только formatter/его тест, WeeklyPage и route test: period card явно показывает `Срок фиксации (Asia/Nicosia)` и форматирует deadline в указанной period timezone. Browser-local input сохраняет прежнюю отдельную label. Owner focused9, strict web typecheck/scoped lint/build pass. Core/API/schema не менялись; 509 unit и96 integration не повторялись.
+
+| Проверка | Кто / команда | Фактический результат |
+| --- | --- | --- |
+| Текущий web unit | QA: web suite | pass:119 тестов /20 файлов,3,80 с, local03:34:47; `/tmp/workloom-p2a-zone-web-unit.log` |
+| Текущий web build / QA | QA: web build, ESLint P2 browser, root QA types | pass; `/tmp/workloom-p2a-zone-web-build.log`, `/tmp/workloom-p2a-zone-qa-types.log`; owner проверил product types/lint, QA проверил новый acceptance файл |
+| Browser current | QA: `npm run test:e2e` | pass:12/12,23,2 с; `/tmp/workloom-p2a-zone-e2e.log`. Дополнительно видимая period-zone label при browser Europe/Berlin. Те же функции и прежние геометрические assertions |
+| Optimized current dist | backend: GET-only readiness и exact body parity | pass: ready200 database/schemaok; HTML551 байт text/html SHA256 `bde362bbf5f63808b3aebb144a90a9786d693b179885bb1b22310daf15942f16`; JS `index-Dm_xfSoO.js`845551 байт application/javascript и CSS `index-BpOzwoWg.css`51403 байт text/css, все200 и byte-identical current dist; без writes/restart/build |
+| Root visual current | координатор | pass: просмотрены ровно4 обновлённых кадра — desktop period card/report и mobile report summary/chart. Deadline zone обозначен верно, summary/chart читаемы, capture artifact устранён. Остальные3 обновлённых кадра root не просматривал; все6 исторических до zone fix были просмотрены |
+
+Шесть прежних кадров сохранены исторически выше. Текущие report screenshots — настоящие viewport, контент прокручен под fixed header; отдельный mobile chart кадр нужен для читаемости на390px. Перенос fixed header в середину прежнего fullPage report — capture artifact, отдельной продуктовой layout-правки по нему не было.
+
+Новый preview: `http://127.0.0.1:4311/w/5eed0000-0000-4000-8000-000000000201/projects/dc10c51e-7cac-450e-93b0-9b565b533c8e/week?period=aa53be06-b303-4854-a32d-5a129c93392b&view=report&run=8dd63756-b5cb-4fa4-8ba9-276aba3a1c2a`.
+
+- [p2a-desktop-week-plan.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-desktop-week-plan.png)
+- [p2a-desktop-freeze-preview.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-desktop-freeze-preview.png)
+- [p2a-desktop-fact-dialog.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-desktop-fact-dialog.png)
+- [p2a-desktop-week-report.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-desktop-week-report.png)
+- [p2a-mobile-week-plan.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-mobile-week-plan.png)
+- [p2a-mobile-week-report.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-mobile-week-report.png)
+- [p2a-mobile-week-report-chart.png](/Volumes/HunterVenga/AiData/.codex/visualizations/2026/10/15/01a1411c-a933-71a2-9e09-ef01489bc313/workloom-evidence/p2a-mobile-week-report-chart.png)
+
+
+**Приёмка P2a.** Координатор принял ограниченный срез после просмотра ровно `p2a-desktop-week-plan.png`, `p2a-desktop-week-report.png`, `p2a-mobile-week-report.png`, `p2a-mobile-week-report-chart.png`. Текущие freeze-preview/fact-dialog/mobile-plan сняты, но root повторно не просмотрены. Исторические6 до timezone correction были просмотрены и сохранены отдельно. Это модельный визуальный просмотр координатором, не человеком. Source checkpoint ожидается; ради hash новых прогонов не требуется. Полный P2, P2b, MVP и пилот не достигнуты.

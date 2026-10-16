@@ -277,6 +277,7 @@ function harness() {
           access: loaded,
           barrierAt: new Date(Date.UTC(2026, 9, 16, 9, 0, (second += 1))),
           repository,
+          planningGuard: { async check() { return null; } },
           async recordChange(event) {
             ordinal += 1;
             events.push({ event, changeSeq, eventOrdinal: ordinal });

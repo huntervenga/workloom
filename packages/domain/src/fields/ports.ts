@@ -1,3 +1,4 @@
+import type { PlanningMutationGuard } from '../planning/ports.js';
 import type {
   ProjectColumnsDto,
   TaskFieldDefinitionDto,
@@ -112,6 +113,8 @@ export interface TaskFieldRepository {
 }
 
 export interface TaskFieldWriteScope extends WorkspaceWriteScope {
+  /** Required by every real composition; tests must inject an explicit policy fake. */
+  readonly planningGuard: PlanningMutationGuard;
   readonly repository: TaskFieldRepository;
 }
 
