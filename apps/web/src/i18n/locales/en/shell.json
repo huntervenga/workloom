@@ -4,7 +4,7 @@
   "loadingIntegrations": "Loading integrations",
   "switchingActor": "Switching test user\u2026",
   "routeFailed": "Unable to open this page",
-  "routeFailedHelp": "Try loading the page again. If it still fails, refresh the tab when your connection returns.",
+  "routeFailedHelp": "Try loading the page again. If it still fails, refresh this tab.",
   "retryPage": "Try loading page again",
   "reloadTab": "Refresh tab",
   "switchQuestion": "Switch user?",
@@ -46,5 +46,8 @@
   "leaveRetryHelp": "Leaving will clear the values needed to retry this change safely. Before creating it again, check what the server already saved.",
   "switchRetryHelp": "Switching users will clear the values needed to retry this change safely. Before creating it again, check what the server already saved.",
   "localDemo": "Local demo",
-  "demoHelp": "About this demo"
+  "demoHelp": "About this demo",
+  "routeFilesFailedHelp": "The page files could not be loaded. Check your connection and try again. If Workloom was updated, refresh this tab.",
+  "appUpdated": "Workloom has been updated",
+  "appUpdatedHelp": "This tab is using an older version. Refresh it to open the page with the current version. Your current page address will be kept."
 }
