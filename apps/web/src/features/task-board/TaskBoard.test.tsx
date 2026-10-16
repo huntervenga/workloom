@@ -92,6 +92,7 @@ describe('independent loaded-task board', () => {
     await user.type(screen.getByLabelText('Original draft'), ' kept');
     rerender(<TaskBoard {...props} tasks={[{ ...task, meetingId: undefined }]} writable={false} />);
     expect(screen.getByLabelText('Original draft')).toHaveValue('In progress kept');
+    expect(screen.getByLabelText('Original draft')).toHaveFocus();
     expect(screen.getByText('Draft kept')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Change status' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry original status' }));
@@ -110,6 +111,31 @@ describe('independent loaded-task board', () => {
     expect(screen.getByText('No due date')).toBeInTheDocument();
     rerender(<TaskBoard {...props} today={undefined} />);
     expect(screen.queryByText('Overdue')).not.toBeInTheDocument();
+  });
+
+  it('keeps full long metadata and separate completion, title and status keyboard actions', async () => {
+    const person = makeMember({ id: 'long-name', userId: 'long-name-user', displayName: 'Alexandra María Verylongunbrokenfamilynameforwrapping' });
+    const task = makeTask({ id: 'long-card', title: 'Review the complete launch plan with Verylongunbrokenprojecttitleforwrapping', responsibleMembershipId: person.id, dueDate: '2026-10-05' });
+    const complete = vi.fn();
+    const { user, props } = renderBoard({ tasks: [task], members: [person], today: '2026-10-16', renderCompletionAction: item => <button type="button" aria-label={`Complete ${item.title}`} onClick={complete}>Complete</button> });
+    const title = screen.getByRole('button', { name: task.title });
+    const card = title.closest('li'); if (!card) throw new Error('Missing card');
+    const metadata = within(card);
+    expect(metadata.getByText(person.displayName)).toBeInTheDocument();
+    expect(metadata.getByText('Assignee', { selector: 'dt' })).toHaveClass('sr-only');
+    expect(metadata.getByText('Due Oct 5, 2026')).toBeInTheDocument();
+    expect(metadata.getByText('Overdue')).toBeInTheDocument();
+    const completion = metadata.getByRole('button', { name: `Complete ${task.title}` });
+    const status = metadata.getByRole('button', { name: 'Change status' });
+    expect(status).toHaveAccessibleDescription(task.title);
+    expect(status).toHaveAttribute('data-task-cell', `${task.id}:statusId`);
+    completion.focus();
+    await user.keyboard('{Enter}'); expect(complete).toHaveBeenCalledTimes(1);
+    await user.tab(); expect(title).toHaveFocus();
+    await user.keyboard('{Enter}'); expect(props.onOpenTask).toHaveBeenCalledWith(task.id);
+    await user.tab(); expect(status).toHaveFocus();
+    await user.keyboard(' '); expect(props.onEditStatus).toHaveBeenCalledWith(task);
+    expect(document.querySelector('button button')).toBeNull();
   });
 
   it('keeps empty catalog lanes and gives an explicit empty loaded view', () => {
