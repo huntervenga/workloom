@@ -148,7 +148,8 @@
     "discardRuleChange": "Discard rule change",
     "refreshRule": "Refresh rule",
     "readFailed": "Could not read the latest data.",
-    "measuringNodes": "Measuring task cards for automatic placement…"
+    "measuringNodes": "Measuring task cards for automatic placement…",
+    "dragInstructions": "Drag a card’s background to arrange your view. Choose Save my layout to keep your changes."
   },
   "layout": {
     "couldNotCalculateFiniteGraphPositions": "Could not calculate finite graph positions.",
