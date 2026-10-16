@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -19,6 +19,7 @@ import { useTaskCommands } from './useTaskCommands';
 import { task as completionTask, rootPath as completionRoot } from '../planning/test/fixtures';
 import { failure } from '../../test/fakeApi';
 import { TaskFields } from './TaskFields';
+import { InlineTaskEdit } from './InlineTaskEdit';
 import { buildCreateInput, emptyDraft, type TaskDraftErrors } from './taskDraft';
 
 const state = vi.hoisted(() => ({ manager: undefined as LocalizationManager | undefined }));
@@ -134,4 +135,20 @@ it('translates a retained completion failure and draft action without another wr
   switchLocale('fr'); expect(screen.getByText(`Vérifier le changement de ${completionTask.title}.`)).toBeVisible();
   expect(screen.getByRole('button', { name: `Reprendre ${completionTask.title}` })).toBeInTheDocument(); expect(screen.getByRole('alert')).toBeVisible();
   switchLocale('en'); expect(screen.getByRole('button', { name: `Resume draft for ${completionTask.title}` })).toBeInTheDocument(); expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
+});
+
+
+it('translates an existing inline title error without resetting the draft or submitting', async () => {
+  const { calls } = installFakeApi({});
+  function Example() {
+    const commands = useTaskCommands(anna.id, alpha.id);
+    return <InlineTaskEdit task={completionTask} field="title" statuses={[]} members={[]} commands={commands} writable onClose={() => undefined} onMoreDetails={() => undefined} onSaved={() => undefined} />;
+  }
+  const ui = renderFieldUi(<Example />);
+  fireEvent.change(screen.getByLabelText('Task name'), { target: { value: '' } });
+  await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByText('Enter a task name.')).toBeVisible();
+  switchLocale('fr'); expect(screen.getByLabelText('Nom de tâche')).toHaveValue(''); expect(screen.getByLabelText('Nom de tâche')).toHaveAttribute('aria-invalid', 'true');
+  expect(screen.getByText('Saisissez un nom de tâche.')).toBeVisible();
+  switchLocale('en'); expect(screen.getByText('Enter a task name.')).toBeVisible(); expect(calls).toHaveLength(0);
 });

@@ -7,7 +7,7 @@ import { ApiError, isAccessDenied } from '../../lib/api';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { submitTaskFormShortcut } from './TaskDrawer';
-import { buildUpdateInput, changedKeys, draftFromTask, type TaskDraft, type TaskDraftErrors } from './taskDraft';
+import { buildUpdateInput, changedKeys, draftFromTask, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors } from './taskDraft';
 import { canEditTaskInline, canResumeInlineSession, type TaskInlineField } from './tableEditing';
 import { unresolvedTaskCommand, type EditSession, type TaskCommands } from './useTaskCommands';
 
@@ -96,11 +96,17 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   const currentError = errors.dueDate ?? errors.form ?? errors.title ?? errors.description ?? errors.startDate ?? errors.estimate;
   return <form noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} onSubmit={submit} onKeyDown={event => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); return; }
+    if (field === 'title' && event.key === 'Enter' && event.target instanceof HTMLInputElement && event.target.closest('form') === event.currentTarget) {
+      if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+      event.preventDefault();
+      if (!frozen && !needsReview && !event.altKey && !event.shiftKey) event.currentTarget.requestSubmit();
+      return;
+    }
     submitTaskFormShortcut(event, !frozen && !needsReview);
   }} className="space-y-1.5 py-1">
     <fieldset disabled={frozen}>
       <legend className="sr-only">{t('tasks.inlineEdit.fields')}</legend>
-      {field === 'statusId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
+      {field === 'title' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.taskName')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="text" maxLength={TASK_TITLE_MAX} autoComplete="off" className="px-2 text-xs" value={session.draft.title} onChange={event => change({ title: event.target.value })} /> : field === 'statusId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
         {!statuses.some(status => status.id === session.draft.statusId) ? <option value={session.draft.statusId}>{t('tasks.taskFields.statusUnavailable')}</option> : null}
         {[...statuses].sort((a, b) => a.position - b.position).map(status => <option key={status.id} value={status.id}>{status.name}</option>)}
       </select> : field === 'responsibleMembershipId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.assignee')} className={inputClassName('px-2 text-xs')} value={session.draft.responsibleMembershipId ?? ''} onChange={event => change({ responsibleMembershipId: event.target.value || null })}>

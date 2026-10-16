@@ -215,7 +215,8 @@
     "editAssignee": "Edit assignee for {{title}}",
     "editDueDate": "Edit due date for {{title}}",
     "draft": "Draft",
-    "draftHint": "This task has unsaved changes. Open its details to resume."
+    "draftHint": "This task has unsaved changes. Open its details to resume.",
+    "editTitle": "Rename {{title}}"
   },
   "recovery": {
     "unconfirmed": "A task command is unconfirmed. Its original values and key are kept.",

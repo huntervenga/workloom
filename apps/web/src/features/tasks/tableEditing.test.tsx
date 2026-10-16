@@ -161,11 +161,12 @@ describe('section quick creation', () => {
 });
 
 describe('explicit inline task edits', () => {
-  it.each(['statusId', 'responsibleMembershipId', 'dueDate'] as const)('updates only %s with the original task revision after explicit Save', async field => {
+  it.each(['title', 'statusId', 'responsibleMembershipId', 'dueDate'] as const)('updates only %s with the original task revision after explicit Save', async field => {
     const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: request => ok({ ...task, ...(request.body as object), revision: task.revision + 1 }) });
     const ui = inline(field);
-    const patch = field === 'statusId' ? { statusId: STATUS_PROGRESS } : field === 'responsibleMembershipId' ? { responsibleMembershipId: null } : { dueDate: '2026-10-20' };
-    if (field === 'statusId') await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
+    const patch = field === 'title' ? { title: 'Renamed task' } : field === 'statusId' ? { statusId: STATUS_PROGRESS } : field === 'responsibleMembershipId' ? { responsibleMembershipId: null } : { dueDate: '2026-10-20' };
+    if (field === 'title') { await ui.user.clear(screen.getByLabelText('Task name')); await ui.user.type(screen.getByLabelText('Task name'), '  Renamed task  '); }
+    else if (field === 'statusId') await ui.user.selectOptions(screen.getByLabelText('Status'), STATUS_PROGRESS);
     else if (field === 'responsibleMembershipId') await ui.user.selectOptions(screen.getByLabelText('Assignee'), '');
     else fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
     expect(calls).toHaveLength(0);
@@ -380,4 +381,61 @@ it('preserves an independent replacement edit draft when an old pending inline e
   await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
   expect(ui.commands().editSessions.current.get(task.id)).toBe(independent);
   expect(ui.onClosed).toHaveBeenCalledTimes(1);
+});
+
+
+describe('inline title keyboard and retained sessions', () => {
+  it.each(['{Enter}', '{Control>}{Enter}{/Control}', '{Meta>}{Enter}{/Meta}'])('saves a title only on deliberate %s, excluding IME and modified line gestures', async shortcut => {
+    const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => ok({ ...task, title: 'Composed title', revision: 2 }) });
+    const ui = inline('title'); const input = screen.getByLabelText('Task name');
+    await ui.user.clear(input); await ui.user.type(input, 'Composed title');
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', isComposing: true });
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', keyCode: 229 });
+    await ui.user.keyboard('{Shift>}{Enter}{/Shift}{Alt>}{Enter}{/Alt}');
+    expect(calls).toHaveLength(0); expect(input).toHaveFocus();
+    await ui.user.keyboard(shortcut);
+    await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
+    expect(calls).toHaveLength(1); expect(calls[0]?.body).toEqual({ expectedRevision: task.revision, title: 'Composed title' });
+  });
+
+  it.each(['', 'x'.repeat(501)])('announces an invalid title without submitting or discarding it', async title => {
+    const { calls } = installFakeApi({}); const ui = inline('title'); const input = screen.getByLabelText('Task name');
+    fireEvent.change(input, { target: { value: title } });
+    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(input).toHaveAttribute('aria-invalid', 'true'); expect(input).toHaveAccessibleDescription(screen.getByRole('alert').textContent ?? '');
+    expect(input).toHaveValue(title); expect(calls).toHaveLength(0);
+    await ui.user.keyboard('{Escape}'); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
+    expect(screen.getByLabelText('Task name')).toHaveValue(title);
+  });
+
+  it('closes an unchanged trimmed title without issuing an update', async () => {
+    const { calls } = installFakeApi({}); const ui = inline('title');
+    fireEvent.change(screen.getByLabelText('Task name'), { target: { value: `  ${task.title}  ` } });
+    await ui.user.keyboard('{Enter}'); expect(ui.onClosed).toHaveBeenCalledTimes(1); expect(calls).toHaveLength(0);
+  });
+
+  it.each(['rich-title', 'other-cell'] as const)('offers only Resume for a %s draft instead of saving it through the title input', async origin => {
+    const seed: EditSession = { base: task, draft: { ...draftFromTask(task), ...(origin === 'rich-title' ? { title: 'Drawer title' } : { dueDate: '2026-10-20' }) }, ...(origin === 'other-cell' ? { inlineField: 'dueDate' as const } : {}) };
+    const { calls } = installFakeApi({}); const ui = inline('title', seed);
+    expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
+    await ui.user.click(screen.getByRole('button', { name: 'Resume draft' }));
+    expect(ui.onMoreDetails).toHaveBeenCalledTimes(1); expect(ui.commands().editSessions.current.get(task.id)).toBe(seed); expect(calls).toHaveLength(0);
+  });
+
+  it.each([false, true])('reconciles the exact reopened title session once after confirmation (unknown retry: %s)', async retry => {
+    const response = deferred<Response>(); const first = lost(); let attempt = 0;
+    const { calls } = installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => ++attempt === 1 && retry ? first.promise : response.promise });
+    const ui = inline('title'); fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Confirmed new title' } });
+    await ui.user.keyboard('{Enter}'); await waitFor(() => expect(attempt).toBe(1));
+    if (retry) { await act(async () => first.lose()); await screen.findByRole('button', { name: 'Retry' }); }
+    await ui.user.click(screen.getByRole('button', { name: 'Collapse editor' })); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
+    expect(screen.getByLabelText('Task name')).toHaveValue('Confirmed new title'); expect(screen.getByLabelText('Task name')).toBeDisabled();
+    if (retry) { await ui.user.click(screen.getByRole('button', { name: 'Retry' })); await waitFor(() => expect(attempt).toBe(2)); await ui.user.click(screen.getByRole('button', { name: 'Collapse editor' })); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' })); }
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await act(async () => response.resolve(ok({ ...task, title: 'Confirmed new title', revision: 2 })));
+    await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1)); expect(screen.getByLabelText('Task name')).toHaveValue('Confirmed new title');
+    expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus(); expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
+    await ui.user.click(screen.getByRole('button', { name: 'Save' })); expect(calls).toHaveLength(retry ? 2 : 1);
+    if (retry) assertExactRetry(calls);
+  });
 });

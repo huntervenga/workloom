@@ -1,0 +1,10 @@
+{
+ "openParent":"Open parent",
+ "backToParent":"Back to parent",
+ "openingParent":"Opening parent…",
+ "parentUnavailable":"The parent task is unavailable in this project. Your draft is kept.",
+ "addSubtask":"Add subtask",
+ "resumeDraft":"Resume new task draft",
+ "resolveSave":"Resolve the current task save before adding a subtask.",
+ "savedEstimateHint":"The subtask uses this task’s saved estimate. Your unsaved estimate stays in this draft."
+}

@@ -12,7 +12,7 @@ import { weeklyPlanningHref } from '../features/planning/navigation';
 import { QuickTaskAdd } from '../features/tasks/QuickTaskAdd';
 import { InlineTaskEdit } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
-import { canEditTaskInline, type TaskInlineField } from '../features/tasks/tableEditing';
+import { canEditTaskInline, taskInlineColumn, type TaskInlineField } from '../features/tasks/tableEditing';
 import { message, type TranslationMessage } from '../i18n';
 import { useTranslation } from '../i18n';
 import { ImportView, ImportNotices } from '../features/imports/ImportView';
@@ -271,7 +271,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   });
   useEffect(() => {
     if (!activeInline) return;
-    const column = activeInline.field === 'statusId' ? 'status' : activeInline.field === 'responsibleMembershipId' ? 'responsible' : 'dueDate';
+    const column = taskInlineColumn(activeInline.field);
     if (graphMode || ganttMode || importMode || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(column))) setActiveInline(null);
   }, [activeInline, visibleColumnIds, boardMode, graphMode, ganttMode, importMode]);
   const fieldValues = useProjectFieldValuesQuery(
@@ -430,7 +430,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 
       <TaskCompletionFeedback controller={completion} onReview={openTask} />
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
-      {taskId === null && creating === null && (quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode) && (!activeInline || personalColumns.denied || graphMode || ganttMode || importMode || !shownTasks.some(task => task.id === activeInline.taskId) || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(activeInline.field === 'statusId' ? 'status' : activeInline.field === 'responsibleMembershipId' ? 'responsible' : 'dueDate'))) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
+      {taskId === null && creating === null && (quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode) && (!activeInline || personalColumns.denied || graphMode || ganttMode || importMode || !shownTasks.some(task => task.id === activeInline.taskId) || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(taskInlineColumn(activeInline.field)))) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
       <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable} />
@@ -547,6 +547,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             creating={creating}
             onClose={closeDrawer}
             onOpenTask={openTask}
+            onCreateChild={parent => startCreate({ sectionId: parent.sectionId, parent })}
             onResumeCreate={() => startCreate({ sectionId: null, parent: null })}
             onCreated={(task) => {
               closeDrawer();

@@ -270,6 +270,7 @@ describe('TaskTable inline edit boundaries', () => {
   ])('keeps $name rows out of ordinary cell edits', ({ patch }) => {
     const onEditTaskField = vi.fn();
     renderTable({ tasks: [makeTask({ id: 'guarded-row', title: 'Guarded task', ...patch })], writable: true, onEditTaskField });
+    expect(screen.queryByRole('button', { name: 'Rename Guarded task' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit status for Guarded task' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit assignee for Guarded task' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Edit due date for Guarded task' })).not.toBeInTheDocument();

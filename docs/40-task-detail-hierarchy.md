@@ -1,0 +1,21 @@
+# Task drawer hierarchy actions
+
+This bounded client slice adds immediate-parent navigation and child creation to the ordinary saved-task drawer. It reuses the project page's task command/draft owners and existing child composer; no backend, hierarchy mutation, child count or recursive traversal is introduced.
+
+## Navigation and creation
+
+Open parent makes an explicit current task GET through the actor/workspace-scoped reload helper. Only the exact requested parent in the same workspace and project can be opened. Denied, missing, foreign-project and self-parent targets show safe fixed copy while retaining the current drawer/draft. The button shows no parent title from a loaded-page subset. A late read after unmount, retarget or a newer source draft cannot navigate or reinstall its old session. Native buttons remain keyboard accessible and never submit the task form.
+
+Add subtask is offered only for known ordinary, unarchived tasks in a writable active project and a non-viewer workspace. Current read failures/refetches and unresolved task writes block a new child action. The optional `onCreateChild(parent)` callback invokes the existing page-owned `startCreate({sectionId: parent.sectionId, parent})`; the callback bridge is owned by the ProjectPage owner. No parent save or draft discard occurs. A saved-parent estimate hint is shown only while the parent estimate field differs from its saved value.
+
+The existing Detail / Additional work choice remains explicit in the child composer. Detail creation omits `estimateMinutes` and joins the saved parent package; additional work uses its own explicit estimate. No new defaults or estimate-copy behavior are added. Back to parent uses the same guarded read, preserving an unsent/held child session. If any create session already exists, the drawer says Resume new task draft and resumes that exact original session, including its original parent and work scope, rather than silently retargeting it.
+
+## Drafts and command recovery
+
+Rich parent edits, custom-field drafts and Discussion drafts remain in their existing page-owned stores. Navigation synchronously retains an unsent/held ordinary task session before invoking the existing open/create callback. The page's single task command ledger continues to block replacement writes while a task command is pending or unknown. Child creates retain the original key/payload through Back to parent and Resume; late acknowledgement uses the existing session-identity/mounted guard, so it does not reopen a child or overwrite the parent draft.
+
+Existing ProjectPage navigation preserves the selected week, person and view; hierarchy actions introduce no URL writer. Parent navigation can read an archived parent and let the existing drawer render it read-only. A meeting target still enters its existing guarded meeting drawer through the page's normal open callback; meeting-backed or unknown-type source tasks never receive the generic Add subtask action. Moved/foreign-project parents remain unavailable in this bounded same-project callback; cross-project hierarchy navigation is not added.
+
+## Source verification
+
+Focused tests cover rich unsent child restoration, parent estimate and child draft round trips through the actual project page, carried period/person context, detail/additional-work POST payloads, current parent authorization and safe denial copy, foreign/self parent targets, late reads after close or a newer draft, original different-parent create-session resumption, pending/unknown parent/create keys and late child acknowledgement, and read-only/archive/meeting/unknown-type source guards. Adjacent drawer/session and Discussion tests verify existing recovery behavior. Browser, visual and compiled-runtime acceptance remain separate coordinator gates; this frontend slice performs no build, runtime restart, migration or main-database operation.

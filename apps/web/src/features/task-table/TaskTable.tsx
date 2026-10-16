@@ -355,11 +355,14 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
   ];
   const childCountText = ctx.partial ? t('taskTable.taskTable.loadedValue', { p0: formatSubtaskCount(childCount) }) : formatSubtaskCount(childCount);
 
+  const titleEditor = ctx.renderTaskFieldEditor?.(task, 'title');
+  const editingTitle = titleEditor !== undefined && titleEditor !== null;
+  const renameLabel = t('tasks.inlineEdit.editTitle', { title: task.title });
   const cell = (field: TaskInlineField, content: ReactNode): ReactNode => {
     const editor = ctx.renderTaskFieldEditor?.(task, field);
     if (editor !== undefined && editor !== null) return editor;
     if (!ctx.onEditTaskField || !canEditTaskInline(task)) return content;
-    const label = field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
+    const label = field === 'title' ? renameLabel : field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
     return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className="flex min-h-8 w-full min-w-0 items-center rounded px-1 text-left hover:bg-slate-100">{content}</button>;
   };
   const builtinCells: Record<string, ReactNode> = {
@@ -384,17 +387,12 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
           )}
           {ctx.renderCompletionAction?.(task)}
           {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
-          <button
-            type="button"
-            onClick={() => ctx.onOpenTask(task.id)}
-            title={task.title}
-            className={cn(
-              'min-w-0 truncate rounded-sm text-left text-sm font-medium hover:text-accent-ink hover:underline',
-              finished ? 'text-muted' : 'text-ink',
-            )}
-          >
-            {task.title}
-          </button>
+          <div className="min-w-0 flex-1">
+            {editingTitle ? titleEditor : <div className="flex min-w-0 items-center gap-1">
+              <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title} className={cn('min-w-0 flex-1 truncate rounded-sm text-left text-sm font-medium hover:text-accent-ink hover:underline', finished ? 'text-muted' : 'text-ink')}>{task.title}</button>
+              {ctx.onEditTaskField && canEditTaskInline(task) ? <button type="button" data-task-cell={`${task.id}:title`} aria-label={renameLabel} title={renameLabel} onClick={event => { event.stopPropagation(); ctx.onEditTaskField?.(task, 'title'); }} className={cn(iconButtonClassName, 'size-7 text-subtle')}><Pencil size={14} aria-hidden="true" /></button> : null}
+            </div>}
+          </div>
           {childCount > 0 ? (
             <span className="shrink-0 text-xs text-muted tabular-nums" title={childCountText}>
               <span aria-hidden="true">{childCount}</span>

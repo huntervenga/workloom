@@ -84,6 +84,8 @@ export interface TaskDrawerProps {
   creating: CreateRequest | null;
   onClose: () => void;
   onOpenTask: (taskId: string) => void;
+  /** Reuses the page-owned child composer; existing create sessions keep their original parent. */
+  onCreateChild?: ((parent: TaskDto) => void) | undefined;
   /** Reopens the kept new-task form, e.g. to resolve its unconfirmed create. */
   onResumeCreate: () => void;
   onCreated: (task: TaskDto) => void;
@@ -245,9 +247,36 @@ function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnTyp
         </div>
       ) : null}
       {/* Keyed by ID only: a refetch never remounts the inputs. */}
-      {props.commentsController && task.meetingId === null ? <TaskDiscussionPanels key={taskId} task={task} controller={props.commentsController} writable={props.writable} canRetry={workspace.role !== 'viewer'} timezone={workspace.timezone} onOpenTask={props.onOpenTask}><TaskEditForm key={taskId} {...props} latest={task} /></TaskDiscussionPanels> : <TaskEditForm key={taskId} {...props} latest={task} />}
+      {props.commentsController && task.meetingId === null ? <TaskDiscussionPanels key={taskId} task={task} controller={props.commentsController} writable={props.writable} canRetry={workspace.role !== 'viewer'} timezone={workspace.timezone} onOpenTask={props.onOpenTask}><TaskEditForm key={taskId} {...props} hierarchyCurrent={!detail.isFetching&&!detail.isError} latest={task} /></TaskDiscussionPanels> : <TaskEditForm key={taskId} {...props} hierarchyCurrent={!detail.isFetching&&!detail.isError} latest={task} />}
     </>
   );
+}
+
+/** Resolve only the explicit immediate parent, then navigate after current authorization. */
+function ParentTaskAction({actorId,workspaceId,projectId,sourceId,parentId,onOpenTask,beforeOpen,intent,back=false,disabled=false}:{actorId:string;workspaceId:string;projectId:string;sourceId:string|null;parentId:string;onOpenTask:(id:string)=>void;beforeOpen:()=>void;intent:object;back?:boolean;disabled?:boolean}) {
+  const {t}=useTranslation();
+  const reload=useReloadTask(actorId,workspaceId);
+  const [loading,setLoading]=useState(false);
+  const [unavailable,setUnavailable]=useState(false);
+  const mounted=useRef(true);
+  const inFlight=useRef(false);
+  const context=`${actorId}:${workspaceId}:${projectId}:${sourceId??''}:${parentId}`;
+  const current=useRef(context);current.current=context;
+  const currentIntent=useRef(intent);currentIntent.current=intent;
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  const invalid=!isUuid(parentId)||parentId===sourceId;
+  const open=async()=>{
+    if(disabled||invalid||inFlight.current)return;
+    const expected=current.current;const expectedIntent=currentIntent.current;inFlight.current=true;setLoading(true);setUnavailable(false);
+    try {
+      const parent=await reload(parentId);
+      if(!mounted.current||current.current!==expected||currentIntent.current!==expectedIntent)return;
+      if(parent.id!==parentId.toLowerCase()||parent.workspaceId!==workspaceId||parent.projectId!==projectId){setUnavailable(true);return;}
+      beforeOpen();onOpenTask(parent.id);
+    } catch {if(mounted.current&&current.current===expected)setUnavailable(true);}
+    finally {if(mounted.current&&current.current===expected){inFlight.current=false;setLoading(false);}}
+  };
+  return <div className="flex min-w-0 flex-wrap items-center gap-2">{invalid?<span role="status">{t('hierarchy.parentUnavailable')}</span>:<Button size="sm" variant="ghost" disabled={disabled||loading} onClick={()=>void open()}>{loading?t('hierarchy.openingParent'):back?t('hierarchy.backToParent'):t('hierarchy.openParent')}</Button>}{unavailable?<span role="status" className="text-xs text-muted">{t('hierarchy.parentUnavailable')}</span>:null}</div>;
 }
 
 function useLookups(props: TaskDrawerProps, extra: readonly TagDto[]) {
@@ -261,7 +290,7 @@ function useLookups(props: TaskDrawerProps, extra: readonly TagDto[]) {
 
 type TaskCommandName = 'update' | 'archive' | 'restore';
 
-function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
+function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurrent:boolean }) {
   const { t } = useTranslation();
   const {
     actorId,
@@ -414,6 +443,9 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
     setErrors({});
   };
 
+  const retainForNavigation=()=>{if(dirty||locked||pending)editSessions.current.set(taskId,session);};
+  const canCreateChild=writable&&workspace.role!=='viewer'&&props.project.archivedAt===null&&latest.archivedAt===null&&latest.meetingId===null&&props.onCreateChild!==undefined;
+  const keptCreate=commands.createSession.current!==null||commands.create.pendingCommand!==null||commands.create.uncertain!==null;
   const unavailableParticipantIds = activeParticipantIds(base).filter((id) => !memberIds.has(id));
 
   return (
@@ -424,6 +456,13 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
           {base.parentTaskId !== null ? <Badge tone="muted">{t('tasks.taskDrawer.subtask')}</Badge> : null}
           {dirty && !locked ? <span className="font-medium text-ink-soft">{t('tasks.taskDrawer.unsavedChanges')}</span> : null}
         </div>
+
+        {latest.parentTaskId!==null||canCreateChild?<div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          {latest.parentTaskId!==null?<ParentTaskAction actorId={actorId} workspaceId={workspace.id} projectId={props.project.id} sourceId={taskId} parentId={latest.parentTaskId} beforeOpen={retainForNavigation} intent={session} onOpenTask={onOpenTask} disabled={!props.hierarchyCurrent}/>:null}
+          {canCreateChild?keptCreate?<Button size="sm" variant="ghost" onClick={()=>{retainForNavigation();onResumeCreate();}}>{t('hierarchy.resumeDraft')}</Button>:<Button size="sm" variant="ghost" disabled={!props.hierarchyCurrent||unresolved!==null} onClick={()=>{if(!props.hierarchyCurrent||unresolvedTaskCommand(commands)!==null)return;retainForNavigation();props.onCreateChild?.(latest);}}>{t('hierarchy.addSubtask')}</Button>:null}
+        </div>:null}
+        {canCreateChild&&!keptCreate&&unresolved!==null?<p className="text-xs text-muted">{t('hierarchy.resolveSave')}</p>:null}
+        {canCreateChild&&!keptCreate&&draft.estimate!==baseDraft.estimate?<p className="text-xs text-muted">{t('hierarchy.savedEstimateHint')}</p>:null}
 
         {archived ? (
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
@@ -751,9 +790,10 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
     <form noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, !busy && !locked)} className="mt-3 flex min-h-0 flex-1 flex-col">
       <div className={formBodyClassName}>
         {parent ? (
-          <p className="text-sm text-ink-soft">
-            {t('tasks.taskDrawer.subtaskOfTask', { title: parent.title })}
-          </p>
+          <div className="space-y-1 text-sm text-ink-soft">
+            <p>{t('tasks.taskDrawer.subtaskOfTask', { title: parent.title })}</p>
+            <ParentTaskAction actorId={props.actorId} workspaceId={props.workspace.id} projectId={project.id} sourceId={null} parentId={parent.id} beforeOpen={()=>{if(dirty||locked||pending)createSession.current=session;}} intent={session} onOpenTask={onOpenTask} back/>
+          </div>
         ) : null}
         {blockedByOther ? (
           <OtherTaskCommandNotice command={blockedByOther} onOpenTask={onOpenTask} onResumeCreate={onResumeCreate} />
