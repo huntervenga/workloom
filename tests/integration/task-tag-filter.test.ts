@@ -1,5 +1,5 @@
-// Source-backed Fastify/domain/PostgreSQL acceptance. This file never creates or drops a DB:
-// its caller must own an explicit fresh workloom_tagfilter_*_test database and clean it up.
+// Source-backed Fastify/domain/PostgreSQL acceptance. The shared integration helper creates
+// and drops this file's own child database; the validated TEST_DATABASE_URL base is untouched.
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
@@ -9,10 +9,11 @@ import { createDatabase, createTaskApplication, createTaskRepository, createLoca
 import { createTaskCursorCodec } from '../../packages/db/src/tasks/cursor.js';
 import { createApp } from '../../apps/api/src/app.js';
 import { loadConfig } from '../../apps/api/src/config.js';
-import { requireTestDatabaseUrl, databaseName } from './support/test-database-url.js';
+import { requireTestDatabaseUrl } from './support/test-database-url.js';
+import { createThrowawayDatabase, type ThrowawayDatabase } from './support/test-database.js';
 
-const url = requireTestDatabaseUrl();
-if (!/^workloom_tagfilter_[a-z0-9_]+_test$/.test(databaseName(url))) throw new Error('Tag-filter tests require a caller-owned fresh workloom_tagfilter_*_test DB.');
+// Fail collection for missing/unsafe explicit test configuration, never DATABASE_URL fallback.
+requireTestDatabaseUrl();
 const secret = 'synthetic-tag-filter-stable-cursor-secret';
 function required<T>(value: T | null | undefined): T {
   if (value === undefined || value === null) throw new Error('Expected fixture/cursor value.');
@@ -21,6 +22,7 @@ function required<T>(value: T | null | undefined): T {
 const context = (userId: string = U.owner, workspaceId: string = W.team): CommandContext => ({ workspaceId, actor: { userId, displayName: 'Synthetic tag test', kind: 'fixture' }, requestId: randomUUID(), source: 'web', idempotencyKey: randomUUID() });
 
 describe('exact single-tag reads on owned disposable PostgreSQL', () => {
+  let target: ThrowawayDatabase | undefined;
   let db: Database;
   let api: FastifyInstance;
   let app: TaskApplication;
@@ -33,12 +35,13 @@ describe('exact single-tag reads on owned disposable PostgreSQL', () => {
   const list = (extra: Partial<TaskListQuery> = {}) => app.listTasks(context(), query({ tagId: tag.id, ...extra }));
 
   beforeAll(async () => {
-    console.info(`TAG_FILTER_OWNED_DB=${databaseName(url)}`);
-    db = createDatabase(url.href, { requireLoopback: true });
-    // A caller-owned empty database is mandatory; never seed existing data.
+    target = await createThrowawayDatabase('task_tag_filter');
+    console.info(`TAG_FILTER_OWNED_DB=${target.name}`);
+    db = createDatabase(target.url, { requireLoopback: true });
+    // The newly created owned child must be empty; never seed existing data.
     const existing = await db.sql`select 1 from information_schema.tables where table_schema='public' limit 1`;
     if (existing.length) throw new Error('Refusing to migrate/seed a nonempty tag-filter test database.');
-    await runMigrations(url.href, { requireLoopback: true });
+    await runMigrations(target.url, { requireLoopback: true });
     await seedDemoData(db);
     app = createTaskApplication(db, { cursorSecret: secret });
     projectId = (await app.createProject(context(), { name: 'Exact tag project' })).id;
@@ -64,9 +67,15 @@ describe('exact single-tag reads on owned disposable PostgreSQL', () => {
     const material = randomBytes(32), credentialId = randomUUID();
     await createLocalCredentialApplication(db).issueCredential(context(), { id: credentialId, name: 'Tag read proof', hashVersion: 1, secretHash: createHash('sha256').update(localMcpSecretPreimage(credentialId, material)).digest('hex'), scopes: ['tasks.read'], expiresInSeconds: 3600 });
     bearer = `wlm_local_v1_${credentialId}.${material.toString('base64url')}`;
-    api = await createApp(loadConfig({ APP_ENV: 'local', AUTH_MODE: 'dev', DEV_ACTOR_ID: U.owner, DATABASE_URL: url.href }), { database: db, taskApplication: app, webDistDir: null, logger: false });
+    api = await createApp(loadConfig({ APP_ENV: 'local', AUTH_MODE: 'dev', DEV_ACTOR_ID: U.owner, DATABASE_URL: target.url }), { database: db, taskApplication: app, webDistDir: null, logger: false });
   }, 60_000);
-  afterAll(async () => { await api?.close(); await db?.close(); });
+  afterAll(async () => {
+    try { await api?.close(); }
+    finally {
+      try { await db?.close(); }
+      finally { await target?.drop(); }
+    }
+  });
 
   it('filters only own tags, includes matching children alone, and never multiplies task/package estimates', async () => {
     const page = await list();
