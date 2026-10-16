@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import { taskResponseSchema } from '@workloom/contracts';
+import { personalTablePreferenceResponseSchema, taskResponseSchema, type ColumnChoice } from '@workloom/contracts';
 import { apiCall, dailyFixture, gate, taskResult } from './support/daily-fixture.js';
 import { revealTaskDetails } from './support/disclosures.js';
 import { evidenceJson } from './support/evidence.js';
@@ -13,6 +14,13 @@ for (const [name, viewport] of sizes) test.describe(`Inline task priority ${name
     // Medium is an explicit fixture baseline, not a change to the product create default (none).
     const work = await f.createTask(`${f.token} priority work`, { priority: 'medium', description: 'Persisted priority description', startDate: '2027-05-30', dueDate: '2027-06-01', estimateMinutes: 90, responsibleMembershipId: f.other.id, participantMembershipIds: [f.own.id, f.other.id] });
     const rich = await f.createTask(`${f.token} independent rich draft`, { estimateMinutes: 60 });
+    // Priority is optional and hidden in the normal fresh-project defaults. Configure only
+    // this new QA project's own preference before observing browser command attempts.
+    const columns: ColumnChoice[] = (['title', 'status', 'responsible', 'dueDate', 'tags', 'priority', 'estimate'] as const).map(key => ({ column: { kind: 'builtin', key }, visible: true }));
+    const columnResponse = await request.put(`${f.prefix}/projects/${f.project.id}/table-preferences/me`, { headers: { origin: f.origin, 'idempotency-key': randomUUID() }, data: { expectedRevision: 0, columns } });
+    expect(columnResponse.status(), await columnResponse.text()).toBe(200);
+    const configuredColumns = personalTablePreferenceResponseSchema.parse(await columnResponse.json()).data;
+    expect(configuredColumns).toMatchObject({ projectId: f.project.id, membershipId: f.own.id, revision: 1, columns });
     const taskPath = `${f.prefix}/tasks/${work.id}`;
     const attempts: { key: string | undefined; body: string | null }[] = [], acceptedResponses: unknown[] = [], writes: { method: string; path: string }[] = [], errors: string[] = [];
     const retryCommitted = gate(), retryAck = gate();
@@ -34,7 +42,7 @@ for (const [name, viewport] of sizes) test.describe(`Inline task priority ${name
       expect(await f.task(work.id)).toEqual(work); await editor.getByRole('button', { name: 'Save', exact: true }).click(); await expect(editor).toHaveCount(0); expect(writes).toEqual([]);
       await action.click(); await priority.selectOption('high'); await priority.press('Escape'); await expect(editor).toHaveCount(0); expect(writes).toEqual([]); await action.click(); await expect(priority).toHaveValue('high');
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0); await page.screenshot({ path: info.outputPath(`priority-editing-${name}.png`), fullPage: true });
-      await evidenceJson(info, 'priority-local-stage.json', { projectId: f.project.id, work, rich, explicitFixturePriority: 'medium', productDefaultChanged: false, nativeChoices: ['none', 'low', 'medium', 'high', 'urgent'], noWriteSelectionAndBlur: true, noOpSaveWrites: 0, keptAfterEscape: 'high', writes: [...writes] });
+      await evidenceJson(info, 'priority-local-stage.json', { projectId: f.project.id, configuredColumns, work, rich, explicitFixturePriority: 'medium', productDefaultChanged: false, nativeChoices: ['none', 'low', 'medium', 'high', 'urgent'], noWriteSelectionAndBlur: true, noOpSaveWrites: 0, keptAfterEscape: 'high', writes: [...writes] });
       const highResponse = page.waitForResponse(r => apiCall(r, 'PATCH', taskPath)); await editor.getByRole('button', { name: 'Save', exact: true }).click(); const high = await taskResult(await highResponse, 200); expect(JSON.parse(attempts[0]?.body ?? '{}')).toEqual({ expectedRevision: work.revision, priority: 'high' }); expect(high).toEqual({ ...work, priority: 'high', revision: work.revision + 1, updatedAt: high.updatedAt }); await expect(editor).toHaveCount(0); await expect(action).toBeFocused(); await expect(action.getByText('High', { exact: true })).toBeVisible();
       await action.click(); await expect(priority).toHaveValue('high'); await priority.selectOption('urgent'); await editor.getByRole('button', { name: 'Save', exact: true }).click(); await expect(editor.getByRole('button', { name: 'Retry', exact: true })).toBeVisible(); await expect(priority).toBeDisabled(); await expect(priority).toHaveValue('urgent'); const committed = await f.task(work.id); expect(committed).toEqual({ ...work, priority: 'urgent', revision: work.revision + 2, updatedAt: committed.updatedAt });
       await editor.getByRole('button', { name: 'Collapse editor', exact: true }).click(); await page.getByRole('button', { name: 'Board', exact: true }).click(); await expect(action).toHaveCount(0); await expect(page.getByText('A task command is unconfirmed. Its original values and key are kept.', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Resume original editor', exact: true }).click();
@@ -45,7 +53,7 @@ for (const [name, viewport] of sizes) test.describe(`Inline task priority ${name
       await page.getByRole('button', { name: 'Tasks', exact: true }).click(); await expect(action.getByText('Urgent', { exact: true })).toBeVisible(); await action.click(); await expect(priority).toHaveValue('urgent'); await priority.selectOption('none'); const clearResponse = page.waitForResponse(r => apiCall(r, 'PATCH', taskPath)); await editor.getByRole('button', { name: 'Save', exact: true }).click(); const cleared = await taskResult(await clearResponse, 200); expect(JSON.parse(attempts[3]?.body ?? '{}')).toEqual({ expectedRevision: retried.revision, priority: 'none' }); expect(cleared).toEqual({ ...work, priority: 'none', revision: work.revision + 3, updatedAt: cleared.updatedAt }); await expect(editor).toHaveCount(0); await expect(action).toBeFocused(); await expect(action).toContainText('No priority');
       await page.getByRole('button', { name: rich.title, exact: true }).click(); await expect(richDrawer.getByLabel('Description', { exact: true })).toHaveValue(rawDescription); expect(await f.task(rich.id)).toEqual(rich); await richDrawer.getByRole('button', { name: 'Discard draft', exact: true }).click(); await richDrawer.getByRole('button', { name: 'Close', exact: true }).first().click(); await expect(richDrawer).toHaveCount(0);
       expect(await f.task(work.id)).toEqual(cleared); expect(attempts).toHaveLength(4); expect(writes).toEqual(Array.from({ length: 4 }, () => ({ method: 'PATCH', path: taskPath }))); expect(errors).toEqual([]); expect(new URL(page.url()).hash).toBe('#priority-context'); expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0); await page.screenshot({ path: info.outputPath(`inline-priority-${name}.png`), fullPage: true });
-      await evidenceJson(info, 'inline-priority-proof.json', { projectId: f.project.id, work, high, committed, retried, cleared, rich, rawDescription, attempts, acceptedResponses, writes, errors, acceptedCommands: 3, replayAttempts: 1, productDefaultChanged: false, actorSwitchCovered: false });
+      await evidenceJson(info, 'inline-priority-proof.json', { projectId: f.project.id, configuredColumns, work, high, committed, retried, cleared, rich, rawDescription, attempts, acceptedResponses, writes, errors, acceptedCommands: 3, replayAttempts: 1, productDefaultChanged: false, actorSwitchCovered: false });
     } finally { retryAck.release(); if (!page.isClosed()) await page.unroute(`**${taskPath}`); }
   });
 });

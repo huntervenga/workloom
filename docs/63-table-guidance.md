@@ -17,3 +17,9 @@ The initial pre-catalog source run had four passes and five expected failures at
 This source slice performs no build, browser execution, API call or application runtime/database change. Native Enter/Space activation and responsive geometry remain a separate compiled browser gate. Source fake-API assertions are not authenticated-flow or physical-input acceptance.
 
 Related contracts: [project sorting](58-project-task-sorting.md), [assignee grouping](50-assignee-grouping.md), [shared estimates](54-inline-team-estimate.md), [contextual toolbar](59-contextual-project-toolbar.md).
+
+## Compiled native acceptance — 14:28–14:30 UTC
+
+Both `0fc9feb` guidance cases pass, desktop1440 in 2.839s and mobile390 in 2.473s. They reuse the exact existing twelve-task title fixture read-only, verify actual complete GET DTOs and before/after equality, and deduplicate four package identities to 240 minutes including two explicit zero packages. Native Enter/Space open/close About this table and retain summary focus; due-only and combined Assignee/Due help, visible loaded footer, unchanged full context and independent raw Description recovery pass without browser mutation attempts or page errors. Closed/open screenshots show zero global overflow; local table scrolling remains allowed.
+
+The final generic partial-scope copy is “Budget covers loaded tasks only”, covering filtered or incomplete scopes truthfully. This complete unfiltered native fixture does not exercise partial, unknown or conflicting estimate states; those remain source coverage. Exact screenshots, staged JSON and traces are under `workloom-evidence/v12-table-complete/manifest.json`, with combined-attempt history in [25](25-ux-verification.md). The separate desktop Priority layout defect remains a failed gate and does not change this bounded guidance result. No runtime, build, worker or old-tab action occurred.
