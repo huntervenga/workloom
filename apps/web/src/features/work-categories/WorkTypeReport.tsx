@@ -3,9 +3,9 @@ import { RecordedWorkLabel } from '../../shared/RecordedWorkLabel';
 import { ReportTaskLinks } from '../planning/ReportTaskLinks';
 import { ReportSetupDisclosure } from '../planning/ReportSetupDisclosure';
 import { workTypeReportConfigurationKey, type ReportDraft, type ReportDraftAction } from '../planning/reportSetupState';
-import type { MembershipDto, PlanningPeriodDto, WorkTypeBucketDto } from '@workloom/contracts';
+import type { MembershipDto, PlanningPeriodDto, WorkTypeBucketDto, WorkTypeReportRunDto } from '@workloom/contracts';
 import { Badge, Button, StateCard, inputClassName } from '@workloom/ui';
-import { useId, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import { isAccessDenied } from '../../lib/api';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
@@ -79,13 +79,13 @@ function PinnedWorkTypeReport({ actorId, workspaceId, period, runId }: { actorId
     <section aria-label={t('work-categories.savedBreakdown')} className="space-y-3 rounded-xl border border-line bg-canvas p-4">
       <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{t('work-categories.savedBreakdown')}</h3><Badge tone="muted">{t('work-categories.versionsPreserved')}</Badge></div>
       <p className="text-xs leading-relaxed text-muted">{t('work-categories.calculatedActualHourRevisionsIncludedThroughLaterChangesTo', { createdAt: formatPeriodCutoff(report.createdAt, period.timezone), timezone: period.timezone, factCutoffAt: formatPeriodCutoff(report.factCutoffAt, period.timezone) })}</p>
+      <p className="text-xs font-medium text-ink-soft">{t('work-categories.savedReportTotals')}</p>
       <dl className="grid gap-3 sm:grid-cols-3"><SummaryMetric label={t('work-categories.totalRecorded')} value={formatEstimate(report.totalActualMinutes)} /><SummaryMetric label={t('work-categories.categorized')} value={formatEstimate(report.categorizedMinutes)} /><SummaryMetric label={t('work-categories.uncategorized')} value={formatEstimate(report.uncategorizedMinutes)} /></dl>
       <p className="text-xs leading-relaxed text-muted">{t('work-categories.activeEntriesTheseAreRecordedHoursTheyDoNot', { activeSourceCount: report.activeSourceCount })}</p>
     </section>
-    <CategoryDistribution buckets={report.byCategory} totalMinutes={report.totalActualMinutes} />
-    <div className="max-w-full overflow-x-auto rounded-xl border border-line bg-surface"><table className="w-full min-w-[420px] text-left text-sm"><caption className="px-4 py-3 text-left font-semibold">{t('work-categories.shareOfRecordedHours')}</caption><thead className="border-y border-line bg-canvas text-xs text-muted"><tr><th className="px-4 py-3">{t('work-categories.workType')}</th><th className="px-4 py-3">{t('work-categories.hours')}</th><th className="px-4 py-3">{t('work-categories.share')}</th></tr></thead><tbody>{report.byCategory.map((bucket) => <tr key={bucket.key} className="border-b border-line last:border-0"><td className="px-4 py-3 [overflow-wrap:anywhere]">{bucketLabel(bucket)}</td><td className="px-4 py-3 tabular-nums">{formatEstimate(bucket.minutes)}</td><td className="px-4 py-3 tabular-nums">{percentage(bucket.sharePercent)}</td></tr>)}</tbody></table></div>
+    <SavedDistributionLens key={report.id} report={report} />
     {report.byPerson.length > 0 ? <section aria-label={t('work-categories.breakdownByPerson')} className="space-y-3"><h3 className="font-semibold">{t('work-categories.byPerson')}</h3>{report.byPerson.map((person) => <details key={person.membershipId} className="rounded-xl border border-line bg-surface p-4"><summary className="cursor-pointer text-sm font-medium">{t('work-categories.entries2', { memberName: person.memberName, totalActualMinutes: formatEstimate(person.totalActualMinutes), activeSourceCount: person.activeSourceCount })}</summary><p className="mt-2 text-xs text-muted">{t('work-categories.eachWorkTypesShareUsesThisPersonsRecordedHours')}</p><dl className="mt-3 space-y-2">{person.byCategory.map((bucket) => <div key={bucket.key} className="flex flex-wrap items-baseline justify-between gap-2 text-sm"><dt className="[overflow-wrap:anywhere]">{bucketLabel(bucket)}</dt><dd className="tabular-nums text-muted">{formatEstimate(bucket.minutes)} · {percentage(bucket.sharePercent)}</dd></div>)}</dl>{person.activeSourceCount === 0 ? <p className="mt-2 text-xs text-muted">{t('work-categories.thisPersonHasNoActiveEntries')}</p> : null}</details>)}</section> : null}
-    <section aria-label={t('work-categories.breakdownSources')} className="space-y-3"><h3 className="font-semibold">{t('work-categories.entriesIncludedInThisReport')}</h3><p className="text-xs text-muted">{t('work-categories.historicalNamesAndCategoriesArePreservedWithTheTime')}</p>
+    <section aria-label={t('work-categories.breakdownSources')} className="space-y-3"><h3 className="font-semibold">{t('work-categories.entriesIncludedInThisReport')}</h3><p className="text-xs text-muted">{t('work-categories.sourcesRemainReportWide')}</p><p className="text-xs text-muted">{t('work-categories.historicalNamesAndCategoriesArePreservedWithTheTime')}</p>
       {rows.isPending ? <p role="status" className="text-sm text-muted">{t('work-categories.loadingReportSources')}</p> : rows.isError && !rows.isFetchNextPageError ? <QueryErrorState error={rows.error} subject="workTypeReport" headingLevel={3} retrying={rows.isFetching} onRetry={() => void rows.refetch()} /> : <>
         <div className="max-w-full overflow-x-auto rounded-xl border border-line bg-surface"><table className="w-full min-w-[660px] text-left text-sm"><caption className="sr-only">{t('work-categories.historicalEntriesInHoursBreakdown')}</caption><thead className="border-b border-line bg-canvas text-xs text-muted"><tr><th className="px-4 py-3">{t('work-categories.taskAndPerson')}</th><th className="px-4 py-3">{t('work-categories.categoryForThisRevision')}</th><th className="px-4 py-3">{t('work-categories.hours')}</th><th className="px-4 py-3">{t('work-categories.state')}</th></tr></thead><tbody>{rows.data?.pages.flatMap((page) => page.items).map((row) => <tr key={row.id} className="border-b border-line last:border-0"><td className="max-w-xs px-4 py-3 [overflow-wrap:anywhere]"><p className="mb-1 text-xs text-muted">{t('work-categories.savedReportTitle')}</p><p className="font-medium">{row.taskTitle}</p><p className="mt-1 text-xs text-muted">{row.memberName} · <RecordedWorkLabel log={row.workLog}/> {t('work-categories.revision')}{row.workLog.revision}</p>{row.workLog.reason ? <p className="mt-1 text-xs text-muted">{row.workLog.reason}</p> : null}<ReportTaskLinks key={`${runId}:${row.id}`} actorId={actorId} workspaceId={workspaceId} projectId={period.projectId} periodId={period.id} membershipId={row.workLog.membershipId} taskIds={[row.workLog.taskId]} /></td><td className="px-4 py-3"><CategoryBadge category={row.workLog.category} /></td><td className="px-4 py-3 tabular-nums">{formatEstimate(row.workLog.minutes)}</td><td className="px-4 py-3 text-xs text-muted">{row.excluded ? t('work-categories.voidedExcludedFromShares') : t('work-categories.included')}</td></tr>)}</tbody></table></div>
         {report.rowCount === 0 ? <p className="text-sm text-muted">{t('work-categories.thisReportHasNoTimeEntries')}</p> : null}
@@ -96,11 +96,68 @@ function PinnedWorkTypeReport({ actorId, workspaceId, period, runId }: { actorId
   </div>;
 }
 
-function CategoryDistribution({ buckets, totalMinutes }: { buckets: readonly WorkTypeBucketDto[]; totalMinutes: number }) {
+/** A display lens over one immutable saved report; it never changes the report cohort. */
+function SavedDistributionLens({ report }: { report: WorkTypeReportRunDto }) {
   const { t } = useTranslation();
   const id = useId();
-  if (buckets.length === 0) return <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">{t('work-categories.noRecordedHoursToBreakDownYet')}</p>;
-  return <figure aria-labelledby={id} className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5"><figcaption id={id} className="text-sm font-semibold">{t('work-categories.shareOfRecordedHours')}</figcaption>{totalMinutes === 0 ? <p className="text-xs text-muted">{t('work-categories.theTotalIs0PercentagesAreUndefinedEvenWhen')}</p> : null}{buckets.map((bucket) => <div key={bucket.key} className="space-y-1.5"><div className="flex flex-wrap items-baseline justify-between gap-2 text-sm"><span className="min-w-0 font-medium [overflow-wrap:anywhere]">{bucketLabel(bucket)}</span><span className="shrink-0 tabular-nums text-muted">{formatEstimate(bucket.minutes)} · {percentage(bucket.sharePercent)}</span></div><svg viewBox="0 0 100 12" preserveAspectRatio="none" role="img" aria-label={`${bucketLabel(bucket)}: ${formatEstimate(bucket.minutes)}, ${percentage(bucket.sharePercent)}`} className="h-3 w-full"><rect width={100} height={12} rx={2} fill="#f1f5f9" /><rect width={bucket.sharePercent ?? 0} height={12} rx={2} fill={bucket.color && /^#[0-9a-f]{6}$/i.test(bucket.color) ? bucket.color : '#94a3b8'} /></svg></div>)}</figure>;
+  const [selection, setSelection] = useState({ membershipId: '', unavailable: false });
+  const person = report.byPerson.find(entry => entry.membershipId === selection.membershipId);
+  const missing = selection.membershipId !== '' && person === undefined;
+  useEffect(() => {
+    if (missing) setSelection({ membershipId: '', unavailable: true });
+  }, [missing]);
+
+  const scopeName = person?.memberName ?? t('work-categories.allSelectedPeople');
+  const buckets = person?.byCategory ?? report.byCategory;
+  const totalMinutes = person?.totalActualMinutes ?? report.totalActualMinutes;
+  const activeSourceCount = person?.activeSourceCount ?? report.activeSourceCount;
+
+  return (
+    <section aria-label={t('work-categories.distributionHeading')} className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-semibold">{t('work-categories.distributionHeading')}</h3>
+        <label htmlFor={id} className="flex min-w-0 flex-wrap items-center gap-2 text-xs font-medium">
+          {t('work-categories.distributionFor')}
+          <select id={id} className={inputClassName('h-9 min-w-0 max-w-full text-xs')} value={person?.membershipId ?? ''} onChange={event => setSelection({ membershipId: event.target.value, unavailable: false })}>
+            <option value="">{t('work-categories.allSelectedPeople')}</option>
+            {report.byPerson.map(entry => <option key={entry.membershipId} value={entry.membershipId}>{entry.memberName}</option>)}
+          </select>
+        </label>
+      </div>
+      <p className="text-sm font-medium [overflow-wrap:anywhere]">{t('work-categories.distributionScope', { name: scopeName })}</p>
+      <p className="text-xs text-muted">{t('work-categories.distributionDenominator', { hours: formatEstimate(totalMinutes), count: activeSourceCount })}</p>
+      {missing || selection.unavailable ? <p role="status" className="text-xs text-muted">{t('work-categories.distributionPersonUnavailable')}</p> : null}
+      {activeSourceCount === 0 ? <p className="text-xs text-muted">{t('work-categories.distributionNoActiveEntries')}</p> : totalMinutes === 0 ? <p className="text-xs text-muted">{t('work-categories.theTotalIs0PercentagesAreUndefinedEvenWhen')}</p> : null}
+      <CategoryDistribution buckets={buckets} />
+      <div className="max-w-full overflow-x-auto rounded-xl border border-line bg-surface">
+        <table className="w-full min-w-[420px] text-left text-sm">
+          <caption className="px-4 py-3 text-left font-semibold">{t('work-categories.shareOfRecordedHours')}</caption>
+          <thead className="border-y border-line bg-canvas text-xs text-muted"><tr><th className="px-4 py-3">{t('work-categories.workType')}</th><th className="px-4 py-3">{t('work-categories.hours')}</th><th className="px-4 py-3">{t('work-categories.share')}</th></tr></thead>
+          <tbody>{buckets.map(bucket => <tr key={bucket.key} className="border-b border-line last:border-0"><td className="px-4 py-3 [overflow-wrap:anywhere]">{bucketLabel(bucket)}</td><td className="px-4 py-3 tabular-nums">{formatEstimate(bucket.minutes)}</td><td className="px-4 py-3 tabular-nums">{percentage(bucket.sharePercent)}</td></tr>)}</tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function CategoryDistribution({ buckets }: { buckets: readonly WorkTypeBucketDto[] }) {
+  const { t } = useTranslation();
+  const id = useId();
+  if (buckets.length === 0) return <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">{t('work-categories.distributionNoBuckets')}</p>;
+  return (
+    <figure aria-labelledby={id} className="space-y-4 rounded-xl border border-line bg-surface p-4 sm:p-5">
+      <figcaption id={id} className="text-sm font-semibold">{t('work-categories.shareOfRecordedHours')}</figcaption>
+      {buckets.map(bucket => (
+        <div key={bucket.key} className="space-y-1.5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm"><span className="min-w-0 font-medium [overflow-wrap:anywhere]">{bucketLabel(bucket)}</span><span className="shrink-0 tabular-nums text-muted">{formatEstimate(bucket.minutes)} · {percentage(bucket.sharePercent)}</span></div>
+          <svg viewBox="0 0 100 12" preserveAspectRatio="none" role="img" aria-label={t('work-categories.distributionBarLabel', { category: bucketLabel(bucket), hours: formatEstimate(bucket.minutes), share: percentage(bucket.sharePercent) })} className="h-3 w-full">
+            <rect width={100} height={12} rx={2} fill="#f1f5f9" />
+            {bucket.sharePercent !== null ? <rect width={bucket.sharePercent} height={12} rx={2} fill={bucket.color && /^#[0-9a-f]{6}$/i.test(bucket.color) ? bucket.color : '#94a3b8'} /> : null}
+          </svg>
+        </div>
+      ))}
+    </figure>
+  );
 }
 function SummaryMetric({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-line bg-surface p-3"><dt className="text-xs text-muted">{label}</dt><dd className="mt-1 text-lg font-semibold">{value}</dd></div>; }
 function bucketLabel(bucket: WorkTypeBucketDto): string { return bucket.fieldId === null && bucket.optionId === null ? t('work-categories.uncategorized') : bucket.label; }

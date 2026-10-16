@@ -140,5 +140,20 @@
   "hoursHelp": "About hours",
   "weekLabel": "Week",
   "personLabel": "Person",
-  "savedReportTitle": "Title in saved report"
+  "savedReportTitle": "Title in saved report",
+  "savedReportTotals": "Saved report totals · all selected people",
+  "distributionHeading": "Work-type distribution",
+  "distributionFor": "Show distribution for",
+  "allSelectedPeople": "All selected people",
+  "distributionScope": "Recorded hours · {{name}}",
+  "distributionDenominator": {
+    "one": "Share denominator: {{hours}} recorded · {{count}} active entry. Uncategorized hours are included.",
+    "other": "Share denominator: {{hours}} recorded · {{count}} active entries. Uncategorized hours are included."
+  },
+  "distributionPersonUnavailable": "The selected person is not in this saved report. Showing all selected people.",
+  "distributionNoActiveEntries": "This selection has no active entries.",
+  "distributionNoBuckets": "No category totals are recorded for this selection.",
+  "distributionBarLabel": "{{category}}: {{hours}}, {{share}}",
+  "sourcesRemainReportWide": "These source details cover all selected people in this saved report. The chart selection does not filter them."
+
 }
