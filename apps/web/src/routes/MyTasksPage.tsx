@@ -1,9 +1,10 @@
+import { useMyTasksLens } from '../features/my-tasks/navigation';
 import { Badge, Button, Skeleton, StateCard, TextInput, inputClassName } from '@workloom/ui';
 import { ArrowUpRight, CheckCheck, Inbox, RefreshCw, Search } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router';
 import { useTranslation } from '../i18n';
-import { uniqueLoadedMyTasks, type MyTasksFilters } from '../features/my-tasks/api';
+import { uniqueLoadedMyTasks } from '../features/my-tasks/api';
 import { useMyTasksQuery } from '../features/my-tasks/queries';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { QueryErrorState } from '../shared/QueryErrorState';
@@ -12,14 +13,24 @@ import { useWorkspaceContext } from './WorkspaceLayout';
 export function MyTasksPage() {
   const { actorId, workspace } = useWorkspaceContext();
   const { t, formatDate } = useTranslation();
-  const [filters, setFilters] = useState<MyTasksFilters>({ relation: 'all', completion: 'open', includeArchived: false });
-  const [search, setSearch] = useState('');
+  const lens = useMyTasksLens();
+  const { filters } = lens;
+  const appliedSearch = filters.search ?? '';
+  const draftScope = { actorId, workspaceId: workspace.id, appliedSearch };
+  const [searchDraft, setSearchDraft] = useState({ ...draftScope, value: appliedSearch });
+  const sameDraftScope = searchDraft.actorId === actorId && searchDraft.workspaceId === workspace.id && searchDraft.appliedSearch === appliedSearch;
+  // A changed applied lens replaces its search draft without remounting/focusing the input.
+  // Other filter changes leave local typing intact, including when navigation is blocked.
+  if (!sameDraftScope) setSearchDraft({ ...draftScope, value: appliedSearch });
+  const search = sameDraftScope ? searchDraft.value : appliedSearch;
   const query = useMyTasksQuery(actorId, workspace.id, filters);
   const items = query.isError ? [] : uniqueLoadedMyTasks(query.data?.pages ?? []);
   useDocumentTitle(t('myTasks.documentTitle', { workspace: workspace.name }));
-  const applySearch = (event: FormEvent) => {
+  const applySearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setFilters(current => ({ ...current, search: search.trim() }));
+    const value = new FormData(event.currentTarget).get('search');
+    if (typeof value !== 'string') return;
+    lens.applySearch(value);
   };
   return (
     <div className="space-y-4">
@@ -28,13 +39,13 @@ export function MyTasksPage() {
         <Button size="sm" disabled={query.isFetching} onClick={() => void query.refetch()}><RefreshCw size={15} aria-hidden="true" />{t('myTasks.refresh')}</Button>
       </header>
       <div className="flex flex-wrap items-end gap-2.5">
-        <label className="min-w-36 flex-1 space-y-1 text-xs font-medium text-muted"><span>{t('myTasks.relationLabel')}</span><select className={inputClassName()} value={filters.relation} onChange={event => setFilters(current => ({ ...current, relation: event.target.value === 'assigned' ? 'assigned' : event.target.value === 'participating' ? 'participating' : 'all' }))}><option value="all">{t('myTasks.relationAll')}</option><option value="assigned">{t('myTasks.relationAssigned')}</option><option value="participating">{t('myTasks.relationParticipating')}</option></select></label>
-        <label className="min-w-36 flex-1 space-y-1 text-xs font-medium text-muted"><span>{t('myTasks.completionLabel')}</span><select className={inputClassName()} value={filters.completion} onChange={event => setFilters(current => ({ ...current, completion: event.target.value === 'closed' ? 'closed' : event.target.value === 'all' ? 'all' : 'open' }))}><option value="open">{t('myTasks.open')}</option><option value="closed">{t('myTasks.closed')}</option><option value="all">{t('myTasks.allCompletion')}</option></select></label>
-        <form onSubmit={applySearch} className="flex min-w-52 flex-[2] items-end gap-2"><label className="min-w-0 flex-1 space-y-1 text-xs font-medium text-muted"><span>{t('myTasks.searchLabel')}</span><TextInput value={search} maxLength={200} placeholder={t('myTasks.searchPlaceholder')} onChange={event => setSearch(event.target.value)} /></label><Button type="submit" size="sm" aria-label={t('myTasks.searchAction')}><Search size={16} aria-hidden="true" /></Button></form>
+        <label className="min-w-36 flex-1 space-y-1 text-xs font-medium text-muted"><span>{t('myTasks.relationLabel')}</span><select className={inputClassName()} value={filters.relation} onChange={event => lens.changeRelation(event.target.value)}><option value="all">{t('myTasks.relationAll')}</option><option value="assigned">{t('myTasks.relationAssigned')}</option><option value="participating">{t('myTasks.relationParticipating')}</option></select></label>
+        <label className="min-w-36 flex-1 space-y-1 text-xs font-medium text-muted"><span>{t('myTasks.completionLabel')}</span><select className={inputClassName()} value={filters.completion} onChange={event => lens.changeCompletion(event.target.value)}><option value="open">{t('myTasks.open')}</option><option value="closed">{t('myTasks.closed')}</option><option value="all">{t('myTasks.allCompletion')}</option></select></label>
+        <form onSubmit={applySearch} className="flex min-w-52 flex-[2] items-end gap-2"><label className="min-w-0 flex-1 space-y-1 text-xs font-medium text-muted"><span>{t('myTasks.searchLabel')}</span><TextInput name="search" value={search} maxLength={200} placeholder={t('myTasks.searchPlaceholder')} onChange={event => setSearchDraft({ ...draftScope, value: event.target.value })} /></label><Button type="submit" size="sm" aria-label={t('myTasks.searchAction')}><Search size={16} aria-hidden="true" /></Button></form>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
         <p role="status">{query.isError ? t('myTasks.errorStatus') : query.isPending ? t('myTasks.loading') : t('myTasks.loadedCount', { count: items.length })}</p>
-        <label className="flex items-center gap-1.5"><input type="checkbox" checked={filters.includeArchived} onChange={event => setFilters(current => ({ ...current, includeArchived: event.target.checked }))} />{t('myTasks.includeArchived')}</label>
+        <label className="flex items-center gap-1.5"><input type="checkbox" checked={filters.includeArchived} onChange={event => lens.changeArchived(event.target.checked)} />{t('myTasks.includeArchived')}</label>
       </div>
       {query.isError ? <QueryErrorState error={query.error} subject="tasks" retrying={query.isFetching} onRetry={() => void query.refetch()} /> : query.isPending ? <div aria-label={t('myTasks.loading')} className="space-y-2 rounded-xl border border-line bg-surface p-4">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-10 w-full" />)}</div> : items.length === 0 ? <StateCard icon={<Inbox size={18} aria-hidden="true" />} title={t('myTasks.emptyTitle')} description={t('myTasks.emptyDescription')} /> : (
         <div className="overflow-hidden rounded-xl border border-line bg-surface">
