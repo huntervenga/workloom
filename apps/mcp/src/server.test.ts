@@ -12,6 +12,19 @@ describe('actual SDK guarded tool handlers',()=>{
  it('checks current credential on every list and denies a revoked long-lived session',async()=>{const bridge={listTools:vi.fn().mockResolvedValueOnce({data:{tools:['list_projects']},meta:{requestId}}).mockRejectedValueOnce(new Error('raw bearer secret')),callTool:vi.fn()};const c=await connect(bridge);expect((await c.listTools(undefined,{cacheMode:'refresh'})).tools).toHaveLength(1);await expect(c.listTools(undefined,{cacheMode:'refresh'})).rejects.toThrow('could not be authorized');expect(bridge.listTools).toHaveBeenCalledTimes(2);});
  it('independently checks saved-catalog calls and sanitizes controlled denials',async()=>{const bridge={listTools:vi.fn().mockResolvedValue({data:{tools:['list_projects']},meta:{requestId}}),callTool:vi.fn().mockRejectedValue(new BridgeError('UNAUTHENTICATED',401))};const c=await connect(bridge);await c.listTools();const result=await c.callTool({name:'list_projects',arguments:{}});expect(result.isError).toBe(true);expect(result.content).toEqual([{type:'text',text:JSON.stringify({error:{code:'UNAUTHENTICATED',message:'The Workloom tool request could not be completed.'}})}]);expect(bridge.callTool).toHaveBeenCalledWith('list_projects',{});});
  it('uses exact shared normalized input and typed result',async()=>{const bridge={listTools:vi.fn().mockResolvedValue({data:{tools:['search_tasks']},meta:{requestId}}),callTool:vi.fn().mockResolvedValue({data:{tool:'search_tasks',data:[],nextCursor:'next-synthetic'},meta:{requestId}})};const c=await connect(bridge);const result=await c.callTool({name:'search_tasks',arguments:{query:{projectId:requestId,limit:2}}});expect(result.isError).not.toBe(true);expect(result.structuredContent).toEqual({tool:'search_tasks',data:[],nextCursor:'next-synthetic'});expect(bridge.callTool).toHaveBeenCalledWith('search_tasks',{query:{projectId:requestId,limit:2}});});
+ it('uses the additive scalar tag filter in the shared search contract', async () => {
+  const tagId = 'abcdef00-0000-4000-8000-000000000801';
+  const callTool = vi.fn().mockResolvedValue({data:{tool:'search_tasks',data:[],nextCursor:null},meta:{requestId}});
+  const c = await connect({listTools:vi.fn(),callTool});
+  const result = await c.callTool({name:'search_tasks',arguments:{query:{projectId:requestId,tagId:tagId.toUpperCase(),limit:2}}});
+  expect(result.isError).not.toBe(true);
+  expect(callTool).toHaveBeenCalledWith('search_tasks',{query:{projectId:requestId,tagId,limit:2}});
+  callTool.mockClear();
+  for (const query of [{projectId:requestId,tagId:[tagId]},{projectId:requestId,tagIds:[tagId]},{projectId:requestId,sort:'title'}]) {
+   expect((await c.callTool({name:'search_tasks',arguments:{query}})).isError).toBe(true);
+  }
+  expect(callTool).not.toHaveBeenCalled();
+ });
  it('never dispatches actor injection or malformed write inputs',async()=>{const bridge={listTools:vi.fn().mockResolvedValue({data:{tools:[]},meta:{requestId}}),callTool:vi.fn()};const c=await connect(bridge);expect((await c.callTool({name:'list_projects',arguments:{actorId:requestId}})).isError).toBe(true);expect((await c.callTool({name:'create_task',arguments:{}})).isError).toBe(true);expect(bridge.callTool).not.toHaveBeenCalled();});
 });
 

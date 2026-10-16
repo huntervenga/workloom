@@ -148,7 +148,8 @@ function harness() {
             row.projectId === input.projectId &&
             (input.includeArchived === true || row.archivedAt === null) &&
             (input.sectionId === undefined || row.sectionId === input.sectionId) &&
-            (input.statusId === undefined || row.statusId === input.statusId),
+            (input.statusId === undefined || row.statusId === input.statusId) &&
+            (input.tagId === undefined || (db.state.taskTags.get(row.id) ?? []).includes(input.tagId)),
         )
         .map(project)
         .sort((left, right) => left.position - right.position || (left.id < right.id ? -1 : 1))
@@ -599,5 +600,60 @@ describe('task list cursors', () => {
     s.db.epoch = 'epoch-2';
     const afterChange = s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, limit: 1, cursor });
     expect((await errorOf(afterChange)).code).toBe('VALIDATION_FAILED');
+  });
+});
+
+
+describe('exact task tag filter', () => {
+  it('paginates only tasks with their own tag and binds the cursor to that tag', async () => {
+    const s = await setup();
+    const tag = await s.app.createTag(s.owner(), { name: 'Design' });
+    const other = await s.app.createTag(s.owner(), { name: 'Other' });
+    const parent = await s.createTask({ title: 'Tagged parent', tagIds: [tag.id, other.id] });
+    await s.createTask({ title: 'Untagged child', parentTaskId: parent.id });
+    const child = await s.createTask({ title: 'Tagged child', parentTaskId: parent.id, tagIds: [tag.id] });
+    await s.createTask({ title: 'Other tag', tagIds: [other.id] });
+    const query = { projectId: s.project.id, tagId: tag.id, limit: 1 };
+    const first = await s.app.listTasks(s.ctx(users.owner), query);
+    expect(first.items.map(row => row.id)).toEqual([parent.id]);
+    const cursor = first.nextCursor as string;
+    const second = await s.app.listTasks(s.ctx(users.owner), { ...query, cursor });
+    expect(second.items.map(row => row.id)).toEqual([child.id]);
+    expect(second.items[0]?.workPackageId).toBe(parent.workPackageId);
+    expect(second.nextCursor).toBeNull();
+    for (const tagId of [other.id, undefined]) {
+      const changed = tagId === undefined ? { projectId: s.project.id, limit: 1, cursor } : { ...query, tagId, cursor };
+      expect((await errorOf(s.app.listTasks(s.ctx(users.owner), changed))).code).toBe('VALIDATION_FAILED');
+    }
+  });
+
+  it('accepts an archived owned tag and validates missing/foreign tags before cursors', async () => {
+    const s = await setup();
+    const tag = await s.app.createTag(s.owner(), { name: 'Archived' });
+    const task = await s.createTask({ tagIds: [tag.id] });
+    await s.app.updateTag(s.owner(), tag.id, { expectedRevision: 1, archived: true });
+    expect((await s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, tagId: tag.id, limit: 50 })).items.map(row => row.id)).toEqual([task.id]);
+    const foreign = { ...tag, id: uuid(901), workspaceId: uuid(902) };
+    s.db.state.tags.set(foreign.id, foreign);
+    for (const tagId of [uuid(903), foreign.id]) {
+      expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, tagId, cursor: 'bad', limit: 50 }))).code).toBe('NOT_FOUND');
+    }
+    expect((await errorOf(s.app.listTasks(s.ctx(users.revoked), { projectId: s.project.id, tagId: tag.id, cursor: 'bad', limit: 50 }))).code).toBe('NOT_FOUND');
+    expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { projectId: uuid(904), tagId: tag.id, cursor: 'bad', limit: 50 }))).code).toBe('NOT_FOUND');
+  });
+
+  it('keeps the original untagged v1 canonical query hash and cursor readable', async () => {
+    const s = await setup();
+    const firstTask = await s.createTask({ title: 'One' });
+    const secondTask = await s.createTask({ title: 'Two' });
+    const first = await s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, limit: 1 });
+    // Literal old query encoding: a tagId null/default would change this binding.
+    const legacyPayload = {
+      version: 1, workspaceId: WS, actorUserId: users.owner, permissionEpoch: 'epoch-1',
+      queryHash: `digest:{"limit":1,"projectId":"${s.project.id}"}`,
+      position: firstTask.position, id: firstTask.id,
+    };
+    expect(JSON.parse(first.nextCursor as string)).toEqual(legacyPayload);
+    expect((await s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, limit: 1, cursor: JSON.stringify(legacyPayload) })).items.map(row => row.id)).toEqual([secondTask.id]);
   });
 });

@@ -317,6 +317,11 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         requireSameProject(requireFound(await reader.findStatus(ws, query.statusId)), query.projectId, 'statusId');
       }
 
+      if (query.tagId !== undefined) {
+        // Archived tags remain readable on existing tasks; only assignment rejects them.
+        requireFound(await reader.findTag(ws, query.tagId));
+      }
+
       const { cursor, ...filters } = query;
       const permissionEpoch = await reader.permissionEpoch(ws);
       const queryHash = hash(filters);

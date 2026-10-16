@@ -360,6 +360,8 @@ export const taskListQuerySchema = z.strictObject({
   sectionId: idSchema.optional(),
   statusId: idSchema.optional(),
   participantMembershipId: idSchema.optional(),
+  /** Exact tag on this task; absent preserves the existing cursor query hash. */
+  tagId: idSchema.optional(),
   search: z.string().max(200).optional(),
   includeArchived: queryBooleanSchema.optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),

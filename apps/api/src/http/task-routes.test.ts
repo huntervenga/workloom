@@ -392,6 +392,10 @@ describe('P1a task routes (HTTP adapter)', () => {
       `${p}&includeArchived=1`,
       `${p}&includeArchived=yes`,
       `${p}&statusId=nope`,
+      `${p}&tagId=nope`,
+      `${p}&tagId=${IDS.tag}&tagId=${IDS.tag}`,
+      `${p}&tagIds=${IDS.tag}`,
+      `${p}&sort=title`,
       `${p}&cursor=`,
       `${p}&search=${'s'.repeat(201)}`,
       `${p}&actor=${FIXTURE_USER_IDS.outsider}`,
@@ -418,6 +422,16 @@ describe('P1a task routes (HTTP adapter)', () => {
     overrides.set('listTasks', () => ({ items: [], nextCursor: null }));
     const last = taskListResponseSchema.parse((await send(app, routeFor('listTasks'))).json());
     expect(last).toMatchObject({ data: [], meta: { nextCursor: null } });
+  });
+
+  it('forwards a canonical scalar tag filter without changing other filters', async () => {
+    const query = `projectId=${IDS.project}&tagId=${IDS.tag.toUpperCase()}&sectionId=${IDS.section}&statusId=${IDS.status}&participantMembershipId=${IDS.membership}&search=spec&limit=2`;
+    const response = await send(app, routeFor('listTasks'), { query });
+    expect(response.statusCode).toBe(200);
+    expect(calls[0]?.args).toEqual([{
+      projectId: IDS.project, tagId: IDS.tag, sectionId: IDS.section,
+      statusId: IDS.status, participantMembershipId: IDS.membership, search: 'spec', limit: 2,
+    }]);
   });
 
   it.each([

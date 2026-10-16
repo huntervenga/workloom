@@ -581,7 +581,7 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
       if (!Number.isSafeInteger(take) || take < 0) {
         throw new TypeError('listTasks needs a non-negative integer take.');
       }
-      const filterIds = [input.projectId, input.sectionId, input.statusId, input.participantMembershipId];
+      const filterIds = [input.projectId, input.sectionId, input.statusId, input.participantMembershipId, input.tagId];
       if (take === 0 || !isUuid(workspaceId) || filterIds.some((id) => id !== undefined && !isUuid(id))) {
         return [];
       }
@@ -608,6 +608,22 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
                   eq(taskParticipants.taskId, tasks.id),
                   eq(taskParticipants.membershipId, input.participantMembershipId),
                   eq(taskParticipants.active, true),
+                ),
+              ),
+          ),
+        );
+      }
+      if (input.tagId !== undefined) {
+        conditions.push(
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(taskTags)
+              .where(
+                and(
+                  eq(taskTags.workspaceId, tasks.workspaceId),
+                  eq(taskTags.taskId, tasks.id),
+                  eq(taskTags.tagId, input.tagId),
                 ),
               ),
           ),

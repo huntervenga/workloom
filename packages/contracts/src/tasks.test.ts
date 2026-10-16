@@ -253,6 +253,16 @@ describe('project, section and tag commands', () => {
 });
 
 describe('taskListQuerySchema', () => {
+  it('accepts one canonical tag ID without adding a default to old queries', () => {
+    const tagId = 'abcdef00-0000-4000-8000-000000000801';
+    expect(taskListQuerySchema.parse({ projectId: ids.project, tagId: tagId.toUpperCase() }).tagId).toBe(tagId);
+    expect(taskListQuerySchema.parse({ projectId: ids.project })).toEqual({ projectId: ids.project, limit: 50 });
+    for (const tagId of ['', 'design', null, [ids.tagDesign], [ids.tagDesign, ids.tagOps]]) {
+      expect(taskListQuerySchema.safeParse({ projectId: ids.project, tagId }).success).toBe(false);
+    }
+    expect(taskListQuerySchema.safeParse({ projectId: ids.project, tagIds: [ids.tagDesign] }).success).toBe(false);
+  });
+
   it('reads includeArchived=false from a query string as false', () => {
     const query = taskListQuerySchema.parse({ projectId: ids.project, includeArchived: 'false' });
 
