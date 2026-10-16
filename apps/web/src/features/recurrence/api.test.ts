@@ -100,6 +100,23 @@ describe('recurrence collections', () => {
     ]);
   });
 
+  it('orders the complete multi-page collection by original series date, independently of UUIDs and moved dates', async () => {
+    const monday = instance('2026-10-19', { ordinal: 3 });
+    const wednesday = instance('2026-10-21', { ordinal: 2 });
+    const friday = instance('2026-10-23', { ordinal: 1 });
+    const movedMonday = { ...monday, resolution: { ...monday.resolution, intendedLocalDate: '2026-10-23', resolvedLocalDate: '2026-10-23', resolvedStartAt: '2026-10-23T07:00:00.000Z', resolvedEndAt: '2026-10-23T08:00:00.000Z' } };
+    const movedFriday = { ...friday, resolution: { ...friday.resolution, intendedLocalDate: '2026-10-19', resolvedLocalDate: '2026-10-19', resolvedStartAt: '2026-10-19T07:00:00.000Z', resolvedEndAt: '2026-10-19T08:00:00.000Z' } };
+    const { calls } = installFakeApi({
+      [`GET ${instancesPath()}`]: request => request.searchParams.get('cursor') === 'uuid-page-2'
+        ? page([movedMonday], null) : page([movedFriday, wednesday], 'uuid-page-2'),
+    });
+    const result = await fetchRecurrenceInstances(alpha.id, SERIES_ID, PERIOD_A);
+    expect(result.map(item => item.id)).toEqual([monday.id, wednesday.id, friday.id]);
+    expect(result.map(item => item.occurrenceKey)).toEqual(['2026-10-19', '2026-10-21', '2026-10-23']);
+    expect(result.map(item => item.resolution.resolvedLocalDate)).toEqual(['2026-10-23', '2026-10-21', '2026-10-19']);
+    expect(calls.map(call => call.searchParams.get('cursor'))).toEqual([null, 'uuid-page-2']);
+  });
+
   it('rejects an instance whose real locators are only partly present instead of inventing the rest', async () => {
     const partial = { ...instance('2026-10-19', { ordinal: 1, materialized: true }), taskId: null };
     installFakeApi({ [`GET ${instancesPath()}`]: () => page([partial], null) });

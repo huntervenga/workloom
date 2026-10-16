@@ -99,11 +99,14 @@ export async function fetchRecurrenceSeriesDetail(workspaceId: string, seriesId:
 }
 
 /** Every header of one bound period, cancelled header-only rows included. */
-export function fetchRecurrenceInstances(workspaceId: string, seriesId: string, periodId: string, signal?: AbortSignal): Promise<RecurrenceInstanceDto[]> {
-  return allPages(
+export async function fetchRecurrenceInstances(workspaceId: string, seriesId: string, periodId: string, signal?: AbortSignal): Promise<RecurrenceInstanceDto[]> {
+  const headers = await allPages(
     `${seriesPath(workspaceId, seriesId)}/instances`, recurrenceInstanceListQuerySchema, { periodId, includeCancelled: true },
     recurrenceInstanceListResponseSchema, signal,
   );
+  // Pagination follows the API's stable IDs. Only the complete collection is ordered for display;
+  // moving an occurrence never changes its original position in the series.
+  return [...headers].sort((a, b) => a.occurrenceKey.localeCompare(b.occurrenceKey) || a.id.localeCompare(b.id));
 }
 
 export async function fetchRecurrenceReadiness(workspaceId: string, periodId: string, signal?: AbortSignal): Promise<RecurrenceReadinessDto> {
