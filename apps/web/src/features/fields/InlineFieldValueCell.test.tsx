@@ -1,5 +1,6 @@
 import type { TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
 import { act, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { alpha, alphaMembers, anna, failure, installFakeApi, ok, type FakeRequest, type RouteTable } from '../../test/fakeApi';
 import { task } from '../planning/test/fixtures';
@@ -281,6 +282,85 @@ describe('InlineFieldValueCell retained sessions and recovery', () => {
     await waitFor(() => expect(ui.exposed.drafts.getTask(task.id)[FIELD_ID]?.serverLocked).toBe(true));
     expect(ui.exposed.drafts.getTask(task.id)[FIELD_ID]).toMatchObject({ stale: false, draft: { type: 'single_select', value: DESIGN } });
     expect(screen.getByRole('button', { name: /has an unsaved draft/ })).toBeInTheDocument();
+  });
+});
+
+describe('InlineFieldValueCell confirmed receipts', () => {
+  const otherPath = `/api/v1/workspaces/${alpha.id}/tasks/${task.id}/field-values/${OTHER_FIELD_ID}`;
+  const OTHER_LABEL = `Edit Phase for ${task.title}`;
+
+  /** Two cells share one page mutation; X's loaded row is held old (no refetch) until changed explicitly. */
+  function setupPair(routes: RouteTable) {
+    const x = stage();
+    const y = { ...stage(), id: OTHER_FIELD_ID, name: 'Phase' };
+    const api = installFakeApi(routes);
+    const control = {} as { mutation: SetFieldValueMutation; setX: (value: TaskFieldValueDto | null) => void; setActor: (id: string) => void };
+    function Pair() {
+      const mutation = useSetTaskFieldValueMutation(anna.id, alpha.id);
+      const owner = useFieldValueDrafts(anna.id, alpha.id, task.projectId, mutation);
+      const [xValue, setX] = useState<TaskFieldValueDto | null>(row(x, { type: 'single_select', value: DESIGN }, 3));
+      const [actor, setActor] = useState(anna.id);
+      Object.assign(control, { mutation, setX, setActor });
+      const common = { actorId: actor, workspaceId: alpha.id, task, members: alphaMembers, writable: true, mutation, drafts: owner.current, onMoreDetails: () => undefined };
+      return (
+        <>
+          <InlineFieldValueCell {...common} field={x} value={xValue} />
+          <InlineFieldValueCell {...common} field={y} value={null} />
+        </>
+      );
+    }
+    const ui = renderFieldUi(<Pair />);
+    return { ...ui, ...api, control, x, writes: () => api.calls.filter((call) => call.method !== 'GET') };
+  }
+
+  async function choose(ui: ReturnType<typeof setupPair>, label: string, option: string) {
+    await waitFor(() => expect(screen.getByRole('combobox', { name: label })).toBeEnabled());
+    await ui.user.click(screen.getByRole('combobox', { name: label }));
+    await ui.user.click(screen.getByRole('option', { name: option }));
+  }
+
+  it('keeps X confirmed after Y resets the shared mutation data, and a newer loaded row still wins', async () => {
+    let xRevision = 3;
+    const ui = setupPair({
+      [`PUT ${valuePath}`]: (request) => ok(row(stage(), (request.body as { value: TaskFieldValueDto['value'] }).value, ++xRevision)),
+      [`PUT ${otherPath}`]: (request) => ok(row({ ...stage(), id: OTHER_FIELD_ID }, (request.body as { value: TaskFieldValueDto['value'] }).value, 1)),
+    });
+    await choose(ui, LABEL, 'Review');
+    await waitFor(() => expect(ui.control.mutation.data?.revision).toBe(4));
+
+    await choose(ui, OTHER_LABEL, 'Design');
+    // Y's send replaces the page's only answer; X's own receipt must not depend on it.
+    await waitFor(() => expect(ui.control.mutation.data?.fieldId).toBe(OTHER_FIELD_ID));
+    expect(screen.getByRole('combobox', { name: LABEL })).toHaveTextContent('Review');
+    expect(screen.getByRole('combobox', { name: OTHER_LABEL })).toHaveTextContent('Design');
+
+    // Next X send is based on the confirmed revision 4, not the held loaded revision 3.
+    await choose(ui, LABEL, 'Not set');
+    await waitFor(() => expect(ui.writes()).toHaveLength(3));
+    expect(ui.writes()[2]?.body).toEqual({ expectedRevision: 4, expectedDefinitionRevision: 4, value: { type: 'single_select', value: null } });
+    await waitFor(() => expect(ui.control.mutation.data?.revision).toBe(5));
+
+    // A newer loaded row for the same field wins over every receipt.
+    act(() => ui.control.setX(row(ui.x, { type: 'single_select', value: DESIGN }, 9)));
+    expect(screen.getByRole('combobox', { name: LABEL })).toHaveTextContent('Design');
+    await choose(ui, LABEL, 'Review');
+    await waitFor(() => expect(ui.writes()).toHaveLength(4));
+    expect(ui.writes()[3]?.body).toEqual({ expectedRevision: 9, expectedDefinitionRevision: 4, value: { type: 'single_select', value: REVIEW } });
+  });
+
+  it('drops a receipt when the actor context changes', async () => {
+    const ui = setupPair({
+      [`PUT ${valuePath}`]: (request) => ok(row(stage(), (request.body as { value: TaskFieldValueDto['value'] }).value, 4)),
+      [`PUT ${otherPath}`]: (request) => ok(row({ ...stage(), id: OTHER_FIELD_ID }, (request.body as { value: TaskFieldValueDto['value'] }).value, 1)),
+    });
+    await choose(ui, LABEL, 'Review');
+    await waitFor(() => expect(ui.control.mutation.data?.revision).toBe(4));
+    await choose(ui, OTHER_LABEL, 'Design');
+    await waitFor(() => expect(ui.control.mutation.data?.fieldId).toBe(OTHER_FIELD_ID));
+    expect(screen.getByRole('combobox', { name: LABEL })).toHaveTextContent('Review');
+    act(() => ui.control.setActor(alphaMembers[1]?.userId ?? ''));
+    // Only the loaded row remains for another actor; the old receipt is never carried over.
+    expect(screen.getByRole('combobox', { name: LABEL })).toHaveTextContent('Design');
   });
 });
 

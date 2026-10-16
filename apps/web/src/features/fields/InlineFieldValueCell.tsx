@@ -108,9 +108,10 @@ function draftForChoice(kind: ChoiceKind, field: TaskFieldDefinitionDto, choice:
  * value and definition revisions. Other types, kept drafts, conflicts and locks open the task's
  * details. Feedback floats in a cell popover, so the cell and its row never change size.
  */
-export function InlineFieldValueCell({ task, field, value, members, writable, mutation, drafts, onMoreDetails }: InlineFieldValueCellProps) {
+export function InlineFieldValueCell({ actorId, workspaceId, task, field, value, members, writable, mutation, drafts, onMoreDetails }: InlineFieldValueCellProps) {
   const { t } = useTranslation();
   const key = field.id.toLowerCase();
+  const context = `${actorId}:${workspaceId}:${task.id}:${field.id}`.toLowerCase();
   // The task's session object changes identity on every write, so same-dirty edits re-render too.
   const sessions = useSyncExternalStore(drafts.subscribe, () => drafts.getTask(task.id));
   const kept = sessions[key];
@@ -124,13 +125,20 @@ export function InlineFieldValueCell({ task, field, value, members, writable, mu
   const pending = heldHere !== null && mutation.pendingCommand !== null;
   const uncertainHere = isCommandFor(mutation.uncertain?.variables, task.id, field.id) ? mutation.uncertain : null;
 
-  // A confirmed write stays the shown value and the next base until the refetched row catches up;
-  // the server still checks the revision, so an older replay can only lead to a reviewed conflict.
-  const confirmed = mutation.data;
-  const base =
-    confirmed && sameId(confirmed.taskId, task.id) && sameId(confirmed.fieldId, field.id) && confirmed.revision > (value?.revision ?? 0)
-      ? confirmed
-      : value;
+  // The page's mutation keeps only the latest answer, and another cell's write clears it before this
+  // cell's refetched row lands. Keep this cell's highest receipt, scoped to its actor/task/field.
+  const [receipt, setReceipt] = useState<{ context: string; value: TaskFieldValueDto } | null>(null);
+  const stored = receipt?.context === context ? receipt.value : null;
+  const answer = mutation.data;
+  const incoming =
+    answer && sameId(answer.workspaceId, workspaceId) && sameId(answer.taskId, task.id) && sameId(answer.fieldId, field.id) ? answer : null;
+  const confirmed = incoming && (stored === null || incoming.revision > stored.revision) ? incoming : stored;
+  useEffect(() => {
+    if (confirmed !== null && confirmed !== stored) setReceipt({ context, value: confirmed });
+  }, [confirmed, stored, context]);
+  // Shown and used as the next base only until a loaded row is as new; it is not the current head,
+  // so the server still checks the revision and an older replay can only lead to a reviewed conflict.
+  const base = confirmed && confirmed.revision > (value?.revision ?? 0) ? confirmed : value;
   const review = heldHere === null && isProtected(kept) ? kept : null;
   const ownError = review?.submitted === true && isCommandFor(mutation.variables, task.id, field.id) ? mutation.error : null;
   const feedbackError = (pending ? null : uncertainHere?.error) ?? ownError;
