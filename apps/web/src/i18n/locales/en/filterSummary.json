@@ -1,0 +1,13 @@
+{
+  "group": "Active filters",
+  "status": "Status: {{value}}",
+  "clearStatus": "Clear status filter: {{value}}",
+  "statusUnavailable": "Status unavailable",
+  "participant": "Participant: {{value}}",
+  "clearParticipant": "Clear participant filter: {{value}}",
+  "participantUnavailable": "Participant unavailable",
+  "tag": "Tag: {{value}}",
+  "clearTag": "Clear tag filter: {{value}}",
+  "archived": "Archived tasks included",
+  "clearArchived": "Exclude archived tasks"
+}
