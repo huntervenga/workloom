@@ -5,6 +5,7 @@ import { evidenceJson } from './support/evidence.js';
 import { mutate, sizes, type Daily } from './support/next-ux.js';
 
 type Point = { x: number; y: number };
+type NativeDragEvent = { type: string; x: number; y: number; taskId: string | null };
 const graphRegion = (page: Page) => page.getByRole('region', { name: 'Project dependencies', exact: true });
 const nodeFor = (graph: Locator, task: TaskDto) => graph.locator(`.react-flow__node[data-id="${task.id}"]`);
 const saveFor = (graph: Locator) => graph.getByRole('button', { name: 'Save my layout', exact: true });
@@ -15,6 +16,15 @@ async function readLayout(f: Daily) {
 }
 async function point(node: Locator): Promise<Point> {
   return node.evaluate(element => { const matrix = new DOMMatrixReadOnly((element as HTMLElement).style.transform); return { x: matrix.e, y: matrix.f }; });
+}
+async function browserPoint(page: Page, value: Point): Promise<Point> {
+  // CSSOM serializes numeric transforms with browser precision; preserve raw API
+  // doubles separately and compare rendered values using that same native path.
+  return page.evaluate(value => {
+    const style = document.createElement('div').style;
+    style.transform = `translate(${value.x}px, ${value.y}px)`;
+    const matrix = new DOMMatrixReadOnly(style.transform); return { x: matrix.e, y: matrix.f };
+  }, value);
 }
 async function viewport(graph: Locator) {
   return graph.locator('.react-flow__viewport').evaluate(element => { const m = new DOMMatrixReadOnly(getComputedStyle(element).transform); return { zoom: m.a, x: m.e, y: m.f }; });
@@ -50,32 +60,52 @@ async function drag(page: Page, graph: Locator, task: TaskDto, dx = 22, dy = 24)
   const box = await background.boundingBox(); if (!box) throw Error('Visible graph metadata is required for native dragging.');
   const start = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const before = await point(node), beforeViewport = await viewport(graph);
+  const movable = await node.evaluate(element => element.classList.contains('draggable'));
   await page.evaluate(() => {
     const host = window as typeof window & { __workloomGraphDrag?: { events: { type: string; x: number; y: number; taskId: string | null }[]; stop: () => void } };
     host.__workloomGraphDrag?.stop();
     const abort = new AbortController(), events: { type: string; x: number; y: number; taskId: string | null }[] = [];
-    for (const type of ['pointerdown', 'pointermove', 'pointerup']) window.addEventListener(type, event => {
+    for (const type of ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'mouseup']) window.addEventListener(type, event => {
       const e = event as PointerEvent; events.push({ type, x: e.clientX, y: e.clientY, taskId: (e.target as Element).closest?.('.react-flow__node')?.getAttribute('data-id') ?? null });
     }, { capture: true, signal: abort.signal });
     host.__workloomGraphDrag = { events, stop: () => abort.abort() };
   });
   try {
     await page.mouse.move(start.x, start.y); await page.mouse.down();
-    await page.mouse.move(start.x + dx, start.y + dy, { steps: 8 }); await page.mouse.up();
-    await expect(node).not.toHaveClass(/\bdragging\b/);
+    // Native XYFlow establishes its anchor at the threshold-crossing mousemove,
+    // so observe an already-active drag rather than count that initial segment.
+    await page.mouse.move(start.x + dx / 4, start.y + dy / 4, { steps: 2 });
+    let activeAnchor: { point: Point; viewport: Awaited<ReturnType<typeof viewport>>; event: NativeDragEvent } | null = null;
+    if (movable) {
+      await expect(node).toHaveClass(/\bdragging\b/);
+      let previous = '', equalReads = 0;
+      await expect.poll(async () => { const current = JSON.stringify(await point(node)); equalReads = current === previous ? equalReads + 1 : 0; previous = current; return equalReads >= 2; }).toBe(true);
+      const event = await page.evaluate(() => (window as typeof window & { __workloomGraphDrag?: { events: NativeDragEvent[] } }).__workloomGraphDrag?.events.findLast(event => event.type === 'mousemove'));
+      if (!event) throw Error('An actual native mousemove must establish the active anchor.');
+      activeAnchor = { point: await point(node), viewport: await viewport(graph), event };
+    }
+    await page.mouse.move(start.x + dx, start.y + dy, { steps: 6 }); await page.mouse.up();
+    let settled = '', equalReads = 0;
+    await expect.poll(async () => {
+      const current = JSON.stringify({ point: await point(node), viewport: await viewport(graph), dragging: await node.evaluate(element => element.classList.contains('dragging')) });
+      equalReads = current === settled ? equalReads + 1 : 0; settled = current; return equalReads >= 2;
+    }).toBe(true);
     const events = await page.evaluate(() => (window as typeof window & { __workloomGraphDrag?: { events: unknown[] } }).__workloomGraphDrag?.events ?? []);
-    return { before, after: await point(node), beforeViewport, afterViewport: await viewport(graph), start, requested: { dx, dy }, events };
+    return { before, after: await point(node), beforeViewport, afterViewport: await viewport(graph), activeAnchor, draggingAfter: await node.evaluate(element => element.classList.contains('dragging')), start, requested: { dx, dy }, events };
   } finally {
     await page.evaluate(() => { const host = window as typeof window & { __workloomGraphDrag?: { stop: () => void } }; host.__workloomGraphDrag?.stop(); delete host.__workloomGraphDrag; });
   }
 }
 function assertScaledDrag(result: Awaited<ReturnType<typeof drag>>, id: string) {
-  const events = result.events as { type: string; x: number; y: number; taskId: string | null }[];
-  const down = events.find(event => event.type === 'pointerdown'), up = events.findLast(event => event.type === 'pointerup');
+  const events = result.events as NativeDragEvent[];
+  const down = events.find(event => event.type === 'mousedown'), up = events.findLast(event => event.type === 'mouseup');
   expect(down?.taskId).toBe(id); if (!down || !up) throw Error('Actual native pointer down/up evidence is required.');
   expect(result.afterViewport).toEqual(result.beforeViewport);
-  expect(result.after.x - result.before.x).toBeCloseTo((up.x - down.x) / result.beforeViewport.zoom, 1);
-  expect(result.after.y - result.before.y).toBeCloseTo((up.y - down.y) / result.beforeViewport.zoom, 1);
+  expect(result.draggingAfter).toBe(false);
+  const anchor = result.activeAnchor; if (!anchor) throw Error('An observed active native drag anchor is required.');
+  expect(anchor.viewport).toEqual(result.beforeViewport);
+  expect(result.after.x - anchor.point.x).toBeCloseTo((up.x - anchor.event.x) / anchor.viewport.zoom, 1);
+  expect(result.after.y - anchor.point.y).toBeCloseTo((up.y - anchor.event.y) / anchor.viewport.zoom, 1);
 }
 
 for (const [name, size] of sizes) test.describe(`Graph native mouse dragging ${name}`, () => {
@@ -103,7 +133,10 @@ for (const [name, size] of sizes) test.describe(`Graph native mouse dragging ${n
     const saveResponse = page.waitForResponse(r => apiCall(r, 'PUT', layoutPath(f)));
     await saveFor(graph).click(); expect((await saveResponse).status()).toBe(200); await expect(saveFor(graph)).toBeDisabled();
     const saved = await readLayout(f);
-    expect(saved.positions).toEqual(expect.arrayContaining([{ taskId: root.id, ...initialDrag.after }, { taskId: hidden.id, x: 700, y: 300 }, { taskId: neighbor.id, x: 400, y: 0 }]));
+    expect(saved.positions).toHaveLength(3);
+    expect(saved.positions.filter(row => row.taskId !== root.id)).toEqual(seeded.positions.filter(row => row.taskId !== root.id));
+    const savedRoot = saved.positions.find(row => row.taskId === root.id); if (!savedRoot) throw Error('The explicitly saved root position is required.');
+    expect(initialDrag.after).toEqual(await browserPoint(page, savedRoot));
     expect(JSON.parse(writes[0]?.body ?? 'null')).toEqual({ expectedRevision: seeded.revision, positions: saved.positions });
     await page.reload(); graph = await openGraph(page, f, root, 2, false);
     expect(await point(nodeFor(graph, root))).toEqual(initialDrag.after); expect(await readLayout(f)).toEqual(saved);
@@ -138,12 +171,12 @@ for (const [name, size] of sizes) test.describe(`Graph native mouse dragging ${n
     try {
       await saveFor(graph).click(); await expect.poll(() => committedLayout !== undefined).toBe(true);
       await expect(nodeFor(graph, root)).not.toHaveClass(/\bdraggable\b/);
-      const pendingDrag = await drag(page, graph, root); expect(pendingDrag.after).toEqual(submitted.after); expect(sent).toHaveLength(1);
+      const pendingDrag = await drag(page, graph, root); expect(pendingDrag.after).toEqual(submitted.after); expect(pendingDrag.activeAnchor).toBeNull(); expect(pendingDrag.draggingAfter).toBe(false); expect(sent).toHaveLength(1);
       expect(await readLayout(f)).toEqual(committedLayout);
       await evidenceJson(info, '03-pending-lock.json', { submitted, pendingDrag, sent: [...sent], committedLayout });
       releaseAck.release();
       const retry = page.getByRole('button', { name: 'Retry original submission', exact: true }); await expect(retry).toBeVisible();
-      const unknownDrag = await drag(page, graph, root); expect(unknownDrag.after).toEqual(submitted.after); expect(sent).toHaveLength(1);
+      const unknownDrag = await drag(page, graph, root); expect(unknownDrag.after).toEqual(submitted.after); expect(unknownDrag.activeAnchor).toBeNull(); expect(unknownDrag.draggingAfter).toBe(false); expect(sent).toHaveLength(1);
       await evidenceJson(info, '04-unknown-lock.json', { unknownDrag, sent: [...sent], committedLayout });
       const replay = page.waitForResponse(r => apiCall(r, 'PUT', layoutPath(f))); await retry.click(); expect((await replay).status()).toBe(200); await expect(retry).toHaveCount(0);
       expect(sent).toHaveLength(2); expect(sent[0]?.key).toBeTruthy(); expect(sent[1]).toEqual(sent[0]); expect(await readLayout(f)).toEqual(committedLayout);
@@ -169,11 +202,15 @@ for (const [name, size] of sizes) test.describe(`Graph native mouse dragging ${n
     const boundaryScreenshot = info.outputPath(`graph-boundary-${name}.png`);
     await graph.getByRole('region', { name: 'Dependency graph', exact: true }).screenshot({ path: boundaryScreenshot });
     await info.attach('coordinate-boundary-diagram', { path: boundaryScreenshot, contentType: 'image/png' });
+    expect(boundaryDrag.draggingAfter).toBe(false);
     expect(Number.isFinite(boundaryDrag.after.x) && Number.isFinite(boundaryDrag.after.y)).toBe(true);
     expect(Math.abs(boundaryDrag.after.x)).toBeLessThanOrEqual(100000); expect(Math.abs(boundaryDrag.after.y)).toBeLessThanOrEqual(100000);
     if (boundaryCanSave) {
       const response = page.waitForResponse(r => apiCall(r, 'PUT', layoutPath(boundary))); await saveFor(graph).click(); expect((await response).status()).toBe(200);
-      expect((await readLayout(boundary)).positions).toEqual([{ taskId: boundaryTask.id, ...boundaryDrag.after }]);
+      const stored = await readLayout(boundary); expect(stored.positions).toHaveLength(1);
+      expect(JSON.parse(writes.at(-1)?.body ?? 'null')).toEqual({ expectedRevision: boundarySeed.revision, positions: stored.positions });
+      const storedPoint = stored.positions[0]; if (!storedPoint) throw Error('The saved boundary position is required.');
+      expect(storedPoint.taskId).toBe(boundaryTask.id); expect(boundaryDrag.after).toEqual(await browserPoint(page, storedPoint));
     } else { expect(boundaryDrag.after).toEqual({ x: 99990, y: -99990 }); expect(await readLayout(boundary)).toEqual(boundarySeed); }
     expect(await f.task(root.id)).toEqual(root); expect(await f.task(hidden.id)).toEqual(hidden); expect(await external.task(neighbor.id)).toEqual(neighbor); expect(await boundary.task(boundaryTask.id)).toEqual(boundaryTask);
     expect(projectDependencyPolicyResponseSchema.parse(await (await request.get(policyPath)).json()).data).toEqual(policy);
