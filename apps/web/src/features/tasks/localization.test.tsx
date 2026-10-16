@@ -87,10 +87,10 @@ describe('owned UI live locale feedback', () => {
 
   it('updates table labels and memoized graph labels while keeping stored content and graph input stable', () => {
     const task = makeTask({ id: 'locale-task', title: 'Stored task title' });
-    const graphTasks = [{ id: 'a', title: 'Stored graph title', projectName: 'Stored project', statusName: 'Stored status', blocked: true, archived: false }];
+    const graphTasks = [{ id: 'a', title: 'Stored graph title', projectName: 'Stored project', statusName: 'Stored status', blocked: true, unresolvedCount: 1, archived: false }];
     const graphEdges = [{ id: 'edge-a', source: 'a', target: 'b' }];
     const graphPositions = { a: { x: 10, y: 20 } };
-    render(<><TaskTable tasks={[task]} sections={[]} statuses={statuses} members={[]} onOpenTask={vi.fn()} onCreateTask={vi.fn()} onCreateChild={vi.fn()} columnPreset="compact" /><GraphCanvas tasks={graphTasks} edges={graphEdges} positions={graphPositions} movable={false} connectable={false} onMove={vi.fn()} onConnect={vi.fn()} onOpen={vi.fn()} /></>);
+    render(<><TaskTable tasks={[task]} sections={[]} statuses={statuses} members={[]} onOpenTask={vi.fn()} onCreateTask={vi.fn()} onCreateChild={vi.fn()} columnPreset="compact" /><GraphCanvas tasks={graphTasks} edges={graphEdges} positions={graphPositions} movable={false} connectable={false} onMove={vi.fn()} onConnect={vi.fn()} onOpen={vi.fn()} onViewBlockers={vi.fn()} /></>);
     expect(screen.getByRole('columnheader', { name: 'Task' })).toBeInTheDocument();
     expect(screen.getByTestId('edge-label')).toHaveTextContent('The next task starts after the previous task finishes');
     switchLocale('fr');

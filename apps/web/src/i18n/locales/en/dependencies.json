@@ -152,5 +152,27 @@
   "layout": {
     "couldNotCalculateFiniteGraphPositions": "Could not calculate finite graph positions.",
     "couldNotCalculateFiniteGraphBounds": "Could not calculate finite graph bounds."
+  },
+  "graphBlockers": {
+    "view": "View blockers ({{count}})",
+    "viewForTask": "View blockers ({{count}}): {{title}}",
+    "title": "Blockers for {{title}}",
+    "description": "Unfinished predecessors across the workspace, including tasks outside this graph. Only the done status group resolves a predecessor.",
+    "checking": "Checking unfinished predecessors…",
+    "count": "Unfinished predecessors: {{count}}",
+    "loaded": "Showing {{loaded}} of {{total}} unfinished predecessors.",
+    "resolved": "No unfinished predecessors at the latest check.",
+    "warn": "Warning mode allows status changes while these predecessors are unfinished.",
+    "enforce": "Starting and completion are blocked until these predecessors finish. Other fields remain editable.",
+    "violation": "The current status conflicts with the blocking rule. It has not been changed automatically.",
+    "outside": "Outside this graph",
+    "archived": "Archived task",
+    "archivedProject": "Archived project",
+    "open": "Open task",
+    "openTask": "Open task: {{title}}",
+    "more": "Load more blockers",
+    "refresh": "Refresh blockers",
+    "restart": "Restart blocker list",
+    "unavailable": "Blockers are unavailable. Previous details are hidden; check again before relying on task readiness."
   }
 }

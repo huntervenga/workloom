@@ -4,7 +4,7 @@ import '@xyflow/react/dist/style.css';
 import { useCallback, useMemo, useState } from 'react';
 import { arrangeGraph, type LayoutEdge } from './layout';
 import type { Point } from './useDependencyWorkspace';
-export interface GraphCanvasTask { id: string; title: string; projectName: string; statusName: string; blocked: boolean; archived: boolean }
+export interface GraphCanvasTask { id: string; title: string; projectName: string; statusName: string; blocked: boolean; unresolvedCount: number; archived: boolean }
 export interface GraphCanvasProps {
   tasks: readonly GraphCanvasTask[];
   edges: readonly LayoutEdge[];
@@ -14,6 +14,7 @@ export interface GraphCanvasProps {
   onMove: (id: string, position: Point) => void;
   onConnect: (source: string, target: string) => void;
   onOpen: (id: string) => void;
+  onViewBlockers: (id: string) => void;
 }
 const labels = {
   get 'controls.ariaLabel'() { return t('dependencies.graphCanvas.graphControls'); }, get 'controls.zoomIn.ariaLabel'() { return t('dependencies.graphCanvas.zoomIn'); }, get 'controls.zoomOut.ariaLabel'() { return t('dependencies.graphCanvas.zoomOut'); },
@@ -25,6 +26,7 @@ const labels = {
 export default function GraphCanvas(p: GraphCanvasProps) {
   const { t } = useTranslation();
   const onOpen = p.onOpen;
+  const onViewBlockers = p.onViewBlockers;
   const [selected, setSelected] = useState<string | null>(null);
   const automatic = useMemo(() => p.tasks.every(task => p.positions[task.id] !== undefined) ? {} : arrangeGraph(p.tasks.map(task => task.id), p.edges), [p.tasks, p.edges, p.positions]);
   const nodes: Node[] = useMemo(() => p.tasks.map(task => ({
@@ -32,8 +34,8 @@ export default function GraphCanvas(p: GraphCanvasProps) {
     sourcePosition: Position.Right, targetPosition: Position.Left, deletable: false,
     style: { width: 240, minHeight: 128, background: '#fff', borderColor: task.blocked ? '#f59e0b' : '#e2e8f0', borderRadius: 12 },
     ariaLabel: t('dependencies.graphCanvas.valueValueValuevalue', { p0: task.title, p1: task.projectName, p2: task.statusName, p3: task.blocked ? t('dependencies.graphCanvas.unfinishedPredecessorsSuffix') : '' }),
-    data: { label: <div className="space-y-2 text-left"><button type="button" className="nodrag nopan line-clamp-2 w-full rounded text-left text-sm font-semibold text-accent-ink" onClick={e => { e.stopPropagation(); onOpen(task.id); }}>{task.title}</button><p className="text-xs text-muted [overflow-wrap:anywhere]">{task.projectName} · {task.statusName}{task.archived ? t('dependencies.graphCanvas.archived') : ''}</p>{task.blocked ? <p className="text-xs text-amber-800">{t('dependencies.graphCanvas.hasUnfinishedPredecessors')}</p> : null}</div> },
-  })), [p.tasks, p.positions, onOpen, automatic, selected, t]);
+    data: { label: <div className="space-y-2 text-left"><button type="button" className="nodrag nopan line-clamp-2 w-full rounded text-left text-sm font-semibold text-accent-ink" onClick={e => { e.stopPropagation(); onOpen(task.id); }}>{task.title}</button><p className="text-xs text-muted [overflow-wrap:anywhere]">{task.projectName} · {task.statusName}{task.archived ? t('dependencies.graphCanvas.archived') : ''}</p>{task.blocked ? <p className="text-xs text-amber-800">{t('dependencies.graphCanvas.hasUnfinishedPredecessors')}</p> : null}<button type="button" className="nodrag nopan inline-flex min-h-6 items-center rounded text-xs font-medium text-accent-ink underline" aria-label={t('dependencies.graphBlockers.viewForTask', { title: task.title, count: task.unresolvedCount })} onPointerDown={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} onDoubleClick={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); onViewBlockers(task.id); }}>{t('dependencies.graphBlockers.view', { count: task.unresolvedCount })}</button></div> },
+  })), [p.tasks, p.positions, onOpen, onViewBlockers, automatic, selected, t]);
   const edges: Edge[] = useMemo(() => p.edges.map(edge => ({ ...edge, deletable: false, markerEnd: { type: MarkerType.ArrowClosed }, ariaLabel: t('dependencies.graphCanvas.theNextTaskStartsAfterThePreviousTask') })), [p.edges, t]);
   const move = p.onMove;
   const changes = useCallback((items: NodeChange[]) => {
