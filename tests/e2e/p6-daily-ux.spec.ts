@@ -35,14 +35,14 @@ for (const [viewportName, viewport] of [['desktop', { width: 1440, height: 1000 
       await expect(list.getByRole('link')).toHaveCount(2);
       await expect(list).toContainText(f.project.name); await expect(list).toContainText(second.name);
       await expect(list).not.toContainText(closed.title); await expect(list).not.toContainText(`${f.token} unrelated`);
-      await page.getByLabel('My involvement', { exact: true }).selectOption('assigned');
+      await page.getByRole('combobox', { name: 'My involvement', exact: true }).selectOption('assigned');
       await expect(list.getByRole('link')).toHaveCount(1); await expect(list).toContainText(assigned.title);
-      await page.getByLabel('My involvement', { exact: true }).selectOption('participating');
+      await page.getByRole('combobox', { name: 'My involvement', exact: true }).selectOption('participating');
       await expect(list).toContainText(participating.title);
-      await page.getByLabel('My involvement', { exact: true }).selectOption('all');
-      await page.getByLabel('Show', { exact: true }).selectOption('all');
+      await page.getByRole('combobox', { name: 'My involvement', exact: true }).selectOption('all');
+      await page.getByRole('combobox', { name: 'Show', exact: true }).selectOption('all');
       await expect(list.getByRole('link')).toHaveCount(3);
-      await page.getByLabel('Show', { exact: true }).selectOption('open');
+      await page.getByRole('combobox', { name: 'Show', exact: true }).selectOption('open');
       await list.getByRole('link', { name: `Open task “${assigned.title}”`, exact: true }).click();
       await expect(page).toHaveURL(new RegExp(`/projects/${f.project.id}\\?task=${assigned.id}$`));
       const drawer = page.getByRole('dialog', { name: assigned.title, exact: true });
@@ -62,7 +62,7 @@ for (const [viewportName, viewport] of [['desktop', { width: 1440, height: 1000 
     test('section Enter creates once without a drawer; status, assignee and due date save only explicitly; action modal leaves View reachable', async ({ page, request, baseURL }, info) => {
       const f = await dailyFixture(request, baseURL, 'Quick and inline');
       await page.goto(f.path);
-      await page.getByRole('button', { name: 'Add task to QA section', exact: true }).click();
+      await page.getByRole('button', { name: 'Add task to “QA section”', exact: true }).click();
       const form = quickForm(page); const title = `${f.token} quick`;
       await form.getByLabel('Task name', { exact: true }).fill(title);
       await form.getByLabel('Assignee', { exact: true }).selectOption(f.own.id);
@@ -119,14 +119,14 @@ for (const [viewportName, viewport] of [['desktop', { width: 1440, height: 1000 
         createdId = task.id; committed.release(); await held.wait; await route.fulfill({ response: actual });
       });
       try {
-        await page.goto(f.path); await page.getByRole('button', { name: 'Add task to QA section', exact: true }).click();
+        await page.goto(f.path); await page.getByRole('button', { name: 'Add task to “QA section”', exact: true }).click();
         const title = `${f.token} delayed`;
         await quickForm(page).getByLabel('Task name', { exact: true }).fill(title);
         await quickForm(page).getByLabel('Task name', { exact: true }).press('Enter'); await committed.wait;
         expect((await f.task(createdId)).title).toBe(title);
         await expect(taskRow(page, title)).toHaveCount(0); // no optimistic task before acknowledgement
         await quickForm(page).getByRole('button', { name: 'Collapse editor', exact: true }).click();
-        await page.getByRole('button', { name: 'Add task to QA section', exact: true }).click();
+        await page.getByRole('button', { name: 'Add task to “QA section”', exact: true }).click();
         await expect(quickForm(page).getByLabel('Task name', { exact: true })).toHaveValue(title);
         await expect(quickForm(page).getByLabel('Task name', { exact: true })).toBeDisabled();
         held.release(); await expect(taskRow(page, title)).toHaveCount(1);

@@ -72,10 +72,13 @@ async function bindUI(page: Page, f: Awaited<ReturnType<typeof setup>>, screensh
 async function factUI(page: Page, f: Awaited<ReturnType<typeof setup>>, task: TaskDto, hours: string) {
   await page.getByRole('button', { name: `Weekly actual hours: ${task.title}`, exact: true }).click();
   const dialog = page.getByRole('dialog', { name: "Record weekly actual hours", exact: true });
-  await expect(dialog.getByLabel("Task", { exact: true })).toHaveValue(task.id);
-  await expect(dialog.getByLabel("Task", { exact: true })).toBeDisabled();
-  await expect(dialog.getByLabel("Whose hours", { exact: true })).toHaveValue(f.own.id);
-  await expect(dialog.getByLabel("Whose hours", { exact: true })).toBeDisabled();
+  await expect(dialog.getByLabel("Task", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Whose hours", { exact: true })).toHaveCount(0);
+  const context = dialog.getByRole('region', { name: "Time entry context", exact: true });
+  await expect(context).toContainText(task.title);
+  await expect(context).toContainText(f.own.displayName);
+  await expect(context).toContainText(f.period.name);
+  await expect(dialog.getByLabel("Actual hours this week", { exact: true })).toBeFocused();
   await dialog.getByLabel("Actual hours this week", { exact: true }).fill(hours);
   const result = page.waitForResponse(r => match(r, 'PUT', `${f.prefix}/tasks/${task.id}/manual-period-work/${f.period.id}/${f.own.id}`));
   await dialog.getByLabel("Actual hours this week", { exact: true }).press('Enter');
@@ -128,13 +131,17 @@ test.describe('P2b desktop1440', () => {
     await plan.locator('button[aria-label="Close"]').click();
     await page.getByRole('button', { name: `Weekly plan: ${b.title}`, exact: true }).click();
     plan = page.getByRole('dialog', { name: "Add to weekly plan", exact: true });
-    await expect(plan.getByLabel("Whole task", { exact: true })).toHaveValue(b.workPackageId);
+    await expect(plan.getByLabel("Whole task", { exact: true })).toHaveCount(0);
+    await expect(plan.getByRole('region', { name: "Time entry context", exact: true })).toContainText(b.title);
+    await expect(plan.getByRole('region', { name: "Time entry context", exact: true })).toContainText(f.own.displayName);
     await expect(plan.getByLabel("Planned hours", { exact: true })).toHaveValue('3');
     await expect(plan.getByRole('button', { name: "Save personal plan", exact: true })).toBeDisabled();
     await plan.locator('button[aria-label="Close"]').click();
     await page.getByRole('button', { name: "Open original hours save", exact: true }).click();
     plan = page.getByRole('dialog', { name: "Add to weekly plan", exact: true });
-    await expect(plan.getByLabel("Whole task", { exact: true })).toHaveValue(a.workPackageId);
+    await expect(plan.getByLabel("Whole task", { exact: true })).toHaveCount(0);
+    await expect(plan.getByRole('region', { name: "Time entry context", exact: true })).toContainText(a.title);
+    await expect(plan.getByRole('region', { name: "Time entry context", exact: true })).toContainText(f.own.displayName);
     await expect(plan.getByLabel("Planned hours", { exact: true })).toHaveValue('2:00');
     const retried = page.waitForResponse(r => match(r, 'POST', `${f.prefix}/periods/${f.period.id}/commitments`));
     await plan.getByRole('button', { name: "Retry original save", exact: true }).click();

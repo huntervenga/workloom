@@ -39,6 +39,10 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 08:39:35.113–08:39:39.804 | Additive synthetic workspace | 82 commands acknowledged; all 54 tables / 14,647 pre-existing rows preserved exactly |
 | 08:41:50.031–08:42:23.805 | Final clean-workspace frames | Ten GET-only desktop/mobile surfaces, zero errors/attempted writes/global overflow |
 | 08:43:29.401 | Exclusive checkpoint window released | Assets unchanged, helper doctor all owned/ready; next source slice has a separate gate |
+| 08:54:06.592–08:54:32.026 | Second checkpoint controlled restart | All 54 tables / 15,247 rows preserved, including clean Studio data |
+| 08:54:34.068 | Second compiled checkpoint `2d02bc4` | 14 served assets frozen; focused cases started with a failure cap |
+| 09:01:19.485–09:01:31.968 | Settled visual correction | Loaded custom values/dependency summary; fourteen GET-only frames, zero errors/writes/global overflow |
+| 09:04:22.083 | Second checkpoint window complete | One 8/8 focused run; four changed weekly cases covered passing across 3+1 runs; all 14 assets unchanged and doctor owned/ready |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 

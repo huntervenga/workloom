@@ -37,3 +37,5 @@ Actual setup, preservation and browser acceptance are recorded separately in [25
 - [Saved weekly report](http://127.0.0.1:4310/w/31800692-b5ab-4c59-87c9-118d9ea8eac9/projects/9266f142-b72a-40b8-bb86-350d6df7c209/week?period=c0d29b3f-f190-4b18-ac4a-379446d88dc0&view=report&run=bbbf7a98-0aaa-4023-90f5-41f72e5f4405)
 
 The saved report records 39h 30m planned and 20h 55m actual, with 75% fact coverage; missing facts intentionally leave total variance unavailable. It is a synthetic teaching example, not fabricated performance evidence for real people.
+
+The new workspace was included in a second full-database controlled restart proof on **2026-10-16, 08:54:06.592–08:54:32.026 UTC**: all 54 tables / 15,247 rows retained exact counts and full-row digests. This includes the synthetic tasks, baseline, recorded facts and reports. It is a controlled local restart proof; an actual OS reboot was not tested. Subsequent focused QA uses separate fresh projects in the original workspace and leaves Workloom Studio unchanged.

@@ -54,10 +54,13 @@ async function reportScreenshot(page: Page, path: string, region: 'summary' | 'c
   await page.screenshot({ path });
 }
 async function factUI(page: Page, prefix: string, period: PlanningPeriodDto, membershipId: string, taskId: string, hours: string, screenshot?: string) {
+  await page.getByLabel("Time entry for", { exact: true }).selectOption(membershipId);
+  await expect(page.getByLabel("Time entry for", { exact: true })).toHaveValue(membershipId);
   await page.getByRole('button', { name: "Record actual hours", exact: true }).click();
   const dialog = page.getByRole('dialog', { name: "Record weekly actual hours", exact: true });
   await dialog.getByLabel("Task", { exact: true }).selectOption(taskId);
-  await dialog.getByLabel("Whose hours", { exact: true }).selectOption(membershipId);
+  await expect(dialog.getByLabel("Whose hours", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('region', { name: "Time entry context", exact: true })).toContainText(period.name);
   await dialog.getByLabel("Actual hours this week", { exact: true }).fill(hours);
   if (screenshot) await page.screenshot({ path: screenshot });
   const result = page.waitForResponse((item) => call(item, 'PUT', `${prefix}/tasks/${taskId}/manual-period-work/${period.id}/${membershipId}`));
@@ -119,7 +122,8 @@ test.describe('P2a desktop1440', () => {
     await page.getByRole('button', { name: "Add to plan", exact: true }).click();
     const plan = page.getByRole('dialog', { name: "Add to weekly plan", exact: true });
     await plan.getByLabel("Whole task", { exact: true }).selectOption(f.root.workPackageId);
-    await plan.getByLabel("Whose plan", { exact: true }).selectOption(f.own.id);
+    await expect(plan.getByLabel("Whose plan", { exact: true })).toHaveCount(0);
+    await expect(plan.getByRole('region', { name: "Time entry context", exact: true })).toContainText(f.own.displayName);
     await plan.getByLabel("Planned hours", { exact: true }).fill('8');
     await plan.getByLabel(`Allocation: ${f.root.title}`, { exact: true }).fill('8');
     const plannedResponse = page.waitForResponse((item) => call(item, 'POST', `${f.prefix}/periods/${period.id}/commitments`));

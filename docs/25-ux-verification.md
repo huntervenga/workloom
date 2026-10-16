@@ -135,3 +135,45 @@ GET-only capture **08:41:50.031–08:42:23.805 UTC**, compiled checkpoint `614ba
 All 12 compiled assets remained exact after the demo/captures at **08:43:29.401 UTC**, with ready database/schema bodies (`.local/runtime/assets-after-demo.json`). Final helper doctor verified all three services still owned and ready. The exclusive frozen-build window was then released to the coordinator. Next-source features and menu-overlay fixes require their own build/browser gates.
 
 Root visual review found the desktop drawer screenshot still contained `Checking predecessors…` and custom-field skeletons. It is **not settled field/dependency visual evidence**. The next combined checkpoint must wait for concrete loaded field/dependency state before capturing the drawer. The clean task row itself was separately measured at y=401.5 desktop / 441.5 mobile (44px height), excluding the preceding section header; `v2-final-demo/actual-task-row.json`.
+
+
+### Second checkpoint: Studio restart persistence and focused browser gate
+
+Compiled source checkpoint **`2d02bc4`**. Coordinator reports all workspace builds passed, full lint passed, and 355 distinct web cases covered passing across the initial 350/354 run and a repaired 21-case subset (including a new discovery case); **not one clean full 355-case run**. These are coordinator source gates, separate from the browser evidence below.
+
+At **08:54:06.592–08:54:32.026 UTC**, helper-owned normal stop/start preserved all **54 public tables / 15,247 rows** with exact counts/full-row digests, `changed=[]`. This snapshot now includes Workloom Studio's tasks, baseline, facts and reports, directly proving their controlled-restart persistence. Worker stayed OFF; no initialization, migration, seed or restore. Private snapshots: `.local/runtime/studio-before-restart-20261016.json` and `studio-after-restart-20261016.json`.
+
+Doctor verified all three restarted services owned/ready: PG **34550** and API **34563** (start 11:54:15 Asia/Nicosia), Vite **34597** (11:54:16). At **08:54:34.068 UTC**, actual optimized inventory contained **14 assets: HTML plus 13 JS/CSS**, all 200/correct MIME/exact dist bytes, database/schema readiness `ok`. Entry `/assets/index-BWzG8-Rh.js`, 772,805 bytes, SHA256 `5f779357e7fbabda3b26d60ee01b2b3aaba6ffecf5fd0fcf34e6c91ece1c2daa`. Manifest `.local/runtime/assets-before-focused.json`.
+
+Eight focused browser cases were authored in `p6-daily-ux.spec.ts` and `p6-time-context.spec.ts`, with fresh additive projects in the explicit original workspace. Workloom Studio is excluded from these writes. Owned lint, root tests TypeScript, whitespace check and collection of exactly eight cases passed before execution. One complete final focused run passed **8/8 in 56.8s**, after the bounded QA corrections below. The unchanged earlier 26-case suite was not rerun for this checkpoint. Actor-switch/revocation browser coverage is not claimed from current-actor or separate HTTP/PostgreSQL checks.
+
+
+#### Focused browser results and initial QA attempts
+
+Final command: Playwright CLI `test tests/e2e/p6-daily-ux.spec.ts tests/e2e/p6-time-context.spec.ts --config .local/playwright.current.config.ts --max-failures=2 --output test-results/v2-focused-final --reporter=list`. Log `/tmp/workloom-v2-focused-final.log`, **8/8 pass (56.8s)**. Real desktop/mobile checks cover:
+
+- Current-actor My tasks across two projects, responsible/participating/completion/search filters, actual existing drawer navigation, edit and refetch after returning. No client actor/membership selector is sent to the inbox endpoint.
+- Section Enter creation once, no drawer or optimistic task row, explicit status/assignee/due saves with only the intended field and exact seen revision, and no write from selection/blur.
+- Real committed quick/inline writes whose response is held while collapsing/reopening the editor, followed by the original late confirmation without duplicate submission. A genuinely committed due-date response is then lost; Retry sends identical bytes/key and produces only one revision.
+- Project actions → Columns → close → View without the initial checkpoint workaround; focus returns to the visible action summary. This accepts the overlay fix in `2d02bc4`.
+- Explicit empty week, selected week/person round-trip, separate per-person plan drafts, independent report cohort, and a saved-row-person task link opening a currently authorized task in a new tab while preserving the saved report and ambient person.
+- Acting person outside a meeting roster leaves attendance unselected. Saved actual details begin collapsed; an unsaved duration change survives close/reopen. Browser writes remain zero in the time-context cases, actual/attendance server records unchanged. Leaving with retained drafts explicitly requires the correct unsaved-change confirmation.
+
+| Log under `/tmp/` | Actual result | QA correction |
+| --- | --- | --- |
+| `workloom-v2-focused-first.log` | 2 fail, 1 interrupted, 5 not run | Actual quoted section-action label; role combobox for wrapped My involvement select; verified runner interrupted to avoid repeated obsolete-selector timeout |
+| `workloom-v2-focused-second.log` | 6 pass, 2 fail (28.6s) | Distinguish footer Close from header Close icon |
+| `workloom-v2-focused-time-first.log` | 2 fail | Role combobox for wrapped Whose attendance select; actual snapshot already showed the correct empty choice |
+| `workloom-v2-focused-time-second.log` | 2 fail | Explicitly assert and accept the correct Leave this page? draft guard before returning |
+| `workloom-v2-focused-time-third.log` | 2/2 pass (21.6s) | Both remaining time-context cases complete |
+| `workloom-v2-focused-final.log` | **8/8 pass (56.8s)** | One complete final run |
+
+These failed attempts are new QA integration assumptions; none established a product failure in this checkpoint. The real native-menu defect from `614bad9` remains documented separately and is now verified fixed.
+
+Four **changed** existing P2a/P2b desktop/mobile cases were then checked because fixed task/person selectors were replaced by visible Time entry context summaries. P2a selects Time entry for before opening its fixed-person form; fixed table forms assert task/person/period text and hours-first focus. The real command target, work-package identity, revision, exact lost-ack body/key, zero/correction and immutable report assertions remain. Initial `/tmp/workloom-v2-weekly-changed.log`: **3 pass / 1 fail (31.1s)** at one further obsolete Whole task selector. Corrected visible target assertions and reran only that desktop case: `/tmp/workloom-v2-weekly-changed-desktop.log`, **1/1 pass (19.6s)**. Thus all four changed cases are covered passing; this is **not a single green four-case run**, and the other 22 unchanged cases were not repeated.
+
+All browser-test ESLint, root test TypeScript and `git diff --check` passed after the corrections. At **09:04:22.083 UTC**, all **14 optimized assets remained exact** against the pre-focused manifest; API database/schema body stayed `ok`, and helper doctor verified PG/API/Vite owned and ready. `.local/runtime/assets-after-focused.json`. Worker remained OFF. The exclusive window is released after this gate; later source edits are a separate candidate.
+
+#### Settled visual correction
+
+Actual interval **09:01:19.485–09:01:31.968 UTC**, GET-only `2d02bc4`, desktop1440×1000/mobile390×844. Evidence `workloom-evidence/v2-checkpoint2-settled/`: fourteen frames covering table, loaded drawer overview, loaded fields/dependencies, week and saved report/work-type results, plus `audit.json`. Every context blocked writes and recorded **zero attempted writes, page errors or global horizontal overflow**. Field/dependency screenshots waited for actual **Research**, **On track** and **No unfinished predecessors**, correcting the earlier skeleton capture. Mobile fields/dependencies fit together in one settled viewport, so their two named screenshots coincide. Saved report/work-type captures intentionally scroll to real saved results; they do not claim those results start in the initial page viewport. Root's results-first report/layout follow-up remains a later source change.
