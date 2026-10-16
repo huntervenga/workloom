@@ -141,5 +141,21 @@
     "expand": "Expand section “{{section}}”",
     "collapseNumbered": "Collapse section {{position}} “{{section}}”",
     "expandNumbered": "Expand section {{position}} “{{section}}”"
+  },
+  "grouping": {
+    "label": "Group by",
+    "section": "Section",
+    "assignee": "Assignee",
+    "help": "Each task appears under its assignee; meetings use their organizer. Weekly hours still belong to the selected person.",
+    "sectionContext": "Section: {{section}}",
+    "parentContext": "Section: {{section}} · Subtask of {{parent}}",
+    "unloadedParentContext": "Section: {{section}} · Subtask (parent not loaded)",
+    "expand": "Expand assignee group “{{name}}”",
+    "collapse": "Collapse assignee group “{{name}}”",
+    "empty": "No loaded tasks match this view.",
+    "moved": "Assignee saved: {{name}}.",
+    "open": "Open task",
+    "expandNumbered": "Expand assignee group {{position}} “{{name}}”",
+    "collapseNumbered": "Collapse assignee group {{position}} “{{name}}”"
   }
 }

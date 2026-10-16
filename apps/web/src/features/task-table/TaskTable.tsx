@@ -13,7 +13,9 @@ import { Avatar, Badge, Button, cn } from '@workloom/ui';
 import { ChevronDown, ChevronRight, Flag, Link2, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useMemo, useState, Fragment, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
-import { buildTaskGroups, visibleTaskRows, type TaskGroup, type TaskTreeNode } from './taskTree';
+import { visibleTaskRows, type TaskTreeNode } from './taskTree';
+import { buildTableGroups, type TableTaskGroup, type TaskGroupingMode } from './taskGrouping';
+import { dedupeTasks } from './workPackages';
 import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
 
 /** A column supplied by the parent, shown after «Приоритет» and before the estimate. */
@@ -68,6 +70,7 @@ export interface TaskTableProps {
   draftTaskIds?: ReadonlySet<string> | undefined;
   quickAdd?: { sectionId: string | null; content: ReactNode } | undefined;
   /** Controlled section disclosure state; project pages retain it across view switches. */
+  grouping?: TaskGroupingMode | undefined;
   collapsedGroupKeys?: ReadonlySet<string> | undefined;
   onGroupCollapsedChange?: ((groupKey: string, collapsed: boolean) => void) | undefined;
   className?: string | undefined;
@@ -320,6 +323,8 @@ function EstimateCell({ task, summary }: { task: TaskDto; summary: WorkPackageSu
 }
 
 interface RowContext {
+  grouping: TaskGroupingMode;
+  taskById: ReadonlyMap<string, TaskDto>;
   selectedTaskIds: readonly string[];
   onSelectTask: ((id: string, selected: boolean) => void) | undefined;
   statusById: ReadonlyMap<string, TaskStatusDto>;
@@ -345,19 +350,24 @@ function sectionLabel(sectionId: string | null, sectionById: ReadonlyMap<string,
   return sectionById.get(sectionId)?.name ?? t('taskTable.taskTable.sectionUnavailable');
 }
 
-function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; ctx: RowContext }) {
+function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGroup; ctx: RowContext }) {
   const { t } = useTranslation();
   const { task } = node;
   const status = ctx.statusById.get(task.statusId);
   const childCount = node.children.length;
   const expanded = !ctx.collapsedIds.has(task.id);
   const finished = status?.group === 'done' || status?.group === 'cancelled';
-  const showSection = node.depth > 0 && task.sectionId !== group.sectionId;
+  const showSection = ctx.grouping === 'section' && node.depth > 0 && task.sectionId !== group.sectionId;
   const activeParticipantIds = [
     ...new Set(task.participants.filter((participant) => participant.active).map((participant) => participant.membershipId)),
   ];
   const childCountText = ctx.partial ? t('taskTable.taskTable.loadedValue', { p0: formatSubtaskCount(childCount) }) : formatSubtaskCount(childCount);
 
+  const parent = task.parentTaskId === null ? undefined : ctx.taskById.get(task.parentTaskId);
+  const context = ctx.grouping === 'assignee' ? task.parentTaskId === null
+    ? t('taskTable.grouping.sectionContext', { section: sectionLabel(task.sectionId, ctx.sectionById) })
+    : parent ? t('taskTable.grouping.parentContext', { section: sectionLabel(task.sectionId, ctx.sectionById), parent: parent.title })
+      : t('taskTable.grouping.unloadedParentContext', { section: sectionLabel(task.sectionId, ctx.sectionById) }) : null;
   const titleEditor = ctx.renderTaskFieldEditor?.(task, 'title');
   const editingTitle = titleEditor !== undefined && titleEditor !== null;
   const renameLabel = t('tasks.inlineEdit.editTitle', { title: task.title });
@@ -395,6 +405,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
               <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title} className={cn('min-w-0 flex-1 truncate rounded-sm text-left text-sm font-medium hover:text-accent-ink hover:underline', finished ? 'text-muted' : 'text-ink')}>{task.title}</button>
               {ctx.onEditTaskField && canEditTaskInline(task) ? <button type="button" data-task-cell={`${task.id}:title`} aria-label={renameLabel} title={renameLabel} onClick={event => { event.stopPropagation(); ctx.onEditTaskField?.(task, 'title'); }} className={cn(iconButtonClassName, 'size-7 text-subtle')}><Pencil size={14} aria-hidden="true" /></button> : null}
             </div>}
+            {context ? <p className="truncate text-xs text-muted" title={context}>{context}</p> : null}
           </div>
           {childCount > 0 ? (
             <span className="shrink-0 text-xs text-muted tabular-nums" title={childCountText}>
@@ -446,7 +457,8 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
   })}</tr>;
 }
 
-function groupTitle(group: TaskGroup): string {
+function groupTitle(group: TableTaskGroup): string {
+  if (group.kind === 'assignee') return group.membershipId === null ? t('taskTable.taskTable.unassigned') : group.member?.displayName ?? t('taskTable.taskTable.memberUnavailable');
   if (group.kind === 'section' && group.section !== null) return group.section.name;
   if (group.kind === 'missing_section') return t('taskTable.taskTable.sectionUnavailable');
   return t('taskTable.taskTable.noSection');
@@ -464,7 +476,7 @@ function GroupHeader({
   onCreateTask,
   onRenameSection,
 }: {
-  group: TaskGroup;
+  group: TableTaskGroup;
   disclosureTitle: string;
   disclosurePosition: number | undefined;
   collapsed: boolean;
@@ -478,9 +490,14 @@ function GroupHeader({
   const { t } = useTranslation();
   const { section } = group;
   const archived = section !== null && section.archivedAt !== null;
-  const canCreate = writable && group.kind !== 'missing_section' && !archived;
+  const canCreate = writable && (group.kind === 'section' || group.kind === 'no_section') && !archived;
   const countText = partial ? t('taskTable.taskTable.loadedValue2', { p0: formatTaskCount(group.taskCount) }) : formatTaskCount(group.taskCount);
-  const disclosureLabel = disclosurePosition === undefined
+  const assignee = group.kind === 'assignee';
+  const disclosureLabel = assignee
+    ? disclosurePosition === undefined
+      ? collapsed ? t('taskTable.grouping.expand', { name: disclosureTitle }) : t('taskTable.grouping.collapse', { name: disclosureTitle })
+      : collapsed ? t('taskTable.grouping.expandNumbered', { name: disclosureTitle, position: disclosurePosition }) : t('taskTable.grouping.collapseNumbered', { name: disclosureTitle, position: disclosurePosition })
+    : disclosurePosition === undefined
     ? collapsed ? t('taskTable.sections.expand', { section: disclosureTitle }) : t('taskTable.sections.collapse', { section: disclosureTitle })
     : collapsed ? t('taskTable.sections.expandNumbered', { section: disclosureTitle, position: disclosurePosition }) : t('taskTable.sections.collapseNumbered', { section: disclosureTitle, position: disclosurePosition });
 
@@ -490,6 +507,7 @@ function GroupHeader({
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
+            data-task-group={group.key}
             aria-expanded={!collapsed}
             aria-label={disclosureLabel}
             onClick={onToggle}
@@ -575,6 +593,7 @@ export function TaskTable({
   columnPreset = 'expanded',
   columnIds,
   onEditTaskField, renderTaskFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd,
+  grouping = 'section',
   collapsedGroupKeys,
   onGroupCollapsedChange,
   className,
@@ -598,7 +617,8 @@ export function TaskTable({
   const visibleIds = columns.map(column => column.id);
   const columnCount = columns.length;
   const minWidth = columnIds ? columns.reduce((sum, column) => sum + column.width, 0) : (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0);
-  const groups = useMemo(() => buildTaskGroups(tasks, sections, locale), [tasks, sections, locale]);
+  const groups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale), [tasks, sections, members, grouping, locale]);
+  const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
   const summary = useMemo(() => summarizeWorkPackages(tasks), [tasks]);
   const statusById = useMemo(() => new Map(statuses.map((status) => [status.id, status])), [statuses]);
   const memberById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
@@ -629,6 +649,7 @@ export function TaskTable({
   }, []);
 
   const ctx: RowContext = {
+    grouping, taskById,
     selectedTaskIds,
     onSelectTask,
     statusById,
@@ -653,6 +674,7 @@ export function TaskTable({
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={column.id === 'title' ? undefined : { width: column.width }} />)}</colgroup>
         <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('px-3 font-medium', column.id === 'title' && 'lg:sticky lg:left-0 lg:z-[1] lg:bg-surface', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && onSelectTask ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 border-r border-line pr-1 text-center text-[10px] text-subtle">{t('tasks.completion.graph')}</span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
+        {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
           const collapsed = collapsedGroups.has(group.key);
           const rows = visibleTaskRows(group.roots, collapsedIds);
@@ -674,7 +696,7 @@ export function TaskTable({
                 }}
                 onRenameSection={onRenameSection}
               />
-              {!collapsed && quickAdd?.sectionId === group.sectionId ? <tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr> : null}
+              {grouping === 'section' && !collapsed && quickAdd?.sectionId === group.sectionId ? <tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr> : null}
               {collapsed ? null : rows.length === 0 ? (
                 <tr className="h-11 border-t border-line">
                   <td colSpan={columnCount} className="py-1 pr-3 pl-[42px] text-sm text-muted">
@@ -687,7 +709,7 @@ export function TaskTable({
             </tbody>
           );
         })}
-        {quickAdd && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody><tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr></tbody> : null}
+        {grouping === 'section' && quickAdd && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody><tr><td colSpan={columnCount} className="border-t border-line bg-canvas px-3">{quickAdd.content}</td></tr></tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
           <SummaryRow summary={summary} partial={partial} columnCount={columnCount} />
         </tfoot>

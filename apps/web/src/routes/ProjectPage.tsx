@@ -1,3 +1,4 @@
+import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
 import { TaskCompletionAction } from '../features/tasks/TaskCompletionAction';
 import { TaskCompletionFeedback } from '../features/tasks/TaskCompletionFeedback';
 import { useTaskCompletion } from '../features/tasks/useTaskCompletion';
@@ -40,7 +41,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import {
   FieldManagerDialog,
@@ -198,15 +199,34 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
   const [quickAddSection, setQuickAddSection] = useState<string | null | undefined>(undefined);
+  const inlineGeneration = useRef(0);
+  const inlineReceipt = useRef<{ task: TaskDto; field: TaskInlineField; generation: number; presentationKey: string } | null>(null);
+  const inlineFocusReturn = useRef<{ task: TaskDto; field: TaskInlineField; generation: number; presentationKey: string; ownsFocus: () => boolean; dispose: () => void } | null>(null);
+  const inlineLeases = useRef(new Set<() => void>());
+  const [savedAssignment, setSavedAssignment] = useState<{ taskId: string; membershipId: string | null; revision: number; generation: number } | null>(null);
+  const invalidateInlineSave = useCallback(() => {
+    inlineGeneration.current += 1;
+    inlineReceipt.current = null;
+    for (const dispose of inlineLeases.current) dispose();
+    inlineFocusReturn.current?.dispose();
+    inlineFocusReturn.current = null;
+    setSavedAssignment(null);
+  }, []);
+  useEffect(() => () => {
+    inlineGeneration.current += 1;
+    for (const dispose of inlineLeases.current) dispose();
+  }, []);
+  const [grouping, setGrouping] = useState<TaskGroupingMode>('section');
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<ReadonlySet<string>>(() => new Set());
   const changeGroupCollapsed = useCallback((key: string, collapsed: boolean) => {
+    invalidateInlineSave();
     setCollapsedGroupKeys(before => {
       if (before.has(key) === collapsed) return before;
       const next = new Set(before);
       if (collapsed) next.add(key); else next.delete(key);
       return next;
     });
-  }, []);
+  }, [invalidateInlineSave]);
   const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean } } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   const [filters, setFilters] = useState<TaskFilterValue>(emptyTaskFilters);
@@ -241,7 +261,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [],
     [tasks.data, tasks.isError, tasks.isFetchNextPageError]);
   // Use the same root hierarchy as the table: a child can belong to another section's group.
-  const taskGroups = useMemo(() => buildTaskGroups(shownTasks, sections.data ?? [], locale), [shownTasks, sections.data, locale]);
+  const sectionGroups = useMemo(() => buildTaskGroups(shownTasks, sections.data ?? [], locale), [shownTasks, sections.data, locale]);
+  const taskGroups = useMemo(() => buildTableGroups(shownTasks, sections.data ?? [], members.data ?? [], grouping, locale), [shownTasks, sections.data, members.data, grouping, locale]);
   const sectionHiddenTaskIds = useMemo(() => new Set(taskGroups
     .filter(group => collapsedGroupKeys.has(group.key))
     .flatMap(group => visibleTaskRows(group.roots, new Set()).map(node => node.task.id))), [taskGroups, collapsedGroupKeys]);
@@ -328,7 +349,95 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // The editor waits for real sections, statuses, members and tags.
   const metadataReady = metadataError === undefined && metadata.every((item) => item.query.isSuccess);
   const completionWritable = writable && metadataReady && !personalColumns.denied && !isAccessDenied(tasks.error);
-  const completion = useTaskCompletion(commands, { tasks: dedupeTasks(shownTasks), statuses: statuses.data ?? [], writable: completionWritable, editingTaskId: activeInline?.taskId ?? null }, () => setAnnouncement(message('tasks.completion.saved')));
+  const taskPresentationKey = JSON.stringify([actorId, workspace.id, project.id, location.key, grouping, filters.search, filters.statusId, filters.participantMembershipId, filters.tagId, filters.includeArchived]);
+  const previousPresentation = useRef(taskPresentationKey);
+  useLayoutEffect(() => {
+    if (previousPresentation.current !== taskPresentationKey) invalidateInlineSave();
+    previousPresentation.current = taskPresentationKey;
+  }, [taskPresentationKey, invalidateInlineSave]);
+  const completion = useTaskCompletion(commands, { tasks: dedupeTasks(shownTasks), statuses: statuses.data ?? [], writable: completionWritable, editingTaskId: activeInline?.taskId ?? null, focusScope: taskPresentationKey }, () => setAnnouncement(message('tasks.completion.saved')));
+
+  const inlineHead = useRef({ activeInline, grouping, presentationKey: taskPresentationKey, completionWritable });
+  useLayoutEffect(() => { inlineHead.current = { activeInline, grouping, presentationKey: taskPresentationKey, completionWritable }; });
+  const beginInlineSave = (form: HTMLFormElement) => {
+    inlineFocusReturn.current?.dispose();
+    inlineFocusReturn.current = null;
+    inlineReceipt.current = null;
+    const generation = ++inlineGeneration.current;
+    setSavedAssignment(null);
+    const origin = inlineHead.current;
+    let ownsFocus = form.contains(document.activeElement);
+    let waitingForHead = false;
+    const pointer = (event: PointerEvent) => { if (event.target instanceof Node && !form.contains(event.target)) ownsFocus = false; };
+    const focus = (event: FocusEvent) => { if (event.target instanceof Node && event.target !== document.body && !form.contains(event.target)) ownsFocus = false; };
+    const blur = () => { ownsFocus = false; };
+    window.addEventListener('blur', blur);
+    document.addEventListener('pointerdown', pointer, true);
+    document.addEventListener('focusin', focus, true);
+    const dispose = () => {
+      window.removeEventListener('blur', blur);
+      document.removeEventListener('pointerdown', pointer, true);
+      document.removeEventListener('focusin', focus, true);
+      inlineLeases.current.delete(dispose);
+    };
+    inlineLeases.current.add(dispose);
+    const isCurrent = () => {
+      const head = inlineHead.current;
+      return inlineGeneration.current === generation && head.completionWritable &&
+        head.activeInline?.focusClaim === origin.activeInline?.focusClaim &&
+        head.presentationKey === origin.presentationKey;
+    };
+    return {
+      onSettled: () => { if (!waitingForHead) dispose(); },
+      onSuccess: (confirmed: TaskDto) => {
+        if (!origin.activeInline || !isCurrent()) return;
+        const field = origin.activeInline.field;
+        // The command/session ledger already confirmed this precise submitted draft.
+        setActiveInline(null);
+        setAnnouncement(message('tasks.taskDrawer.taskSaved'));
+        if (field === 'responsibleMembershipId' && origin.grouping === 'assignee') {
+          inlineReceipt.current = { task: confirmed, field, generation, presentationKey: origin.presentationKey };
+        }
+        if (!ownsFocus) return;
+        waitingForHead = true;
+        inlineFocusReturn.current = { task: confirmed, field, generation, presentationKey: origin.presentationKey, ownsFocus: () => ownsFocus, dispose };
+      },
+    };
+  };
+
+  // A task write refetches list heads asynchronously. Wait for that head and the new
+  // row/card to commit, rather than focusing a source button that is about to unmount.
+  useLayoutEffect(() => {
+    if (activeInline !== null || tasks.isFetching) return;
+    const receipt = inlineReceipt.current;
+    if (receipt) {
+      const current = dedupeTasks(shownTasks).find(task => task.id === receipt.task.id);
+      if (receipt.generation === inlineGeneration.current && receipt.presentationKey === taskPresentationKey && completionWritable && current && canEditTaskInline(current) && current.revision === receipt.task.revision && current[receipt.field] === receipt.task[receipt.field]) {
+        setSavedAssignment({ taskId: current.id, membershipId: current.responsibleMembershipId, revision: current.revision, generation: receipt.generation });
+      }
+      inlineReceipt.current = null;
+    }
+    const intent = inlineFocusReturn.current;
+    if (!intent) return;
+    if (intent.generation !== inlineGeneration.current || intent.presentationKey !== taskPresentationKey || !completionWritable || !intent.ownsFocus()) {
+      intent.dispose();
+      inlineFocusReturn.current = null;
+      return;
+    }
+    const current = dedupeTasks(shownTasks).find(task => task.id === intent.task.id);
+    if (!current || !canEditTaskInline(current) || current.revision !== intent.task.revision || current[intent.field] !== intent.task[intent.field]) {
+      intent.dispose();
+      inlineFocusReturn.current = null;
+      return;
+    }
+    const cell = document.querySelector<HTMLButtonElement>(`button[data-task-cell="${intent.task.id}:${intent.field}"]`);
+    const group = grouping === 'assignee' ? document.querySelector<HTMLButtonElement>(`button[data-task-group="${assigneeGroupKey(current.responsibleMembershipId)}"]`) : null;
+    const target = cell ?? group;
+    // Remove the lease before our deliberate focus transfer.
+    intent.dispose();
+    if (target) target.focus();
+    inlineFocusReturn.current = null;
+  }, [activeInline, tasks.isFetching, shownTasks, taskPresentationKey, completionWritable, grouping]);
 
   const setTaskParam = (next: string | null) =>
     setSearchParams((previous) => {
@@ -339,12 +448,13 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     });
 
   const openTask = (id: string) => {
+    invalidateInlineSave();
     setQuickAddSection(undefined);
     setActiveInline(null);
     setCreating(null);
     setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);for(const key of ['meetingTab','meetingMember','meetingAttendance','meetingPeriod'])next.delete(key);return next;});
   };
-  const completionAction = (task: TaskDto) => <TaskCompletionAction task={task} statuses={statuses.data ?? []} writable={completionWritable} blocked={unresolvedTaskCommand(commands) !== null} pending={completion.pending && completion.attempt?.session.base.id === task.id} hasDraft={commands.editSessions.current.has(task.id)} editing={activeInline?.taskId === task.id} onChoose={completion.choose} onReview={openTask} />;
+  const completionAction = (task: TaskDto) => <TaskCompletionAction task={task} statuses={statuses.data ?? []} writable={completionWritable} blocked={unresolvedTaskCommand(commands) !== null} pending={completion.pending && completion.attempt?.session.base.id === task.id} hasDraft={commands.editSessions.current.has(task.id)} editing={activeInline?.taskId === task.id} onChoose={completion.choose} onTargetReady={completion.targetReady} onReview={openTask} />;
   const openGraphTask = useCallback((task: TaskDto) => {
     if (task.projectId !== project.id) { navigate(`/w/${workspace.id}/projects/${task.projectId}?task=${task.id}`); return; }
     setCreating(null);
@@ -361,18 +471,20 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const expandQuickSection = (sectionId: string | null) => {
     setCollapsedGroupKeys(before => {
       const next = new Set(before);
-      for (const group of taskGroups) if (group.sectionId === sectionId) next.delete(group.key);
+      for (const group of sectionGroups) if (group.sectionId === sectionId) next.delete(group.key);
       // A filtered empty No section group may reappear only after creation.
       if (sectionId === null) next.delete('no-section');
       return next;
     });
   };
   const startCreate = (request: CreateRequest) => {
+    invalidateInlineSave();
     if (!writable || request.parent?.archivedAt) return;
     const kept = commands.createSession.current;
     setActiveInline(null);
     setTaskParam(null);
     if (kept?.origin === 'quick' && (commands.create.pendingCommand || commands.create.uncertain)) {
+      setGrouping('section');
       setCreating(null);
       expandQuickSection(kept.request.sectionId);
       setQuickAddSection(kept.request.sectionId);
@@ -387,6 +499,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setCreating(kept?.request ?? request);
   };
   const startQuickAdd = (sectionId: string | null) => {
+    invalidateInlineSave();
     if (!writable || !metadataReady) return;
     setTaskParam(null);
     setCreating(null);
@@ -397,6 +510,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setQuickAddSection(targetSection);
   };
   const startInline = (task: TaskDto, field: TaskInlineField) => {
+    invalidateInlineSave();
     if (!writable || !canEditTaskInline(task)) return;
     const held = unresolvedTaskCommand(commands);
     if (held && (held.taskId !== task.id || !commands.update.pendingCommand && !commands.update.uncertain)) return;
@@ -406,6 +520,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setActiveInline({ taskId: task.id, field, focusClaim: { current: false } });
   };
   const closeInline = (taskId: string, field: TaskInlineField) => {
+    invalidateInlineSave();
     setActiveInline(null);
     requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`button[data-task-cell="${taskId}:${field}"]`)?.focus());
   };
@@ -413,7 +528,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setCreating(null);
     if (taskId !== null) setTaskParam(null);
   };
-  const quickEditorHidden = quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode
+  const quickEditorHidden = grouping !== 'section' || quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode
     || taskGroups.some(group => group.sectionId === quickAddSection && collapsedGroupKeys.has(group.key));
   const inlineEditorHidden = activeInline === null || personalColumns.denied || graphMode || ganttMode || importMode
     || !shownTasks.some(task => task.id === activeInline.taskId)
@@ -447,6 +562,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </ProjectActions>
       </header>
 
+      {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm">
+        <span>{t('taskTable.grouping.moved', { name: savedAssignment.membershipId === null ? t('taskTable.taskTable.unassigned') : members.data?.find(member => member.id === savedAssignment.membershipId)?.displayName ?? t('taskTable.taskTable.memberUnavailable') })}</span>
+        <Button size="sm" variant="ghost" onClick={() => openTask(savedAssignment.taskId)}>{t('taskTable.grouping.open')}</Button>
+      </div> : null}
       <TaskCompletionFeedback controller={completion} onReview={openTask} />
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
       {showTaskRecovery ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
@@ -502,10 +621,18 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             </div>
           ) : null}
           {boardMode ? taskTime.notices : taskTime.controls}
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="min-w-0 flex-1"><TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <div className="min-w-0 basis-full sm:basis-0 sm:flex-1"><TaskFilters value={filters} onChange={next => { invalidateInlineSave(); setFilters(next); }} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div>
+            {!boardMode && !graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
+              {t('taskTable.grouping.label')}
+              <select aria-label={t('taskTable.grouping.label')} className="min-h-8 rounded border border-line bg-surface px-2 text-xs text-ink" value={grouping} onChange={event => { invalidateInlineSave(); setGrouping(event.target.value === 'assignee' ? 'assignee' : 'section'); }}>
+                <option value="section">{t('taskTable.grouping.section')}</option>
+                <option value="assignee">{t('taskTable.grouping.assignee')}</option>
+              </select>
+            </label> : null}
             <PersonalColumnsDialog showTrigger={!boardMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
           </div>
+          {grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode ? <p className="text-xs text-muted">{t('taskTable.grouping.help')}</p> : null}
           {personalColumns.query.isError && !personalColumns.denied ? <p role="status" className="text-xs text-amber-800">{t('taskTable.personalColumns.loadFailed')}</p> : null}
           {/* A custom field failure never hides the built-in table. */}
           {fieldsError ? (
@@ -520,11 +647,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
             renderCompletionAction={completionAction}
             boardMode={boardMode}
+            grouping={grouping}
             collapsedGroupKeys={collapsedGroupKeys}
             onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
             draftTaskIds={new Set(commands.editSessions.current.keys())}
-            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
             quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => setQuickAddSection(undefined)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
@@ -600,6 +728,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 interface TaskListProps {
   renderCompletionAction: NonNullable<ComponentProps<typeof TaskTable>['renderCompletionAction']>;
   boardMode: boolean;
+  grouping: TaskGroupingMode;
   collapsedGroupKeys: ReadonlySet<string>;
   onGroupCollapsedChange: NonNullable<ComponentProps<typeof TaskTable>['onGroupCollapsedChange']>;
   selectedTaskIds: readonly string[];

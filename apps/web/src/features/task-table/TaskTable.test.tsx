@@ -350,3 +350,40 @@ describe('section disclosure', () => {
     expect(document.body).not.toHaveTextContent('unknown-a'); expect(document.body).not.toHaveTextContent('unknown-b');
   });
 });
+
+describe('TaskTable assignee grouping', () => {
+  it('keeps loaded parent/own section context in flat rows and counts each shared package once', () => {
+    const parent = { ...launch, responsibleMembershipId: anna.id };
+    const child = { ...layout, responsibleMembershipId: boris.id };
+    renderTable({ tasks: [parent, child], grouping: 'assignee', writable: true, quickAdd: { sectionId: null, content: <span>Unexpected quick row</span> } });
+    expect(screen.getAllByRole('button', { name: parent.title })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: child.title })).toHaveLength(1);
+    expect(rowOf(child.title)).toHaveTextContent(`Section: ${design.name} · Subtask of ${parent.title}`);
+    expect(screen.queryByTitle('Parent task is outside the loaded set')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /subtasks of/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add task to|Add task without|Rename section/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Add subtask to “${child.title}”` })).toBeEnabled();
+    expect(screen.queryByText('Unexpected quick row')).not.toBeInTheDocument();
+    expect(summaryRow()).toHaveTextContent('10h');
+  });
+
+  it('distinguishes unavailable member groups and honestly describes unloaded parents', async () => {
+    const user = userEvent.setup();
+    renderTable({ tasks: [makeTask({ id: 'first', title: 'First unknown', responsibleMembershipId: 'missing-one', parentTaskId: 'not-loaded' }), makeTask({ id: 'second', title: 'Second unknown', responsibleMembershipId: 'missing-two' })], grouping: 'assignee', partial: true });
+    const buttons = screen.getAllByRole('button', { name: /Collapse assignee group.*Member unavailable/ });
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]?.getAttribute('aria-label')).not.toBe(buttons[1]?.getAttribute('aria-label'));
+    expect(rowOf('First unknown')).toHaveTextContent('Subtask (parent not loaded)');
+    const first = buttons[0];
+    if (!first) throw new Error('Missing first assignee group');
+    await user.click(first);
+    expect(screen.queryByRole('button', { name: 'First unknown' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Second unknown' })).toBeInTheDocument();
+  });
+
+  it('shows an honest empty loaded view without inventing empty member groups', () => {
+    renderTable({ tasks: [], grouping: 'assignee' });
+    expect(screen.getByText('No loaded tasks match this view.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /assignee group/ })).not.toBeInTheDocument();
+  });
+});

@@ -1,0 +1,31 @@
+# Loaded-task assignee grouping
+
+This source slice adds one Table **Group by** control: **Section** (the initial choice) or **Assignee**. The choice and group disclosure state live in the existing actor/workspace/project page owner. They survive Table/Board switches and loaded-page/filter changes, and reset with that owner. There is no persisted preference, automatic navigation, additional read or write.
+
+Section delegates to the existing canonical task-tree builder. Assignee projects the same deduplicated authorized loaded scope into flat rows: every task appears once under its own `responsibleMembershipId`; meeting organizers already occupy that field. Participants never duplicate tasks. Known memberships sort by current localized display name and stable ID; separate unavailable memberships follow by ID, and Unassigned comes last. Empty roster groups are not invented. Counts and paging remain loaded-scope counts. The full-width team-budget footer still deduplicates shared packages and is not a group allocation or an authoritative period total.
+
+Flat rows carry one clipped, fully titled 12px context line: their own section and, for subtasks, the loaded parent's title. A parent already loaded under another assignee is valid context. An unloaded parent receives an honest neutral label. No parent read is added and no hierarchy detachment/cycle warning is invented in this presentation. Section descendant collapse remains independent. Group disclosure keys have separate Section/Assignee namespaces; duplicate visible names have distinct accessible disclosure names.
+
+Assignee groups have no group-specific Add task or Rename action. Global Add task and eligible row Add subtask keep their original section/parent semantics. Weekly hour columns still belong to the explicitly selected existing week/person context, independently of group membership. The control has a short explanation of this distinction.
+
+## Draft and command transitions
+
+Switching grouping hides Section quick-add rows without mounting duplicate null-section forms. An ordinary retained quick draft resumes in the existing detail composer. A pending or unconfirmed quick command resumes its original Section editor, expands only that original section and retains exact body/key. Rich edit drafts remain Resume-only; grouping does not create new command sessions or retarget a retained draft.
+
+Inline editors use the existing task commands, original source revision and exact confirmation ledger. A current Assignee save can move a task into a collapsed destination: the destination stays collapsed; a confirmed localized message offers Open task after the current authorized list head matches the receipt revision and edited value. A superseding, removed or ineligible head cancels both that notice and focus restoration. A later view/group/filter change or replacement editor invalidates that save's presentation generation. Its receipt still reconciles the submitted session, but cannot reopen a view, expand a group, close an independent editor or announce a stale reassignment.
+
+The page owns inline focus restoration across row-group and Board-lane remounts. Each explicit submission captures its exact open claim and presentation scope. Its interaction lease is revoked by outside pointer/focus or window blur. After confirmation, the page waits for the authoritative loaded head and committed target; it then returns still-owned focus to the same cell, or the collapsed Assignee disclosure. The lease remains active while the head is delayed, including after the receipt arrives. It is disposed after restoration/revocation, on a new intent or on owner unmount. There is no time/frame guessing and no late autofocus on remounted forms.
+
+Completion has a separate owned target-ready focus lease, wired through the same page presentation key; its exact implementation and tests are recorded in [docs52](52-completion-focus-recovery.md). Ordinary task sessions and hours/custom-field draft owners remain the existing controllers; this slice adds no storage or optimistic task rows.
+
+## Verification
+
+Source-only verification passed: 118 cases in seven affected suites (44.40s, one worker), source-aliased web TypeScript noEmit, scoped ESLint, the global localization audit, JSON parsing, local document links and `git diff --check`. The 27 new cases comprise three pure grouping cases, three table cases and 21 actual ProjectPage grouping/transition cases. Existing section, Board, title and shared inline editing regressions remain green.
+
+The actual-page cases cover independent collapse/selection/pagination and hour context, retained ordinary/held quick drafts, exact assignee retry and remount confirmation, rich-draft Resume-only behavior, current collapsed-destination acknowledgement, current view/filter/group/open generations, post-ACK outside focus/window blur before delayed head readiness, superseding/removed/archived heads, viewer behavior and fresh owner reset. The original inline source fails the controlled Board-lane-remount-before-held-ACK case: its submitted editor has unmounted, so the old callback leaves the replacement editor open. The new bridge passes that same case. A receipt-first probe alone did not reproduce the original failure, so that probe is not used as RED evidence. Initial new-test selector/lifecycle expectation mistakes were corrected before the final green run.
+
+Evidence logs: `/private/tmp/assignee-final-tests.log`, `/private/tmp/assignee-final-tsc.log`, `/private/tmp/assignee-final-lint.log`, `/private/tmp/assignee-final-audit.log`; original-source regression `/private/tmp/assignee-inline-red.log`. The source freeze manifest records exact owned file hashes and the original-source transform provenance.
+
+Compiled browser/mobile geometry, real server commands and actual keyboard focus remain pending the next coordinated build and QA window. The frozen `3caa48f` Board focus failure is separate evidence and is not relabeled as a pass by these source changes.
+
+Related contracts: [section disclosure](45-task-section-collapse.md), [retained task drafts](44-retained-task-drafts.md), [retained hours](48-retained-hours-drafts.md), [retained custom fields](49-retained-field-drafts.md), [Board](33-task-board.md).

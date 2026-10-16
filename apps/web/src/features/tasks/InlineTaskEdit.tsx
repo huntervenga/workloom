@@ -23,10 +23,12 @@ export interface InlineTaskEditProps {
   onClose: () => void;
   onMoreDetails: () => void;
   onSaved: (task: TaskDto) => void;
+  /** Page-owned completion survives a row moving to another group or Board lane. */
+  onSaveStarted?: ((form: HTMLFormElement) => { onSuccess: (task: TaskDto) => void; onSettled: () => void }) | undefined;
 }
 
 /** Uses the exact seen task revision; only this cell's field can enter the update. */
-export function InlineTaskEdit({ task, field, statuses, members, commands, writable, onClose, onMoreDetails, onSaved, focusClaim }: InlineTaskEditProps) {
+export function InlineTaskEdit({ task, field, statuses, members, commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted }: InlineTaskEditProps) {
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
@@ -72,8 +74,9 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     setSession(before => ({ ...before, draft: { ...before.draft, ...patch } }));
     setErrors({});
   };
-  const saved = (confirmed: TaskDto) => {
+  const saved = (confirmed: TaskDto, bridge?: ReturnType<NonNullable<InlineTaskEditProps['onSaveStarted']>>) => {
     if (!commands.confirmSession(session, confirmed)) return;
+    if (bridge) { bridge.onSuccess(confirmed); return; }
     onSaved(confirmed);
     if (!mounted.current) return;
     setSession({ base: confirmed, draft: draftFromTask(confirmed), inlineField: field });
@@ -83,7 +86,11 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (event.target !== event.currentTarget || confirmed || pending || blocked) return;
-    if (uncertain) { update.retryUncertain({ onSuccess: saved }); return; }
+    if (uncertain) {
+      const bridge = onSaveStarted?.(event.currentTarget);
+      update.retryUncertain({ onSuccess: result => saved(result, bridge), onSettled: () => bridge?.onSettled() });
+      return;
+    }
     if (!editable || needsReview) return;
     // A drawer or another cell's draft must never be submitted through this control.
     if (!canResumeInlineSession(session, field)) return;
@@ -91,7 +98,8 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     if (!result.ok) { setErrors(result.errors); return; }
     setErrors({});
     if (result.input === null) { editSessions.current.delete(task.id); onClose(); return; }
-    update.mutate({ taskId: task.id, input: result.input }, { onSuccess: saved });
+    const bridge = onSaveStarted?.(event.currentTarget);
+    update.mutate({ taskId: task.id, input: result.input }, { onSuccess: result => saved(result, bridge), onSettled: () => bridge?.onSettled() });
   };
   const currentError = errors.dueDate ?? errors.form ?? errors.title ?? errors.description ?? errors.startDate ?? errors.estimate;
   return <form noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} onSubmit={submit} onKeyDown={event => {
