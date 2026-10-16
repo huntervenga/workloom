@@ -1,3 +1,6 @@
+import { TaskCompletionAction } from '../features/tasks/TaskCompletionAction';
+import { TaskCompletionFeedback } from '../features/tasks/TaskCompletionFeedback';
+import { useTaskCompletion } from '../features/tasks/useTaskCompletion';
 import { useCurrentSearchParams } from '../lib/useCurrentSearchParams';
 import { TaskBoard } from '../features/task-board';
 import { PersonalColumnsDialog } from '../features/task-table/PersonalColumnsDialog';
@@ -324,6 +327,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const refreshImportCatalog = async () => (await Promise.all([members.refetch(), sections.refetch(), statuses.refetch(), tags.refetch(), fieldDefinitions.refetch()])).every(result => result.isSuccess);
   // The editor waits for real sections, statuses, members and tags.
   const metadataReady = metadataError === undefined && metadata.every((item) => item.query.isSuccess);
+  const completionWritable = writable && metadataReady && !personalColumns.denied && !isAccessDenied(tasks.error);
+  const completion = useTaskCompletion(commands, { tasks: dedupeTasks(shownTasks), statuses: statuses.data ?? [], writable: completionWritable, editingTaskId: activeInline?.taskId ?? null }, () => setAnnouncement(message('tasks.completion.saved')));
 
   const setTaskParam = (next: string | null) =>
     setSearchParams((previous) => {
@@ -339,6 +344,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setCreating(null);
     setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);for(const key of ['meetingTab','meetingMember','meetingAttendance','meetingPeriod'])next.delete(key);return next;});
   };
+  const completionAction = (task: TaskDto) => <TaskCompletionAction task={task} statuses={statuses.data ?? []} writable={completionWritable} blocked={unresolvedTaskCommand(commands) !== null} pending={completion.pending && completion.attempt?.session.base.id === task.id} hasDraft={commands.editSessions.current.has(task.id)} editing={activeInline?.taskId === task.id} onChoose={completion.choose} onReview={openTask} />;
   const openGraphTask = useCallback((task: TaskDto) => {
     if (task.projectId !== project.id) { navigate(`/w/${workspace.id}/projects/${task.projectId}?task=${task.id}`); return; }
     setCreating(null);
@@ -422,6 +428,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </ProjectActions>
       </header>
 
+      <TaskCompletionFeedback controller={completion} onReview={openTask} />
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
       {taskId === null && creating === null && (quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode) && (!activeInline || personalColumns.denied || graphMode || ganttMode || importMode || !shownTasks.some(task => task.id === activeInline.taskId) || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(activeInline.field === 'statusId' ? 'status' : activeInline.field === 'responsibleMembershipId' ? 'responsible' : 'dueDate'))) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
@@ -478,7 +485,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           {taskTime.controls}
           <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0 flex-1"><TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div>
-            <PersonalColumnsDialog controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
+            <PersonalColumnsDialog showTrigger={!boardMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
           </div>
           {personalColumns.query.isError && !personalColumns.denied ? <p role="status" className="text-xs text-amber-800">{t('taskTable.personalColumns.loadFailed')}</p> : null}
           {/* A custom field failure never hides the built-in table. */}
@@ -492,6 +499,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             />
           ) : null}
           {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
+            renderCompletionAction={completionAction}
             boardMode={boardMode}
             onEditTaskField={startInline}
             draftTaskIds={new Set(commands.editSessions.current.keys())}
@@ -568,6 +576,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 }
 
 interface TaskListProps {
+  renderCompletionAction: NonNullable<ComponentProps<typeof TaskTable>['renderCompletionAction']>;
   boardMode: boolean;
   selectedTaskIds: readonly string[];
   onSelectTask: (id: string, selected: boolean) => void;
@@ -618,7 +627,7 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
   const scope = loadedTaskScope(query.data);
   return (
     <div className="space-y-3">
-      {boardMode ? <TaskBoard tasks={dedupeTasks(scope.tasks)} statuses={table.statuses} members={table.members} partial={!scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
+      {boardMode ? <TaskBoard renderCompletionAction={table.renderCompletionAction} tasks={dedupeTasks(scope.tasks)} statuses={table.statuses} members={table.members} partial={!scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={dedupeTasks(scope.tasks)}
         partial={filtered || !scope.complete}

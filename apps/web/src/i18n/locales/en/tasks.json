@@ -226,5 +226,29 @@
       "one": "{{count}} task draft is kept on this page.",
       "other": "{{count}} task drafts are kept on this page."
     }
+  },
+  "completion": {
+    "graph": "Graph",
+    "completedState": "Completed: {{title}}",
+    "cancelledState": "Cancelled: {{title}}",
+    "incompleteState": "Not completed: {{title}}",
+    "refresh": "The task or status changed. Review the current task before changing its status.",
+    "saving": "Saving status for {{title}}…",
+    "finishEdit": "Finish or collapse the current field edit first.",
+    "resume": "Resume draft for {{title}}",
+    "otherCommand": "Resolve the pending task save first.",
+    "noActive": "No active status is configured for reopening.",
+    "noDone": "No completion status is configured.",
+    "reopen": "Reopen {{title}}",
+    "complete": "Mark {{title}} complete",
+    "reopenChoice": "Choose a status to reopen",
+    "completeChoice": "Choose a completion status",
+    "reopenAs": "Reopen as {{status}}",
+    "completeAs": "Complete as {{status}}",
+    "feedback": "Task completion status",
+    "review": "Review original task",
+    "reviewChange": "Review the status change for {{title}}.",
+    "retry": "Retry original status change",
+    "saved": "Task status change confirmed."
   }
 }

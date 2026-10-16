@@ -12,6 +12,12 @@ import { PersonalColumnsDialog } from '../task-table/PersonalColumnsDialog';
 import { usePersonalTablePreference } from '../task-table/usePersonalTablePreference';
 import { TaskTable } from '../task-table/TaskTable';
 import { makeTask, statuses } from '../task-table/taskTableFixtures';
+import { TaskCompletionAction } from './TaskCompletionAction';
+import { TaskCompletionFeedback } from './TaskCompletionFeedback';
+import { useTaskCompletion } from './useTaskCompletion';
+import { useTaskCommands } from './useTaskCommands';
+import { task as completionTask, rootPath as completionRoot } from '../planning/test/fixtures';
+import { failure } from '../../test/fakeApi';
 import { TaskFields } from './TaskFields';
 import { buildCreateInput, emptyDraft, type TaskDraftErrors } from './taskDraft';
 
@@ -21,7 +27,7 @@ vi.mock('../../i18n', async importOriginal => {
   const resources = import.meta.glob<TranslationCatalog>('../../i18n/locales/en/*.json', { eager: true, import: 'default' });
   const en = Object.fromEntries(Object.entries(resources).map(([path, catalog]) => [path.slice(path.lastIndexOf('/') + 1).replace('.json', ''), catalog]));
   const manager = new actual.LocalizationManager({ en, fr: {
-    tasks: { taskFields: { taskName: 'Nom de tâche', teamEstimateHours: 'Budget équipe, heures' }, taskDraft: { enterATaskName: 'Saisissez un nom de tâche.' } },
+    tasks: { completion: { resume: 'Reprendre {{title}}', reviewChange: 'Vérifier le changement de {{title}}.', feedback: 'Changement de statut' }, taskFields: { taskName: 'Nom de tâche', teamEstimateHours: 'Budget équipe, heures' }, taskDraft: { enterATaskName: 'Saisissez un nom de tâche.' } },
     fields: { fieldDefinitionForm: { columnName: 'Nom de colonne', enterAColumnName: 'Saisissez un nom de colonne.' } },
     taskTable: { personalColumns: { title: 'Mes colonnes', columnsDraft: 'Colonnes · brouillon', save: 'Enregistrer les colonnes' }, taskTable: { task2: 'Tâche', teamEstimate: 'Budget équipe' }, estimate: { enterHoursSuchAs15Or1: 'Heures QA invalides.' } },
     dependencies: { graphCanvas: { hasUnfinishedPredecessors: 'Prédécesseurs inachevés', theNextTaskStartsAfterThePreviousTask: 'La tâche suivante attend la précédente' } },
@@ -114,4 +120,18 @@ it('keeps an unsaved personal column choice when the current locale changes', as
   expect(screen.getByRole('checkbox', { name: 'Tags' })).not.toBeChecked();
   expect(screen.getByRole('button', { name: 'Enregistrer les colonnes' })).toBeEnabled();
   expect(screen.getByRole('checkbox', { name: 'Stored column name' })).toBeChecked();
+});
+
+it('translates a retained completion failure and draft action without another write', async () => {
+  const completionStatuses = [{ id: completionTask.statusId, workspaceId: completionTask.workspaceId, projectId: completionTask.projectId, name: 'Stored active', group: 'todo' as const, position: 0, revision: 1 }, { id: 'f6000000-0000-4000-8000-000000000002', workspaceId: completionTask.workspaceId, projectId: completionTask.projectId, name: 'Stored done', group: 'done' as const, position: 1, revision: 1 }];
+  const { calls } = installFakeApi({ [`PATCH ${completionRoot}/tasks/${completionTask.id}`]: () => failure(422, 'DEPENDENCY_BLOCKED', 'private details') });
+  function Example() {
+    const commands = useTaskCommands(anna.id, alpha.id); const c = useTaskCompletion(commands, { tasks: [completionTask], statuses: completionStatuses, writable: true, editingTaskId: null }, () => undefined);
+    return <><TaskCompletionAction task={completionTask} statuses={completionStatuses} writable blocked={false} pending={c.pending} hasDraft={commands.editSessions.current.has(completionTask.id)} editing={false} onChoose={c.choose} onReview={() => undefined} /><TaskCompletionFeedback controller={c} onReview={() => undefined} /></>;
+  }
+  const ui = renderFieldUi(<Example />); await ui.user.click(screen.getByRole('button', { name: `Mark ${completionTask.title} complete` }));
+  await screen.findByText(`Review the status change for ${completionTask.title}.`);
+  switchLocale('fr'); expect(screen.getByText(`Vérifier le changement de ${completionTask.title}.`)).toBeVisible();
+  expect(screen.getByRole('button', { name: `Reprendre ${completionTask.title}` })).toBeInTheDocument(); expect(screen.getByRole('alert')).toBeVisible();
+  switchLocale('en'); expect(screen.getByRole('button', { name: `Resume draft for ${completionTask.title}` })).toBeInTheDocument(); expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
 });

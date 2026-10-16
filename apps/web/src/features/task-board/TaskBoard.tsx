@@ -16,6 +16,7 @@ export interface TaskBoardProps {
   today?: string | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
   caption?: string | undefined;
+  renderCompletionAction?: ((task: TaskDto) => ReactNode) | undefined;
   onOpenTask: (taskId: string) => void;
   onEditStatus: (task: TaskDto) => void;
   /** The parent owns eligibility and original-command recovery; return null when inactive. */
@@ -31,7 +32,7 @@ export function TaskBoard(props: TaskBoardProps) {
   return <section aria-label={props.caption ?? t('board.title')} className="min-w-0 max-w-full space-y-3">
     <div className="space-y-1"><h2 id={`${id}-title`} className="text-lg font-semibold">{props.caption ?? t('board.title')}</h2><p id={`${id}-scope`} className="text-xs text-muted">{t('board.loadedCount', { count: model.loadedCount })}</p>{props.partial ? <p className="text-xs text-muted">{t('board.partial')}</p> : null}</div>
     <p id={`${id}-help`} className="sr-only">{t('board.navigationHelp')}</p>
-    <div role="region" aria-label={t('board.lanes')} aria-describedby={`${id}-scope ${id}-help`} tabIndex={0} className="max-w-full overflow-x-auto overscroll-x-contain rounded-xl pb-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">
+    <div role="region" aria-label={t('board.lanes')} aria-describedby={`${id}-scope ${id}-help`} tabIndex={0} className="relative max-w-full overflow-x-auto overscroll-x-contain rounded-xl pb-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">
       <div className="flex min-w-full items-start gap-3">
         {model.lanes.map((lane, index) => <section key={lane.statusId} aria-labelledby={`${id}-lane-${index}`} className="w-[min(19rem,calc(100vw-4rem))] min-w-0 shrink-0 space-y-3 rounded-xl border border-line bg-canvas p-3">
           <header className="space-y-1"><h3 id={`${id}-lane-${index}`} className="text-sm font-semibold [overflow-wrap:anywhere]">{lane.status?.name ?? t('board.missingStatus', { number: index - catalogLaneCount + 1 })}</h3><p className="text-xs text-muted">{t('board.laneCount', { count: lane.cards.length })}</p></header>
@@ -54,7 +55,7 @@ function TaskCard({ card, props, status }: { card: BoardCard; props: TaskBoardPr
   const due = task.dueDate === null ? t('board.noDueDate') : t('board.dueDate', { date: formatDate(new Date(`${task.dueDate}T12:00:00Z`), { dateStyle: 'medium', timeZone: 'UTC' }) });
   return <li className="min-w-0 space-y-3 rounded-lg border border-line bg-surface p-3 shadow-xs">
     {parent.kind === 'loaded' ? <div className="space-y-0.5 text-xs"><p id={`${id}-parent`} className="text-muted">{t('board.parent')}</p><button aria-describedby={`${id}-parent`} type="button" onClick={() => props.onOpenTask(parent.task.id)} className="block min-h-6 max-w-full rounded text-left text-accent-ink [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">{parent.task.title}</button></div> : parent.kind === 'not_loaded' ? <p className="text-xs text-muted">{t('board.parentNotLoaded')}</p> : null}
-    <button id={`${id}-title`} type="button" onClick={() => props.onOpenTask(task.id)} className="block min-h-8 w-full rounded text-left text-sm font-semibold [overflow-wrap:anywhere] hover:text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">{task.title}</button>
+    <div className="flex min-w-0 items-start gap-1.5">{props.renderCompletionAction?.(task)}<button id={`${id}-title`} type="button" onClick={() => props.onOpenTask(task.id)} className="block min-h-8 w-full rounded text-left text-sm font-semibold [overflow-wrap:anywhere] hover:text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">{task.title}</button></div>
     <dl className="space-y-1 text-xs"><div className="min-w-0 [overflow-wrap:anywhere]"><dt className="text-muted">{t('board.assignee')}</dt><dd>{person}</dd></div><div><dt className="sr-only">{t('board.due')}</dt><dd className={overdue ? 'text-amber-800' : 'text-muted'}>{due}{overdue ? <span className="ml-1 font-medium">{t('board.overdue')}</span> : null}</dd></div></dl>
     {task.archivedAt !== null || task.meetingId !== null || props.draftTaskIds?.has(task.id) ? <div className="flex flex-wrap gap-1">
       {task.archivedAt !== null ? <Badge tone="muted">{t('board.archived')}</Badge> : null}

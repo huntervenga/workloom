@@ -62,6 +62,7 @@ export interface TaskTableProps {
   columnPreset?: 'compact' | 'expanded' | undefined;
   /** Exact visible built-in/custom IDs; title remains pinned first. */
   columnIds?: readonly string[] | undefined;
+  renderCompletionAction?: ((task: TaskDto) => ReactNode) | undefined;
   onEditTaskField?: ((task: TaskDto, field: TaskInlineField) => void) | undefined;
   renderTaskFieldEditor?: ((task: TaskDto, field: TaskInlineField) => ReactNode) | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
@@ -332,6 +333,7 @@ interface RowContext {
   columnIds: readonly string[];
   onEditTaskField: TaskTableProps['onEditTaskField'];
   renderTaskFieldEditor: TaskTableProps['renderTaskFieldEditor'];
+  renderCompletionAction: TaskTableProps['renderCompletionAction'];
   draftTaskIds: ReadonlySet<string>;
 }
 
@@ -363,9 +365,10 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
   const builtinCells: Record<string, ReactNode> = {
     title: (      <td
         className="py-1 pr-3 lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]"
-        style={{ paddingLeft: `${12 + node.depth * 20}px` }}>
+        style={{ paddingLeft: 12 }}>
         <div className="flex min-w-0 items-center gap-1.5">
-          {ctx.onSelectTask ? <input type="checkbox" aria-label={t('taskTable.taskTable.selectForGraphValue', { p0: task.title })} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /> : null}
+          {ctx.onSelectTask ? <span className="mr-1 flex w-8 shrink-0 justify-center border-r border-line pr-2"><input type="checkbox" aria-label={t('taskTable.taskTable.selectForGraphValue', { p0: task.title })} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /></span> : null}
+          <div className="flex min-w-0 flex-1 items-center gap-1.5" style={{ paddingLeft: node.depth * 20 }}>
           {childCount > 0 ? (
             <button
               type="button"
@@ -379,6 +382,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
           ) : (
             <span aria-hidden="true" className="size-6 shrink-0" />
           )}
+          {ctx.renderCompletionAction?.(task)}
           {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
           <button
             type="button"
@@ -424,6 +428,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
               <Plus size={16} aria-hidden="true" />
             </button>
           ) : null}
+          </div>
         </div>
       </td>),
     status: <td className="px-3 py-1">{cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)}</td>,
@@ -549,7 +554,7 @@ export function TaskTable({
   customColumns = noCustomColumns,
   columnPreset = 'expanded',
   columnIds,
-  onEditTaskField, renderTaskFieldEditor, draftTaskIds = new Set(), quickAdd,
+  onEditTaskField, renderTaskFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd,
   className,
 }: TaskTableProps) {
   const { t, locale } = useTranslation();
@@ -603,7 +608,7 @@ export function TaskTable({
     customColumns,
     columnIds: visibleIds,
     onEditTaskField: writable ? onEditTaskField : undefined,
-    renderTaskFieldEditor, draftTaskIds,
+    renderTaskFieldEditor, renderCompletionAction, draftTaskIds,
   };
 
   return (
@@ -611,7 +616,7 @@ export function TaskTable({
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={column.id === 'title' ? undefined : { width: column.width }} />)}</colgroup>
-        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('px-3 font-medium', column.id === 'title' && 'lg:sticky lg:left-0 lg:z-[1] lg:bg-surface', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></th>)}</tr></thead>
+        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('px-3 font-medium', column.id === 'title' && 'lg:sticky lg:left-0 lg:z-[1] lg:bg-surface', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && onSelectTask ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 border-r border-line pr-1 text-center text-[10px] text-subtle">{t('tasks.completion.graph')}</span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
         {groups.map((group) => {
           const rows = visibleTaskRows(group.roots, collapsedIds);
           return (

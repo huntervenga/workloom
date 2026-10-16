@@ -20,8 +20,9 @@ interface Props {
   controller: PersonalTablePreferenceController; fields: readonly TaskFieldDefinitionDto[];
   projectColumns: ProjectColumnsDto | undefined; timeAvailable: boolean; catalogError: unknown;
   onReloadCatalog: () => Promise<void>;
+  showTrigger?: boolean;
 }
-export function PersonalColumnsDialog({ controller: c, fields, projectColumns, timeAvailable, catalogError, onReloadCatalog }: Props) {
+export function PersonalColumnsDialog({ controller: c, fields, projectColumns, timeAvailable, catalogError, onReloadCatalog, showTrigger = true }: Props) {
   const { t } = useTranslation();
   const refs = useRef(new Map<string, HTMLButtonElement>());
   const focusAfterMove = useRef<string | null>(null);
@@ -41,8 +42,8 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
     focusAfterMove.current = `${columnKey(a.column)}:${direction}`; c.setDraft(next);
   };
   return <>
-    <Button size="sm" aria-haspopup="dialog" aria-expanded={c.open} onClick={() => c.setOpen(true)}><Columns3 size={16} aria-hidden="true" />{t(c.draft ? 'taskTable.personalColumns.columnsDraft' : 'taskTable.personalColumns.columns')}</Button>
-    {c.held && !c.open ? <div role="status" className="text-xs text-amber-800">{t(c.command.uncertain ? 'taskTable.personalColumns.collapsedUnknown' : 'taskTable.personalColumns.collapsedPending')}</div> : null}
+    {showTrigger ? <Button size="sm" aria-haspopup="dialog" aria-expanded={c.open} onClick={() => c.setOpen(true)}><Columns3 size={16} aria-hidden="true" />{t(c.draft ? 'taskTable.personalColumns.columnsDraft' : 'taskTable.personalColumns.columns')}</Button> : null}
+    {c.held && !c.open ? <div role="status" className="text-xs text-amber-800">{t(c.command.uncertain ? 'taskTable.personalColumns.collapsedUnknown' : 'taskTable.personalColumns.collapsedPending')}{!showTrigger ? <Button size="sm" variant="ghost" onClick={() => c.setOpen(true)}>{t('taskTable.personalColumns.resumeSave')}</Button> : null}</div> : null}
     <DialogShell title={t('taskTable.personalColumns.title')} description={t('taskTable.personalColumns.description')} open={c.open} onOpenChange={c.setOpen}>
       {c.denied ? <QueryErrorState error={c.query.error ?? c.command.error} subject="tablePreference" headingLevel={2} /> : <>
         <p className="mt-3 text-xs text-muted">{t(c.query.data?.columns === null ? 'taskTable.personalColumns.followingDefaults' : 'taskTable.personalColumns.personalView')}</p>

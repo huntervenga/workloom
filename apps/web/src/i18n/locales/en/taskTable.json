@@ -133,6 +133,7 @@
     "collapsedPending": "Your column settings are still being saved.",
     "loadFailed": "Your columns could not be refreshed. The last available settings are shown.",
     "unavailableView": "Column settings are unavailable with your current access.",
-    "saved": "Columns saved. Current settings refreshed."
+    "saved": "Columns saved. Current settings refreshed.",
+    "resumeSave": "Resume column save"
   }
 }
