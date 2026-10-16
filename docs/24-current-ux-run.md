@@ -56,7 +56,12 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 09:50:08.830–09:50:29.933 | Personal columns final frames | Four settled Studio GET-only table/chooser frames;13choices, zero writes/errors/overflow |
 | 09:54:03.906 | Fourth window released | Changed-flow regression6/6 pass22.9s; all14assets unchanged, doctor owned/ready; no next-source builds by QA |
 | 10:05:57.600–10:06:04.763 | Original rapid Close→Week RED | Both sizes reproduce oldtaskresurrection6–8ms after Close; no injected delay or settledmask |
-| 10:06:39.338 | Brief RED window released | All14frozenassets unchanged/readinessok; nextsourcefix and Board/meeting gates remain pending |
+| 10:06:39.338 | Brief RED window released | All14frozenassets unchanged/readinessok; nextsourcefix and Board/meeting gates remained pending |
+| 10:12:22.167–10:12:46.001 | Checkpoint9460856 restart | All56tables/19,166rows exact; no migration,14assets frozen, worker OFF |
+| 10:17:12.874 | Complete Board/meeting/rapid browser gate |8/8 PASS23.8s secondrun; first4pass/2selectorfail/2notrun preserved; originalrapidRED→GREEN |
+| 10:17:30.136–10:17:34.459 | Extended GET-only rapid navigation | Close→Board/Graph and both picker orders preserve currentroute/hash, zero writes/errors/overflow |
+| 10:18:43.944–10:18:48.848 | Final settled five frames | Board12tasks/fourlanes +storedmeetingDiscussion; actualmobileStudioBoard284pxoverflow found, notallvisualPASS |
+| 10:21:30.599 | Fifth runtime window released | All14assets unchanged/readinessok; ownedservicesready; mobileBoardcontainment fix nextsourcegate, oldtabuntested |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 

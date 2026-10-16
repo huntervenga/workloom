@@ -36,8 +36,8 @@
 | [30 Time context](30-time-context-ux.md) | Week/person navigation, separate report cohort and saved-row task links |
 | [31 Task discussion](31-task-comments.md) | Literal ordinary-task comments, trusted authors, lazy activity and exact retry |
 | [32 Personal task columns](32-personal-table-columns.md) | Own order/visibility, versioned reset, current-head retry and accepted local0012 proof |
-| [33 Task board](33-task-board.md) | Bounded status-board source contract; next compiled/browser gate remains separate |
-| [34 Single-tag task filter](34-task-tag-filter.md) | Source contract and isolated backend tests; next compiled/browser gate remains separate |
+| [33 Task board](33-task-board.md) | Loaded-task status board: functional browser gate passed; populated-later-lane mobile overflow remains |
+| [34 Single-tag task filter](34-task-tag-filter.md) | One intersecting tag filter: isolated backend and actual paged table/board browser gates |
 
 Продуктовые требования находятся в 01. Документы 02–08 уточняют реализацию и этапность: весь командный пилот из 01 не должен появиться в первой локальной версии. Если конкретные DTO и физическая схема конфликтуют с продуктовым поведением, согласовать исправление до реализации, а не изменять требования молча.
 

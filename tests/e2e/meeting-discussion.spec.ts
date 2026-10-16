@@ -23,7 +23,7 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mo
         const drawer = page.getByRole('dialog', { name: meeting.task.title, exact: true });
         await drawer.getByRole('button', { name: 'Edit actual details', exact: true }).click(); await drawer.getByLabel('Actual duration, minutes', { exact: true }).fill('22');
         await drawer.getByRole('combobox', { name: 'Whose attendance', exact: true }).selectOption(ownAttendance.id);
-        await drawer.getByLabel('Attendance outcome', { exact: true }).selectOption('partial');
+        await drawer.getByRole('combobox', { name: 'Attendance outcome', exact: true }).selectOption('partial');
         await drawer.getByLabel('Time attended, hours', { exact: true }).fill('0.25');
         const attendanceComment = drawer.getByLabel('Attendance comment (optional)', { exact: true }); await attendanceComment.fill('Retained attendance draft');
         await drawer.getByRole('tab', { name: /^Discussion/ }).click();
@@ -36,7 +36,7 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mo
         await expect(drawer.getByLabel('Comment', { exact: true })).toHaveValue(body); await expect(drawer.getByLabel('Comment', { exact: true })).toBeDisabled();
         await drawer.getByRole('tab', { name: 'Attendance', exact: true }).click();
         await expect(drawer.getByLabel('Actual duration, minutes', { exact: true })).toHaveValue('22'); await expect(drawer.getByRole('combobox', { name: 'Whose attendance', exact: true })).toHaveValue(ownAttendance.id);
-        await expect(drawer.getByLabel('Attendance outcome', { exact: true })).toHaveValue('partial'); await expect(drawer.getByLabel('Time attended, hours', { exact: true })).toHaveValue('0.25'); await expect(attendanceComment).toHaveValue('Retained attendance draft');
+        await expect(drawer.getByRole('combobox', { name: 'Attendance outcome', exact: true })).toHaveValue('partial'); await expect(drawer.getByLabel('Time attended, hours', { exact: true })).toHaveValue('0.25'); await expect(attendanceComment).toHaveValue('Retained attendance draft');
         await attendanceComment.focus(); held.release(); expect((await posted).status()).toBe(201);
         await expect(attendanceComment).toBeFocused(); await expect(drawer.getByRole('tab', { name: 'Attendance', exact: true })).toHaveAttribute('aria-selected', 'true'); expect(commentsPosted).toBe(1);
         await drawer.getByRole('tab', { name: /^Discussion/ }).click(); const literal = drawer.getByRole('region', { name: 'Discussion', exact: true }).getByText(body, { exact: true }); await expect(literal).toBeVisible(); expect(await literal.textContent()).toBe(body); await expect(literal.locator('b,a')).toHaveCount(0);
