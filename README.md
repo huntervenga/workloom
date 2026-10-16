@@ -6,9 +6,9 @@
 
 Текущий локальный UX дополнен English JSON-каталогами с обнаружением локалей, My tasks, быстрым добавлением и явным редактированием задач, сохранением недельного контекста, обсуждением задач и встреч, результатами отчётов до формы настройки и личным порядком/видимостью колонок, доской статусов и одним пересекающимся фильтром по тегу. Это ограниченные локальные возможности; сохранённые именованные виды, фильтры в настройках колонок и полный пилот не заявлены. Контракты — [23](docs/23-localization-and-ux.md), [28–38](docs/README.md), фактические проверки — [25](docs/25-ux-verification.md). Быстрый Close→Week проверен RED→GREEN. На собранном checkpoint `bafc9d6` с completion `20dd1ff` и My tasks lens `fd0fa07` приняты ограниченные completion, управление cutoff и applied URL lens; мобильное переполнение Board 284px исправлено, обе фактические ширины дают 0px глобального переполнения.
 
-Отдельный обычный worker действительно сохранил baseline после заданного deadline; браузерные планы и настройки отчёта сохранились. Worker штатно остановлен и сейчас OFF; шесть будущих stale jobs остаются в очереди. Применённая additive0013 и регистрация четырёх очередей имеют отдельные проверки сохранности данных. Настоящий переход старой вкладки через смену сборки завершился ошибкой загрузки старого chunk; его восстановление ещё требует отдельного gate.
+Отдельный обычный worker действительно сохранил baseline после заданного deadline; браузерные планы и настройки отчёта сохранились. Worker штатно остановлен и сейчас OFF; шесть будущих stale jobs остаются в очереди. Применённая additive0013 и регистрация четырёх очередей имеют отдельные проверки сохранности данных. Настоящий переход старой вкладки `bafc9d6` через сборку `634aac8` сохранил исходную ошибку старого chunk; явный Refresh tab затем загрузил новую сборку с тем же полным URL. Новая формулировка об обновлении приложения ещё требует следующего реального перехода между сборками.
 
-Новые source commits `b039001`, `9f38c23`, `c423972`, `9433b5d` (update recovery, inline title, иерархия, плотность Board и защита retarget parent lookup) ещё не собраны и не приняты в браузере. [Управляемый локальный worker](docs/43-managed-local-worker.md) проверен source-тестами; реальный managed start/drain/stop пока не проверен. Полный перенос Asana, Auth/private ACL, внешние календари, полный MCP, production и командный пилот остаются отдельными этапами.
+Текущий собранный checkpoint — `634aac8`: update recovery, inline title, иерархия, плотность Board, защита parent lookup и retained drafts. Полные build/types/lint и 665 web cases / 99 suites прошли; шесть новых функциональных browser cases ещё выполняются и не приняты. [Управляемый worker](docs/43-managed-local-worker.md) прошёл отдельный реальный worker-only start/health/reuse/drain/stop в 11:23:26–11:26:16 UTC; все app identities и 42 jobs сохранены, 59 из 60 таблиц точны, изменился только ожидаемый discovery cursor. Worker сейчас OFF; общий stop/start с worker и OS reboot не проверены. Полный перенос Asana, Auth/private ACL, внешние календари, полный MCP, production и командный пилот остаются отдельными этапами.
 
 ## Начать здесь
 
@@ -35,7 +35,7 @@
 - [Cutoff readiness и управление автоматической фиксацией](docs/36-cutoff-readiness-ui.md)
 - [My tasks: применённые фильтры в URL](docs/37-my-tasks-applied-lens.md)
 - [Контракт автоматической фиксации cutoff](docs/38-cutoff-automation-contract.md)
-- [Managed worker: source-only, реальный lifecycle gate впереди](docs/43-managed-local-worker.md)
+- [Managed worker: команды и принятый worker-only lifecycle](docs/43-managed-local-worker.md)
 
 ## Стек и границы
 
@@ -187,7 +187,7 @@ npm run db:queue:migrate        # явная установка/проверка
 npm run start --workspace @workloom/worker
 ```
 
-Worker при старте только проверяет application/queue readiness и настройки; сам DDL не создаёт и drift не исправляет. Health — JSON logs `worker.health`/`worker.health_queue`; SIGTERM завершает работу с drain. Подробности и ограничения — [apps/worker/README](apps/worker/README.md). В текущем checkout после реального cutoff gate worker штатно остановлен и OFF; API/web и синтетические данные сохранены. Проверка ручного worker не доказывает lifecycle нового helper: [43](docs/43-managed-local-worker.md) описывает source-only managed support и отдельный ещё не выполненный реальный gate.
+Worker при старте только проверяет application/queue readiness и настройки; сам DDL не создаёт и drift не исправляет. Health — JSON logs `worker.health`/`worker.health_queue`; SIGTERM завершает работу с drain. Подробности и ограничения — [apps/worker/README](apps/worker/README.md). В текущем checkout после реального cutoff gate worker штатно остановлен и OFF; API/web и синтетические данные сохранены. Отдельный managed worker-only lifecycle также принят; [43](docs/43-managed-local-worker.md) описывает `start --worker`, `worker-start`, `worker-stop`, свежий doctor health и ещё не проверенный combined full stop/reboot. Plain `start` сохраняет уже запущенный owned worker, но не запускает новый.
 
 ### Проверка production-сборки
 

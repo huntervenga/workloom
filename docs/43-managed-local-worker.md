@@ -1,6 +1,6 @@
 # Optional managed local worker
 
-This extends the existing [local runtime helper](26-local-runtime.md) with explicit worker management. The implementation has focused source tests. A real managed start/drain/stop gate and an actual OS reboot have **not yet been verified**; execution evidence belongs in [25](25-ux-verification.md). The separately controlled manual worker gate does not establish this helper's lifecycle coverage.
+This extends the existing [local runtime helper](26-local-runtime.md) with explicit worker management. **The bounded real worker-only start/health/reuse/drain/stop gate passed on 16 October 2026; worker is now OFF.** Execution evidence is in [25](25-ux-verification.md), separately from the earlier manual-worker deadline proof. A combined full runtime stop/start with worker and an actual OS reboot remain unverified.
 
 ## Start deliberately
 
@@ -56,13 +56,17 @@ A reused PID, changed command/cwd, uncertain inspection, missing clean-stop evid
 
 An optional OFF worker alone does not fail an otherwise healthy application check. The message explicitly says automatic processing is not operating through this helper. Manual/unowned, stale and degraded worker observations fail the worker health assessment. A healthy running worker is evidence that processing can proceed; a particular deadline is complete only when its persisted baseline and job provenance have been verified. Automatic report creation remains outside the accepted cutoff slice.
 
-## Focused verification and next real gate
+## Focused verification and actual lifecycle gate
 
 ```sh
 node --check scripts/local-runtime.mjs
 node --test tests/scripts/local-runtime.test.mjs
 ```
 
-The focused tests use synthetic identities, log records and injected process/time ports. They do not inspect or signal live processes, connect to PostgreSQL or execute the helper. They cover optional dispatch, exact identity, manual-worker refusal, proven-dead reboot reconciliation, complete/fresh evidence, failed/uncertain drain, no forced kill and full-stop ordering. Source tests do not establish a real reboot or managed lifecycle pass.
+The focused tests use synthetic identities, log records and injected process/time ports. They do not inspect or signal live processes, connect to PostgreSQL or execute the helper. They cover optional dispatch, exact identity, manual-worker refusal, proven-dead reboot reconciliation, complete/fresh evidence, failed/uncertain drain, no forced kill and full-stop ordering. Source tests alone do not establish a real reboot or managed lifecycle pass; the separate real worker-only gate below establishes the latter within its stated scope.
 
-After the coordinator confirms the manual worker has stopped, the proposed real gate is: capture current app/database/process evidence; run worker-start and doctor; verify exact new ownership plus all four queues and fresh cutoff/discovery observations; run plain start and verify the same worker PID/start time was preserved; run worker-stop and verify clean drain, OFF status and unchanged API/Vite/PostgreSQL identities. A separately approved full stop/start with `--worker` can then prove combined lifecycle and reboot-style dead-record recovery. Preserve existing data, record intended job writes separately, and keep old-tab/browser coverage separate from process health. The coordinator must authorize this gate before execution.
+After 22 focused source tests and separate coordinator authorization, helper source checkpoint `3b1fbd0` started an owned compiled worker at **2026-10-16 11:23:26.252 UTC**. Doctor confirmed fresh health for all four queues, cutoff and discovery. Plain `start` preserved the exact worker identity and ownership record, as well as the existing PostgreSQL, API and Vite identities; plain start itself did not certify health.
+
+`worker-stop` sent normal SIGTERM only to the verified owned worker. Clean drain ran **11:26:16.593–11:26:16.608 UTC** in 15ms; doctor then reported OFF, with no remaining owned worker record or worker database connections. All 42 physical job rows and queue registrations remained exact: 29 completed recurrence jobs, seven completed cutoff jobs and six future created stale cutoff jobs. Public snapshots at **11:23:25.977–11:26:26.637 UTC** preserved 59 of 60 full-table digests across 21,509 rows. Only `planning_cutoff_discovery_state` advanced its expected cursor; task, plan, baseline, receipt, audit and Studio data remained unchanged. The private proof is `.local/runtime/managed-worker-lifecycle-proof-20261016.json`; [25](25-ux-verification.md) records the bounded provenance.
+
+The worker remains OFF, so automatic processing is currently stopped. This proves a controlled worker-only lifecycle. The combined full stop/start with `--worker`, actual reboot recovery and continuous operation remain separate future gates. Keep browser and old-tab coverage separate from process health.
