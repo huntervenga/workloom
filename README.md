@@ -6,9 +6,11 @@
 
 Текущий локальный UX дополнен English JSON-каталогами с обнаружением локалей, My tasks, быстрым добавлением и явным редактированием задач, сохранением недельного контекста, обсуждением задач и встреч, результатами отчётов до формы настройки и личным порядком/видимостью колонок, доской статусов и одним пересекающимся фильтром по тегу. Это ограниченные локальные возможности; сохранённые именованные виды, фильтры в настройках колонок и полный пилот не заявлены. Контракты — [23](docs/23-localization-and-ux.md), [28–38](docs/README.md), фактические проверки — [25](docs/25-ux-verification.md). Быстрый Close→Week проверен RED→GREEN. На собранном checkpoint `bafc9d6` с completion `20dd1ff` и My tasks lens `fd0fa07` приняты ограниченные completion, управление cutoff и applied URL lens; мобильное переполнение Board 284px исправлено, обе фактические ширины дают 0px глобального переполнения.
 
-Отдельный обычный worker действительно сохранил baseline после заданного deadline; браузерные планы и настройки отчёта сохранились. Worker штатно остановлен и сейчас OFF; шесть будущих stale jobs остаются в очереди. Применённая additive0013 и регистрация четырёх очередей имеют отдельные проверки сохранности данных. Настоящий переход старой вкладки `bafc9d6` через сборку `634aac8` сохранил исходную ошибку старого chunk; явный Refresh tab затем загрузил новую сборку с тем же полным URL. Новая формулировка об обновлении приложения ещё требует следующего реального перехода между сборками.
+Отдельный обычный worker действительно сохранил baseline после заданного deadline; браузерные планы и настройки отчёта сохранились. Worker штатно остановлен и сейчас OFF; шесть будущих stale jobs остаются в очереди. Применённая additive0013 и регистрация четырёх очередей имеют отдельные проверки сохранности данных. [Управляемый worker](docs/43-managed-local-worker.md) прошёл отдельный worker-only start/health/reuse/drain/stop в 11:23:26–11:26:16 UTC; все app identities и 42 jobs сохранены, 59 из 60 таблиц точны, изменился только ожидаемый discovery cursor. Общий stop/start с worker и OS reboot не проверены.
 
-Текущий собранный checkpoint — `634aac8`: update recovery, inline title, иерархия, плотность Board, защита parent lookup и retained drafts. Полные build/types/lint и 665 web cases / 99 suites прошли; шесть новых функциональных browser cases ещё выполняются и не приняты. [Управляемый worker](docs/43-managed-local-worker.md) прошёл отдельный реальный worker-only start/health/reuse/drain/stop в 11:23:26–11:26:16 UTC; все app identities и 42 jobs сохранены, 59 из 60 таблиц точны, изменился только ожидаемый discovery cursor. Worker сейчас OFF; общий stop/start с worker и OS reboot не проверены. Полный перенос Asana, Auth/private ACL, внешние календари, полный MCP, production и командный пилот остаются отдельными этапами.
+Принятый checkpoint `634aac8` прошёл шесть desktop/mobile browser cases для inline title, иерархии и Board time context, а также отдельные два реальных native Stay/dismissed-reload cases; физический IME не проверен. Текущий собранный checkpoint — `3caa48f`: сохранённые task/hours/field drafts, сворачивание секций, person lens сохранённого work-type отчёта и компактные Board cards. Полные build/types/lint и 732 web cases / 106 suites прошли; новый gate из восьми browser cases открыт и пока не принят. Подтверждённая потеря keyboard focus на Board требует исправления. Контракты и точные границы — [44–49](docs/README.md), результаты отдельных попыток — [25](docs/25-ux-verification.md). Черновики хранятся в памяти и не восстанавливаются после подтверждённого ухода или reload. Новые assignee grouping и applied-filter chips находятся в source development и ещё не имеют compiled/browser acceptance.
+
+Реальная сохранённая вкладка `634aac8` при переходе через сборку `3caa48f` получила прежний lazy-chunk 404, показала **Workloom has been updated** и только после явного Refresh tab открыла новую сборку с тем же полным URL. Этот отдельный recovery gate прошёл в 11:59:46.885 UTC: ноль writes, page errors и global overflow; автоматического reload не было. Полный перенос Asana, Auth/private ACL, внешние календари, полный MCP, production и командный пилот остаются отдельными этапами.
 
 ## Начать здесь
 
@@ -36,6 +38,12 @@
 - [My tasks: применённые фильтры в URL](docs/37-my-tasks-applied-lens.md)
 - [Контракт автоматической фиксации cutoff](docs/38-cutoff-automation-contract.md)
 - [Managed worker: команды и принятый worker-only lifecycle](docs/43-managed-local-worker.md)
+- [Сохранённые task drafts и защита ухода](docs/44-retained-task-drafts.md)
+- [Сворачивание секций таблицы](docs/45-task-section-collapse.md)
+- [Person lens сохранённого work-type отчёта](docs/46-work-type-person-lens.md)
+- [Компактные Board cards](docs/47-compact-board-cards.md)
+- [Сохранённые hours drafts и защита ухода](docs/48-retained-hours-drafts.md)
+- [Сохранённые field drafts и защита ухода](docs/49-retained-field-drafts.md)
 
 ## Стек и границы
 
