@@ -17,7 +17,8 @@ describe('independent loaded-task board', () => {
   it('shows scoped counts, every catalog lane and a separate fallback lane for each missing status', () => {
     const tasks = [makeTask({ id: 'one', title: 'One' }), makeTask({ id: 'one', revision: 2, title: 'One current' }), makeTask({ id: 'two', title: 'Two', statusId: 'missing-a' }), makeTask({ id: 'three', title: 'Three', statusId: 'missing-b' })];
     renderBoard({ tasks, partial: true, caption: 'Filtered review' });
-    expect(screen.getByRole('heading', { name: 'Filtered review' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Filtered review' })).toHaveClass('sr-only');
+    expect(screen.getByRole('region', { name: 'Filtered review' })).toHaveAccessibleName('Filtered review');
     expect(screen.getByText('3 loaded tasks in this view.')).toBeInTheDocument();
     expect(screen.getByText('More matching tasks may be available. Counts cover only the loaded tasks in this view.')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Task status lanes' })).toHaveAttribute('tabindex', '0');

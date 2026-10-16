@@ -29,8 +29,8 @@ export function TaskBoard(props: TaskBoardProps) {
   const id = useId();
   const model = buildBoardModel(props.tasks, props.statuses);
   const catalogLaneCount = model.lanes.filter(lane => lane.status !== null).length;
-  return <section aria-label={props.caption ?? t('board.title')} className="min-w-0 max-w-full space-y-3">
-    <div className="space-y-1"><h2 id={`${id}-title`} className="text-lg font-semibold">{props.caption ?? t('board.title')}</h2><p id={`${id}-scope`} className="text-xs text-muted">{t('board.loadedCount', { count: model.loadedCount })}</p>{props.partial ? <p className="text-xs text-muted">{t('board.partial')}</p> : null}</div>
+  return <section aria-labelledby={`${id}-title`} className="min-w-0 max-w-full space-y-3">
+    <div><h2 id={`${id}-title`} className="sr-only">{props.caption ?? t('board.title')}</h2><p id={`${id}-scope`} className="text-xs text-muted">{t('board.loadedCount', { count: model.loadedCount })}</p>{props.partial ? <p className="mt-1 text-xs text-muted">{t('board.partial')}</p> : null}</div>
     <p id={`${id}-help`} className="sr-only">{t('board.navigationHelp')}</p>
     <div role="region" aria-label={t('board.lanes')} aria-describedby={`${id}-scope ${id}-help`} tabIndex={0} className="relative max-w-full overflow-x-auto overscroll-x-contain rounded-xl pb-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">
       <div className="flex min-w-full items-start gap-3">

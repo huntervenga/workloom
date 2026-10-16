@@ -482,7 +482,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                 {t('projects.projectPage.openSubmission')}</Button>
             </div>
           ) : null}
-          {taskTime.controls}
+          {boardMode ? taskTime.notices : taskTime.controls}
           <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0 flex-1"><TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div>
             <PersonalColumnsDialog showTrigger={!boardMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
