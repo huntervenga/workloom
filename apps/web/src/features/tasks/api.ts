@@ -50,6 +50,9 @@ export function normalizeTaskFilters(filters: TaskListFilters): TaskListFilters 
   if (tagId) normalized.tagId = tagId;
   if (search) normalized.search = search;
   if (filters.includeArchived) normalized.includeArchived = true;
+  // Omitted/manual keep the legacy request and cache identity. Unsupported runtime
+  // values still reach schema validation rather than silently becoming a valid sort.
+  if (filters.sort !== undefined && filters.sort !== 'manual') normalized.sort = filters.sort;
   return normalized;
 }
 

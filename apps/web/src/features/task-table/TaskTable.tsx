@@ -16,6 +16,7 @@ import { formatEstimate } from './estimate';
 import { visibleTaskRows, type TaskTreeNode } from './taskTree';
 import { buildTableGroups, type TableTaskGroup, type TaskGroupingMode } from './taskGrouping';
 import { dedupeTasks } from './workPackages';
+import type { TaskSortMode } from './taskOrdering';
 import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
 
 /** A column supplied by the parent, shown after «Приоритет» and before the estimate. */
@@ -69,8 +70,13 @@ export interface TaskTableProps {
   renderTaskFieldEditor?: ((task: TaskDto, field: TaskInlineField) => ReactNode) | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
   quickAdd?: { sectionId: string | null; content: ReactNode } | undefined;
-  /** Controlled section disclosure state; project pages retain it across view switches. */
+  /** Orders rows within the existing group/parent structure. */
+  sortMode?: TaskSortMode | undefined;
   grouping?: TaskGroupingMode | undefined;
+  /** Page-owned descendant disclosure; standalone callers keep local state. */
+  collapsedTaskIds?: ReadonlySet<string> | undefined;
+  onTaskCollapsedChange?: ((taskId: string, collapsed: boolean) => void) | undefined;
+  /** Controlled group disclosure retained across query/view switches. */
   collapsedGroupKeys?: ReadonlySet<string> | undefined;
   onGroupCollapsedChange?: ((groupKey: string, collapsed: boolean) => void) | undefined;
   className?: string | undefined;
@@ -595,6 +601,9 @@ export function TaskTable({
   columnIds,
   onEditTaskField, renderTaskFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd,
   grouping = 'section',
+  sortMode = 'manual',
+  collapsedTaskIds,
+  onTaskCollapsedChange,
   collapsedGroupKeys,
   onGroupCollapsedChange,
   className,
@@ -618,13 +627,14 @@ export function TaskTable({
   const visibleIds = columns.map(column => column.id);
   const columnCount = columns.length;
   const minWidth = columnIds ? columns.reduce((sum, column) => sum + column.width, 0) : (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0);
-  const groups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale), [tasks, sections, members, grouping, locale]);
+  const groups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale, sortMode), [tasks, sections, members, grouping, locale, sortMode]);
   const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
   const summary = useMemo(() => summarizeWorkPackages(tasks), [tasks]);
   const statusById = useMemo(() => new Map(statuses.map((status) => [status.id, status])), [statuses]);
   const memberById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const sectionById = useMemo(() => new Map(sections.map((section) => [section.id, section])), [sections]);
-  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [localCollapsedIds, setLocalCollapsedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const collapsedIds = collapsedTaskIds ?? localCollapsedIds;
   const [localCollapsedGroups, setLocalCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
   const collapsedGroups = collapsedGroupKeys ?? localCollapsedGroups;
   const changeGroup = (key: string, collapsed: boolean) => {
@@ -641,13 +651,14 @@ export function TaskTable({
   for (const title of titles) titleCounts.set(title, (titleCounts.get(title) ?? 0) + 1);
 
   const onToggle = useCallback((taskId: string) => {
-    setCollapsedIds((previous) => {
+    if (onTaskCollapsedChange) { onTaskCollapsedChange(taskId, !collapsedIds.has(taskId)); return; }
+    setLocalCollapsedIds((previous) => {
       const next = new Set(previous);
       if (next.has(taskId)) next.delete(taskId);
       else next.add(taskId);
       return next;
     });
-  }, []);
+  }, [collapsedIds, onTaskCollapsedChange]);
 
   const ctx: RowContext = {
     grouping, taskById,

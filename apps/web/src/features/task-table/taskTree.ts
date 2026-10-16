@@ -1,6 +1,7 @@
 import { localization } from '../../i18n';
 import type { SectionDto, TaskDto } from '@workloom/contracts';
 import { dedupeTasks } from './workPackages';
+import { compareTaskRows, type TaskSortMode } from './taskOrdering';
 
 export interface TaskTreeNode {
   task: TaskDto;
@@ -28,10 +29,6 @@ export interface TaskGroup {
   taskCount: number;
 }
 
-function compareTasks(a: TaskDto, b: TaskDto): number {
-  return a.position - b.position || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id);
-}
-
 function compareSections(a: SectionDto, b: SectionDto, locale: string): number {
   return a.position - b.position || a.name.localeCompare(b.name, locale) || a.id.localeCompare(b.id);
 }
@@ -45,8 +42,8 @@ function countNodes(nodes: readonly TaskTreeNode[]): number {
  * their real `parentTaskId`. A child stays under its parent even when its own section differs.
  * Every loaded task appears exactly once; cycles and missing parents never drop or loop.
  */
-export function buildTaskGroups(tasks: readonly TaskDto[], sections: readonly SectionDto[], locale = localization.getLocale()): TaskGroup[] {
-  const unique = dedupeTasks(tasks).sort(compareTasks);
+export function buildTaskGroups(tasks: readonly TaskDto[], sections: readonly SectionDto[], locale = localization.getLocale(), sort: TaskSortMode = 'manual'): TaskGroup[] {
+  const unique = dedupeTasks(tasks).sort((left, right) => compareTaskRows(left, right, 'manual'));
   const byId = new Map(unique.map((task) => [task.id, task]));
   const childrenOf = new Map<string, TaskDto[]>();
   const rootTasks: { task: TaskDto; reason: TaskTreeNode['detachedReason'] }[] = [];
@@ -145,7 +142,13 @@ export function buildTaskGroups(tasks: readonly TaskDto[], sections: readonly Se
     });
   }
 
-  return groups;
+  if (sort === 'manual') return groups;
+  // Establish parent/cycle ownership canonically before ordering siblings, so a
+  // changed sort cannot promote another cycle root or move a child to a new group.
+  const orderNodes = (nodes: readonly TaskTreeNode[]): TaskTreeNode[] => nodes
+    .map(node => ({ ...node, children: orderNodes(node.children) }))
+    .sort((left, right) => compareTaskRows(left.task, right.task, sort));
+  return groups.map(group => ({ ...group, roots: orderNodes(group.roots) }));
 }
 
 /** Rows to render for a group: depth-first, skipping descendants of collapsed tasks. */

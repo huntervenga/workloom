@@ -1,3 +1,4 @@
+import { orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
 import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
 import { TaskCompletionAction } from '../features/tasks/TaskCompletionAction';
 import { TaskCompletionFeedback } from '../features/tasks/TaskCompletionFeedback';
@@ -217,6 +218,15 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     for (const dispose of inlineLeases.current) dispose();
   }, []);
   const [grouping, setGrouping] = useState<TaskGroupingMode>('section');
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<ReadonlySet<string>>(() => new Set());
+  const changeTaskCollapsed = useCallback((taskId: string, collapsed: boolean) => {
+    invalidateInlineSave();
+    setCollapsedTaskIds(before => {
+      const next = new Set(before);
+      if (collapsed) next.add(taskId); else next.delete(taskId);
+      return next;
+    });
+  }, [invalidateInlineSave]);
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<ReadonlySet<string>>(() => new Set());
   const changeGroupCollapsed = useCallback((key: string, collapsed: boolean) => {
     invalidateInlineSave();
@@ -232,6 +242,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const [filters, setFilters] = useState<TaskFilterValue>(emptyTaskFilters);
   const search = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
   const [searchParams, setSearchParams] = useCurrentSearchParams();
+  const sortMode: TaskSortMode = searchParams.getAll('sort').length === 1 && searchParams.get('sort') === 'due_asc' ? 'due_asc' : 'manual';
   const taskId = searchParams.get('task');
   const boardMode = searchParams.get('view') === 'board';
   const graphMode = searchParams.get('view') === 'graph';
@@ -243,6 +254,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 
   const tasks = useTaskListQuery(actorId, workspace.id, {
     projectId: project.id,
+    sort: sortMode === 'due_asc' ? 'due_asc' : undefined,
     search,
     statusId: filters.statusId || undefined,
     tagId: filters.tagId || undefined,
@@ -263,10 +275,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const loadedPackages = useMemo(() => summarizeWorkPackages(shownTasks), [shownTasks]);
   // Use the same root hierarchy as the table: a child can belong to another section's group.
   const sectionGroups = useMemo(() => buildTaskGroups(shownTasks, sections.data ?? [], locale), [shownTasks, sections.data, locale]);
-  const taskGroups = useMemo(() => buildTableGroups(shownTasks, sections.data ?? [], members.data ?? [], grouping, locale), [shownTasks, sections.data, members.data, grouping, locale]);
-  const sectionHiddenTaskIds = useMemo(() => new Set(taskGroups
-    .filter(group => collapsedGroupKeys.has(group.key))
-    .flatMap(group => visibleTaskRows(group.roots, new Set()).map(node => node.task.id))), [taskGroups, collapsedGroupKeys]);
+  const taskGroups = useMemo(() => buildTableGroups(shownTasks, sections.data ?? [], members.data ?? [], grouping, locale, sortMode), [shownTasks, sections.data, members.data, grouping, locale, sortMode]);
+  const sectionHiddenTaskIds = useMemo(() => new Set(taskGroups.flatMap(group => {
+    const visible = new Set(collapsedGroupKeys.has(group.key) ? [] : visibleTaskRows(group.roots, collapsedTaskIds).map(node => node.task.id));
+    return visibleTaskRows(group.roots, new Set()).filter(node => !visible.has(node.task.id)).map(node => node.task.id);
+  })), [taskGroups, collapsedGroupKeys, collapsedTaskIds]);
   const { roots: graphRoots, setRoots: setGraphRoots, setRootOrigin: setGraphRootOrigin } = dependencies;
   useEffect(() => {
     if (!graphMode || graphRoots !== null || !tasks.isSuccess) return;
@@ -350,7 +363,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // The editor waits for real sections, statuses, members and tags.
   const metadataReady = metadataError === undefined && metadata.every((item) => item.query.isSuccess);
   const completionWritable = writable && metadataReady && !personalColumns.denied && !isAccessDenied(tasks.error);
-  const taskPresentationKey = JSON.stringify([actorId, workspace.id, project.id, location.key, grouping, filters.search, filters.statusId, filters.participantMembershipId, filters.tagId, filters.includeArchived]);
+  const taskPresentationKey = JSON.stringify([actorId, workspace.id, project.id, location.key, grouping, filters.search, filters.statusId, filters.participantMembershipId, filters.tagId, filters.includeArchived, sortMode]);
   const previousPresentation = useRef(taskPresentationKey);
   useLayoutEffect(() => {
     if (previousPresentation.current !== taskPresentationKey) invalidateInlineSave();
@@ -636,9 +649,21 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                 <option value="assignee">{t('taskTable.grouping.assignee')}</option>
               </select>
             </label> : null}
+            {!graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
+              {t('taskTable.sort.label')}
+              <select aria-label={t('taskTable.sort.label')} className="min-h-8 rounded border border-line bg-surface px-2 text-xs text-ink" value={sortMode} onChange={event => {
+                const nextSort = event.target.value === 'due_asc' ? 'due_asc' : 'manual';
+                invalidateInlineSave();
+                setSearchParams(before => { const next = new URLSearchParams(before); if (nextSort === 'due_asc') next.set('sort', nextSort); else next.delete('sort'); return next; });
+              }}>
+                <option value="manual">{t('taskTable.sort.manual')}</option>
+                <option value="due_asc">{t('taskTable.sort.dueDate')}</option>
+              </select>
+            </label> : null}
             <PersonalColumnsDialog showTrigger={!boardMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
           </div>
           {grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode ? <p className="text-xs text-muted">{t('taskTable.grouping.help')}</p> : null}
+          {sortMode === 'due_asc' && !graphMode && !ganttMode && !importMode ? <p className="text-xs text-muted">{boardMode ? t('taskTable.sort.boardHelp') : t('taskTable.sort.tableHelp')}</p> : null}
           {personalColumns.query.isError && !personalColumns.denied ? <p role="status" className="text-xs text-amber-800">{t('taskTable.personalColumns.loadFailed')}</p> : null}
           {/* A custom field failure never hides the built-in table. */}
           {fieldsError ? (
@@ -653,7 +678,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
             renderCompletionAction={completionAction}
             boardMode={boardMode}
+            sortMode={sortMode}
             grouping={grouping}
+            collapsedTaskIds={collapsedTaskIds}
+            onTaskCollapsedChange={changeTaskCollapsed}
             collapsedGroupKeys={collapsedGroupKeys}
             onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
@@ -734,7 +762,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 interface TaskListProps {
   renderCompletionAction: NonNullable<ComponentProps<typeof TaskTable>['renderCompletionAction']>;
   boardMode: boolean;
+  sortMode: TaskSortMode;
   grouping: TaskGroupingMode;
+  collapsedTaskIds: ReadonlySet<string>;
+  onTaskCollapsedChange: NonNullable<ComponentProps<typeof TaskTable>['onTaskCollapsedChange']>;
   collapsedGroupKeys: ReadonlySet<string>;
   onGroupCollapsedChange: NonNullable<ComponentProps<typeof TaskTable>['onGroupCollapsedChange']>;
   selectedTaskIds: readonly string[];
@@ -786,7 +817,7 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
   const scope = loadedTaskScope(query.data);
   return (
     <div className="space-y-3">
-      {boardMode ? <TaskBoard renderCompletionAction={table.renderCompletionAction} tasks={dedupeTasks(scope.tasks)} statuses={table.statuses} members={table.members} partial={!scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
+      {boardMode ? <TaskBoard renderCompletionAction={table.renderCompletionAction} tasks={orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={!scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={scope.tasks}
         partial={filtered || !scope.complete}

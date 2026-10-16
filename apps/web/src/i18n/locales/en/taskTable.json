@@ -157,5 +157,12 @@
     "open": "Open task",
     "expandNumbered": "Expand assignee group {{position}} “{{name}}”",
     "collapseNumbered": "Collapse assignee group {{position}} “{{name}}”"
+  },
+  "sort": {
+    "label": "Sort",
+    "manual": "Manual",
+    "dueDate": "Due date",
+    "tableHelp": "Groups keep their order. Tasks sort by their own due date within each group or sibling list; subtasks stay under their parent. Undated tasks come last.",
+    "boardHelp": "Status lanes keep their order. Cards sort by their own due date within each lane, with undated tasks last."
   }
 }
