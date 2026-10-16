@@ -71,6 +71,16 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
     case 'work_type_report.create':return projects(await periodProject(text(record(i.target,'report target')['periodId'],'period')));
     default:return never(i);
    }
+  case 'dependency':{
+   const t=record(i.target,'dependency target');
+   switch(i.command){
+    case 'graph.layout.set':return none;
+    case 'dependency.policy.update':return projects(text(t['projectId'],'project'));
+    case 'dependency.create':return projects(await taskProject(text(t['predecessorTaskId'],'predecessor')),await taskProject(text(t['successorTaskId'],'successor')));
+    case 'dependency.update':return projects(await taskProject(text(t['predecessorTaskId'],'predecessor')),await taskProject(text(t['successorTaskId'],'successor')));
+    default:return never(i);
+   }
+  }
   case 'recurrence':
    switch(i.command){
     case 'recurrence.series.create':return projects((await repo.tasks.findProject(ws,text(record(i.target,'series target')['projectId'],'project')))?.id);

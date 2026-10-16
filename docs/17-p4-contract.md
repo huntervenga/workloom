@@ -1,8 +1,8 @@
-# P4a: зависимости, блокировки и персональный граф — контракт для ревью
+# P4a: зависимости, блокировки и персональный граф — контракт кандидата
 
-Статус: **предложение точного P4a freeze, 16 октября 2026 года; без разрешения на source/install**. P3a принят (source `9443e06`, docs `51e58cb`); P3b реализуется и проходит собственную интеграционную проверку. На время этой ревизии docs17 принадлежит backend lane; docs16/contracts/domain/DB остаются foundation. Автор ревизии — Codex gpt-6.1-sol high после подтверждённого лимита Claude до 07:50 UTC. Ни P4 source, ни зависимости, ни миграции этой ревизией не меняются.
+Статус: **принятый ограниченный P4a, 16 октября 2026 года**. Реализованы девять операций frozen-каталога, общий task/recurrence status validator, глобальные cycle checks, ограниченный graph projection и собственная раскладка. Функциональные, upgrade/replay и текущие desktop/mobile проверки приняты; точная хронология широких и последующих targeted проверок, первоначальных ошибок и исправлений — в [журнале](11-implementation-progress.md). Source checkpoint и финальная сверка served assets оформляются coordinator отдельно. Gantt/startDate/date batch/baseline overlay/private ACL/Auth/deploy не входят в этот приёмочный срез.
 
-Основания: [продукт](01-product-spec.md), [архитектура](02-architecture.md), [domain §12](03-domain-and-data.md), [P4.1–P4.6](06-implementation-plan.md), [baseline](13-p2a-contract.md), [meetings](15-p3a-contract.md), [recurrence](16-p3b-contract.md). Ниже имена предложены для следующего contract authoring pass; до GO они не являются существующими exports.
+Основания: [продукт](01-product-spec.md), [архитектура](02-architecture.md), [domain §12](03-domain-and-data.md), [P4.1–P4.6](06-implementation-plan.md), [baseline](13-p2a-contract.md), [meetings](15-p3a-contract.md), [recurrence](16-p3b-contract.md). Публичные schemas/types находятся в `packages/contracts/src/dependencies.ts`; nine-method `DependencyApplication` и реальная `@workloom/db.createDependencyApplication` реализованы.
 
 ## 1. Принятый ограниченный срез
 
@@ -42,7 +42,7 @@ Create/restore unresolved edge к successor уже in_progress/done в enforce �
 
 Guard — **общая in-scope проверка перехода статуса**, не HTTP/web и не только TaskApplication.updateTask. Её вызывают TaskApplication и P3b reviseOccurrenceMeetingInScope при template edit существующих встреч; initial create новой встречи ещё не имеет edges. Batch/series apply заранее проверяет все предполагаемые status transitions до любых command writes, затем тот же validator защищает relevant task save. Recurrence template не получает bypass из-за внутреннего composer. Edge writes и policy writes используют тот же planning/recurrence pre-handler guard protocol; footprint включает проекты обоих endpoints, policy — successor project. Неожиданный поздний сбой откатывает edge/policy/audit/outbox/key. Если cutoff сохраняется с ожидаемым отказом — только существующий tagged pre-handler outcome; не catch-and-commit после частичных proposed writes. Новые edges не изменяют прошлый baseline и не притворяются historical topology.
 
-## 5. Точные предложенные schemas и projections
+## 5. Публичные schemas и projections
 
 Файл `packages/contracts/src/dependencies.ts`:
 
@@ -59,7 +59,7 @@ Guard — **общая in-scope проверка перехода статуса
 
 `DependencyGraphDto = {projectId,rootTaskIds:UUID[],neighborDepth:0|1|2,asOfChangeSeq:string,nodes:[{task:TaskDto,context:DependencyTaskContextDto,blocking:TaskBlockingSummaryDto,hasOutsideDependencies:boolean,outsideUnresolvedPredecessorCount:integer>=0}],edges:TaskDependencyDto[]}`. Источник — один consistent read; numeric changeSeq сериализуется строкой, UI сравнивает BigInt, не lexical/Number. Graph contains active edges induced выбранным neighborhood; summary по полным edges. `hasOutsideDependencies` учитывает active incident edge к узлу вне возвращённого набора. Exact outside unresolved count допустим в текущем workspace-visible продукте; никакой private-count гарантии.
 
-## 6. Точный предложенный HTTP/port каталог — 9 операций
+## 6. HTTP/port каталог — 9 операций
 
 Все пути под `/api/v1/workspaces/:workspaceId`. `ctx` первый, доверенный server actor/workspace/source/requestId; mutations требуют Idempotency-Key, Origin/Host guards сохраняются. Только PUT graph-layout получает scoped bodyLimit **256 KiB** для500 строго проверенных positions, включая escaped UUID JSON; остальные routes сохраняют глобальные16 KiB. Valid500 и payload>256 KiB проверяются транспортными тестами; cap не заменяет schema limits.
 
@@ -106,20 +106,30 @@ P4b добавит nullable date-only startDate, inclusive dueDate, unknown/not_
 
 P4b отдельные gates: start/due null/DST/effort independence, atomic date batch/races/meeting locks, selected baseline provenance/old missing field, Gantt keyboard+drag/overlay. P4a не сертифицирует эти сценарии, private ACL, Auth, old-tab upgrade или production/worker hosting.
 
-## 10. Dependency research — сохранённая подготовка, не install
+## 10. Dependency research и принятые зависимости
 
 
-Проверено 16 октября 2026 года, без install/lockfile mutation. Official npm registry (`npm view`) на момент проверки: `@xyflow/react`12.12.0 MIT (React/ReactDOM peer>=17), `@dagrejs/dagre`3.1.1 MIT, `elkjs`0.12.0 с package SPDX `EPL-2.0 OR GPL-3.0-or-later`. Git master elkjs уже0.13.0, dagre3.1.2-pre: branch metadata не выдаётся за опубликованный stable version. Перед будущим install повторно проверить registry/tarball/license/React19 types и зафиксировать точную версию lockfile; этот draft не устанавливает ни одну библиотеку.
+16 октября 2026 года после P4a GO повторно проверен официальный npm registry: `@xyflow/react` **12.12.0 MIT**, React/ReactDOM/@types peers>=17; `@dagrejs/dagre` **3.1.1 MIT**, bundled `dist/types/index.d.ts`, transitive graphlib4.0.5. Coordinator разрешил только эти два UI dependency pins; frontend изменил только web manifest, foundation выполнил единственный root install/lock update. Установлено22 packages, audited485,0 vulnerabilities на этом запуске. Проверка конкретных UI/types/bundle остаётся частью QA gate, а не следует из npm metadata.
+
+`elkjs`0.12.0 (`EPL-2.0 OR GPL-3.0-or-later`) остался исследованной альтернативой; он не установлен. Git master/pre-release metadata не подменяет опубликованный stable artifact. Новые graph/Gantt зависимости этим контрактом не разрешаются.
 
 - [React Flow package/license](https://github.com/xyflow/xyflow/blob/main/packages/react/package.json), [MIT file](https://github.com/xyflow/xyflow/blob/main/LICENSE): кандидат renderer для уже выбранной архитектуры. Dependency commands, даты, доступ и циклы остаются domain/API, не библиотечными callbacks.
 - [Официальная accessibility документация React Flow](https://reactflow.dev/learn/advanced-use/accessibility): есть node/edge focus, keyboard selection, arrow movement, localized ariaLabelConfig. Это основание сохранить штатные возможности и добавить явные формы связей/дат, а не объявить готовую WCAG-проверку Workloom.
 - [Официальный layout обзор](https://reactflow.dev/learn/layouting/layouting) отделяет renderer от внешней раскладки. Dagre проще для небольшого плоского directed graph; documented subflow limitation важна при связях наружу nested subflow. Предлагается сначала плоская раскладка, без ложного parent nesting.
-- [Dagre repository](https://github.com/dagrejs/dagre), [MIT](https://github.com/dagrejs/dagre/blob/master/LICENSE): предпочтительный кандидат узкого P4a layout adapter после версии/типов/bundle proof. UI direction и node dimensions заданы явно; layout не scheduling engine.
+- [Dagre repository](https://github.com/dagrejs/dagre), [MIT](https://github.com/dagrejs/dagre/blob/master/LICENSE): выбранный узкий P4a layout adapter; версия закреплена, конкретный bundle/types проверены текущим gate. UI direction и node dimensions заданы явно; layout не scheduling engine.
 - [ELK package metadata](https://github.com/kieler/elkjs/blob/master/package.json), [EPL-2.0 text](https://github.com/kieler/elkjs/blob/master/LICENSE.md): альтернативный кандидат для более сложного layout/ports/routing. Его declared license отличается от MIT; не называть MIT и не включать автоматически. Выбор конкретного artifact/license и distribution notices принимается до install; draft не даёт юридического заключения.
 
 Собственный узкий calendar timeline использует существующие React/CSS/date contracts. Коммерческий Gantt engine, d3 force simulation и иные graph dependencies сейчас не нужны и не одобрены.
 
 
-## 11. Владение после отдельного GO
+## 11. Владение и приёмка
 
-Foundation: exact contracts/domain/DB/migration и единственный root install/lock owner. Backend: thin9 API adapters/composition/transport tests. Frontend: card/graph/personal layout UI и package/ui; только после contract exports. QA: real PG concurrency/integration/browser/visual. Coordinator отдельно разрешает renderer/layout deps и проверяет pinned versions/licenses. До P3b acceptance новый P4 source не начинается; этот документ лишь делает следующий review concrete.
+Foundation: exact contracts/domain/DB/migration0007 и единственный root install/lock owner. Backend: thin9 API adapters/composition/transport tests. Frontend: card/graph/personal layout UI и packages/ui. QA: real PG concurrency/integration/browser/visual. Публичные exports были опубликованы до persistence; lanes реализовали один frozen каталог.
+
+Широкий core/API/worker gate — 998 tests/49 files, real HTTP/PG — 163 tests/15 files; build/lint/typecheck прошли. Последующие frontend reset/automatic-bounds/async-arrange исправления имеют отдельные текущие web/targeted доказательства: финальный desktop1/1 и предшествующий mobile1/1 прошли, root принял текущие visuals. Первоначальные browser/fixture failures не переименовываются в pass; итоговые точные web/browser counts и asset parity записаны отдельно в журнале.
+
+Миграция0007 сохранила все47 старых таблиц по исходным колонкам,13 настоящих cached command rows/hashes/results и четыре nested pinned report SQL документа; предыдущие14 SQL/snapshot файлов и journal prefix не изменены. Применена только0007, повторный запуск пустой. Fresh install содержит51 таблицу, isolated Drizzle не даёт diff. Эта проверка не сертифицирует старый browser bundle, private ACL, production hosting или полный P4/MVP.
+
+Generated auto-layout на500 узлах проверяется отдельно: только автоматически вычисленные координаты при необходимости центрируются/равномерно масштабируются в разрешённый диапазон. Уже сохранённые и пользовательские координаты не нормализуются. Pending automatic calculation блокирует Save/reset/discard/move; успешная full replacement погашает отправленное reset intent. Эти UI исправления не меняют tasks, даты, планы или факты.
+
+Следующий [P4b draft](18-p4b-contract.md) остаётся отдельным не реализованным срезом до explicit GO.

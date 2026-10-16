@@ -14,17 +14,18 @@
 | [08 Railway и эксплуатация](08-railway-and-operations.md) | Сборка, окружения, миграции, очереди, резервирование и выпуск |
 | [09 Первая задача реализации](09-first-implementation-task.md) | Задание и критерии приёмки P0; исторический handoff |
 | [10 Внешние календари](10-calendar-integration.md) | Будущий дизайн личных подключений Google/Outlook после первого пилота; не входит в P0–P6 |
-| [11 Журнал доказательств](11-implementation-progress.md) | Фактические проверки P0, ограниченных P1a/P1b/P2a/P2b/P3a/P3b, исторические checkpoints и неисполненное |
+| [11 Журнал доказательств](11-implementation-progress.md) | Фактические проверки P0, ограниченных P1a/P1b/P2a/P2b/P3a/P3b/P4a, исторические checkpoints и неисполненное |
 | [12 Активный прогон](12-active-run.md) | Ledger текущего прогона: сроки, политика моделей, владельцы и текущий срез; доказательства — только в 11 |
 | [13 Контракт P2a](13-p2a-contract.md) | Замороженный ограниченный каталог недельного планирования, факта, фиксации и отчётов |
 | [14 Контракт P2b](14-p2b-contract.md) | Категории внесённых часов и быстрый недельный ввод; принятый bounded scope, evidence в11 |
 | [15 Контракт P3a](15-p3a-contract.md) | Разовые shared meetings, explicit personal plan и attendance; bounded local gates, evidence в11 |
 | [16 Контракт P3b](16-p3b-contract.md) | Конечные серии, DST, protected calendar census и отдельный worker; bounded local gates в11 |
-| [17 Проект P4](17-p4-contract.md) | Планируемые зависимости/Gantt: draft, не реализовано |
+| [17 Контракт P4a](17-p4-contract.md) | Зависимости, blocking и личный graph layout; bounded local gates в11 |
+| [18 Проект P4b](18-p4b-contract.md) | Date-only start/due, Gantt и baseline overlay: draft, ещё не реализовано |
 
 Продуктовые требования находятся в 01. Документы 02–08 уточняют реализацию и этапность: весь командный пилот из 01 не должен появиться в первой локальной версии. Если конкретные DTO и физическая схема конфликтуют с продуктовым поведением, согласовать исправление до реализации, а не изменять требования молча.
 
-Состояние на 16 октября 2026 года: локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b. Доступны таблица задач и типизированные колонки, недельный план/freeze/факт, pinned отчёты, shared meetings и explicit attendance, конечные серии встреч с DST preview и отдельным materialization worker. Полный P1/P2/P3, MVP и пилот не завершены. Private ACL/Auth, зависимости/Gantt, импорт/MCP, внешние календари и production остаются будущими.
+Состояние на 16 октября 2026 года: локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a. Доступны таблица задач и типизированные колонки, недельный план/freeze/факт, pinned отчёты, shared meetings и explicit attendance, конечные серии встреч с DST preview и отдельным materialization worker, current dependency graph и собственной раскладкой. Полный P1/P2/P3/P4, MVP и пилот не завершены. Private ACL/Auth, Gantt/date batch, импорт/MCP, внешние календари и production остаются будущими.
 
 Точные раздельные gates, initial failures, исправления и checkpoints — в [11](11-implementation-progress.md); срок и политика моделей продолжающегося прогона — в [12](12-active-run.md). Quickstart — в корневом [README](../README.md), отдельный запуск worker — в [его README](../apps/worker/README.md). `npm run dev` запускает API+web; worker запускается отдельно после явной queue migration.
 

@@ -106,3 +106,8 @@ export {
 } from './recurrence/materializer.js';
 
 export {createRecurrenceOccurrenceResolver,buildRecurrenceScheduleSegments,RECURRENCE_RESOLVER_IMPLEMENTATION} from './recurrence/schedule.js';
+
+export * from './dependencies/application.js';
+export * from './dependencies/ports.js';
+export {createDependencyApplication} from './dependencies/service.js';
+export {createTaskStatusTransitionPolicy} from './dependencies/status-policy.js';

@@ -188,6 +188,7 @@ function harness() {
           barrierAt: new Date(Date.UTC(2026, 9, 16, 9, 0, (second += 1))),
           repository,
           planningGuard: { async check() { return null; } },
+          statusTransitions:{async assertTransition(){}},
           async recordChange(event) {
             events.push(event);
             return { changeSeq: BigInt(events.length), eventOrdinal: 1 };

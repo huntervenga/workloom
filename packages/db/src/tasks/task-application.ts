@@ -48,6 +48,7 @@ export function createTaskApplication(
           repository: createTaskRepository(scope.tx),
           recurrenceCensus: census.recurrenceCensus,
           planningGuard: createPlanningMutationGuard(census, tools),
+          statusTransitions:census.statusTransitions,
         };
         return work(taskScope);
       });

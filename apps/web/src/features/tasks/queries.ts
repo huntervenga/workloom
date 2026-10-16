@@ -168,6 +168,8 @@ export function tagsWouldRegress(next: TaskDto, known: readonly TagDto[]): boole
  * newer cached data stays and the detail is refetched. Task lists refetch too.
  */
 export function storeTask(queryClient: QueryClient, actorId: string, workspaceId: string, task: TaskDto) {
+  // Status/archive changes affect authoritative dependency projections, including other projects.
+  void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'dependencies'] });
   const detailKey = queryKeys.task(actorId, workspaceId, task.id);
   const cached = queryClient.getQueryData<TaskDto>(detailKey);
   if (cached) {

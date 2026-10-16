@@ -1,6 +1,6 @@
 # План реализации Workloom
 
-Версия от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b; P3b добавил конечные серии встреч, protected calendar census и отдельный recurrence worker. Точные gates, initial failures, исправления и source checkpoints — в [11](11-implementation-progress.md). Полный P1/P2/P3, P4–P6, MVP и пилот не завершены. Приёмка ниже сохраняет будущие требования. Стек — [02](02-architecture.md), данные — [03](03-domain-and-data.md), API — [04](04-api-and-integrations.md), клиент — [05](05-client-and-ux.md).
+Версия от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a; P3b добавил конечные серии встреч, protected calendar census и отдельный recurrence worker. Точные gates, initial failures, исправления и source checkpoints — в [11](11-implementation-progress.md). Полный P1/P2/P3/P4, P5–P6, MVP и пилот не завершены. Приёмка ниже сохраняет будущие требования. Стек — [02](02-architecture.md), данные — [03](03-domain-and-data.md), API — [04](04-api-and-integrations.md), клиент — [05](05-client-and-ux.md).
 
 ## Порядок работы
 
@@ -123,6 +123,8 @@ Workloom защищает запись и URL внутри продукта. Д�
 Демонстрация: серия пяти часовых созвонов, шесть участников; один отсутствовал в среду, другой был полчаса в четверг. В недельных отчётах правильные часы каждого. Повторный save/MCP retry не меняет сумму; личная встреча недоступна с другой fixture identity.
 
 ## P4 Зависимости Gantt и граф
+
+Статус: ограниченный P4a локально принят — finish-to-start dependencies/cycles, authoritative warn/enforce blocking, current graph выбранного набора и собственный full-set layout по [17](17-p4-contract.md). Граф не является Gantt; startDate/date batch, baseline date overlay и остальной P4 остаются [планом P4b](18-p4b-contract.md). Acceptance tables ниже сохраняют будущие требования; точные gates/failures/fixes — в [11](11-implementation-progress.md).
 
 | ID | Работа | Владение | Приёмка |
 | --- | --- | --- | --- |

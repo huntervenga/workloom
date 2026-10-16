@@ -11,6 +11,7 @@ import {
   boolean,
   check,
   date,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -842,6 +843,7 @@ export const REQUIRED_TABLES = [
   'work_type_report_runs',
   'recurrence_series','recurrence_series_versions','recurrence_generation_authorizations','recurrence_period_bindings',
   'recurrence_instances','recurrence_exception_versions','recurrence_calendar_locks',
+  'task_dependencies','project_dependency_policies','graph_layouts','graph_layout_positions',
 ] as const;
 
 
@@ -1263,3 +1265,25 @@ export const recurrenceCalendarLocks=pgTable('recurrence_calendar_locks',{
  foreignKey({name:'recurrence_calendar_locks_meeting_fk',columns:[t.workspaceId,t.projectId,t.meetingId],foreignColumns:[meetings.workspaceId,meetings.projectId,meetings.id]}),
  index('recurrence_calendar_locks_instance_idx').on(t.workspaceId,t.instanceId),
 ]);
+
+/** P4a current finish-to-start graph; historic baselines deliberately do not join these mutable heads. */
+export const taskDependencies=pgTable('task_dependencies',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),predecessorTaskId:uuid('predecessor_task_id').notNull(),successorTaskId:uuid('successor_task_id').notNull(),
+ type:text('type').$type<'finish_to_start'>().notNull(),state:text('state').$type<'active'|'removed'>().notNull(),revision:integer('revision').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[
+ unique('task_dependencies_workspace_id_unique').on(t.workspaceId,t.id),unique('task_dependencies_identity_unique').on(t.workspaceId,t.predecessorTaskId,t.successorTaskId,t.type),
+ foreignKey({name:'task_dependencies_predecessor_fk',columns:[t.workspaceId,t.predecessorTaskId],foreignColumns:[tasks.workspaceId,tasks.id]}),
+ foreignKey({name:'task_dependencies_successor_fk',columns:[t.workspaceId,t.successorTaskId],foreignColumns:[tasks.workspaceId,tasks.id]}),
+ check('task_dependencies_self_check',sql`${t.predecessorTaskId} <> ${t.successorTaskId}`),check('task_dependencies_type_check',sql`${t.type} = 'finish_to_start'`),check('task_dependencies_state_check',sql`${t.state} in ('active','removed')`),check('task_dependencies_revision_check',sql`${t.revision} >= 1`),
+ index('task_dependencies_predecessor_idx').on(t.workspaceId,t.predecessorTaskId,t.state),index('task_dependencies_successor_idx').on(t.workspaceId,t.successorTaskId,t.state),
+]);
+export const projectDependencyPolicies=pgTable('project_dependency_policies',{
+ workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),mode:text('mode').$type<'warn'|'enforce'>().notNull(),revision:integer('revision').notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[primaryKey({columns:[t.workspaceId,t.projectId]}),foreignKey({name:'project_dependency_policies_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),check('project_dependency_policies_mode_check',sql`${t.mode} in ('warn','enforce')`),check('project_dependency_policies_revision_check',sql`${t.revision} >= 1`)]);
+export const graphLayouts=pgTable('graph_layouts',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),membershipId:uuid('membership_id').notNull(),viewKey:text('view_key').$type<'default'>().notNull(),revision:integer('revision').notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[unique('graph_layouts_workspace_id_unique').on(t.workspaceId,t.id),unique('graph_layouts_identity_unique').on(t.workspaceId,t.projectId,t.membershipId,t.viewKey),foreignKey({name:'graph_layouts_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),foreignKey({name:'graph_layouts_membership_fk',columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),check('graph_layouts_view_check',sql`${t.viewKey} = 'default'`),check('graph_layouts_revision_check',sql`${t.revision} >= 1`)]);
+export const graphLayoutPositions=pgTable('graph_layout_positions',{
+ workspaceId:uuid('workspace_id').notNull(),layoutId:uuid('layout_id').notNull(),taskId:uuid('task_id').notNull(),x:doublePrecision('x').notNull(),y:doublePrecision('y').notNull(),
+},t=>[primaryKey({columns:[t.workspaceId,t.layoutId,t.taskId]}),foreignKey({name:'graph_layout_positions_layout_fk',columns:[t.workspaceId,t.layoutId],foreignColumns:[graphLayouts.workspaceId,graphLayouts.id]}),foreignKey({name:'graph_layout_positions_task_fk',columns:[t.workspaceId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.id]}),check('graph_layout_positions_finite_check',sql`${t.x} between -100000 and 100000 and ${t.y} between -100000 and 100000`)]);

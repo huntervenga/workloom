@@ -70,6 +70,7 @@ export async function reviseOccurrenceMeetingInScope(scope:RecurrenceWriteScope,
   const current=await scope.repository.tasks.findTask(ws,taskId);if(!current)throw notFoundError();
   const fields=['title','statusId','sectionId'].filter(field=>field==='title'?t.title!==current.title:field==='statusId'?t.statusId!==current.statusId:(t.sectionId??null)!==current.sectionId);
   const now=scope.barrierAt.toISOString(),next={...current,title:t.title,statusId:t.statusId,sectionId:t.sectionId??null,revision:current.revision+1,updatedAt:now};
+  await scope.statusTransitions.assertTransition(current,next.statusId);
   await scope.repository.tasks.saveTaskCore(next);
   await scope.recordChange({entityType:'task',entityId:taskId,action:'updated',entityRevision:next.revision,diff:{fields,seriesId:header.seriesId,instanceId:header.id},outbox:{type:'task.updated',payload:{workspaceId:ws,taskId,revision:next.revision}}});
  }

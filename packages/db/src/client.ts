@@ -4,6 +4,7 @@ import postgres from 'postgres';
 
 import { parseDatabaseUrl, type DatabaseUrlInfo } from './database-url.js';
 import {
+  taskDependencies,projectDependencyPolicies,graphLayouts,graphLayoutPositions,
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
   recurrenceSeries,recurrenceSeriesVersions,recurrencePeriodBindings,recurrenceInstances,recurrenceExceptionVersions,recurrenceGenerationAuthorizations,recurrenceCalendarLocks,
   auditEvents,
@@ -44,6 +45,7 @@ import {
 } from './schema.js';
 
 export const tables = {
+  taskDependencies,projectDependencyPolicies,graphLayouts,graphLayoutPositions,
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
   recurrenceSeries,recurrenceSeriesVersions,recurrencePeriodBindings,recurrenceInstances,recurrenceExceptionVersions,recurrenceGenerationAuthorizations,recurrenceCalendarLocks,
   planningPeriods,

@@ -288,6 +288,8 @@ export function createRecurrenceApplication(deps:RecurrenceApplicationDependenci
    if(built.dto.previewHash!==previewHash)return staleOutcome(scope,built.context.bindings.map(b=>b.periodId));
    if(built.dto.protectedTargets.length)throw protectedError(built.dto.protectedTargets.length);
    const {context,draft,plan}=built,series=context.series,versionId=newId();
+   // Validate every existing task transition before any series/version/header proposed write.
+   for(const impact of plan)if(impact.action==='update'&&impact.header?.locator&&impact.desired?.calendarState==='scheduled'){const task=found(await repo.planning.tasks.findTask(ws,impact.header.locator.taskId));const effectiveVersion=impact.desired.sourceVersionId===DRAFT?built.draft:found(context.versions.find(v=>v.id===impact.desired?.sourceVersionId));await scope.statusTransitions.assertTransition(task,effectiveVersion.template.statusId);}
    const change=await scope.recordChange({entityType:'recurrence_series',entityId:series.id,action:'edited',entityRevision:series.revision+1,diff:{versionId,effectiveFromNominalDate:draft.effectiveFromNominalDate,update:plan.filter(e=>e.action==='update').length,create:plan.filter(e=>e.action==='create').length,cancel:plan.filter(e=>e.action==='cancel').length}});
    const version:RecurrenceSeriesVersionRecord={id:versionId,seriesId:series.id,revision:draft.revision,effectiveFromNominalDate:draft.effectiveFromNominalDate,schedule:draft.schedule,template:draft.template,policyVersion:tools.resolver.policyVersion,actorUserId:scope.context.actor.userId,createdAt:now,changeSeq:change.changeSeq.toString()};
    await repo.insertSeriesVersion(version,ws);

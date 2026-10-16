@@ -100,3 +100,6 @@ export {createRecurrenceWorkerFacade,type RecurrenceWorkerFacadeOptions} from '.
 export {createRecurrenceOutboxRelay,RECURRENCE_RELAY_DEFAULT_LIMIT,RECURRENCE_RELAY_MAX_LIMIT,type RecurrenceOutboxRelayOptions} from './recurrence/outbox-relay.js';
 export {createRecurrenceCursorCodec,type RecurrenceCursorCodec,type RecurrenceCursorCodecOptions} from './recurrence/cursor.js';
 export {createRecurrenceRepository,type RecurrenceRepositoryOptions} from './repositories/recurrence-repository.js';
+
+export {createDependencyApplication,type DependencyApplicationOptions} from './dependencies/dependency-application.js';
+export {createDependencyRepository} from './repositories/dependency-repository.js';

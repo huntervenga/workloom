@@ -1,3 +1,4 @@
+import type {DependencyMutationCommand,TaskStatusTransitionPolicy} from '../dependencies/ports.js';
 import type {MeetingMutationCommand} from '../meetings/ports.js';
 import type { WorkCategoryResolver, WorkCategoryMutationCommand } from '../categories/ports.js';
 import type {
@@ -72,6 +73,7 @@ export interface PlanningRepository {
   insertReportRun(run:WeeklyPlanFactReportRunDto,rows:WeeklyPlanFactRowDto[]):Promise<void>;
 }
 export interface PlanningWriteScope extends WorkspaceWriteScope {
+  readonly statusTransitions:TaskStatusTransitionPolicy;
   readonly repository:PlanningRepository;
   /** P3b mandatory same-TX census bound by every real composition (no optional no-op production bypass).
    * The shared guard resolves the affected footprint through it and performFreeze ensures/captures census with it. */
@@ -106,6 +108,7 @@ export type PlanningMutationIntent =
  | {readonly family:'planning';readonly command:PlanningMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'meeting';readonly command:MeetingMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'category';readonly command:WorkCategoryMutationCommand;readonly target:unknown;readonly input:unknown}
+ | {readonly family:'dependency';readonly command:DependencyMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'recurrence';readonly command:RecurrenceMutationCommand;readonly target:unknown;readonly input:unknown};
 export interface CommittedPlanningRejection {
   readonly __workloomPlanningOutcome:'rejected';readonly code:'FIELD_LOCKED'|'PREVIEW_STALE';

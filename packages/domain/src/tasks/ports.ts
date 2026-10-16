@@ -1,3 +1,4 @@
+import type {TaskStatusTransitionPolicy} from '../dependencies/ports.js';
 import type { PlanningMutationGuard } from '../planning/ports.js';
 import type {
   ProjectDto,
@@ -138,6 +139,7 @@ export interface TaskRepository {
 }
 
 export interface TaskWriteScope extends WorkspaceWriteScope {
+  readonly statusTransitions:TaskStatusTransitionPolicy;
   /** Required by every real composition; tests must inject an explicit policy fake. */
   readonly planningGuard: PlanningMutationGuard;
   readonly repository: TaskRepository;

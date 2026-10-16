@@ -26,6 +26,8 @@ export interface TaskTableCustomColumn {
 }
 
 export interface TaskTableProps {
+  selectedTaskIds?: readonly string[] | undefined;
+  onSelectTask?: ((id: string, selected: boolean) => void) | undefined;
   /** Loaded tasks of one project. The table never fetches or invents tasks. */
   tasks: readonly TaskDto[];
   /** Project sections; archived ones are shown only while loaded tasks sit in them. */
@@ -296,6 +298,8 @@ function EstimateCell({ task, summary }: { task: TaskDto; summary: WorkPackageSu
 }
 
 interface RowContext {
+  selectedTaskIds: readonly string[];
+  onSelectTask: ((id: string, selected: boolean) => void) | undefined;
   statusById: ReadonlyMap<string, TaskStatusDto>;
   memberById: ReadonlyMap<string, MembershipDto>;
   sectionById: ReadonlyMap<string, SectionDto>;
@@ -332,6 +336,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
         className="py-1 pr-3 lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]"
         style={{ paddingLeft: `${12 + node.depth * 20}px` }}>
         <div className="flex min-w-0 items-center gap-1.5">
+          {ctx.onSelectTask ? <input type="checkbox" aria-label={`Выбрать для графа: ${task.title}`} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /> : null}
           {childCount > 0 ? (
             <button
               type="button"
@@ -539,6 +544,8 @@ function SummaryRow({ summary, partial, columnCount }: { summary: WorkPackageSum
  * budget («Оценка задачи», each package counted once). Data and mutations belong to the parent.
  */
 export function TaskTable({
+  selectedTaskIds = [],
+  onSelectTask,
   tasks,
   sections,
   statuses,
@@ -573,6 +580,8 @@ export function TaskTable({
   }, []);
 
   const ctx: RowContext = {
+    selectedTaskIds,
+    onSelectTask,
     statusById,
     memberById,
     sectionById,

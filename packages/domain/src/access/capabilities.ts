@@ -25,6 +25,7 @@ export const CAPABILITIES = [
   'plan.adjust',
   'fields.manage',
   'reports.read',
+  'dependencies.manage',
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -33,7 +34,7 @@ export type Capability = (typeof CAPABILITIES)[number];
  * later stages are documented here so the table stays in one place; no
  * command for them exists yet.
  */
-export const CAPABILITY_STAGE: Readonly<Record<Capability, 'P0' | 'P1' | 'P2' | 'P6'>> = {
+export const CAPABILITY_STAGE: Readonly<Record<Capability, 'P0' | 'P1' | 'P2' | 'P4' | 'P6'>> = {
   'workspace.read': 'P0',
   'members.read': 'P0',
   'members.manage': 'P6',
@@ -48,6 +49,7 @@ export const CAPABILITY_STAGE: Readonly<Record<Capability, 'P0' | 'P1' | 'P2' | 
   'plan.adjust': 'P2',
   'fields.manage': 'P1',
   'reports.read': 'P2',
+  'dependencies.manage':'P4',
 };
 
 const MEMBER_CAPABILITIES: readonly Capability[] = [

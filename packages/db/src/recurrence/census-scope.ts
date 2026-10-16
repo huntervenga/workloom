@@ -1,5 +1,7 @@
+import {createDependencyRepository} from '../repositories/dependency-repository.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  createTaskStatusTransitionPolicy,
   createRecurrenceOccurrenceComposer,
   createRecurrenceOccurrenceResolver,
   createRecurrenceScopedMaterializer,
@@ -81,6 +83,7 @@ export function composeRecurrenceCensusScope(scope: DbWorkspaceWriteScope, runti
     barrierAt: scope.barrierAt,
     recordChange: scope.recordChange,
     repository: meetings.planning,
+    statusTransitions:createTaskStatusTransitionPolicy(createDependencyRepository(scope.tx)),
     meetings,
     categoryResolver: createWorkCategoryResolver(createWorkCategoryRepository(scope.tx), scope.context.workspaceId),
     recurrence: createRecurrenceRepository(scope.tx, {

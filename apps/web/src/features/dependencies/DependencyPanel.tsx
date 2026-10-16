@@ -1,0 +1,79 @@
+import type { ProjectDto, TaskDependencyDto, TaskDto } from '@workloom/contracts';
+import { Badge, Button } from '@workloom/ui';
+import { useState } from 'react';
+import { Link } from 'react-router';
+import { isAccessDenied } from '../../lib/api';
+import { SaveFeedback } from '../../shared/SaveFeedback';
+import { QueryErrorState } from '../../shared/QueryErrorState';
+import { useProjectQuery } from '../projects/queries';
+import { useTaskQuery } from '../tasks/queries';
+import { useBlockingQuery, useDependenciesQuery } from './queries';
+import type { DependencyWorkspace } from './useDependencyWorkspace';
+
+export interface DependencyPanelProps {
+  actorId: string;
+  workspaceId: string;
+  project: ProjectDto;
+  task: TaskDto;
+  controller: DependencyWorkspace;
+  writable: boolean;
+  onOpenTask: (taskId: string) => void;
+}
+export function DependencyPanel(p: DependencyPanelProps) {
+  const [expanded, setExpanded] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(false);
+  const blocking = useBlockingQuery(p.actorId, p.workspaceId, p.task.id);
+  const dependencies = useDependenciesQuery(p.actorId, p.workspaceId, p.task.id, expanded);
+  const deniedCommands = [p.controller.commands.create, p.controller.commands.update].filter(command => isAccessDenied(command.error));
+  const denied = [blocking.error, dependencies.error, ...deniedCommands.map(command => command.error)].find(isAccessDenied);
+  const checkAccess = async () => {
+    setCheckingAccess(true);
+    try {
+      const reads = await Promise.all([blocking.refetch(), dependencies.refetch()]);
+      if (reads.every(read => read.isSuccess)) {
+        for (const command of deniedCommands) command.reset();
+      }
+    } finally { setCheckingAccess(false); }
+  };
+  const summary = blocking.data?.pages[0]?.data.summary;
+  const edges = [...new Map((dependencies.data?.pages ?? []).flatMap(page => page.data).map(edge => [edge.id, edge])).values()];
+  const blockedRows = (blocking.data?.pages ?? []).flatMap(page => page.data.blockers);
+  if (denied) return <section aria-label="Связи задачи" className="rounded-xl border border-line p-4"><QueryErrorState error={denied} subject="task" headingLevel={3} /><Button disabled={checkingAccess} onClick={() => void checkAccess()}>Проверить доступ к связям</Button></section>;
+  return <section aria-label="Связи задачи" className="space-y-3 rounded-xl border border-line p-4">
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Связи задачи</h3>{p.writable && !p.task.archivedAt ? <Button size="sm" onClick={() => p.controller.openCreate(p.task)}>Добавить связь</Button> : null}</div>
+    {blocking.isError ? <QueryErrorState error={blocking.error} subject="task" headingLevel={3} onRetry={() => void blocking.refetch({ cancelRefetch: true })} /> : summary ? <div className="space-y-2">
+      <div className="flex flex-wrap gap-2"><Badge tone={summary.isBlocked ? 'warning' : 'muted'}>{summary.isBlocked ? `Незавершённых предшественников: ${summary.unresolvedCount}` : 'Незавершённых предшественников нет'}</Badge><Badge tone="muted">{summary.policy.mode === 'enforce' ? 'Запрет начала и завершения' : 'Предупреждение'}</Badge></div>
+      {summary.isBlocked ? <p className="text-xs leading-relaxed text-muted">{summary.policy.mode === 'enforce' ? 'Начать или завершить задачу можно после завершения всех предшественников. Другие поля можно изменять.' : 'Перед началом или завершением проверьте предшественников. Этот режим позволяет изменить статус.'} Проверка учитывает связи за пределами текущего списка и фильтров.</p> : null}
+      {summary.violatesCurrentStatus ? <p className="text-xs text-amber-900">Текущий статус уже не соответствует блокировкам. Он не изменён автоматически.</p> : null}
+      {blockedRows.length ? <ul className="space-y-2">{blockedRows.map(row => <li key={row.dependency.id} className="text-sm"><TaskLink task={row.predecessor} projectId={p.project.id} workspaceId={p.workspaceId} onOpen={p.onOpenTask} /> <span className="text-xs text-muted">· {row.predecessorContext.project.name} · {row.predecessorContext.status.name}{row.predecessor.archivedAt ? ' · в архиве' : ''}</span></li>)}</ul> : null}
+      {blocking.hasNextPage ? <Button size="sm" disabled={blocking.isFetchingNextPage} onClick={() => void blocking.fetchNextPage()}>Ещё предшественники</Button> : null}
+    </div> : <p role="status" className="text-xs text-muted">Проверяем предшественников…</p>}
+    {p.controller.commands.update.variables?.anchorTaskId === p.task.id ? <SaveFeedback subject="taskSave" error={p.controller.commands.update.error} uncertainError={p.controller.commands.update.uncertain?.error ?? null} /> : null}
+    <details open={expanded} onToggle={e => setExpanded(e.currentTarget.open)}>
+      <summary className="cursor-pointer rounded text-sm font-medium">Все связи, включая снятые</summary>
+      <div className="mt-3 space-y-3">{dependencies.isError ? <><QueryErrorState error={dependencies.error} subject="task" headingLevel={3} /><Button size="sm" onClick={() => { void dependencies.refetch({ cancelRefetch: true }); }}>Начать список связей заново</Button></> : dependencies.isPending ? <p role="status" className="text-xs text-muted">Загрузка связей…</p> : edges.length === 0 ? <p className="text-sm text-muted">Связей пока нет.</p> : <ul className="space-y-3">{edges.map(edge => <EdgeRow key={edge.id} edge={edge} {...p} />)}</ul>}
+        {dependencies.hasNextPage ? <Button size="sm" disabled={dependencies.isFetchingNextPage} onClick={() => void dependencies.fetchNextPage()}>Ещё связи</Button> : null}
+      </div>
+    </details>
+  </section>;
+}
+function TaskLink({ task, projectId, workspaceId, onOpen }: { task: TaskDto; projectId: string; workspaceId: string; onOpen: (id: string) => void }) {
+  if (task.projectId !== projectId) return <Link className="rounded font-medium text-accent-ink underline [overflow-wrap:anywhere]" to={`/w/${workspaceId}/projects/${task.projectId}?task=${task.id}`}>{task.title}</Link>;
+  return <button type="button" className="rounded text-left font-medium text-accent-ink underline [overflow-wrap:anywhere]" onClick={() => onOpen(task.id)}>{task.title}</button>;
+}
+function Endpoint({ id, p }: { id: string; p: DependencyPanelProps }) {
+  const task = useTaskQuery(p.actorId, p.workspaceId, id);
+  const project = useProjectQuery(p.actorId, p.workspaceId, task.data?.projectId ?? '');
+  if (task.isError || project.isError) return <span className="text-muted">Связанная задача недоступна</span>;
+  if (!task.data) return <span className="text-muted">Загрузка связанной задачи…</span>;
+  return <span><TaskLink task={task.data} projectId={p.project.id} workspaceId={p.workspaceId} onOpen={p.onOpenTask} /> <span className="text-xs text-muted">· {project.data?.name ?? 'Проект загружается'}{task.data.archivedAt ? ' · в архиве' : ''}</span></span>;
+}
+function EdgeRow(p: DependencyPanelProps & { edge: TaskDependencyDto }) {
+  const { edge, controller: c } = p;
+  const incoming = edge.successorTaskId === p.task.id;
+  const mutation = c.commands.update;
+  const held = mutation.pendingCommand?.variables ?? mutation.uncertain?.variables;
+  return <li className="space-y-2 border-t border-line pt-3 text-sm"><p><span className="text-muted">{incoming ? 'Зависит от: ' : 'Блокирует: '}</span><Endpoint id={incoming ? edge.predecessorTaskId : edge.successorTaskId} p={p} /></p>
+    <div className="flex flex-wrap items-center gap-2"><Badge tone="muted">{edge.state === 'removed' ? 'Связь снята' : 'После завершения'}</Badge>{p.writable ? <Button size="sm" disabled={!!held} onClick={() => mutation.mutate({ anchorTaskId: p.task.id, edge, input: { expectedRevision: edge.revision, state: edge.state === 'active' ? 'removed' : 'active' } })}>{edge.state === 'active' ? 'Снять связь' : 'Восстановить связь'}</Button> : null}</div>
+  </li>;
+}

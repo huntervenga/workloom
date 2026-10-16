@@ -457,6 +457,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
 
         // Every provided reference is validated, even when it equals the current value.
         if (parsed.statusId !== undefined) {
+          await scope.statusTransitions.assertTransition(task,parsed.statusId);
           requireSameProject(requireFound(await repo.findStatus(ws, parsed.statusId)), task.projectId, 'statusId');
         }
         if (isSet(parsed.sectionId)) await requireAssignableSection(repo, ws, task.projectId, parsed.sectionId);

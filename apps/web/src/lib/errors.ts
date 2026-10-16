@@ -168,6 +168,10 @@ export function describeError(error: unknown, subject: ErrorSubject): ErrorDescr
     return { ...hidden, retryable: false, unavailable: true, requestId: error.requestId };
   }
 
+  if (error.code === 'DEPENDENCY_CYCLE') {
+    return { title: 'Связь создаёт цикл', description: 'Эта связь замкнёт цепочку задач. Выберите другое направление или другую задачу.', retryable: false, unavailable: false, requestId: error.requestId };
+  }
+
   if (error.kind === 'conflict' && error.code === 'PREVIEW_STALE') {
     return { title: subjectTitles[subject], description: 'План изменился после предпросмотра. Загрузите свежий предпросмотр и подтвердите фиксацию ещё раз.', retryable: false, unavailable: false, requestId: error.requestId };
   }

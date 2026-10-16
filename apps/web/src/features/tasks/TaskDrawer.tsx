@@ -1,3 +1,5 @@
+import { DependencyPanel } from '../dependencies/DependencyPanel';
+import type { DependencyWorkspace } from '../dependencies/useDependencyWorkspace';
 import { MeetingDrawer } from '../meetings/MeetingDrawer';
 import type { MeetingTab, MeetingWorkspace } from '../meetings/useMeetingWorkspace';
 import type {
@@ -48,6 +50,7 @@ import {
 } from './useTaskCommands';
 
 export interface TaskDrawerProps {
+  dependencyController?: DependencyWorkspace;
   meetingController?: MeetingWorkspace;
   meetingTab?: MeetingTab;
   meetingRequestedPeriodId?:string|undefined;
@@ -126,7 +129,7 @@ export function TaskDrawer(props: TaskDrawerProps) {
       ? `Проект «${project.name}». Задачу видят все участники пространства.`
       : `Проект «${project.name}». Новую задачу увидят все участники пространства.`;
 
-  if(shown?.meetingId && props.meetingController) return <MeetingDrawer controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab??'meeting'} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
+  if(shown?.meetingId && props.meetingController) return <MeetingDrawer dependencyController={props.dependencyController} controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab??'meeting'} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
   if(shown && shown.meetingId===undefined) return <DialogShell variant="drawer" title="Тип задачи уточняется" description="Для безопасного редактирования нужна актуальная информация сервера." open={open} onOpenChange={next=>{if(!next)onClose();}}><div className="mt-4 space-y-3"><p className="text-sm text-muted">Сохранённый ответ не содержит тип задачи. Обновите её перед изменением.</p><Button onClick={()=>void detail.refetch()}>Обновить тип задачи</Button></div></DialogShell>;
   return (
     <DialogShell
@@ -476,6 +479,8 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto }) {
             }
           />
         </fieldset>
+
+        {props.dependencyController ? <DependencyPanel actorId={actorId} workspaceId={workspace.id} project={props.project} task={latest} controller={props.dependencyController} writable={canEdit} onOpenTask={onOpenTask} /> : null}
 
         {/* Values have their own revisions and commands, independent of the task form above. */}
         {fieldValueMutation ? (

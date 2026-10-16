@@ -65,7 +65,7 @@ Root выпустил разовые workspace-visible meetings/attendance по 
 
 Genuine pre0005 P2b fixture уже создана через принятый API: `/tmp/workloom-p2b-compat-fixture.json` (0600, без credentials), exact task.create без будущего marker, work.set/categoryA/rev1 и work.recategorize/categoryB/rev2 raw keys/results/hashes, оба pinned report types JSON и старые SQL rows. По отдельному разрешению root quiet0005 upgrade выполнен:35 прежних old-column table digests неизменны,current6/repeat[]. QA exact raw3 HTTP replay и оба pinned report types подтвердил, unified manual90 без дублирования. Fresh P3a API32694/PID65721 ready200; финальный P3a SPA обслуживается с exact HTML/JS/CSS byte parity, latest JS index-B95BHm_Q.js. Functional и visual gates приняты root. Тогда действовал fallback Codex high без Claude probes до reset02:50UTC (исторически; возврат — в политике моделей); deadline 07:18:10UTC без сдвига.
 
-## Активный P3b
+## Последний checkpoint P3b
 
 P3b по [16](16-p3b-contract.md) принят root после bounded functional/visual gates и финального served asset parity; source checkpoint `7441251470e32b47272a2031cdcf76e70c668a31` создан, дерево сразу после commit чистое. Core/API/worker и web заморожены. Раздельные точные результаты, initial failures и исправления — в [11](11-implementation-progress.md): core/API/worker919, web206, realPG147; первый browser18=17pass/1реальный CSS failure, corrected targeted2=2pass. Root принял desktop и исправленные390px frames; chronological UI sort — отдельный nonblocking follow-up после checkpoint.
 
@@ -74,6 +74,14 @@ P3b по [16](16-p3b-contract.md) принят root после bounded functiona
 - Реальный worker7 в147 проверил transactional relay/poison isolation/ACK-loss/durable receipt/current grant/stale/pause/DLQ. Отдельно official queue lifecycle install/repeat/drift strict options. После controlled browser dev queue явно установлена; compiled entrypoint автоматически подготовил3 occurrences без плана/факта, healthok, SIGTERMexit0. Worker сейчас OFF; npmdev запускает только API+web.
 - Reset planned-calendar seam реально red→green; required before/after preview и calendar-only sync сохраняют task metadata/actual/history. Модели: исходные Opus files сохранены; после actual03:36–39 quota действует Codex gpt-6.1-sol high. Reset07:50UTC позже жёсткого конца07:18:10UTC; новых probes нет.
 - Следующий шаг назначает root после source checkpoint. Полный P3/MVP, Auth/private ACL, внешние календари и deploy не достигнуты. Последние15 минут прогона — стабильный checkpoint.
+
+## Активный P4a
+
+P4a dependencies/blocking/personal graph layout по [17](17-p4-contract.md) принят root05:05UTC; source checkpoint ожидается. Initial core998/PG163/allweb228 и lint/types/build pass; reset fix allweb230 pass. Initial browser20:18pass/2QAselectlocators; corrected2:mobilepass/desktoprealasync-arrange race; после fix18focused/types/lint/build и finaldesktop1 pass. Counts раздельные в [11](11-implementation-progress.md), одного зелёного20 не заявлять. Root принял mobile4/desktopblockers и final optimized4310 FitView; все6 served HTML/assets совпадают с dist, proof в11.
+
+Quiet0007 proof:47 oldtables/cache13/4reportSQL preserved,current8/repeat[]. Genuine pre0007 fixture0600/source744125 и exact13raw replay/32scoped projections/5HTTP pinned docs unchanged. Runtime89940/PID15941 на4310 готов DB/schemaok; workerOFF, demo сохранены. Vite4311 transformedGraphView содержит новый arranging Save guard. Новых Claude calls нет: fallback Codex high до конца, reset07:50 позже deadline07:18:10. Последние15 минут — стабильный checkpoint.
+
+Следующий P4b по [18](18-p4b-contract.md) пока draft; source только после root GO/checkpoint. До0008 снять genuine ordinary TaskDto без startDate, с dueDate, explicit personal/project baseline и rawcreate/update/cache bytes; nested прежние13 сохранить. Full P4/MVP/Auth/privateACL/production не достигнуты.
 
 ## Матрица P2a и оставшиеся границы
 
