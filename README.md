@@ -29,6 +29,7 @@ Worker штатно остановлен и сейчас OFF; шесть stale j
 - [Контракт P5a: ограниченный импорт CSV](docs/19-p5-import-contract.md)
 - [Контракт P5b: локальный MCP](docs/20-p5b-mcp-contract.md)
 - [Передача локального пилота](docs/21-local-pilot-handoff.md)
+- [English UI и добавление языка через JSON](docs/23-localization-and-ux.md#add-a-language)
 - [Локальный worker: запуск, health и остановка](apps/worker/README.md)
 - [Безопасный перезапуск сохранённой локальной базы и приложения](docs/26-local-runtime.md)
 - [Чистый синтетический пример Workloom Studio](docs/27-synthetic-demo.md)
@@ -219,6 +220,22 @@ NODE_ENV=production npm start   # собранный API и SPA на http://127.
 - `npm run test:unit` — unit-тесты contracts, domain, db, API и worker, затем jsdom-тесты `@workloom/web`. У `@workloom/ui` отдельного набора тестов нет.
 - `npm run test:integration` сначала выполняет полную сборку (`npm run build`), потому что набор включает smoke собранного API и ассетов SPA. `.env` не читается: экспортируйте отдельный `TEST_DATABASE_URL=postgres://<user>:<password>@127.0.0.1:<port>/workloom_test`. Имя базы должно начинаться с `workloom_test` или заканчиваться на `_test` и не совпадать с `DATABASE_URL`.
 - Браузерные тесты: один раз `npm run test:e2e:install`, затем `npm run test:e2e`. Playwright сам запускает `npm run dev` (или использует уже запущенный) и открывает `http://127.0.0.1:4311`. PostgreSQL он не поднимает: база должна быть запущена, мигрирована и заполнена демо-данными.
+
+## Добавление языка
+
+1. Скопируйте нужные JSON-файлы пространств имён из `apps/web/src/i18n/locales/en/` в каталог с корректным языковым тегом, например `apps/web/src/i18n/locales/de/` или `apps/web/src/i18n/locales/fr-CA/`.
+2. Переведите значения, сохранив английские ключи, имена `{{parameter}}` и форму сообщений. Для множественного числа сохраните объект с обязательной формой `other`; остальные формы выбираются по правилам языка. HTML не добавляйте. Перевод может быть частичным: пропущенные сообщения берутся из English-каталога.
+3. Из корня репозитория на Node.js 24 проверьте каталоги, обнаружение файлов и типы:
+
+```sh
+npm run check:localization
+npm run test --workspace @workloom/web -- src/i18n/LocalizationManager.test.tsx src/i18n/catalog-discovery.test.ts src/i18n/audit.test.ts
+npm run typecheck --workspace @workloom/web
+```
+
+Реестр языков и импорты менять не требуется: язык обнаруживается по JSON-файлам. Чтобы добавить его в собранное приложение, выполните отдельную `npm run build` и перезагрузите вкладку. При двух и более включённых в сборку языках переключатель появится в верхней панели автоматически. English остаётся языком по умолчанию до явного выбора пользователя.
+
+Подробности о fallback, параметрах и проверке переключения — в [руководстве по локализации](docs/23-localization-and-ux.md#add-a-language).
 
 ## Команды
 
