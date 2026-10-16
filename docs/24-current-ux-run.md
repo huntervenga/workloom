@@ -48,7 +48,13 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 09:14:38.684 | Third checkpoint `bbc0e53` runtime | Ownedrestart preserves55tables; newAPIreads/14assets pass |
 | 09:21:57.320–09:22:04.033 | Comments/D1 visual proof | Six GET-only initial-result/literal-discussion frames; no Studio comments added |
 | 09:22:24.178 | Third checkpoint window complete | First complete8/8 pass18.0s, all14assets unchanged, doctor owned/ready; source-only D2/prefs separate |
-| 09:34:10.221–09:34:11.526 | Fresh pre-preferences backup | Actual owned-copy restore preserves55tables/17,177rows +12migrationrows; exact copy removed; MAIN0012 not yet applied |
+| 09:34:10.221–09:34:11.526 | Fresh pre-preferences backup | Actual owned-copy restore preserves55tables/17,177rows +12migrationrows; exact copy removed; separate MAIN0012 GO followed |
+| 09:43:15.248–09:43:17.444 | Reviewed MAIN0012 | Only additive preferences migration applied; all55 oldtables/17,177rows +12migrationrows unchanged, newtable empty |
+| 09:43:57.194 | Fourth runtime restart | All56 tables/17,177rows exact; owned/ready services,14assets frozen |
+| 09:44:52.266–09:44:54.863 | D2 compact plan geometry | All16 plans/foursemanticcolumns; desktopmedian55px/mobile95px, actualhours1287/1383px earlier; zero writes/errors/overflow |
+| 09:48:20.289 | Personal columns complete browser run |8/8 pass21.2s; prior attempts preserved and rapid Close→Week product race remains explicit |
+| 09:50:08.830–09:50:29.933 | Personal columns final frames | Four settled Studio GET-only table/chooser frames;13choices, zero writes/errors/overflow |
+| 09:54:03.906 | Fourth window released | Changed-flow regression6/6 pass22.9s; all14assets unchanged, doctor owned/ready; no next-source builds by QA |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 

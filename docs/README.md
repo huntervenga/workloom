@@ -31,11 +31,18 @@
 | [25 UX verification](25-ux-verification.md) | New browser, locale, runtime and demo evidence; initial failures retained |
 | [26 Safe local runtime](26-local-runtime.md) | Existing durable cluster doctor/start/stop, identity guards and recovery limits |
 | [27 Clean synthetic workspace](27-synthetic-demo.md) | Workloom Studio entry links, additive setup and exact replay rules |
+| [28 My tasks](28-my-tasks.md) | Current-actor cross-project inbox; bounded read and browser proof |
+| [29 Daily task editing](29-daily-task-editing.md) | Section quick add, explicit inline status/assignee/due saves and retained command drafts |
+| [30 Time context](30-time-context-ux.md) | Week/person navigation, separate report cohort and saved-row task links |
+| [31 Task discussion](31-task-comments.md) | Literal ordinary-task comments, trusted authors, lazy activity and exact retry |
+| [32 Personal task columns](32-personal-table-columns.md) | Own order/visibility, versioned reset, current-head retry and accepted local0012 proof |
+| [33 Task board](33-task-board.md) | Bounded status-board source contract; next compiled/browser gate remains separate |
+| [34 Single-tag task filter](34-task-tag-filter.md) | Source contract and isolated backend tests; next compiled/browser gate remains separate |
 
 Продуктовые требования находятся в 01. Документы 02–08 уточняют реализацию и этапность: весь командный пилот из 01 не должен появиться в первой локальной версии. Если конкретные DTO и физическая схема конфликтуют с продуктовым поведением, согласовать исправление до реализации, а не изменять требования молча.
 
 Состояние на 16 октября 2026 года: локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b/P5a/P5b. Доступны таблица задач и типизированные колонки, недельный план/freeze/факт, pinned отчёты, shared meetings и explicit attendance, конечные серии встреч с DST preview и отдельным materialization worker, current dependency graph с собственной раскладкой, date-only Gantt и атомарным review/apply обычных дат, ограниченный CSV import с исходниками и сверкой, локальный stdio MCP с собственными scoped credentials. Полный P1/P2/P3/P4, MVP и пилот не завершены. Pointer drag, Private ACL/Auth, полный импорт, остальные MCP tools/remote MCP, внешние календари и production остаются будущими.
 
-Точные раздельные gates, initial failures, исправления и checkpoints — в [11](11-implementation-progress.md); срок и политика моделей продолжающегося прогона — в [12](12-active-run.md). Quickstart — в корневом [README](../README.md), отдельный запуск worker — в [его README](../apps/worker/README.md). `npm run dev` запускает API+web; worker запускается отдельно после явной queue migration.
+Исторические gates и checkpoints — в [11](11-implementation-progress.md) и [12](12-active-run.md). Текущий отдельный UX-прогон — [24](24-current-ux-run.md), его фактические browser/runtime/data gates, initial failures и известные ограничения — [25](25-ux-verification.md). Quickstart — в корневом [README](../README.md), отдельный запуск worker — в [его README](../apps/worker/README.md). `npm run dev` запускает API+web; worker запускается отдельно после явной queue migration.
 
 Для продолжения читать 02,06,11 и контракт следующего bounded среза. Оставшиеся acceptance tables описывают целевой продукт, а не выполненные проверки. Для командного пилота дополнительно обязательны 07–08.

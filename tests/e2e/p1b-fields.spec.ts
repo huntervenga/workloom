@@ -90,14 +90,16 @@ async function editValue(page: Page, drawer: Locator, prefix: string, taskId: st
 }
 
 async function expectInsideTableViewport(locator: Locator) {
-  const rect = await locator.evaluate((element) => {
-    const box = element.getBoundingClientRect();
-    const clip = element.closest('table')?.parentElement?.getBoundingClientRect();
-    if (!clip) throw new Error('Missing table viewport.');
-    return { left: box.left, right: box.right, clipLeft: clip.left, clipRight: clip.right, viewport: innerWidth };
-  });
-  expect(rect.left).toBeGreaterThanOrEqual(rect.clipLeft - 1);
-  expect(rect.right).toBeLessThanOrEqual(Math.min(rect.clipRight, rect.viewport) + 1);
+  await expect(async () => {
+    const rect = await locator.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const clip = element.closest('table')?.parentElement?.getBoundingClientRect();
+      if (!clip) throw new Error('Missing table viewport.');
+      return { left: box.left, right: box.right, clipLeft: clip.left, clipRight: clip.right, viewport: innerWidth };
+    });
+    expect(rect.left).toBeGreaterThanOrEqual(rect.clipLeft - 1);
+    expect(rect.right).toBeLessThanOrEqual(Math.min(rect.clipRight, rect.viewport) + 1);
+  }).toPass({ timeout: 5_000 });
 }
 
 /** A point over the underlying drawer, outside the nested dialog, must hit its backdrop. */
@@ -186,7 +188,7 @@ test.describe('P1b desktop 1440', () => {
     const table = page.getByRole('main').getByRole('table');
     const estimate = table.getByRole('columnheader', { name: "Team estimate", exact: true });
     await expectInsideTableViewport(estimate);
-    await expectInsideTableViewport(table.locator('tfoot').getByRole('cell').last());
+    await expectInsideTableViewport(table.locator('tfoot td > span').first());
     await table.evaluate((element) => { if (element.parentElement) element.parentElement.scrollLeft = element.parentElement.scrollWidth; });
     for (const field of [text, number, boolean]) {
       const header = table.getByRole('columnheader', { name: field.name, exact: true });

@@ -152,7 +152,7 @@ async function expectEstimateInView(page: Page, title: string): Promise<void> {
     [`title of «${title}»`, row.getByRole('button', { name: title, exact: true })],
     ['estimate column header', table.getByRole('columnheader', { name: "Team estimate", exact: true })],
     [`estimate cell of «${title}»`, row.getByRole('cell').nth(await table.getByRole('columnheader', { name: 'Team estimate', exact: true }).evaluate(element => Array.from(element.parentElement?.children ?? []).indexOf(element)))],
-    ['estimate total', table.locator('tfoot').getByRole('cell').last()],
+    ['estimate total', table.locator('tfoot td > span').first()],
   ];
   for (const [name, target] of targets) {
     await expect(target, name).toBeVisible();
@@ -304,7 +304,7 @@ test.describe('desktop 1440', () => {
     await expect(taskTable(page)).toBeVisible();
 
     // Task through the table action and the create drawer.
-    await taskTable(page).getByRole('button', { name: "Add task without a section", exact: true }).click();
+    await main.getByRole('button', { name: "Add task", exact: true }).click();
     const createDrawer = page.getByRole('dialog', { name: "New task" });
     await createDrawer.getByLabel("Task name", { exact: true }).fill(title);
     await createDrawer.getByLabel("Description", { exact: true }).fill(description);
