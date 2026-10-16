@@ -64,9 +64,16 @@ for (const [name, viewport] of sizes) test.describe(`Graph blocker inspector ${n
     await page.keyboard.press('Escape'); await expect(drawer).toHaveCount(0); await expect(openLocal).toBeFocused();
     await page.keyboard.press('Escape'); await expect(inspector).toHaveCount(0); await expect(opener).toBeFocused();
     await depth.selectOption('1'); await expect(list.getByRole('listitem')).toHaveCount(3);
-    const rootRow = list.getByRole('listitem').filter({ has: page.getByRole('button', { name: root.title, exact: true }) });
-    await rootRow.locator('summary').click(); await rootRow.getByRole('button', { name: `Right: ${root.title}`, exact: true }).click();
-    await expect(graph.getByRole('button', { name: 'Save my layout', exact: true })).toBeEnabled();
+    // Preserve the original y0/y164 saved coordinates; only explicit automatic placement creates local moves.
+    expect(graphLayoutResponseSchema.parse(await (await request.get(f.prefix + layoutPath)).json()).data).toEqual(layout);
+    const saveLayout = graph.getByRole('button', { name: 'Save my layout', exact: true });
+    await expect(saveLayout).toBeDisabled();
+    await expect(graph.getByRole('region', { name: 'Dependency graph', exact: true })).toHaveCount(0);
+    const arrange = graph.getByRole('button', { name: 'Apply automatic layout', exact: true });
+    await expect(arrange).toBeEnabled(); await arrange.focus(); await arrange.press('Enter');
+    await expect(saveLayout).toBeEnabled();
+    expect(writes).toEqual([]);
+    expect(graphLayoutResponseSchema.parse(await (await request.get(f.prefix + layoutPath)).json()).data).toEqual(layout);
     await graph.getByRole('button', { name: 'Diagram', exact: true }).click();
     const canvas = graph.getByRole('region', { name: 'Dependency graph', exact: true });
     const nodes = canvas.locator('.react-flow__node'); await expect(nodes).toHaveCount(3);
@@ -75,14 +82,27 @@ for (const [name, viewport] of sizes) test.describe(`Graph blocker inspector ${n
       const rect = node.getBoundingClientRect(), button = node.querySelector<HTMLButtonElement>('button[aria-label^="View blockers ("]');
       if (!button) throw Error('Measured node must expose its native blocker control.');
       const control = button.getBoundingClientRect();
-      return { id: node.getAttribute('data-id'), transform: (node as HTMLElement).style.transform, x: rect.x, y: rect.y, width: rect.width, height: rect.height, button: { x: control.x, y: control.y, width: control.width, height: control.height, minHeightCss: getComputedStyle(button).minHeight } };
+      const text = [...node.querySelectorAll<HTMLElement>('button, p')].map(element => {
+        const range = document.createRange(); range.selectNodeContents(element);
+        return { tag: element.tagName, text: element.textContent, lineClamp: getComputedStyle(element).webkitLineClamp, clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, rectangles: [...range.getClientRects()].map(r => ({ left: r.left - rect.left, right: r.right - rect.left, top: r.top - rect.top, bottom: r.bottom - rect.top })) };
+      });
+      return { text, id: node.getAttribute('data-id'), transform: (node as HTMLElement).style.transform, x: rect.x, y: rect.y, width: rect.width, height: rect.height, button: { x: control.x, y: control.y, width: control.width, height: control.height, minHeightCss: getComputedStyle(button).minHeight } };
     }));
     await expect.poll(async () => (await measure()).every(n => n.width > 0 && n.height > 0)).toBe(true);
     const geometry = await measure();
-    await evidenceJson(info, 'graph-node-geometry.json', { geometry, representativeSpacing: { nodeHeight: 128, gap: 36 }, arbitrarySavedLayoutsCovered: false });
+    await evidenceJson(info, 'graph-node-geometry.json', { geometry, initialSavedSpacing: { nodeHeight: 128, gap: 36 }, layoutAction: 'Apply automatic layout in list-first state using measured content', arbitrarySavedLayoutsCovered: false });
     await page.screenshot({ path: info.outputPath(`graph-nodes-${name}.png`), fullPage: true });
-    // Inspect actual fit-scaled rectangles; CSS min-height is not a claim of 24 screen pixels.
+    // Inspect full content and actual fit-scaled rectangles after real measured automatic placement.
+    // CSS min-height is not a claim of 24 screen pixels; arbitrary saved positions may overlap.
+    const expectedNodes = [{ task: root, project: f.project, status: f.todo }, { task: local, project: f.project, status: f.todo }, { task: outside, project: external.project, status: external.todo }];
     for (const node of geometry) {
+      const expectedNode = expectedNodes.find(row => row.task.id === node.id); if (!expectedNode) throw Error('Unexpected graph node.');
+      expect(node.text[0]?.text).toBe(expectedNode.task.title);
+      expect(node.text.find(row => row.tag === 'P')?.text).toBe(`${expectedNode.project.name} · ${expectedNode.status.name}`);
+      for (const text of node.text) {
+        expect(text.lineClamp).toBe('none'); expect(text.scrollHeight).toBeLessThanOrEqual(text.clientHeight + 1);
+        expect(text.rectangles.every(r => r.left >= -1 && r.right <= node.width + 1 && r.top >= -1 && r.bottom <= node.height + 1)).toBe(true);
+      }
       expect(parseFloat(node.button.minHeightCss)).toBeGreaterThanOrEqual(24);
       expect(node.button.x).toBeGreaterThanOrEqual(node.x - 1); expect(node.button.y).toBeGreaterThanOrEqual(node.y - 1);
       expect(node.button.x + node.button.width).toBeLessThanOrEqual(node.x + node.width + 1);
@@ -114,6 +134,6 @@ for (const [name, viewport] of sizes) test.describe(`Graph blocker inspector ${n
     expect(projectDependencyPolicyResponseSchema.parse(await (await request.get(f.prefix + policyPath)).json()).data).toEqual(policy);
     expect(await f.task(root.id)).toEqual(root); expect(await f.task(local.id)).toEqual(local); expect(await external.task(outside.id)).toEqual(outside); expect(await external.task(deeper.id)).toEqual(deeper);
     expect(writes).toEqual([]); expect(errors).toEqual([]); expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
-    await evidenceJson(info, 'graph-inspector-proof.json', { geometry, reads, blockingRequests, writes, errors, edges, layout, representativeSpacing: { nodeHeight: 128, gap: 36 }, arbitrarySavedLayoutsCovered: false, browserActorSwitchCovered: false });
+    await evidenceJson(info, 'graph-inspector-proof.json', { geometry, reads, blockingRequests, writes, errors, edges, layout, initialSavedSpacing: { nodeHeight: 128, gap: 36 }, layoutAction: 'Apply automatic layout in list-first state using measured content', arbitrarySavedLayoutsCovered: false, browserActorSwitchCovered: false });
   });
 });
