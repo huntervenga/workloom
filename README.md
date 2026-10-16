@@ -4,13 +4,13 @@
 
 Создано 16 октября 2026 года. Сейчас здесь P0 и принятые ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b/P5a/P5b. P0 — цепочка React → Fastify → реальный PostgreSQL с синтетической локальной identity. P1a — проекты, секции, задачи и теги; P1b — типизированные колонки проекта, их значения и история; P2a — недельный план, фиксация, ручной факт и воспроизводимый план/факт; P2b — категории работы, отчёт по типам и быстрый недельный ввод из таблицы. Эти срезы реализованы в браузере, API, domain и PostgreSQL (подробнее ниже). Полный P1, MVP и командный пилот не завершены. Исторические проверки — в [журнале 11](docs/11-implementation-progress.md), актуальные проверки и границы текущего UX-прогона — в [журнале 25](docs/25-ux-verification.md).
 
-Текущий локальный UX дополнен English JSON-каталогами с обнаружением локалей, My tasks, быстрым добавлением и явным редактированием задач, сохранением недельного контекста, обсуждением задач и встреч, результатами отчётов до формы настройки и личным порядком/видимостью колонок, доской статусов и одним пересекающимся фильтром по тегу. Это ограниченные локальные возможности; сохранённые именованные виды, фильтры в настройках колонок и полный пилот не заявлены. Контракты — [23](docs/23-localization-and-ux.md), [28–38](docs/README.md), фактические проверки — [25](docs/25-ux-verification.md). Быстрый Close→Week проверен RED→GREEN. На собранном checkpoint `bafc9d6` с completion `20dd1ff` и My tasks lens `fd0fa07` приняты ограниченные completion, управление cutoff и applied URL lens; мобильное переполнение Board 284px исправлено, обе фактические ширины дают 0px глобального переполнения.
+Текущий ограниченный UX включает English JSON-каталоги, My tasks, явное редактирование задач, сохранённые в памяти task/hours/field drafts, недельный контекст, обсуждения, pinned отчёты, личные колонки, сворачивание секций, группировку по ответственному, applied-filter summaries и Board. Именованные виды и полный пилот остаются будущими. Контракты собраны в [карте документации](docs/README.md), фактические проверки и исходные неудачные попытки — в [25](docs/25-ux-verification.md). После подтверждённого ухода или reload черновики не восстанавливаются.
 
-Отдельный обычный worker действительно сохранил baseline после заданного deadline; браузерные планы и настройки отчёта сохранились. Worker штатно остановлен и сейчас OFF; шесть будущих stale jobs остаются в очереди. Применённая additive0013 и регистрация четырёх очередей имеют отдельные проверки сохранности данных. [Управляемый worker](docs/43-managed-local-worker.md) прошёл отдельный worker-only start/health/reuse/drain/stop в 11:23:26–11:26:16 UTC; все app identities и 42 jobs сохранены, 59 из 60 таблиц точны, изменился только ожидаемый discovery cursor. Общий stop/start с worker и OS reboot не проверены.
+Последний проверенный собранный checkpoint — `6ff13df`: normal build/types/lint всех workspaces прошли; backend — 1307 тестов в 77 наборах, web — 841 тест в 116 наборах. Реальные PostgreSQL-проверки прошли 45 тестов в 5 наборах изолированных баз; основная база сохранена без изменений. Предыдущий восьмисценарный desktop/mobile gate `223b708` принял grouping, filter chips и восстановление focus, включая прежний Board RED. Текущий gate Graph/inline Team estimate прошёл четыре из четырёх сценариев за 15,5 секунды после исправления только селекторов тестового harness; исходная попытка и настоящий прежний Graph overlap RED сохранены отдельно. Явная автоматическая раскладка прошла измерение полного текста и отсутствия пересечений; прежние сохранённые координаты могут пересекаться, а экранный размер Graph controls зависит от zoom. Это не общая приёмка мобильного удобства. Локализованный field display проверен в source и normal build; отдельная locale browser-проверка не заявлена. Серверный due sort проверен в PostgreSQL и после restart — реальными API pagination/filter checks; пользовательский sort control не входит в этот проверенный checkpoint. Точные границы — [50–57](docs/README.md) и [25](docs/25-ux-verification.md).
 
-Принятый checkpoint `634aac8` прошёл шесть desktop/mobile browser cases для inline title, иерархии и Board time context, а также отдельные два реальных native Stay/dismissed-reload cases; физический IME не проверен. Текущий собранный checkpoint — `3caa48f`: сохранённые task/hours/field drafts, сворачивание секций, person lens сохранённого work-type отчёта и компактные Board cards. Полные build/types/lint и 732 web cases / 106 suites прошли; новый gate из восьми browser cases открыт и пока не принят. Подтверждённая потеря keyboard focus на Board требует исправления. Контракты и точные границы — [44–49](docs/README.md), результаты отдельных попыток — [25](docs/25-ux-verification.md). Черновики хранятся в памяти и не восстанавливаются после подтверждённого ухода или reload. Новые assignee grouping и applied-filter chips находятся в source development и ещё не имеют compiled/browser acceptance.
+Worker штатно остановлен и сейчас OFF; шесть stale jobs сохранены. Реальный cutoff job и [managed worker-only lifecycle](docs/43-managed-local-worker.md) имеют отдельные проверки. Контролируемый helper stop/start PostgreSQL, API и web прошёл в 13:08 UTC: сохранены cluster/database identity, все 60 public tables и 24 113 строк, полный schema/catalog, queue data с 42 jobs и четырьмя очередями, 14 served assets и собранный backend. OS reboot не заявлен. Синтетическая база хранится в игнорируемой `.local/postgres/data` на `127.0.0.1:55432`; актуальные runtime и сохранность записываются отдельно в [25](docs/25-ux-verification.md).
 
-Реальная сохранённая вкладка `634aac8` при переходе через сборку `3caa48f` получила прежний lazy-chunk 404, показала **Workloom has been updated** и только после явного Refresh tab открыла новую сборку с тем же полным URL. Этот отдельный recovery gate прошёл в 11:59:46.885 UTC: ноль writes, page errors и global overflow; автоматического reload не было. Полный перенос Asana, Auth/private ACL, внешние календари, полный MCP, production и командный пилот остаются отдельными этапами.
+Отдельный настоящий old-tab gate `634aac8`→`3caa48f` сохранил исходный lazy-chunk 404: вкладка показала **Workloom has been updated**, а явный Refresh tab загрузил новую сборку с тем же полным URL без автоматического reload. Для текущего checkpoint этот gate не повторяли. Физический IME, authenticated flows, Auth/private ACL, полный перенос Asana, внешние календари, полный MCP, production и командный пилот остаются отдельными этапами.
 
 ## Начать здесь
 
@@ -44,6 +44,14 @@
 - [Компактные Board cards](docs/47-compact-board-cards.md)
 - [Сохранённые hours drafts и защита ухода](docs/48-retained-hours-drafts.md)
 - [Сохранённые field drafts и защита ухода](docs/49-retained-field-drafts.md)
+- [Группировка загруженных задач по ответственному](docs/50-assignee-grouping.md)
+- [Видимые summaries активных фильтров](docs/51-active-filter-summaries.md)
+- [Восстановление focus после завершения задачи](docs/52-completion-focus-recovery.md)
+- [Graph: inspector блокирующих задач](docs/53-graph-blocker-inspector.md)
+- [Inline Team estimate общего пакета](docs/54-inline-team-estimate.md)
+- [Локализованное отображение пользовательских полей](docs/55-custom-field-localized-display.md)
+- [Graph: раскладка по измеренным размерам](docs/56-measured-graph-geometry.md)
+- [Серверная сортировка задач по сроку](docs/57-server-task-due-sort.md)
 
 ## Стек и границы
 
@@ -157,7 +165,7 @@ MCP запускается отдельным клиентом непосред�
 
 ### Текущий рабочий checkout
 
-В этом checkout игнорируемый `.env` (права 0600) уже указывает на временный синтетический кластер PostgreSQL 17.5, запущенный отдельно от репозитория (только `127.0.0.1:55432`, база `workloom_dev`). Это кластер конкретной задачи, а не production и не стандартная настройка. Пока он работает, достаточно:
+В этом checkout игнорируемый `.env` (права 0600) уже указывает на сохранённый синтетический кластер PostgreSQL 17.5 в игнорируемой `.local/postgres/data` (только `127.0.0.1:55432`, база `workloom_dev`). Это кластер конкретной задачи, а не production и не стандартная настройка. Пока он работает, достаточно:
 
 ```sh
 npm ci
@@ -195,7 +203,7 @@ npm run db:queue:migrate        # явная установка/проверка
 npm run start --workspace @workloom/worker
 ```
 
-Worker при старте только проверяет application/queue readiness и настройки; сам DDL не создаёт и drift не исправляет. Health — JSON logs `worker.health`/`worker.health_queue`; SIGTERM завершает работу с drain. Подробности и ограничения — [apps/worker/README](apps/worker/README.md). В текущем checkout после реального cutoff gate worker штатно остановлен и OFF; API/web и синтетические данные сохранены. Отдельный managed worker-only lifecycle также принят; [43](docs/43-managed-local-worker.md) описывает `start --worker`, `worker-start`, `worker-stop`, свежий doctor health и ещё не проверенный combined full stop/reboot. Plain `start` сохраняет уже запущенный owned worker, но не запускает новый.
+Worker при старте только проверяет application/queue readiness и настройки; сам DDL не создаёт и drift не исправляет. Health — JSON logs `worker.health`/`worker.health_queue`; SIGTERM завершает работу с drain. Подробности и ограничения — [apps/worker/README](apps/worker/README.md). В текущем checkout после реального cutoff gate worker штатно остановлен и OFF; API/web и синтетические данные сохранены. Отдельный managed worker-only lifecycle также принят; [43](docs/43-managed-local-worker.md) описывает `start --worker`, `worker-start`, `worker-stop`, свежий doctor health и ещё не проверенные общий lifecycle с активным worker и OS reboot. Plain `start` сохраняет уже запущенный owned worker, но не запускает новый.
 
 ### Проверка production-сборки
 
