@@ -224,4 +224,15 @@ Footer `ef5f5b0` keeps the loaded budget inside the table's visible width ([63](
 
 On compiled `35ec787`, the normal gates passed, including **959 web cases in 128 suites**. The seven native table cases passed in **22.7s** with the same guidance spec hash as the RED. Root viewed the scrolled screenshots and saw the budget and labels at the far right. The four real-409 personal-columns cases passed in **8.9s**. All 14 assets were byte-exact 15:23:11.235–15:24:45.908 UTC with the worker OFF.
 
-The read-only re-review found all three P3 findings resolved, with no new blocking issue. `35ec787` is the latest accepted checkpoint, and source is frozen. 403/503 and the direct reload race are untested natively. Root's work window is still open and is scheduled to end at 15:36:38 UTC. Details are in [25](25-ux-verification.md).
+The read-only re-review found all three P3 findings resolved, with no new blocking issue. `35ec787` is the latest accepted checkpoint, and source is frozen. 403/503 and the direct reload race were untested natively at that point. Details are in [25](25-ux-verification.md).
+
+Test-only `6099cea` then added a jsdom flow for the reload/pending-save race. Root's three personal-columns suites passed 35/35, and types and lint passed. There was no build, browser run or full-suite rerun ([25](25-ux-verification.md)).
+
+## Handoff — 16 October 2026
+
+- **Code.** The accepted compiled checkpoint is `35ec787`. The later commit `6099cea` changes tests only. Product source is frozen.
+- **Runtime.** The helper-owned PostgreSQL, API and Vite were ready at the last gate. The worker is **OFF**, and six stale jobs remain stored. Automatic deadline processing is therefore stopped ([43](43-managed-local-worker.md)).
+- **Team guide.** [66](66-team-quick-start.md) is current.
+- **Rules.** The working rules in `AGENTS.md` are unchanged. No extra evidence archives were made, and secrets, `.env`, `.local` and database contents stay excluded.
+- **Not done.** Real Auth, private ACL, a full Asana migration, external calendars, physical touch/IME and production are outside accepted scope. Native 403/503 and the reload race remain untested natively.
+- **Window.** The requested window is 07:36:38–15:36:38 UTC. Root records the final git, link and runtime checks and the actual completion separately.

@@ -724,8 +724,25 @@ The guidance spec is the same SHA256 `0fbbf6ed…294944ec48` as the final RED at
 
 **Runtime.** All 14 served assets stayed byte-identical **15:23:11.235–15:24:45.908 UTC**. Entry `/assets/index-Z8nwgbHh.js`, 793,243 bytes, SHA256 `36ac17970313a5412c24e107425b9b4448695abb313a450bae5d28c805b4648d`. Manifests: `/private/tmp/workloom-v16-green-assets-{before,after}.json`. Readiness reported database/schema ready, doctor reported owned/ready PG/API/Vite, and the worker stayed **OFF**. No restart, migration, seed, old-tab, worker or production action occurred. Only additive QA fixtures were written.
 
-**Re-review.** An independent Claude re-review of `5af56a8` read four source files, without execution or a browser. It found all three P3 findings resolved and no new blocking issue. It confirmed the bounded latest-held/error guard in source. A direct concurrent reload race was not tested, and no broader approval is claimed.
+**Re-review.** An independent Claude re-review of `5af56a8` read four source files, without execution or a browser. It found all three P3 findings resolved and no new blocking issue. It confirmed the bounded latest-held/error guard in source. At the time of the review, the direct concurrent reload race was untested; see test-only `6099cea` below. No broader approval is claimed.
 
 **Outcome.** Compiled `35ec787` is the latest accepted checkpoint, and source is frozen with no further product changes planned. No extra archive copies were made; tests, traces and screenshots stay at their original paths, and the historical V12 archive is unchanged.
 
-**Session.** At the time of writing (about 15:27 UTC), root's work window is still open; it is scheduled to end at 15:36:38 UTC. This record makes no claim about the end of that window.
+**Session.** The requested work window is 07:36:38–15:36:38 UTC. Root's goal record holds the actual completion.
+
+### V17 test-only `6099cea`: reload/pending-save race in jsdom
+
+`PersonalColumnsRecovery.test.tsx` adds one deterministic user flow, with no production change:
+
+1. A reload GET is held.
+2. The user saves, and the save stays pending.
+3. The GET then returns a new head.
+4. The pending command and the draft's original revision are retained.
+5. The PUT loses its ACK.
+6. Retry sends exactly the same key and body.
+
+The author ran the recovery suite: 14/14 passed. Their first attempt had a wrong Tags checkbox expectation, which was fixed in the test only. No RED was observed against a removed production guard.
+
+Root ran the three personal-columns suites: 35/35 passed in 7.61s. Web types and targeted lint also passed. Logs: `/private/tmp/workloom-v17-column-race-focused.log`, `/private/tmp/workloom-v17-web-types.log`, `/private/tmp/workloom-v17-lint.log`.
+
+There was no build, browser run, backend rerun or full-suite rerun for `6099cea`. The 959-case full web count and the 11 native passes belong to compiled `35ec787` and are not restated as a 960-case suite. The race now has jsdom coverage only; it is still untested natively. A lost ACK arriving before the reload reply is not covered separately.
