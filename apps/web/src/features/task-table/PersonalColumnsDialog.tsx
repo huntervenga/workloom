@@ -36,8 +36,8 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
   const frozen = c.frozen || !c.query.data || !projectColumns || Boolean(catalogError);
   // A definitive rejection or failed post-save head read must stay visible after close, including views without the trigger.
   const closedFailure = !c.open && c.held === null && (c.command.error !== null || c.head === 'failed');
-  // Any command error means that command was not saved; a denied head read alone says nothing about an acknowledged save.
-  const closedFailureKey = c.denied ? c.command.error ? 'taskTable.personalColumns.collapsedDenied' : 'taskTable.personalColumns.unavailableView' : conflict ? 'taskTable.personalColumns.collapsedConflict' : c.command.error ? 'taskTable.personalColumns.collapsedFailed' : 'taskTable.personalColumns.collapsedHeadFailed';
+  // Access is checked before replay, so a denied retry of an unconfirmed save may follow a committed first write: denial copy stays neutral.
+  const closedFailureKey = c.denied ? 'taskTable.personalColumns.unavailableView' : conflict ? 'taskTable.personalColumns.collapsedConflict' : c.command.error ? 'taskTable.personalColumns.collapsedFailed' : 'taskTable.personalColumns.collapsedHeadFailed';
   const deniedError = unavailable(c.query.error) ? c.query.error : c.command.error;
   useLayoutEffect(() => { const key = focusAfterMove.current; if (key) { focusAfterMove.current = null; const primary = refs.current.get(key); const opposite = key.endsWith(':-1') ? `${key.slice(0, -3)}:1` : `${key.slice(0, -2)}:-1`; (primary && !primary.disabled ? primary : refs.current.get(opposite))?.focus(); } });
   const reload = async () => { await onReloadCatalog(); await c.reload(); };
@@ -85,7 +85,7 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
         {c.command.uncertain ? <Button size="sm" variant="primary" disabled={c.command.pendingCommand !== null || c.denied} onClick={() => c.command.retryUncertain()}>{t('taskTable.personalColumns.retry')}</Button> : <Button size="sm" variant="primary" disabled={frozen || conflict || !c.draft || Boolean(result?.invalidRefs.length) || Boolean(result?.limitExceeded)} onClick={() => c.save(c.draft?.columns === null ? null : choices)}>{t('taskTable.personalColumns.save')}</Button>}
         <Button size="sm" disabled={frozen} onClick={() => c.setDraft(null)}>{t('taskTable.personalColumns.reset')}</Button>
         <Button size="sm" variant="ghost" disabled={c.held !== null} onClick={c.discard}>{t('taskTable.personalColumns.discard')}</Button>
-        {conflict || c.head === 'failed' || c.denied ? <Button size="sm" disabled={c.held !== null || c.query.isFetching} onClick={() => void reload()}>{t('taskTable.personalColumns.reload')}</Button> : null}
+        {conflict || c.head === 'failed' || c.denied ? <Button size="sm" disabled={c.query.isFetching} onClick={() => void reload()}>{t('taskTable.personalColumns.reload')}</Button> : null}
         <Button size="sm" variant="ghost" onClick={() => c.setOpen(false)}>{t('taskTable.personalColumns.close')}</Button>
       </div>
     </DialogShell>

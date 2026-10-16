@@ -16,7 +16,6 @@ const pending = 'Your column settings are still being saved.';
 const unknown = 'Your column save is unconfirmed. Open Columns to retry the original settings.';
 const conflictCopy = 'Your column changes were not saved because your settings changed elsewhere. Review them to reload and continue.';
 const failedCopy = 'Your column changes were not saved. Review them to continue.';
-const deniedCopy = 'Your column changes were not saved. Column settings are unavailable with your current access.';
 const headCopy = 'Current column settings could not be refreshed. Review them and reload before saving again.';
 const accessCopy = 'Column settings are unavailable with your current access.';
 const refreshingCopy = 'Refreshing the current column settings…';
@@ -84,7 +83,7 @@ describe('closed personal-column save recovery outside Table', () => {
     await holdSaveThenLeaveTable(ui);
     await act(async () => response.resolve(failure(403, 'FORBIDDEN', 'private settings')));
     await waitFor(() => expect(ui.controller().denied).toBe(true));
-    expect(screen.getByRole('status')).toHaveTextContent(deniedCopy);
+    expect(screen.getByRole('status')).toHaveTextContent(accessCopy); expect(screen.getByRole('status')).not.toHaveTextContent(/not saved/i);
     expect(screen.queryByText('private settings')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Outside QA focus' })).toHaveFocus();
     const reads = ui.reads();
@@ -94,7 +93,7 @@ describe('closed personal-column save recovery outside Table', () => {
     await ui.user.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(ui.controller().denied).toBe(true);
     await ui.user.keyboard('{Escape}');
-    expect(screen.getByRole('status')).toHaveTextContent(deniedCopy);
+    expect(screen.getByRole('status')).toHaveTextContent(accessCopy);
     expect(screen.getByRole('button', { name: 'Review columns' })).toBeInTheDocument();
     expect(ui.writes()).toBe(1); expect(ui.reads()).toBe(reads);
   });
@@ -142,7 +141,7 @@ describe('closed personal-column save recovery outside Table', () => {
     expect(ui.controller().denied).toBe(true); expect(ui.controller().command.error).toBeNull(); expect(ui.controller().saveConfirmed).toBe(true);
     const banner = screen.getByRole('status');
     expect(banner).toHaveTextContent(accessCopy);
-    for (const copy of [deniedCopy, headCopy, failedCopy, 'not saved']) expect(banner).not.toHaveTextContent(copy);
+    for (const copy of [headCopy, failedCopy, 'not saved']) expect(banner).not.toHaveTextContent(copy);
     expect(screen.queryByText('private settings')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Outside QA focus' })).toHaveFocus();
     const reads = ui.reads();
@@ -163,7 +162,7 @@ describe('closed personal-column save recovery outside Table', () => {
     await act(async () => lose());
     await waitFor(() => expect(ui.controller().command.uncertain).not.toBeNull());
     expect(screen.getByRole('status')).toHaveTextContent(unknown);
-    for (const copy of [conflictCopy, failedCopy, deniedCopy, headCopy]) expect(screen.queryByText(copy)).not.toBeInTheDocument();
+    for (const copy of [conflictCopy, failedCopy, accessCopy, headCopy]) expect(screen.queryByText(copy)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Resume column save' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Review columns' })).not.toBeInTheDocument();
     expect(ui.writes()).toBe(1);
@@ -213,7 +212,7 @@ it('shows the current command denial rather than an older unrelated head-read fa
   expect(screen.queryByLabelText('Tags')).not.toBeInTheDocument();
   for (const text of ['private settings', 'internal read failure']) expect(screen.queryByText(text)).not.toBeInTheDocument();
   await ui.user.keyboard('{Escape}');
-  expect(screen.getByRole('status')).toHaveTextContent(deniedCopy);
+  expect(screen.getByRole('status')).toHaveTextContent(accessCopy);
   expect(ui.writes()).toBe(1);
 });
 
@@ -239,4 +238,79 @@ it('describes the post-conflict Discard refresh without claiming a save, includi
   await ui.user.keyboard('{Escape}');
   expect(screen.getByRole('status')).toHaveTextContent(headCopy);
   expect(ui.writes()).toBe(1);
+});
+
+describe('explicit current-settings reload around retained and held column saves', () => {
+  it('keeps the retained draft revision through an ordinary read retry so another tab still gets an honest 409', async () => {
+    let current = head(1, [title]); let failRead = false;
+    const ui = example({
+      [`GET ${path}`]: () => failRead ? failure(503, 'UNAVAILABLE', 'internal read failure') : ok(current),
+      [`PUT ${path}`]: ({ body }) => (body as { expectedRevision: number }).expectedRevision === current.revision ? ok(current = head(current.revision + 1, [title])) : failure(409, 'REVISION_CONFLICT', 'private preference internals'),
+    });
+    await waitFor(() => expect(ui.controller().query.isSuccess).toBe(true));
+    await ui.user.click(screen.getByRole('button', { name: 'Columns' })); await ui.user.click(screen.getByLabelText('Tags'));
+    expect(ui.controller().draft?.expectedRevision).toBe(1);
+    current = head(2, [title]); failRead = true;
+    await act(async () => { await ui.controller().query.refetch(); });
+    await waitFor(() => expect(ui.controller().query.error).toMatchObject({ kind: 'unavailable' }));
+    failRead = false;
+    await ui.user.click(within(screen.getByRole('dialog', { name: 'My task columns' })).getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(ui.controller().query.data?.revision).toBe(2));
+    await waitFor(() => expect(ui.controller().query.isError).toBe(false));
+    expect(ui.controller().draft?.expectedRevision).toBe(1);
+    await ui.user.click(screen.getByRole('button', { name: 'Save columns' }));
+    await waitFor(() => expect(ui.controller().command.error).toMatchObject({ kind: 'conflict' }));
+    expect(ui.calls.find(call => call.method === 'PUT')?.body).toMatchObject({ expectedRevision: 1 });
+    // Only the confirmed conflict rebases the retained draft onto the explicitly reloaded head.
+    await ui.user.click(screen.getByRole('button', { name: 'Reload and review' }));
+    await waitFor(() => expect(ui.controller().command.error).toBeNull());
+    expect(ui.controller().draft?.expectedRevision).toBe(2); expect(ui.writes()).toBe(1);
+  });
+
+  it('reloads a denied current-settings read while an unconfirmed save is held, then retries the exact original command', async () => {
+    let lose: () => void = () => undefined; let puts = 0; let readDenied = false;
+    const first = new Promise<Response>((_resolve, reject) => { lose = () => reject(new TypeError('Failed to fetch')); });
+    const ui = example({ [`GET ${path}`]: () => readDenied ? failure(403, 'FORBIDDEN', 'private settings') : ok(head(5, [title])), [`PUT ${path}`]: () => ++puts === 1 ? first : ok(head(6, [title])) });
+    await waitFor(() => expect(ui.controller().query.isSuccess).toBe(true));
+    await ui.user.click(screen.getByRole('button', { name: 'Columns' }));
+    await ui.user.click(screen.getByLabelText('Tags')); await ui.user.click(screen.getByRole('button', { name: 'Save columns' }));
+    await waitFor(() => expect(ui.controller().held).not.toBeNull());
+    await act(async () => lose());
+    await waitFor(() => expect(ui.controller().command.uncertain).not.toBeNull());
+    readDenied = true; await act(async () => { await ui.controller().query.refetch(); });
+    await waitFor(() => expect(ui.controller().denied).toBe(true));
+    const held = ui.controller().command.uncertain; const draft = ui.controller().draft;
+    readDenied = false;
+    const reload = screen.getByRole('button', { name: 'Reload and review' });
+    expect(reload).toBeEnabled();
+    await ui.user.click(reload);
+    await waitFor(() => expect(ui.controller().denied).toBe(false));
+    expect(ui.controller().command.uncertain).toBe(held); expect(ui.controller().draft).toBe(draft);
+    expect(ui.controller().draft?.expectedRevision).toBe(5); expect(ui.writes()).toBe(1);
+    await ui.user.click(screen.getByRole('button', { name: 'Retry original columns' }));
+    await waitFor(() => expect(ui.controller().held).toBeNull());
+    const [sent, resent] = ui.calls.filter(call => call.method === 'PUT');
+    expect(resent?.headers.get('Idempotency-Key')).toBe(sent?.headers.get('Idempotency-Key'));
+    expect(resent?.body).toEqual(sent?.body); expect(ui.writes()).toBe(2);
+  });
+
+  it('uses neutral access copy, never a not-saved claim, when an unconfirmed save is retried and then denied', async () => {
+    let lose: () => void = () => undefined; let puts = 0;
+    const first = new Promise<Response>((_resolve, reject) => { lose = () => reject(new TypeError('Failed to fetch')); });
+    const ui = example({ [`GET ${path}`]: () => ok(head(4, [title])), [`PUT ${path}`]: () => ++puts === 1 ? first : failure(403, 'FORBIDDEN', 'private settings') });
+    await holdSaveThenLeaveTable(ui);
+    await act(async () => lose());
+    await waitFor(() => expect(ui.controller().command.uncertain).not.toBeNull());
+    const draft = ui.controller().draft; expect(draft).not.toBeNull();
+    await ui.user.click(screen.getByRole('button', { name: 'Resume column save' }));
+    await ui.user.click(screen.getByRole('button', { name: 'Retry original columns' }));
+    await waitFor(() => expect(ui.controller().denied).toBe(true));
+    expect(ui.controller().command.uncertain).toBeNull(); expect(ui.controller().draft).toBe(draft);
+    expect(screen.queryByText(/not saved/i)).not.toBeInTheDocument();
+    await ui.user.keyboard('{Escape}');
+    const banner = screen.getByRole('status');
+    expect(banner).toHaveTextContent(accessCopy); expect(banner).not.toHaveTextContent(/not saved/i);
+    expect(screen.queryByText('private settings')).not.toBeInTheDocument();
+    expect(ui.writes()).toBe(2);
+  });
 });

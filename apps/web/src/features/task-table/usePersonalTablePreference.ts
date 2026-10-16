@@ -1,6 +1,6 @@
 import type { ColumnChoice, UpdatePersonalTablePreferenceInput } from '@workloom/contracts';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { isUuid } from '../../lib/format';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
@@ -36,6 +36,9 @@ export function usePersonalTablePreference(actorId: string, workspaceId: string,
     },
   });
   const held = command.pendingCommand ?? command.uncertain;
+  // Read after an awaited head fetch, so a command that started or settled meanwhile is never reset or rebased.
+  const live = useRef({ held, error: command.error });
+  useLayoutEffect(() => { live.current = { held, error: command.error }; });
   const denied = unavailable(query.error) || unavailable(command.error);
   const frozen = held !== null || head !== 'idle' || denied;
   const setDraft = (columns: ColumnChoice[] | null) => {
@@ -51,12 +54,17 @@ export function usePersonalTablePreference(actorId: string, workspaceId: string,
     if (conflicted) void refreshHead();
   };
   const reload = async () => {
-    if (held) return;
+    // Only a confirmed conflict, captured before the read, proves the retained draft's base is stale.
+    const before = command.error;
+    const conflicted = before instanceof ApiError && before.kind === 'conflict';
     const result = await query.refetch();
     if (!result.isSuccess) return;
+    setHead('idle');
+    // The read is always allowed; a pending or unconfirmed command keeps its draft, body and key.
+    if (live.current.held || live.current.error !== before) return;
     const current = draftRef.current;
-    if (current) { const next = { ...current, expectedRevision: result.data.revision }; draftRef.current = next; setDraftState(next); }
-    setHead('idle'); command.reset();
+    if (conflicted && current) { const next = { ...current, expectedRevision: result.data.revision }; draftRef.current = next; setDraftState(next); }
+    command.reset();
   };
   const save = (columns: ColumnChoice[] | null) => {
     if (held || head !== 'idle' || denied || !query.data || command.error instanceof ApiError && command.error.kind === 'conflict') return;

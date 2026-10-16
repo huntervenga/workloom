@@ -140,7 +140,6 @@
     "resumeSave": "Resume column save",
     "collapsedConflict": "Your column changes were not saved because your settings changed elsewhere. Review them to reload and continue.",
     "collapsedFailed": "Your column changes were not saved. Review them to continue.",
-    "collapsedDenied": "Your column changes were not saved. Column settings are unavailable with your current access.",
     "collapsedHeadFailed": "Current column settings could not be refreshed. Review them and reload before saving again.",
     "reviewColumns": "Review columns"
   },
