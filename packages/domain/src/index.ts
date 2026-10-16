@@ -136,3 +136,6 @@ export { createMyTasksApplication } from './my-tasks/service.js';
 export { createTaskCommentsApplication } from './task-comments/service.js';
 export type { TaskCommentsApplication } from './task-comments/application.js';
 export type { TaskCommentAnchor, TaskActivityAnchor, TaskTimelineCursor, CommentTarget, TaskCommentsRepository, TaskCommentsWriteScope, TaskCommentsUnitOfWork, TaskCommentsTools } from './task-comments/ports.js';
+export { createPersonalTablePreferenceApplication } from './table-preferences/service.js';
+export type { PersonalTablePreferenceApplication } from './table-preferences/application.js';
+export type { PersonalTablePreferenceRepository, PersonalTablePreferenceWriteScope, PersonalTablePreferenceUnitOfWork, PersonalTablePreferenceTools } from './table-preferences/ports.js';

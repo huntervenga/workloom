@@ -1,3 +1,6 @@
+import { PersonalColumnsDialog } from '../features/task-table/PersonalColumnsDialog';
+import { reconcilePersonalColumns, tableColumnId } from '../features/task-table/personalColumns';
+import { usePersonalTablePreference } from '../features/task-table/usePersonalTablePreference';
 import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/task-comments';
 import { ProjectActions } from '../features/projects/ProjectActions';
 import { weeklyPlanningHref } from '../features/planning/navigation';
@@ -22,7 +25,6 @@ import { useMeetingWorkspace } from '../features/meetings/useMeetingWorkspace';
 import { usePlanningPeriodsQuery } from '../features/planning/queries';
 import type {
   MembershipDto,
-  ProjectColumnsDto,
   ProjectDto,
   SectionDto,
   TaskDto,
@@ -89,19 +91,6 @@ interface FieldColumn {
   width: number;
 }
 
-/** Visible columns of active fields in the shared settings' order; settings without a known field are skipped. */
-function visibleFieldColumns(definitions: readonly TaskFieldDefinitionDto[], settings: ProjectColumnsDto): FieldColumn[] {
-  const activeById = new Map(
-    definitions.filter((field) => field.archivedAt === null).map((field) => [field.id.toLowerCase(), field]),
-  );
-  return settings.columns
-    .filter((column) => column.visible)
-    .sort((a, b) => a.position - b.position)
-    .flatMap((column) => {
-      const field = activeById.get(column.fieldId.toLowerCase());
-      return field === undefined ? [] : [{ field, width: column.width }];
-    });
-}
 
 function fieldValueKey(taskId: string, fieldId: string): string {
   return `${taskId.toLowerCase()}:${fieldId.toLowerCase()}`;
@@ -184,6 +173,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const statuses = useStatusesQuery(actorId, workspace.id, project.id);
   const members = useMembershipsQuery(actorId, workspace.id);
   const tags = useTagsQuery(actorId, workspace.id);
+  const personalColumns = usePersonalTablePreference(actorId, workspace.id, project.id, members.data?.find(member => member.userId === actorId)?.id ?? '');
   // Owned here so that closing the drawer keeps uncertain commands and drafts.
   const commands = useTaskCommands(actorId, workspace.id);
   const commentsController = useTaskCommentsWorkspace(actorId, workspace.id);
@@ -222,7 +212,6 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const search = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
   const [searchParams, setSearchParams] = useSearchParams();
   const taskId = searchParams.get('task');
-  const columnPreset = searchParams.get('columns') === 'all' ? 'expanded' : 'compact';
   const graphMode = searchParams.get('view') === 'graph';
   const ganttMode = searchParams.get('view') === 'gantt';
   const importMode = searchParams.get('view') === 'import';
@@ -244,11 +233,6 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const canManageFields = (workspace.role === 'owner' || workspace.role === 'admin') && project.archivedAt === null;
   const canManageImports = workspace.role === 'owner' || workspace.role === 'admin';
 
-  // Errors win over loaded data, so a denied refetch hides the custom columns.
-  const fieldColumns =
-    fieldDefinitions.isSuccess && projectColumns.isSuccess
-      ? visibleFieldColumns(fieldDefinitions.data, projectColumns.data)
-      : [];
   // Values are requested, in batches, only for the tasks the table shows and only while a custom column is visible.
   const shownTasks = useMemo(() =>
     tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [],
@@ -267,11 +251,26 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     onOpenMeeting:(id,tab,selection)=>{setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;});},
     onLoadTasks: () => void tasks.fetchNextPage(), accessDenied: isAccessDenied(members.error) || isAccessDenied(tasks.error),
   });
+  const timeAvailable = Boolean(taskTime.context.periodId && members.data?.some(member => member.id === taskTime.context.workerId) && meetingPeriods.data?.some(period => period.id === taskTime.context.periodId));
+  const reconciledColumns = useMemo(() => reconcilePersonalColumns(personalColumns.query.data?.columns ?? null,
+    fieldDefinitions.isSuccess ? fieldDefinitions.data : [], projectColumns.isSuccess ? projectColumns.data : { workspaceId: workspace.id, projectId: project.id, revision: 1, columns: [] }, timeAvailable),
+    [personalColumns.query.data?.columns, fieldDefinitions.data, fieldDefinitions.isSuccess, projectColumns.data, projectColumns.isSuccess, workspace.id, project.id, timeAvailable]);
+  const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.map(tableColumnId), [reconciledColumns]);
+  const fieldColumns: FieldColumn[] = reconciledColumns.effectiveVisibleRefs.flatMap(ref => {
+    if (ref.kind !== 'field' || !fieldDefinitions.isSuccess || !projectColumns.isSuccess) return [];
+    const field = fieldDefinitions.data.find(item => item.id === ref.fieldId && item.projectId === project.id && item.workspaceId === workspace.id && item.archivedAt === null);
+    return field ? [{ field, width: projectColumns.data.columns.find(column => column.fieldId === field.id)?.width ?? 160 }] : [];
+  });
+  useEffect(() => {
+    if (!activeInline) return;
+    const column = activeInline.field === 'statusId' ? 'status' : activeInline.field === 'responsibleMembershipId' ? 'responsible' : 'dueDate';
+    if (!visibleColumnIds.includes(column)) setActiveInline(null);
+  }, [activeInline, visibleColumnIds]);
   const fieldValues = useProjectFieldValuesQuery(
     actorId,
     workspace.id,
     project.id,
-    fieldColumns.length > 0 ? shownTasks.map((task) => task.id) : [],
+    !personalColumns.denied && fieldColumns.length > 0 ? shownTasks.map((task) => task.id) : [],
   );
   const valueByKey = new Map<string, TaskFieldValueDto>(
     fieldValues.data.map((value) => [fieldValueKey(value.taskId, value.fieldId), value]),
@@ -413,13 +412,13 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
-            <FieldManagerDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
+            <FieldManagerDialog triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             {writable ? <CreateSectionDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} trigger={<Button size="sm" variant="ghost"><FolderPlus size={16} aria-hidden="true" />{t('projects.projectPage.newSection')}</Button>} onCreated={section => setAnnouncement(message('projects.projectPage.sectionValueCreated', { p0: section.name }))} /> : null}
         </ProjectActions>
       </header>
 
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
-      {taskId === null && creating === null && (quickAddSection === undefined || graphMode || ganttMode || importMode) && (!activeInline || !shownTasks.some(task => task.id === activeInline.taskId)) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
+      {taskId === null && creating === null && (quickAddSection === undefined || graphMode || ganttMode || importMode) && (!activeInline || personalColumns.denied || graphMode || ganttMode || importMode || !shownTasks.some(task => task.id === activeInline.taskId) || !visibleColumnIds.includes(activeInline.field === 'statusId' ? 'status' : activeInline.field === 'responsibleMembershipId' ? 'responsible' : 'dueDate')) ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
       <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable} />
@@ -473,15 +472,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           {taskTime.controls}
           <div className="flex min-w-0 items-center gap-2">
             <div className="min-w-0 flex-1"><TaskFilters value={filters} onChange={setFilters} statuses={statuses.data} members={members.data} /></div>
-            <details className="relative shrink-0" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
-              <summary className="flex h-9 cursor-pointer list-none items-center rounded-lg border border-line bg-surface px-3 text-sm font-medium text-ink-soft hover:bg-canvas [&::-webkit-details-marker]:hidden">{t('projects.projectPage.viewSummary', { view: t(columnPreset === 'expanded' ? 'projects.projectPage.allColumns' : 'projects.projectPage.dailyView') })}</summary>
-              <fieldset className="absolute right-0 z-20 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-2 rounded-xl border border-line bg-surface p-4 shadow-lg">
-                <legend className="sr-only">{t('projects.projectPage.tableColumns')}</legend>
-                {(['compact', 'expanded'] as const).map(preset => <label key={preset} className="flex items-center gap-2 text-sm text-ink"><input type="radio" name="task-column-preset" checked={columnPreset === preset} onChange={() => setSearchParams(before => { const next = new URLSearchParams(before); if (preset === 'expanded') next.set('columns', 'all'); else next.delete('columns'); return next; })} />{t(preset === 'expanded' ? 'projects.projectPage.allColumns' : 'projects.projectPage.dailyView')}</label>)}
-                <p className="text-xs leading-relaxed text-muted">{t('projects.projectPage.columnPresetHelp', { count: customColumns.length })}</p>
-              </fieldset>
-            </details>
+            <PersonalColumnsDialog controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
           </div>
+          {personalColumns.query.isError && !personalColumns.denied ? <p role="status" className="text-xs text-amber-800">{t('taskTable.personalColumns.loadFailed')}</p> : null}
           {/* A custom field failure never hides the built-in table. */}
           {fieldsError ? (
             <QueryErrorState
@@ -492,7 +485,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               onRetry={() => void fieldsError.query.refetch()}
             />
           ) : null}
-          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : <TaskList
+          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
             onEditTaskField={startInline}
             draftTaskIds={new Set(commands.editSessions.current.keys())}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} task={task} field={field} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
@@ -506,8 +499,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             sections={sections.data}
             statuses={statuses.data}
             members={members.data}
-            columnPreset={columnPreset}
-            customColumns={[...taskTime.columns, ...(columnPreset === 'expanded' ? customColumns : [])]}
+            columnIds={visibleColumnIds}
+            customColumns={[...taskTime.columns, ...customColumns]}
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
@@ -577,7 +570,7 @@ interface TaskListProps {
   statuses: readonly TaskStatusDto[];
   members: readonly MembershipDto[];
   customColumns: readonly TaskTableCustomColumn[];
-  columnPreset: 'compact' | 'expanded';
+  columnIds: readonly string[];
   onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;
   renderTaskFieldEditor: NonNullable<ComponentProps<typeof TaskTable>['renderTaskFieldEditor']>;
   draftTaskIds: ReadonlySet<string>;

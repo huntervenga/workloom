@@ -54,6 +54,7 @@ function updateValue({ input }: UpdateTaskFieldVariables, base: TaskFieldDefinit
 }
 
 export interface FieldManagerDialogProps {
+  triggerLabel?: string;
   actorId: string;
   workspaceId: string;
   projectId: string;
@@ -65,7 +66,7 @@ export interface FieldManagerDialogProps {
  * and options of existing ones. Every write hook lives here, outside the dialog content, so closing
  * the dialog keeps a pending or unconfirmed write, its frozen form and the navigation guard.
  */
-export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage }: FieldManagerDialogProps) {
+export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage, triggerLabel }: FieldManagerDialogProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const fields = useTaskFieldsQuery(actorId, workspaceId, projectId);
@@ -161,7 +162,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage 
       trigger={
         <Button>
           <Columns3 size={16} aria-hidden="true" />
-          {t('fields.fieldManagerDialog.columns')}</Button>
+          {triggerLabel ?? t('fields.fieldManagerDialog.columns')}</Button>
       }
       open={open}
       onOpenChange={changeOpen}

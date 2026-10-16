@@ -1,3 +1,4 @@
+import type { ColumnChoice } from '@workloom/contracts';
 /**
  * Drizzle description of the P0, P1a and P1b schema. The executable source of truth is the
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
@@ -829,6 +830,7 @@ export const REQUIRED_TABLES = [
   'task_tags',
   'command_idempotency',
   'task_comments',
+  'personal_table_preferences',
   'task_field_definitions',
   'task_field_definition_versions',
   'task_field_options',
@@ -1351,4 +1353,18 @@ export const taskComments = pgTable('task_comments', {
   check('task_comments_body_length', sql`char_length(body) between 1 and 4000 and body ~ '[^[:space:]]'`),
   check('task_comments_author_label_length', sql`char_length(btrim(author_display_name_snapshot)) between 1 and 200`),
   check('task_comments_created_at_finite', sql`isfinite(created_at)`),
+]);
+
+/** Actor-owned display head; null remains a versioned instruction to follow current defaults. */
+export const personalTablePreferences = pgTable('personal_table_preferences', {
+  workspaceId: uuid('workspace_id').notNull(), projectId: uuid('project_id').notNull(), membershipId: uuid('membership_id').notNull(),
+  revision: integer('revision').notNull(), columns: jsonb('columns').$type<ColumnChoice[] | null>(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+}, table => [
+  primaryKey({ name: 'personal_table_preferences_pk', columns: [table.workspaceId, table.projectId, table.membershipId] }),
+  foreignKey({ name: 'personal_table_preferences_project_fk', columns: [table.workspaceId, table.projectId], foreignColumns: [projects.workspaceId, projects.id] }),
+  foreignKey({ name: 'personal_table_preferences_membership_fk', columns: [table.workspaceId, table.membershipId], foreignColumns: [memberships.workspaceId, memberships.id] }),
+  check('personal_table_preferences_revision', sql`revision >= 1`),
+  check('personal_table_preferences_time', sql`isfinite(updated_at)`),
+  check('personal_table_preferences_columns', sql`columns is null or public.workloom_valid_personal_table_columns(columns)`),
 ]);

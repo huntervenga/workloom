@@ -276,3 +276,22 @@ describe('TaskTable inline edit boundaries', () => {
     expect(onEditTaskField).not.toHaveBeenCalled();
   });
 });
+
+it('renders exact personal column order and keeps package totals independent of estimate position', () => {
+  const custom = { id: 'custom-note', label: 'Stored custom label', width: 160, renderCell: () => 'Stored custom value' };
+  renderTable({ tasks: [launch, layout], columnIds: ['title', 'estimate', 'custom-note', 'responsible', 'status'], customColumns: [custom] });
+  expect(screen.getAllByRole('columnheader').map(header => header.textContent)).toEqual(['Task', 'Team estimate', 'Stored custom label', 'Assignee', 'Status']);
+  const cells = within(rowOf(launch.title)).getAllByRole('cell');
+  expect(cells).toHaveLength(5); expect(cells[1]).toHaveTextContent('10h'); expect(cells[2]).toHaveTextContent('Stored custom value');
+  expect(within(summaryRow()).getAllByRole('cell')).toHaveLength(1);
+  expect(within(summaryRow()).getByRole('cell')).toHaveAttribute('colspan', '5');
+  expect(within(summaryRow()).getByText('10h')).toBeInTheDocument();
+});
+
+it('keeps a one-column personal view usable without forcing the old full table width or hiding budget provenance', () => {
+  renderTable({ tasks: [launch], columnIds: ['title'] });
+  expect(screen.getAllByRole('columnheader')).toHaveLength(1);
+  expect(screen.getByRole('table')).toHaveStyle({ minWidth: '320px' });
+  expect(within(summaryRow()).getByRole('cell')).toHaveAttribute('colspan', '1');
+  expect(within(summaryRow()).getByText('Loaded team budget')).toBeInTheDocument();
+});

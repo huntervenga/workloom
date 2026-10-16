@@ -105,6 +105,8 @@ function defaultFieldRoute(request: FakeRequest): Response | null {
 /** Replaces fetch with a table of "METHOD /path" handlers; unknown routes answer 404. */
 export function installFakeApi(table: RouteTable): { calls: FakeRequest[] } {
   const calls: FakeRequest[] = [];
+  let currentActorId: string | null = null;
+  const currentMemberships = new Map<string, MembershipDto[]>();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const request: FakeRequest = {
@@ -117,7 +119,28 @@ export function installFakeApi(table: RouteTable): { calls: FakeRequest[] } {
     };
     calls.push(request);
     const handler = table[`${request.method} ${request.path}`];
-    if (handler) return handler(request);
+    if (handler) {
+      const response = await handler(request);
+      if (request.method === 'GET' && response.ok && (request.path === '/api/v1/me' || /\/memberships$/.test(request.path))) {
+        // Malformed-success fixtures still reach the real API parser unchanged.
+        const payload = await response.clone().json().catch(() => null) as { data?: { actor?: ActorDto } | MembershipDto[] } | null;
+        if (!payload || typeof payload !== 'object') return response;
+        if (request.path === '/api/v1/me') {
+          const data = payload.data as { actor?: ActorDto } | undefined;
+          currentActorId = typeof data?.actor?.id === 'string' ? data.actor.id.toLowerCase() : null;
+        } else {
+          const match = /^\/api\/v1\/workspaces\/([^/]+)\/memberships$/.exec(request.path);
+          if (match?.[1] && Array.isArray(payload.data)) currentMemberships.set(decodeURIComponent(match[1]).toLowerCase(), payload.data);
+        }
+      }
+      return response;
+    }
+    const ownPreference = request.method === 'GET' ? /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/table-preferences\/me$/.exec(request.path) : null;
+    if (ownPreference?.[1] && ownPreference[2]) {
+      const workspaceId = decodeURIComponent(ownPreference[1]).toLowerCase(), projectId = decodeURIComponent(ownPreference[2]).toLowerCase();
+      const member = currentMemberships.get(workspaceId)?.find(row => row.userId.toLowerCase() === currentActorId && row.workspaceId.toLowerCase() === workspaceId);
+      if (member) return ok({ workspaceId, projectId, membershipId: member.id.toLowerCase(), revision: 0, columns: null });
+    }
     return defaultFieldRoute(request) ?? failure(404, 'NOT_FOUND', 'Route not found');
   });
   vi.stubGlobal('fetch', fetchMock);

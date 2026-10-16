@@ -21,6 +21,8 @@ export type ErrorSubject =
   | 'comments'
   | 'commentSave'
   | 'activity'
+  | 'tablePreference'
+  | 'tablePreferenceSave'
   | 'fields'
   | 'fieldSave'
   | 'columns'
@@ -68,6 +70,8 @@ const subjectTitles: Record<ErrorSubject, string> = {
   get comments() { return t('errors.subject.comments'); },
   get commentSave() { return t('errors.subject.commentSave'); },
   get activity() { return t('errors.subject.activity'); },
+  get tablePreference() { return t('errors.subject.tablePreference'); },
+  get tablePreferenceSave() { return t('errors.subject.tablePreferenceSave'); },
   get fields() { return t('errors.subject.fields'); },
   get fieldSave() { return t('errors.subject.fieldSave'); },
   get columns() { return t('errors.subject.columns'); },
@@ -117,6 +121,14 @@ const taskUnavailableCopy = {
   get description() { return t('errors.hidden.task.description'); },
 };
 const unavailableCopy: Partial<Record<ErrorSubject, { title: string; description: string }>> = {
+  tablePreference: {
+    get title() { return t('errors.hidden.project.title'); },
+    get description() { return t('errors.hidden.project.description'); },
+  },
+  tablePreferenceSave: {
+    get title() { return t('errors.hidden.project.title'); },
+    get description() { return t('errors.hidden.project.description'); },
+  },
   comments: taskUnavailableCopy,
   activity: taskUnavailableCopy,
   commentSave: taskUnavailableCopy,
@@ -144,6 +156,7 @@ const saveSubjects: ReadonlySet<ErrorSubject> = new Set([
   'tagSave',
   'taskSave',
   'commentSave',
+  'tablePreferenceSave',
   'fieldSave',
   'columnsSave',
   'fieldValueSave',

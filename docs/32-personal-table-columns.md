@@ -1,6 +1,6 @@
 # Personal task-table column preferences
 
-This is the reviewed design for the next bounded daily-work slice. It is documentation only: backend/frontend source, migration `0012`, journal changes, builds and runtime actions require a separate coordinator release after the comments checkpoint. The existing comments migration/runtime QA window remains exclusive.
+This is the reviewed contract and source implementation record for personal table columns. The coordinator released source work after the comments `0011` checkpoint; backend/frontend source and migration `0012` are prepared. Main migration, compiled runtime and browser acceptance remain separate coordinator-owned gates. Source-only checks do not modify the frozen compiled API or main database.
 
 ## Outcome and scope
 
@@ -119,7 +119,7 @@ A pending/unknown request retains its exact body, expected revision and operatio
 
 ## Persistence and migration plan
 
-One new mutable head table, `personal_table_preferences`, is proposed in `0012_personal_table_preferences.sql`:
+One new mutable head table, `personal_table_preferences`, is defined in the reviewed source `0012_personal_table_preferences.sql`:
 
 - Natural primary/unique identity `(workspace_id, project_id, membership_id)`; no shared/default row and no arbitrary view key.
 - Composite same-workspace project and membership foreign keys with no cascade delete.
@@ -133,7 +133,7 @@ Audit/outbox expose only workspace/project/membership IDs and preference revisio
 
 The backend owner owns the new contracts/domain/db/API modules, exact guard/footprint additions, schema/client registration, migration SQL/snapshot/journal/readiness changes, backend tests and this document. TaskUX owns chooser/reconciliation/hooks, TaskTable/ProjectPage integration, frontend tests and the new English namespace. Existing shared field-management defaults remain under their current ownership.
 
-No `0012` source or journal edit is allowed until QA confirms main `0011` is complete and the coordinator releases this source slice. Migration review and disposable upgrade/fault tests precede any main application. Runtime build/restart/main migration remain coordinator-owned.
+The coordinator released `0012` source only after QA confirmed main `0011` complete. Migration review and disposable upgrade/fault tests precede any main application. Runtime build/restart/main migration remain coordinator-owned.
 
 ## Required acceptance gates
 
@@ -145,4 +145,17 @@ No `0012` source or journal edit is allowed until QA confirms main `0011` is com
 - Planning isolation: overdue/blocked recurrence/cutoff fixtures remain unchanged; no task/field/worklog/shared-layout revision changes; audit/outbox contain metadata only; GET performs no writes.
 - UI: keyboard reorder and visibility, explicit save/reset/conflict recovery, reload/remount and language switch draft retention, unknown/pending exact retry, no loss of inline/task/comment drafts, no foreign labels/values, weekly cells only for explicit context and no fabricated totals.
 
-These are acceptance requirements, not passing evidence. Build, migration, API, browser and visual verification will be recorded separately after implementation approval.
+The requirements above are checked by the focused source-level evidence below; compiled build, main migration, API/browser and visual verification remain separate gates.
+
+
+## Source verification — 2026-10-16
+
+- **27 pure server cases pass**: four contract/property cases (including every one of 512 visibility combinations with varied order), six domain cases, four HTTP adapter cases, and 13 migration/static cases.
+- **14 actual PostgreSQL cases pass** in `packages/db/integration/table-preferences.test.ts`. The populated pre-0012 upgrade preserves all old 55 public table row hashes and migration history; readiness refuses the pending schema, applies only 0012, then passes. Viewer access to a readable archived project accepts stored archived own-project fields. Actor isolation, foreign/missing field rejection, versioned reset/same-content save, concurrent exact/stale revision writers, old receipt after a newer head, and a lost application return after actual commit are covered.
+- Four AFTER INSERT/UPDATE database fault stages (preference head, audit, outbox, receipt) leave all 56 public table hashes and workspace sequence unchanged. The SQL validator is checked against 512 flag/order combinations plus malformed shapes, JSON null, duplicate/title errors, total bounds and 201 custom refs below the total bound. Composite FKs, positive revision and direct JSON constraint failures are exercised.
+- Actual `REPEATABLE READ READ ONLY` settings and a concurrent membership change prove the GET authorization/projection snapshot; subsequent fresh access is denied, and ordinary GET changes no rows. An overdue blocked recurrence fixture remains blocked with unchanged source rows and permission epoch after a viewer preference save. Audit/outbox allow only minimal IDs/revision metadata.
+- Shared fixture compatibility derives absent own preferences from the actual resolved fixture actor and membership; explicit handlers still win, another actor's membership is never borrowed, and unknown PUT remains unimplemented. Malformed-success responses still reach the application parser unchanged.
+
+The isolated run log is `/tmp/workloom-preferences-postgres.log`. Exact owned base `workloom_test_preferences_base_5e9006dd0f` and child `wl_db_preferences_11a2a187_test` were removed; a maintenance catalog read found zero names matching `%preferences%`. No main rows/schema, compiled `dist` or runtime process changed. Source aliases were used while the compiled API stayed frozen. After the coordinator's normal library build, the focused PG command is `npm run test:integration --workspace @workloom/db -- integration/table-preferences.test.ts` against an explicitly configured synthetic `TEST_DATABASE_URL`; the helper creates/drops its own empty database and never falls back to `DATABASE_URL`.
+
+The chooser keeps the dialog open after a confirmed save and successful authoritative-head refresh, with localized **Columns saved. Current settings refreshed.** feedback until the next edit/discard. A late acknowledgement never opens/closes or refocuses a dialog and never installs an old receipt as the current head. A failed head refresh blocks new saves until an explicit successful Reload; confirmed refreshed feedback appears only once the head is fresh.

@@ -11,7 +11,7 @@ import type {
 } from '@workloom/contracts';
 import { Avatar, Badge, Button, cn } from '@workloom/ui';
 import { ChevronDown, ChevronRight, Flag, Link2, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, Fragment, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import { buildTaskGroups, visibleTaskRows, type TaskGroup, type TaskTreeNode } from './taskTree';
 import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
@@ -60,6 +60,8 @@ export interface TaskTableProps {
   customColumns?: readonly TaskTableCustomColumn[] | undefined;
   /** Compact keeps everyday columns; expanded also shows participants, tags and priority. */
   columnPreset?: 'compact' | 'expanded' | undefined;
+  /** Exact visible built-in/custom IDs; title remains pinned first. */
+  columnIds?: readonly string[] | undefined;
   onEditTaskField?: ((task: TaskDto, field: TaskInlineField) => void) | undefined;
   renderTaskFieldEditor?: ((task: TaskDto, field: TaskInlineField) => ReactNode) | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
@@ -67,7 +69,6 @@ export interface TaskTableProps {
   className?: string | undefined;
 }
 
-const COLUMN_COUNT = 8;
 /** Width of the built-in columns at the minimum table width: title 360px plus 800px. */
 const BASE_MIN_WIDTH = 1160;
 const noCustomColumns: readonly TaskTableCustomColumn[] = [];
@@ -328,7 +329,7 @@ interface RowContext {
   partial: boolean;
   today: string | undefined;
   customColumns: readonly TaskTableCustomColumn[];
-  expandedColumns: boolean;
+  columnIds: readonly string[];
   onEditTaskField: TaskTableProps['onEditTaskField'];
   renderTaskFieldEditor: TaskTableProps['renderTaskFieldEditor'];
   draftTaskIds: ReadonlySet<string>;
@@ -359,9 +360,8 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
     const label = field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
     return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className="flex min-h-8 w-full min-w-0 items-center rounded px-1 text-left hover:bg-slate-100">{content}</button>;
   };
-  return (
-    <tr className="group h-11 border-t border-line hover:bg-canvas/70">
-      <td
+  const builtinCells: Record<string, ReactNode> = {
+    title: (      <td
         className="py-1 pr-3 lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]"
         style={{ paddingLeft: `${12 + node.depth * 20}px` }}>
         <div className="flex min-w-0 items-center gap-1.5">
@@ -425,53 +425,19 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TaskGroup; c
             </button>
           ) : null}
         </div>
-      </td>
-      <td className="px-3 py-1">
-        {cell('statusId', status === undefined ? (
-          <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span>
-        ) : (
-          <span className="flex min-w-0 items-center gap-1.5">
-            <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} />
-            <span className="truncate text-ink-soft" title={status.name}>{status.name}</span>
-          </span>
-        ))}
-      </td>
-      <td className="px-3 py-1">
-        {cell('responsibleMembershipId', task.responsibleMembershipId === null ? (
-          <Empty label={t('taskTable.taskTable.unassigned')} />
-        ) : (
-          <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />
-        ))}
-      </td>
-      {ctx.expandedColumns ? <td className="px-3 py-1">
-        <ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} />
-      </td> : null}
-      <td className="px-3 py-1">
-        {cell('dueDate', <DueDateCell dueDate={task.dueDate} today={ctx.today} finished={finished} />)}
-      </td>
-      {ctx.expandedColumns ? <td className="px-3 py-1">
-        <TagsCell tags={task.tags} />
-      </td> : null}
-      {ctx.expandedColumns ? <td className="px-3 py-1">
-        <PriorityCell priority={task.priority} />
-      </td> : null}
-      {ctx.customColumns.map((column) => (
-        <td key={column.id} className="min-w-0 overflow-hidden px-3 py-1">
-          {column.renderCell(task)}
-        </td>
-      ))}
-      <td
-        className={cn(
-          'px-3 py-1 text-right',
-          stickyEstimateClassName,
-          // Opaque copies of the row backgrounds, so scrolled cells never show through.
-          'lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]',
-        )}
-      >
-        <EstimateCell task={task} summary={ctx.summary} />
-      </td>
-    </tr>
-  );
+      </td>),
+    status: <td className="px-3 py-1">{cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)}</td>,
+    responsible: <td className="px-3 py-1">{cell('responsibleMembershipId', task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)}</td>,
+    participants: <td className="px-3 py-1"><ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} /></td>,
+    dueDate: <td className="px-3 py-1">{cell('dueDate', <DueDateCell dueDate={task.dueDate} today={ctx.today} finished={finished} />)}</td>,
+    tags: <td className="px-3 py-1"><TagsCell tags={task.tags} /></td>,
+    priority: <td className="px-3 py-1"><PriorityCell priority={task.priority} /></td>,
+    estimate: <td className={cn('px-3 py-1 text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && stickyEstimateClassName)}><EstimateCell task={task} summary={ctx.summary} /></td>,
+  };
+  return <tr className="group h-11 border-t border-line hover:bg-canvas/70">{ctx.columnIds.map(id => {
+    const custom = ctx.customColumns.find(column => column.id === id);
+    return <Fragment key={id}>{builtinCells[id] ?? (custom ? <td className="min-w-0 overflow-hidden px-3 py-1">{custom.renderCell(task)}</td> : null)}</Fragment>;
+  })}</tr>;
 }
 
 function groupTitle(group: TaskGroup): string {
@@ -545,7 +511,8 @@ function SummaryRow({ summary, partial, columnCount }: { summary: WorkPackageSum
   const { total } = summary;
   return (
     <tr className="h-11 border-t border-line-strong bg-canvas">
-      <td colSpan={columnCount - 1} className="px-3 py-1.5 text-xs text-muted">
+      <td colSpan={columnCount} className="px-3 py-1.5 text-xs text-muted">
+        <span className="mr-3 inline-flex font-semibold text-ink tabular-nums">{total.status === 'ok' ? formatEstimate(total.minutes) : <Empty label={t('taskTable.taskTable.totalUnavailable')} />}</span>
         <span className="font-medium text-ink-soft">{t('taskTable.taskTable.loadedTeamBudget')}</span>
         <span> {t('taskTable.taskTable.sharedWorkBudgetForTheWholeTeam')}</span>
         <span> {t('taskTable.taskTable.loadedCount', { count: summary.taskCount })}</span>
@@ -555,15 +522,7 @@ function SummaryRow({ summary, partial, columnCount }: { summary: WorkPackageSum
           <span className="text-amber-800"> {t('taskTable.taskTable.sharedEstimatesDisagreeRefreshDataToCalculateThe')}</span>
         ) : null}
       </td>
-      <td
-        className={cn(
-          'px-3 py-1.5 text-right text-sm font-semibold text-ink tabular-nums',
-          stickyEstimateClassName,
-          'lg:bg-canvas',
-        )}
-      >
-        {total.status === 'ok' ? formatEstimate(total.minutes) : <Empty label={t('taskTable.taskTable.totalUnavailable')} />}
-      </td>
+
     </tr>
   );
 }
@@ -589,13 +548,29 @@ export function TaskTable({
   caption = t('taskTable.taskTable.projectTasks'),
   customColumns = noCustomColumns,
   columnPreset = 'expanded',
+  columnIds,
   onEditTaskField, renderTaskFieldEditor, draftTaskIds = new Set(), quickAdd,
   className,
 }: TaskTableProps) {
   const { t, locale } = useTranslation();
   const expandedColumns = columnPreset === 'expanded';
-  const columnCount = (expandedColumns ? COLUMN_COUNT : 5) + customColumns.length;
-  const minWidth = (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0);
+  const builtinColumns = [
+    { id: 'title', label: t('taskTable.taskTable.task2'), width: 320 },
+    { id: 'status', label: t('taskTable.taskTable.status'), width: 144 },
+    { id: 'responsible', label: t('taskTable.taskTable.assignee'), width: 176 },
+    { id: 'participants', label: t('taskTable.taskTable.participants'), width: 96 },
+    { id: 'dueDate', label: t('taskTable.taskTable.dueDate'), width: 128 },
+    { id: 'tags', label: t('taskTable.taskTable.tags'), width: 128 },
+    { id: 'priority', label: t('taskTable.taskTable.priority'), width: 96 },
+    { id: 'estimate', label: t('taskTable.taskTable.teamEstimate'), width: 128 },
+  ];
+  const byColumnId = new Map([...builtinColumns, ...customColumns].map(column => [column.id, column]));
+  const defaultIds = ['title', 'status', 'responsible', ...(expandedColumns ? ['participants'] : []), 'dueDate', ...(expandedColumns ? ['tags', 'priority'] : []), ...customColumns.map(column => column.id), 'estimate'];
+  const orderedIds = columnIds ? ['title', ...columnIds.filter(id => id !== 'title')] : defaultIds;
+  const columns = orderedIds.flatMap(id => { const column = byColumnId.get(id); return column ? [column] : []; });
+  const visibleIds = columns.map(column => column.id);
+  const columnCount = columns.length;
+  const minWidth = columnIds ? columns.reduce((sum, column) => sum + column.width, 0) : (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0);
   const groups = useMemo(() => buildTaskGroups(tasks, sections, locale), [tasks, sections, locale]);
   const summary = useMemo(() => summarizeWorkPackages(tasks), [tasks]);
   const statusById = useMemo(() => new Map(statuses.map((status) => [status.id, status])), [statuses]);
@@ -626,7 +601,7 @@ export function TaskTable({
     partial,
     today,
     customColumns,
-    expandedColumns,
+    columnIds: visibleIds,
     onEditTaskField: writable ? onEditTaskField : undefined,
     renderTaskFieldEditor, draftTaskIds,
   };
@@ -635,52 +610,8 @@ export function TaskTable({
     <div className={cn('relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
-        <colgroup>
-          <col />
-          <col style={{ width: 144 }} />
-          <col style={{ width: 176 }} />
-          {expandedColumns ? <col className="w-24" /> : null}
-          <col style={{ width: 128 }} />
-          {expandedColumns ? <col className="w-32" /> : null}
-          {expandedColumns ? <col className="w-24" /> : null}
-          {customColumns.map(column => <col key={column.id} style={{ width: column.width }} />)}
-          <col className="w-32" />
-        </colgroup>
-        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]">
-          <tr className="h-9">
-            <th
-              scope="col"
-              className="px-3 font-medium lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),inset_0_-1px_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)]"
-            >
-              <span className="pl-[30px]">{t('taskTable.taskTable.task2')}</span>
-            </th>
-            <th scope="col" className="px-3 font-medium">
-              {t('taskTable.taskTable.status')}</th>
-            <th scope="col" className="px-3 font-medium">
-              {t('taskTable.taskTable.assignee')}</th>
-            {expandedColumns ? <th scope="col" className="px-3 font-medium">
-              {t('taskTable.taskTable.participants')}</th> : null}
-            <th scope="col" className="px-3 font-medium">
-              {t('taskTable.taskTable.dueDate')}</th>
-            {expandedColumns ? <th scope="col" className="px-3 font-medium">
-              {t('taskTable.taskTable.tags')}</th> : null}
-            {expandedColumns ? <th scope="col" className="px-3 font-medium">
-              {t('taskTable.taskTable.priority')}</th> : null}
-            {customColumns.map((column) => (
-              <th key={column.id} scope="col" className="px-3 font-medium">
-                <span className="block truncate" title={column.label}>
-                  {column.label}
-                </span>
-              </th>
-            ))}
-            {/* Same as `stickyEstimateClassName`, plus the header's bottom line its background would cover. */}
-            <th
-              scope="col"
-              className="px-3 text-right font-medium lg:sticky lg:right-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_1px_0_0_var(--color-line),inset_0_-1px_0_var(--color-line),-8px_0_8px_-8px_rgb(15_23_42/0.18)]"
-            >
-              {t('taskTable.taskTable.teamEstimate')}</th>
-          </tr>
-        </thead>
+        <colgroup>{columns.map(column => <col key={column.id} style={column.id === 'title' ? undefined : { width: column.width }} />)}</colgroup>
+        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('px-3 font-medium', column.id === 'title' && 'lg:sticky lg:left-0 lg:z-[1] lg:bg-surface', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></th>)}</tr></thead>
         {groups.map((group) => {
           const rows = visibleTaskRows(group.roots, collapsedIds);
           return (

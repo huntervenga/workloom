@@ -15,6 +15,7 @@ import {
   createRecurrenceApplication,
   createTaskApplication,
   createTaskCommentsApplication,
+  createPersonalTablePreferenceApplication,
   createTaskFieldApplication,
   createTaskScheduleApplication,
   createWorkCategoryApplication,
@@ -23,7 +24,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { TaskCommentsApplication, MyTasksApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
@@ -44,6 +45,7 @@ import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './ht
 import { registerTaskRoutes } from './http/task-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
 import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
+import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-routes.js';
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, resolveWebDist, sendSpaIndex, shouldServeSpa } from './http/static-web.js';
 
 export interface AppDependencies {
@@ -61,6 +63,7 @@ export interface AppDependencies {
   /** Self-only workspace task inbox; reads share one read-only snapshot. */
   readonly myTasksApplication?: MyTasksApplication;
   readonly taskCommentsApplication?: TaskCommentsApplication;
+  readonly personalTablePreferenceApplication?: PersonalTablePreferenceApplication;
   /**
    * Overrides the custom field service built from the database (HTTP tests). Without it and
    * without a database (P0/P1a HTTP tests), the P1b field routes are not registered.
@@ -113,6 +116,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
   const myTasksApplication = dependencies.myTasksApplication ?? (database === undefined ? undefined : createMyTasksApplication(database));
   const taskCommentsApplication = dependencies.taskCommentsApplication ?? (database === undefined ? undefined : createTaskCommentsApplication(database));
+  const personalTablePreferenceApplication = dependencies.personalTablePreferenceApplication ?? (database === undefined ? undefined : createPersonalTablePreferenceApplication(database));
   const taskFieldApplication =
     dependencies.taskFieldApplication ?? (database === undefined ? undefined : createTaskFieldApplication(database));
   const planningApplication =
@@ -218,6 +222,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     registerMyTasksRoutes(app, { identity, myTasks: myTasksApplication });
   }
   if (taskCommentsApplication !== undefined) registerTaskCommentsRoutes(app, { identity, comments: taskCommentsApplication });
+  if (personalTablePreferenceApplication !== undefined) registerPersonalTablePreferenceRoutes(app, { identity, preferences: personalTablePreferenceApplication });
   if (taskFieldApplication !== undefined) {
     registerFieldRoutes(app, { identity, fields: taskFieldApplication });
   }

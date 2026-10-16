@@ -114,3 +114,4 @@ export { createMyTasksApplication } from './my-tasks/application.js';
 export { createMyTasksCursorCodec, type MyTasksCursorOptions } from './my-tasks/cursor.js';
 export { createTaskCommentsApplication } from './task-comments/application.js';
 export type { TaskCommentsApplicationOptions } from './task-comments/application.js';
+export { createPersonalTablePreferenceApplication } from './table-preferences/application.js';

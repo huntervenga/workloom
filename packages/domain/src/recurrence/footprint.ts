@@ -27,7 +27,7 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
  // Broad sources (a workspace tag) include every project and period owner: fail closed, never narrowed by guess.
  const allProjects=async()=>projects(...(await repo.tasks.listProjects(ws)).map(p=>p.id),...(await repo.listPeriods(ws)).map(p=>p.projectId));
  switch(i.family){
-  case 'comment':return none;
+  case 'comment':case 'table_preference':return none;
   case 'import':return i.command==='import.csv.stage'?none:projects(i.target.projectId);
   case 'schedule':return projects(i.target.projectId,...i.target.affectedProjectIds);
   case 'task':

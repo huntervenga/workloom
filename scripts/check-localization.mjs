@@ -47,6 +47,7 @@ const literalExemptions = new Map([
 ]);
 const readSource = path => readFileSync(join(root, path), 'utf8');
 const dynamicKeys = new Map([
+  ['apps/web/src/features/task-table/PersonalColumnsDialog.tsx', new Map([['builtinLabels[ref.key]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-table/PersonalColumnsDialog.tsx'), 'builtinLabels'), reason: 'Exhaustive finite ten built-in table-column IDs map to literal localization keys.' }]])],
   ['apps/web/src/features/task-comments/TaskDiscussion.tsx', new Map([
     ['activityKeys[event.kind]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-comments/TaskDiscussion.tsx'), 'activityKeys'), reason: 'Exhaustive finite public activity kind dictionary; all values are literal localization keys.' }],
     ['problemKeys[problem]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-comments/TaskDiscussion.tsx'), 'problemKeys'), reason: 'Finite local comment validation enum mapped to literal message keys; server text is never rendered.' }],

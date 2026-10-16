@@ -75,6 +75,7 @@
       "one": "Daily view keeps task, status, assignee, due date and team estimate. All columns also shows people, tags, priority and {{count}} configured custom column. Selected weekly plan and actual columns stay visible. Shared project settings are preserved.",
       "other": "Daily view keeps task, status, assignee, due date and team estimate. All columns also shows people, tags, priority and {{count}} configured custom columns. Selected weekly plan and actual columns stay visible. Shared project settings are preserved."
     },
-    "viewSummary": "View: {{view}}"
+    "viewSummary": "View: {{view}}",
+    "teamColumns": "Team columns"
   }
 }

@@ -63,5 +63,7 @@
   "planLocked": "The original plan is already frozen and cannot be overwritten. Add new work as a separate entry.",
   "subject.comments": "Unable to load comments",
   "subject.commentSave": "Unable to add the comment",
-  "subject.activity": "Unable to load activity"
+  "subject.activity": "Unable to load activity",
+  "subject.tablePreference": "Unable to load your table columns",
+  "subject.tablePreferenceSave": "Unable to save your table columns"
 }

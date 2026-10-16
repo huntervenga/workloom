@@ -6,6 +6,10 @@ import type * as I18n from '../../i18n';
 import type { LocalizationManager, TranslationCatalog } from '../../i18n/LocalizationManager';
 import GraphCanvas from '../dependencies/GraphCanvas';
 import { FieldDefinitionForm } from '../fields/FieldDefinitionForm';
+import { alpha, anna, installFakeApi, ok } from '../../test/fakeApi';
+import { columns, field, PROJECT_ID, renderFieldUi } from '../fields/test/fixtures';
+import { PersonalColumnsDialog } from '../task-table/PersonalColumnsDialog';
+import { usePersonalTablePreference } from '../task-table/usePersonalTablePreference';
 import { TaskTable } from '../task-table/TaskTable';
 import { makeTask, statuses } from '../task-table/taskTableFixtures';
 import { TaskFields } from './TaskFields';
@@ -19,7 +23,7 @@ vi.mock('../../i18n', async importOriginal => {
   const manager = new actual.LocalizationManager({ en, fr: {
     tasks: { taskFields: { taskName: 'Nom de tâche', teamEstimateHours: 'Budget équipe, heures' }, taskDraft: { enterATaskName: 'Saisissez un nom de tâche.' } },
     fields: { fieldDefinitionForm: { columnName: 'Nom de colonne', enterAColumnName: 'Saisissez un nom de colonne.' } },
-    taskTable: { taskTable: { task2: 'Tâche', teamEstimate: 'Budget équipe' }, estimate: { enterHoursSuchAs15Or1: 'Heures QA invalides.' } },
+    taskTable: { personalColumns: { title: 'Mes colonnes', columnsDraft: 'Colonnes · brouillon', save: 'Enregistrer les colonnes' }, taskTable: { task2: 'Tâche', teamEstimate: 'Budget équipe' }, estimate: { enterHoursSuchAs15Or1: 'Heures QA invalides.' } },
     dependencies: { graphCanvas: { hasUnfinishedPredecessors: 'Prédécesseurs inachevés', theNextTaskStartsAfterThePreviousTask: 'La tâche suivante attend la précédente' } },
   } });
   state.manager = manager;
@@ -91,4 +95,23 @@ describe('owned UI live locale feedback', () => {
     expect(screen.getByRole('button', { name: 'Stored graph title' })).toBeInTheDocument();
     expect(graphPositions).toEqual({ a: { x: 10, y: 20 } });
   });
+});
+
+it('keeps an unsaved personal column choice when the current locale changes', async () => {
+  const membershipId = 'c0000000-0000-4000-8000-000000000001';
+  const note = field('Stored column name');
+  installFakeApi({ [`GET /api/v1/workspaces/${alpha.id}/projects/${PROJECT_ID}/table-preferences/me`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, membershipId, revision: 0, columns: null }) });
+  function Example() {
+    const controller = usePersonalTablePreference(anna.id, alpha.id, PROJECT_ID, membershipId);
+    return <PersonalColumnsDialog controller={controller} fields={[note]} projectColumns={columns([note])} timeAvailable={false} catalogError={null} onReloadCatalog={async () => undefined} />;
+  }
+  const ui = renderFieldUi(<Example />);
+  await ui.user.click(screen.getByRole('button', { name: 'Columns' }));
+  await screen.findByRole('checkbox', { name: 'Tags' });
+  await ui.user.click(screen.getByRole('checkbox', { name: 'Tags' }));
+  switchLocale('fr');
+  expect(screen.getByRole('dialog', { name: 'Mes colonnes' })).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: 'Tags' })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: 'Enregistrer les colonnes' })).toBeEnabled();
+  expect(screen.getByRole('checkbox', { name: 'Stored column name' })).toBeChecked();
 });

@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CommandContext } from '@workloom/domain';
 import type { WorkloomExecutor } from '../src/client.js';
 import { FIXTURE_MEMBERSHIP_IDS as M, FIXTURE_USER_IDS as U, FIXTURE_WORKSPACE_IDS as W } from '../src/fixtures.js';
-import { MIGRATIONS_FOLDER, runMigrations } from '../src/migrations.js';
+import { MIGRATIONS_FOLDER, readExpectedMigrations, runMigrations } from '../src/migrations.js';
 import { createReadinessProbe } from '../src/readiness.js';
 import { seedDemoData } from '../src/seed/demo-seed.js';
 import { createTaskApplication } from '../src/tasks/task-application.js';
@@ -41,7 +41,7 @@ describe('append-only discussion and safe activity on owned disposable PostgreSQ
     const prior = mkdtempSync(join(tmpdir(), 'workloom-comments-prior-migrations-'));
     try {
       const journal = JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8')) as { entries: { tag: string }[] };
-      journal.entries = journal.entries.filter(entry => entry.tag !== '0011_task_comments');
+      journal.entries = journal.entries.slice(0, journal.entries.findIndex(entry => entry.tag === '0011_task_comments'));
       mkdirSync(join(prior, 'meta'));
       writeFileSync(join(prior, 'meta', '_journal.json'), JSON.stringify(journal));
       for (const entry of journal.entries) copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(prior, `${entry.tag}.sql`));
@@ -63,7 +63,7 @@ describe('append-only discussion and safe activity on owned disposable PostgreSQ
   afterAll(async () => { await target?.drop(); });
 
   it('upgrades a populated pre-comments schema without changing any old rows/history and gates readiness', () => {
-    expect(migrationEvidence).toEqual({ pendingWasNotReady: true, applied: ['0011_task_comments'], oldRowsUnchanged: true, oldHistoryUnchanged: true, ready: true });
+    expect(migrationEvidence).toEqual({ pendingWasNotReady: true, applied: readExpectedMigrations().slice(11).map(migration => migration.tag), oldRowsUnchanged: true, oldHistoryUnchanged: true, ready: true });
   });
 
   it('stores exact plaintext and immutable trusted author/time, with no body in audit/outbox', async () => {
