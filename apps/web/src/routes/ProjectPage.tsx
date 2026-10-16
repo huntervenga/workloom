@@ -701,6 +701,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
             draftTaskIds={new Set(commands.editSessions.current.keys())}
+            activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => closeInline(task.id, field)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
             quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={() => setQuickAddSection(undefined)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
             selectedTaskIds={selectedTaskIds}
@@ -796,6 +797,7 @@ interface TaskListProps {
   columnIds: readonly string[];
   onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;
   renderTaskFieldEditor: NonNullable<ComponentProps<typeof TaskTable>['renderTaskFieldEditor']>;
+  activeFieldEditor: ComponentProps<typeof TaskTable>['activeFieldEditor'];
   draftTaskIds: ReadonlySet<string>;
   quickAdd: ComponentProps<typeof TaskTable>['quickAdd'];
   writable: boolean;

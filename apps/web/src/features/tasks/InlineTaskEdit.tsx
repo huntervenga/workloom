@@ -72,8 +72,9 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     else editSessions.current.delete(task.id);
   }, [confirmed, dirty, editSessions, foreignDraft, pending, session, task.id, uncertain]);
 
-  if (foreignDraft) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="space-y-2 py-2 text-xs"><p>{t('tasks.inlineEdit.existingDraft')}</p><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.resumeDraft')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div>;
-  if (!editable && !uncertain) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="space-y-2 py-2 text-xs"><p>{t('tasks.inlineEdit.notEditable')}</p><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.moreDetails')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div>;
+  // Layout stays inside the cell budget: text wraps and actions wrap instead of spilling under sticky cells.
+  if (foreignDraft) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="min-w-0 space-y-2 py-2 text-xs [overflow-wrap:anywhere]"><p>{t('tasks.inlineEdit.existingDraft')}</p><div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1"><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.resumeDraft')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div></div>;
+  if (!editable && !uncertain) return <div onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(); } }} className="min-w-0 space-y-2 py-2 text-xs [overflow-wrap:anywhere]"><p>{t('tasks.inlineEdit.notEditable')}</p><div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1"><Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{t('tasks.quickAdd.moreDetails')}</Button><Button size="sm" variant="ghost" onClick={onClose}>{t('tasks.quickAdd.collapse')}</Button></div></div>;
   const change = (patch: Partial<TaskDraft>) => {
     setSession(before => ({ ...before, draft: { ...before.draft, ...patch } }));
     setErrors({});
@@ -115,8 +116,8 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
       return;
     }
     submitTaskFormShortcut(event, !frozen && !needsReview && !staleEstimate);
-  }} className="space-y-1.5 py-1">
-    <fieldset disabled={frozen}>
+  }} className="min-w-0 max-w-full space-y-1.5 py-1 [overflow-wrap:anywhere]">
+    <fieldset disabled={frozen} className="min-w-0">
       <legend className="sr-only">{t('tasks.inlineEdit.fields')}</legend>
       {field === 'estimate' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.inlineEstimate.label')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={`${id}-estimate-help${currentError ? ` ${id}-error` : ''}${staleEstimate ? ` ${id}-estimate-source` : ''}`} type="text" autoComplete="off" className="px-2 text-xs" value={session.draft.estimate} onChange={event => change({ estimate: event.target.value })} /> : field === 'title' ? <TextInput autoFocus={shouldFocus} aria-label={t('tasks.taskFields.taskName')} aria-invalid={Boolean(currentError) || undefined} aria-describedby={currentError ? `${id}-error` : undefined} type="text" maxLength={TASK_TITLE_MAX} autoComplete="off" className="px-2 text-xs" value={session.draft.title} onChange={event => change({ title: event.target.value })} /> : field === 'statusId' ? <select autoFocus={shouldFocus} aria-label={t('tasks.taskFields.status')} className={inputClassName('px-2 text-xs')} value={session.draft.statusId} onChange={event => change({ statusId: event.target.value })}>
         {!statuses.some(status => status.id === session.draft.statusId) ? <option value={session.draft.statusId}>{t('tasks.taskFields.statusUnavailable')}</option> : null}
@@ -137,7 +138,7 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     {currentError ? <p role="alert" id={`${id}-error`} className="text-xs text-red-700">{t(currentError.key, currentError.params)}</p> : null}
     {blocked ? <p role="status" className="text-xs text-amber-800">{t('tasks.quickAdd.otherCommand')}</p> : null}
     <SaveFeedback subject="taskSave" error={ownError} uncertainError={uncertain ? update.uncertain?.error ?? null : null} />
-    <div className="flex items-center gap-1">
+    <div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1">
       <Button size="sm" className="px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || (staleEstimate && !uncertain) || undefined}>{pending ? t('tasks.inlineEdit.saving') : uncertain ? t('tasks.inlineEdit.retry') : t('tasks.inlineEdit.save')}</Button>
       <button type="button" className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas" title={t('tasks.quickAdd.moreDetails')} aria-label={t('tasks.quickAdd.moreDetails')} disabled={pending || uncertain || blocked} onClick={() => { editSessions.current.set(task.id, session); onMoreDetails(); }}><Expand size={14} aria-hidden="true" /></button>
       <button type="button" className="inline-flex size-6 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas" title={t('tasks.quickAdd.collapse')} aria-label={t('tasks.quickAdd.collapse')} onClick={onClose}><X size={14} aria-hidden="true" /></button>

@@ -1,4 +1,4 @@
-import { canEditTaskInline, isCurrentEstimateProjection, type TaskInlineField } from '../tasks/tableEditing';
+import { canEditTaskInline, isCurrentEstimateProjection, taskInlineColumn, type TaskInlineField } from '../tasks/tableEditing';
 import { t, useTranslation, formatDate } from '../../i18n';
 import type {
   MembershipDto,
@@ -68,6 +68,11 @@ export interface TaskTableProps {
   renderCompletionAction?: ((task: TaskDto) => ReactNode) | undefined;
   onEditTaskField?: ((task: TaskDto, field: TaskInlineField) => void) | undefined;
   renderTaskFieldEditor?: ((task: TaskDto, field: TaskInlineField) => ReactNode) | undefined;
+  /**
+   * Presentation only: the cell whose editor `renderTaskFieldEditor` returns. Its visible column
+   * gets a real editor width instead of letting the form spill under neighbouring/sticky cells.
+   */
+  activeFieldEditor?: { taskId: string; field: TaskInlineField } | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
   quickAdd?: { sectionId: string | null; content: ReactNode } | undefined;
   /** Orders rows within the existing group/parent structure. */
@@ -85,6 +90,8 @@ export interface TaskTableProps {
 /** Width of the built-in columns at the minimum table width: title 360px plus 800px. */
 const BASE_MIN_WIDTH = 1160;
 const noCustomColumns: readonly TaskTableCustomColumn[] = [];
+/** Shared inline editor budget: input, wrapped save/recovery feedback and the action row. */
+export const INLINE_EDITOR_COLUMN_WIDTH = 288;
 
 /** Icon-only control; callers add its size and text color. */
 const iconButtonClassName =
@@ -598,7 +605,7 @@ export function TaskTable({
   customColumns = noCustomColumns,
   columnPreset = 'expanded',
   columnIds,
-  onEditTaskField, renderTaskFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd,
+  onEditTaskField, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd,
   grouping = 'section',
   sortMode = 'manual',
   collapsedTaskIds,
@@ -625,9 +632,13 @@ export function TaskTable({
   const columns = orderedIds.flatMap(id => { const column = byColumnId.get(id); return column ? [column] : []; });
   const visibleIds = columns.map(column => column.id);
   const columnCount = columns.length;
-  const minWidth = columnIds ? columns.reduce((sum, column) => sum + column.width, 0) : (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0);
   const groups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale, sortMode), [tasks, sections, members, grouping, locale, sortMode]);
   const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
+  // The flexible title column keeps its own minimum; the table grows and scrolls locally instead.
+  const editorColumnId = activeFieldEditor && taskById.has(activeFieldEditor.taskId) ? taskInlineColumn(activeFieldEditor.field) : null;
+  const columnWidth = (column: { id: string; width: number }) => column.id === editorColumnId && column.id !== 'title' ? Math.max(column.width, INLINE_EDITOR_COLUMN_WIDTH) : column.width;
+  const editorExtraWidth = columns.reduce((sum, column) => sum + columnWidth(column) - column.width, 0);
+  const minWidth = editorExtraWidth + (columnIds ? columns.reduce((sum, column) => sum + column.width, 0) : (expandedColumns ? BASE_MIN_WIDTH : 820) + customColumns.reduce((sum, column) => sum + column.width, 0));
   const summary = useMemo(() => summarizeWorkPackages(tasks), [tasks]);
   const statusById = useMemo(() => new Map(statuses.map((status) => [status.id, status])), [statuses]);
   const memberById = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
@@ -683,7 +694,7 @@ export function TaskTable({
     <div className={cn('relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
-        <colgroup>{columns.map(column => <col key={column.id} style={column.id === 'title' ? undefined : { width: column.width }} />)}</colgroup>
+        <colgroup>{columns.map(column => <col key={column.id} data-inline-editor={column.id === editorColumnId || undefined} style={column.id === 'title' ? undefined : { width: columnWidth(column) }} />)}</colgroup>
         <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('px-3 font-medium', column.id === 'title' && 'lg:sticky lg:left-0 lg:z-[1] lg:bg-surface', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && onSelectTask ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 border-r border-line pr-1 text-center text-[10px] text-subtle">{t('tasks.completion.graph')}</span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
