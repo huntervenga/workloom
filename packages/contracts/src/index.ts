@@ -11,3 +11,5 @@ export * from './common/recorded-work.js';
 export * from './meetings.js';
 export * from './recurrence.js';
 export * from './dependencies.js';
+
+export * from './schedule.js';

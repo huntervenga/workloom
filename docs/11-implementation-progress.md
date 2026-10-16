@@ -1,6 +1,6 @@
 # Журнал доказательств реализации
 
-Снимок от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a. P4a — зависимости, authoritative blocking и собственная раскладка графа; source checkpoint `12f5dbd8c9d5af8c01070e0278ec1ec8fe499fe2` создан root05:06UTC, дерево сразу после commit чистое. Полный P1/P2/P3/P4, MVP и пилот не завершены; Gantt/date batch P4b, private ACL/Auth, внешние календари, P5–P6, production и обновление старых вкладок не проверены. Исторические failures и targeted reruns ниже сохраняются отдельно. Этапы — [06](06-implementation-plan.md), проверки — [07](07-verification-and-pilot.md), quickstart — [README](../README.md).
+Снимок от 16 октября 2026 года. Локально приняты P0 и ограниченные P1a/P1b/P2a/P2b/P3a/P3b/P4a/P4b. Последний P4b добавил ordinary date-only start/due, typed/day-shift review/apply и bounded Gantt с immutable baseline overlay; source checkpoint ожидается после docs freeze. Полный P1/P2/P3/P4, MVP и пилот не завершены; pointer drag, private ACL/Auth, внешние календари, P5–P6, production и обновление старых вкладок не проверены. Исторические failures и targeted reruns ниже сохраняются отдельно. Этапы — [06](06-implementation-plan.md), проверки — [07](07-verification-and-pilot.md), quickstart — [README](../README.md).
 
 ## Происхождение
 
@@ -671,3 +671,42 @@ Root выпустил bounded dependencies/blocking/personal-layout по [17](17
 
 
 **Финальный served build/приёмка:** root принял P4a05:05UTC. Backend GET-only proof `/tmp/workloom-p4a-final-asset-parity.json`05:04:46UTC: ready200 DB/schemaok; HTML551B SHA256 `bd6e47e730596fb28ad9e3ad9e295a6383206c674a7cb75a891b50cc3038aa40`, root JS `index-DrQeeN66.js`1198212B SHA256 `35251b52a0d9cbee748190ee95179f3f4de774c1e5b31fc199dacabe169d9627`, CSS `index-CHt3jnH1.css`52804B; также lazy GraphCanvas JS183086B/CSS15869B и layout JS49379B — все6 объектов200/correct MIME/точное byte+SHA совпадение с текущим dist. Vite4311 transformed GraphView отдельно содержит точный Save arranging guard (`/tmp/workloom-p4a-vite-guard-proof.json`). Browser flows идут через4311; final FitView действительно выполнен через compiled4310. Документационный freeze:22 Markdown файла/225 local file links,0 broken; whitespace diffcheck pass. Новых tests ради prose/hash нет.
+
+## P4b — начальный real HTTP/PostgreSQL gate (кандидат)
+
+Root дал GO после принятого P4a source `12f5dbd8c9d5af8c01070e0278ec1ec8fe499fe2` и docs-only `48b138f298631000942683160366176441c3c8a3`. Авторство новых QA tests/fixtures/docs — Codex gpt-6.1-sol high; по новому указанию пользователя Claude автоматически не возвращать, probes нет. Это candidate, UI/broad acceptance ещё впереди.
+
+API-only build pass. Первый focused real HTTP/throwaway PG: **8 pass/3 QA fixture failures из11**,21,02с (`/tmp/workloom-p4b-focused.log`): два bulk-fixture inserts не задали обязательные timestamps dependency, а error replay сравнивал новый requestId. После исправления только оснастки и добавления cross-project census сценария affected run **5/5 pass,7 skipped**,20,96с (`/tmp/workloom-p4b-focused-corrected.log`). Итого покрыты12 различных сценариев; это не один полный зелёный12 run. QA types/exact lint pass.
+
+Проверены SQL-compatible0001/leap2000/9999, отказ0000/не-leap и effective partial pair; readonly preview и atomic two-task date apply без изменения estimate/participants; canonical order/idempotency и current tenant ACL; inclusive predecessorDue/successorStart, оба desired endpoints, внешний project context/source freshness; unrelated layout/project freeze не меняют previewHash. Baseline overlay отличает not_selected/not_in_baseline/not_set/set и остаётся immutable после date edit. Meeting calendar имеет unknown priority и protected dates; archived batch отвергнут.100 selected rows/101 отказ и1000 comparisons/1001 отказ — реальные FK-valid bulk fixtures, whole error без partial output. Старый exact receipt исполняется даже после1001 новых edges, но revoked membership отвергает replay. Полный authoritative blocker count остаётся1001.
+
+Cutoff probe использует реальный PG clock с8с margin: late SQL fault полностью откатывает freeze+dates+key; retry commits только due freeze и tagged PREVIEW_STALE; exact replay не создаёт второй baseline. Новый preview разрешает ordinary dates при сохранении baseline. Read-only recovery показывает missing и complete-but-unfrozen overdue periods без materialize/freeze. Cross-project dependency endpoint census участвует и в review recovery, и в guarded apply: внешний календарь подготавливается/фиксируется до tagged stale, proposed dates неизменны.
+
+**Genuine pre0008**: `/tmp/workloom-p4a-compat-fixture.json`0600, SHA256 `18a8909c01c38dbee75b3694c40de738ccee60178a39f7bd2cdd0546dd0385e3`, source12f5dbd. Ordinary create/update/fresh Task и personal/project baseline не содержат startDate; dueDate2027-01-16 сохранена.1200whole/360weekly/300fact/−60; оба report types pinned.8 новых raw commands +13 nested прежних =21 cached full rows;34 project-scoped old-column sets. Начальная setup-попытка manual expectedRevision0 получила400; correctednull соответствует контракту, отдельная fixture успешна. Старый partial synthetic setup сохранён, чужие данные не удалялись. Post0008 compatibility пока не заявляется; verifier подготовлен отдельно от product source.
+
+**Quiet0008 и genuine raw21:** после отдельного root GO API15941/session89940 остановлен SIGTERMexit0,4310closed,workerOFF. Foundation `/tmp/workloom-p4b-upgrade-preservation.json`:51 прежняя таблица по original columns неизменна,21 cached full row/hash/result exact,6 baseline SQL JSON и6 pinned report SQL rows exact; только0008/current9/repeat[],16 applied SQL/snapshot файлов и journal prefix неизменны. Все старые tasks получили лишь nullable start_date=NULL, без backfill.
+
+Свежий compiled API session40855/PID23140 на4310 готов DB/schemaok. `/tmp/workloom-p4b-compat-proof.json` verified05:19:13.880UTC подтверждает21 exact raw replay/cache,34 scoped old-column sets и4 HTTP pinned documents без создания новых commands/reports. Genuine personal/project baseline overlay показывает startDate `{state:'not_captured'}`, dueDate `{state:'set',value:'2027-01-16'}`; свежая Task имеет startDate:null, прежние cached Task outcomes всё ещё без startDate property. Это server compatibility, старый browser bundle не запускался. Static web тогда ещё исторический P4a до финального web build.
+
+### P4b — широкий gate и браузерный кандидат
+
+| Gate | Фактический результат |
+| --- | --- |
+| `npm run test:integration` | Полный build7 workspaces; real HTTP/PostgreSQL **175/16 pass**,158,47с; `/tmp/workloom-p4b-full-integration.log` |
+| Root lint/typecheck | pass;222 browser boundaries и все workspace/root QA types; `/tmp/workloom-p4b-root-{lint,types}.log` |
+| Core/API/worker unit | **1059/53 pass**,3,36с; `/tmp/workloom-p4b-root-unit.log` |
+| All web | **252/46 pass**,8,90с; `/tmp/workloom-p4b-web.log` |
+| Полный browser | **22/22 pass**,55,2с; `/tmp/workloom-p4b-browser.log` |
+
+Counts разных suites не складываются. Широкий PG gate впервые целиком подтвердил текущие12 P4b сценариев, включая receipt replay после архивирования target. Full browser включает20 прежних и2 новых: desktop2,0с — реальные два date edits одним apply/reload, immutable baseline overlay и28→366 calendar days через Berlin DST; mobile1,7с — реальный commit с потерей ответа, закрытие drawer/смена окна и exact original key/body retry, revision только+1. Browser UI работает через Vite4311 и настоящий compiled API/PG; отдельные исходные P0 error/empty mocks явно названы в test report, не DB proof.
+
+Перед gate root/core review исправил freshness/capability replay seam: current target access проверяется до receipt, а новый1001 graph bound после; shared guard получает доверенные affected endpoint projects. UI имеет retained drafts, original-only cleanup, monotonic comparisons и denial latch для всех chunks/open drawer/выбранного overlay; recovery period сначала читается и открывается по реальному projectId. Optional generic TaskDrawer startDate сохраняет прежний omitted input shape, если поле не меняли. Calendar axis использует PlainDate; дальние0001–9999 даты не расширяют окно. Pointer drag, auto date cascading/critical path и historical graph topology не реализованы; доступно typed/day-shift редактирование с review.
+
+Финальный GET-only `/tmp/workloom-p4b-final-asset-parity.json` verified05:29:14.943UTC: ready200 DB/schemaok, все6 HTML/rootJS/CSS/lazyGraphCanvasJS+CSS/layout объектов200/correct MIME/exact bytes+SHA к dist. HTML551B SHA256 `2812f7ae8b18170a9a621400c9cce083891e880f930ae09fbbf54aa0c2b327b3`; root JS `index-BPFfZHw_.js`1236261B SHA256 `17a8b63ed578625a8e73fde470b34e5b2752b4f44a668c2826b2852d6fd34a80`; CSS `index-CEbfyfnB.css`53325B. Vite Gantt source отдельно200/calendar axis present; никакой restart/data mutation при smoke.
+
+Шесть durable frames — `workloom-evidence/p4b-{desktop,mobile}-{date-review,gantt,old-baseline}.png`. Последние2 сняты через optimized4310 GET/UI-only: настоящий старый personal/project baseline с not_captured start и set due. Первые Gantt viewport кадры обрезали rows ниже controls; это capture framing, не product failure. Они сохранены в `p4b-initial-framing/`, replacement GET/UI-scroll-only optimized captures направлены на actual axis+3rows. Root просмотрел все6 текущих кадров и принял boundedP4b. Никаких дополнительных product reruns ради framing нет.
+
+
+**Итог P4b:** root functional/visual acceptance после всех текущих gates; source checkpoint пока ожидается. Все product/QA source и документы P4b authored Codex gpt-6.1-sol high,0 Claude calls/probes; текущее явное указание пользователя — только Codex, исторические Opus attribution не меняются. Foundation provenance `/tmp/workloom-p4b-foundation-provenance.json`. Runtime23140/session40855 и исходные demo сохранены, nativePG17.5 current9, workerOFF. FullP4/MVP/Auth/privateACL/import/MCP/production/old-tab не заявлены.
+
+Documentation freeze:23 Markdown files/root README+AGENTS+workerREADME/docs01–19,289 local file links checked,0 broken; `git diff --check` pass. Новых product tests ради prose/hash нет.

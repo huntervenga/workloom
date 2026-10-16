@@ -1,3 +1,4 @@
+import {assertTaskDateRange,assertOrdinaryTaskDates} from './dates.js';
 import type { TaskMutationCommand } from '../planning/ports.js';
 import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
 import {
@@ -63,6 +64,7 @@ const TASK_CORE_KEYS = [
   'sectionId',
   'parentTaskId',
   'responsibleMembershipId',
+  'startDate',
   'dueDate',
   'priority',
   'position',
@@ -352,6 +354,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
       return mutate(context, 'task.edit', 'task.create', null, parsed, taskSchema, async (scope, ws, now) => {
         const repo = scope.repository;
         const projectId = parsed.projectId;
+        assertTaskDateRange(parsed.startDate,parsed.dueDate);
         await requireOpenProject(repo, ws, projectId);
         if (isSet(parsed.sectionId)) await requireAssignableSection(repo, ws, projectId, parsed.sectionId);
         requireSameProject(requireFound(await repo.findStatus(ws, parsed.statusId)), projectId, 'statusId');
@@ -401,6 +404,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           responsibleMembershipId: parsed.responsibleMembershipId ?? null,
           participants: [],
           participantsRevision: 1,
+          startDate: parsed.startDate ?? null,
           dueDate: parsed.dueDate ?? null,
           priority: parsed.priority ?? 'none',
           tags: [],
@@ -455,6 +459,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         expectRevision(task.revision, parsed.expectedRevision);
         if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before editing.', 'taskId');
 
+        assertOrdinaryTaskDates(task,parsed);
         // Every provided reference is validated, even when it equals the current value.
         if (parsed.statusId !== undefined) {
           await scope.statusTransitions.assertTransition(task,parsed.statusId);
@@ -521,6 +526,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           parentTaskId: parsed.parentTaskId === undefined ? task.parentTaskId : parsed.parentTaskId,
           responsibleMembershipId:
             parsed.responsibleMembershipId === undefined ? task.responsibleMembershipId : parsed.responsibleMembershipId,
+          startDate: parsed.startDate === undefined ? task.startDate ?? null : parsed.startDate,
           dueDate: parsed.dueDate === undefined ? task.dueDate : parsed.dueDate,
           priority: parsed.priority ?? task.priority,
           position: parsed.position ?? task.position,

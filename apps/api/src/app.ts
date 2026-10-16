@@ -11,13 +11,14 @@ import {
   createRecurrenceApplication,
   createTaskApplication,
   createTaskFieldApplication,
+  createTaskScheduleApplication,
   createWorkCategoryApplication,
   describeErrorForLog,
   FIXTURE_ACTOR_IDS,
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, RecurrenceApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
@@ -30,6 +31,7 @@ import { registerDependencyRoutes } from './http/dependency-routes.js';
 import { registerMeetingRoutes } from './http/meeting-routes.js';
 import { registerPlanningRoutes } from './http/planning-routes.js';
 import { registerRecurrenceRoutes } from './http/recurrence-routes.js';
+import { registerScheduleRoutes } from './http/schedule-routes.js';
 import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from './http/request-guards.js';
 import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './http/routes.js';
 import { registerTaskRoutes } from './http/task-routes.js';
@@ -62,6 +64,8 @@ export interface AppDependencies {
   readonly recurrenceApplication?: RecurrenceApplication;
   /** P4a shared application from the existing pool, injectable for transport tests. */
   readonly dependencyApplication?: DependencyApplication;
+  /** P4b schedule application; same existing pool, injectable for focused transport tests. */
+  readonly taskScheduleApplication?: TaskScheduleApplication;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
   /** Web dist directory; null disables static serving. Default: apps/web/dist when config.serveWeb. */
@@ -102,6 +106,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.recurrenceApplication ?? (database === undefined ? undefined : createRecurrenceApplication(database));
   const dependencyApplication =
     dependencies.dependencyApplication ?? (database === undefined ? undefined : createDependencyApplication(database));
+  const taskScheduleApplication =
+    dependencies.taskScheduleApplication ?? (database === undefined ? undefined : createTaskScheduleApplication(database));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
   const identity =
     dependencies.identityAdapter ??
@@ -202,6 +208,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   if (dependencyApplication !== undefined) {
     registerDependencyRoutes(app, { identity, dependencies: dependencyApplication });
+  }
+  if (taskScheduleApplication !== undefined) {
+    registerScheduleRoutes(app, { identity, schedule: taskScheduleApplication });
   }
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);

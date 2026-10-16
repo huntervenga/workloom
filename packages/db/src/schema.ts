@@ -321,6 +321,7 @@ export const tasks = pgTable(
     statusId: uuid('status_id').notNull(),
     responsibleMembershipId: uuid('responsible_membership_id'),
     participantsRevision: integer('participants_revision').notNull().default(1),
+    startDate: date('start_date', { mode: 'string' }),
     dueDate: date('due_date', { mode: 'string' }),
     priority: taskPriorityEnum('priority').notNull().default('none'),
     revision: integer('revision').notNull().default(1),
@@ -331,6 +332,8 @@ export const tasks = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    check('tasks_dates_range_check',sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.startDate} <= ${table.dueDate}`),
+    check('tasks_dates_supported_year_check',sql`(${table.startDate} IS NULL OR ${table.startDate} BETWEEN DATE '0001-01-01' AND DATE '9999-12-31') AND (${table.dueDate} IS NULL OR ${table.dueDate} BETWEEN DATE '0001-01-01' AND DATE '9999-12-31')`),
     foreignKey({
       name: 'tasks_project_fk',
       columns: [table.workspaceId, table.projectId],

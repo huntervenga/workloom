@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import type {
   RecordedWorkLogDto,AttendanceWorkLogDto,
   PackageBaselineDto, PlanBaselineDto,
@@ -117,7 +117,7 @@ export function createPlanningRepository(source:Database|WorkloomExecutor):Plann
       return r?{workspaceId:r.workspaceId,projectId:r.projectId,workPackageId:r.workPackageId,estimateMinutes:r.estimateMinutes,packageRevision:r.packageRevision,baselineId:r.baselineId}:null;
     },
     async insertPackageObservation(row:PackageFreezeObservation) {await db.insert(packageFreezeObservations).values(row);},
-    async listLocks(ws) {return db.select().from(planningLocks).where(eq(planningLocks.workspaceId,ws));},
+    async listLocks(ws,filter) {if(filter&&filter.taskIds.length===0&&filter.workPackageIds.length===0)return [];return db.select().from(planningLocks).where(and(eq(planningLocks.workspaceId,ws),filter?or(filter.taskIds.length?inArray(planningLocks.taskId,[...filter.taskIds]):sql`false`,filter.workPackageIds.length?inArray(planningLocks.workPackageId,[...filter.workPackageIds]):sql`false`):undefined));},
     async insertLocks(rows:PlanningLock[]) {if(rows.length)await db.insert(planningLocks).values(rows);},
     async listMeetings(ws,projectId) {
       const rows=await db.select().from(meetings).where(and(eq(meetings.workspaceId,ws),eq(meetings.projectId,projectId))).orderBy(asc(meetings.id));

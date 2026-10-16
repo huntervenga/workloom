@@ -57,6 +57,13 @@
       "when": 1792124905785,
       "tag": "0007_dependencies_graph",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792127378682,
+      "tag": "0008_task_calendar_dates",
+      "breakpoints": true
     }
   ]
 }

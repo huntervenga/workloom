@@ -146,6 +146,7 @@ export function invalidateTask(queryClient: QueryClient, actorId: string, worksp
  */
 export function taskWouldRegress(cached: TaskDto, next: TaskDto): boolean {
   if (cached.meetingId !== undefined && next.meetingId === undefined) return true;
+  if (cached.startDate !== undefined && next.startDate === undefined) return true;
   if (next.revision < cached.revision) return true;
   if (next.participantsRevision < cached.participantsRevision) return true;
   return next.workPackageId === cached.workPackageId && next.workPackageRevision < cached.workPackageRevision;
@@ -168,6 +169,7 @@ export function tagsWouldRegress(next: TaskDto, known: readonly TagDto[]): boole
  * newer cached data stays and the detail is refetched. Task lists refetch too.
  */
 export function storeTask(queryClient: QueryClient, actorId: string, workspaceId: string, task: TaskDto) {
+  void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'schedule'] });
   // Status/archive changes affect authoritative dependency projections, including other projects.
   void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'dependencies'] });
   const detailKey = queryKeys.task(actorId, workspaceId, task.id);

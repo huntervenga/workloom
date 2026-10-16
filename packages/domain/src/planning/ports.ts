@@ -55,7 +55,7 @@ export interface PlanningRepository {
   insertPackageBaseline(row:PackageBaselineDto):Promise<void>;
   findPackageObservation(workspaceId:string,packageId:string):Promise<PackageFreezeObservation|null>;
   insertPackageObservation(row:PackageFreezeObservation):Promise<void>;
-  listLocks(workspaceId:string):Promise<PlanningLock[]>;
+  listLocks(workspaceId:string,filter?:{readonly taskIds:readonly string[];readonly workPackageIds:readonly string[]}):Promise<PlanningLock[]>;
   insertLocks(rows:PlanningLock[]):Promise<void>;
   listMeetings(workspaceId:string,projectId:string):Promise<MeetingDto[]>;
   findMeetingByTask(workspaceId:string,taskId:string):Promise<MeetingDto|null>;
@@ -103,6 +103,7 @@ export type TaskMutationCommand = 'project.create'|'project.update'|'section.cre
 export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set';
 export type PlanningMutationCommand = 'period.create'|'period.update'|'commitment.create'|'commitment.update'|'plan.freeze'|'work.set'|'report.create';
 export type PlanningMutationIntent =
+ | {readonly family:'schedule';readonly command:'task.schedule.apply';readonly target:{readonly projectId:string;readonly affectedProjectIds:readonly string[]};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>}
  | {readonly family:'task';readonly command:TaskMutationCommand;readonly target:string|null;readonly input:unknown}
  | {readonly family:'field';readonly command:FieldMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'planning';readonly command:PlanningMutationCommand;readonly target:unknown;readonly input:unknown}

@@ -91,9 +91,9 @@ Canonical command names: `dependency.create`, `dependency.update`, `dependency.p
 
 Граф плоский, fixed node dimensions; auto-layout локальный deterministic preview, не domain scheduling. Late layout response для старого graph source/actor/project игнорируется. «Сохранить раскладку» отдельная reviewed команда. Новые task/graph данные не запускают молчаливый full-layout save. Keyboard form add/remove и список остаются доступными на390px; Enter/Space открывает task, Escape снимает selection, arrow movement меняет только unsent coordinates, zoom/fit labels русские. Node delete не удаляет Task. Pending/uncertain/saved layout и unsent draft защищают departure согласно текущему общему lifecycle.
 
-## 8. Отложенный P4b и historical topology
+## 8. Отдельный P4b и deferred historical topology
 
-P4b добавит nullable date-only startDate, inclusive dueDate, unknown/not_set distinction, обычные date guards и atomic preview/apply1..100 tasks одного проекта. Meeting schedule остаётся guarded single source. Calendar span не выводится из hours. Gantt/baseline overlay требует выбранного baselineId и captured values; старый snapshot без startDate — not_captured, не current backfill. Historical edges могут появиться лишь отдельной additive optional/no-default snapshot section, а current edges никогда не выдаются за прошлую topology. Ни один из этих routes/inputs не входит в текущие9 операций P4a.
+P4b реализован и принят отдельно: nullable date-only startDate, inclusive dueDate, unknown/not_set distinction, обычные date guards и atomic preview/apply1..100 tasks одного проекта. Meeting schedule остаётся guarded single source. Calendar span не выводится из hours. Gantt/baseline overlay требует выбранного baselineId и captured values; старый snapshot без startDate — not_captured, не current backfill. Historical edges могут появиться лишь отдельной additive optional/no-default snapshot section, а current edges никогда не выдаются за прошлую topology. Ни один из этих routes/inputs не входит в текущие9 операций P4a.
 
 ## 9. Приёмка P4a и граница последующих проверок
 
@@ -104,7 +104,7 @@ P4b добавит nullable date-only startDate, inclusive dueDate, unknown/not_
 5. Layout own revision0 absence/no write, first save1, stale409, exact retry unchanged. Full-set save retains filtered positions; explicit reset не удаляет tasks/edges. При overdue cutoff (включая complete и incomplete census чужих периодов) layout save не меняет task/plan/baseline и не создаёт чужой outbox/audit: допустимы только own layout event/idempotency. Task/package/plan/fact histories unchanged. Upgrade old columns/replay/pinned JSON byte equality.
 6. Browser: keyboard edge CRUD + pointer alternative, graph selected subset/cross-project/filtered blocker, one-node position save/reload, uncertain response exact retry and original target, current denied cached hiding. Desktop и390px визуально отдельно.
 
-P4b отдельные gates: start/due null/DST/effort independence, atomic date batch/races/meeting locks, selected baseline provenance/old missing field, Gantt keyboard+drag/overlay. P4a не сертифицирует эти сценарии, private ACL, Auth, old-tab upgrade или production/worker hosting.
+P4b отдельные gates: start/due null/DST/effort independence, atomic date batch/races/meeting locks, selected baseline provenance/old missing field, Gantt keyboard/date-input/overlay (pointer drag остаётся deferred). P4a не сертифицирует эти сценарии, private ACL, Auth, old-tab upgrade или production/worker hosting.
 
 ## 10. Dependency research и принятые зависимости
 
@@ -132,4 +132,4 @@ Foundation: exact contracts/domain/DB/migration0007 и единственный 
 
 Generated auto-layout на500 узлах проверяется отдельно: только автоматически вычисленные координаты при необходимости центрируются/равномерно масштабируются в разрешённый диапазон. Уже сохранённые и пользовательские координаты не нормализуются. Pending automatic calculation блокирует Save/reset/discard/move; успешная full replacement погашает отправленное reset intent. Эти UI исправления не меняют tasks, даты, планы или факты.
 
-Следующий [P4b draft](18-p4b-contract.md) остаётся отдельным не реализованным срезом до explicit GO.
+[P4b](18-p4b-contract.md) принят отдельно как bounded manual-date/Gantt/overlay срез; его доказательства не приписываются прежнему P4a gate. Pointer drag/resize, automatic scheduling и historical topology остаются deferred.

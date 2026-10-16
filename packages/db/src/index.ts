@@ -103,3 +103,5 @@ export {createRecurrenceRepository,type RecurrenceRepositoryOptions} from './rep
 
 export {createDependencyApplication,type DependencyApplicationOptions} from './dependencies/dependency-application.js';
 export {createDependencyRepository} from './repositories/dependency-repository.js';
+
+export {createTaskScheduleApplication} from './schedule-application.js';

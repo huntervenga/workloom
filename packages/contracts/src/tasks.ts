@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
+import { sqlCalendarDateSchema } from './common/sql-date.js';
 
 /**
  * P1a projects, sections, statuses, tags and tasks.
@@ -172,6 +173,8 @@ export const taskSchema = z.object({
   participants: z.array(taskParticipantSchema),
   /** Revision of the participant set, independent of the task `revision`. */
   participantsRevision: revisionSchema,
+  /** Optional without default preserves historical cached/snapshot JSON. Fresh reads emit null or date. */
+  startDate: calendarDateSchema.nullable().optional(),
   dueDate: calendarDateSchema.nullable(),
   priority: taskPrioritySchema,
   tags: z.array(tagSchema),
@@ -244,7 +247,8 @@ export const createTaskInputSchema = z
     statusId: idSchema,
     responsibleMembershipId: idSchema.nullable().optional(),
     participantMembershipIds: membershipIdListSchema.optional(),
-    dueDate: calendarDateSchema.nullable().optional(),
+    startDate: sqlCalendarDateSchema.nullable().optional(),
+    dueDate: sqlCalendarDateSchema.nullable().optional(),
     priority: taskPrioritySchema.optional(),
     tagIds: tagIdListSchema.optional(),
     estimateMinutes: minutesSchema.nullable().optional(),
@@ -270,6 +274,7 @@ const taskMutationKeys = [
   'parentTaskId',
   'responsibleMembershipId',
   'participantMembershipIds',
+  'startDate',
   'dueDate',
   'priority',
   'tagIds',
@@ -307,7 +312,8 @@ export const updateTaskInputSchema = z
     responsibleMembershipId: idSchema.nullable().optional(),
     participantMembershipIds: membershipIdListSchema.optional(),
     expectedParticipantsRevision: revisionSchema.optional(),
-    dueDate: calendarDateSchema.nullable().optional(),
+    startDate: sqlCalendarDateSchema.nullable().optional(),
+    dueDate: sqlCalendarDateSchema.nullable().optional(),
     priority: taskPrioritySchema.optional(),
     tagIds: tagIdListSchema.optional(),
     estimateMinutes: minutesSchema.nullable().optional(),

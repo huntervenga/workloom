@@ -1,0 +1,3 @@
+ALTER TABLE "tasks" ADD COLUMN "start_date" date;--> statement-breakpoint
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_dates_range_check" CHECK ("tasks"."start_date" IS NULL OR "tasks"."due_date" IS NULL OR "tasks"."start_date" <= "tasks"."due_date");--> statement-breakpoint
+ALTER TABLE "tasks" ADD CONSTRAINT "tasks_dates_supported_year_check" CHECK (("tasks"."start_date" IS NULL OR "tasks"."start_date" BETWEEN DATE '0001-01-01' AND DATE '9999-12-31') AND ("tasks"."due_date" IS NULL OR "tasks"."due_date" BETWEEN DATE '0001-01-01' AND DATE '9999-12-31'));

@@ -23,6 +23,7 @@ export const fieldLabels: Record<TaskDraftKey, string> = {
   sectionId: 'Раздел',
   responsibleMembershipId: 'Ответственный',
   participantMembershipIds: 'Участники',
+  startDate: 'Дата начала',
   dueDate: 'Срок',
   priority: 'Приоритет',
   tagIds: 'Теги',
@@ -56,6 +57,8 @@ export function formatDraftValue(key: TaskDraftKey, draft: TaskDraft, lookups: T
       return draft.responsibleMembershipId === null ? 'Не назначен' : memberName(draft.responsibleMembershipId);
     case 'participantMembershipIds':
       return draft.participantMembershipIds.length === 0 ? 'Нет участников' : draft.participantMembershipIds.map(memberName).join(', ');
+    case 'startDate':
+      return draft.startDate || 'Без начала';
     case 'dueDate':
       return draft.dueDate === '' ? 'Без срока' : draft.dueDate;
     case 'priority':
@@ -143,6 +146,8 @@ export function TaskFields({
     section: `${id}-section`,
     responsible: `${id}-responsible`,
     due: `${id}-due`,
+    start: `${id}-start`,
+    startError: `${id}-start-error`,
     dueError: `${id}-due-error`,
     priority: `${id}-priority`,
     estimate: `${id}-estimate`,
@@ -300,12 +305,18 @@ export function TaskFields({
         </div>
 
         <div>
+          <label htmlFor={ids.start} className={labelClassName}>Дата начала</label>
+          <TextInput id={ids.start} type="date" min="0001-01-01" max="9999-12-31" className="mt-1.5" value={draft.startDate ?? ''} aria-invalid={errors.startDate ? true : undefined} aria-describedby={errors.startDate ? ids.startError : undefined} onChange={event => onChange({ startDate: event.target.value })} />
+          <FieldError id={ids.startError} message={errors.startDate} />
+        </div>
+        <div>
           <label htmlFor={ids.due} className={labelClassName}>
             Срок
           </label>
           <TextInput
             id={ids.due}
             type="date"
+            min="0001-01-01" max="9999-12-31"
             className="mt-1.5"
             value={draft.dueDate}
             aria-invalid={errors.dueDate ? true : undefined}

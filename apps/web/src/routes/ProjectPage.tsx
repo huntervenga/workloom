@@ -1,3 +1,6 @@
+import { GanttView } from '../features/schedule/GanttView';
+import { ScheduleDialog, ScheduleNotices } from '../features/schedule/ScheduleDialog';
+import { useScheduleWorkspace } from '../features/schedule/useScheduleWorkspace';
 import { GraphView } from '../features/dependencies/GraphView';
 import { EdgeDialog } from '../features/dependencies/EdgeDialog';
 import { DependencyNotices } from '../features/dependencies/DependencyNotices';
@@ -169,6 +172,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // Owned here so that closing the drawer keeps uncertain commands and drafts.
   const commands = useTaskCommands(actorId, workspace.id);
   const dependencies = useDependencyWorkspace(actorId, workspace.id, project.id);
+  const schedule = useScheduleWorkspace(actorId, workspace.id, project.id, workspace.timezone);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const navigate = useNavigate();
   const meetingController=useMeetingWorkspace(actorId,workspace.id,project.id);
@@ -201,6 +205,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const [searchParams, setSearchParams] = useSearchParams();
   const taskId = searchParams.get('task');
   const graphMode = searchParams.get('view') === 'graph';
+  const ganttMode = searchParams.get('view') === 'gantt';
 
   const tasks = useTaskListQuery(actorId, workspace.id, {
     projectId: project.id,
@@ -382,14 +387,17 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </div>
       </header>
 
+      <ScheduleNotices controller={schedule} />
+      <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable} />
       <DependencyNotices controller={dependencies} />
       <EdgeDialog controller={dependencies} actorId={actorId} workspaceId={workspace.id} project={project} writable={writable} />
       <MeetingCommandNotices controller={meetingController} onOpen={(id,tab,selection)=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;})}/>
       {meetingController.commands.create.pendingCommand||meetingController.commands.create.uncertain?<div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">Создание встречи ещё не подтверждено. <Button size="sm" onClick={()=>meetingController.setCreateOpen(true)}>Открыть создание встречи</Button></div>:null}
       <CreateMeetingDialog accessDenied={[members.error,sections.error,statuses.error,meetingPeriods.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={meetingPeriods.data??[]} statuses={statuses.data??[]} sections={sections.data??[]} ownMembershipId={members.data?.find(m=>m.userId===actorId)?.id??''} timezone={workspace.timezone} onCreated={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab','plan');return next;})}/>
       <nav aria-label="Представления проекта" className="flex flex-wrap gap-2">
-        <Button variant={graphMode ? 'ghost' : 'primary'} aria-current={!graphMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>Задачи</Button>
+        <Button variant={graphMode || ganttMode ? 'ghost' : 'primary'} aria-current={!graphMode && !ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>Задачи</Button>
         <Button variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? `Граф выбранных (${selectedTaskIds.length})` : 'Граф'}</Button>
+        <Button variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>Сроки</Button>
         <Link to={`/w/${workspace.id}/projects/${project.id}/week`} className={buttonClassName({ variant: 'ghost' })}>
           <CalendarDays size={16} aria-hidden="true" />Неделя
         </Link>
@@ -441,7 +449,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               onRetry={() => void fieldsError.query.refetch()}
             />
           ) : null}
-          {graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Загружено больше 100 задач. Выберите до 100 исходных задач в списке ниже; граф не сокращает набор автоматически.</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : <TaskList
+          {graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Загружено больше 100 задач. Выберите до 100 исходных задач в списке ниже; граф не сокращает набор автоматически.</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : <TaskList
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
             query={tasks}

@@ -10,13 +10,15 @@
 
 ## Политика моделей
 
-- Предпочтительно Claude Code CLI `--model opus --effort high`; фактическую resolved-модель записывать для каждого запуска (предыдущая — `claude-opus-5-5`).
-- Fallback на текущий Codex `gpt-6.1-sol` high — только при фактическом исчерпании квоты и до reset провайдера. Fallback глобально координирует root; агенты сообщают фактическое событие квоты и время reset, недоступный Claude повторно не дёргают.
-- Возврат: в самое раннее подтверждённое провайдером время reset — ОДНА ограниченная проба, затем root рассылает возврат. Предполагаемый reset не основание.
-- Свежее подтверждённое провайдером `rate_limit_event` в этом прогоне (источник — root/foundation; то же фактическое событие наблюдал QA), статус `allowed`: `five_hour` utilization 0.75, reset `2026-10-16T02:50:00Z` (`1792119000`); `seven_day` 0.40, reset `2026-10-16T04:00:00Z` (`1792123200`). Ранее наблюдавшийся `1792119000` теперь подтверждён свежим событием, а не только исторический. Это исходное разрешённое событие; позже квота фактически исчерпана — переход указан ниже. Политика выше не меняется.
+**Текущее явное указание пользователя после P4a checkpoint: только Codex `gpt-6.1-sol` high и агенты этого семейства до нового указания. Автоматического возврата к Claude и probes на reset нет.** Исторические Opus runs, фактические quota events и прежние переключения ниже сохраняют исходную атрибуцию; прежняя политика возврата больше не действует.
+
+- Историческая политика до нового указания: предпочтительно Claude Code CLI `--model opus --effort high`; фактическую resolved-модель записывать для каждого запуска (предыдущая — `claude-opus-5-5`).
+- Историческое правило: fallback на Codex `gpt-6.1-sol` high — только при фактическом исчерпании квоты и до reset провайдера. Fallback глобально координирует root; агенты сообщают фактическое событие квоты и время reset, недоступный Claude повторно не дёргают.
+- Историческое правило возврата: в самое раннее подтверждённое провайдером время reset — ОДНА ограниченная проба, затем root рассылает возврат. Предполагаемый reset не основание.
+- Свежее подтверждённое провайдером `rate_limit_event` в этом прогоне (источник — root/foundation; то же фактическое событие наблюдал QA), статус `allowed`: `five_hour` utilization 0.75, reset `2026-10-16T02:50:00Z` (`1792119000`); `seven_day` 0.40, reset `2026-10-16T04:00:00Z` (`1792123200`). Ранее наблюдавшийся `1792119000` теперь подтверждён свежим событием, а не только исторический. Это исходное разрешённое событие; позже квота фактически исчерпана — переход указан ниже. Это историческое исходное событие; текущий выбор пользователя указан выше.
 - Без автоматической оплаты, покупок и bypass permissions. Вымышленные исторические переключения не записывать.
 - Частичный Claude-код сохраняется: HTTP acceptance session `d6fcb3e9-e3fa-4fb3-97c2-98f74c4506b3` успела записать `tests/integration/support/p1b.ts` и `tests/integration/p1b-fields.test.ts` перед следующим quota rejection; отдельная policy-сессия остановилась по квоте до записи. Последующее авторство Codex записывать отдельно; в окне fallback до reset новых Claude-запусков не было (историческое утверждение).
-- Возврат: root подтвердил фактический успешный ограниченный Claude-запуск `2026-10-16T02:50:16Z`, `--model opus --effort high` → `claude-opus-5-5`. С этого момента предпочтительная модель снова Claude; resolved-модель по-прежнему записывать для каждого запуска. Фактическим началом возврата остаётся этот запуск root.
+- Возврат: root подтвердил фактический успешный ограниченный Claude-запуск `2026-10-16T02:50:16Z`, `--model opus --effort high` → `claude-opus-5-5`. В том историческом окне предпочтительная модель снова Claude; resolved-модель по-прежнему записывать для каждого запуска. Фактическим началом возврата остаётся этот запуск root.
 - После возврата было разрешённое окно Claude. Затем root подтвердил фактическое исчерпание в 03:36–03:39 UTC; QA также получил `rejected`, `five_hour` 1.01/reset `2026-10-16T07:50:00Z` (`1792137000`), `seven_day` 0.51/reset 04:00 UTC. Reset позже конца прогона: текущая модель авторства — Codex `gpt-6.1-sol` high, новых Claude probes до дедлайна нет.
 
 | Время UTC | Модель | Статус | Фактическая причина | Reset | Возврат |
@@ -24,7 +26,9 @@
 | 2026-10-15T23:18:10Z | Claude Code CLI, opus (`claude-opus-5-5`) | исходная, предпочтительная; сначала `allowed` | исходное свежее событие root/foundation и QA | `five_hour` `02:50:00Z`, `seven_day` `04:00:00Z` | см. следующий переход |
 | 2026-10-15T23:37:38Z (время записи подтверждения) | Codex `gpt-6.1-sol` high | исторический временный fallback, подтверждён root; завершён возвратом | фактический Claude `rate_limit_event`: `rejected`, five_hour 1.0; ответ «You've hit your session limit», QA session `193b2f21-1f53-4de6-be13-4fa3be70a65f`, exit 1 | провайдер подтвердил `2026-10-16T02:50:00Z` (05:50 Кипр), seven_day 0.43/reset 04:00 UTC | возврат `2026-10-16T02:50:16Z` после одной ограниченной пробы root, см. следующую строку |
 | 2026-10-16T02:50:16Z | Claude Code CLI, `--model opus --effort high` (`claude-opus-5-5`) | историческое разрешённое окно после reset; завершено следующим fallback | фактический успешный ограниченный запуск после подтверждённого reset | — | выполнен; root разослал возврат |
-| 2026-10-16 03:36–03:39 UTC (подтверждение root; QA также rejected) | Codex `gpt-6.1-sol` high | текущий fallback | фактический Claude five_hour 1.01; QA follow-ups 9968/2540 exit 1 до записи, прежние Opus-файлы сохранены | `2026-10-16T07:50:00Z`, позже deadline 07:18:10 | в этом прогоне не запланирован |
+| 2026-10-16 03:36–03:39 UTC (подтверждение root; QA также rejected) | Codex `gpt-6.1-sol` high | исторический fallback, затем явный текущий выбор пользователя | фактический Claude five_hour 1.01; QA follow-ups 9968/2540 exit 1 до записи, прежние Opus-файлы сохранены | `2026-10-16T07:50:00Z`, позже deadline 07:18:10 | в этом прогоне не запланирован |
+
+Текущий выбор после P4a: Codex `gpt-6.1-sol` high по прямому указанию пользователя. Подтверждённый provider reset07:50UTC остаётся историческим фактом и не запускает ни probe, ни автоматическую смену модели.
 
 ## Исходный checkpoint
 
@@ -75,13 +79,17 @@ P3b по [16](16-p3b-contract.md) принят root после bounded functiona
 - Reset planned-calendar seam реально red→green; required before/after preview и calendar-only sync сохраняют task metadata/actual/history. Модели: исходные Opus files сохранены; после actual03:36–39 quota действует Codex gpt-6.1-sol high. Reset07:50UTC позже жёсткого конца07:18:10UTC; новых probes нет.
 - Следующий шаг назначает root после source checkpoint. Полный P3/MVP, Auth/private ACL, внешние календари и deploy не достигнуты. Последние15 минут прогона — стабильный checkpoint.
 
-## Активный P4a
+## Последний checkpoint P4a
 
 P4a dependencies/blocking/personal graph layout по [17](17-p4-contract.md) принят root05:05UTC; source checkpoint `12f5dbd8c9d5af8c01070e0278ec1ec8fe499fe2` создан root05:06UTC, дерево сразу после commit чистое. Initial core998/PG163/allweb228 и lint/types/build pass; reset fix allweb230 pass. Initial browser20:18pass/2QAselectlocators; corrected2:mobilepass/desktoprealasync-arrange race; после fix18focused/types/lint/build и finaldesktop1 pass. Counts раздельные в [11](11-implementation-progress.md), одного зелёного20 не заявлять. Root принял mobile4/desktopblockers и final optimized4310 FitView; все6 served HTML/assets совпадают с dist, proof в11.
 
 Quiet0007 proof:47 oldtables/cache13/4reportSQL preserved,current8/repeat[]. Genuine pre0007 fixture0600/source744125 и exact13raw replay/32scoped projections/5HTTP pinned docs unchanged. Runtime89940/PID15941 на4310 готов DB/schemaok; workerOFF, demo сохранены. Vite4311 transformedGraphView содержит новый arranging Save guard. Новых Claude calls нет: fallback Codex high до конца, reset07:50 позже deadline07:18:10. Последние15 минут — стабильный checkpoint.
 
-Следующий P4b по [18](18-p4b-contract.md) пока draft; source только после root GO/checkpoint. До0008 снять genuine ordinary TaskDto без startDate, с dueDate, explicit personal/project baseline и rawcreate/update/cache bytes; nested прежние13 сохранить. Full P4/MVP/Auth/privateACL/production не достигнуты.
+## Активный P4b
+
+Root дал GO после source12f5dbd и docs-only48b138. Точный контракт — [18](18-p4b-contract.md): ordinary start/due dates, read-only bounded schedule review, atomic keyed apply и baseline overlay без подстановки текущих дат. Functional candidate прошёл build7/lint/types, core1059/53, web252/46, actualHTTP/PG175/16 и полныйbrowser22/22. Root просмотрел все6 текущих кадров и принял boundedP4b; source checkpoint ожидается после docs freeze. Quiet0008 уже выполнен:51oldtables/21cache/6baselineSQL+6reportSQL preserved,current9/repeat[]. Fresh API40855/PID23140 на4310 и финальнаяP4bSPA совпадают с dist; workerOFF. Работает только Codex gpt-6.1-sol high по текущему указанию пользователя; Claude не вызывать автоматически.
+
+Genuine pre0008 fixture `/tmp/workloom-p4a-compat-fixture.json` (0600/source12f5dbd) снята через принятый API: ordinary TaskDto/create/update и personal/project baseline без startDate, dueDate2027-01-16 captured;1200whole/360weekly/300fact/−60, оба report types pinned.8 новых raw/cache commands +13 nested старых =21;34 old-column scoped projections сохранены. Начальная setup-попытка manual expectedRevision0 получила400; исправлена на контрактныйnull, отдельная fixture успешна. Это QA предположение, не product failure. Post0008 exact21raw/cache replay,34scoped old-column sets и4HTTP pinned docs pass; обе genuineстарые baseline показывают startDate not_captured и dueDate set2027-01-16. FreshTask startDate:null, oldcachedTask propertyabsent. Capture framing исправлен GET/UI-scroll-only без source change; initialframes сохранены. Полный P4/MVP/Auth/privateACL/production не достигнуты.
 
 ## Матрица P2a и оставшиеся границы
 
@@ -97,3 +105,4 @@ Quiet0007 proof:47 oldtables/cache13/4reportSQL preserved,current8/repeat[]. Gen
 | после root functional/visual acceptance | bounded P3a | принят локально; source `9443e063aba5b15eedb41b4ed6f4f43c68cf4baf`, дерево после commit чистое; узкая docs-only provenance без reruns | [11](11-implementation-progress.md#p3a--final-plan-cleanup-targeted-gate) |
 | после root functional/visual/operator acceptance | bounded P3b | принят локально; source `7441251470e32b47272a2031cdcf76e70c668a31`, дерево сразу после commit чистое; узкая docs-only provenance без reruns | [11](11-implementation-progress.md#p3b--итоговые-core-postgresql-upgrade-и-browser-gates) |
 | root acceptance05:05UTC/source05:06UTC | bounded P4a | source `12f5dbd8c9d5af8c01070e0278ec1ec8fe499fe2`, дерево сразу после commit чистое; narrow docs-only provenance без reruns | [11](11-implementation-progress.md#p4a--широкая-проверка-ui-redgreen-и-итоговая-приёмка) |
+| root functional/visual acceptance | bounded P4b | принят локально; source hash ожидается | [11](11-implementation-progress.md#p4b--широкий-gate-и-браузерный-кандидат) |

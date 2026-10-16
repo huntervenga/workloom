@@ -1,5 +1,5 @@
 import {
-  calendarDateSchema,
+  sqlCalendarDateSchema,
   createTaskInputSchema,
   updateTaskInputSchema,
   type CreateTaskInput,
@@ -24,6 +24,8 @@ export interface TaskDraft {
   participantMembershipIds: string[];
   /** Raw `YYYY-MM-DD`; empty means no due date. */
   dueDate: string;
+  /** Optional in retained pre-P4b drafts; absent remains untouched in old command shapes. */
+  startDate?: string;
   priority: TaskPriority;
   tagIds: string[];
   /** Hours as typed; empty means not estimated, which differs from `0`. */
@@ -38,6 +40,7 @@ export const taskDraftKeys = [
   'sectionId',
   'responsibleMembershipId',
   'participantMembershipIds',
+  'startDate',
   'dueDate',
   'priority',
   'tagIds',
@@ -46,7 +49,7 @@ export const taskDraftKeys = [
 
 export type TaskDraftKey = (typeof taskDraftKeys)[number];
 
-export type TaskDraftErrors = Partial<Record<'title' | 'description' | 'dueDate' | 'estimate' | 'form', string>>;
+export type TaskDraftErrors = Partial<Record<'title' | 'description' | 'startDate' | 'dueDate' | 'estimate' | 'form', string>>;
 
 export type BuildResult<T> = { ok: true; input: T } | { ok: false; errors: TaskDraftErrors };
 
@@ -71,6 +74,7 @@ export function draftFromTask(task: TaskDto, _memberIds?: ReadonlySet<string>): 
     responsibleMembershipId: task.responsibleMembershipId,
     participantMembershipIds: activeParticipantIds(task),
     dueDate: task.dueDate ?? '',
+    startDate: task.startDate ?? '',
     priority: task.priority,
     tagIds: task.tags.map((tag) => tag.id),
     estimate: formatEstimateInput(task.estimateMinutes),
@@ -86,6 +90,7 @@ export function emptyDraft(statusId: string, sectionId: string | null): TaskDraf
     responsibleMembershipId: null,
     participantMembershipIds: [],
     dueDate: '',
+    startDate: '',
     priority: 'none',
     tagIds: [],
     estimate: '',
@@ -103,6 +108,8 @@ function sameValue(key: TaskDraftKey, a: TaskDraft, b: TaskDraft): boolean {
     case 'participantMembershipIds':
     case 'tagIds':
       return sameIds(a[key], b[key]);
+    case 'startDate':
+      return (a.startDate ?? '') === (b.startDate ?? '');
     case 'title':
       return a.title.trim() === b.title.trim();
     case 'estimate': {
@@ -138,9 +145,11 @@ function checkDraft(draft: TaskDraft, checkEstimate: boolean): { errors: TaskDra
   if (draft.description.length > TASK_DESCRIPTION_MAX) {
     errors.description = 'Описание должно быть не длиннее 20 000 символов.';
   }
-  if (draft.dueDate !== '' && !calendarDateSchema.safeParse(draft.dueDate).success) {
+  if (draft.dueDate !== '' && !sqlCalendarDateSchema.safeParse(draft.dueDate).success) {
     errors.dueDate = 'Укажите существующую дату.';
   }
+  if (draft.startDate && !sqlCalendarDateSchema.safeParse(draft.startDate).success) errors.startDate = 'Укажите существующую дату от 0001 до 9999 года.';
+  if (draft.startDate && draft.dueDate && draft.startDate > draft.dueDate) errors.dueDate = 'Срок не может быть раньше даты начала.';
   let minutes: number | null = null;
   if (checkEstimate) {
     const estimate = parseEstimateInput(draft.estimate);
@@ -183,6 +192,7 @@ export function buildCreateInput(projectId: string, draft: TaskDraft, options: C
   }
   if (draft.responsibleMembershipId !== null) input.responsibleMembershipId = draft.responsibleMembershipId;
   if (draft.participantMembershipIds.length > 0) input.participantMembershipIds = [...draft.participantMembershipIds];
+  if (draft.startDate) input.startDate = draft.startDate;
   if (draft.dueDate !== '') input.dueDate = draft.dueDate;
   if (draft.priority !== 'none') input.priority = draft.priority;
   if (draft.tagIds.length > 0) input.tagIds = [...draft.tagIds];
@@ -213,6 +223,7 @@ export function buildUpdateInput(base: TaskDto, baseDraft: TaskDraft, draft: Tas
     input.participantMembershipIds = [...draft.participantMembershipIds];
     input.expectedParticipantsRevision = base.participantsRevision;
   }
+  if (changed.has('startDate')) input.startDate = draft.startDate || null;
   if (changed.has('dueDate')) input.dueDate = draft.dueDate === '' ? null : draft.dueDate;
   if (changed.has('priority')) input.priority = draft.priority;
   if (changed.has('tagIds')) input.tagIds = [...draft.tagIds];

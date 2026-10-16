@@ -111,3 +111,9 @@ export * from './dependencies/application.js';
 export * from './dependencies/ports.js';
 export {createDependencyApplication} from './dependencies/service.js';
 export {createTaskStatusTransitionPolicy} from './dependencies/status-policy.js';
+
+export type {TaskScheduleApplication} from './schedule/application.js';
+
+export * from './schedule/ports.js';
+export {createTaskScheduleApplication} from './schedule/service.js';
+export {assertTaskDateRange,assertOrdinaryTaskDates} from './tasks/dates.js';

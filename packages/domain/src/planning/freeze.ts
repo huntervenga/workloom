@@ -157,12 +157,15 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
     const input=record(intent.input),target=record(intent.target);
     let blocked:string[]=[];
     switch(intent.family) {
+      case 'schedule':
+        if(!await intent.previewMatches())return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
+        break;
       case 'task':
         switch(intent.command) {
           case 'task.update': {
             const task=intent.target===null?null:await repo.tasks.findTask(ws,intent.target);
             if(task&&input['estimateMinutes']!==undefined)blocked=locks.filter(l=>l.kind==='estimate'&&l.workPackageId===task.workPackageId).map(l=>l.baselineId);
-            if(task?.meetingId&&['participantMembershipIds','responsibleMembershipId','dueDate','parentTaskId','estimateMinutes'].some(k=>input[k]!==undefined)) {
+            if(task?.meetingId&&['participantMembershipIds','responsibleMembershipId','startDate','dueDate','parentTaskId','estimateMinutes'].some(k=>input[k]!==undefined)) {
               const meetingLocks=await repo.listMeetingLocks(ws,task.meetingId);
               if(meetingLocks.length)blocked.push(...meetingLocks.map(l=>l.baselineId));
               else throw rule('Use the meeting command to change its roster, schedule or package.');
