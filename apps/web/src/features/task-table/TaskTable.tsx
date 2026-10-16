@@ -593,16 +593,19 @@ function SummaryRow({ summary, partial, columnCount }: { summary: WorkPackageSum
   const { total } = summary;
   return (
     <tr className="h-11 border-t border-line-strong bg-canvas">
-      <td colSpan={columnCount} className="px-3 py-1.5 text-xs text-muted">
-        <span className="mr-3 inline-flex font-semibold text-ink tabular-nums">{total.status === 'ok' ? formatEstimate(total.minutes) : <Empty label={t('taskTable.taskTable.totalUnavailable')} />}</span>
-        <span className="font-medium text-ink-soft">{t('taskTable.taskTable.loadedTeamBudget')}</span>
-        <span> {t('taskTable.taskTable.loadedCount', { count: summary.taskCount })}</span>
-        <span> {t('taskTable.taskTable.unestimatedCount', { count: summary.unestimatedTaskCount })}</span>
-        <span> {t('taskTable.taskTable.sharedWorkBudgetForTheWholeTeam')}</span>
-        {partial ? <span> {t('taskTable.taskTable.partialProjectTotalCoversLoadedTasksOnly')}</span> : null}
-        {total.status === 'needs_refresh' ? (
-          <span className="text-amber-800"> {t('taskTable.taskTable.sharedEstimatesDisagreeRefreshDataToCalculateThe')}</span>
-        ) : null}
+      {/* The text pins to the scroller's visible width (container units), so horizontal browsing keeps it readable. */}
+      <td colSpan={columnCount} className="p-0 text-xs text-muted">
+        <div data-task-table-summary="" className="sticky left-0 w-[100cqw] px-3 py-1.5">
+          <span className="mr-3 inline-flex font-semibold text-ink tabular-nums">{total.status === 'ok' ? formatEstimate(total.minutes) : <Empty label={t('taskTable.taskTable.totalUnavailable')} />}</span>
+          <span className="font-medium text-ink-soft">{t('taskTable.taskTable.loadedTeamBudget')}</span>
+          <span> {t('taskTable.taskTable.loadedCount', { count: summary.taskCount })}</span>
+          <span> {t('taskTable.taskTable.unestimatedCount', { count: summary.unestimatedTaskCount })}</span>
+          <span> {t('taskTable.taskTable.sharedWorkBudgetForTheWholeTeam')}</span>
+          {partial ? <span> {t('taskTable.taskTable.partialProjectTotalCoversLoadedTasksOnly')}</span> : null}
+          {total.status === 'needs_refresh' ? (
+            <span className="text-amber-800"> {t('taskTable.taskTable.sharedEstimatesDisagreeRefreshDataToCalculateThe')}</span>
+          ) : null}
+        </div>
       </td>
 
     </tr>
@@ -717,7 +720,7 @@ export function TaskTable({
   };
 
   return (
-    <div data-task-table-scroll="" className={cn('relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
+    <div data-task-table-scroll="" className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} data-inline-editor={column.id === editorColumnId || undefined} style={column.id === 'title' ? undefined : { width: columnWidth(column) }} />)}</colgroup>

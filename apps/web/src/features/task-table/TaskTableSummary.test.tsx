@@ -32,6 +32,25 @@ it('keeps deduplicated loaded scope, shared estimates counted once and missing e
   expect(row.textContent).toBe(text);
 });
 
+it('pins the unchanged footer budget to the local scroller viewport instead of the full table width', () => {
+  renderTable({ tasks: [makeTask({ id: 'known', workPackageId: 'known', estimateMinutes: 90 }), makeTask({ id: 'missing', workPackageId: 'missing', estimateMinutes: null })], partial: true });
+  const table = screen.getByRole('table');
+  const row = summaryRow();
+  const cells = within(row).getAllByRole('cell');
+  expect(cells).toHaveLength(1);
+  expect(row.parentElement?.tagName).toBe('TFOOT');
+  expect(row.closest('table')).toBe(table);
+  expect(cells[0]).toHaveAttribute('colspan', String(table.querySelectorAll('col').length));
+  // jsdom has no layout: the native table-guidance gate measures the real geometry.
+  const scroller = table.closest('[data-task-table-scroll]');
+  expect(scroller).toHaveClass('@container', 'overflow-auto', 'rounded-2xl', 'border');
+  const pinned = within(row).getByText('Loaded team budget').closest('[data-task-table-summary]');
+  expect(pinned?.parentElement).toBe(cells[0]);
+  expect(pinned).toHaveClass('sticky', 'left-0', 'w-[100cqw]');
+  expect(pinned).toHaveTextContent('1h 30mLoaded team budget · Loaded: 2 tasks · Not estimated: 1 task · Shared estimates counted once. · Budget covers loaded tasks only.');
+  expect(row.textContent).toBe(pinned?.textContent);
+});
+
 it('continues to identify a complete loaded page as loaded scope', () => {
   renderTable({ tasks: [makeTask({ id: 'zero', workPackageId: 'zero', estimateMinutes: 0 })] });
   const row = summaryRow();
