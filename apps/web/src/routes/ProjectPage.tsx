@@ -694,6 +694,24 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // claimed; a filter, search or unloaded page labels the list as a subset.
   // Including archived tasks only widens the list; every other filter narrows it.
   const filtered = hasActiveTaskFilters({ ...filters, includeArchived: false });
+  // A new object for every filter, search, view or history change, so Back to an equal key
+  // never revives an older confirmation.
+  const quickCreateScope = useMemo(() => ({ key: taskPresentationKey, filtered }), [taskPresentationKey, filtered]);
+  const quickCreateHead = useRef(quickCreateScope);
+  useLayoutEffect(() => { quickCreateHead.current = quickCreateScope; }, [quickCreateScope]);
+  // Only the latest confirmed quick create a filter may hide; shown only in its own scope.
+  const [quickCreated, setQuickCreated] = useState<{ scope: typeof quickCreateScope; taskId: string; title: string } | null>(null);
+  useEffect(() => { setQuickCreated(before => before === null || before.scope === quickCreateScope ? before : null); }, [quickCreateScope]);
+  // Captured with the queued title and called only after its confirmed answer. An answer for a
+  // scope that has since changed confirms nothing; the authoritative list shows the row.
+  const quickTaskCreated = (task: TaskDto) => {
+    if (quickCreateHead.current !== quickCreateScope) return;
+    if (quickCreateScope.filtered) {
+      // The visible feedback is the one announcement, never repeated by an earlier generic one.
+      setAnnouncement(null);
+      setQuickCreated({ scope: quickCreateScope, taskId: task.id, title: task.title });
+    } else setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }));
+  };
   const loadedSubtasks = useMemo((): LoadedSubtasks | undefined => {
     if (taskId === null || !isUuid(taskId) || tasks.data === undefined || (tasks.isError && !tasks.isFetchNextPageError)) return undefined;
     const parentId = taskId.toLowerCase();
@@ -785,6 +803,17 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       <div role="status" aria-live="polite" className="sr-only">
         {announcement ? t(announcement.key, announcement.params) : null}
       </div>
+      {/* Fixed outside the layout flow, so the header, table and next input never shift. */}
+      <div role="status" aria-live="polite" className="fixed inset-x-4 bottom-4 z-30 empty:hidden sm:left-auto sm:w-96">
+        {/* The message keeps its own full-width row; the actions wrap compactly below it. */}
+        {quickCreated?.scope === quickCreateScope ? <div className="rounded-lg border border-line bg-surface px-3 py-2 text-sm shadow-lg">
+          <p className="line-clamp-3 break-words">{t('tasks.quickAdd.createdFiltered', { title: quickCreated.title })}</p>
+          <div className="mt-1 flex flex-wrap justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={() => openTask(quickCreated.taskId)}>{t('tasks.quickAdd.openDetails')}</Button>
+            <Button size="sm" variant="ghost" onClick={() => setQuickCreated(null)}>{t('tasks.quickAdd.dismissCreated')}</Button>
+          </div>
+        </div> : null}
+      </div>
 
       {metadataError ? (
         <QueryErrorState
@@ -872,7 +901,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
-            quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} commands={commands} writable={writable} onClose={reason => closeQuickAdd(quickAddSection ?? null, reason)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
+            quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} commands={commands} writable={writable} onClose={reason => closeQuickAdd(quickAddSection ?? null, reason)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={quickTaskCreated} /> } : undefined}
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
             query={tasks}

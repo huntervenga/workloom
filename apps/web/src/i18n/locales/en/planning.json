@@ -44,6 +44,14 @@
   "chooseATask": "Choose a task",
   "savedTaskNotLoaded": "Saved task · not loaded",
   "loadMoreTasks": "Load more tasks",
+  "taskCatalog": {
+    "loading": "Loading tasks…",
+    "failed": "Could not load tasks. Your entry is kept.",
+    "retry": "Retry loading tasks",
+    "loadingMore": "Loading more tasks…",
+    "moreFailed": "Could not load more tasks. Loaded tasks and your entry are kept.",
+    "retryMore": "Retry loading more tasks"
+  },
   "whoseHours": "Whose hours",
   "actualHoursThisWeek": "Actual hours this week",
   "forExample5Or130": "For example, 5 or 1:30",

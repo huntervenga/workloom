@@ -23,6 +23,12 @@ export interface FactSession {
 export function factSession(period: PlanningPeriodDto, log: ManualPeriodWorkLogDto | null, membershipId: string, taskId = ''): FactSession {
   return { key: log?.id ?? `new:${period.id}:${membershipId}`, period, base: log, taskId: log?.taskId ?? taskId, membershipId: log?.membershipId ?? membershipId, hours: formatEstimateInput(log?.minutes ?? null), reason: '', state: log?.state ?? 'active', stale: false };
 }
+/** `loaded` means a usable initial catalog is shown; `failed` names the read that last failed. */
+export interface TaskCatalogState {
+  loaded: boolean;
+  failed: 'tasks' | 'moreTasks' | null;
+  fetching: boolean;
+}
 interface Props {
   session: FactSession | null;
   open: boolean;
@@ -38,6 +44,10 @@ interface Props {
   hasMoreTasks: boolean;
   loadingMoreTasks: boolean;
   onLoadTasks: () => void;
+  /** Task-catalog read state for the task selector; omitted (fixed-context callers) means ready. */
+  taskCatalog?: TaskCatalogState;
+  /** Re-reads the initial task catalog; a failed next page retries through onLoadTasks. */
+  onRetryTasks?: () => void;
   onChange: (session: FactSession) => void;
   onClose: () => void;
   onSaved: (key: string) => void;
@@ -62,6 +72,9 @@ export function FactDialog(props: Props) {
   const missingTask = session.taskId && !props.tasks.some((task) => task.id === session.taskId);
   const missingMember = session.membershipId && !props.members.some((member) => member.id === session.membershipId);
   const ownError = mutation.variables?.periodId === session.period.id && mutation.variables.taskId === session.taskId && mutation.variables.membershipId === session.membershipId ? mutation.error : null;
+  const catalog = props.taskCatalog;
+  // Only a fresh entry chooses its task from the catalog; held retries and existing corrections never wait for it.
+  const catalogMissing = !props.fixedContext && catalog?.loaded === false && session.base === null;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -69,7 +82,7 @@ export function FactDialog(props: Props) {
       if (!mutation.pendingCommand && mutation.uncertain) mutation.retryUncertain({ onSuccess: () => props.onSaved(session.key) });
       return;
     }
-    if (locked || session.stale || !editable) return;
+    if (locked || session.stale || !editable || catalogMissing) return;
     const parsed = parseEstimateInput(session.hours);
     if (!parsed.valid || parsed.minutes === null) { setValidation('planning.enterWeeklyHoursForExample5130Or'); return; }
     const selectedTask=props.tasks.find(task=>task.id===session.taskId);
@@ -98,7 +111,9 @@ export function FactDialog(props: Props) {
         {props.contextNote}
         {blocked ? <p role="status" className="text-sm text-amber-800">{t('planning.anotherActualHoursEntryIsSavingOrItsResult')}</p> : null}
         <fieldset disabled={locked || !editable} className="min-w-0 space-y-4">
-          {!props.fixedContext ? <div className="space-y-1.5"><label htmlFor={`${id}-task`} className="text-sm font-medium">{t('planning.task')}</label><select id={`${id}-task`} className={inputClassName()} value={session.taskId} disabled={session.base !== null || props.fixedContext} onChange={(event) => props.onChange({ ...session, taskId: event.target.value })}><option value="">{t('planning.chooseATask')}</option>{props.tasks.filter(task=>task.meetingId===null).map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}{missingTask ? <option value={session.taskId}>{t('planning.savedTaskNotLoaded')}</option> : null}</select>{props.hasMoreTasks ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>{t('planning.loadMoreTasks')}</Button> : null}</div> : null}
+          {!props.fixedContext ? <div className="space-y-1.5"><label htmlFor={`${id}-task`} className="text-sm font-medium">{t('planning.task')}</label><select id={`${id}-task`} className={inputClassName()} value={session.taskId} disabled={session.base !== null || props.fixedContext || catalogMissing} onChange={(event) => props.onChange({ ...session, taskId: event.target.value })}><option value="">{t('planning.chooseATask')}</option>{props.tasks.filter(task=>task.meetingId===null).map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}{missingTask ? <option value={session.taskId}>{t('planning.savedTaskNotLoaded')}</option> : null}</select>
+            {catalog && (!catalog.loaded || catalog.failed === 'tasks') ? catalog.failed === 'tasks' && !catalog.fetching ? <div className="flex flex-wrap items-center gap-2"><p role="alert" className="min-w-0 flex-1 text-sm text-red-700">{t('planning.taskCatalog.failed')}</p><Button size="sm" onClick={props.onRetryTasks}>{t('planning.taskCatalog.retry')}</Button></div> : <p role="status" className="text-sm text-muted">{t('planning.taskCatalog.loading')}</p> : null}
+            {catalog?.failed === 'moreTasks' ? props.loadingMoreTasks ? <Button size="sm" disabled>{t('planning.taskCatalog.loadingMore')}</Button> : <div className="flex flex-wrap items-center gap-2"><p role="alert" className="min-w-0 flex-1 text-sm text-red-700">{t('planning.taskCatalog.moreFailed')}</p><Button size="sm" onClick={props.onLoadTasks}>{t('planning.taskCatalog.retryMore')}</Button></div> : props.hasMoreTasks && catalog?.loaded !== false ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>{t('planning.loadMoreTasks')}</Button> : null}</div> : null}
           {!props.fixedContext && !props.fixedMember ? <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">{t('planning.whoseHours')}</label><select id={`${id}-member`} className={inputClassName()} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers || props.fixedContext} onChange={(event) => props.onChange({ ...session, membershipId: event.target.value })}><option value="">{t('planning.chooseAPerson')}</option>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}{missingMember ? <option value={session.membershipId}>{t('planning.savedPersonMissingFromCurrentList')}</option> : null}</select></div> : null}
           <div className="space-y-1.5"><label htmlFor={`${id}-hours`} className="text-sm font-medium">{t('planning.actualHoursThisWeek')}</label><TextInput id={`${id}-hours`} autoFocus={props.fixedContext} value={shownHours} onChange={(event) => props.onChange({ ...session, hours: event.target.value })} inputMode="decimal" placeholder={t('planning.forExample5Or130')} /><p className="text-xs text-muted">{t('planning.0ConfirmsNoTimeSpentBlankStaysUnknownThis')}</p></div>
           {session.base ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={shownState === 'void'} onChange={(event) => props.onChange({ ...session, state: event.target.checked ? 'void' : 'active' })} />{t('planning.voidThisEntry')}</label> : null}
@@ -107,7 +122,7 @@ export function FactDialog(props: Props) {
         {validation ? <p role="alert" className="text-sm text-red-700">{t(validation)}</p> : null}
         <SaveFeedback subject="factSave" error={ownError} uncertainError={heldHere ? mutation.uncertain?.error ?? null : null} action={session.stale ? <Button size="sm" disabled={reloading} onClick={() => void reload()}>{t('planning.reloadCurrentEntry')}</Button> : null} />
         {reloadFailed ? <p role="alert" className="text-sm text-red-700">{t('planning.couldNotRefreshTheEntryYourInputIsSaved')}</p> : null}
-        <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4"><Button onClick={props.onClose}>{t('planning.close')}</Button>{editable ? <Button type="submit" variant="primary" disabled={mutation.pendingCommand !== null || blocked || session.stale}>{heldHere ? mutation.pendingCommand ? t('planning.saving') : t('planning.retryOriginalSave') : t('planning.saveActualHours')}</Button> : null}</div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-4"><Button onClick={props.onClose}>{t('planning.close')}</Button>{editable ? <Button type="submit" variant="primary" disabled={mutation.pendingCommand !== null || blocked || session.stale || (catalogMissing && !heldHere)}>{heldHere ? mutation.pendingCommand ? t('planning.saving') : t('planning.retryOriginalSave') : t('planning.saveActualHours')}</Button> : null}</div>
       </form>
     </DialogShell>
   );

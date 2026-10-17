@@ -225,7 +225,10 @@
     "add": "Add task",
     "moreDetails": "More details",
     "keyboardHint": "Enter adds · Escape keeps draft",
-    "keyboardHintNext": "Enter adds this task and starts the next one. Escape closes and keeps a typed draft."
+    "keyboardHintNext": "Enter adds this task and starts the next one. Escape closes and keeps a typed draft.",
+    "createdFiltered": "Task “{{title}}” created. Your filters are still applied.",
+    "openDetails": "Open details",
+    "dismissCreated": "Dismiss confirmation"
   },
   "inlineEdit": {
     "existingDraft": "This task has other unsaved changes. Resume its full draft to review them.",
