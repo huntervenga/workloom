@@ -1,6 +1,8 @@
 # Workloom
 
-Ограниченный локальный shared Auth **`be63752`** принят и включён: backend/isolated-PG/fake-provider Chrome gates прошли, живой redirect достиг Google. Пользовательский Google login не завершён. Общий web gate отдельно остаётся RED (1534 passed / 5 failed). Настройка, собственный server-only `AUTH_SESSION_KEY`, действующие upstream origins и отдельные gates — в [76](docs/76-shared-auth-local.md). Production/Railway остаются закрыты.
+На основном локальном сервере **`http://127.0.0.1:4310` активирован код `d534371`** (`codex/bootstrap-plan`): создание workspace ([77](docs/77-workspace-creation.md)), новая строка, детали и ручной порядок таблицы ([78](docs/78-task-row-and-manual-order.md)). Global `npm run check` до test-only follow-up, backend **1498/92**, isolated PG **9/3 + 14/2**, scoped component **79/5 + 30/3** и compiled Chrome **6/6 с fake Auth provider** прошли. Сохранение прежних данных и served assets подтверждено отдельным activation proof. Последний quiet full web на `d534371`: **1677 PASS / 1 FAIL, 195 PASS / 1 FAIL из196 suites, 508.77s**, один worker и прежние deadlines. Единственный RED — устаревший ProjectSorting oracle — исправлен **одной строкой на Enter** в test-only commit **`9b6f314`**; все assertions/deadlines сохранены, scoped **15/1 PASS, 26.81s**, scoped ESLint/diff check PASS. **Весь command после исправления не повторялся; единого1678/0 результата не заявлено.** Initial **1583 PASS /87 RED** сохранён как история; известных функциональных дефектов в ограниченном запрошенном UX не осталось. Нового завершённого live Google login и actual old-tab upgrade rerun нет; production/deployment не выполнялись.
+
+Предыдущий принятый Auth checkpoint — ограниченный локальный shared Auth **`be63752`**: backend/isolated-PG/fake-provider Chrome gates прошли, живой redirect достиг Google. Пользовательский Google login не завершён. Общий web gate этого baseline отдельно остаётся RED (1534 passed / 5 failed); новые focused результаты его не заменяют. Настройка, собственный server-only `AUTH_SESSION_KEY`, действующие upstream origins и отдельные gates — в [76](docs/76-shared-auth-local.md). Production/Railway остаются закрыты.
 
 Текущий route/landing checkpoint — **`9e13b63`**, compiled entry `app-DTmpv0na.js` ([75](docs/75-hosting-and-auth-setup.md)); базовый daily UX — **`bd8ce21`**: baseline `7b9a712`, перенос текста Graph `2f71ad8` и исправление Graph locale/accessibility labels. Широкие **1367 web / 171 набор** и **101 разный compiled native (97 + 4 отдельно)** относятся к DG baseline. BRg отдельно прошёл перекрывающиеся 25 night cases, 15 dense views и 30-минутный read-only soak четырёх страниц. Финальный Tdb прошёл global check/build, два actual-provider locale tests, 15 dense views, английский Chrome keyboard/live/Discard и сохранение данных/процессов/assets. Полный 1367/101 заново не заявляется. UI остаётся English/LTR; virtual DE — unit fixture, не готовая локализация или physical AT. Точные scopes и RED — в [71](docs/71-night-verification.md), практический следующий шаг — в [74](docs/74-next-team-pilot.md). Resize, automatic scheduling, Auth/private ACL, physical touch/IME, Safari и production не заявлены.
 
@@ -74,6 +76,8 @@ Worker штатно остановлен и сейчас OFF; шесть stale j
 - [Восстановление личных колонок после конфликта и закрытой ошибки](docs/64-personal-columns-recovery.md)
 - [Ширина активного inline-редактора](docs/65-inline-editor-layout.md)
 - [Быстрый старт для команды](docs/66-team-quick-start.md)
+- [Создание workspace (локально4310, код d534371)](docs/77-workspace-creation.md)
+- [Новая строка таблицы и ручной порядок (локально4310, код d534371)](docs/78-task-row-and-manual-order.md)
 
 ## Стек и границы
 
