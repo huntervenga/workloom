@@ -8,6 +8,7 @@ import {
   createDependencyApplication,
   createMeetingApplication,
   createMyTasksApplication,
+  createWorkspaceChangeHeadApplication,
   createLocalCredentialApplication,
   createLocalMcpApplication,
   createPlanningApplication,
@@ -25,7 +26,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { AppConfig } from './config.js';
@@ -46,6 +47,7 @@ import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from
 import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './http/routes.js';
 import { registerTaskRoutes } from './http/task-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
+import { registerWorkspaceChangeHeadRoutes } from './http/workspace-change-head-routes.js';
 import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
 import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-routes.js';
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, resolveWebDist, sendSpaIndex, shouldServeSpa } from './http/static-web.js';
@@ -64,6 +66,8 @@ export interface AppDependencies {
   readonly taskApplication?: TaskApplication;
   /** Self-only workspace task inbox; reads share one read-only snapshot. */
   readonly myTasksApplication?: MyTasksApplication;
+  /** Authorized current-workspace head; uses one read-only snapshot. */
+  readonly workspaceChangeHeadApplication?: WorkspaceChangeHeadApplication;
   readonly taskCommentsApplication?: TaskCommentsApplication;
   readonly personalTablePreferenceApplication?: PersonalTablePreferenceApplication;
   /**
@@ -118,6 +122,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   // Reuses the same pool; no additional connection is opened.
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
   const myTasksApplication = dependencies.myTasksApplication ?? (database === undefined ? undefined : createMyTasksApplication(database));
+  const workspaceChangeHeadApplication = dependencies.workspaceChangeHeadApplication ?? (database === undefined ? undefined : createWorkspaceChangeHeadApplication(database));
   const taskCommentsApplication = dependencies.taskCommentsApplication ?? (database === undefined ? undefined : createTaskCommentsApplication(database));
   const personalTablePreferenceApplication = dependencies.personalTablePreferenceApplication ?? (database === undefined ? undefined : createPersonalTablePreferenceApplication(database));
   const taskFieldApplication =
@@ -221,6 +226,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   registerApiRoutes(app, routeDeps);
   if (taskApplication !== undefined) {
     registerTaskRoutes(app, { identity, tasks: taskApplication });
+  }
+  if (workspaceChangeHeadApplication !== undefined) {
+    registerWorkspaceChangeHeadRoutes(app, { identity, workspaceChangeHead: workspaceChangeHeadApplication });
   }
   if (myTasksApplication !== undefined) {
     registerMyTasksRoutes(app, { identity, myTasks: myTasksApplication });

@@ -124,3 +124,6 @@ export {createCutoffDiscovery} from './cutoff/discovery.js';
 export {createCutoffOutboxRelay} from './cutoff/outbox-relay.js';
 
 export {CUTOFF_QUEUE,CUTOFF_DEAD_LETTER_QUEUE,CUTOFF_QUEUE_OPTIONS,CUTOFF_DEAD_LETTER_QUEUE_OPTIONS,CUTOFF_QUEUE_REGISTRATIONS,WORKLOOM_QUEUE_REGISTRATIONS} from './queue/schema.js';
+
+export { createWorkspaceChangeHeadApplication } from './workspace-change-head/application.js';
+export { createWorkspaceChangeHeadReadRepository } from './workspace-change-head/repository.js';

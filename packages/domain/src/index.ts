@@ -145,3 +145,7 @@ export * from './cutoff/ports.js';
 export {createCutoffApplication, cutoffAuthority, cutoffSources, requireCutoffPeriod, requestCutoffForPeriod} from './cutoff/service.js';
 
 export {createCutoffWorkerFacade,cutoffOutcome,blockedCutoffOutcome} from './cutoff/worker.js';
+
+export type { WorkspaceChangeHeadApplication } from './workspace-change-head/application.js';
+export type { WorkspaceChangeHeadRecord, WorkspaceChangeHeadReadRepository, WorkspaceChangeHeadReadUnitOfWork } from './workspace-change-head/ports.js';
+export { createWorkspaceChangeHeadApplication } from './workspace-change-head/service.js';

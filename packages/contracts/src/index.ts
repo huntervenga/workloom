@@ -24,3 +24,5 @@ export { taskTableBuiltinColumnSchema, tableColumnRefSchema, columnChoiceSchema,
 export type { TaskTableBuiltinColumn, TableColumnRef, ColumnChoice, PersonalTablePreferenceDto, UpdatePersonalTablePreferenceInput } from './table-preferences.js';
 
 export * from './cutoff.js';
+
+export * from './workspace-change-head.js';
