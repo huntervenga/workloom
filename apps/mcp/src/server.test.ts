@@ -37,6 +37,23 @@ describe('actual SDK guarded tool handlers',()=>{
   for (const sort of ['due_desc',['due_asc'],{dueDate:'asc'}]) expect((await c.callTool({name:'search_tasks',arguments:{query:{projectId:requestId,sort}}})).isError).toBe(true);
   expect(callTool).not.toHaveBeenCalled();
  });
+ it('discovers and forwards the optional open completion filter from the shared search query', async () => {
+  const callTool = vi.fn().mockResolvedValue({data:{tool:'search_tasks',data:[],nextCursor:null},meta:{requestId}});
+  const c = await connect({listTools:async()=>({data:{tools:['search_tasks']},meta:{requestId}}),callTool});
+  const catalog = await c.listTools();
+  const querySchema = (catalog.tools[0]?.inputSchema.properties as Record<string,{properties:Record<string,unknown>;required?:string[]}>|undefined)?.query;
+  expect(querySchema?.properties.completion).toMatchObject({const:'open'});
+  expect(querySchema?.required ?? []).not.toContain('completion');
+  const open = {projectId:requestId,completion:'open',statusId:requestId,sort:'due_asc',limit:2};
+  expect((await c.callTool({name:'search_tasks',arguments:{query:open}})).isError).not.toBe(true);
+  expect(callTool).toHaveBeenLastCalledWith('search_tasks',{query:open});
+  expect((await c.callTool({name:'search_tasks',arguments:{query:{projectId:requestId,limit:2}}})).isError).not.toBe(true);
+  expect(callTool).toHaveBeenLastCalledWith('search_tasks',{query:{projectId:requestId,limit:2}});
+  expect(Object.hasOwn((callTool.mock.lastCall?.[1] as {query:object}).query,'completion')).toBe(false);
+  callTool.mockClear();
+  for (const completion of ['all','done','OPEN','',null,['open'],{group:'todo'}]) expect((await c.callTool({name:'search_tasks',arguments:{query:{projectId:requestId,completion}}})).isError).toBe(true);
+  expect(callTool).not.toHaveBeenCalled();
+ });
  it('never dispatches actor injection or malformed write inputs',async()=>{const bridge={listTools:vi.fn().mockResolvedValue({data:{tools:[]},meta:{requestId}}),callTool:vi.fn()};const c=await connect(bridge);expect((await c.callTool({name:'list_projects',arguments:{actorId:requestId}})).isError).toBe(true);expect((await c.callTool({name:'create_task',arguments:{}})).isError).toBe(true);expect(bridge.callTool).not.toHaveBeenCalled();});
 });
 

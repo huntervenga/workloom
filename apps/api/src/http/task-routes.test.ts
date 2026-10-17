@@ -396,6 +396,12 @@ describe('P1a task routes (HTTP adapter)', () => {
       `${p}&tagId=${IDS.tag}&tagId=${IDS.tag}`,
       `${p}&tagIds=${IDS.tag}`,
       `${p}&sort=title`,
+      `${p}&completion=all`,
+      `${p}&completion=done`,
+      `${p}&completion=OPEN`,
+      `${p}&completion=`,
+      `${p}&completion=open&completion=open`,
+      `${p}&completed=open`,
       `${p}&cursor=`,
       `${p}&search=${'s'.repeat(201)}`,
       `${p}&actor=${FIXTURE_USER_IDS.outsider}`,
@@ -441,6 +447,17 @@ describe('P1a task routes (HTTP adapter)', () => {
       projectId: IDS.project, tagId: IDS.tag, sectionId: IDS.section,
       statusId: IDS.status, participantMembershipId: IDS.membership, search: 'spec', limit: 2,
     }]);
+  });
+
+  it('forwards the scalar open completion filter and keeps omitted queries in their prior shape', async () => {
+    const query = `projectId=${IDS.project}&completion=open&statusId=${IDS.status}&tagId=${IDS.tag}&sort=due_asc&limit=2&cursor=open-token`;
+    expect((await send(app, routeFor('listTasks'), { query })).statusCode).toBe(200);
+    expect(calls[0]?.args).toStrictEqual([{
+      projectId: IDS.project, completion: 'open', statusId: IDS.status, tagId: IDS.tag, sort: 'due_asc', limit: 2, cursor: 'open-token',
+    }]);
+    expect((await send(app, routeFor('listTasks'), { query: `projectId=${IDS.project}&limit=2` })).statusCode).toBe(200);
+    expect(calls[1]?.args).toStrictEqual([{ projectId: IDS.project, limit: 2 }]);
+    expect(Object.hasOwn(calls[1]?.args[0] as object, 'completion')).toBe(false);
   });
 
   it.each([

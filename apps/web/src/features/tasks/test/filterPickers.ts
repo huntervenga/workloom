@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import type { UserEvent } from '@testing-library/user-event';
 
-export type FilterPickerLabel = 'Task status' | 'Task participant' | 'Task tag';
+export type FilterPickerLabel = 'Task completion' | 'Task status' | 'Task participant' | 'Task tag';
 
 /** The custom filter picker trigger. Its visible text is the selected choice. */
 export const filterPicker = (label: FilterPickerLabel) => screen.getByRole('combobox', { name: label });

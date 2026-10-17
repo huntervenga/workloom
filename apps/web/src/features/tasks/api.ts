@@ -53,6 +53,9 @@ export function normalizeTaskFilters(filters: TaskListFilters): TaskListFilters 
   // Omitted/manual keep the legacy request and cache identity. Unsupported runtime
   // values still reach schema validation rather than silently becoming a valid sort.
   if (filters.sort !== undefined && filters.sort !== 'manual') normalized.sort = filters.sort;
+  // Omitted means all tasks with the legacy identity. An explicit value is forwarded as given,
+  // so an unsupported runtime string is rejected by the schema instead of reading every task.
+  if (filters.completion !== undefined) normalized.completion = filters.completion;
   return normalized;
 }
 

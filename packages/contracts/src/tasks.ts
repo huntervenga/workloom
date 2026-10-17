@@ -364,6 +364,11 @@ export const taskListQuerySchema = z.strictObject({
   participantMembershipId: idSchema.optional(),
   /** Exact tag on this task; absent preserves the existing cursor query hash. */
   tagId: idSchema.optional(),
+  /**
+   * `open` keeps tasks whose status is in the `todo` or `in_progress` group, custom statuses
+   * included. Absent means all tasks and preserves the existing cursor query hash.
+   */
+  completion: z.literal('open').optional(),
   search: z.string().max(200).optional(),
   includeArchived: queryBooleanSchema.optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),

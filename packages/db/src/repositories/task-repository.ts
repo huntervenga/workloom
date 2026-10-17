@@ -629,6 +629,25 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
           ),
         );
       }
+      if (input.completion !== undefined) {
+        if (input.completion !== 'open') throw new TypeError('listTasks got an unsupported completion filter.');
+        // Status group decides completion, so custom statuses follow their group; no client filtering.
+        conditions.push(
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(taskStatuses)
+              .where(
+                and(
+                  eq(taskStatuses.workspaceId, tasks.workspaceId),
+                  eq(taskStatuses.projectId, tasks.projectId),
+                  eq(taskStatuses.id, tasks.statusId),
+                  inArray(taskStatuses.group, ['todo', 'in_progress']),
+                ),
+              ),
+          ),
+        );
+      }
       if (input.search !== undefined && input.search !== '') {
         const pattern = likeContains(input.search);
         conditions.push(

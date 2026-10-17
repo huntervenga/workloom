@@ -361,3 +361,25 @@ describe('bounded task due sort query', () => {
     expect(taskListQuerySchema.safeParse({ projectId: ids.project, sort: 'due_asc', direction: 'asc' }).success).toBe(false);
   });
 });
+
+describe('open task completion filter query', () => {
+  it('adds no completion key or default to legacy query output', () => {
+    const legacy = taskListQuerySchema.parse({ projectId: ids.project });
+    expect(legacy).toEqual({ projectId: ids.project, limit: 50 });
+    expect(Object.keys(legacy)).toEqual(['projectId', 'limit']);
+    expect(Object.hasOwn(legacy, 'completion')).toBe(false);
+    const explicitUndefined = taskListQuerySchema.parse({ projectId: ids.project, completion: undefined });
+    expect(Object.hasOwn(explicitUndefined, 'completion')).toBe(true);
+    expect(explicitUndefined.completion).toBeUndefined();
+  });
+
+  it('accepts only the scalar open mode alongside the other filters', () => {
+    const query = { projectId: ids.project, statusId: ids.status, tagId: ids.tagDesign, completion: 'open', sort: 'due_asc' };
+    expect(taskListQuerySchema.parse(query)).toEqual({ ...query, limit: 50 });
+    for (const completion of ['all', 'done', 'closed', 'OPEN', '', null, true, ['open'], { group: 'todo' }]) {
+      expect(taskListQuerySchema.safeParse({ projectId: ids.project, completion }).success).toBe(false);
+    }
+    expect(taskListQuerySchema.safeParse({ projectId: ids.project, completed: 'open' }).success).toBe(false);
+    expect(taskListQuerySchema.safeParse({ projectId: ids.project, statusGroup: 'todo' }).success).toBe(false);
+  });
+});

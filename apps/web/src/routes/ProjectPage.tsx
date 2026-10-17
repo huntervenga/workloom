@@ -264,7 +264,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   }, [invalidateInlineSave]);
   const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean } } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
-  // Status, participant, tag and archived are validated URL state; search text stays in memory.
+  // Completion, status, participant, tag and archived are validated URL state; search text stays in memory.
   const [searchText, setSearchText] = useState(emptyTaskFilters.search);
   const search = useDebouncedValue(searchText.trim(), SEARCH_DEBOUNCE_MS);
   const [searchParams, setSearchParams] = useCurrentSearchParams();
@@ -292,6 +292,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     projectId: project.id,
     sort: sortMode === 'due_asc' ? 'due_asc' : undefined,
     search,
+    completion: filters.completion === 'open' ? 'open' : undefined,
     statusId: filters.statusId || undefined,
     tagId: filters.tagId || undefined,
     participantMembershipId: filters.participantMembershipId || undefined,
@@ -409,7 +410,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // The editor waits for real sections, statuses, members and tags.
   const metadataReady = metadataError === undefined && metadata.every((item) => item.query.isSuccess);
   const completionWritable = writable && metadataReady && !personalColumns.denied && !isAccessDenied(tasks.error);
-  const taskPresentationKey = JSON.stringify([actorId, workspace.id, project.id, location.key, grouping, filters.search, filters.statusId, filters.participantMembershipId, filters.tagId, filters.includeArchived, sortMode]);
+  const taskPresentationKey = JSON.stringify([actorId, workspace.id, project.id, location.key, grouping, filters.search, filters.completion, filters.statusId, filters.participantMembershipId, filters.tagId, filters.includeArchived, sortMode]);
   const previousPresentation = useRef(taskPresentationKey);
   useLayoutEffect(() => {
     if (previousPresentation.current !== taskPresentationKey) invalidateInlineSave();
@@ -816,7 +817,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           ) : null}
           {tableMode ? taskTime.controls : taskTime.notices}
           <div className="flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
-            {showTaskFilters ? <div className="min-w-0 basis-full sm:basis-0 sm:flex-1"><TaskFilters value={filters} onChange={changeFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
+            {showTaskFilters ? <div className="min-w-0 max-w-full shrink grow basis-[36rem]"><TaskFilters value={filters} onChange={changeFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
             {!boardMode && !graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
               {t('taskTable.grouping.label')}
               <ChoicePicker compact label={t('taskTable.grouping.label')} value={grouping}
@@ -1003,7 +1004,7 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
   const scope = loadedTaskScope(query.data);
   return (
     <div className="space-y-3">
-      {boardMode ? <TaskBoard renderCompletionAction={table.renderCompletionAction} tasks={orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={!scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
+      {boardMode ? <TaskBoard renderCompletionAction={table.renderCompletionAction} tasks={orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={scope.tasks}
         partial={filtered || !scope.complete}

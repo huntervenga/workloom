@@ -6,11 +6,18 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 
 /**
- * What the user chose; applied on the server. Status, participant, tag and archived live in the
- * page URL (see `readTaskFilterParams`); search text stays in memory, never in the URL.
+ * All tasks, or only open ones. The server decides what is open (every todo and in-progress
+ * status, custom ones included); loaded rows are never filtered on the client.
+ */
+export type TaskCompletionFilter = 'all' | 'open';
+
+/**
+ * What the user chose; applied on the server. Completion, status, participant, tag and archived
+ * live in the page URL (see `readTaskFilterParams`); search text stays in memory, never in the URL.
  */
 export interface TaskFilterValue {
   search: string;
+  completion: TaskCompletionFilter;
   statusId: string;
   participantMembershipId: string;
   tagId: string;
@@ -19,6 +26,7 @@ export interface TaskFilterValue {
 
 export const emptyTaskFilters: TaskFilterValue = {
   search: '',
+  completion: 'all',
   statusId: '',
   participantMembershipId: '',
   tagId: '',
@@ -26,14 +34,14 @@ export const emptyTaskFilters: TaskFilterValue = {
 };
 
 export function hasActiveTaskFilters(value: TaskFilterValue): boolean {
-  return value.search.trim() !== '' || value.statusId !== '' || value.participantMembershipId !== '' || value.tagId !== '' || value.includeArchived;
+  return value.search.trim() !== '' || value.completion === 'open' || value.statusId !== '' || value.participantMembershipId !== '' || value.tagId !== '' || value.includeArchived;
 }
 
 /** The URL-backed filters; search is never read from or written to the URL. */
 export type TaskFilterParams = Omit<TaskFilterValue, 'search'>;
 
 /** Each URL-backed filter owns exactly one page parameter. */
-const filterParam = { statusId: 'status', participantMembershipId: 'participant', tagId: 'tag', includeArchived: 'includeArchived' } as const;
+const filterParam = { completion: 'completion', statusId: 'status', participantMembershipId: 'participant', tagId: 'tag', includeArchived: 'includeArchived' } as const;
 
 /** A repeated owned key is ambiguous; it receives the same safe default as invalid input. */
 function single(params: URLSearchParams, key: string): string | undefined {
@@ -50,6 +58,8 @@ function readId(params: URLSearchParams, key: string): string {
 export function readTaskFilterParams(params: URLSearchParams): TaskFilterParams {
   const archived = taskListQuerySchema.shape.includeArchived.safeParse(single(params, filterParam.includeArchived));
   return {
+    // Only the exact single `open` narrows; anything else shows all tasks and stays in the URL as it was.
+    completion: single(params, filterParam.completion) === 'open' ? 'open' : 'all',
     statusId: readId(params, filterParam.statusId),
     participantMembershipId: readId(params, filterParam.participantMembershipId),
     tagId: readId(params, filterParam.tagId),
@@ -66,8 +76,13 @@ export function patchTaskFilterParams(params: URLSearchParams, before: TaskFilte
   const ids = ['statusId', 'participantMembershipId', 'tagId'] as const;
   const changedIds = ids.filter(key => before[key] !== next[key]);
   const archivedChanged = before.includeArchived !== next.includeArchived;
-  if (changedIds.length === 0 && !archivedChanged) return null;
+  const completionChanged = before.completion !== next.completion;
+  if (changedIds.length === 0 && !archivedChanged && !completionChanged) return null;
   const patched = new URLSearchParams(params);
+  if (completionChanged) {
+    if (next.completion === 'open') patched.set(filterParam.completion, 'open');
+    else patched.delete(filterParam.completion);
+  }
   for (const key of changedIds) {
     if (next[key]) patched.set(filterParam[key], next[key]);
     else patched.delete(filterParam[key]);
@@ -136,11 +151,17 @@ export function TaskFilters({ value, onChange, statuses, members, tags = [] }: T
     ...orderedTags.map(tag => ({ value: tag.id, label: tag.name })),
   ];
 
-  const activeCount = Number(value.statusId !== '') + Number(value.participantMembershipId !== '') + Number(value.tagId !== '') + Number(value.includeArchived);
+  const completionOptions: ChoiceOption[] = [
+    { value: 'all', label: t('tasks.taskFilters.allTasks') },
+    { value: 'open', label: t('tasks.taskFilters.incompleteTasks') },
+  ];
+
+  const activeCount = Number(value.completion === 'open') + Number(value.statusId !== '') + Number(value.participantMembershipId !== '') + Number(value.tagId !== '') + Number(value.includeArchived);
   const selectedStatus = statuses.find(status => status.id === value.statusId)?.name ?? t('filterSummary.statusUnavailable');
   const selectedParticipant = members.find(member => member.id === value.participantMembershipId)?.displayName ?? t('filterSummary.participantUnavailable');
   const selectedTagLabel = selectedTag ? selectedTag.archivedAt === null ? selectedTag.name : t('tasks.taskFields.valueArchived', { p0: selectedTag.name }) : t('tasks.taskFilters.tagUnavailable');
   const summaries = [
+    ...(value.completion === 'open' ? [{ key: 'completion', label: t('filterSummary.completion'), clearLabel: t('filterSummary.clearCompletion'), patch: { completion: 'all' as const } }] : []),
     ...(value.statusId ? [{ key: 'status', label: t('filterSummary.status', { value: selectedStatus }), clearLabel: t('filterSummary.clearStatus', { value: selectedStatus }), patch: { statusId: '' } }] : []),
     ...(value.participantMembershipId ? [{ key: 'participant', label: t('filterSummary.participant', { value: selectedParticipant }), clearLabel: t('filterSummary.clearParticipant', { value: selectedParticipant }), patch: { participantMembershipId: '' } }] : []),
     ...(value.tagId ? [{ key: 'tag', label: t('filterSummary.tag', { value: selectedTagLabel }), clearLabel: t('filterSummary.clearTag', { value: selectedTagLabel }), patch: { tagId: '' } }] : []),
@@ -148,10 +169,16 @@ export function TaskFilters({ value, onChange, statuses, members, tags = [] }: T
   ];
   return (
     <div className="min-w-0 space-y-2">
-    <div className="flex min-w-0 items-center gap-2">
-      <div className="min-w-0 flex-1">
+    {/* Search keeps a comfortable width; the controls wrap below it, still right-aligned so the Filters panel opens inside the page. */}
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div className="min-w-0 max-w-full grow basis-60">
         <label htmlFor={ids.search} className="sr-only">{t('tasks.taskFilters.searchTasks')}</label>
         <TextInput id={ids.search} type="search" placeholder={t('tasks.taskFilters.searchTasks')} value={value.search} autoComplete="off" onChange={event => set({ search: event.target.value })} />
+      </div>
+      <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+      {/* Separate from the status filter: it narrows by status group, not one status. */}
+      <div className="w-40 shrink-0">
+        <ChoicePicker compact label={t('tasks.taskFilters.taskCompletion')} value={value.completion} options={completionOptions} onValueChange={completion => set({ completion: completion === 'open' ? 'open' : 'all' })} />
       </div>
       <details className="relative shrink-0" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
         <summary ref={summaryRef} className="flex h-9 cursor-pointer list-none items-center rounded-lg border border-line bg-surface px-3 text-sm font-medium text-ink-soft hover:bg-canvas [&::-webkit-details-marker]:hidden">{activeCount ? t('tasks.taskFilters.filterCount', { count: activeCount }) : t('tasks.taskFilters.filters')}</summary>
@@ -175,6 +202,7 @@ export function TaskFilters({ value, onChange, statuses, members, tags = [] }: T
         </div>
       </details>
       {hasActiveTaskFilters(value) ? <Button size="sm" variant="ghost" aria-label={t('tasks.taskFilters.clearFilters')} title={t('tasks.taskFilters.clearFilters')} onClick={() => onChange(emptyTaskFilters)}><X size={16} aria-hidden="true" /></Button> : null}
+      </div>
     </div>
     {summaries.length ? <div role="group" aria-label={t('filterSummary.group')} className="flex min-w-0 flex-wrap gap-2">
       {summaries.map(summary => <button key={summary.key} type="button" aria-label={summary.clearLabel} onClick={() => { set(summary.patch); summaryRef.current?.focus(); }} className="inline-flex min-h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-left text-xs text-ink-soft hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"><span className="min-w-0 [overflow-wrap:anywhere]">{summary.label}</span><X size={14} aria-hidden="true" className="shrink-0" /></button>)}

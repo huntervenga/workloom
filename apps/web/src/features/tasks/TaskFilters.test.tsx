@@ -177,7 +177,7 @@ describe('single-tag task chooser', () => {
 
 
 const selectedStatus = statuses[0]; if (!selectedStatus) throw new Error('Missing status fixture');
-const combined: TaskFilterValue = { search: '  literal search  ', statusId: selectedStatus.id, participantMembershipId: member.id, tagId: first.id, includeArchived: true };
+const combined: TaskFilterValue = { search: '  literal search  ', completion: 'all', statusId: selectedStatus.id, participantMembershipId: member.id, tagId: first.id, includeArchived: true };
 
 describe('visible active-filter summaries', () => {
   it.each([
@@ -239,6 +239,66 @@ describe('visible active-filter summaries', () => {
   });
 });
 
+describe('task completion choice', () => {
+  it('is a separate custom picker next to search, outside the closed Filters panel and the status filter', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Controlled />);
+    const summary = screen.getByText('Filters', { selector: 'summary' });
+    expect(summary.closest('details')).not.toHaveAttribute('open');
+    const picker = filterPicker('Task completion');
+    expect(picker).toBeVisible(); expect(picker.tagName).toBe('BUTTON'); expect(picker).toHaveAttribute('aria-haspopup', 'listbox');
+    expect(picker).toHaveTextContent('All tasks');
+    expect(summary.closest('details')?.contains(picker)).toBe(false);
+    expect(container.querySelector('select')).toBeNull();
+    expect(await filterOptionNames(user, 'Task completion')).toEqual(['All tasks', 'Incomplete tasks']);
+    expect(picker).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'Clear filters' })).not.toBeInTheDocument();
+    await user.click(summary);
+    expect(filterPicker('Task status')).toHaveTextContent('All statuses');
+    expect(await filterOptionNames(user, 'Task status')).not.toContain('Incomplete tasks');
+  });
+
+  it('sends one explicit change, counts it, shows a clearable chip and Clear filters resets it with everything else', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const value: TaskFilterValue = { ...emptyTaskFilters, search: 'Held', tagId: first.id };
+    const view = render(<TaskFilters {...catalogs} value={value} onChange={onChange} />);
+    await chooseFilter(user, 'Task completion', 'All tasks');
+    expect(onChange).not.toHaveBeenCalled();
+    await chooseFilter(user, 'Task completion', 'Incomplete tasks');
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith({ ...value, completion: 'open' });
+    onChange.mockClear();
+    view.rerender(<TaskFilters {...catalogs} value={{ ...value, completion: 'open' }} onChange={onChange} />);
+    expect(filterPicker('Task completion')).toHaveTextContent('Incomplete tasks');
+    const summary = screen.getByText('Filters (2)', { selector: 'summary' });
+    const chips = within(screen.getByRole('group', { name: 'Active filters' }));
+    const chip = chips.getByRole('button', { name: 'Show all tasks, including completed' });
+    expect(chip).toHaveTextContent('Incomplete tasks only');
+    expect(chips.getAllByRole('button')).toHaveLength(2);
+    await user.click(chip);
+    expect(onChange).toHaveBeenLastCalledWith({ ...value, completion: 'all' }); expect(summary).toHaveFocus();
+    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(onChange).toHaveBeenLastCalledWith(emptyTaskFilters);
+    expect(emptyTaskFilters.completion).toBe('all');
+    expect(hasActiveTaskFilters({ ...emptyTaskFilters, completion: 'open' })).toBe(true);
+    expect(hasActiveTaskFilters({ ...emptyTaskFilters, completion: 'all' })).toBe(false);
+  });
+
+  it('keeps Incomplete tasks through a controlled Clear only of another chip', async () => {
+    const user = userEvent.setup();
+    render(<Controlled initial={{ ...combined, completion: 'open' }} />);
+    expect(screen.getByText('Filters (5)', { selector: 'summary' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: `Clear tag filter: ${first.name}` }));
+    expect(screen.getByText('Filters (4)', { selector: 'summary' })).toBeInTheDocument();
+    expect(filterPicker('Task completion')).toHaveTextContent('Incomplete tasks');
+    await user.click(screen.getByRole('button', { name: 'Show all tasks, including completed' }));
+    expect(filterPicker('Task completion')).toHaveTextContent('All tasks');
+    expect(screen.getByText('Filters (3)', { selector: 'summary' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox')).toHaveValue(combined.search);
+  });
+});
+
 const STATUS = 'f6000000-0000-4000-8000-000000000002';
 const PERSON = 'c0000000-0000-4000-8000-000000000002';
 const TAG = 'f7000000-0000-4000-8000-000000000001';
@@ -246,10 +306,28 @@ const TAG = 'f7000000-0000-4000-8000-000000000001';
 describe('task filter URL state', () => {
   it('reads canonical single values and ignores malformed, repeated and unknown boolean values', () => {
     expect(readTaskFilterParams(new URLSearchParams(`status=${STATUS.toUpperCase()}&participant=${PERSON}&tag=${TAG}&includeArchived=true&search=never`)))
-      .toEqual({ statusId: STATUS, participantMembershipId: PERSON, tagId: TAG, includeArchived: true });
-    for (const query of ['status=not-a-uuid&participant=&tag=x', `status=${STATUS}&status=${STATUS}`, 'includeArchived=1', 'includeArchived=True', 'includeArchived=false', `includeArchived=true&includeArchived=true`, `statusId=${STATUS}&participantMembershipId=${PERSON}&tagId=${TAG}`]) {
-      expect(readTaskFilterParams(new URLSearchParams(query)), query).toEqual({ statusId: '', participantMembershipId: '', tagId: '', includeArchived: false });
+      .toEqual({ completion: 'all', statusId: STATUS, participantMembershipId: PERSON, tagId: TAG, includeArchived: true });
+    expect(readTaskFilterParams(new URLSearchParams(`completion=open&status=${STATUS}`))).toEqual({ completion: 'open', statusId: STATUS, participantMembershipId: '', tagId: '', includeArchived: false });
+    for (const query of ['status=not-a-uuid&participant=&tag=x', `status=${STATUS}&status=${STATUS}`, 'includeArchived=1', 'includeArchived=True', 'includeArchived=false', `includeArchived=true&includeArchived=true`, `statusId=${STATUS}&participantMembershipId=${PERSON}&tagId=${TAG}`,
+      'completion=closed', 'completion=OPEN', 'completion=all', 'completion=', 'completion=true', 'completion=open&completion=open', 'completion=open&completion=closed', 'completion=%20open']) {
+      expect(readTaskFilterParams(new URLSearchParams(query)), query).toEqual({ completion: 'all', statusId: '', participantMembershipId: '', tagId: '', includeArchived: false });
     }
+  });
+
+  it('writes completion=open only for Incomplete tasks, removes the key for All tasks and keeps every other parameter', () => {
+    const empty = readTaskFilterParams(new URLSearchParams());
+    const head = new URLSearchParams(`view=board&sort=due_asc&week=w&worker=p&task=t&other=kept&status=${STATUS}`);
+    const open = patchTaskFilterParams(head, empty, { ...empty, completion: 'open' });
+    expect(open?.toString()).toBe(`view=board&sort=due_asc&week=w&worker=p&task=t&other=kept&status=${STATUS}&completion=open`);
+    expect(head.has('completion')).toBe(false);
+    const all = patchTaskFilterParams(new URLSearchParams(`view=board&completion=open&task=t`), { ...empty, completion: 'open' }, empty);
+    expect(all?.toString()).toBe('view=board&task=t');
+    // A repeated value is replaced by the one explicit choice.
+    expect(patchTaskFilterParams(new URLSearchParams('completion=open&completion=open&other=kept'), empty, { ...empty, completion: 'open' })?.getAll('completion')).toEqual(['open']);
+    // An unchanged choice never touches an invalid original value, even when another filter changes.
+    const kept = patchTaskFilterParams(new URLSearchParams('completion=closed&other=kept'), empty, { ...empty, tagId: TAG });
+    expect(kept?.toString()).toBe(`completion=closed&other=kept&tag=${TAG}`);
+    expect(patchTaskFilterParams(new URLSearchParams('completion=closed'), empty, empty)).toBeNull();
   });
 
   it('patches only changed filters onto the current head, keeps every other parameter and never writes search', () => {

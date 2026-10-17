@@ -1,5 +1,7 @@
 {
   "group": "Active filters",
+  "completion": "Incomplete tasks only",
+  "clearCompletion": "Show all tasks, including completed",
   "status": "Status: {{value}}",
   "clearStatus": "Clear status filter: {{value}}",
   "statusUnavailable": "Status unavailable",

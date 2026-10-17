@@ -46,7 +46,8 @@ describe('project Board integration', () => {
     await board(user);
     expect(filterPicker('Task status')).toHaveTextContent('Stored progress');
     expect(screen.getByText('1 loaded task in this view.')).toBeVisible();
-    expect(screen.queryByText('More matching tasks may be available. Counts cover only the loaded tasks in this view.')).not.toBeInTheDocument();
+    // A filtered list is always a partial loaded budget, like the table, even after its last page.
+    expect(screen.getByText('More matching tasks may be available. Counts cover only the loaded tasks in this view.')).toBeVisible();
     await user.click(screen.getByRole('button', { name: other.title }));
     const drawer = await screen.findByRole('dialog', { name: other.title }); expect(within(drawer).getByLabelText('Task name')).toHaveValue(other.title);
     await closeDrawer(user); await user.click(views().getByRole('button', { name: 'Tasks' }));

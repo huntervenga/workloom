@@ -178,7 +178,10 @@
     "allTags": "All tags",
     "tagUnavailable": "Tag unavailable",
     "statusUnavailable": "Status unavailable",
-    "participantUnavailable": "Participant unavailable"
+    "participantUnavailable": "Participant unavailable",
+    "taskCompletion": "Task completion",
+    "allTasks": "All tasks",
+    "incompleteTasks": "Incomplete tasks"
   },
   "estimates": {
     "current": "Current shared estimate",

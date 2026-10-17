@@ -4,6 +4,7 @@ import type {
   SectionDto,
   TagDto,
   TaskDto,
+  TaskListQuery,
   TaskParticipantDto,
   TaskStatusDto,
 } from '@workloom/contracts';
@@ -78,6 +79,8 @@ function harness() {
       idempotency: new Map(),
     }),
     epoch: 'epoch-1',
+    /** Filters the service forwarded to `listTasks`, in call order. */
+    listInputs: [] as TaskListQuery[],
   };
   const events: ChangeEventInput[] = [];
 
@@ -109,6 +112,12 @@ function harness() {
   const scoped = <T extends { workspaceId: string }>(row: T | undefined, ws: string): T | null =>
     row !== undefined && row.workspaceId === ws ? row : null;
   const idempotencyKey = (ws: string, actor: string, command: string, key: string) => [ws, actor, command, key].join('|');
+  /** Mirrors the adapter's correlated status-group EXISTS for `completion: 'open'`. */
+  const hasOpenStatus = (task: TaskDto): boolean => {
+    const status = db.state.statuses.get(task.statusId);
+    return status !== undefined && status.workspaceId === task.workspaceId && status.projectId === task.projectId &&
+      (status.group === 'todo' || status.group === 'in_progress');
+  };
 
   const repository: TaskRepository = {
     access,
@@ -141,6 +150,7 @@ function harness() {
       return row === null ? null : project(row);
     },
     async listTasks(ws, input, after, take) {
+      db.listInputs.push(input);
       return [...db.state.tasks.values()]
         .filter(
           (row) =>
@@ -149,7 +159,11 @@ function harness() {
             (input.includeArchived === true || row.archivedAt === null) &&
             (input.sectionId === undefined || row.sectionId === input.sectionId) &&
             (input.statusId === undefined || row.statusId === input.statusId) &&
-            (input.tagId === undefined || (db.state.taskTags.get(row.id) ?? []).includes(input.tagId)),
+            (input.tagId === undefined || (db.state.taskTags.get(row.id) ?? []).includes(input.tagId)) &&
+            (input.completion === undefined || hasOpenStatus(row)) &&
+            // Literal case-insensitive substring on title/description, like the production ILIKE predicate.
+            (input.search === undefined || input.search === '' ||
+              [row.title, row.description].some((text) => text.toLowerCase().includes((input.search as string).toLowerCase()))),
         )
         .map(project)
         .sort((left, right) => (input.sort === 'due_asc'
@@ -657,6 +671,123 @@ describe('exact task tag filter', () => {
     };
     expect(JSON.parse(first.nextCursor as string)).toEqual(legacyPayload);
     expect((await s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, limit: 1, cursor: JSON.stringify(legacyPayload) })).items.map(row => row.id)).toEqual([secondTask.id]);
+  });
+});
+
+
+describe('open task completion filter', () => {
+  /** Default statuses plus custom ones in todo, in_progress and done groups, one task in each. */
+  async function completionFixture() {
+    const s = await setup();
+    const statuses = await s.app.listStatuses(s.ctx(users.owner), s.project.id);
+    const inGroup = (group: TaskStatusDto['group']) => statuses.find((status) => status.group === group) as TaskStatusDto;
+    const review: TaskStatusDto = { ...inGroup('in_progress'), id: uuid(951), name: 'Review', position: 4 };
+    const triage: TaskStatusDto = { ...inGroup('todo'), id: uuid(952), name: 'Triage', position: 5 };
+    const shipped: TaskStatusDto = { ...inGroup('done'), id: uuid(953), name: 'Shipped', position: 6 };
+    for (const status of [review, triage, shipped]) s.db.state.statuses.set(status.id, status);
+    const task = (title: string, status: TaskStatusDto, dueDate: string | null = null) =>
+      s.createTask({ title, statusId: status.id, dueDate });
+    const tasks = {
+      todo: await task('Todo', inGroup('todo'), '2026-10-20'),
+      done: await task('Done', inGroup('done'), '2026-10-18'),
+      progress: await task('In progress', inGroup('in_progress')),
+      cancelled: await task('Cancelled', inGroup('cancelled'), '2026-10-17'),
+      review: await task('Review', review, '2026-10-19'),
+      shipped: await task('Shipped', shipped),
+      triage: await task('Triage', triage),
+      archivedOpen: await task('Archived triage', triage),
+    };
+    await s.app.archiveTask(s.owner(), tasks.archivedOpen.id, { expectedRevision: 1 });
+    return { ...s, tasks, review, shipped, inGroup };
+  }
+
+  it('pages only todo/in_progress groups, custom statuses included, before the page limit', async () => {
+    const s = await completionFixture();
+    const query = { projectId: s.project.id, completion: 'open' as const, limit: 2 };
+    const first = await s.app.listTasks(s.ctx(users.owner), query);
+    expect(s.db.listInputs.at(-1)).toEqual({ projectId: s.project.id, completion: 'open', limit: 2 });
+    expect(first.items.map(row => row.id)).toEqual([s.tasks.todo.id, s.tasks.progress.id]);
+    const second = await s.app.listTasks(s.ctx(users.owner), { ...query, cursor: first.nextCursor as string });
+    expect(second.items.map(row => row.id)).toEqual([s.tasks.review.id, s.tasks.triage.id]);
+    expect(second.nextCursor).toBeNull();
+
+    const all = await s.app.listTasks(s.ctx(users.owner), { projectId: s.project.id, limit: 50 });
+    expect(Object.hasOwn(s.db.listInputs.at(-1) as object, 'completion')).toBe(false);
+    expect(all.items.map(row => row.id)).toEqual([
+      s.tasks.todo.id, s.tasks.done.id, s.tasks.progress.id, s.tasks.cancelled.id,
+      s.tasks.review.id, s.tasks.shipped.id, s.tasks.triage.id,
+    ]);
+    const withArchived = await s.app.listTasks(s.ctx(users.owner), { ...query, includeArchived: true, limit: 50 });
+    expect(withArchived.items.map(row => row.id)).toEqual([
+      s.tasks.todo.id, s.tasks.progress.id, s.tasks.review.id, s.tasks.triage.id, s.tasks.archivedOpen.id,
+    ]);
+  });
+
+  it('keeps the exact status filter in conjunction and orders open tasks by due date', async () => {
+    const s = await completionFixture();
+    const base = { projectId: s.project.id, completion: 'open' as const, limit: 50 };
+    const ids = async (input: TaskListQuery) => (await s.app.listTasks(s.ctx(users.owner), input)).items.map(row => row.id);
+    expect(await ids({ ...base, statusId: s.review.id })).toEqual([s.tasks.review.id]);
+    expect(await ids({ ...base, statusId: s.shipped.id })).toEqual([]);
+    expect(await ids({ ...base, statusId: s.inGroup('cancelled').id })).toEqual([]);
+    expect(await ids({ ...base, search: 'Triage' })).toEqual([s.tasks.triage.id]);
+    expect(await ids({ ...base, sort: 'due_asc' })).toEqual([
+      s.tasks.review.id, s.tasks.todo.id, s.tasks.progress.id, s.tasks.triage.id,
+    ]);
+  });
+
+  it('binds explicit open into the cursor hash while omitted completion keeps the literal legacy hash', async () => {
+    const s = await completionFixture();
+    const base = { projectId: s.project.id, limit: 1 };
+    const binding = { workspaceId: WS, actorUserId: users.owner, permissionEpoch: 'epoch-1' };
+    const legacy = await s.app.listTasks(s.ctx(users.owner), base);
+    expect(JSON.parse(legacy.nextCursor as string)).toEqual({
+      version: 1, ...binding, queryHash: `digest:{"limit":1,"projectId":"${s.project.id}"}`,
+      position: s.tasks.todo.position, id: s.tasks.todo.id,
+    });
+    const open = await s.app.listTasks(s.ctx(users.owner), { ...base, completion: 'open' });
+    expect(JSON.parse(open.nextCursor as string)).toEqual({
+      version: 1, ...binding, queryHash: `digest:{"completion":"open","limit":1,"projectId":"${s.project.id}"}`,
+      position: s.tasks.todo.position, id: s.tasks.todo.id,
+    });
+    const openDue = await s.app.listTasks(s.ctx(users.owner), { ...base, completion: 'open', sort: 'due_asc' });
+    expect(JSON.parse(openDue.nextCursor as string)).toEqual({
+      version: 2, ...binding,
+      queryHash: `digest:{"completion":"open","limit":1,"projectId":"${s.project.id}","sort":"due_asc"}`,
+      dueDate: s.tasks.review.dueDate, id: s.tasks.review.id,
+    });
+    expect((await s.app.listTasks(s.ctx(users.owner), { ...base, cursor: legacy.nextCursor as string })).items.map(row => row.id))
+      .toEqual([s.tasks.done.id]);
+    expect((await s.app.listTasks(s.ctx(users.owner), { ...base, completion: 'open', cursor: open.nextCursor as string })).items.map(row => row.id))
+      .toEqual([s.tasks.progress.id]);
+
+    for (const input of [
+      { ...base, cursor: open.nextCursor as string },
+      { ...base, completion: 'open' as const, cursor: legacy.nextCursor as string },
+      { ...base, completion: 'open' as const, statusId: s.review.id, cursor: open.nextCursor as string },
+      { ...base, completion: 'open' as const, sort: 'due_asc' as const, cursor: open.nextCursor as string },
+      { ...base, sort: 'due_asc' as const, cursor: openDue.nextCursor as string },
+      { ...base, completion: 'open' as const, limit: 2, cursor: open.nextCursor as string },
+    ]) expect((await errorOf(s.app.listTasks(s.ctx(users.owner), input))).code).toBe('VALIDATION_FAILED');
+    expect((await errorOf(s.app.listTasks(s.ctx(users.viewer), { ...base, completion: 'open', cursor: open.nextCursor as string }))).code)
+      .toBe('VALIDATION_FAILED');
+  });
+
+  it('checks current access before decoding cursors and rejects invalid completion instead of listing all', async () => {
+    const s = await completionFixture();
+    const base = { projectId: s.project.id, completion: 'open' as const, limit: 1 };
+    expect((await errorOf(s.app.listTasks(s.ctx(users.revoked), { ...base, cursor: 'bad' }))).code).toBe('NOT_FOUND');
+    expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { ...base, projectId: uuid(990), cursor: 'bad' }))).code).toBe('NOT_FOUND');
+    expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { ...base, statusId: uuid(991), cursor: 'bad' }))).code).toBe('NOT_FOUND');
+    const open = await s.app.listTasks(s.ctx(users.owner), base);
+    s.db.epoch = 'epoch-2';
+    expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { ...base, cursor: open.nextCursor as string }))).code).toBe('VALIDATION_FAILED');
+    const calls = s.db.listInputs.length;
+    for (const completion of ['all', 'done', 'OPEN', '', null]) {
+      const input = { projectId: s.project.id, completion, limit: 50 } as unknown as TaskListQuery;
+      expect((await errorOf(s.app.listTasks(s.ctx(users.owner), input))).code).toBe('VALIDATION_FAILED');
+    }
+    expect(s.db.listInputs).toHaveLength(calls);
   });
 });
 
