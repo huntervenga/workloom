@@ -1,6 +1,6 @@
 import { t, useTranslation } from '../i18n';
 import type { WorkspaceDto } from '@workloom/contracts';
-import { StateCard, buttonClassName } from '@workloom/ui';
+import { Button, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, Lock } from 'lucide-react';
 import { Link, Outlet, useOutletContext, useParams } from 'react-router';
 import { useMe } from '../features/identity/identity';
@@ -27,6 +27,7 @@ export function WorkspaceLayout() {
   const workspace = useWorkspaceQuery(actorId, workspaceId);
 
   if (!isUuid(workspaceId)) return <WorkspaceUnavailable />;
+  if (workspace.headDenial) return <WorkspaceUnavailable retrying={workspace.isFetching || workspace.recoveringHeadAccess} onRetry={() => void workspace.refetch()} />;
   if (workspace.isPending) return <PageSkeleton label={t('routes.loadingWorkspace')} />;
 
   // Errors win over any previously loaded data, so a denied refetch hides the workspace.
@@ -46,7 +47,7 @@ export function WorkspaceLayout() {
   return <Outlet context={{ actorId, workspace: workspace.data } satisfies WorkspaceOutletContext} />;
 }
 
-function WorkspaceUnavailable() {
+function WorkspaceUnavailable({ onRetry, retrying = false }: { onRetry?: (() => void) | undefined; retrying?: boolean }) {
   useTranslation();
   useDocumentTitle(t('routes.workspaceUnavailable'));
   return (
@@ -56,11 +57,14 @@ function WorkspaceUnavailable() {
       title={t('routes.workspaceUnavailable')}
       description={t('routes.workspaceUnavailableDescription')}
       actions={
+        <div className="flex flex-wrap gap-2">
+        {onRetry ? <Button disabled={retrying} onClick={onRetry}>{retrying ? t('common.retrying') : t('common.retry')}</Button> : null}
         <Link to="/" className={buttonClassName({ variant: 'primary' })}>
           <ArrowLeft size={16} aria-hidden="true" />
 
           {t('routes.backWorkspaces')}
         </Link>
+        </div>
       }
     />
   );

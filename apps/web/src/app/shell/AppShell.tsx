@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 import { Outlet, useMatch, useNavigate } from 'react-router';
 import { MeProvider, useMe, useMeQuery } from '../../features/identity/identity';
 import { useWorkspaceQuery } from '../../features/workspace/queries';
+import { useWorkspaceLiveRefresh } from '../../features/workspace/useWorkspaceLiveRefresh';
 import { discardWorkspaceData } from '../../lib/cacheScope';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { MobileNav } from './MobileNav';
@@ -88,6 +89,7 @@ function ShellFrame() {
   const workspace = useWorkspaceQuery(actorId, workspaceId);
   const currentWorkspace = workspace.isSuccess ? workspace.data : null;
   useDiscardPreviousWorkspace(actorId, workspaceId);
+  useWorkspaceLiveRefresh(actorId, workspaceId, workspace.isSuccess && workspace.headDenial === null);
 
   const sidebar = (onNavigate?: () => void) => (
     <SidebarContent me={me} workspaceId={workspaceId} role={currentWorkspace?.role ?? null} onNavigate={onNavigate} />

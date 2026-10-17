@@ -11,6 +11,8 @@ export const queryKeys = {
   actor: (actorId: string) => ['actor', actorId] as const,
   workspaces: (actorId: string) => ['actor', actorId, 'workspaces'] as const,
   workspace: (actorId: string, workspaceId: string) => ['actor', actorId, 'workspace', workspaceId] as const,
+  workspaceChangeHead: (actorId: string, workspaceId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'change-head'] as const,
   memberships: (actorId: string, workspaceId: string) =>
     ['actor', actorId, 'workspace', workspaceId, 'memberships'] as const,
   projectList: (actorId: string, workspaceId: string) => ['actor', actorId, 'workspace', workspaceId, 'projects'] as const,

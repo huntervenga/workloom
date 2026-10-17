@@ -30,6 +30,9 @@ export default defineConfig({
     // Locale resources are discovered from directory contents with import.meta.glob.
     // Persistent transform caches can retain an old inventory after JSON files are added.
     fsModuleCache: false,
+    // Browser/jsdom tests share the local machine with browser acceptance runs; two workers
+    // keep local resource use bounded and reproducible.
+    maxWorkers: 2,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
   },

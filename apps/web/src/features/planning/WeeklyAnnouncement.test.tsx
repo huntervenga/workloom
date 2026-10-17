@@ -1,5 +1,5 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { localization } from '../../i18n';
 import type * as LocalizationExports from '../../i18n';
 import { installFakeApi, ok, renderApp } from '../../test/fakeApi';
@@ -16,6 +16,8 @@ vi.mock('../../i18n', async importOriginal => {
   const manager = new actual.LocalizationManager(catalogs);
   return { ...actual, localization: manager, t: manager.t, useTranslation: () => actual.useTranslation(manager) };
 });
+
+beforeAll(async () => { await import('../../routes/WeeklyPage'); });
 
 afterEach(() => { act(() => localization.setLocale('en')); });
 

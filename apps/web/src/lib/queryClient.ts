@@ -1,6 +1,8 @@
 import { QueryCache, QueryClient, type Query } from '@tanstack/react-query';
 import { ApiError, isAccessDenied } from './api';
 import { queryKeys, workspaceScopeOf } from './queryKeys';
+import { handleWorkspaceHeadQueryError } from './workspaceHeadQueryError';
+import { obsoleteWorkspaceHeadRead } from './workspaceHeadRechecks';
 
 export interface QueryClientOptions {
   /** Tests disable retries to keep error states deterministic. */
@@ -34,7 +36,8 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
  * visible to this actor, so it is dropped rather than kept as a placeholder.
  */
 function handleQueryError(client: QueryClient, error: unknown, query: Query<unknown, unknown, unknown>): void {
-  if (!(error instanceof ApiError)) return;
+  if (!(error instanceof ApiError) || obsoleteWorkspaceHeadRead(query)) return;
+  if (handleWorkspaceHeadQueryError(client, error, query)) return;
 
   if (error.kind === 'unauthenticated' && query.queryKey[0] !== 'me') {
     void client.invalidateQueries({ queryKey: queryKeys.me });

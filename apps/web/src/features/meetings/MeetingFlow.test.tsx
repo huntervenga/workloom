@@ -1,13 +1,14 @@
 import { chooseTimeContext } from '../work-categories/test/timeContext';
 import type { AttendanceDto, MeetingDto, TaskDto, UpdateMeetingInput } from '@workloom/contracts';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, created, deferred, failure, installFakeApi, json, ok, renderApp } from '../../test/fakeApi';
 import { MEMBER_ID, PERIOD_A, PERIOD_B, PROJECT_ID, TASK_ID, STAMP, lostResponse, rootPath, task } from '../planning/test/fixtures';
 import { tablePath, tableRoutes, projection, definition, OPTION_A } from '../work-categories/test/fixtures';
 import { taskWouldRegress } from '../tasks/queries';
 import { draftForMeeting, meetingDraftDirty } from './useMeetingWorkspace';
 import { choosePicker, outcomeOption } from './test/pickers';
+beforeAll(async () => { await import('../../routes/ProjectPage'); });
 const MEETING='ab000000-0000-4000-8000-000000000001';
 const ATTENDANCE='ac000000-0000-4000-8000-000000000001';
 function meeting(overrides:Partial<MeetingDto>={}):MeetingDto {return {id:MEETING,workspaceId:alpha.id,projectId:PROJECT_ID,taskId:TASK_ID,workPackageId:task.workPackageId,revision:1,participantsRevision:1,plannedPeriodId:PERIOD_A,plannedStartAt:'2026-10-25T01:30:42.123Z',timezone:'Europe/Berlin',plannedDurationMinutes:60,organizerMembershipId:MEMBER_ID,state:'scheduled',actualStartAt:null,actualDurationMinutes:null,joinUrl:null,recordingUrl:null,summaryUrl:null,summaryText:null,scheduleFrozen:false,hasPostedAttendance:false,createdAt:STAMP,updatedAt:STAMP,...overrides};}

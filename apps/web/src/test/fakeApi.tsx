@@ -103,8 +103,9 @@ function defaultFieldRoute(request: FakeRequest): Response | null {
 }
 
 /** Replaces fetch with a table of "METHOD /path" handlers; unknown routes answer 404. */
-export function installFakeApi(table: RouteTable): { calls: FakeRequest[] } {
+export function installFakeApi(table: RouteTable): { calls: FakeRequest[]; backgroundCalls: FakeRequest[] } {
   const calls: FakeRequest[] = [];
+  const backgroundCalls: FakeRequest[] = [];
   let currentActorId: string | null = null;
   const currentMemberships = new Map<string, MembershipDto[]>();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -117,8 +118,15 @@ export function installFakeApi(table: RouteTable): { calls: FakeRequest[] } {
       headers: new Headers(init.headers),
       credentials: init.credentials,
     };
-    calls.push(request);
     const handler = table[`${request.method} ${request.path}`];
+    // Legacy static feature fixtures do not model collaboration. Unsupported background head
+    // reads get a transient 503 and are recorded separately; explicitly registered head handlers
+    // always win and remain in calls, including all live-refresh regression tests.
+    if (!handler && request.method === 'GET' && /^\/api\/v1\/workspaces\/[^/]+\/change-head$/.test(request.path)) {
+      backgroundCalls.push(request);
+      return failure(503, 'UNAVAILABLE', 'Collaboration is not modeled by this fixture');
+    }
+    calls.push(request);
     if (handler) {
       const response = await handler(request);
       if (request.method === 'GET' && response.ok && (request.path === '/api/v1/me' || /\/memberships$/.test(request.path))) {
@@ -144,7 +152,7 @@ export function installFakeApi(table: RouteTable): { calls: FakeRequest[] } {
     return defaultFieldRoute(request) ?? failure(404, 'NOT_FOUND', 'Route not found');
   });
   vi.stubGlobal('fetch', fetchMock);
-  return { calls };
+  return { calls, backgroundCalls };
 }
 
 export function deferred<T>() {

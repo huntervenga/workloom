@@ -18,7 +18,7 @@ mkdirSync(output, { recursive: true, mode: 0o700 });
 const origin = 'http://127.0.0.1:4310';
 const path = '/w/31800692-b5ab-4c59-87c9-118d9ea8eac9/projects/9266f142-b72a-40b8-bb86-350d6df7c209';
 const sha = value => createHash('sha256').update(value).digest('hex');
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const context = await browser.newContext({ baseURL: origin, viewport: { width: 1440, height: 1000 } });
 await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
 await context.route('**/api/**', route => ['GET', 'HEAD', 'OPTIONS'].includes(route.request().method()) ? route.continue() : route.abort());
@@ -81,7 +81,11 @@ try {
   } else if (instruction.expectUpdatedCopy === true) {
     throw new Error('Original lazy route remained available; updated-entry recovery was not exercised. Do not manufacture a chunk failure.');
   }
-  await expect(page.getByLabel('Period', { exact: true })).toHaveValue('');
+  const period = page.getByRole('combobox', { name: 'Period', exact: true });
+  await expect(period).toHaveText('Choose a week');
+  await expect(period).toHaveAttribute('aria-expanded', 'false');
+  // An explicit empty choice preserves the no-period state; an absent parameter could select a week.
+  expect(new URL(page.url()).searchParams.get('period')).toBe('');
   const afterTimeOrigin = await page.evaluate(() => globalThis.performance.timeOrigin);
   evidence.after = { newEntry, newEntrySha256: newHash, displayedEntry: await page.locator('script[type="module"][src]').getAttribute('src'), timeOrigin: afterTimeOrigin, sameDocument: afterTimeOrigin === timeOrigin, url: page.url(), loaded: await page.evaluate(() => globalThis.performance.getEntriesByType('resource').map(row => row.name)), globalOverflow: await page.evaluate(() => globalThis.document.documentElement.scrollWidth - globalThis.innerWidth) };
   expect(writes).toEqual([]); expect(evidence.after.globalOverflow).toBeLessThanOrEqual(0);
