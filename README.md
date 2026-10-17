@@ -1,6 +1,18 @@
 # Workloom
 
-На основном локальном сервере **`http://127.0.0.1:4310` активирован код `d534371`** (`codex/bootstrap-plan`): создание workspace ([77](docs/77-workspace-creation.md)), новая строка, детали и ручной порядок таблицы ([78](docs/78-task-row-and-manual-order.md)). Global `npm run check` до test-only follow-up, backend **1498/92**, isolated PG **9/3 + 14/2**, scoped component **79/5 + 30/3** и compiled Chrome **6/6 с fake Auth provider** прошли. Сохранение прежних данных и served assets подтверждено отдельным activation proof. Последний quiet full web на `d534371`: **1677 PASS / 1 FAIL, 195 PASS / 1 FAIL из196 suites, 508.77s**, один worker и прежние deadlines. Единственный RED — устаревший ProjectSorting oracle — исправлен **одной строкой на Enter** в test-only commit **`9b6f314`**; все assertions/deadlines сохранены, scoped **15/1 PASS, 26.81s**, scoped ESLint/diff check PASS. **Весь command после исправления не повторялся; единого1678/0 результата не заявлено.** Initial **1583 PASS /87 RED** сохранён как история; известных функциональных дефектов в ограниченном запрошенном UX не осталось. Нового завершённого live Google login и actual old-tab upgrade rerun нет; production/deployment не выполнялись.
+**Текущий срез — ежедневная таблица ([79](docs/79-assignee-daily-table.md)): код `4894b0c` принят локально и активен на `http://127.0.0.1:4310/app`; миграции БД нет.** Final manifest — 1864 исходных/скомпилированных файла (1040 исходных + 824 скомпилированных) + 78 web build artifacts, SHA-256 `6649bdb4688dfb5afbd882d144b47beec82b9d3136ac9b177bbe8fae751e2cdf`, все 8 gates actual exit 0. Functional whole web (jsdom policy 3s/15s) — **1756/1756 tests, 210/210 files PASS, 1368.51s**; backend unit **1525/93**, isolated PG **26/3**, compiled Chrome daily **12/12** и legacy **6/6** (две отдельные команды) прошли. Три ранних strict whole web — **1721/35**, **1754/2**, **1665/91** — остаются RED; причины 91 падения неизвестны, и свежий PASS их не объясняет. Activation proof подтвердил API-only restart с сохранением всех 77 tables, env и побайтной выдачей 49 resources; это не authenticated login, не old-tab upgrade и не production. Точные proofs, RED и границы — в 79.
+
+Как пользоваться срезом (контракт — в [79](docs/79-assignee-daily-table.md)):
+
+- **Порядок и переназначение:** **Group by → Assignee** и **Sort → Manual**; ручка слева от названия переносит корневую задачу или подзадачу внутри плоского списка или в список другого участника. Parent, section, work package и история не меняются.
+- **Групповое изменение:** левая область строки выбирает задачу, **Shift-click** — диапазон, **Ctrl/Cmd-click** — отдельные строки, до 100 задач; **Edit selected tasks → Apply to selected tasks** применяет изменения одной атомарной командой.
+- **Даты:** **Edit dates** показывает **Due date**, **+ Start date** раскрывает начало; календарь с явными Today и Clear, сохраняется только итоговый диапазон `start ≤ due`.
+- **Tags:** ячейка **Tags → Edit tags** — поиск и выбор существующих tags; создание — через **Open details to create tags** / **New tag → Create tag** или **Tags → Workspace tags**.
+- **Часы:** **Choose week** открывает **Week for hours**; явно выберите неделю и **Whose hours to show**, затем вводите **Weekly actual hours**. Сохранённый 0 отличается от отсутствия записи, неделя автоматически не выбирается, ранее скрытая колонка остаётся скрытой.
+
+Root проверил новые 12 Chrome cases; полной идентичности с Asana не заявлено.
+
+**Предыдущий принятый baseline (был активен до активации `4894b0c`).** На основном локальном сервере **`http://127.0.0.1:4310` до этого был активирован код `d534371`** (`codex/bootstrap-plan`): создание workspace ([77](docs/77-workspace-creation.md)), новая строка, детали и ручной порядок таблицы ([78](docs/78-task-row-and-manual-order.md)). Global `npm run check` до test-only follow-up, backend **1498/92**, isolated PG **9/3 + 14/2**, scoped component **79/5 + 30/3** и compiled Chrome **6/6 с fake Auth provider** прошли. Сохранение прежних данных и served assets подтверждено отдельным activation proof. Последний quiet full web на `d534371`: **1677 PASS / 1 FAIL, 195 PASS / 1 FAIL из196 suites, 508.77s**, один worker и прежние deadlines. Единственный RED — устаревший ProjectSorting oracle — исправлен **одной строкой на Enter** в test-only commit **`9b6f314`**; все assertions/deadlines сохранены, scoped **15/1 PASS, 26.81s**, scoped ESLint/diff check PASS. **Весь command после исправления не повторялся; единого1678/0 результата не заявлено.** Initial **1583 PASS /87 RED** сохранён как история; известных функциональных дефектов в ограниченном запрошенном UX не осталось. Нового завершённого live Google login и actual old-tab upgrade rerun нет; production/deployment не выполнялись.
 
 Предыдущий принятый Auth checkpoint — ограниченный локальный shared Auth **`be63752`**: backend/isolated-PG/fake-provider Chrome gates прошли, живой redirect достиг Google. Пользовательский Google login не завершён. Общий web gate этого baseline отдельно остаётся RED (1534 passed / 5 failed); новые focused результаты его не заменяют. Настройка, собственный server-only `AUTH_SESSION_KEY`, действующие upstream origins и отдельные gates — в [76](docs/76-shared-auth-local.md). Production/Railway остаются закрыты.
 
@@ -78,6 +90,7 @@ Worker штатно остановлен и сейчас OFF; шесть stale j
 - [Быстрый старт для команды](docs/66-team-quick-start.md)
 - [Создание workspace (локально4310, код d534371)](docs/77-workspace-creation.md)
 - [Новая строка таблицы и ручной порядок (локально4310, код d534371)](docs/78-task-row-and-manual-order.md)
+- [Ежедневная таблица: Assignee, групповые изменения, даты и часы (локально4310, код 4894b0c)](docs/79-assignee-daily-table.md)
 
 ## Стек и границы
 
@@ -303,4 +316,4 @@ docs/              Спецификация, планы и журнал дока
 
 Пустые каталоги обозначают согласованные границы будущего кода; они не означают наличие реализации. Рабочее название Workloom не является утверждённым публичным брендом.
 
-Текущая приёмка `bd8ce21`, wrap `2f71ad8` и baseline `7b9a712` приведена в начале; [71](docs/71-night-verification.md) сохраняет точные scopes, source checkpoints, RED и отдельные API/old-tab gates. Исторические абзацы выше не заменяют текущую матрицу.
+Текущая локальная приёмка `4894b0c` приведена в начале и в [79](docs/79-assignee-daily-table.md). [71](docs/71-night-verification.md) сохраняет прежние scopes `bd8ce21`, wrap `2f71ad8`, baseline `7b9a712`, RED и отдельные API/old-tab gates; они не заменяют текущую матрицу.
