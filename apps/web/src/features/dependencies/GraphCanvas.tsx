@@ -1,5 +1,5 @@
-import { t, useTranslation } from '../../i18n';
-import { Background, Controls, MarkerType, Position, ReactFlow, type Edge, type Node, type NodeChange, type ReactFlowInstance } from '@xyflow/react';
+import { useTranslation } from '../../i18n';
+import { Background, Controls, MarkerType, Position, ReactFlow, type AriaLabelConfig, type Edge, type Node, type NodeChange, type ReactFlowInstance } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button } from '@workloom/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -21,13 +21,6 @@ export interface GraphCanvasProps {
   onOpen: (id: string) => void;
   onViewBlockers: (id: string) => void;
 }
-const labels = {
-  get 'controls.ariaLabel'() { return t('dependencies.graphCanvas.graphControls'); }, get 'controls.zoomIn.ariaLabel'() { return t('dependencies.graphCanvas.zoomIn'); }, get 'controls.zoomOut.ariaLabel'() { return t('dependencies.graphCanvas.zoomOut'); },
-  get 'controls.fitView.ariaLabel'() { return t('dependencies.graphCanvas.fitSelectedGraph'); }, get 'controls.interactive.ariaLabel'() { return t('dependencies.graphCanvas.toggleMovement'); },
-  get 'node.a11yDescription.default'() { return t('dependencies.graphCanvas.selectATaskArrowKeysChangeItsPosition'); },
-  get 'node.a11yDescription.keyboardDisabled'() { return t('dependencies.graphCanvas.theButtonInsideANodeOpensTheTask'); },
-  get 'edge.a11yDescription.default'() { return t('dependencies.graphCanvas.dependencyTheNextTaskStartsAfterThePrevious'); },
-};
 const FOCUS_NAME_LIMIT = 5;
 function LegendLine({ state }: { state: GraphEdgeState }) {
   const style = graphEdgeStyle(state, 'normal');
@@ -42,6 +35,22 @@ export default function GraphCanvas(p: GraphCanvasProps) {
   const presented = useMemo(() => presentGraphEdges(p.edges, p.tasks), [p.edges, p.tasks]);
   const focus = useMemo(() => graphNeighborhood(focusId, presented), [focusId, presented]);
   const titles = useMemo(() => new Map(p.tasks.map(task => [task.id, task.title])), [p.tasks]);
+  // A fresh object per locale: React Flow re-merges ariaLabelConfig only when its identity changes.
+  const labels = useMemo((): Partial<AriaLabelConfig> => {
+    const coordinate = new Intl.NumberFormat(locale);
+    // React Flow passes lowercase arrow-key tokens; never announce them raw.
+    const direction = (token: string) => token === 'left' ? t('dependencies.graphCanvas.directionLeft') : token === 'right' ? t('dependencies.graphCanvas.directionRight')
+      : token === 'up' ? t('dependencies.graphCanvas.directionUp') : token === 'down' ? t('dependencies.graphCanvas.directionDown') : t('dependencies.graphCanvas.directionUnknown');
+    return {
+      'controls.ariaLabel': t('dependencies.graphCanvas.graphControls'), 'controls.zoomIn.ariaLabel': t('dependencies.graphCanvas.zoomIn'), 'controls.zoomOut.ariaLabel': t('dependencies.graphCanvas.zoomOut'),
+      'controls.fitView.ariaLabel': t('dependencies.graphCanvas.fitSelectedGraph'), 'controls.interactive.ariaLabel': t('dependencies.graphCanvas.toggleMovement'),
+      'node.a11yDescription.default': t('dependencies.graphCanvas.selectATaskArrowKeysChangeItsPosition'),
+      'node.a11yDescription.keyboardDisabled': t('dependencies.graphCanvas.theButtonInsideANodeOpensTheTask'),
+      'node.a11yDescription.ariaLiveMessage': moved => t('dependencies.graphCanvas.nodeMoved', { direction: direction(moved.direction), x: coordinate.format(moved.x), y: coordinate.format(moved.y) }),
+      'edge.a11yDescription.default': t('dependencies.graphCanvas.dependencyTheNextTaskStartsAfterThePrevious'),
+      'minimap.ariaLabel': t('dependencies.graphCanvas.miniMap'), 'handle.ariaLabel': t('dependencies.graphCanvas.handle'),
+    };
+  }, [t, locale]);
   const nodes: Node[] = useMemo(() => p.tasks.map(task => {
     const emphasis = nodeEmphasis(task.id, focus);
     const suffix = [task.blocked ? t('dependencies.graphCanvas.unfinishedPredecessorsSuffix') : '', task.statusGroup === 'done' ? t('dependencies.graphCanvas.doneSuffix') : '', task.violatesCurrentStatus ? t('dependencies.graphCanvas.statusConflictSuffix') : ''].join('');
@@ -50,6 +59,7 @@ export default function GraphCanvas(p: GraphCanvasProps) {
       sourcePosition: Position.Right, targetPosition: Position.Left, deletable: false,
       style: { ...graphNodeBoxStyle, ...graphNodeTone(task, emphasis) },
       ariaLabel: t('dependencies.graphCanvas.valueValueValuevalue', { p0: task.title, p1: task.projectName, p2: task.statusName, p3: suffix }),
+      domAttributes: { 'aria-roledescription': t('dependencies.graphCanvas.nodeRoleDescription') },
       data: { label: <GraphNodeContent task={task} onOpen={onOpen} onViewBlockers={onViewBlockers} /> },
     };
   }), [p.tasks, p.positions, onOpen, onViewBlockers, focus, focusId, t]);
@@ -60,6 +70,7 @@ export default function GraphCanvas(p: GraphCanvasProps) {
       id: edge.id, source: edge.source, target: edge.target, deletable: false, zIndex: emphasis === 'focused' ? 1 : 0,
       markerEnd: { type: MarkerType.ArrowClosed, color: graphEdgeColor(edge.state) }, style: graphEdgeStyle(edge.state, emphasis),
       ariaLabel: t('dependencies.graphCanvas.edgeLabel', { relation: t('dependencies.graphCanvas.theNextTaskStartsAfterThePreviousTask'), state: t(edge.state === 'resolved' ? 'dependencies.graphCanvas.edgeResolved' : 'dependencies.graphCanvas.edgeUnresolved', names) }),
+      domAttributes: { 'aria-roledescription': t('dependencies.graphCanvas.edgeRoleDescription') },
     };
   }), [presented, focus, titles, t]);
   const move = p.onMove;
