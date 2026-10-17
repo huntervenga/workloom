@@ -45,10 +45,12 @@ export function ScheduleBar({ start, due, window, baseline = false, onFocus, sta
 function planLabel(plan: PlanBaselineDto, members: readonly MembershipDto[]) {
   return `${plan.scope === 'project' ? t('schedule.ganttView.project') : members.find(member => member.id === plan.membershipId)?.displayName ?? t('schedule.ganttView.personal')} · ${frozenAt(plan.frozenAt)}`;
 }
-export function GanttView({ actorId, workspace, project, tasks, tasksSettled, selectedIds, onSelect, periods, members, controller: c, writable, hasMore, loadingMore, onLoadMore, onOpen }: {
+export function GanttView({ actorId, workspace, project, tasks, tasksSettled, selectedIds, selectionDisabled = false, onSelect, periods, members, controller: c, writable, hasMore, loadingMore, onLoadMore, onOpen }: {
   actorId: string; workspace: WorkspaceDto; project: ProjectDto; tasks: readonly TaskDto[]; selectedIds: readonly string[]; onSelect: (id: string, selected: boolean) => void;
   /** Optional page signal that `tasks` reflects a successful task-list read, including an empty one. */
   tasksSettled?: boolean;
+  /** A pending or unknown page-owned bulk command keeps its original selection. */
+  selectionDisabled?: boolean;
   periods: readonly PlanningPeriodDto[]; members: readonly MembershipDto[]; controller: ScheduleWorkspace; writable: boolean; hasMore: boolean; loadingMore: boolean; onLoadMore: () => void; onOpen: (id: string) => void;
 }) {
   const { t, locale } = useTranslation();
@@ -163,7 +165,7 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
     return <div key={task.id} role="group" aria-label={t('schedule.ganttView.calendarDatesValue', { p0: task.title })} className="flex border-b border-line last:border-b-0" data-gantt-row="">
       <div className={`sticky left-0 z-10 ${LABEL_COLUMN} shrink-0 border-r border-line bg-surface px-2 py-1.5`}>
         <div className="flex min-w-0 items-center gap-1.5">
-          <input type="checkbox" className="shrink-0" aria-label={t('schedule.ganttView.selectDatesValue', { p0: task.title })} checked={selectedIds.includes(task.id)} disabled={!selectedIds.includes(task.id) && selectedIds.length >= 100} onChange={e => onSelect(task.id, e.target.checked)} />
+          <input type="checkbox" className="shrink-0" aria-label={t('schedule.ganttView.selectDatesValue', { p0: task.title })} checked={selectedIds.includes(task.id)} disabled={selectionDisabled || !selectedIds.includes(task.id) && selectedIds.length >= 100} onChange={e => onSelect(task.id, e.target.checked)} />
           <button type="button" title={task.title} className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium text-accent-ink hover:underline" onClick={() => onOpen(task.id)}>{task.title}</button>
           {row.meetingId ? null : writable && row.editableDates ? <button type="button" aria-label={t('schedule.ganttView.editDates')} title={t('schedule.ganttView.editDates')} className="shrink-0 rounded border border-line bg-surface px-1.5 text-[11px] leading-5 text-ink-soft hover:border-line-strong hover:text-ink" onClick={() => c.open([task], context.rows)}>{t('schedule.ganttView.editShort')}</button> : <span title={t('schedule.ganttView.datesCannotBeEdited')} className="shrink-0 text-[11px] text-muted"><span aria-hidden="true">{t('schedule.ganttView.readOnlyShort')}</span><span className="sr-only">{t('schedule.ganttView.datesCannotBeEdited')}</span></span>}
         </div>

@@ -230,15 +230,17 @@ export function TaskDrawer(props: TaskDrawerProps) {
 }
 
 interface OtherTaskCommandNoticeProps {
+  onReviewBulk: () => void;
   command: UnresolvedTaskCommand;
   onOpenTask: (taskId: string) => void;
   onResumeCreate: () => void;
 }
 
 /** Another task command of this page is unresolved, so this form sends nothing until it is. */
-function OtherTaskCommandNotice({ command, onOpenTask, onResumeCreate }: OtherTaskCommandNoticeProps) {
+function OtherTaskCommandNotice({ command, onOpenTask, onResumeCreate, onReviewBulk }: OtherTaskCommandNoticeProps) {
   const { t } = useTranslation();
   const { taskId } = command;
+  if (command.kind === 'bulk') return <div role="status" className="space-y-2 rounded-lg border border-line p-3 text-sm"><p>{t(command.uncertain ? 'taskTable.bulk.unconfirmed' : 'taskTable.bulk.saving')}</p><Button size="sm" onClick={onReviewBulk}>{t('taskTable.bulk.review')}</Button></div>;
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
@@ -566,7 +568,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
         ) : null}
 
         {blockedByOther ? (
-          <OtherTaskCommandNotice command={blockedByOther} onOpenTask={onOpenTask} onResumeCreate={onResumeCreate} />
+          <OtherTaskCommandNotice command={blockedByOther} onOpenTask={onOpenTask} onResumeCreate={onResumeCreate} onReviewBulk={props.onClose} />
         ) : null}
 
         {newerOnServer && !locked ? (
@@ -927,7 +929,7 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
           </div>
         ) : null}
         {blockedByOther ? (
-          <OtherTaskCommandNotice command={blockedByOther} onOpenTask={onOpenTask} onResumeCreate={onResumeCreate} />
+          <OtherTaskCommandNotice command={blockedByOther} onOpenTask={onOpenTask} onResumeCreate={onResumeCreate} onReviewBulk={props.onClose} />
         ) : null}
         {restored && !locked ? (
           <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">

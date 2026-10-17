@@ -1,5 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
 import type {
+  BulkUpdateTasksInput,
   ArchiveTaskInput,
   CreateTagInput,
   CreateTaskInput,
@@ -16,6 +17,7 @@ import { isUuid } from '../../lib/format';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import {
+  bulkUpdateTasksRequest,
   TASK_PAGE_SIZE,
   archiveTaskRequest,
   createTagRequest,
@@ -310,4 +312,30 @@ export function useRestoreTaskMutation(actorId: string, workspaceId: string) {
     prepare: ({ taskId, input }: RestoreTaskVariables) => restoreTaskRequest(workspaceId, taskId, input),
     onSuccess: (task) => void storeTask(queryClient, actorId, workspaceId, task),
   });
+}
+
+export interface BulkUpdateTaskVariables extends IdempotentVariables { input: BulkUpdateTasksInput }
+export function useBulkUpdateTasksMutation(actorId: string, workspaceId: string) {
+  const client = useQueryClient();
+  return useIdempotentMutation({
+    prepare: ({ input }: BulkUpdateTaskVariables) => bulkUpdateTasksRequest(workspaceId, input),
+    onSuccess: tasks => { void storeConfirmedTasks(client, actorId, workspaceId, tasks); },
+  });
+}
+
+/** An atomic batch updates detail caches without one refetch storm per returned row. */
+export function storeConfirmedTasks(client: QueryClient, actorId: string, workspaceId: string, tasks: readonly TaskDto[]) {
+  const knownTags = client.getQueryData<TagDto[]>(queryKeys.tags(actorId, workspaceId)) ?? [];
+  for (const task of tasks) {
+    const key = queryKeys.task(actorId, workspaceId, task.id);
+    const cached = client.getQueryData<TaskDto>(key);
+    if (!cached) continue;
+    if (taskWouldRegress(cached, task) || tagsWouldRegress(task, [...cached.tags, ...knownTags])) void invalidateTask(client, actorId, workspaceId, task.id);
+    else client.setQueryData(key, task);
+  }
+  const workspace = queryKeys.workspace(actorId, workspaceId);
+  void client.invalidateQueries({ queryKey: [...workspace, 'schedule'] });
+  void client.invalidateQueries({ queryKey: [...workspace, 'dependencies'] });
+  const prefix = queryKeys.tasks(actorId, workspaceId);
+  return client.invalidateQueries({ queryKey: prefix, predicate: query => query.queryKey[prefix.length] !== 'detail' });
 }

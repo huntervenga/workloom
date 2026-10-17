@@ -253,6 +253,7 @@
     "editStatus": "Edit status for {{title}}",
     "editAssignee": "Edit assignee for {{title}}",
     "editDueDate": "Edit due date for {{title}}",
+    "editTags": "Edit tags for {{title}}",
     "editPriority": "Edit priority for {{title}}",
     "draft": "Draft",
     "draftHint": "This task has unsaved changes. Open its details to resume.",
@@ -299,5 +300,26 @@
     "sharedHelp": "This changes the shared budget for the whole team and every task in this work package.",
     "formatHelp": "Use hours such as 1.5 or 1:30. Leave blank for unknown; 0 means zero.",
     "refreshRequired": "Refresh task data before editing this shared package estimate."
+  },
+  "dates": {
+    "addStart": "+ Start date",
+    "edit": "Edit dates",
+    "editNew": "Edit dates for the new task",
+    "done": "Done",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "today": "Today",
+    "clearStart": "Clear start date",
+    "clearDue": "Clear due date",
+    "choosingStart": "Choosing start date",
+    "choosingDue": "Choosing due date",
+    "calendar": "Choose a date",
+    "format": "YYYY-MM-DD"
+  },
+  "tags": {
+    "search": "Search tags",
+    "noMatches": "No matching tags",
+    "edit": "Edit tags",
+    "createInDetails": "Open details to create tags"
   }
 }

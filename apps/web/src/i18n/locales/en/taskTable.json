@@ -14,7 +14,8 @@
     "moved": "Moved “{{title}}”.",
     "wait": "Wait until the current save is confirmed, then move the task again.",
     "draft": "Save or discard the changes to “{{title}}” before moving it.",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "emptyGroup": "Drop task to assign to {{name}}"
   },
   "sectionMove": {
     "action": "Move “{{title}}” to another section",
@@ -198,6 +199,39 @@
     "manual": "Manual",
     "dueDate": "Due date",
     "tableHelp": "Groups keep their order. Tasks sort by their own due date within each group or sibling list; subtasks stay under their parent. Undated tasks come last.",
-    "boardHelp": "Status lanes keep their order. Cards sort by their own due date within each lane, with undated tasks last."
+    "boardHelp": "Status lanes keep their order. Cards sort by their own due date within each lane, with undated tasks last.",
+    "manualDragHint": "Choose Manual sort to drag tasks between rows and assignees."
+  },
+  "selection": {
+    "select": "Select task: {{title}}",
+    "limit": "Select up to 100 tasks. Narrow the range or clear the current selection.",
+    "dismiss": "Dismiss"
+  },
+  "bulk": {
+    "region": "Edit selected tasks",
+    "count": "{{count}} tasks selected",
+    "assignee": "Assignee",
+    "unchanged": "Keep assignee",
+    "dates": "Dates",
+    "dateDialog": "Edit selected task dates",
+    "apply": "Apply to selected tasks",
+    "clear": "Clear selection",
+    "done": "Done",
+    "dateHint": "Only entered or explicitly cleared dates change. Other dates stay as they are.",
+    "invalid": "Check the selected changes and dates.",
+    "unavailable": "Some selected tasks are unavailable or have an open draft. Review the selection before applying.",
+    "saving": "Updating the selected tasks…",
+    "retry": "Retry original",
+    "saved": "{{count}} tasks updated.",
+    "unconfirmed": "Selected task changes need confirmation. Retry the original selection without editing it.",
+    "review": "Review selected tasks",
+    "hidden": "{{count}} selected tasks are outside this view.",
+    "clearHidden": "Clear hidden selection",
+    "reload": "Refresh selected tasks"
+  },
+  "dates": {
+    "range": "{{start}} – {{due}}",
+    "rangeLabel": "Start date: {{start}}; due date: {{due}}",
+    "startOnly": "From {{start}}"
   }
 }

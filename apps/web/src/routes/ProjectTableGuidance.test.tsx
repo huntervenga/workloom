@@ -78,7 +78,7 @@ it('keeps keyboard navigation and current URL, filters, selected task and week/p
     await chooseFilter(ui.user, 'Task participant', member.displayName);
     expect(new URLSearchParams(ui.router.state.location.search).get('participant')).toBe(MEMBER_ID);
     await ui.user.click(screen.getByText('Filters (1)', { selector: 'summary' }));
-    await ui.user.click(screen.getByRole('checkbox', { name: `Select for graph: ${task.title}` }));
+    await ui.user.click(screen.getByRole('button', { name: `Select task: ${task.title}` }));
     await waitFor(() => expect(ui.calls.filter(call => call.path === `${rootPath}/tasks`).at(-1)?.searchParams.get('participantMembershipId')).toBe(MEMBER_ID));
     // A complete filtered result is still a loaded scope, not evidence of more pages.
     const budget = screen.getByText('Loaded team budget').closest('tr');
@@ -105,7 +105,7 @@ it('keeps keyboard navigation and current URL, filters, selected task and week/p
     expect(screen.getByRole('combobox', { name: 'Group by' })).toHaveTextContent('Assignee');
     expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveTextContent('Due date');
     expect(filterPicker('Task participant')).toHaveTextContent(member.displayName);
-    expect(screen.getByRole('checkbox', { name: `Select for graph: ${task.title}` })).toBeChecked();
+    expect(screen.getByRole('button', { name: `Select task: ${task.title}` })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A));
     expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', MEMBER_ID));
     expect(ui.calls.slice(callsBefore)).toHaveLength(0);

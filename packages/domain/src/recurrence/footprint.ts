@@ -41,6 +41,17 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
     case 'task.update':case 'task.archive':case 'task.restore':case 'task.move':return projects(await taskProject(text(i.target,'task')));
     default:return never(i);
    }
+  case 'task_bulk':{
+   if(i.target.projectId!==i.input.projectId)throw new Error('Unknown recurrence footprint: bulk target and input project differ.');
+   const projectId=(await repo.tasks.findProject(ws,i.target.projectId))?.id;
+   if(!projectId)return none;
+   for(const row of i.input.tasks){
+    const task=await repo.tasks.findTask(ws,row.taskId);
+    if(!task)throw notFoundError();
+    if(task.projectId!==projectId)throw new DomainError('DOMAIN_VALIDATION_FAILED','The task belongs to another project.');
+   }
+   return projects(projectId);
+  }
   case 'task_row':{
    // The target is composed from the same parsed input; a mismatch is a wiring defect, never user input.
    if(i.target.projectId!==i.input.task.projectId)throw new Error('Unknown recurrence footprint: task row target and input project differ.');

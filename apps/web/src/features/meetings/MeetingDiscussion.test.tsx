@@ -2,7 +2,7 @@ import type { AttendanceDto, MeetingDto, TaskCommentDto, TaskDto } from '@worklo
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { MemoryRouter, useNavigate } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../app/AppRoutes';
 import { SessionProvider } from '../../app/session';
 import { localization } from '../../i18n';
@@ -22,6 +22,8 @@ vi.mock('../../i18n', async importOriginal => {
  const manager=new actual.LocalizationManager(catalogsFromModules({...english,'../../i18n/locales/de/comments.json':{discussion:'Diskussion',draftTab:'Diskussion (Entwurf)'}}));
  return {...actual,localization:manager,t:manager.t,useTranslation:()=>actual.useTranslation(manager)};
 });
+// Compile the lazy routes before the first DOM wait; these tests exercise meeting UI, not module loading.
+beforeAll(async()=>{await Promise.all([import('../../routes/ProjectPage'),import('../../routes/WeeklyPage')]);});
 afterEach(()=>{act(()=>localization.setLocale('en'));});
 const MEETING='ab000000-0000-4000-8000-000000000001';const ATTENDANCE='ac000000-0000-4000-8000-000000000001';
 const meetingTask:TaskDto={...task,meetingId:MEETING,title:'Saved meeting',participants:[{membershipId:MEMBER_ID,role:'assignee',active:true,revision:1}]};

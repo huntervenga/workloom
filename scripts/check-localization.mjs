@@ -46,6 +46,9 @@ const literalExemptions = new Map([
   ["apps/web/src/features/work-categories/useTaskTimeTable.tsx:Work record unavailable", "Internal read/validation diagnostic; UI uses fixed describeError catalog copy, never error.message."],
 ]);
 // Exact machine strings in task editors; UI labels remain catalog checked.
+// Exact AST template-text fragments from dropCellStyle.boxShadow; no pattern or whole-file exemption.
+literalExemptions.set("apps/web/src/features/task-table/TaskTable.tsx:inset 0 ", "CSS boxShadow template head in dropCellStyle; assigned only to cell style, never rendered as user copy.");
+literalExemptions.set("apps/web/src/features/task-table/TaskTable.tsx:px 0 var(--color-accent), var(--tw-shadow, 0 0 #0000)", "CSS boxShadow template tail in dropCellStyle; retains the cell edge shadow and is never rendered as user copy.");
 literalExemptions.set("apps/web/src/features/task-table/TaskTable.tsx:flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-highlighted:bg-accent-soft data-disabled:cursor-default data-disabled:opacity-50", "Radix menu CSS tokens; never user-visible copy.");
 literalExemptions.set("apps/web/src/features/task-table/TaskTable.tsx:input, textarea, select, [contenteditable=\"true\"], [data-editing], [role=\"menu\"], [role=\"listbox\"], [role=\"dialog\"]", "DOM selector preserving native editor menus; never rendered as copy.");
 literalExemptions.set("apps/web/src/features/tasks/InitialTaskCells.tsx:textarea, input, button", "Focus-target DOM selector inside the staged cell editor; never user-visible copy.");
@@ -53,6 +56,8 @@ literalExemptions.set("apps/web/src/features/tasks/QuickTaskAdd.tsx:flex h-8 cur
 literalExemptions.set("apps/web/src/features/tasks/TaskCompletionAction.tsx:group/complete inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:opacity-50", "Named CSS group and completion-control CSS tokens; never user-visible copy.");
 literalExemptions.set("apps/web/src/features/workspace/workspaceCreationApi.ts:A mutation needs a UUID Idempotency-Key.", "Programmer invariant from an invalid generated key; UI maps non-API errors to workspace.create.failed, never error.message.");
 literalExemptions.set("apps/web/src/features/workspace/workspaceCreationController.ts:The workspace answer arrived after the session changed.", "Internal CreationIdentityChangedError diagnostic; UI maps its class to workspace.create.signedOut without displaying this message.");
+literalExemptions.set("apps/web/src/features/tasks/TaskDateInput.tsx:mt-1 block h-9 w-full min-w-0 rounded border border-line bg-surface px-2 text-sm text-ink outline-none focus:border-accent-line focus:ring-2 focus:ring-accent-soft disabled:bg-canvas disabled:text-muted aria-[invalid=true]:border-red-300", "Date-input CSS tokens assigned to className; this exact literal is never rendered as user copy.");
+literalExemptions.set("apps/web/src/features/tasks/api.ts:BULK_RESPONSE_INCOMPLETE", "Internal response-schema refinement code only; parseResponse discards Zod issues and throws ApiError invalid_response, which describeError maps to fixed catalog copy without rendering this diagnostic.");
 const readSource = path => readFileSync(join(root, path), 'utf8');
 const dynamicKeys = new Map([
   ['apps/web/src/features/cutoff/CutoffPanel.tsx', new Map([
@@ -108,6 +113,20 @@ dynamicKeys.set('apps/web/src/features/tasks/TaskFields.tsx', new Map([['message
 dynamicKeys.set('apps/web/src/features/tasks/InlineTaskEdit.tsx', new Map([['currentError.key', { keys: taskIssueKeys, reason: 'Inline editing renders the same checked TaskDraftIssue descriptors as the task drawer.' }]]));
 dynamicKeys.set('apps/web/src/features/workspace/WorkspaceCreation.tsx', new Map([['rejectionKey(error)', { keys: ['workspace.create.signedOut', 'workspace.create.failed', 'workspace.create.rejectedInput', 'workspace.create.notAllowed', 'workspace.create.rateLimited'], reason: 'Finite rejectionKey maps identity changes, local failures and API error kinds to fixed catalog copy; server error text is never displayed.' }]]));
 dynamicKeys.set('apps/web/src/features/tasks/QuickTaskAdd.tsx', new Map([['issue.key', { keys: taskIssueKeys, reason: 'Quick add renders the same checked TaskDraftIssue descriptors as the task drawer.' }]]));
+
+// Paired-date renderers receive the same finite factory descriptors, not server error text.
+for (const file of [
+  'apps/web/src/features/tasks/TaskFields.tsx',
+  'apps/web/src/features/tasks/InlineTaskEdit.tsx',
+  'apps/web/src/features/tasks/TaskDraftCells.tsx',
+]) {
+  const rules = dynamicKeys.get(file) ?? new Map();
+  for (const expression of ['errors.startDate.key', 'errors.dueDate.key']) {
+    rules.set(expression, { keys: taskIssueKeys, reason: 'Date errors are TaskDraftIssue descriptors from the taskDraftIssue factory; all literal factory calls and the finite estimate-parser input are extracted above.' });
+  }
+  dynamicKeys.set(file, rules);
+}
+
 
 dynamicKeys.set('apps/web/src/features/tasks/TaskDrawer.tsx', new Map([
   ['errors.form.key', { keys: taskIssueKeys, reason: 'Task form errors are descriptors from the checked taskDraftIssue factory.' }],

@@ -1,5 +1,6 @@
 import type {
   ArchiveTaskInput,
+  BulkUpdateTasksInput,
   CreateProjectInput,
   CreateSectionInput,
   CreateTagInput,
@@ -64,4 +65,6 @@ export interface TaskApplication {
   restoreTask(context: CommandContext, taskId: string, input: RestoreTaskInput): Promise<TaskDto>;
   /** Manual reorder next to an active sibling; see `moveTaskInputSchema`. */
   moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<TaskDto>;
+  /** Explicit all-or-nothing selection patch, with current access checked before receipt replay. */
+  bulkUpdateTasks(context: CommandContext, input: BulkUpdateTasksInput): Promise<TaskDto[]>;
 }

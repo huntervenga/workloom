@@ -160,6 +160,7 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
     if (!fullRow) return;
     const escapeRow = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || menuActive.current || !(event.target instanceof Element)) return;
+      if (event.target.closest('[data-task-draft-popup]')) return;
       const owner = event.target.closest('[data-quick-draft]');
       if (owner?.getAttribute('data-quick-draft') !== id || owner.querySelector('[role="combobox"][aria-expanded="true"]')) return;
       event.preventDefault();
@@ -329,7 +330,7 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   if (!renderRow) return titleCell;
   const context: TaskDraftCellContext = {
     draft, onChange: change, lookups, disabled: frozen, errors, errorId: field => `${id}-${field}`,
-    inheritsEstimate: sharesParentPackage, rowKey: id,
+    inheritsEstimate: sharesParentPackage, rowKey: id, onMoreDetails: canOpenDetails ? openDetails : undefined,
   };
   const staged = session.initialCells ?? emptyInitialTaskCellsDraft();
   // Columns without a built-in draft value: a staged custom field or weekly hours, else nothing.

@@ -1,10 +1,13 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { alpha, failure, installFakeApi, ok, project, renderApp, type RouteTable } from '../../test/fakeApi';
 import { tablePath, tableRoutes } from '../work-categories/test/fixtures';
 import { dependencyKeys } from './queries';
 import { blocking, edge, graph, layout, PROJECT_ID, rootPath, summary, taskAt } from './test/fixtures';
 import { anna } from '../../test/fakeApi';
+
+// Compile the large lazy route before the first DOM wait; these tests exercise its UI, not module loading.
+beforeAll(async () => { await import('../../routes/ProjectPage'); });
 
 const width = window.innerWidth;
 beforeEach(() => { Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true, writable: true }); });
@@ -52,7 +55,10 @@ describe('project graph roots and retained layout', () => {
       [`GET ${rootPath}/projects/${PROJECT_ID}/graph`]: request => ok(graph([first], request.searchParams.get('rootTaskIds')?.split(',') ?? [])),
     });
     const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('checkbox', { name: `Select for graph: ${first.title}` }));
+    const select = await screen.findByRole('button', { name: `Select task: ${first.title}` });
+    expect(select).toHaveAttribute('aria-pressed', 'false');
+    await user.click(select);
+    expect(select).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: "Selected graph (1)" }));
     await screen.findByText(/Starting tasks taken from your selection/);
     await waitFor(() => expect(calls.some(call => call.path.endsWith('/graph'))).toBe(true));

@@ -3,7 +3,7 @@ import type {DependencyMutationCommand,TaskStatusTransitionPolicy} from '../depe
 import type {MeetingMutationCommand} from '../meetings/ports.js';
 import type { WorkCategoryResolver, WorkCategoryMutationCommand } from '../categories/ports.js';
 import type {
-  CreateTaskRowInput,FreezeScope,RecurrenceSnapshotSectionDto,MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
+  BulkUpdateTasksInput,CreateTaskRowInput,FreezeScope,RecurrenceSnapshotSectionDto,MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
   PlanningPackageDto, PlanningPeriodDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto,
   WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto,
 } from '@workloom/contracts';
@@ -121,6 +121,7 @@ export type PlanningMutationIntent =
  | {readonly family:'schedule';readonly command:'task.schedule.apply';readonly target:{readonly projectId:string;readonly affectedProjectIds:readonly string[]};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>}
  | {readonly family:'task';readonly command:TaskMutationCommand;readonly target:string|null;readonly input:unknown}
  /** Atomic table row: its own typed aggregate, never folded into the task commands or their preview hashes. */
+ | {readonly family:'task_bulk';readonly command:'task.bulk.update';readonly target:{readonly projectId:string};readonly input:BulkUpdateTasksInput}
  | {readonly family:'task_row';readonly command:'task.row.create';readonly target:{readonly projectId:string};readonly input:CreateTaskRowInput}
  | {readonly family:'field';readonly command:FieldMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'planning';readonly command:PlanningMutationCommand;readonly target:unknown;readonly input:unknown}

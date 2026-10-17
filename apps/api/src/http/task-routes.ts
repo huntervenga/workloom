@@ -1,5 +1,7 @@
 import {
   archiveTaskInputSchema,
+  bulkUpdateTasksInputSchema,
+  bulkTaskUpdateResponseSchema,
   createProjectInputSchema,
   createSectionInputSchema,
   createTagInputSchema,
@@ -180,6 +182,11 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskRouteDependen
   app.post(`${BASE}/tasks/:taskId/restore`, async (request, reply) => {
     const { params, input, ctx } = await write(request, taskParamsSchema, restoreTaskInputSchema);
     return sendData(request, reply, taskResponseSchema, await deps.tasks.restoreTask(ctx, params.taskId, input));
+  });
+
+  app.post(`${BASE}/tasks/bulk-update`, async (request, reply) => {
+    const { input, ctx } = await write(request, workspaceParamsSchema, bulkUpdateTasksInputSchema);
+    return sendData(request, reply, bulkTaskUpdateResponseSchema, await deps.tasks.bulkUpdateTasks(ctx, input));
   });
 
   app.post(`${BASE}/tasks/:taskId/move`, async (request, reply) => {

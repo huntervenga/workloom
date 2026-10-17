@@ -6,6 +6,7 @@ import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { formatEstimate, parseEstimateInput } from '../task-table';
 import { TagSwatch } from './TagDialogs';
+import { TaskDateInput } from './TaskDateInput';
 import { TASK_DESCRIPTION_MAX, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors, type TaskDraftIssue, type TaskDraftKey } from './taskDraft';
 
 export const priorityLabels: Record<TaskPriority, string> = {
@@ -148,7 +149,7 @@ export function TaskFields({
   // Each explicit validation attempt gets a new error object, so the same error reopens
   // details after the user closes it. Native toggling remains fully under user control.
   useLayoutEffect(() => {
-    if ((errors.startDate || errors.estimate) && detailsRef.current) detailsRef.current.open = true;
+    if (errors.estimate && detailsRef.current) detailsRef.current.open = true;
   }, [errors]);
   const ids = {
     title: `${id}-title`,
@@ -264,19 +265,8 @@ export function TaskFields({
             onValueChange={(value) => onChange({ responsibleMembershipId: value === '' ? null : value })}
           />
         </div><div>
-          <label htmlFor={ids.due} className={labelClassName}>
-            {t('tasks.taskFields.dueDate')}</label>
-          <TextInput
-            id={ids.due}
-            type="date"
-            min="0001-01-01" max="9999-12-31"
-            className="mt-1.5"
-            value={draft.dueDate}
-            aria-invalid={errors.dueDate ? true : undefined}
-            aria-describedby={errors.dueDate ? ids.dueError : undefined}
-            onChange={(event) => onChange({ dueDate: event.target.value })}
-          />
-          <FieldError id={ids.dueError} message={errors.dueDate} />
+          <TaskDateInput startDate={draft.startDate ?? ''} dueDate={draft.dueDate} onChange={onChange} calendarPopover
+            errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} />
         </div></div>
 <div>
         <label htmlFor={ids.description} className={labelClassName}>
@@ -306,10 +296,6 @@ export function TaskFields({
             options={sectionChoices}
             onValueChange={(value) => onChange({ sectionId: value === '' ? null : value })}
           />
-        </div><div>
-          <label htmlFor={ids.start} className={labelClassName}>{t('tasks.taskFields.startDate')}</label>
-          <TextInput id={ids.start} type="date" min="0001-01-01" max="9999-12-31" className="mt-1.5" value={draft.startDate ?? ''} aria-invalid={errors.startDate ? true : undefined} aria-describedby={errors.startDate ? ids.startError : undefined} onChange={event => onChange({ startDate: event.target.value })} />
-          <FieldError id={ids.startError} message={errors.startDate} />
         </div><div>
           <label htmlFor={ids.priority} className={labelClassName}>
             {t('tasks.taskFields.priority')}</label>

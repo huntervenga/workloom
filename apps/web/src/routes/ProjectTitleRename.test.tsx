@@ -19,7 +19,7 @@ describe('project inline task title rename', () => {
     let current = { ...task, revision: 4 }; const gate = deferred<Response>();
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`GET ${rootPath}/tasks/${task.id}`]: () => ok(current), [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise }));
     const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('checkbox', { name: `Select for graph: ${task.title}` }));
+    await user.click(await screen.findByRole('button', { name: `Select task: ${task.title}` }));
     await user.click(await rename()); const input = titleBox(); expect(input).toHaveFocus(); expect(input).toHaveValue(task.title);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.queryByRole('columnheader', { name: 'Due date' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Finish or collapse the current field edit first.' })).toBeDisabled();
@@ -31,7 +31,7 @@ describe('project inline task title rename', () => {
     await act(async () => gate.resolve(ok(current = { ...current, title: 'Everyday renamed task', revision: 5 })));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Everyday renamed task' })).toHaveFocus());
     expect(screen.queryByRole('form', { name: /^Add a task to/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('checkbox', { name: 'Select for graph: Everyday renamed task' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Select task: Everyday renamed task' })).toHaveAttribute('aria-pressed', 'true');
     await user.click(await details('Everyday renamed task'));
     expect(within(await screen.findByRole('dialog')).getByLabelText('Task name')).toHaveValue('Everyday renamed task');
   });

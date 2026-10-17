@@ -1,5 +1,6 @@
 import {
   errorResponseSchema,
+  bulkTaskUpdateResponseSchema,
   projectListResponseSchema,
   projectResponseSchema,
   sectionListResponseSchema,
@@ -131,6 +132,7 @@ const tasks: TaskApplication = {
   archiveTask: recorder('archiveTask', () => task),
   restoreTask: recorder('restoreTask', () => task),
   moveTask: recorder('moveTask', () => task),
+  bulkUpdateTasks: recorder('bulkUpdateTasks', () => [task]),
 };
 
 // Only identity lookups are needed: the real dev identity adapter resolves the actor.
@@ -223,6 +225,7 @@ const CATALOG: RouteCase[] = [
     status: 201,
     schema: taskResponseSchema,
   },
+  { method: 'POST', path: '/tasks/bulk-update', body: { projectId: IDS.project, tasks: [{ taskId: IDS.task, expectedRevision: 3 }], changes: { responsibleMembershipId: null, dueDate: null } }, call: 'bulkUpdateTasks', args: [{ projectId: IDS.project, tasks: [{ taskId: IDS.task, expectedRevision: 3 }], changes: { responsibleMembershipId: null, dueDate: null } }], status: 200, schema: bulkTaskUpdateResponseSchema },
   { method: 'GET', path: '/tasks/:taskId', call: 'getTask', args: [IDS.task], status: 200, schema: taskResponseSchema },
   {
     method: 'PATCH',
@@ -605,4 +608,33 @@ describe('P1a task routes (HTTP adapter)', () => {
       await p0.close();
     }
   });
+  it('forwards explicit assignee moves including group-end without coalescing null to omission', async () => {
+    const route = routeFor('moveTask');
+    const body = { expectedRevision: 3, anchorTaskId: null, placement: 'after', responsibleMembershipId: null };
+    const result = await send(app, route, { body });
+    expect(result.statusCode).toBe(200);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args).toEqual([IDS.task, body]);
+    expectRejected(await send(app, route, { body: { ...body, placement: 'before' } }), 400, 'VALIDATION_FAILED');
+    expectRejected(await send(app, route, { body: { expectedRevision: 3, anchorTaskId: null, placement: 'after' } }), 400, 'VALIDATION_FAILED');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('rejects invalid entire bulk selections and missing identity protection before one domain call', async () => {
+    const route = routeFor('bulkUpdateTasks');
+    const body = route.body as { projectId: string; tasks: { taskId: string; expectedRevision: number }[]; changes: object };
+    for (const invalid of [
+      { ...body, tasks: [] }, { ...body, tasks: [...body.tasks, ...body.tasks] },
+      { ...body, tasks: [{ taskId: IDS.task, expectedRevision: 0 }] },
+      { ...body, changes: {} }, { ...body, changes: { participantMembershipIds: [] } },
+      { ...body, changes: { dueDate: '2026-02-30' } }, { ...body, workspaceId: W },
+    ]) expectRejected(await send(app, route, { body: invalid }), 400, 'VALIDATION_FAILED');
+    expectRejected(await send(app, route, { idempotencyKey: null }), 400, 'VALIDATION_FAILED');
+    expectRejected(await send(app, route, { headers: { origin: 'http://evil.example' } }), 403, 'ORIGIN_NOT_ALLOWED');
+    expect(calls).toHaveLength(0);
+    overrides.set('bulkUpdateTasks', () => { throw new DomainError('REVISION_CONFLICT', 'Synthetic later-row conflict'); });
+    expectRejected(await send(app, route), 409, 'REVISION_CONFLICT');
+    expect(calls).toHaveLength(1);
+  });
+
 });

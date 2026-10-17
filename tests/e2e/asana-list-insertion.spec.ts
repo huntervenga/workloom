@@ -20,6 +20,13 @@ type Command = { path: string; method: string; body: string; key: string | undef
 const realRow = (page: Page, id: string) => page.locator(`tr[data-task-row="${id}"]`);
 const draftRow = (page: Page) => page.locator('tr[data-task-draft-row][data-task-draft-state="draft"]');
 const titleInput = (page: Page) => draftRow(page).getByRole('textbox', { name: 'Task name', exact: true });
+async function setDraftDueDate(page: Page, dueDate: string) {
+  await draftRow(page).getByRole('button', { name: 'Edit dates for the new task', exact: true }).click();
+  const popup = page.getByRole('dialog', { name: 'Edit dates', exact: true });
+  await expect(popup).toBeVisible(); await popup.getByLabel('Due date', { exact: true }).fill(dueDate);
+  await popup.getByRole('button', { name: 'Done', exact: true }).click(); await expect(popup).toHaveCount(0);
+}
+
 function required<T>(value: T | undefined): T { if (value === undefined) throw new Error('Required private acceptance fixture is missing.'); return value; }
 async function read<T>(page: Page, path: string, parser: Parser<T>): Promise<T> {
   const response = await page.request.get(`${APP}${path}`); expect(response.status()).toBe(200);
@@ -129,23 +136,55 @@ async function point(locator: Locator) {
   if (!box) throw new Error('Actual mouse target is not visible.');
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
-async function drag(page: Page, id: string, targetId: string, placement: 'before' | 'after', escape = false, scope: Page | Locator = page) {
+type DropCue = 'valid' | 'none';
+type LiveDrop = { hit: boolean; half: 'before' | 'after' | null; drop: string | null; anyDrop: boolean };
+async function frames(page: Page) {
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+}
+function liveDrop(cell: Element, at: { x: number; y: number }): LiveDrop {
+  // The real hit under the held pointer, ignoring the ghost, must be the intended row's own element.
+  const own = cell.closest('tr[data-task-row]');
+  const hit = document.elementsFromPoint(at.x, at.y).find(element => !element.closest('[data-task-drag-preview]'));
+  const row = hit?.closest('tr[data-task-row]') ?? null;
+  const rect = row?.getBoundingClientRect();
+  const marked = own?.matches('[data-task-drop]') ? own : own?.querySelector('[data-task-drop]');
+  return { hit: row !== null && row === own, half: rect ? (at.y < rect.top + rect.height / 2 ? 'before' : 'after') : null,
+    drop: marked?.getAttribute('data-task-drop') ?? null, anyDrop: document.querySelector('[data-task-drop]') !== null };
+}
+function settled(live: LiveDrop | undefined, placement: 'before' | 'after', cue: DropCue) {
+  return live !== undefined && live.hit && live.half === placement && (cue === 'valid' ? live.drop === placement : !live.anyDrop);
+}
+async function drag(page: Page, id: string, targetId: string, placement: 'before' | 'after', escape = false, scope: Page | Locator = page, cue: DropCue = 'valid') {
   // Hover reveals the normal move control; drop halves come from the actual saved title cell.
-  await scope.locator(`tr[data-task-row="${id}"] > td:first-child`).hover();
-  const handle = scope.locator(`[data-task-move-handle="${id}"]`);
-  await expect(handle).toBeEnabled();
-  const from = await point(handle);
   const target = scope.locator(`tr[data-task-row="${targetId}"] > td:first-child`);
   await target.scrollIntoViewIfNeeded();
-  const box = await target.boundingBox();
-  if (!box) throw new Error('Actual saved title cell is not visible for the mouse drop.');
-  const to = { x: box.x + box.width / 2, y: box.y + box.height * (placement === 'before' ? 0.25 : 0.75) };
+  await scope.locator(`tr[data-task-row="${id}"] > td:first-child`).hover();
+  const handle = scope.locator(`[data-task-move-handle="${id}"]`);
+  await expect(handle).toBeEnabled(); await expect(handle).not.toHaveAttribute('aria-disabled', 'true');
+  // Measured after the last pre-drag scroll, so mouse-down lands on the fresh handle center.
+  const from = await point(handle);
+  const preview = page.getByTestId('task-drag-preview');
   await page.mouse.move(from.x, from.y); await page.mouse.down();
   try {
-    await page.mouse.move(from.x + 9, from.y, { steps: 3 });
-    await page.mouse.move(to.x, to.y, { steps: 12 });
+    await page.mouse.move(from.x + 9, from.y, { steps: 3 }); await frames(page);
+    await expect(preview).toBeVisible(); await expect(preview).toHaveAttribute('data-task-drag-preview', id);
+    // Edge autoscroll is intentional, so the same held pointer follows the target's live geometry.
+    let at = { x: from.x + 9, y: from.y }; let live: LiveDrop | undefined;
+    for (let move = 0; move <= 5 && !settled(live, placement, cue); move++) {
+      const box = await target.boundingBox();
+      if (!box) throw new Error(`Saved title cell ${targetId} is not measurable during the held drag.`);
+      at = { x: box.x + box.width / 2, y: box.y + box.height * (placement === 'before' ? 0.25 : 0.75) };
+      await page.mouse.move(at.x, at.y, { steps: move === 0 ? 12 : 3 }); await frames(page);
+      live = await target.evaluate(liveDrop, at);
+    }
+    if (!settled(live, placement, cue)) throw new Error(`Held drag did not settle ${placement} ${targetId} after 5 corrections: ${JSON.stringify(live)}`);
+    await expect(preview).toBeVisible(); await expect(preview).toHaveAttribute('data-task-drag-preview', id);
+    expect(await target.evaluate(liveDrop, at)).toMatchObject(cue === 'valid'
+      ? { hit: true, half: placement, drop: placement } : { hit: true, half: placement, drop: null, anyDrop: false });
+    if (cue === 'none') { await expect(scope.locator('[data-task-drop]')).toHaveCount(0); await expect(page.locator('[data-task-drop]')).toHaveCount(0); }
     if (escape) await page.keyboard.press('Escape');
   } finally { await page.mouse.up(); }
+  await expect(preview).toBeHidden();
 }
 async function picker(page: Page, row: Locator, label: string, choice: string) {
   await row.getByRole('combobox', { name: label, exact: true }).click();
@@ -195,7 +234,7 @@ test.describe('Asana task list insertion on private shared Auth', () => {
     await picker(page, draftRow(page), 'Status', 'In progress');
     await picker(page, draftRow(page), 'Assignee', f.member.displayName);
     await picker(page, draftRow(page), 'Priority', 'High');
-    await draftRow(page).getByLabel('Due date', { exact: true }).fill('2035-04-06');
+    await setDraftDueDate(page, '2035-04-06');
     await draftRow(page).getByRole('textbox', { name: 'Team estimate (hours)', exact: true }).fill('1.5');
     let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
     let held = false;
@@ -289,10 +328,10 @@ test.describe('Asana task list insertion on private shared Auth', () => {
     await expect(realRow(page, x.id)).toBeVisible();
     await drag(page, y.id, x.id, 'before'); await expect.poll(async () => names((await tasks(f)).filter(value => value.parentTaskId === parent.id))).toEqual(['y', 'x']);
     const before = ordered(await tasks(f)); const moveCount = writes.found.length;
-    await drag(page, b.id, parent.id, 'after', true); await drag(page, b.id, b.id, 'before');
+    await drag(page, b.id, parent.id, 'after', true); await drag(page, b.id, b.id, 'before', false, page, 'none');
     expect(writes.found).toHaveLength(moveCount); expect(ordered(await tasks(f))).toEqual(before);
     // An adjacent command may save a receipt, but cannot change positions or business revisions.
-    await drag(page, y.id, x.id, 'before'); expect(ordered(await tasks(f))).toEqual(before);
+    await drag(page, y.id, x.id, 'before', false, page, 'none'); expect(ordered(await tasks(f))).toEqual(before);
     const moved = required(before.find(value => value.id === a.id));
     expect({ parent: moved.parentTaskId, package: moved.workPackageId, estimate: moved.estimateMinutes, start: moved.startDate, due: moved.dueDate })
       .toEqual({ parent: a.parentTaskId, package: a.workPackageId, estimate: 90, start: '2035-01-01', due: '2035-01-03' });
@@ -417,7 +456,7 @@ test.describe('Asana task list insertion on private shared Auth', () => {
     await openProject(f); const scroll = await page.evaluate(() => window.scrollY); await after(f, b);
     await assertBetween(page, b.id, c.id); await geometry(realRow(page, b.id), draftRow(page));
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
-    await draftRow(page).getByLabel('Due date', { exact: true }).fill('2035-06-02');
+    await setDraftDueDate(page, '2035-06-02');
     await titleInput(page).scrollIntoViewIfNeeded(); await submit(page, 'X');
     await expect.poll(async () => names(await tasks(f))).toEqual(['A', 'B', 'X', 'C']); await titleInput(page).press('Escape');
     expect(Math.abs(await page.evaluate(() => window.scrollY) - scroll)).toBeLessThanOrEqual(2);

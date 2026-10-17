@@ -53,7 +53,7 @@ describe('page-owned task grouping', () => {
     const later = { ...parent, id: 'f2000000-0000-4000-8000-000000000003', title: 'Later row', workPackageId: 'f1000000-0000-4000-8000-000000000003', estimateMinutes: 60 };
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.has('cursor') ? page([later]) : page([parent, child], 'next-page') }));
     const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('checkbox', { name: `Select for graph: ${parent.title}` }));
+    await user.click(await screen.findByRole('button', { name: `Select task: ${parent.title}` }));
     expect(groupControl()).toHaveTextContent('Section');
     await chooseTimeContext(user, 'Week for hours', PERIOD_A);
     await user.click(screen.getByRole('button', { name: 'Collapse section “Original section”' }));
@@ -73,7 +73,7 @@ describe('page-owned task grouping', () => {
     await tableChoice(user, groupControl(), 'section');
     expect(screen.getByRole('button', { name: 'Expand section “Original section”' })).toHaveAttribute('aria-expanded', 'false');
     await user.click(screen.getByRole('button', { name: 'Expand section “Original section”' }));
-    expect(screen.getByRole('checkbox', { name: `Select for graph: ${parent.title}` })).toBeChecked();
+    expect(screen.getByRole('button', { name: `Select task: ${parent.title}` })).toHaveAttribute('aria-pressed', 'true');
     expect(writes(calls)).toHaveLength(0);
   });
 

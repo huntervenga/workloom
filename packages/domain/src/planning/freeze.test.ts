@@ -145,3 +145,19 @@ describe('atomic task row aggregate guard',()=>{
     expect(writes).toEqual([]);
   });
 });
+
+describe('assignee move and atomic bulk meeting policy', () => {
+  const meetingTask = { ...task, meetingId: id(901) };
+  const scope = (locked: boolean) => ({ context: ctx, repository: repository({ tasks: { findTask: async () => meetingTask } as unknown as PlanningRepository['tasks'], listMeetingLocks: async () => locked ? [{ baselineId: id(902) }] as Awaited<ReturnType<PlanningRepository['listMeetingLocks']>> : [] }), barrierAt: new Date(time), recurrenceCensus }) as PlanningWriteScope;
+  it('permits same-current-assignee meeting reordering and unchanged legacy moves', async () => {
+    const guard = createPlanningMutationGuard(scope(true), tools);
+    expect(await guard.check({ family: 'task', command: 'task.move', target: taskId, input: { responsibleMembershipId: a } })).toBeNull();
+    expect(await guard.check({ family: 'task', command: 'task.move', target: taskId, input: {} })).toBeNull();
+  });
+  it('does not bypass meeting roster locks through a move or bulk patch', async () => {
+    const guard = createPlanningMutationGuard(scope(true), tools);
+    expect((await guard.check({ family: 'task', command: 'task.move', target: taskId, input: { responsibleMembershipId: b } }))?.details).toEqual({ committed: true, baselineIds: [id(902)] });
+    expect((await guard.check({ family: 'task_bulk', command: 'task.bulk.update', target: { projectId: project }, input: { projectId: project, tasks: [{ taskId, expectedRevision: 1 }], changes: { dueDate: null } } }))?.code).toBe('FIELD_LOCKED');
+    await expect(createPlanningMutationGuard(scope(false), tools).check({ family: 'task', command: 'task.move', target: taskId, input: { responsibleMembershipId: b } })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' });
+  });
+});

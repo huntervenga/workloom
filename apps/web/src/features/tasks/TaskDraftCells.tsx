@@ -5,6 +5,7 @@ import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type Reac
 import { useTranslation } from '../../i18n';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { CellPopover } from './CellPopover';
+import { keepFocusOnPopoverPress, TaskDateInput } from './TaskDateInput';
 import { fieldLabels, formatDraftValue, priorityLabels, type TaskLookups } from './TaskFields';
 import { changedKeys, emptyDraft, type TaskDraft, type TaskDraftErrors, type TaskDraftKey } from './taskDraft';
 
@@ -33,6 +34,8 @@ export interface TaskDraftCellContext {
   inheritsEstimate: boolean;
   /** Marks portalled lists as part of the row, so moving into them does not leave the row. */
   rowKey: string;
+  /** The row owner's guarded handoff, unavailable while extras or unresolved commands prevent it. */
+  onMoreDetails?: (() => void) | undefined;
 }
 
 /**
@@ -109,14 +112,15 @@ function TaskDraftCell({ cell, context }: { cell: TaskDraftCellId; context: Task
         }),
       ];
       return <DraftMultiPicker label={fieldLabels.tagIds} summary={formatDraftValue('tagIds', draft, lookups)} empty={t('tasks.taskFields.noTagsYet')}
-        options={options} values={draft.tagIds} disabled={disabled} rowKey={rowKey} onChange={tagIds => onChange({ tagIds })} />;
+        options={options} values={draft.tagIds} disabled={disabled} rowKey={rowKey} onChange={tagIds => onChange({ tagIds })}
+        emptyAction={context.onMoreDetails ? <button type="button" className="rounded px-1 py-1 text-xs font-medium text-accent-ink hover:bg-canvas" onClick={context.onMoreDetails}>{t('tasks.tags.createInDetails')}</button> : undefined} />;
     }
     case 'startDate':
-      return <input type="date" aria-label={fieldLabels.startDate} min="0001-01-01" max="9999-12-31" readOnly={disabled} aria-disabled={disabled || undefined} {...invalid('startDate')}
+      // Canonical YYYY-MM-DD text, like TaskDateInput: a partly typed date stays as typed for validation to reject.
+      return <input type="text" aria-label={fieldLabels.startDate} min="0001-01-01" max="9999-12-31" placeholder={t('tasks.dates.format')} autoComplete="off" spellCheck={false} readOnly={disabled} aria-disabled={disabled || undefined} {...invalid('startDate')}
         className={cn(cellInputClassName, 'px-1')} value={draft.startDate ?? ''} onChange={event => onChange({ startDate: event.target.value })} />;
     case 'dueDate':
-      return <input type="date" aria-label={fieldLabels.dueDate} min="0001-01-01" max="9999-12-31" readOnly={disabled} aria-disabled={disabled || undefined} {...invalid('dueDate')}
-        className={cn(cellInputClassName, 'px-1')} value={draft.dueDate} onChange={event => onChange({ dueDate: event.target.value })} />;
+      return <DraftDatePicker context={context} />;
     case 'estimate':
       return <input type="text" aria-label={t('tasks.inlineEstimate.label')} autoComplete="off" readOnly={disabled} aria-disabled={disabled || undefined} {...invalid('estimate')}
         className={cellInputClassName} value={draft.estimate} onChange={event => onChange({ estimate: event.target.value })} />;
@@ -132,10 +136,11 @@ interface DraftMultiPickerProps {
   disabled: boolean;
   rowKey: string;
   onChange: (values: string[]) => void;
+  emptyAction?: ReactNode | undefined;
 }
 
 /** A bounded checkbox list in a cell popover; toggling changes only the local draft. */
-function DraftMultiPicker({ label, summary, empty, options, values, disabled, rowKey, onChange }: DraftMultiPickerProps) {
+function DraftMultiPicker({ label, summary, empty, options, values, disabled, rowKey, onChange, emptyAction }: DraftMultiPickerProps) {
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -155,7 +160,7 @@ function DraftMultiPicker({ label, summary, empty, options, values, disabled, ro
     event.preventDefault(); event.stopPropagation();
     close(true);
   };
-  return <div ref={setAnchor} className="flex h-8 min-w-0 items-center" onBlur={blur}>
+  return <div ref={setAnchor} className="flex h-8 min-w-0 items-center" onMouseDown={keepFocusOnPopoverPress} onBlur={blur}>
     <button ref={triggerRef} type="button" aria-label={label} aria-describedby={`${id}-value`} aria-expanded={open} aria-controls={open ? `${id}-list` : undefined} disabled={disabled}
       onClick={() => setOpen(value => !value)} onKeyDown={open ? escape : undefined}
       className={cn('flex h-8 w-full min-w-0 items-center gap-1 rounded px-2 text-left text-sm text-ink hover:bg-canvas disabled:text-muted', values.length === 0 && 'text-subtle')}>
@@ -163,9 +168,9 @@ function DraftMultiPicker({ label, summary, empty, options, values, disabled, ro
       <ChevronDown size={14} aria-hidden="true" className="shrink-0 text-muted" />
     </button>
     {open ? <CellPopover anchor={anchor}>
-      <fieldset ref={panelRef} id={`${id}-list`} data-quick-draft={rowKey} onKeyDown={escape} className="flex max-h-64 min-w-48 flex-col gap-1 overflow-y-auto">
+      <fieldset ref={panelRef} id={`${id}-list`} data-quick-draft={rowKey} data-task-draft-popup="" onKeyDown={escape} className="flex max-h-64 min-w-48 flex-col gap-1 overflow-y-auto">
         <legend className="sr-only">{label}</legend>
-        {options.length === 0 ? <p className="text-muted">{empty}</p> : options.map(option => {
+        {options.length === 0 ? <><p className="text-muted">{empty}</p>{emptyAction}</> : options.map(option => {
           const checked = held.has(option.value.toLowerCase());
           return <label key={option.value} className="flex min-h-8 items-center gap-2 text-sm">
             <input type="checkbox" checked={checked} disabled={disabled || (option.disabled === true && !checked)} onChange={event => toggle(option.value, event.target.checked)} />
@@ -173,6 +178,40 @@ function DraftMultiPicker({ label, summary, empty, options, values, disabled, ro
           </label>;
         })}
       </fieldset>
+    </CellPopover> : null}
+  </div>;
+}
+
+/** A new row keeps both date endpoints in its own unsent draft, without growing the grid. */
+function DraftDatePicker({ context }: { context: TaskDraftCellContext }) {
+  const { t } = useTranslation();
+  const { draft, onChange, disabled, errors, rowKey } = context;
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const close = () => { setOpen(false); trigger.current?.focus({ preventScroll: true }); };
+  const inside = (node: unknown) => node instanceof Node && (anchor?.contains(node) === true || panel.current?.contains(node) === true);
+  return <div ref={setAnchor} className="flex h-8 min-w-0 flex-1 items-center" onMouseDown={keepFocusOnPopoverPress} onBlur={event => {
+    if (inside(event.relatedTarget)) return;
+    window.setTimeout(() => { if (!inside(document.activeElement)) setOpen(false); }, 0);
+  }}>
+    <button ref={trigger} type="button" disabled={disabled} aria-label={t('tasks.dates.editNew')} aria-haspopup="dialog" aria-expanded={open}
+      aria-controls={open ? `${id}-panel` : undefined} className="h-8 min-w-0 flex-1 truncate rounded px-2 text-left text-sm text-ink hover:bg-canvas disabled:text-muted"
+      onClick={() => setOpen(value => !value)}>{draft.dueDate || t('tasks.taskFields.noDueDate')}</button>
+    {open ? <CellPopover anchor={anchor} className="max-h-[calc(100dvh-16px)] overflow-y-auto" role="dialog" ariaLabel={t('tasks.dates.edit')} id={`${id}-panel`}>
+      <div ref={panel} data-quick-draft={rowKey} data-task-draft-popup="" onKeyDown={event => {
+        if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {
+          event.preventDefault(); event.stopPropagation(); return;
+        }
+        if (event.key !== 'Escape') return;
+        event.preventDefault(); event.stopPropagation(); close();
+      }}>
+        <TaskDateInput startDate={draft.startDate ?? ''} dueDate={draft.dueDate} onChange={onChange} disabled={disabled} autoFocus
+          errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} />
+        <button type="button" className="mt-3 rounded px-2 py-1 text-xs font-medium text-accent-ink hover:bg-canvas" onClick={close}>{t('tasks.dates.done')}</button>
+      </div>
     </CellPopover> : null}
   </div>;
 }

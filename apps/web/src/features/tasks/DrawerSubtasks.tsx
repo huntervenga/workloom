@@ -6,7 +6,8 @@ import { formatDate, message, useTranslation, type TranslationMessage } from '..
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { formatEstimate } from '../task-table/estimate';
 import type { TaskDropPlacement, TaskTableCustomColumn, TaskTableDraftRow, TaskTableDraftRowState } from '../task-table/TaskTable';
-import { usePointerRowDrag } from '../task-table/usePointerRowDrag';
+import { TaskDragPreview } from '../task-table/TaskDragPreview';
+import { usePointerRowDrag, usePointerRowDragProtection } from '../task-table/usePointerRowDrag';
 import { summarizeWorkPackages } from '../task-table/workPackages';
 import type { InitialTimeContext } from './InitialTaskCells';
 import { InlineTaskEdit, type InlineCloseReason } from './InlineTaskEdit';
@@ -86,6 +87,7 @@ export function DrawerSubtasks({
   parent, scope, projectId, statuses, members, sections, tags, commands, writable, onOpen, onMoreDetails, onCreated, onAnnounce,
   extraColumns = noColumns, initialFields, initialTimeContext, initialTimeWritable, initialTimeCurrent, addRequest,
 }: DrawerSubtasksProps) {
+  const acquireDragProtection = usePointerRowDragProtection();
   const { t } = useTranslation();
   const headingId = useId();
   const [editing, setEditing] = useState<{ taskId: string; focusClaim: { current: boolean } } | null>(null);
@@ -165,7 +167,7 @@ export function DrawerSubtasks({
       onSuccess: moved => announce(message('taskTable.move.moved', { title: moved.title })),
     });
   };
-  const { drag, startDrag } = usePointerRowDrag({ taskById, dropAllowed, onMove: moveTask, blocked: moveBlocked });
+  const { drag, startDrag } = usePointerRowDrag({ taskById, dropAllowed, onMove: moveTask, blocked: moveBlocked, acquireProtection: acquireDragProtection });
   // A refused or unknown reorder of one of these rows is resolved here; an unknown one resends exactly.
   const heldMoveTaskId = commands.move.uncertain?.variables.taskId ?? commands.move.variables?.taskId ?? null;
   const moveFeedback = heldMoveTaskId !== null && taskById.has(heldMoveTaskId)
@@ -225,7 +227,7 @@ export function DrawerSubtasks({
             {editing?.taskId === child.id ? (
               <div className="min-w-0 flex-1">
                 <InlineTaskEdit key={`${child.id}:title`} focusClaim={editing.focusClaim} task={child} field="title" estimatePackages={packages} statuses={statuses} members={members} sections={sections}
-                  commands={commands} writable={writable} onMoreDetails={() => onOpen(child.id)} onSaved={() => undefined}
+                  tags={tags} commands={commands} writable={writable} onMoreDetails={() => onOpen(child.id)} onSaved={() => undefined}
                   onClose={(reason: InlineCloseReason = 'cancel') => {
                     setEditing(null);
                     if (reason === 'next') openAfter(child);
@@ -293,6 +295,7 @@ export function DrawerSubtasks({
 
   return (
     <section aria-labelledby={headingId} className="space-y-2">
+      {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} /> : null}
       <h3 id={headingId} className="text-sm font-medium text-ink">{t('tasks.subtasks.heading')}</h3>
       {scope.partial ? <p className="text-xs text-muted">{t('tasks.subtasks.loadedOnly')}</p> : null}
       <TaskCompletionFeedback controller={completion} onReview={onOpen} />

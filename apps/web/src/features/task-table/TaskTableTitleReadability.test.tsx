@@ -55,7 +55,7 @@ it('keeps full deep title names, loaded depth and the authorized parent while re
   await user.click(within(row).getByRole('button', { name: `Task actions: ${title}` }));
   await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Add subtask' }));
   expect(calls.onCreateChild).toHaveBeenCalledExactlyOnceWith(tasks[8]);
-  await user.click(within(row).getByRole('checkbox', { name: `Select for graph: ${title}` }));
+  await user.click(within(row).getByRole('button', { name: `Select task: ${title}` }));
   expect(calls.onSelectTask).toHaveBeenCalledExactlyOnceWith('depth-8', true);
   expect(calls.onOpenTask).toHaveBeenCalledTimes(1);
   expect(screen.getByText('Loaded team budget').closest('tr')).toHaveTextContent('3h');

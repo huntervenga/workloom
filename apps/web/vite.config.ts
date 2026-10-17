@@ -37,6 +37,8 @@ export default defineConfig({
     // keep local resource use bounded and reproducible.
     maxWorkers: 2,
     environment: 'jsdom',
+    // jsdom functional budget only; not a latency or performance acceptance threshold.
+    testTimeout: 15_000,
     setupFiles: ['./src/test/setup.ts'],
   },
 });

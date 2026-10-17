@@ -83,9 +83,9 @@ describe('inline team package estimate', () => {
     const { user } = renderApp(tablePath); await screen.findByRole('button', { name: base.title });
     expect(screen.queryByRole('button', { name: `Edit team estimate for ${base.title}` })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: base.title })).toHaveLength(1);
-    expect(screen.getAllByRole('checkbox', { name: `Select for graph: ${base.title}` })).toHaveLength(1);
-    await user.click(screen.getByRole('checkbox', { name: `Select for graph: ${base.title}` }));
-    expect(screen.getByRole('checkbox', { name: `Select for graph: ${base.title}` })).toBeChecked();
+    expect(screen.getAllByRole('button', { name: `Select task: ${base.title}` })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: `Select task: ${base.title}` }));
+    expect(screen.getByRole('button', { name: `Select task: ${base.title}` })).toHaveAttribute('aria-pressed', 'true');
     const footer = screen.getByText('Loaded team budget').closest('tr');
     if (kind === 'newer') expect(footer).toHaveTextContent('3h'); else expect(footer).toHaveTextContent('Shared estimates disagree');
     if (kind === 'duplicate-conflict') {

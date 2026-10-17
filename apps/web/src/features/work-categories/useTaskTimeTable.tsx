@@ -187,8 +187,17 @@ export function useTaskTimeTable(props: Props) {
   };
   const ready = period.isSuccess && period.data.projectId === project.id && !projection.isPending && projection.error === null && !denied;
   const cellUnavailable = () => <span className="text-xs text-muted">{projection.isPending || period.isPending ? t('work-categories.loading') : t('work-categories.hoursNotLoaded')}</span>;
-  const columns: TaskTableCustomColumn[] = periodId ? [
+  // Visibility follows the saved column preference, not whether a week has already been chosen.
+  // Choosing context is a deliberate read-only action; it never invents a period or records zero.
+  const chooseWeek = () => {
+    const picker = document.getElementById('task-time-week');
+    picker?.focus({ preventScroll: false });
+    if (picker?.getAttribute('aria-expanded') === 'false') picker.click();
+  };
+  const chooseWeekCell = () => <button type="button" className="h-8 max-w-full truncate rounded px-1.5 text-left text-xs text-accent-ink hover:bg-canvas" onClick={chooseWeek}>{t('work-categories.chooseWeekForEntry')}</button>;
+  const columns: TaskTableCustomColumn[] = [
     { id: 'weekly-plan', label: t('work-categories.weeklyPlan', { workerName: workerName }), width: 215, renderCell: (task) => {
+      if (!periodId) return chooseWeekCell();
       if (!ready) return cellUnavailable();
       const row = projection.tasks.get(task.id); const work = projection.packages.get(task.workPackageId);
       if (!row || !work) return cellUnavailable();
@@ -196,6 +205,7 @@ export function useTaskTimeTable(props: Props) {
       return <div className="flex min-w-0 items-center gap-1.5"><Button variant="ghost" size="sm" className="h-9 max-w-24 min-w-0 px-1.5 sm:h-7" title={value} aria-label={t('work-categories.weeklyPlan2', { taskTitle: task.title })} disabled={opening} onClick={() => openPlan(task)}><span className="min-w-0 truncate">{value}</span></Button>{lines.length ? <p className="min-w-0 flex-1 text-[11px] leading-[14px] text-muted" title={lines.join(' · ')}>{lines.map(line => <span key={line} className="block truncate">{line}</span>)}</p> : null}</div>;
     } },
     { id: 'weekly-fact', label: t('work-categories.weeklyActualHours2', { workerName: workerName }), width: 215, renderCell: (task) => {
+      if (!periodId) return chooseWeekCell();
       if (!ready) return cellUnavailable();
       const row = projection.tasks.get(task.id); const work = projection.packages.get(task.workPackageId);
       if (!row || !work) return cellUnavailable();
@@ -203,7 +213,7 @@ export function useTaskTimeTable(props: Props) {
       const breakdownLabel = t('work-categories.wholeWorkPackage', { hours: work.subjectActiveSourceCount === 0 ? t('work-categories.notRecorded2') : formatEstimate(work.subjectActualMinutes) });
       return <div className="flex min-w-0 items-center gap-1.5"><Button variant="ghost" size="sm" className="h-9 max-w-24 min-w-0 px-1.5 sm:h-7" title={value} aria-label={t('work-categories.weeklyActualHours3', { taskTitle: task.title })} disabled={opening} onClick={() => openFact(task)}><span className="min-w-0 truncate">{value}</span></Button><div className="flex min-w-0 flex-1 items-center gap-1 sm:block">{row.ownManualWork?.state === 'active' ? <span className="block min-w-0 overflow-hidden whitespace-nowrap [&_*]:whitespace-nowrap"><CategoryBadge category={row.ownManualWork.category} /></span> : null}{representative.get(task.workPackageId) === task.id ? <button type="button" className="block h-9 min-w-0 flex-1 truncate rounded text-left text-[11px] leading-[14px] text-muted underline decoration-dotted underline-offset-2 sm:h-auto sm:w-full" title={breakdownLabel} disabled={opening} onClick={() => openBreakdown(task)}>{breakdownLabel}</button> : null}</div></div>;
     } },
-  ] : [];
+  ];
 
   // Keep recovery and read errors visible when a view does not display time-entry pickers.
   const notices = <>
@@ -213,12 +223,14 @@ export function useTaskTimeTable(props: Props) {
     {openingError ? <QueryErrorState error={openingError} subject="taskTime" headingLevel={3} retrying={opening} onRetry={() => setOpeningError(null)} /> : null}
     {heldNotices.map((notice) => <div key={notice.key} role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><span className="min-w-0 flex-1">{t('work-categories.theOriginalWeekAndPersonArePreserved2', { label: notice.label, saveState: notice.pending ? t('work-categories.waitingForServerResponse') : t('work-categories.resultStillUnknown') })}</span><Button size="sm" onClick={notice.resume}>{t('work-categories.openOriginalHoursSave')}</Button></div>)}
   </>;
+  const entryHint = !periodId ? <p className="text-xs text-muted">{t('work-categories.chooseWeekHint')}</p> : null;
   const controls = <section aria-label={t('work-categories.weeklyHoursInTable')} className="min-w-0 space-y-2">
     <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
       <div className="flex min-w-0 flex-1 basis-52 items-center gap-2 sm:max-w-80"><label htmlFor="task-time-week" className="shrink-0 text-xs font-medium">{t('work-categories.weekLabel')}</label><ChoicePicker compact label={t('work-categories.weekForHours')} id="task-time-week" className="h-8 flex-1 text-xs shadow-none" value={periodId} onValueChange={value => lens({ periodId: value })} options={[{ value: '', label: t('work-categories.chooseAWeekExplicitly') }, ...sortPlanningPeriods(periods.data ?? []).map(item => ({ value: item.id, label: `${item.name} · ${item.localStart}` }))]} /></div>
       <div className="flex min-w-0 flex-1 basis-44 items-center gap-2 sm:max-w-64"><label htmlFor="task-time-worker" className="shrink-0 text-xs font-medium">{t('work-categories.personLabel')}</label><ChoicePicker compact searchable label={t('work-categories.whoseHoursToShow')} id="task-time-worker" className="h-8 flex-1 text-xs shadow-none" value={workerId} onValueChange={value => lens({ workerId: value })} options={props.members.map(member => ({ value: member.id, label: `${member.displayName}${member.id === ownMembershipId ? t('work-categories.me') : ''}`, avatarName: member.displayName }))} /></div>
       <details className="text-xs text-muted"><summary className="cursor-pointer rounded font-medium text-accent-ink">{t('work-categories.hoursHelp')}</summary><p className="max-w-xl pt-2">{t('work-categories.choosingAPersonChangesTheDisplayedHoursNotThe')}</p></details>
     </div>
+    {entryHint}
     {periodId && !canWriteSubject ? <p className="text-xs text-muted">{t('work-categories.youCanViewThesePersonalHours')}</p> : null}
     {notices}
   </section>;
@@ -241,5 +253,5 @@ export function useTaskTimeTable(props: Props) {
     writable: canWriteSubject && !denied,
     current: ready && !period.isFetching && !projection.isFetching,
   } as const;
-  return { controls, notices, columns, dialogs, context: { periodId, workerId } as const, initialRowContext };
+  return { controls, notices, columns, columnsAvailable: true as const, entryHint, dialogs, context: { periodId, workerId } as const, initialRowContext };
 }

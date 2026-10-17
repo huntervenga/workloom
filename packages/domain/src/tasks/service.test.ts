@@ -1146,6 +1146,22 @@ describe('manual task order', () => {
     expectOrderWrite(s, before, idsOf(a, c, b), { id: c.id, sectionId: null });
   });
 
+  it('keeps the legacy section-only move renumbering a tied, gapped order', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Later' });
+    const a = await s.createTask({ title: 'A' });
+    s.db.state.tasks.set(a.id, { ...(s.db.state.tasks.get(a.id) as TaskDto), position: 2 });
+    const c = seedTask(s, a, 9201, { position: 2, sectionId: section.id });
+    const b = seedTask(s, a, 9202, { position: 9 });
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(idsOf(a, c, b));
+
+    // Same ID order, other section: the legacy path still writes the source and renumbers 0..N-1.
+    const before = orderSnapshot(s);
+    expect((await moveTo(s, c.id, a.id, 'after')).sectionId).toBeNull();
+    expectOrderWrite(s, before, idsOf(a, c, b), { id: c.id, sectionId: null });
+    expect(idsOf(a, c, b).map((id) => (s.db.state.tasks.get(id) as TaskDto).position)).toEqual([0, 1, 2]);
+  });
+
   it('keeps subtasks under their parent and in their section, without reparenting', async () => {
     const s = await setup();
     const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Later' });
@@ -1287,5 +1303,280 @@ describe('manual task order', () => {
     expectOrderWrite(s, before, [parent.id, ...seededIds(0, 228), late.id, ...seededIds(228, 235), head.id, ...seededIds(235)], null, {
       createEvents,
     });
+  });
+});
+
+describe('atomic assignee moves and explicit bulk patches', () => {
+  it('changes a root current assignee and order atomically while preserving its section and historical identities', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Source section' });
+    const a = await s.createTask({ title: 'A', sectionId: section.id, responsibleMembershipId: members.owner, participantMembershipIds: [members.owner], estimateMinutes: 90, dueDate: '2026-10-30' });
+    const other = await s.createTask({ title: 'Other' });
+    const b = await s.createTask({ title: 'B', responsibleMembershipId: members.viewer });
+    const changed = await s.app.moveTask(s.owner(), a.id, { expectedRevision: a.revision, anchorTaskId: b.id, placement: 'after', responsibleMembershipId: members.viewer });
+    expect(globalOrder(s.projected(), s.project.id)).toEqual([other.id, b.id, a.id]);
+    expect(changed).toMatchObject({ responsibleMembershipId: members.viewer, sectionId: section.id, parentTaskId: null, workPackageId: a.workPackageId, workPackageRevision: a.workPackageRevision, participants: a.participants, participantsRevision: a.participantsRevision, estimateMinutes: 90, dueDate: a.dueDate, revision: a.revision + 1 });
+    const event = s.events.findLast(e => e.entityId === a.id);
+    expect(event?.diff).toMatchObject({ responsibleMembershipId: { from: members.owner, to: members.viewer } });
+  });
+
+  it('places null-anchor moves after the complete active target group including children and supports unassigned', async () => {
+    const s = await setup();
+    const source = await s.createTask({ title: 'Source', responsibleMembershipId: members.owner });
+    const anchor = await s.createTask({ title: 'Target', responsibleMembershipId: members.viewer });
+    const last = seedTask(s, anchor, 8901, { position: 300 });
+    const child = seedTask(s, anchor, 8902, { parentTaskId: anchor.id, position: 301 });
+    const archived = seedTask(s, anchor, 8903, { archivedAt: ARCHIVED_AT, position: 302 });
+    const before = globalOrder(s.projected(), s.project.id).filter(id => id !== source.id);
+    const moved = await s.app.moveTask(s.owner(), source.id, { expectedRevision: source.revision, anchorTaskId: null, placement: 'after', responsibleMembershipId: members.viewer });
+    expect(globalOrder(s.projected(), s.project.id)).toEqual([anchor.id, last.id, child.id, source.id, archived.id]);
+    expect(globalOrder(s.projected(), s.project.id).filter(id => id !== source.id)).toEqual(before);
+    const placed = s.projected();
+    const cleared = await s.app.moveTask(s.owner(), moved.id, { expectedRevision: moved.revision, anchorTaskId: null, placement: 'after', responsibleMembershipId: null });
+    expect(cleared.responsibleMembershipId).toBeNull();
+    // No active unassigned row imposes an order: the source keeps its global slot and nothing else is renumbered.
+    expect(cleared.position).toBe(moved.position);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual([anchor.id, last.id, child.id, source.id, archived.id]);
+    for (const id of [anchor.id, last.id, child.id, archived.id]) expect(s.projected().get(id)).toEqual(placed.get(id));
+  });
+
+  it('rejects revoked target memberships and wrong-person anchors without writes', async () => {
+    const s = await setup();
+    const a = await s.createTask({ responsibleMembershipId: members.owner });
+    const b = await s.createTask({ responsibleMembershipId: members.viewer });
+    for (const [source, body, code] of [
+      [a, { anchorTaskId: b.id, responsibleMembershipId: members.owner }, 'DOMAIN_VALIDATION_FAILED'],
+      [a, { anchorTaskId: null, responsibleMembershipId: members.revoked }, 'NOT_FOUND'],
+    ] as const) await expectRejectedWithoutWrites(s, 'invalid assignee drop', () => s.app.moveTask(s.owner(), source.id, { expectedRevision: source.revision, placement: 'after', ...body }), code);
+  });
+
+  it('moves flat assignee children across parent groups and root anchors while preserving source lineage', async () => {
+    const s = await setup();
+    const p = await s.createTask({ responsibleMembershipId: members.owner }), q = await s.createTask({ responsibleMembershipId: members.viewer });
+    const child = await s.createTask({ parentTaskId: p.id, responsibleMembershipId: members.owner });
+    const otherChild = await s.createTask({ parentTaskId: q.id, responsibleMembershipId: members.viewer });
+    const moved = await s.app.moveTask(s.owner(), child.id, { expectedRevision: child.revision, anchorTaskId: otherChild.id, placement: 'after', responsibleMembershipId: members.viewer });
+    expect(moved).toMatchObject({ parentTaskId: p.id, sectionId: child.sectionId, workPackageId: child.workPackageId, responsibleMembershipId: members.viewer });
+    const root = await s.app.moveTask(s.owner(), p.id, { expectedRevision: (s.projected().get(p.id) as TaskDto).revision, anchorTaskId: child.id, placement: 'after', responsibleMembershipId: members.viewer });
+    expect(root).toMatchObject({ parentTaskId: null, workPackageId: p.workPackageId, responsibleMembershipId: members.viewer });
+  });
+
+  it('preserves the literal pre-assignee move hash, and explicit null changes its binding', async () => {
+    const s = await setup();
+    const a = await s.createTask(), b = await s.createTask();
+    const key = s.key();
+    const body = { expectedRevision: b.revision, anchorTaskId: a.id, placement: 'before' as const };
+    const first = await s.app.moveTask(s.ctx(users.owner, key), b.id, body);
+    const receipt = [...s.db.state.idempotency.values()].find(r => r.idempotencyKey === key);
+    expect(receipt?.payloadHash).toBe(`digest:{"command":"task.move","input":{"anchorTaskId":"${a.id}","expectedRevision":1,"placement":"before"},"target":"${b.id}"}`);
+    expect(await s.app.moveTask(s.ctx(users.owner, key), b.id, body)).toEqual(first);
+    await expect(s.app.moveTask(s.ctx(users.owner, key), b.id, { ...body, responsibleMembershipId: null })).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+  });
+
+  it('bulk patches every selected row once, preserves unselected rows and participant/package identities, and replays exact success', async () => {
+    const s = await setup();
+    const a = await s.createTask({ title: 'A', participantMembershipIds: [members.owner], dueDate: '2026-10-30' });
+    const untouched = await s.createTask({ title: 'Hidden/unselected' });
+    const b = await s.createTask({ title: 'B', parentTaskId: a.id });
+    const key = s.key(), body = { projectId: s.project.id, tasks: [a, b].map(t => ({ taskId: t.id, expectedRevision: t.revision })), changes: { responsibleMembershipId: members.viewer, startDate: '2026-10-20', dueDate: '2026-11-01' } };
+    const first = await s.app.bulkUpdateTasks(s.ctx(users.owner, key), body);
+    expect(first.map(t => t.id)).toEqual([a.id, b.id]);
+    for (const task of first) expect(task).toMatchObject({ responsibleMembershipId: members.viewer, startDate: '2026-10-20', dueDate: '2026-11-01', revision: 2 });
+    expect(first[0]?.participants).toEqual(a.participants);
+    expect(first[1]?.workPackageId).toBe(a.workPackageId);
+    expect(s.projected().get(untouched.id)).toEqual(untouched);
+    const state = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES), eventCount = s.events.length;
+    expect(await s.app.bulkUpdateTasks(s.ctx(users.owner, key), body)).toEqual(first);
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(state);
+    expect(s.events).toHaveLength(eventCount);
+    expect(s.db.planningChecks.at(-1)?.[0]).toMatchObject({ family: 'task_bulk', command: 'task.bulk.update', target: { projectId: s.project.id } });
+    await expect(s.app.bulkUpdateTasks(s.ctx(users.owner, key), { ...body, changes: { dueDate: null } })).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    const restore = revokeMembership(members.owner);
+    try { await expect(s.app.bulkUpdateTasks(s.ctx(users.owner, key), body)).rejects.toMatchObject({ code: 'NOT_FOUND' }); } finally { restore(); }
+    s.db.state.tasks.delete(b.id);
+    await expect(s.app.bulkUpdateTasks(s.ctx(users.owner, key), body)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('preflights all revisions and final date ranges before any bulk proposal', async () => {
+    const s = await setup();
+    const a = await s.createTask(), b = await s.createTask({ startDate: '2026-12-01' });
+    const base = { projectId: s.project.id, tasks: [a, b].map(t => ({ taskId: t.id, expectedRevision: t.revision })) };
+    await expectRejectedWithoutWrites(s, 'later invalid range', () => s.app.bulkUpdateTasks(s.owner(), { ...base, changes: { dueDate: '2026-11-01' } }), 'DOMAIN_VALIDATION_FAILED');
+    await expectRejectedWithoutWrites(s, 'later stale revision', () => s.app.bulkUpdateTasks(s.owner(), { ...base, tasks: [{ taskId: a.id, expectedRevision: 1 }, { taskId: b.id, expectedRevision: 2 }], changes: { responsibleMembershipId: members.viewer } }), 'REVISION_CONFLICT');
+    await expectRejectedWithoutWrites(s, 'inactive target', () => s.app.bulkUpdateTasks(s.owner(), { ...base, changes: { responsibleMembershipId: members.revoked } }), 'NOT_FOUND');
+    await expectRejectedWithoutWrites(s, 'viewer', () => s.app.bulkUpdateTasks(s.ctx(users.viewer, s.key()), { ...base, changes: { dueDate: null } }), 'CAPABILITY_REQUIRED');
+  });
+
+  it('rolls back earlier bulk writes, events and receipt if a later persistence write fails', async () => {
+    const s = await setup();
+    const a = await s.createTask(), b = await s.createTask();
+    const state = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES), eventCount = s.events.length;
+    const rows = s.db.state.tasks, original = rows.set;
+    rows.set = function (key, value) { if (key === b.id) throw new Error('Synthetic second save failure'); return original.call(this, key, value); };
+    await expect(s.app.bulkUpdateTasks(s.owner(), { projectId: s.project.id, tasks: [a, b].map(t => ({ taskId: t.id, expectedRevision: 1 })), changes: { responsibleMembershipId: members.viewer } })).rejects.toThrow('Synthetic second save failure');
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(state);
+    expect(s.events).toHaveLength(eventCount);
+  });
+});
+
+/** A same-person null-anchor drop that imposes no new order returns the original task and stores only a receipt. */
+async function expectAssigneeNoop(s: OrderFixture, taskId: string) {
+  const original = await s.app.getTask(s.ctx(users.owner), taskId);
+  const rows = dumpOf(s.db.state, 'tasks', ...SIDE_TABLES);
+  const events = s.events.length;
+  const receipts = s.db.state.idempotency.size;
+  const input = { expectedRevision: original.revision, anchorTaskId: null, placement: 'after' as const, responsibleMembershipId: original.responsibleMembershipId };
+
+  const context = s.owner();
+  expect(await s.app.moveTask(context, taskId, input)).toEqual(original);
+  const stored = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES);
+  expect(JSON.stringify(await s.app.moveTask(s.ctx(users.owner, context.idempotencyKey), taskId, input))).toBe(JSON.stringify(original));
+  expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(stored);
+  const stale = await errorOf(s.app.moveTask(s.owner(), taskId, { ...input, expectedRevision: original.revision + 1 }));
+  expect(stale.code).toBe('REVISION_CONFLICT');
+
+  expect(dumpOf(s.db.state, 'tasks', ...SIDE_TABLES)).toBe(rows);
+  expect(s.events).toHaveLength(events);
+  expect(s.db.state.idempotency.size).toBe(receipts + 1);
+  expect(s.db.writesOutsideRun).toBe(0);
+}
+
+/** A null-anchor reassignment with no ordering constraint: only the source assignee and revision change, with one event. */
+async function expectSlotPreservingReassign(s: OrderFixture, taskId: string, responsibleMembershipId: string | null): Promise<TaskDto> {
+  const original = await s.app.getTask(s.ctx(users.owner), taskId);
+  const before = orderSnapshot(s);
+  const receipts = s.db.state.idempotency.size;
+  const input = { expectedRevision: original.revision, anchorTaskId: null, placement: 'after' as const, responsibleMembershipId };
+
+  const context = s.owner();
+  const moved = await s.app.moveTask(context, taskId, input);
+  expect(moved).toEqual({ ...original, responsibleMembershipId, revision: original.revision + 1, updatedAt: moved.updatedAt });
+  const after = s.projected();
+  expect(globalOrder(after, s.project.id)).toEqual(globalOrder(before.rows, s.project.id));
+  for (const [id, old] of before.rows) expect({ id, row: after.get(id) }).toEqual({ id, row: id === taskId ? moved : old });
+  expect(dumpOf(s.db.state, ...SIDE_TABLES)).toBe(before.side);
+
+  expect(s.events).toHaveLength(before.events + 1);
+  const event = s.events.at(-1) as ChangeEventInput;
+  expect(event).toMatchObject({
+    entityType: 'task', entityId: taskId, action: 'updated', entityRevision: moved.revision,
+    outbox: { type: 'task.updated', payload: { workspaceId: WS, taskId, revision: moved.revision, projectId: s.project.id } },
+  });
+  expect(event.diff).toMatchObject({
+    responsibleMembershipId: { from: original.responsibleMembershipId, to: responsibleMembershipId },
+    revision: { from: original.revision, to: moved.revision },
+  });
+  const diff = event.diff;
+  if (diff === undefined) throw new Error(`expected task.updated event for ${taskId} to carry a diff`);
+  // The anchor is command context, not a field write; no position or section change is recorded.
+  expect(Object.keys(diff).filter((key) => key !== 'anchor').sort()).toEqual(['responsibleMembershipId', 'revision']);
+  expect(s.db.state.idempotency.size).toBe(receipts + 1);
+
+  const stored = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES);
+  expect(JSON.stringify(await s.app.moveTask(s.ctx(users.owner, context.idempotencyKey), taskId, input))).toBe(JSON.stringify(moved));
+  expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(stored);
+  expect(s.events).toHaveLength(before.events + 1);
+  expect(s.db.writesOutsideRun).toBe(0);
+  return moved;
+}
+
+describe('null-anchor assignee group end', () => {
+  it('group-end semantic: a same-person drop of the last active member keeps its slot across interleaved rows', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Source section' });
+    const a = await s.createTask({ title: 'A', responsibleMembershipId: members.owner });
+    const aChild = await s.createTask({ title: 'A child', parentTaskId: a.id, responsibleMembershipId: members.owner });
+    const x = await s.createTask({ title: 'Other person', responsibleMembershipId: members.viewer });
+    const source = await s.createTask({ title: 'Source', sectionId: section.id, responsibleMembershipId: members.owner, participantMembershipIds: [members.owner], estimateMinutes: 45 });
+    const y = await s.createTask({ title: 'Unassigned' });
+    const archived = await s.createTask({ title: 'Archived owner', responsibleMembershipId: members.owner });
+    await s.app.archiveTask(s.owner(), archived.id, { expectedRevision: 1 });
+    const order = idsOf(a, aChild, x, source, y, archived);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(order);
+
+    await expectAssigneeNoop(s, source.id);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(order);
+  });
+
+  it('group-end semantic: the only active task of a person stays put with unrelated rows after it', async () => {
+    const s = await setup();
+    const archived = await s.createTask({ title: 'Archived owner', responsibleMembershipId: members.owner });
+    await s.app.archiveTask(s.owner(), archived.id, { expectedRevision: 1 });
+    const p = await s.createTask({ title: 'P', responsibleMembershipId: members.viewer });
+    const source = await s.createTask({ title: 'Only owner task', responsibleMembershipId: members.owner, participantMembershipIds: [members.owner, members.viewer] });
+    const pChild = await s.createTask({ title: 'P child', parentTaskId: p.id, responsibleMembershipId: members.viewer });
+    const unassigned = await s.createTask({ title: 'Only unassigned task' });
+    const tail = await s.createTask({ title: 'Tail', responsibleMembershipId: members.viewer });
+    const order = idsOf(archived, p, source, pChild, unassigned, tail);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(order);
+
+    await expectAssigneeNoop(s, source.id);
+    await expectAssigneeNoop(s, unassigned.id);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(order);
+  });
+
+  it('group-end semantic: reassignment already after the target group or into an empty group writes only assignee and revision', async () => {
+    // Source already follows the last active target member, children included.
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Source section' });
+    const t = await s.createTask({ title: 'Target', responsibleMembershipId: members.viewer });
+    const tChild = await s.createTask({ title: 'Target child', parentTaskId: t.id, responsibleMembershipId: members.viewer });
+    const x = await s.createTask({ title: 'Owner before source', responsibleMembershipId: members.owner });
+    const source = await s.createTask({ title: 'Source', sectionId: section.id, responsibleMembershipId: members.owner, participantMembershipIds: [members.owner], estimateMinutes: 45 });
+    const y = await s.createTask({ title: 'Unassigned after' });
+    await expectSlotPreservingReassign(s, source.id, members.viewer);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(idsOf(t, tChild, x, source, y));
+
+    // Genuinely empty destinations: an archived target row imposes no order, nor does an empty unassigned group.
+    const e = await setup();
+    const archived = await e.createTask({ title: 'Archived target', responsibleMembershipId: members.viewer });
+    await e.app.archiveTask(e.owner(), archived.id, { expectedRevision: 1 });
+    const lone = await e.createTask({ title: 'Lone', responsibleMembershipId: members.owner });
+    const tail = await e.createTask({ title: 'Tail', responsibleMembershipId: members.owner });
+    await expectSlotPreservingReassign(e, lone.id, members.viewer);
+    await expectSlotPreservingReassign(e, lone.id, null);
+    expect(globalOrder(e.projected(), e.project.id)).toEqual(idsOf(archived, lone, tail));
+  });
+
+  it('group-end semantic: legacy ties and gaps keep exact numeric positions unless the global order really changes', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Source section' });
+    const t = await s.createTask({ title: 'Target', responsibleMembershipId: members.viewer });
+    s.db.state.tasks.set(t.id, { ...(s.db.state.tasks.get(t.id) as TaskDto), position: 4 });
+    // Legacy rows: ties at 4 and 7, gaps before 7 and 20; the archived target-person row imposes no order.
+    const tChild = seedTask(s, t, 9101, { parentTaskId: t.id, position: 4 });
+    const x = seedTask(s, t, 9102, { responsibleMembershipId: members.owner, position: 7 });
+    const source = seedTask(s, t, 9103, { responsibleMembershipId: members.owner, sectionId: section.id, position: 7 });
+    const archived = seedTask(s, t, 9104, { archivedAt: ARCHIVED_AT, position: 7 });
+    const y = seedTask(s, t, 9105, { responsibleMembershipId: null, position: 20 });
+    const order = idsOf(t, tChild, x, source, archived, y);
+    const positions = () => {
+      const rows = s.projected();
+      return globalOrder(rows, s.project.id).map((id) => (rows.get(id) as TaskDto).position);
+    };
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(order);
+    expect(positions()).toEqual([4, 4, 7, 7, 7, 20]);
+
+    // Assignment-only: the source already follows the last active target member, so nothing is renumbered.
+    const moved = await expectSlotPreservingReassign(s, source.id, members.viewer);
+    expect(moved).toMatchObject({ position: 7, sectionId: section.id, parentTaskId: null });
+    await expectAssigneeNoop(s, source.id);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(order);
+    expect(positions()).toEqual([4, 4, 7, 7, 7, 20]);
+
+    // A real reorder behind the last active unassigned row still renumbers the whole project once.
+    const placed = s.projected();
+    const events = s.events.length;
+    const cleared = await s.app.moveTask(s.owner(), source.id, { expectedRevision: moved.revision, anchorTaskId: null, placement: 'after', responsibleMembershipId: null });
+    const after = s.projected();
+    expect(globalOrder(after, s.project.id)).toEqual(idsOf(t, tChild, x, archived, y, source));
+    expect(positions()).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(cleared).toMatchObject({ responsibleMembershipId: null, sectionId: section.id, position: 5, revision: moved.revision + 1 });
+    for (const [id, old] of placed) {
+      if (id === source.id) continue;
+      const row = after.get(id) as TaskDto;
+      expect({ id, row }).toEqual({ id, row: { ...old, position: row.position, revision: old.revision + 1, updatedAt: cleared.updatedAt } });
+    }
+    expect(s.events.length - events).toBe(placed.size);
   });
 });

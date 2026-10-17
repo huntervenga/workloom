@@ -3,6 +3,8 @@ import type { TaskMutationCommand } from '../planning/ports.js';
 import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
 import {
   archiveTaskInputSchema,
+  bulkUpdateTasksInputSchema,
+  bulkTaskUpdateResponseSchema,
   createProjectInputSchema,
   createSectionInputSchema,
   createTagInputSchema,
@@ -20,6 +22,7 @@ import {
   updateTagInputSchema,
   updateTaskInputSchema,
   type ArchiveTaskInput,
+  type BulkUpdateTasksInput,
   type CreateProjectInput,
   type CreateSectionInput,
   type CreateTagInput,
@@ -494,6 +497,64 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
       });
     },
 
+    async bulkUpdateTasks(context: CommandContext, input: BulkUpdateTasksInput): Promise<TaskDto[]> {
+      const parsed = parseInput<BulkUpdateTasksInput>(bulkUpdateTasksInputSchema, input);
+      const ctx = normalizeContext(context);
+      const key = ctx.idempotencyKey;
+      if (key === undefined || !IDEMPOTENCY_KEY_PATTERN.test(key)) throw validationError(['Idempotency-Key'], 'A valid Idempotency-Key is required.');
+      const command = 'task.bulk.update';
+      const payloadHash = hash({ command, target: parsed.projectId, input: parsed });
+      const outcome = await writer.run(ctx, 'task.edit', async scope => {
+        const repo = scope.repository, ws = ctx.workspaceId;
+        // Current access to EVERY requested target is established before a stored response is replayed.
+        requireFound(await repo.findProject(ws, parsed.projectId));
+        const targets: TaskDto[] = [];
+        for (const row of parsed.tasks) {
+          const task = requireFound(await repo.findTask(ws, row.taskId));
+          requireSameProject(task, parsed.projectId, 'tasks');
+          targets.push(task);
+        }
+        const existing = await repo.findIdempotency(ws, ctx.actor.userId, command, key);
+        if (existing !== null) {
+          if (existing.payloadHash !== payloadHash) throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This Idempotency-Key was already used for a different request.');
+          if (isCommittedPlanningRejection(existing.result)) return existing.result;
+          const stored = bulkTaskUpdateResponseSchema.shape.data.safeParse(existing.result);
+          if (!stored.success) throw new Error('Stored bulk result does not match its contract.');
+          return stored.data;
+        }
+        await requireOpenProject(repo, ws, parsed.projectId);
+        const changes = parsed.changes;
+        if (changes.responsibleMembershipId !== undefined) await requireActiveMembers(repo, ws, changes.responsibleMembershipId, []);
+        // Complete preflight before cutoff prerequisites or proposed writes. Revisions are not rechecked on exact replay.
+        for (const [index, task] of targets.entries()) {
+          expectRevision(task.revision, parsed.tasks[index]?.expectedRevision ?? 0);
+          if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before editing.', 'tasks');
+          assertTaskDateRange(changes.startDate === undefined ? task.startDate : changes.startDate, changes.dueDate === undefined ? task.dueDate : changes.dueDate);
+        }
+        const now = scope.barrierAt.toISOString();
+        const rejected = await scope.planningGuard.check({ family: 'task_bulk', command, target: { projectId: parsed.projectId }, input: parsed });
+        const updated: TaskDto[] = [];
+        if (rejected === null) for (const task of targets) {
+          const next: TaskDto = { ...task,
+            ...(changes.responsibleMembershipId !== undefined ? { responsibleMembershipId: changes.responsibleMembershipId } : {}),
+            ...(changes.startDate !== undefined ? { startDate: changes.startDate } : {}),
+            ...(changes.dueDate !== undefined ? { dueDate: changes.dueDate } : {}),
+          };
+          const diff = changedFields(task, next, ['responsibleMembershipId', 'startDate', 'dueDate']);
+          if (Object.keys(diff).length > 0) {
+            await repo.saveTaskCore({ ...next, revision: task.revision + 1, updatedAt: now });
+            const confirmed = await reloadTask(repo, ws, task.id);
+            await record(scope, 'task', task.id, 'updated', confirmed.revision, { ...diff, revision: { from: task.revision, to: confirmed.revision } }, taskEventIds(confirmed));
+            updated.push(confirmed);
+          } else updated.push(task);
+        }
+        const result = rejected ?? updated;
+        await repo.insertIdempotency({ workspaceId: ws, actorUserId: ctx.actor.userId, command, idempotencyKey: key, payloadHash, result, createdAt: now });
+        return result;
+      });
+      return unwrapPlanningOutcome(outcome);
+    },
+
     async moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<TaskDto> {
       const id = parsePathId(taskId);
       const parsed = parseInput<MoveTaskInput>(moveTaskInputSchema, input);
@@ -504,33 +565,52 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before moving.', 'taskId');
         if (parsed.anchorTaskId === id) throw ruleError('A task cannot be placed next to itself.', 'anchorTaskId');
         await requireOpenProject(repo, ws, task.projectId);
-        const anchor = await requireOrderAnchor(repo, ws, task.projectId, task.parentTaskId, parsed.anchorTaskId, 'anchorTaskId');
-
-        // A subtask stays in its section; a root task joins the anchor's section. Never reparented.
+        const assigneeMode = parsed.responsibleMembershipId !== undefined;
+        if (assigneeMode) {
+          await requireActiveMembers(repo, ws, parsed.responsibleMembershipId ?? null, []);
+        }
+        const responsibleMembershipId = assigneeMode ? parsed.responsibleMembershipId ?? null : task.responsibleMembershipId;
+        const projectOrder = await listOrderScope(repo, ws, task.projectId);
+        let anchor: TaskDto | null;
+        if (parsed.anchorTaskId === null) {
+          // Full project scope, never the filtered/loaded client group. Archived rows keep their relative order.
+          anchor = projectOrder.filter(row => row.id !== id && row.archivedAt === null && row.responsibleMembershipId === responsibleMembershipId).at(-1) ?? null;
+        } else {
+          if (assigneeMode) {
+            anchor = requireFound(await repo.findTask(ws, parsed.anchorTaskId));
+            requireSameProject(anchor, task.projectId, 'anchorTaskId');
+            if (anchor.archivedAt !== null) throw ruleError('The anchor task is archived.', 'anchorTaskId');
+          } else anchor = await requireOrderAnchor(repo, ws, task.projectId, task.parentTaskId, parsed.anchorTaskId, 'anchorTaskId');
+          if (assigneeMode && anchor.responsibleMembershipId !== responsibleMembershipId) {
+            throw ruleError('The anchor belongs to another responsible person.', 'anchorTaskId');
+          }
+        }
+        // Legacy section moves take the root anchor's section; assignee moves keep source section.
         let sectionId = task.sectionId;
-        if (task.parentTaskId === null) {
+        if (!assigneeMode && task.parentTaskId === null && anchor !== null) {
           sectionId = anchor.sectionId;
           if (sectionId !== null) await requireAssignableSection(repo, ws, task.projectId, sectionId);
-        } else if (anchor.sectionId !== task.sectionId) {
+        } else if (!assigneeMode && task.parentTaskId !== null && anchor?.sectionId !== task.sectionId) {
           throw ruleError('A subtask can only be moved within its own section.', 'anchorTaskId');
         }
-
-        const projectOrder = await listOrderScope(repo, ws, task.projectId);
-        const order = placeInOrder(projectOrder, id, anchor.id, parsed.placement, 'anchorTaskId');
-        // Already in place: no write and no audit; the receipt still records the unchanged task.
-        const unchanged = sectionId === task.sectionId && order.every((row, rank) => (row?.id ?? id) === projectOrder[rank]?.id);
+        // A null anchor constrains only a non-empty active group, and a source already after its last member keeps its global slot.
+        const anchorRank = projectOrder.findIndex(row => row.id === anchor?.id);
+        const keepSlot = parsed.anchorTaskId === null && anchorRank < projectOrder.findIndex(row => row.id === id);
+        const order = anchor === null || keepSlot ? projectOrder.map(row => (row.id === id ? null : row)) : placeInOrder(projectOrder, id, anchor.id, parsed.placement, 'anchorTaskId');
+        const orderChanged = order.some((row, rank) => (row?.id ?? id) !== projectOrder[rank]?.id);
+        const unchanged = sectionId === task.sectionId && responsibleMembershipId === task.responsibleMembershipId && !orderChanged;
         if (unchanged) return task;
-
-        // The moved task always gets a new revision, even when legacy ties leave its number unchanged.
-        await repo.saveTaskCore({ ...task, sectionId, position: order.indexOf(null), revision: task.revision + 1, updatedAt: now });
+        // Assignee writes that keep the global order keep the numeric position, ties and gaps included; legacy moves always renumber.
+        const renumber = !assigneeMode || orderChanged;
+        await repo.saveTaskCore({ ...task, sectionId, responsibleMembershipId, position: renumber ? order.indexOf(null) : task.position, revision: task.revision + 1, updatedAt: now });
         const updated = await reloadTask(repo, ws, id);
         const diff = {
-          ...changedFields(task, updated, ['sectionId', 'position']),
+          ...changedFields(task, updated, assigneeMode ? ['sectionId', 'position', 'responsibleMembershipId'] : ['sectionId', 'position']),
           revision: { from: task.revision, to: updated.revision },
-          anchor: { taskId: anchor.id, placement: parsed.placement },
+          anchor: { taskId: anchor?.id ?? null, placement: parsed.placement },
         };
         await record(scope, 'task', id, 'updated', updated.revision, diff, taskEventIds(updated));
-        await saveShiftedTasks(scope, order, now);
+        if (renumber) await saveShiftedTasks(scope, order, now);
         return updated;
       });
     },

@@ -36,6 +36,7 @@ const boundaryMessage =
 
 export default defineConfig(
   globalIgnores([
+    '.local/',
     '**/node_modules/',
     '**/dist/',
     '**/coverage/',

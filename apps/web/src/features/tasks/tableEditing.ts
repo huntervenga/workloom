@@ -4,7 +4,7 @@ import type { WorkPackageEntry } from '../task-table/workPackages';
 import { hasInitialTaskCells } from './InitialTaskCells';
 import type { CreateRequest, CreateResultAnchor, CreateSession, EditSession } from './useTaskCommands';
 
-export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate' | 'priority' | 'estimate' | 'sectionId';
+export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate' | 'priority' | 'estimate' | 'sectionId' | 'tagIds';
 
 /** View/recovery mapping must follow the edited field rather than assume a date fallback. */
 export function taskInlineColumn(field: TaskInlineField) {
@@ -15,6 +15,7 @@ export function taskInlineColumn(field: TaskInlineField) {
     case 'statusId': return 'status';
     case 'responsibleMembershipId': return 'responsible';
     case 'dueDate': return field;
+    case 'tagIds': return 'tags';
     case 'priority': return field;
     case 'estimate': return field;
   }
@@ -131,7 +132,7 @@ export function canResumeQuickSession(session: CreateSession, sectionId: string 
 
 export function canResumeInlineSession(session: EditSession, field: TaskInlineField): boolean {
   const changed = changedKeys(draftFromTask(session.base), session.draft);
-  return changed.length === 0 || session.inlineField === field && changed.every(key => key === field);
+  return changed.length === 0 || session.inlineField === field && changed.every(key => key === field || field === 'dueDate' && key === 'startDate');
 }
 
 /** A displayed package value is safe to edit only from that exact source projection. */
@@ -153,6 +154,13 @@ export function matchesInlineTaskReceipt(current: TaskDto, receipt: TaskDto, fie
     case 'statusId':
     case 'responsibleMembershipId':
     case 'dueDate':
+      return current.dueDate === receipt.dueDate && (current.startDate ?? null) === (receipt.startDate ?? null);
+    case 'tagIds': {
+      // Tag metadata can advance independently; confirmation owns the selected stable IDs only.
+      const ids = (task: TaskDto) => task.tags.map(tag => tag.id.toLowerCase()).sort();
+      const left = ids(current); const right = ids(receipt);
+      return left.length === right.length && left.every((id, index) => id === right[index]);
+    }
     case 'priority':
     case 'sectionId':
       return current[field] === receipt[field];

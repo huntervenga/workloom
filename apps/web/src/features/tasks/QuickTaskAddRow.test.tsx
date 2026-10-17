@@ -29,7 +29,7 @@ const cell = (column: string) => screen.getByTestId('draft-row').querySelector(`
 const afterB: CreateRequest = { sectionId: SECTION, parent: null, insertion: { anchorTaskId: B_ID, placement: 'after' } };
 const titleOf = (body: unknown) => (body as { title: string }).title;
 
-function row(request?: CreateRequest) {
+function row(request?: CreateRequest, tagOptions: readonly TagDto[] = tags, withinShell = false) {
   const onCreated = vi.fn(); const onClosed = vi.fn();
   // Details take focus as a drawer would; the row must not take it back.
   const onMoreDetails = vi.fn(() => document.getElementById('qa-details')?.focus());
@@ -39,12 +39,12 @@ function row(request?: CreateRequest) {
     current = commands;
     const [open, setOpen] = useState(true);
     return <>
-      <table><tbody>{open ? <QuickTaskAdd projectId={PROJECT_ID} sectionId={SECTION} sectionName="Stored section" statuses={statuses} members={alphaMembers} tags={tags} commands={commands} writable
+      <table><tbody>{open ? <QuickTaskAdd projectId={PROJECT_ID} sectionId={SECTION} sectionName="Stored section" statuses={statuses} members={alphaMembers} tags={tagOptions} commands={commands} writable
         request={request} renderRow={renderRow} onClose={reason => { onClosed(reason); setOpen(false); }} onMoreDetails={onMoreDetails} onCreated={onCreated} /> : null}</tbody></table>
       <button onClick={() => setOpen(true)}>Resume QA row</button><button>Outside focus</button><button id="qa-details">Details heading</button>
     </>;
   }
-  const view = renderFieldUi(<Example />);
+  const view = renderFieldUi(withinShell ? <main tabIndex={-1}><Example /></main> : <Example />);
   return { ...view, onCreated, onClosed, onMoreDetails, commands: () => { if (!current) throw new Error('No command harness'); return current; } };
 }
 
@@ -70,7 +70,9 @@ describe('full quick task row', () => {
     await ui.user.click(screen.getByRole('combobox', { name: 'Priority' }));
     await ui.user.click(screen.getByRole('option', { name: 'High' }));
     fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2026-10-19' } });
+    await ui.user.click(screen.getByRole('button', { name: 'Edit dates for the new task' }));
     fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+    await ui.user.click(screen.getByRole('button', { name: 'Done' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Team estimate (hours)' }), { target: { value: '1:30' } });
     await ui.user.click(screen.getByRole('button', { name: 'Tags' }));
     await ui.user.click(screen.getByRole('checkbox', { name: 'Stored tag' }));
@@ -282,4 +284,85 @@ describe('submitted draft preview', () => {
     expect(preview.queryByRole('button')).not.toBeInTheDocument();
     expect(preview.queryByRole('link')).not.toBeInTheDocument();
   });
+});
+
+
+it('closes local date and tag pickers on first Escape while retaining the unsent row values', async () => {
+  const { calls } = installFakeApi({});
+  const ui = row(afterB);
+  await ui.user.click(screen.getByRole('button', { name: 'Edit dates for the new task' }));
+  fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2027-03-20' } });
+  await ui.user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog', { name: 'Edit dates' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Edit dates for the new task' })).toHaveFocus();
+  expect(ui.onClosed).not.toHaveBeenCalled();
+  await ui.user.click(screen.getByRole('button', { name: 'Edit dates for the new task' }));
+  expect(screen.getByLabelText('Due date')).toHaveValue('2027-03-20');
+  await ui.user.click(screen.getByRole('button', { name: 'Done' }));
+  await ui.user.click(screen.getByRole('button', { name: 'Tags' }));
+  await ui.user.click(screen.getByRole('checkbox', { name: 'Stored tag' }));
+  await ui.user.keyboard('{Escape}');
+  expect(screen.queryByRole('checkbox', { name: 'Stored tag' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Tags' })).toHaveFocus();
+  expect(ui.onClosed).not.toHaveBeenCalled();
+  await ui.user.click(screen.getByRole('button', { name: 'Tags' }));
+  expect(screen.getByRole('checkbox', { name: 'Stored tag' })).toBeChecked();
+  expect(calls).toHaveLength(0);
+});
+
+
+it('offers the existing details tag-creation path from an empty picker without sending or losing the new row draft', async () => {
+  const { calls } = installFakeApi({});
+  const ui = row(afterB, []);
+  await ui.user.type(screen.getByLabelText('Task name'), 'Retained tag draft');
+  await ui.user.click(screen.getByRole('button', { name: 'Tags' }));
+  await ui.user.click(screen.getByRole('button', { name: 'Open details to create tags' }));
+  expect(ui.onMoreDetails).toHaveBeenCalledTimes(1);
+  expect(ui.commands().createSession.current?.draft.title).toBe('Retained tag draft');
+  expect(ui.commands().createSession.current?.request.insertion).toEqual(afterB.insertion);
+  expect(calls).toHaveLength(0);
+});
+
+
+it('keeps a held nonfocusable date-popup target through the timer and gives the first Escape to the popup', async () => {
+  const { calls } = installFakeApi({});
+  const ui = row(afterB);
+  await ui.user.click(screen.getByRole('button', { name: 'Edit dates for the new task' }));
+  fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2027-03-20' } });
+  await ui.user.pointer({ keys: '[MouseLeft>]', target: screen.getByText('March 2027') });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(screen.getByRole('dialog', { name: 'Edit dates' })).toBeInTheDocument();
+  expect(ui.onClosed).not.toHaveBeenCalled();
+  await ui.user.pointer({ keys: '[/MouseLeft]' });
+  await ui.user.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog', { name: 'Edit dates' })).not.toBeInTheDocument();
+  expect(ui.onClosed).not.toHaveBeenCalled();
+  await ui.user.keyboard('{Escape}');
+  expect(ui.onClosed).toHaveBeenCalledTimes(1);
+  expect(calls).toHaveLength(0);
+});
+
+
+it('retains an unsent draft when its tag label is held inside a focusable shell', async () => {
+  const { calls } = installFakeApi({});
+  const ui = row(afterB, tags, true);
+  await ui.user.type(screen.getByLabelText('Task name'), 'Unsent tagged task');
+  await ui.user.click(screen.getByRole('button', { name: 'Tags' }));
+  await ui.user.pointer({ keys: '[MouseLeft>]', target: screen.getByText('Stored tag') });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+  expect(screen.getByRole('checkbox', { name: 'Stored tag' })).not.toBeChecked();
+  expect(ui.onClosed).not.toHaveBeenCalled();
+  expect(calls).toHaveLength(0);
+  await ui.user.pointer({ keys: '[/MouseLeft]' });
+  expect(screen.getByRole('checkbox', { name: 'Stored tag' })).toBeChecked();
+  await ui.user.keyboard('{Enter}');
+  expect(calls).toHaveLength(0);
+  await ui.user.keyboard('{Escape}');
+  expect(screen.getByRole('button', { name: 'Tags' })).toHaveFocus();
+  expect(ui.onClosed).not.toHaveBeenCalled();
+  await ui.user.click(screen.getByRole('button', { name: 'Tags' }));
+  expect(screen.getByRole('checkbox', { name: 'Stored tag' })).toBeChecked();
+  expect(screen.getByLabelText('Task name')).toHaveValue('Unsent tagged task');
+  expect(ui.commands().createSession.current?.draft.tagIds).toEqual([TAG_ID]);
+  expect(calls).toHaveLength(0);
 });

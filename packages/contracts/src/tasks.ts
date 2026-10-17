@@ -368,14 +368,44 @@ export const restoreTaskInputSchema = z.strictObject({
 });
 
 /**
- * Manual reorder next to an active sibling with the same parent. A subtask also keeps its section;
- * a root task takes the anchor's section. Status, parent, dates and estimates never change.
- * `expectedRevision` guards the moved task only; siblings are re-read under the workspace barrier.
+ * Manual reorder in the project-global order.
+ *
+ * Omitted `responsibleMembershipId` keeps the legacy section move: the anchor is an active task
+ * with the same parent; a subtask keeps its section and a root task takes the root anchor's section.
+ *
+ * Explicit `responsibleMembershipId` (`null` = unassigned) selects the flat assignee mode: the anchor
+ * is any active task of the same project, with any parent, that already has that responsible person;
+ * the source keeps its own parent and section. A null anchor means the end of that person's complete
+ * active group (every task: children, filtered-out and unloaded rows included). When that group is
+ * empty, or the source already follows its last other member, the source keeps its global slot and
+ * numeric position; otherwise it is placed directly after that member. Assignee mode changes only
+ * the source's current responsible person, never history (baselines, participants, recorded work).
+ *
+ * Status, parent, dates, participants and estimates never change. `expectedRevision` guards the
+ * moved task only; other rows are re-read under the workspace barrier.
  */
 export const moveTaskInputSchema = z.strictObject({
   expectedRevision: revisionSchema,
-  anchorTaskId: idSchema,
+  anchorTaskId: idSchema.nullable(),
   placement: taskPlacementSchema,
+  /** Explicit (including null) selects assignee mode; omission preserves the legacy section move. */
+  responsibleMembershipId: idSchema.nullable().optional(),
+}).superRefine((input, ctx) => {
+  if (input.anchorTaskId === null && (input.responsibleMembershipId === undefined || input.placement !== 'after')) {
+    ctx.addIssue({ code: 'custom', path: ['anchorTaskId'], message: 'A null anchor requires an explicit assignee and placement after.' });
+  }
+});
+
+/** One atomic patch to an explicit selection; omission leaves a field unchanged, null clears it. */
+export const bulkUpdateTasksInputSchema = z.strictObject({
+  projectId: idSchema,
+  tasks: z.array(z.strictObject({ taskId: idSchema, expectedRevision: revisionSchema })).min(1).max(100)
+    .refine(rows => hasUniqueIds(rows.map(row => row.taskId)), { error: 'Task IDs must be unique.' }),
+  changes: z.strictObject({
+    responsibleMembershipId: idSchema.nullable().optional(),
+    startDate: sqlCalendarDateSchema.nullable().optional(),
+    dueDate: sqlCalendarDateSchema.nullable().optional(),
+  }).refine(input => hasAnyField(input, ['responsibleMembershipId', 'startDate', 'dueDate']), noChangeError),
 });
 
 /** Query strings carry booleans as text; only `true`/`false` are accepted (never truthy coercion). */
@@ -413,6 +443,7 @@ export const tagResponseSchema = envelopeSchema(tagSchema);
 export const tagListResponseSchema = envelopeSchema(z.array(tagSchema));
 export const taskResponseSchema = envelopeSchema(taskSchema);
 export const taskListResponseSchema = envelopeSchema(z.array(taskSchema));
+export const bulkTaskUpdateResponseSchema = envelopeSchema(z.array(taskSchema));
 /** Participant rows of one task, inactive ones included. No dedicated P1a route is listed above. */
 export const taskParticipantListResponseSchema = envelopeSchema(z.array(taskParticipantSchema));
 
@@ -439,6 +470,8 @@ export type ArchiveTaskInput = z.infer<typeof archiveTaskInputSchema>;
 export type RestoreTaskInput = z.infer<typeof restoreTaskInputSchema>;
 export type TaskInsertion = z.infer<typeof taskInsertionSchema>;
 export type MoveTaskInput = z.infer<typeof moveTaskInputSchema>;
+export type BulkUpdateTasksInput = z.infer<typeof bulkUpdateTasksInputSchema>;
+export type BulkTaskUpdateResponse = z.infer<typeof bulkTaskUpdateResponseSchema>;
 export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
 
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;

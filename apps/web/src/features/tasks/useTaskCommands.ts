@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';
 import { createRetainedTaskSessions } from './retainedTaskSessions';
 import {
+  useBulkUpdateTasksMutation,
   useArchiveTaskMutation,
   useCreateTagMutation,
   useCreateTaskMutation,
@@ -112,6 +113,7 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
   const archive = useArchiveTaskMutation(actorId, workspaceId);
   const restore = useRestoreTaskMutation(actorId, workspaceId);
   const move = useMoveTaskMutation(actorId, workspaceId);
+  const bulk = useBulkUpdateTasksMutation(actorId, workspaceId);
   const createTag = useCreateTagMutation(actorId, workspaceId);
   /** Tags created from the task form, shown before the tag list refetches. */
   const [createdTags, setCreatedTags] = useState<TagDto[]>([]);
@@ -218,7 +220,7 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
 
   useEffect(() => {
     const front = quick.queue[0];
-    if (!front || quick.sending || quick.paused || create.pendingCommand || update.pendingCommand || update.uncertain || archive.pendingCommand || archive.uncertain || restore.pendingCommand || restore.uncertain || move.pendingCommand || move.uncertain) return;
+    if (!front || quick.sending || quick.paused || bulk.pendingCommand || bulk.uncertain || create.pendingCommand || update.pendingCommand || update.uncertain || archive.pendingCommand || archive.uncertain || restore.pendingCommand || restore.uncertain || move.pendingCommand || move.uncertain) return;
     // The place is resolved once, before the first send; a create following an unknown task waits.
     const input = front.sent ?? resolveQuickCreateInput(front);
     if (!input) return;
@@ -238,12 +240,12 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
       quick.publish();
       updateQuick(value => value + 1);
     });
-  }, [quick, quickVersion, create, update.pendingCommand, update.uncertain, archive.pendingCommand, archive.uncertain, restore.pendingCommand, restore.uncertain, move.pendingCommand, move.uncertain, confirmSession, createSession]);
+  }, [quick, quickVersion, create, update.pendingCommand, update.uncertain, archive.pendingCommand, archive.uncertain, restore.pendingCommand, restore.uncertain, move.pendingCommand, move.uncertain, bulk.pendingCommand, bulk.uncertain, confirmSession, createSession]);
 
 
   const addCreatedTag = useCallback((tag: TagDto) => setCreatedTags((previous) => [...previous, tag]), []);
 
-  return { create, update, archive, restore, move, createTag, createdTags, addCreatedTag, createSession, editSessions, confirmedSessions, confirmSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, cancelQuickDraft, discardRejectedQuickCreate };
+  return { create, update, archive, restore, move, bulk, createTag, createdTags, addCreatedTag, createSession, editSessions, confirmedSessions, confirmSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, cancelQuickDraft, discardRejectedQuickCreate };
 }
 
 export type TaskCommands = ReturnType<typeof useTaskCommands>;
@@ -251,6 +253,7 @@ export type TaskCommands = ReturnType<typeof useTaskCommands>;
 export interface UnresolvedTaskCommand {
   /** The edited, archived, restored or moved task; null for a task being created. */
   taskId: string | null;
+  kind?: 'bulk';
   /** Sent without a confirmed answer; otherwise still waiting for one. */
   uncertain: boolean;
 }
@@ -261,7 +264,9 @@ export interface UnresolvedTaskCommand {
  * Read from the commands each hook holds, never from TanStack's latest `variables`.
  */
 export function unresolvedTaskCommand(commands: TaskCommands): UnresolvedTaskCommand | null {
-  const { create, update, archive, restore, move } = commands;
+  const { create, update, archive, restore, move, bulk } = commands;
+  if (bulk?.pendingCommand) return { taskId: null, uncertain: false, kind: 'bulk' };
+  if (bulk?.uncertain) return { taskId: null, uncertain: true, kind: 'bulk' };
   for (const mutation of [update, archive, restore, move]) {
     if (mutation.pendingCommand) return { taskId: mutation.pendingCommand.variables.taskId, uncertain: false };
   }

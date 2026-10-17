@@ -5,6 +5,7 @@ import { alpha, alphaMembers, deferred, failure, installFakeApi, json, ok, rende
 import { lostResponse } from '../features/planning/test/fixtures';
 import { PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
+import { formatDate } from '../i18n';
 
 // Compile the large lazy route before the first DOM wait; these tests exercise its UI, not module loading.
 beforeAll(async () => { await import('./ProjectPage'); });
@@ -167,7 +168,10 @@ describe('project Board integration', () => {
     const confirmedCard = screen.getByRole('button', { name: task.title }).closest('li'); if (!confirmedCard) throw new Error('Missing confirmed card');
     await waitFor(() => expect(within(confirmedCard).queryByText('No due date')).not.toBeInTheDocument());
     await user.click(views().getByRole('button', { name: 'Tasks' })); await screen.findByRole('table');
-    expect(screen.getByRole('button', { name: `Edit due date for ${task.title}` }).querySelector('time')).toHaveAttribute('datetime', '2026-10-20');
+    // The saved cell labels its date with the long UTC calendar form instead of a <time> element.
+    const savedDue = formatDate(new Date(Date.UTC(2026, 9, 20)), { dateStyle: 'long', timeZone: 'UTC' });
+    const savedCell = within(screen.getByRole('button', { name: `Edit due date for ${task.title}` })).getByLabelText(savedDue);
+    expect(savedCell).toHaveAttribute('title', savedDue);
     expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
   });

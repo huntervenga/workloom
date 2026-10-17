@@ -54,7 +54,7 @@ describe('page-owned section collapse', () => {
     const extra = { ...other, id: 'f2000000-0000-4000-8000-000000000005', title: 'Later first-section task', sectionId: SECTION_A, workPackageId: 'f1000000-0000-4000-8000-000000000005', estimateMinutes: 45 };
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.has('search') ? page([other]) : request.searchParams.has('cursor') ? page([extra]) : page([parent, child, other, loose], 'next-section-page') }));
     const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('checkbox', { name: `Select for graph: ${parent.title}` }));
+    await user.click(await screen.findByRole('button', { name: `Select task: ${parent.title}` }));
     await user.click(collapse());
     expect(screen.queryByRole('button', { name: parent.title })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: child.title })).not.toBeInTheDocument();
@@ -73,7 +73,7 @@ describe('page-owned section collapse', () => {
     expect(screen.queryByRole('button', { name: extra.title })).not.toBeInTheDocument();
     expect(screen.getByText('Loaded team budget').closest('tr')).toHaveTextContent('4h 15m');
     await user.click(expand());
-    expect(screen.getByRole('checkbox', { name: `Select for graph: ${parent.title}` })).toBeChecked();
+    expect(screen.getByRole('button', { name: `Select task: ${parent.title}` })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: extra.title })).toBeInTheDocument();
     expect(writes(calls)).toHaveLength(0);
   });

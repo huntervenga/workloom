@@ -164,11 +164,15 @@
     "wholePackage": "Whole-package plan, not split by task",
     "sharesPackagePlan": "Shares one package plan: {{hours}}"
   },
-  "peopleInBreakdown": { "one": "{{count}} person", "other": "{{count}} people" },
+  "peopleInBreakdown": {
+    "one": "{{count}} person",
+    "other": "{{count}} people"
+  },
   "latestBreakdown": "Latest saved breakdown",
   "latestBreakdownStatus": "Showing the newest saved breakdown. Choose a saved breakdown to pin a different one.",
   "pinnedBreakdownStatus": "Showing the selected saved breakdown.",
   "calculateCurrentBreakdown": "Calculate current breakdown",
-  "calculateCurrentBreakdownHint": "Saves a new breakdown for everyone from the hours recorded now. Earlier saved breakdowns stay unchanged."
-
+  "calculateCurrentBreakdownHint": "Saves a new breakdown for everyone from the hours recorded now. Earlier saved breakdowns stay unchanged.",
+  "chooseWeekForEntry": "Choose week",
+  "chooseWeekHint": "Choose a week to enter planned or actual hours. The selected person is shown above; estimates stay separate."
 }

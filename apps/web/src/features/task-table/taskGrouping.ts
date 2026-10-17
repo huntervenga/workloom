@@ -18,7 +18,7 @@ export type TableTaskGroup = TaskGroup | AssigneeTaskGroup;
 export const assigneeGroupKey = (membershipId: string | null): string => membershipId === null ? 'unassigned' : `assignee:${membershipId}`;
 
 /** Read-only grouping of the authorized loaded scope. Section retains the canonical tree. */
-export function buildTableGroups(tasks: readonly TaskDto[], sections: readonly SectionDto[], members: readonly MembershipDto[], mode: TaskGroupingMode, locale: string, sort: TaskSortMode = 'manual'): TableTaskGroup[] {
+export function buildTableGroups(tasks: readonly TaskDto[], sections: readonly SectionDto[], members: readonly MembershipDto[], mode: TaskGroupingMode, locale: string, sort: TaskSortMode = 'manual', includeEmpty = false): TableTaskGroup[] {
   if (mode === 'section') return buildTaskGroups(tasks, sections, locale, sort);
   const memberById = new Map(members.map(member => [member.id, member]));
   const buckets = new Map<string | null, TaskTreeNode[]>();
@@ -29,6 +29,7 @@ export function buildTableGroups(tasks: readonly TaskDto[], sections: readonly S
     nodes.push({ task, depth: 0, children: [], detachedReason: null });
     buckets.set(task.responsibleMembershipId, nodes);
   }
+  if (includeEmpty) { for (const member of members) if (!buckets.has(member.id)) buckets.set(member.id, []); if (!buckets.has(null)) buckets.set(null, []); }
   return [...buckets].map(([membershipId, roots]): AssigneeTaskGroup => ({
     kind: 'assignee', key: assigneeGroupKey(membershipId), membershipId,
     member: membershipId === null ? null : memberById.get(membershipId) ?? null,

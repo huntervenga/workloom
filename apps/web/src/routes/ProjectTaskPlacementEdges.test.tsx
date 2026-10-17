@@ -154,7 +154,14 @@ describe('plain Enter on an unchanged middle task title grouped by assignee', ()
     await waitFor(() => expect(titleRow(taskB.title).nextElementSibling).toBe(titleRow('Anna next')));
     expect(titleRow('Anna next').closest('tbody')).toBe(titleRow(taskB.title).closest('tbody'));
     expect(within(savedRow.closest('tbody') as HTMLTableSectionElement).getByRole('button', { name: annaGroup })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Collapse assignee group “Unassigned”' })).not.toBeInTheDocument();
+    // Unassigned stays an intentional empty, expanded drop target: the new task never jumps into it.
+    const unassignedBody = document.querySelector('tbody[data-task-assignee-group=""]') as HTMLTableSectionElement;
+    expect(within(unassignedBody).getByRole('button', { name: 'Collapse assignee group “Unassigned”' })).toHaveAttribute('aria-expanded', 'true');
+    expect(unassignedBody.querySelector('th[scope="rowgroup"] .sr-only')).toHaveTextContent('0 tasks');
+    expect(unassignedBody.querySelector('tr[data-task-group-drop=""]')).toBeInTheDocument();
+    expect(unassignedBody.querySelectorAll('tr[data-task-row]')).toHaveLength(0);
+    expect(unassignedBody.querySelector(`tr[data-task-row="${NEW_ID}"]`)).toBeNull();
+    expect(within(unassignedBody).queryByRole('button', { name: 'Anna next' })).not.toBeInTheDocument();
     expect(stored.find(item => item.id === NEW_ID)).toMatchObject({ responsibleMembershipId: annaMember.id });
     expect(posts(calls)).toHaveLength(1);
     expect(patches(calls)).toHaveLength(0);

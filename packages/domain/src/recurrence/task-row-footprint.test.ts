@@ -75,3 +75,18 @@ describe('task row recurrence footprint',()=>{
     expect(calls).toEqual([]);
   });
 });
+
+describe('atomic bulk recurrence footprint', () => {
+  const input = { projectId: project, tasks: [{ taskId: existingTask, expectedRevision: 1 }], changes: { dueDate: null } };
+  const intent = (projectId = project): PlanningMutationIntent => ({ family: 'task_bulk', command: 'task.bulk.update', target: { projectId }, input });
+  it('resolves every target and exactly the explicit project', async () => {
+    const { scope, reads } = footprintScope([project]);
+    expect(await resolveRecurrenceAffectedProjects(scope, intent())).toEqual({ kind: 'projects', projectIds: [project] });
+    expect(reads).toEqual([`project:${project}`, `task:${existingTask}`]);
+  });
+  it('fails closed on composition mismatch or an inaccessible requested task', async () => {
+    const { scope } = footprintScope([project, other]);
+    await expect(resolveRecurrenceAffectedProjects(scope, intent(other))).rejects.toThrow('bulk target and input project differ');
+    await expect(resolveRecurrenceAffectedProjects(scope, { ...intent(), input: { ...input, tasks: [{ taskId: missingPeriod, expectedRevision: 1 }] } } as PlanningMutationIntent)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+});

@@ -1,10 +1,11 @@
 import type { AttendanceDto, MeetingDto, TaskDto, UpdateMeetingInput } from '@workloom/contracts';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, deferred, installFakeApi, ok, renderApp, type RouteTable } from '../../test/fakeApi';
 import { MEMBER_ID, PERIOD_A, PERIOD_B, PROJECT_ID, TASK_ID, STAMP, rootPath, task } from '../planning/test/fixtures';
 import { tablePath, tableRoutes } from '../work-categories/test/fixtures';
 import { choosePicker, outcomeOption } from './test/pickers';
+beforeAll(async () => { await import('../../routes/ProjectPage'); });
 const MEETING='ab000000-0000-4000-8000-000000000011';
 const ATTENDANCE='ac000000-0000-4000-8000-000000000011';
 const SERIES_ID='ae000000-0000-4000-8000-000000000001';

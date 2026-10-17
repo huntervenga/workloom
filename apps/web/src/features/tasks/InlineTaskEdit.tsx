@@ -1,4 +1,4 @@
-import { taskPrioritySchema, type MembershipDto, type SectionDto, type TaskDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup } from '@workloom/contracts';
+import { taskPrioritySchema, type MembershipDto, type SectionDto, type TagDto, type TaskDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup } from '@workloom/contracts';
 import { Button, cn } from '@workloom/ui';
 import { Expand, LoaderCircle, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
@@ -9,6 +9,8 @@ import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { CellPopover } from './CellPopover';
 import { priorityLabels } from './TaskFields';
+import { keepFocusOnPopoverPress, TaskDateInput } from './TaskDateInput';
+import { TaskTagPicker } from './TaskTagPicker';
 import { buildUpdateInput, changedKeys, draftFromTask, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors } from './taskDraft';
 import { revealInlineEditor } from '../task-table/TaskTable';
 import type { WorkPackageEntry } from '../task-table/workPackages';
@@ -37,6 +39,7 @@ export interface InlineTaskEditProps {
   members: readonly MembershipDto[];
   /** Project sections for the section move; only active ones are offered. */
   sections?: readonly SectionDto[] | undefined;
+  tags?: readonly TagDto[] | undefined;
   commands: TaskCommands;
   writable: boolean;
   estimatePackages?: ReadonlyMap<string, WorkPackageEntry> | undefined;
@@ -59,7 +62,7 @@ const iconActionClassName = cn('inline-flex size-7 shrink-0 items-center justify
  * Uses the exact seen task revision; only this cell's field can enter the update. Choices save
  * at once through the same command; text saves on Enter or when focus leaves the editor.
  */
-export function InlineTaskEdit({ task, field, statuses, members, sections = [], commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
+export function InlineTaskEdit({ task, field, statuses, members, sections = [], tags = [], commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
@@ -276,11 +279,15 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     : field === 'sectionId' ? picker(t('tasks.taskFields.section'), draftSection ?? '', sectionOptions)
     : field === 'estimate' ? <input {...textProps} type="text" aria-label={t('tasks.inlineEstimate.label')} value={session.draft.estimate} onChange={event => change({ estimate: event.target.value })} />
     : field === 'title' ? <input {...textProps} type="text" aria-label={t('tasks.taskFields.taskName')} maxLength={TASK_TITLE_MAX} value={session.draft.title} onChange={event => change({ title: event.target.value })} />
-    : <input {...textProps} type="date" aria-label={t('tasks.taskFields.dueDate')} min="0001-01-01" max="9999-12-31" className={cn(cellInputClassName, 'px-1')} value={session.draft.dueDate} onChange={event => change({ dueDate: event.target.value })} />;
+    : <span className="min-w-0 truncate px-1 text-sm">{field === 'tagIds'
+      ? [...new Map([...task.tags, ...tags].map(tag => [tag.id.toLowerCase(), tag])).values()].filter(tag => session.draft.tagIds.some(id => id.toLowerCase() === tag.id.toLowerCase())).map(tag => tag.name).join(', ') || t('tasks.taskFields.noTags')
+      : session.draft.dueDate || t('tasks.taskFields.noDueDate')}</span>;
   const primary = uncertain ? <Button size="sm" className="h-7 px-2" variant="primary" type="submit">{t('tasks.inlineEdit.retry')}</Button>
     : choice ? null
     : <Button size="sm" className="h-7 px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || staleEstimate || undefined}>{pending ? t('tasks.inlineEdit.saving') : t('tasks.inlineEdit.save')}</Button>;
   return <form ref={attach} noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} aria-busy={pending || undefined} onSubmit={submit}
+    // A held press on a date/tag panel's static content must not blur into the deferred autosave below.
+    onMouseDown={field === 'dueDate' || field === 'tagIds' ? keepFocusOnPopoverPress : undefined}
     onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose('cancel'); return; }
       if (choice || event.key !== 'Enter' || !(event.target instanceof HTMLInputElement) || event.target.closest('form') !== event.currentTarget) return;
@@ -309,10 +316,17 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     className="relative flex h-8 min-w-0 items-center">
     {control}
     {pending ? <><LoaderCircle size={14} aria-hidden="true" className="pointer-events-none absolute right-2 text-muted motion-safe:animate-spin" /><span role="status" className="sr-only">{t('tasks.inlineEdit.saving')}</span></> : null}
-    {(hasFeedback || field === 'estimate') && !pickerOpen ? <CellPopover anchor={anchor} side={choice ? 'top' : 'bottom'}>
+    {(hasFeedback || field === 'estimate' || field === 'dueDate' || field === 'tagIds') && !pickerOpen ? <CellPopover anchor={anchor} side={choice ? 'top' : 'bottom'}
+      className={field === 'dueDate' ? 'max-h-[calc(100dvh-16px)] overflow-y-auto' : undefined}
+      role={field === 'dueDate' || field === 'tagIds' ? 'dialog' : undefined}
+      ariaLabel={field === 'dueDate' ? t('tasks.dates.edit') : field === 'tagIds' ? t('tasks.tags.edit') : undefined}>
+      {field === 'dueDate' ? <TaskDateInput startDate={session.draft.startDate ?? ''} dueDate={session.draft.dueDate} onChange={change} disabled={frozen || needsReview}
+        autoFocus={shouldFocus} errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} /> : null}
+      {field === 'tagIds' ? <TaskTagPicker tags={[...new Map([...task.tags, ...tags].map(tag => [tag.id.toLowerCase(), tag])).values()]} values={session.draft.tagIds} onChange={tagIds => change({ tagIds })} disabled={frozen || needsReview} autoFocus={shouldFocus} /> : null}
+      {field === 'tagIds' && ![...task.tags, ...tags].some(tag => tag.archivedAt === null) ? <Button size="sm" variant="ghost" onClick={() => { editSessions.current.set(task.id, session); onMoreDetails(); }}>{t('tasks.tags.createInDetails')}</Button> : null}
       {field === 'estimate' ? <p id={`${id}-estimate-help`} className="text-muted">{t('tasks.inlineEstimate.sharedHelp')} {t('tasks.inlineEstimate.formatHelp')}</p> : null}
       {staleEstimate ? <p id={`${id}-estimate-source`} role="status" className="text-amber-800">{t('tasks.inlineEstimate.refreshRequired')}</p> : null}
-      {currentError ? <p role="alert" id={`${id}-error`} className="text-red-700">{t(currentError.key, currentError.params)}</p> : null}
+      {currentError && !(field === 'dueDate' && (errors.startDate || errors.dueDate)) ? <p role="alert" id={`${id}-error`} className="text-red-700">{t(currentError.key, currentError.params)}</p> : null}
       {blocked ? <p role="status" className="text-amber-800">{t('tasks.quickAdd.otherCommand')}</p> : null}
       <SaveFeedback subject="taskSave" error={ownError} uncertainError={uncertain ? update.uncertain?.error ?? null : null} />
       {actions(primary)}

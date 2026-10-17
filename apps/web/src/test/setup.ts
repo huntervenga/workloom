@@ -1,6 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
+
+// Condition-based waits return as soon as they pass; explicit timing oracles and
+// physical Chrome acceptance remain separate.
+configure({ asyncUtilTimeout: 3_000 });
 
 afterEach(() => {
   cleanup();

@@ -44,7 +44,7 @@ describe('fixed grid while a cell editor is open', () => {
     const cell = form.closest('td');
     const row = cell?.closest('tr');
     if (!cell || !row) throw Error('Editor cell required.');
-    expect(within(row).getAllByRole('cell').indexOf(cell)).toBe(columnIds.indexOf(column));
+    expect(within(row).getAllByRole('cell').indexOf(cell)).toBe((columnIds as readonly string[]).indexOf(column));
     expect(cell).toHaveAttribute('data-editing');
     expect(row.querySelectorAll('[data-editing]')).toHaveLength(1);
     // Every body cell is one fixed line that truncates instead of wrapping or growing.

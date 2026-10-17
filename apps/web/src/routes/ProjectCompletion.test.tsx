@@ -20,7 +20,7 @@ describe('explicit task completion', () => {
     const gate = deferred<Response>(); const seen = { ...task, revision: 4 }; let current = seen;
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise }));
     const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('checkbox', { name: `Select for graph: ${task.title}` }));
+    await user.click(await screen.findByRole('button', { name: `Select task: ${task.title}` }));
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
     await user.click(await complete());
     await waitFor(() => expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1));
@@ -30,7 +30,7 @@ describe('explicit task completion', () => {
     const sourceButton = screen.getByRole('button', { name: `Saving status for ${task.title}…` }); await user.click(sourceButton); expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
     await act(async () => gate.resolve(ok(current = { ...seen, statusId: DONE, revision: 5 })));
     expect(await screen.findByRole('button', { name: `Reopen ${task.title}` })).toBe(sourceButton); expect(sourceButton).toHaveFocus();
-    expect(screen.getByRole('checkbox', { name: `Select for graph: ${task.title}` })).toBeChecked();
+    expect(screen.getByRole('button', { name: `Select task: ${task.title}` })).toHaveAttribute('aria-pressed', 'true');
   });
   it('requires an explicit done choice when there are multiple completion statuses', async () => {
     let current = task;

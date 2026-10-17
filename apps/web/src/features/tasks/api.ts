@@ -1,4 +1,7 @@
 import {
+  bulkUpdateTasksInputSchema,
+  bulkTaskUpdateResponseSchema,
+  type BulkUpdateTasksInput,
   archiveTaskInputSchema,
   createTagInputSchema,
   createTaskInputSchema,
@@ -238,4 +241,14 @@ export async function restoreTask(
   options: MutationOptions,
 ): Promise<TaskDto> {
   return (await sendMutation(restoreTaskRequest(workspaceId, taskId, input), options)).data;
+}
+
+/** All selected rows are validated and committed together; no follow-up per-row writes. */
+export function bulkUpdateTasksRequest(workspaceId: string, input: BulkUpdateTasksInput) {
+  return prepareMutation({ method: 'POST', path: `/api/v1/workspaces/${workspaceId}/tasks/bulk-update`, input,
+    inputSchema: bulkUpdateTasksInputSchema, responseSchema: bulkTaskUpdateResponseSchema.refine(response => {
+      const expected = new Set(input.tasks.map(row => row.taskId.toLowerCase()));
+      const received = new Set(response.data.map(task => task.id.toLowerCase()));
+      return response.data.length === expected.size && received.size === expected.size && response.data.every(task => expected.has(task.id.toLowerCase()) && task.projectId.toLowerCase() === input.projectId.toLowerCase());
+    }, { message: 'BULK_RESPONSE_INCOMPLETE' }) });
 }

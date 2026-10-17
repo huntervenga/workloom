@@ -1,10 +1,12 @@
+import { usePointerRowDragProtection } from '../features/task-table/usePointerRowDrag';
+import { BulkTaskToolbar } from '../features/task-table/BulkTaskToolbar';
 import { captureDraftPlacement, type DraftPlacementSnapshot } from '../features/task-table/draftPlacement';
 import { ChoicePicker } from '../shared/ChoicePicker';
 import { DialogReturnFocus } from '../shared/DialogShell';
 import { compareTaskRows, orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
 import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
 import { TaskCompletionAction } from '../features/tasks/TaskCompletionAction';
-import { TaskCompletionFeedback } from '../features/tasks/TaskCompletionFeedback';
+import { TaskCompletionFeedback, TaskFeedbackLayer } from '../features/tasks/TaskCompletionFeedback';
 import { useTaskCompletion } from '../features/tasks/useTaskCompletion';
 import { useCurrentSearchParams } from '../lib/useCurrentSearchParams';
 import { TaskBoard } from '../features/task-board';
@@ -74,7 +76,7 @@ import {
   useDebouncedValue,
   type TaskFilterValue,
 } from '../features/tasks/TaskFilters';
-import { loadedTaskScope, useTagsQuery, useTaskListQuery } from '../features/tasks/queries';
+import { loadedTaskScope, useReloadTask, useTagsQuery, useTaskListQuery } from '../features/tasks/queries';
 import { useTaskCommands, unresolvedTaskCommand, type CreateRequest, type EditSession } from '../features/tasks/useTaskCommands';
 import { WorkCategorySettings, useTaskTimeTable } from '../features/work-categories';
 import { useMembershipsQuery } from '../features/workspace/queries';
@@ -223,6 +225,7 @@ interface ProjectContentProps {
 }
 
 function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectContentProps) {
+  const acquireDragProtection = usePointerRowDragProtection();
   const { t, locale } = useTranslation();
   const sections = useSectionsQuery(actorId, workspace.id, project.id);
   const statuses = useStatusesQuery(actorId, workspace.id, project.id);
@@ -235,6 +238,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const dependencies = useDependencyWorkspace(actorId, workspace.id, project.id);
   const schedule = useScheduleWorkspace(actorId, workspace.id, project.id, workspace.timezone);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const selectionLedger = useRef(new Map<string, TaskDto>());
+  const reloadSelectedTask = useReloadTask(actorId, workspace.id);
+  const selectionScope = `${actorId}:${workspace.id}:${project.id}`;
+  const selectionScopeHead = useRef(selectionScope);
+  useLayoutEffect(() => { selectionScopeHead.current = selectionScope; }, [selectionScope]);
+  useEffect(() => { selectionLedger.current.clear(); setSelectedTaskIds([]); }, [actorId, workspace.id, project.id]);
   const activeViewControl = useRef<HTMLButtonElement | null>(null);
   const defaultColumnReturn = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
@@ -373,7 +382,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     onOpenMeeting:(id,tab,selection)=>{setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;});},
     onLoadTasks: () => void tasks.fetchNextPage(), accessDenied: isAccessDenied(members.error) || isAccessDenied(tasks.error),
   });
-  const timeAvailable = Boolean(taskTime.context.periodId && members.data?.some(member => member.id === taskTime.context.workerId) && meetingPeriods.data?.some(period => period.id === taskTime.context.periodId));
+  const timeAvailable = true; // Weekly columns are available before a week is explicitly chosen; saved visibility still wins.
   const reconciledColumns = useMemo(() => reconcilePersonalColumns(personalColumns.query.data?.columns ?? null,
     fieldDefinitions.isSuccess ? fieldDefinitions.data : [], projectColumns.isSuccess ? projectColumns.data : { workspaceId: workspace.id, projectId: project.id, revision: 1, columns: [] }, timeAvailable),
     [personalColumns.query.data?.columns, fieldDefinitions.data, fieldDefinitions.isSuccess, projectColumns.data, projectColumns.isSuccess, workspace.id, project.id, timeAvailable]);
@@ -928,14 +937,14 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // Manual reorder: one guarded move at a time, after every other task command has resolved.
   const moveBlocked = !completionWritable || unresolvedTaskCommand(commands) !== null || commands.move.pendingCommand !== null || commands.move.uncertain !== null
     || commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching;
-  const moveTask = (task: TaskDto, anchor: TaskDto, placement: TaskDropPlacement) => {
-    if (!completionWritable || sortMode !== 'manual' || grouping !== 'section') return;
+  const moveTask = (task: TaskDto, anchor: TaskDto | null, placement: TaskDropPlacement, target?: { responsibleMembershipId: string | null }) => {
+    if (!completionWritable || sortMode !== 'manual' || (!anchor && target === undefined)) return;
     if (commands.editSessions.current.has(task.id)) { setAnnouncement(message('taskTable.move.draft', { title: task.title })); return; }
     if (moveBlocked) { setAnnouncement(message('taskTable.move.wait')); return; }
     invalidateInlineSave();
     setActiveInline(null);
     setAnnouncement(message('taskTable.move.moving', { title: task.title }));
-    commands.move.mutate({ taskId: task.id, input: { expectedRevision: task.revision, anchorTaskId: anchor.id, placement } }, {
+    commands.move.mutate({ taskId: task.id, input: { expectedRevision: task.revision, anchorTaskId: anchor?.id ?? null, placement, ...(target ? { responsibleMembershipId: target.responsibleMembershipId } : {}) } }, {
       onSuccess: moved => setAnnouncement(message('taskTable.move.moved', { title: moved.title })),
     });
   };
@@ -950,8 +959,25 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const renameSection = (section: SectionDto) =>
     setRenamingSection(sections.data?.find((item) => item.id === heldSectionId) ?? section);
 
+  // One guarded selection port for the table and Timeline: a pending or unknown bulk write keeps its selection.
+  const bulkHeld = commands.bulk.pendingCommand !== null || commands.bulk.uncertain !== null;
+  const changeSelection = (ids: string[]) => {
+    if (commands.bulk.pendingCommand || commands.bulk.uncertain || ids.length > 100) return;
+    const latest = new Map(shownTasks.map(task => [task.id, task]));
+    for (const id of ids) { const task = latest.get(id); if (task) selectionLedger.current.set(id, task); }
+    for (const id of selectionLedger.current.keys()) if (!ids.includes(id)) selectionLedger.current.delete(id);
+    setSelectedTaskIds(ids);
+  };
+  // Recovery describes the actual immutable command, even if a different view attempts to change the selection.
+  const heldBulkInput = commands.bulk.pendingCommand?.variables.input ?? commands.bulk.uncertain?.variables.input;
+  const toolbarIds = heldBulkInput?.tasks.map(row => row.taskId) ?? selectedTaskIds;
+  const toolbarSelection = { ids: toolbarIds, tasks: toolbarIds.flatMap(id => {
+    const task = shownTasks.find(row => row.id === id) ?? selectionLedger.current.get(id);
+    return task?.projectId === project.id ? [task] : [];
+  }) };
+
   return (
-    <div className="min-w-0 space-y-3">
+    <div className="min-w-0 space-y-3 pb-36">
       <header className="flex min-w-0 items-center gap-3">
         <div className="min-w-0 flex-1">
           <BackToProjects href={projectsHref} />
@@ -971,10 +997,24 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </ProjectActions>
       </header>
 
-      {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm">
+      {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <TaskFeedbackLayer><div role="status" className="fixed right-3 top-20 z-[60] max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm shadow-lg">
         <span>{t('taskTable.grouping.moved', { name: savedAssignment.membershipId === null ? t('taskTable.taskTable.unassigned') : members.data?.find(member => member.id === savedAssignment.membershipId)?.displayName ?? t('taskTable.taskTable.memberUnavailable') })}</span>
         <Button size="sm" variant="ghost" onClick={() => openTask(savedAssignment.taskId)}>{t('taskTable.grouping.open')}</Button>
-      </div> : null}
+      </div></TaskFeedbackLayer> : null}
+      {(toolbarSelection.ids.length > 0 || bulkHeld) && writable ? <BulkTaskToolbar key={`${actorId}:${workspace.id}:${project.id}`} projectId={project.id}
+        count={toolbarSelection.ids.length} hiddenCount={toolbarSelection.ids.filter(id => !shownTasks.some(task => task.id === id)).length}
+        onClearHidden={() => setSelectedTaskIds(before => before.filter(id => { const visible = shownTasks.some(task => task.id === id); if (!visible) selectionLedger.current.delete(id); return visible; }))} onReload={async () => {
+          const scope = selectionScope;
+          const fresh = await Promise.all(selectedTaskIds.map(id => reloadSelectedTask(id)));
+          if (selectionScopeHead.current !== scope) return;
+          for (const row of fresh) if (row.projectId === project.id) selectionLedger.current.set(row.id, row);
+          setSelectedTaskIds(before => [...before]);
+          await tasks.refetch();
+        }} tasks={toolbarSelection.tasks}
+        members={members.data ?? []} commands={commands} writable={completionWritable}
+        blocked={unresolvedTaskCommand(commands) !== null || commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching}
+        onClear={() => { selectionLedger.current.clear(); setSelectedTaskIds([]); }}
+        onConfirmed={rows => { for (const row of rows) selectionLedger.current.set(row.id, row); }} /> : null}
       <TaskCompletionFeedback controller={completion} onReview={openTask} />
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
       {continuedFeedback ? <SaveFeedback subject="taskSave" error={continuedError} uncertainError={continuedUncertain}
@@ -988,7 +1028,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       {showTaskRecovery ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
-      <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable} />
+      <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable && !bulkHeld} />
       <DependencyNotices controller={dependencies} />
       <EdgeDialog controller={dependencies} actorId={actorId} workspaceId={workspace.id} project={project} writable={writable} />
       <MeetingCommandNotices controller={meetingController} onOpen={(id,tab,selection)=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;})}/>
@@ -1077,7 +1117,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               <summary className="w-fit cursor-pointer rounded py-1">{t('taskTable.guidance.aboutTable')}</summary>
               <div className="space-y-1 pb-1 pt-1">
                 {grouping === 'assignee' ? <p>{t('taskTable.grouping.help')}</p> : null}
-                {sortMode === 'due_asc' ? <p>{t('taskTable.sort.tableHelp')}</p> : null}
+                {sortMode === 'due_asc' ? <><p>{t('taskTable.sort.tableHelp')}</p><p>{t('taskTable.sort.manualDragHint')}</p></> : null}
               </div>
             </details>
           ) : null}
@@ -1093,7 +1133,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               onRetry={() => void fieldsError.query.refetch()}
             />
           ) : null}
-          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} tasksSettled={tasks.isSuccess} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
+          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} tasksSettled={tasks.isSuccess} selectedIds={selectedTaskIds} selectionDisabled={bulkHeld} onSelect={(id, selected) => changeSelection(selected ? selectedTaskIds.includes(id) || selectedTaskIds.length >= 100 ? selectedTaskIds : [...selectedTaskIds, id] : selectedTaskIds.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable && !bulkHeld} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
             renderCompletionAction={completionAction}
             boardMode={boardMode}
             sortMode={sortMode}
@@ -1105,12 +1145,15 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onEditTaskField={startInline}
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
-            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
             quickAdd={quickAdd}
             onMoveTask={moveTask}
             moveBlocked={moveBlocked}
+            acquireDragProtection={acquireDragProtection}
             selectedTaskIds={selectedTaskIds}
-            onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
+            onSelectionChange={changeSelection}
+            selectionDisabled={bulkHeld}
+            dragScope={taskPresentationKey}
             query={tasks}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
@@ -1154,7 +1197,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onCreateChild={parent => startCreate({ sectionId: parent.sectionId, parent })}
             onResumeCreate={() => startCreate({ sectionId: null, parent: null })}
             loadedSubtasks={loadedSubtasks}
-            subtaskColumns={visibleExtraColumns}
+            subtaskColumns={visibleExtraColumns.filter(column => !['weekly-plan', 'weekly-fact'].includes(column.id) || rowContext.periodId !== null)}
             initialFields={initialFields}
             initialTimeContextFor={initialTimeContextFor}
             initialTimeWritable={rowContext.writable}
@@ -1196,7 +1239,10 @@ interface TaskListProps {
   collapsedGroupKeys: ReadonlySet<string>;
   onGroupCollapsedChange: NonNullable<ComponentProps<typeof TaskTable>['onGroupCollapsedChange']>;
   selectedTaskIds: readonly string[];
-  onSelectTask: (id: string, selected: boolean) => void;
+  onSelectTask?: ((id: string, selected: boolean) => void) | undefined;
+  onSelectionChange?: ((ids: string[]) => void) | undefined;
+  selectionDisabled?: boolean | undefined;
+  dragScope?: string | undefined;
   query: ReturnType<typeof useTaskListQuery>;
   filtered: boolean;
   project: ProjectDto;
@@ -1213,6 +1259,7 @@ interface TaskListProps {
   quickAdd: ComponentProps<typeof TaskTable>['quickAdd'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
   moveBlocked: boolean;
+  acquireDragProtection: () => () => void;
   writable: boolean;
   onOpenTask: (taskId: string) => void;
   onCreateTask: (sectionId?: string | null) => void;

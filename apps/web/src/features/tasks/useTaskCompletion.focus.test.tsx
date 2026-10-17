@@ -2,7 +2,7 @@ import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../lib/queryClient';
 import { alpha, anna, deferred, installFakeApi, ok } from '../../test/fakeApi';
 import { rootPath, task } from '../planning/test/fixtures';
@@ -25,6 +25,15 @@ function hook() {
 }
 
 describe('explicit completion focus lease handshake', () => {
+  it('restores only the matching target with preventScroll after a confirmed completion', async () => {
+    const h = hook(); await h.start(); h.source.remove();
+    const focus = vi.spyOn(h.target, 'focus');
+    h.rerender({ value: { ...context, tasks: [next] } });
+    act(() => { h.result.current.completion.targetReady(next, h.target); });
+    await h.confirm();
+    expect(focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+  });
+
   it('waits for the receipt when the new target is ready first, and an old registration cannot remove the replacement', async () => {
     const h = hook(); const unregisterOld = h.result.current.completion.targetReady(task, h.source);
     await h.start(); h.source.remove(); h.rerender({ value: { ...context, tasks: [next] } });

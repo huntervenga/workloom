@@ -38,7 +38,7 @@ export function useTaskCompletion(commands: TaskCommands, context: Context, onSa
     if (!target || target.task.revision !== task.revision || target.task.statusId !== task.statusId || !target.element.isConnected || target.element.disabled || target.element.getAttribute('aria-disabled') === 'true') return;
     if (document.activeElement !== document.body && !ownsFocus(lease, document.activeElement)) { focusLease.current = null; return; }
     focusLease.current = null;
-    if (document.activeElement !== target.element) target.element.focus();
+    if (document.activeElement !== target.element) target.element.focus({ preventScroll: true });
   }, [ownsFocus]);
   const targetReady = useCallback((task: TaskDto, element: HTMLButtonElement) => {
     if (!alive.current) return () => undefined;

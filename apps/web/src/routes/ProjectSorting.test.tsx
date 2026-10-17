@@ -61,15 +61,15 @@ const sort = () => screen.getByRole('combobox', { name: 'Sort' });
 const views = () => within(screen.getByRole('navigation', { name: 'Project views' }));
 const taskCalls = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filter(call => call.path === `${rootPath}/tasks`);
 const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filter(call => call.method !== 'GET');
-function rowOrder() { return within(screen.getByRole('table')).getAllByRole('row').flatMap(row => { const selected = within(row).queryByRole('checkbox'); return selected ? [selected.getAttribute('aria-label')] : []; }); }
+function rowOrder() { return within(screen.getByRole('table')).getAllByRole('row').flatMap(row => { const selected = within(row).queryByRole('button', { name: /^Select task: / }); return selected ? [selected.getAttribute('aria-label')] : []; }); }
 
 it('applies server due paging, preserves grouped hierarchy and Manual positions, and keeps sort outside filter clearing', async () => {
   const { calls } = installFakeApi(routes()); const ui = app(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}&other=kept#anchor`);
   try {
     await screen.findByRole('button', { name: parent.title }); expect(sort()).toHaveTextContent('Manual');
-    expect(rowOrder()).toEqual([`Select for graph: ${parent.title}`, `Select for graph: ${child.title}`, `Select for graph: ${peer.title}`]);
+    expect(rowOrder()).toEqual([`Select task: ${parent.title}`, `Select task: ${child.title}`, `Select task: ${peer.title}`]);
     await tableChoice(ui.user, sort(), 'due_asc');
-    await waitFor(() => expect(rowOrder()).toEqual([`Select for graph: ${peer.title}`, `Select for graph: ${parent.title}`, `Select for graph: ${child.title}`]));
+    await waitFor(() => expect(rowOrder()).toEqual([`Select task: ${peer.title}`, `Select task: ${parent.title}`, `Select task: ${child.title}`]));
     expect(taskCalls(calls).at(-1)?.searchParams.get('sort')).toBe('due_asc');
     expect(ui.router.state.location.search).toContain('other=kept'); expect(ui.router.state.location.hash).toBe('#anchor');
     expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)); expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', MEMBER_ID));
@@ -81,7 +81,7 @@ it('applies server due paging, preserves grouped hierarchy and Manual positions,
     expect(sort()).toHaveTextContent('Due date'); expect(ui.router.state.location.search).toContain('sort=due_asc');
     expect(ui.router.state.location.search).not.toContain('participant='); expect(ui.router.state.location.search).toContain('other=kept');
     await tableChoice(ui.user, sort(), 'manual');
-    await waitFor(() => expect(rowOrder()[0]).toBe(`Select for graph: ${parent.title}`));
+    await waitFor(() => expect(rowOrder()[0]).toBe(`Select task: ${parent.title}`));
     expect(ui.router.state.location.search).not.toContain('sort='); expect(writes(calls)).toHaveLength(0);
   } finally { ui.unmount(); ui.router.dispose(); ui.client.clear(); }
 });
@@ -122,7 +122,7 @@ it('keeps a child draft exactly once when a due first page precedes its parent a
   await waitFor(() => expect(screen.queryByTitle('Parent task is outside the loaded set')).not.toBeInTheDocument());
   // The row rejoins its parent's group; the remounted editor keeps the raw draft but never reclaims focus.
   expect(screen.getByLabelText('Task name')).toHaveValue('Raw child draft retained'); expect(screen.getByLabelText('Task name')).not.toHaveFocus();
-  expect(screen.getAllByRole('checkbox', { name: `Select for graph: ${child.title}` })).toHaveLength(1);
+  expect(screen.getAllByRole('button', { name: `Select task: ${child.title}` })).toHaveLength(1);
   expect(screen.getByRole('button', { name: 'Collapse section “First section”' }).closest('th')).toHaveTextContent('loaded: 2 tasks');
   expect(screen.getByRole('button', { name: 'Collapse section “Second section”' }).closest('th')).toHaveTextContent('loaded: 0 tasks');
   expect(screen.getByText('Loaded team budget').closest('tr')).toHaveTextContent('2h');
@@ -133,7 +133,7 @@ it('resorts flat Assignee groups and deduped Board heads after a newer duplicate
   const updated = { ...parent, dueDate: '2026-01-01', revision: 2 };
   const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => page(request.searchParams.get('sort') === 'due_asc' ? [child, peer, parent, updated] : [parent, peer, child]) }));
   const { user } = renderApp(`${tablePath}?sort=due_asc`); await screen.findByRole('table'); await tableChoice(user, screen.getByRole('combobox', { name: 'Group by' }), 'assignee');
-  expect(rowOrder()).toEqual([`Select for graph: ${parent.title}`, `Select for graph: ${child.title}`, `Select for graph: ${peer.title}`]);
+  expect(rowOrder()).toEqual([`Select task: ${parent.title}`, `Select task: ${child.title}`, `Select task: ${peer.title}`]);
   await user.click(views().getByRole('button', { name: 'Board' }));
   const cards = screen.getAllByRole('button', { name: /^(Later parent|Earlier child|Middle root)$/ }).filter(button => !button.hasAttribute('aria-describedby'));
   expect(cards.map(card => card.textContent)).toEqual([parent.title, child.title, peer.title]);
@@ -200,15 +200,15 @@ it('retains descendant collapse through a cold pending sort query and a Board ro
   installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.get('sort') === 'due_asc' ? due.promise : page([parent, child, peer]) }));
   const { user } = renderApp(tablePath); await screen.findByRole('table');
   await user.click(screen.getByRole('button', { name: `Collapse subtasks of “${parent.title}”` }));
-  expect(screen.queryByRole('checkbox', { name: `Select for graph: ${child.title}` })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: `Select task: ${child.title}` })).not.toBeInTheDocument();
   await tableChoice(user, sort(), 'due_asc'); await act(async () => due.resolve(page([child, peer, parent])));
   await screen.findByRole('button', { name: parent.title });
-  expect(screen.queryByRole('checkbox', { name: `Select for graph: ${child.title}` })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: `Select task: ${child.title}` })).not.toBeInTheDocument();
   await user.click(views().getByRole('button', { name: 'Board' })); await screen.findAllByRole('button', { name: parent.title });
   await user.click(views().getByRole('button', { name: 'Tasks' }));
   expect(screen.getByRole('button', { name: `Expand subtasks of “${parent.title}”` })).toHaveAttribute('aria-expanded', 'false');
   await user.click(screen.getByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
-  expect(screen.getByRole('checkbox', { name: `Select for graph: ${child.title}` })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: `Select task: ${child.title}` })).toBeInTheDocument();
 });
 
 it('retains the original blur-submitted child command when descendant disclosure hides it and sorting changes', async () => {
