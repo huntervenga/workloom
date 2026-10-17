@@ -68,10 +68,19 @@ async function submitCreation(page: Page, f: Fixture) {
 async function noOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
 }
+const outcomeLabel = { unknown: 'Unconfirmed', present: 'Attended entire meeting', partial: 'Attended part of meeting', absent: 'Absent · 0 minutes' } as const;
+async function meetingChoice(page: Page, label: string, option: string | RegExp) {
+  await page.getByRole('combobox', { name: label, exact: true }).click();
+  const list = page.getByRole('listbox', { name: label, exact: true });
+  await expect(list).toBeVisible(); await list.getByRole('option', { name: option, exact: typeof option === 'string' }).click();
+  await expect(list).toHaveCount(0);
+}
+const personOption = (name: string) => new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?: · confirmed)?$');
 async function confirmUI(page: Page, f: Fixture, created: MeetingCreationDto, row: AttendanceDto, status: 'present' | 'partial' | 'absent', hours?: string, reason?: string) {
   const drawer = page.getByRole('dialog', { name: created.task.title, exact: true });
-  await drawer.getByRole('combobox', { name: "Whose attendance", exact: true }).selectOption(row.id);
-  await drawer.getByRole('combobox', { name: "Attendance outcome", exact: true }).selectOption(status);
+  const person = f.members.find(member => member.id === row.membershipId); if (!person) throw Error('Attendance member required.');
+  await meetingChoice(page, 'Whose attendance', personOption(person.displayName));
+  await meetingChoice(page, 'Attendance outcome', outcomeLabel[status]);
   if (hours) await drawer.getByLabel("Time attended, hours", { exact: true }).fill(hours);
   if (reason) await drawer.getByLabel("Reason for attendance correction", { exact: true }).fill(reason);
   const response = page.waitForResponse(r => call(r, 'POST', `${f.prefix}/tasks/${created.task.id}/attendance/confirm`));
@@ -102,8 +111,10 @@ test.describe('P3a desktop1440', () => {
     await drawer.locator('button[aria-label="Close"]').click();
     await expect(drawer).toHaveCount(0);
     const planColleague = f.members[1]; if (!planColleague) throw new Error('Plan colleague required.');
-    await page.getByLabel("Week for hours", { exact: true }).selectOption(f.period.id);
-    await page.getByLabel("Whose hours to show", { exact: true }).selectOption(planColleague.id);
+    await meetingChoice(page, 'Week for hours', `${f.period.name} · ${f.period.localStart}`);
+    await expect.poll(() => new URL(page.url()).searchParams.get('week')).toBe(f.period.id);
+    await meetingChoice(page, 'Whose hours to show', personOption(planColleague.displayName));
+    await expect.poll(() => new URL(page.url()).searchParams.get('worker')).toBe(planColleague.id);
     await page.getByRole('button', { name: `Weekly plan: ${created.task.title}`, exact: true }).click();
     await expect(drawer.getByRole('checkbox', { name: planColleague.displayName, exact: true })).toBeChecked();
     const singlePreviewResponse = page.waitForResponse(r => call(r, 'POST', `${f.prefix}/tasks/${created.task.id}/meeting-plan-preview`));
@@ -136,14 +147,16 @@ test.describe('P3a desktop1440', () => {
     await expect(drawer).toHaveCount(0);
     const freezePreview = (await f.post(`/periods/${f.period.id}/freeze-preview`, { scope: 'project' }, 200, freezePreviewResponseSchema)).data;
     const baseline = (await f.post(`/periods/${f.period.id}/freeze`, { scope: 'project', previewHash: freezePreview.previewHash }, 200, planBaselineResponseSchema)).data;
-    await page.getByLabel("Week for hours", { exact: true }).selectOption(otherPeriod.id);
+    await meetingChoice(page, 'Week for hours', `${otherPeriod.name} · ${otherPeriod.localStart}`);
+    await expect.poll(() => new URL(page.url()).searchParams.get('week')).toBe(otherPeriod.id);
     await page.getByRole('button', { name: `Weekly actual hours: ${created.task.title}`, exact: true }).click();
     await expect(drawer.getByRole('heading', { name: "This meeting belongs to another period", exact: true })).toBeVisible();
     await expect(drawer.getByRole('button', { name: "Confirm selected person's attendance", exact: true })).toHaveCount(0);
     await expect(drawer.getByRole('button', { name: "Apply personal plans", exact: true })).toHaveCount(0);
     expect(await recorded(f, created.task.id)).toEqual([]);
     await drawer.getByRole('button', { name: "Open meeting's original period", exact: true }).click();
-    await expect(page.getByLabel("Week for hours", { exact: true })).toHaveValue(f.period.id);
+    await expect(page.getByLabel('Week for hours', { exact: true })).toContainText(`${f.period.name} · ${f.period.localStart}`);
+    await expect.poll(() => new URL(page.url()).searchParams.get('week')).toBe(f.period.id);
     await expect(drawer.getByRole('tab', { name: "Attendance", exact: true })).toHaveAttribute('aria-selected', 'true');
     await drawer.getByRole('button', { name: "Meeting followed the plan · fill details", exact: true }).click();
     const actualResponse = page.waitForResponse(r => call(r, 'PATCH', `${f.prefix}/tasks/${created.task.id}/meeting`));
@@ -156,9 +169,9 @@ test.describe('P3a desktop1440', () => {
     const batch = drawer.getByRole('region', { name: "Team attendance", exact: true });
     await batch.getByRole('button', { name: "Select team members", exact: true }).click();
     await batch.getByRole('button', { name: "Mark selected as attended", exact: true }).click();
-    await batch.getByRole('combobox', { name: `Attendance outcome: ${fourthMember.displayName}`, exact: true }).selectOption('partial');
+    await meetingChoice(page, `Attendance outcome: ${fourthMember.displayName}`, outcomeLabel.partial);
     await batch.getByLabel(`Time attended, hours: ${fourthMember.displayName}`, { exact: true }).fill('0.5');
-    await batch.getByRole('combobox', { name: `Attendance outcome: ${fifthMember.displayName}`, exact: true }).selectOption('absent');
+    await meetingChoice(page, `Attendance outcome: ${fifthMember.displayName}`, outcomeLabel.absent);
     const review = batch.getByRole('region', { name: "Review team attendance", exact: true });
     await expect(review).toContainText('Rows to save: 5');
     await expect(review).toContainText("3h 30");
@@ -182,10 +195,11 @@ test.describe('P3a desktop1440', () => {
     await expect(drawer).toHaveCount(0);
     await page.goto(`${f.path}/week?period=${f.period.id}`);
     await page.getByRole('button', { name: "Report", exact: true }).click();
-    await page.getByLabel("Saved baseline", { exact: true }).selectOption(baseline.id);
+    await meetingChoice(page, 'Saved baseline', /^Project plan · /);
     const reportResponse = page.waitForResponse(r => call(r, 'POST', `${f.prefix}/report-runs`));
     await page.getByRole('button', { name: "Calculate new report", exact: true }).click();
     const run = (await parsed(await reportResponse, 201, weeklyPlanFactReportRunResponseSchema)).data;
+    expect(run.baselineId).toBe(baseline.id);
     expect(run.summary).toMatchObject({ knownPlannedMinutes: 300, actualMinutes: 210, totalVarianceMinutes: -90, totalVariancePercent: -30 });
     await page.getByRole('region', { name: "Saved report", exact: true }).evaluate(e => window.scrollTo({ top: scrollY + e.getBoundingClientRect().top - 96 }));
     await page.screenshot({ path: info.outputPath('p3a-desktop-week-report.png') });
@@ -193,42 +207,43 @@ test.describe('P3a desktop1440', () => {
     // A colleague lens must dispatch that person's attendance, rather than the actor's source.
     const colleague = f.members[3]; if (!colleague) throw new Error('Colleague required.');
     await page.goto(`${f.path}?week=${f.period.id}`);
-    await page.getByLabel("Whose hours to show", { exact: true }).selectOption(colleague.id);
+    await meetingChoice(page, 'Whose hours to show', personOption(colleague.displayName));
+    await expect.poll(() => new URL(page.url()).searchParams.get('worker')).toBe(colleague.id);
     await page.getByRole('button', { name: `Weekly actual hours: ${created.task.title}`, exact: true }).click();
-    await expect(drawer.getByRole('combobox', { name: "Whose attendance", exact: true })).toHaveValue(fourth.id);
+    await expect(drawer.getByRole('combobox', { name: "Whose attendance", exact: true })).toContainText(colleague.displayName);
     const ownAttendance = original.find(a => a.membershipId === f.own.id);
     if (!ownAttendance) throw new Error('Owner attendance required.');
-    await drawer.getByRole('combobox', { name: "Whose attendance", exact: true }).selectOption(ownAttendance.id);
-    await drawer.getByRole('combobox', { name: "Attendance outcome", exact: true }).selectOption('partial');
+    await meetingChoice(page, 'Whose attendance', personOption(f.own.displayName));
+    await meetingChoice(page, 'Attendance outcome', outcomeLabel.partial);
     await drawer.getByLabel("Time attended, hours", { exact: true }).fill('0.75');
     await drawer.getByLabel("Reason for attendance correction", { exact: true }).fill('Неотправленный личный черновик');
     await confirmUI(page, f, created, original.find(a => a.id === fourth.id) ?? fourth, 'partial', '0.25', 'Уточнили время участия коллеги');
     const corrected = await attendance(f, created.task.id);
     expect(corrected.find(a => a.id === fourth.id)?.minutes).toBe(15);
     for (const row of original.filter(a => a.id !== fourth.id)) expect(corrected.find(a => a.id === row.id)).toEqual(row);
-    await drawer.getByRole('combobox', { name: "Whose attendance", exact: true }).selectOption(ownAttendance.id);
-    await expect(drawer.getByRole('combobox', { name: "Attendance outcome", exact: true })).toHaveValue('partial');
+    await meetingChoice(page, 'Whose attendance', personOption(f.own.displayName));
+    await expect(drawer.getByRole('combobox', { name: "Attendance outcome", exact: true })).toContainText(outcomeLabel.partial);
     await expect(drawer.getByLabel("Time attended, hours", { exact: true })).toHaveValue('0.75');
     await expect(drawer.getByLabel("Reason for attendance correction", { exact: true })).toHaveValue('Неотправленный личный черновик');
     // Deliberate reset, after proving the unrelated unsent draft survived the full response.
     await drawer.getByRole('tab', { name: "Meeting", exact: true }).click();
     await drawer.getByRole('button', { name: "Discard meeting draft", exact: true }).click();
     await drawer.getByRole('tab', { name: "Attendance", exact: true }).click();
-    await drawer.getByRole('combobox', { name: "Whose attendance", exact: true }).selectOption(fourth.id);
+    await meetingChoice(page, 'Whose attendance', personOption(colleague.displayName));
     await drawer.getByRole('button', { name: "Attendance history", exact: true }).click();
     const history = page.getByRole('dialog', { name: "Attendance history", exact: true });
     await expect(history).toContainText('Уточнили время участия коллеги');
     await expect(history.getByRole('listitem').first()).toContainText(`Revision ${corrected.find(a => a.id === fourth.id)?.revision}`);
     await page.screenshot({ path: info.outputPath('p3a-desktop-attendance-history.png') });
     await page.reload();
-    await expect(drawer.getByRole('combobox', { name: "Whose attendance", exact: true })).toHaveValue(fourth.id);
+    await expect(drawer.getByRole('combobox', { name: "Whose attendance", exact: true })).toContainText(colleague.displayName);
     await drawer.locator('button[aria-label="Close"]').click();
     await expect(drawer).toHaveCount(0);
     await page.getByRole('button', { name: /^Whole work package:/ }).click();
     const breakdown = page.getByRole('dialog', { name: "Time-entry sources", exact: true });
     const colleagueSource = breakdown.locator('div.rounded-lg').filter({ hasText: colleague.displayName });
     await colleagueSource.getByRole('button', { name: "Edit this time entry", exact: true }).click();
-    await expect(drawer.getByRole('combobox', { name: "Whose attendance", exact: true })).toHaveValue(fourth.id);
+    await expect(drawer.getByRole('combobox', { name: "Whose attendance", exact: true })).toContainText(colleague.displayName);
     await expect(drawer.getByLabel("Time attended, hours", { exact: true })).toHaveValue('0:15');
     expect((await recorded(f, created.task.id)).reduce((n, r) => n + r.minutes, 0)).toBe(195);
     const oldRun = await request.get(`${f.prefix}/report-runs/${run.id}`);
@@ -263,8 +278,8 @@ test.describe('P3a mobile390', () => {
     await drawer.getByRole('tab', { name: "Attendance", exact: true }).click();
     const row = created.attendances[0]; if (!row) throw new Error('Attendance required.');
     await expect(drawer.getByLabel("Actual start", { exact: true })).toHaveValue('');
-    await drawer.getByRole('combobox', { name: "Attendance outcome", exact: true }).selectOption('absent');
-    await drawer.getByRole('combobox', { name: "Time basis for absence", exact: true }).selectOption('planned_absence');
+    await meetingChoice(page, 'Attendance outcome', outcomeLabel.absent);
+    await meetingChoice(page, 'Time basis for absence', 'Planned absence · no actual start required');
     const path = `${f.prefix}/tasks/${created.task.id}/attendance/confirm`;
     let original: { key: string; body: string } | undefined;
     await page.route(`**${path}`, async route => {

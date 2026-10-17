@@ -55,7 +55,8 @@ describe('projects', () => {
     expect(nameInput).toHaveValue('Запуск сайта');
 
     await user.click(submit);
-    expect(await screen.findByRole('link', { name: 'Запуск сайта' })).toBeInTheDocument();
+    // The sidebar repeats active projects; the page's own list is in the main landmark.
+    expect(await within(screen.getByRole('main')).findByRole('link', { name: 'Запуск сайта' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await waitFor(() => expect(openButton).toHaveFocus());
 
@@ -63,7 +64,7 @@ describe('projects', () => {
     await user.click(openButton);
     await user.type(await screen.findByLabelText("Project name"), 'Запуск сайта');
     await user.click(screen.getByRole('button', { name: "Create project" }));
-    await waitFor(() => expect(screen.getAllByRole('link', { name: 'Запуск сайта' })).toHaveLength(2));
+    await waitFor(() => expect(within(screen.getByRole('main')).getAllByRole('link', { name: 'Запуск сайта' })).toHaveLength(2));
 
     const writes = calls.filter((call) => call.method === 'POST');
     const keys = writes.map((call) => call.headers.get('idempotency-key'));
@@ -128,7 +129,7 @@ describe('projects', () => {
     });
     renderApp(`/w/${watched.id}/projects`);
 
-    expect(await screen.findByRole('link', { name: 'Отчёт за квартал' })).toBeInTheDocument();
+    expect(await within(await screen.findByRole('main')).findByRole('link', { name: 'Отчёт за квартал' })).toBeInTheDocument();
     expect(screen.getByText("Your Viewer role allows you to view projects.")).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /New project|Rename/ })).not.toBeInTheDocument();
   });

@@ -7,6 +7,7 @@ import type * as LocalizationExports from '../../i18n';
 import { alpha, alphaMembers, anna, failure, installFakeApi, json, ok, type RouteTable } from '../../test/fakeApi';
 import { renderFieldUi } from '../fields/test/fixtures';
 import { PERIOD_B, period } from '../planning/test/fixtures';
+import { choosePicker } from '../planning/test/pickers';
 import { WorkTypeReport } from './WorkTypeReport';
 import { categoryKeys, useWorkCategoryCommands } from './queries';
 import { categoryReport, categorized, MEMBER_ID, PROJECT_ID, rootPath, TYPE_RUN } from './test/fixtures';
@@ -78,12 +79,12 @@ describe('saved work-type team/person distribution lens', () => {
     const selector = await ready();
     const cached = ui.client.getQueryData<WorkTypeReportRunDto>(categoryKeys.run(anna.id, alpha.id, TYPE_RUN));
     const original = structuredClone(cached);
-    expect(selector).toHaveValue('');
+    expect(selector).toHaveTextContent('All selected people');
     expect(lens().getByText(/Share denominator: 4h recorded · 6 active entries/)).toBeVisible();
     expect(lens().getByRole('img', { name: 'Snapshot analysis: 2h, 50%' })).toBeVisible();
     const readCount = calls.length;
 
-    await ui.user.selectOptions(selector, MEMBER_ID);
+    await choosePicker(ui.user, 'Show distribution for', 'Snapshot Anna');
 
     expect(lens().getByText('Recorded hours · Snapshot Anna')).toBeVisible();
     expect(lens().getByText(/Share denominator: 1h recorded · 2 active entries/)).toBeVisible();
@@ -99,7 +100,7 @@ describe('saved work-type team/person distribution lens', () => {
     expect(ui.onDraftAction).not.toHaveBeenCalled();
     expect(ui.client.getQueryData(categoryKeys.run(anna.id, alpha.id, TYPE_RUN))).toEqual(original);
 
-    await ui.user.selectOptions(selector, '');
+    await choosePicker(ui.user, 'Show distribution for', 'All selected people');
     expect(lens().getByRole('img', { name: 'Snapshot support: 1h, 25%' })).toBeVisible();
     expect(calls.every(call => call.method === 'GET')).toBe(true);
   });
@@ -107,8 +108,8 @@ describe('saved work-type team/person distribution lens', () => {
   it('keeps active zero-hour entries, undefined shares and absent active entries distinct', async () => {
     installFakeApi(routes());
     const ui = example();
-    const selector = await ready();
-    await ui.user.selectOptions(selector, ZERO);
+    await ready();
+    await choosePicker(ui.user, 'Show distribution for', 'Snapshot Zero');
     expect(lens().getByText(/0m recorded · 1 active entry\./)).toBeVisible();
     expect(lens().getByText('The total is 0. Percentages are undefined, even when zero-hour entries exist.')).toBeVisible();
     expect(lens().queryByText('This selection has no active entries.')).not.toBeInTheDocument();
@@ -116,7 +117,7 @@ describe('saved work-type team/person distribution lens', () => {
     expect(zeroBar.querySelectorAll('rect')).toHaveLength(1);
     expect(lens().getByRole('row', { name: 'Snapshot analysis 0m Share undefined' })).toBeVisible();
 
-    await ui.user.selectOptions(selector, EMPTY);
+    await choosePicker(ui.user, 'Show distribution for', 'Snapshot Empty');
     expect(lens().getByText(/0m recorded · 0 active entries/)).toBeVisible();
     expect(lens().getByText('This selection has no active entries.')).toBeVisible();
     expect(lens().getByText('No category totals are recorded for this selection.')).toBeVisible();
@@ -131,7 +132,7 @@ describe('saved work-type team/person distribution lens', () => {
     person.byCategory[0].sharePercent = null;
     installFakeApi(routes([report]));
     const ui = example();
-    await ui.user.selectOptions(await ready(), MEMBER_ID);
+    await ready(); await choosePicker(ui.user, 'Show distribution for', 'Snapshot Anna');
     const bar = lens().getByRole('img', { name: 'Snapshot analysis: 15m, Share undefined' });
     expect(bar.querySelectorAll('rect')).toHaveLength(1);
     expect(lens().getByRole('row', { name: 'Snapshot analysis 15m Share undefined' })).toBeVisible();
@@ -142,10 +143,12 @@ describe('saved work-type team/person distribution lens', () => {
     const report = savedReport();
     report.byCategory = report.byCategory.map((bucket, index) => index < 2 ? { ...bucket, label: 'Same saved label' } : bucket);
     installFakeApi(routes([report]));
-    example();
-    const selector = await ready();
-    expect(within(selector).getByRole('option', { name: 'Snapshot Anna' })).toHaveValue(MEMBER_ID);
-    expect(within(selector).queryByRole('option', { name: 'Current renamed person' })).not.toBeInTheDocument();
+    const ui = example();
+    await ui.user.click(await ready());
+    const choices = within(screen.getByRole('listbox', { name: 'Show distribution for' }));
+    expect(choices.getByRole('option', { name: 'Snapshot Anna' })).toBeInTheDocument();
+    expect(choices.queryByRole('option', { name: 'Current renamed person' })).not.toBeInTheDocument();
+    await ui.user.keyboard('{Escape}');
     const first = lens().getByRole('img', { name: 'Same saved label: 2h, 50%' });
     const second = lens().getByRole('img', { name: 'Same saved label: 1h, 25%' });
     expect(first.querySelector('rect:last-of-type')).toHaveAttribute('fill', '#3399aa');
@@ -164,9 +167,9 @@ describe('saved work-type team/person distribution lens', () => {
     };
     installFakeApi(routes([savedReport(), second]));
     const ui = example();
-    await ui.user.selectOptions(await ready(), MEMBER_ID);
-    await ui.user.selectOptions(screen.getByRole('combobox', { name: 'Saved breakdown' }), NEXT_RUN);
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Show distribution for' })).toHaveValue(''));
+    await ready(); await choosePicker(ui.user, 'Show distribution for', 'Snapshot Anna');
+    await choosePicker(ui.user, 'Saved breakdown', /· 8h$/);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Show distribution for' })).toHaveTextContent('All selected people'));
     expect(lens().getByText(/Share denominator: 8h recorded · 6 active entries/)).toBeVisible();
     expect(ui.onDraftAction).not.toHaveBeenCalled();
   });
@@ -174,24 +177,26 @@ describe('saved work-type team/person distribution lens', () => {
   it('falls back safely when the selected saved person is unavailable and does not resurrect it on later data', async () => {
     installFakeApi(routes());
     const ui = example();
-    await ui.user.selectOptions(await ready(), MEMBER_ID);
+    await ready(); await choosePicker(ui.user, 'Show distribution for', 'Snapshot Anna');
     const key = categoryKeys.run(anna.id, alpha.id, TYPE_RUN);
     act(() => { ui.client.setQueryData(key, { ...savedReport(), byPerson: savedReport().byPerson.filter(person => person.membershipId !== MEMBER_ID) }); });
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Show distribution for' })).toHaveValue(''));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Show distribution for' })).toHaveTextContent('All selected people'));
     expect(lens().getByRole('status')).toHaveTextContent('The selected person is not in this saved report. Showing all selected people.');
     act(() => { ui.client.setQueryData(key, savedReport()); });
-    await waitFor(() => expect(within(screen.getByRole('combobox', { name: 'Show distribution for' })).getByRole('option', { name: 'Snapshot Anna' })).toBeInTheDocument());
-    expect(screen.getByRole('combobox', { name: 'Show distribution for' })).toHaveValue('');
+    await ui.user.click(screen.getByRole('combobox', { name: 'Show distribution for' }));
+    expect(within(await screen.findByRole('listbox', { name: 'Show distribution for' })).getByRole('option', { name: 'Snapshot Anna' })).toBeInTheDocument();
+    await ui.user.keyboard('{Escape}');
+    expect(screen.getByRole('combobox', { name: 'Show distribution for' })).toHaveTextContent('All selected people');
     expect(lens().getByText(/4h recorded · 6 active entries/)).toBeVisible();
   });
 
   it('retains the selected saved identity through locale changes', async () => {
     const { calls } = installFakeApi(routes());
     const ui = example();
-    await ui.user.selectOptions(await ready(), MEMBER_ID);
+    await ready(); await choosePicker(ui.user, 'Show distribution for', 'Snapshot Anna');
     const count = calls.length;
     act(() => localization.setLocale('fr'));
-    expect(screen.getByRole('combobox', { name: 'Afficher la répartition pour' })).toHaveValue(MEMBER_ID);
+    expect(screen.getByRole('combobox', { name: 'Afficher la répartition pour' })).toHaveTextContent('Snapshot Anna');
     expect(lens().getByText('Recorded hours · Snapshot Anna')).toBeVisible();
     expect(calls).toHaveLength(count);
   });
@@ -204,7 +209,7 @@ describe('saved work-type team/person distribution lens', () => {
       [`GET ${runPath}/rows`]: request => json(200, { data: request.searchParams.has('cursor') ? [second] : [first], meta: { requestId: 'lens-sources', nextCursor: request.searchParams.has('cursor') ? null : 'next-page' } }),
     }));
     const ui = example();
-    await ui.user.selectOptions(await ready(), MEMBER_ID);
+    await ready(); await choosePicker(ui.user, 'Show distribution for', 'Snapshot Anna');
     const sources = within(screen.getByRole('region', { name: 'Breakdown sources' }));
     expect(sources.getByText('These source details cover all selected people in this saved report. The chart selection does not filter them.')).toBeVisible();
     expect(sources.getByText('Source for another saved person')).toBeVisible();
@@ -223,7 +228,7 @@ describe('saved work-type team/person distribution lens', () => {
       [`GET ${target === 'run' ? runPath : `${runPath}/rows`}`]: () => denied ? failure(403, 'FORBIDDEN', 'private source body') : target === 'run' ? ok(savedReport()) : json(200, { data: [], meta: { requestId: 'lens-empty', nextCursor: null } }),
     }));
     const ui = example();
-    await ui.user.selectOptions(await ready(), MEMBER_ID);
+    await ready(); await choosePicker(ui.user, 'Show distribution for', 'Snapshot Anna');
     denied = true;
     await act(async () => { await ui.client.invalidateQueries({ queryKey: target === 'run' ? categoryKeys.run(anna.id, alpha.id, TYPE_RUN) : categoryKeys.rows(anna.id, alpha.id, TYPE_RUN), exact: true }); });
     await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Show distribution for' })).not.toBeInTheDocument());
@@ -238,9 +243,11 @@ describe('saved work-type team/person distribution lens', () => {
     unmount();
     const empty = { ...categoryReport(), membershipIds: [], byPerson: [], byCategory: [], totalActualMinutes: 0, categorizedMinutes: 0, uncategorizedMinutes: 0, activeSourceCount: 0 };
     const { calls } = installFakeApi(routes([empty]));
-    example();
-    expect(await ready()).toHaveValue('');
-    expect(lens().getAllByRole('option')).toHaveLength(1);
+    const ui = example();
+    expect(await ready()).toHaveTextContent('All selected people');
+    await ui.user.click(await ready());
+    expect(within(screen.getByRole('listbox', { name: 'Show distribution for' })).getAllByRole('option')).toHaveLength(1);
+    await ui.user.keyboard('{Escape}');
     expect(lens().getByText('This selection has no active entries.')).toBeVisible();
     expect(calls.every(call => call.method === 'GET')).toBe(true);
   });

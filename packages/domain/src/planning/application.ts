@@ -1,6 +1,6 @@
 import type {
   CreatePlanningPeriodInput, CreatePeriodCommitmentInput, CreateWeeklyPlanFactReportInput,
-  FreezePlanInput, FreezePreviewDto, FreezePreviewInput, ManualPeriodWorkLogDto, PackageBaselineDto,
+  FreezePlanInput, FreezePreviewDto, FreezePreviewInput, ManualPeriodWorkLogDto, OriginalPackageEstimateDto, PackageBaselineDto,
   PeriodCommitmentDto, PeriodCommitmentListQuery, PlanBaselineDto, PlanningPackageDto,
   PlanningPackageListQuery, PlanningPageQuery, PlanningPeriodDto, PlanningPeriodListQuery,
   ReportRunListQuery, SetManualPeriodWorkInput, UpdatePeriodCommitmentInput, UpdatePlanningPeriodInput,
@@ -29,6 +29,8 @@ export interface PlanningApplication {
   listBaselines(ctx: CommandContext, periodId: string, query: PlanningPageQuery): Promise<PlanningPage<PlanBaselineDto>>;
   getBaseline(ctx: CommandContext, baselineId: string): Promise<PlanBaselineDto>;
   getPackageBaseline(ctx: CommandContext, baselineId: string): Promise<PackageBaselineDto>;
+  /** Read-only first-freeze projection for one current-workspace package; never includes the current estimate. */
+  getOriginalPackageEstimate(ctx: CommandContext, workPackageId: string): Promise<OriginalPackageEstimateDto>;
   listWorkLogs(ctx: CommandContext, query: WorkLogListQuery): Promise<PlanningPage<ManualPeriodWorkLogDto>>;
   setManualPeriodWork(ctx: CommandContext, taskId: string, periodId: string, membershipId: string, input: SetManualPeriodWorkInput): Promise<ManualPeriodWorkLogDto>;
   listReportRuns(ctx: CommandContext, query: ReportRunListQuery): Promise<PlanningPage<WeeklyPlanFactReportRunDto>>;

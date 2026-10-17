@@ -9,7 +9,7 @@ import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import {
   fetchPlanningPeriods, fetchPlanningPeriod, fetchPlanningPackages, fetchPeriodCommitments,
-  fetchPlanBaselines, fetchPeriodWorkLogs, fetchReportRuns, fetchReportRun, fetchReportRows,
+  fetchPlanBaselines, fetchPeriodWorkLogs, fetchReportRuns, fetchReportRun, fetchReportRows, fetchOriginalPackageEstimate,
   createPlanningPeriodRequest, updatePlanningPeriodRequest, createPeriodCommitmentRequest,
   updatePeriodCommitmentRequest, freezePlanRequest, setManualPeriodWorkRequest, createWeeklyReportRequest,
 } from './api';
@@ -27,6 +27,7 @@ export const planningKeys = {
   runs: (actorId: string, workspaceId: string, periodId: string) => [...planningKeys.period(actorId, workspaceId, periodId), 'runs'] as const,
   run: (actorId: string, workspaceId: string, runId: string) => [...planningKeys.root(actorId, workspaceId), 'run', canonical(runId)] as const,
   rows: (actorId: string, workspaceId: string, runId: string) => [...planningKeys.run(actorId, workspaceId, runId), 'rows'] as const,
+  originalEstimate: (actorId: string, workspaceId: string, packageId: string) => [...planningKeys.root(actorId, workspaceId), 'original-estimate', canonical(packageId)] as const,
 };
 
 export function usePlanningPeriodsQuery(actorId: string, workspaceId: string, projectId: string) {
@@ -103,6 +104,16 @@ export function useReportRowsQuery(actorId: string, workspaceId: string, runId: 
   });
 }
 
+/** Read-only. Until a related freeze captures the package, every mount rereads so a new freeze is not hidden. */
+export function useOriginalPackageEstimateQuery(actorId: string, workspaceId: string, packageId: string) {
+  return useQuery({
+    queryKey: planningKeys.originalEstimate(actorId, workspaceId, packageId),
+    queryFn: ({ signal }) => fetchOriginalPackageEstimate(workspaceId, packageId, signal),
+    enabled: isUuid(packageId),
+    staleTime: (query) => query.state.data?.state === 'not_captured_yet' ? 0 : 30_000,
+  });
+}
+
 /** Invalidate live collections only; immutable pinned runs do not change after a fact edit. */
 export function usePlanningCommands(actorId: string, workspaceId: string, projectId: string) {
   const client = useQueryClient();
@@ -137,6 +148,8 @@ export function usePlanningCommands(actorId: string, workspaceId: string, projec
       invalidatePeriod(variables.periodId);
       void client.invalidateQueries({ queryKey: queryKeys.tasks(actorId, workspaceId) });
       void client.invalidateQueries({ queryKey: queryKeys.fields(actorId, workspaceId) });
+      // A freeze may capture first originals; mounted reads refetch from the server, nothing is synthesized.
+      void client.invalidateQueries({ queryKey: [...planningKeys.root(actorId, workspaceId), 'original-estimate'] });
     },
   });
   const setFact = useIdempotentMutation({

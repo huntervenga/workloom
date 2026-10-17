@@ -10,6 +10,7 @@ import { alpha, alphaMembers, anna, beta, deferred, failure, installFakeApi, jso
 import { categorized, categoryReport, TYPE_RUN } from '../work-categories/test/fixtures';
 import { ReportTaskLinks } from './ReportTaskLinks';
 import { MEMBER_ID, PACKAGE_ID, PERIOD_A, PROJECT_ID, RUN_ID, TASK_ID, log, report, rootPath, routes, task, weekPath } from './test/fixtures';
+import { periodPicker, personPicker, periodLabel, personLabel } from './test/pickers';
 
 function taskAt(index: number): TaskDto {
   return { ...task, id: `f2000000-0000-4000-8000-${String(index).padStart(12, '0')}`, title: `Current task ${index}` };
@@ -159,8 +160,8 @@ describe('saved report current-task destinations', () => {
     expect(screen.getByText('Not recorded')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'View linked task (1)' }));
     expect(await screen.findByRole('link', { name: `${third.title} Open current task in a new tab` })).toBeInTheDocument();
-    expect(screen.getByLabelText('Time entry for')).toHaveValue(colleague.id);
-    expect(screen.getByLabelText('Period', { exact: true })).toHaveValue(PERIOD_A);
+    expect(personPicker()).toHaveTextContent(personLabel(colleague.id));
+    expect(periodPicker()).toHaveTextContent(periodLabel(PERIOD_A));
     expect(screen.getByRole('button', { name: /^Report$/ })).toHaveAttribute('aria-current', 'page');
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });

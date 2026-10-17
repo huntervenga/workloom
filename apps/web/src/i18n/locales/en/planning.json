@@ -282,5 +282,47 @@
     "unallocated": "Unallocated",
     "notSet": "Not set",
     "removed": "Removed from current plan"
+  },
+  "useSharedEstimate": "Use shared estimate ({{hours}})",
+  "useSharedEstimateHint": "Fills this draft only. Nothing is saved until you save the personal plan.",
+  "sharedEstimateNotSet": "The shared task estimate is not set.",
+  "latestProjectReport": "Latest project report",
+  "latestReportStatus": "Showing the newest saved report for the project baseline. Choose a saved report to pin a different one.",
+  "chosenReportStatus": "Showing the selected saved report.",
+  "calculateCurrentReport": "Calculate current report",
+  "calculateCurrentReportHint": "Saves a new report for the project baseline and everyone from the hours recorded now. Earlier saved reports stay unchanged.",
+  "reportAsOf": "As of {{time}}",
+  "missingActuals": {
+    "title": "Baseline work without actual hours",
+    "none": "Every baseline item had actual hours as of {{time}}.",
+    "count": "As of {{time}}, {{missing}} of {{total}} baseline items had no actual-hours entry. Missing is not zero.",
+    "byPerson": "Missing actual hours by person",
+    "person": "{{person}}: {{missing}}",
+    "filter": "Show only rows without actual hours",
+    "loadedOnly": "Filters the rows of this saved report. Totals above are unchanged.",
+    "loadedOnlyMore": "Filters the loaded rows of this saved report. Load more rows to check the rest. Totals above are unchanged.",
+    "noneLoaded": "No loaded rows are missing actual hours."
+  },
+  "myBaseline": {
+    "label": "My baseline",
+    "saved": "Saved {{time}}",
+    "notSaved": "Not saved yet"
+  },
+  "correctedEntry": "Corrected · revision {{revision}}",
+  "selectedPeriodUnavailable": "Selected week · unavailable",
+  "actualHourEntries": "Actual-hour entries",
+  "aboutSavedReport": "About this saved report",
+  "versionsPreservedHelp": "Versions preserved: this report keeps the exact baseline and hour revisions it used.",
+  "currentSharedEstimate": "Current shared estimate",
+  "currentSharedEstimateHint": "The whole task's estimate now. It can still change.",
+  "peopleLens": {
+    "label": "Show",
+    "accessibleLabel": "Show plans and hours for",
+    "scope": "Display only. It does not change who new entries are for or who is in a report.",
+    "all": "All people",
+    "me": "{{person}} (me)",
+    "hidden": { "one": "{{count}} entry is hidden by this view.", "other": "{{count}} entries are hidden by this view." },
+    "hiddenWithDrafts": { "one": "{{count}} entry is hidden by this view, {{drafts}} with unsaved changes.", "other": "{{count}} entries are hidden by this view, {{drafts}} with unsaved changes." },
+    "showAll": "Show all people"
   }
 }

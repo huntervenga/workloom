@@ -1,5 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ComponentProps } from 'react';
+import type * as ChoicePickerExports from '../../shared/ChoicePicker';
 import type * as WeeklyReportExports from './WeeklyReport';
 import type * as WorkTypeReportExports from '../work-categories/WorkTypeReport';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -11,6 +12,8 @@ import { renderFieldUi } from '../fields/test/fixtures';
 import { categoryReport, TYPE_RUN } from '../work-categories/test/fixtures';
 import { PERIOD_A, PERIOD_B, RUN_ID, baseline, report, rootPath, routes, weekPath } from './test/fixtures';
 
+const pickers=vi.hoisted(()=>new Map<string,(value:string)=>void>());
+vi.mock('../../shared/ChoicePicker',async importOriginal=>{const actual=await importOriginal<typeof ChoicePickerExports>();return {...actual,ChoicePicker:(props:ComponentProps<typeof actual.ChoicePicker>)=>{pickers.set(props.label,props.onValueChange);return <actual.ChoicePicker {...props}/>;}};});
 const completion=vi.hoisted(()=>({weekly:null as null|((id:string,period:string,source:string)=>void),types:null as null|((id:string,period:string,source:string)=>void)}));
 // Keep the real report UI/queries. Retain the actual page callback to deliver a completion
 // at the router-head/React-render boundary deterministically, rather than adding sleeps.
@@ -23,8 +26,10 @@ function reportRoutes(){return {...routes(),[`GET ${rootPath}/periods/${PERIOD_A
 describe('Weekly event-time navigation',()=>{
  it.each(['person','view'] as const)('does not resurrect the old period or report IDs when an old %s control fires in the same batch',async control=>{
   const colleague=alphaMembers[1];if(!colleague)throw new Error('Missing colleague');const {calls}=installFakeApi(reportRoutes());const {router}=renderWeekly(`?period=${PERIOD_A}&view=plan&run=${RUN_ID}&typeRun=${TYPE_RUN}&series=f9000000-0000-4000-8000-000000000099#kept`);
-  const period=await screen.findByLabelText('Period',{exact:true});const person=screen.getByLabelText('Time entry for');const view=screen.getByRole('button',{name:/^Work types$/});
-  act(()=>{fireEvent.change(period,{target:{value:PERIOD_B}});if(control==='person')fireEvent.change(person,{target:{value:colleague.id}});else fireEvent.click(view);});
+  await screen.findByRole('combobox',{name:'Period'});const view=screen.getByRole('button',{name:/^Work types$/});
+  // Capture callbacks rendered for the old URL, then deliver both in one React batch. Only one actual picker menu is open at a time.
+  const choosePeriod=pickers.get('Period');const choosePerson=pickers.get('Time entry for');if(!choosePeriod||!choosePerson)throw new Error('Missing picker callbacks');
+  act(()=>{choosePeriod(PERIOD_B);if(control==='person')choosePerson(colleague.id);else fireEvent.click(view);});
   const params=new URLSearchParams(router.state.location.search);expect(params.get('period')).toBe(PERIOD_B);expect(params.has('run')).toBe(false);expect(params.has('typeRun')).toBe(false);expect(params.get('series')).toBe('f9000000-0000-4000-8000-000000000099');expect(router.state.location.hash).toBe('#kept');if(control==='person')expect(params.get('worker')).toBe(colleague.id);else expect(params.get('view')).toBe('work-types');expect(calls.filter(call=>call.method!=='GET')).toHaveLength(0);
  });
  it.each([

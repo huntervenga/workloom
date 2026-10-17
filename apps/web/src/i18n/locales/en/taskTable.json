@@ -1,4 +1,9 @@
 {
+  "sectionMove": {
+    "action": "Move “{{title}}” to another section",
+    "short": "Move to section",
+    "moved": "Moved “{{title}}” to {{section}}."
+  },
   "taskTable": {
     "low": "Low",
     "medium": "Medium",

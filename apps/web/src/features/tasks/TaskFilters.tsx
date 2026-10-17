@@ -1,10 +1,14 @@
 import { useTranslation } from '../../i18n';
-import type { MembershipDto, TagDto, TaskStatusDto } from '@workloom/contracts';
-import { Button, TextInput, inputClassName } from '@workloom/ui';
+import { taskListQuerySchema, type MembershipDto, type TagDto, type TaskStatusDto } from '@workloom/contracts';
+import { Button, TextInput } from '@workloom/ui';
 import { X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 
-/** What the user chose; applied on the server. Search text stays in memory, never in the URL. */
+/**
+ * What the user chose; applied on the server. Status, participant, tag and archived live in the
+ * page URL (see `readTaskFilterParams`); search text stays in memory, never in the URL.
+ */
 export interface TaskFilterValue {
   search: string;
   statusId: string;
@@ -23,6 +27,56 @@ export const emptyTaskFilters: TaskFilterValue = {
 
 export function hasActiveTaskFilters(value: TaskFilterValue): boolean {
   return value.search.trim() !== '' || value.statusId !== '' || value.participantMembershipId !== '' || value.tagId !== '' || value.includeArchived;
+}
+
+/** The URL-backed filters; search is never read from or written to the URL. */
+export type TaskFilterParams = Omit<TaskFilterValue, 'search'>;
+
+/** Each URL-backed filter owns exactly one page parameter. */
+const filterParam = { statusId: 'status', participantMembershipId: 'participant', tagId: 'tag', includeArchived: 'includeArchived' } as const;
+
+/** A repeated owned key is ambiguous; it receives the same safe default as invalid input. */
+function single(params: URLSearchParams, key: string): string | undefined {
+  const values = params.getAll(key);
+  return values.length === 1 ? values[0] : undefined;
+}
+
+function readId(params: URLSearchParams, key: string): string {
+  const parsed = taskListQuerySchema.shape.statusId.safeParse(single(params, key));
+  return parsed.success && parsed.data !== undefined ? parsed.data : '';
+}
+
+/** Validated filters from the page URL. Malformed or repeated values are ignored, never rewritten. */
+export function readTaskFilterParams(params: URLSearchParams): TaskFilterParams {
+  const archived = taskListQuerySchema.shape.includeArchived.safeParse(single(params, filterParam.includeArchived));
+  return {
+    statusId: readId(params, filterParam.statusId),
+    participantMembershipId: readId(params, filterParam.participantMembershipId),
+    tagId: readId(params, filterParam.tagId),
+    includeArchived: archived.success && archived.data === true,
+  };
+}
+
+/**
+ * Applies only the filters that changed from `before` to `next` onto the current URL `params`, so
+ * two quick changes from one render both survive and every unrelated parameter is kept.
+ * Returns null when no URL-backed filter changed (a search edit, for example).
+ */
+export function patchTaskFilterParams(params: URLSearchParams, before: TaskFilterParams, next: TaskFilterParams): URLSearchParams | null {
+  const ids = ['statusId', 'participantMembershipId', 'tagId'] as const;
+  const changedIds = ids.filter(key => before[key] !== next[key]);
+  const archivedChanged = before.includeArchived !== next.includeArchived;
+  if (changedIds.length === 0 && !archivedChanged) return null;
+  const patched = new URLSearchParams(params);
+  for (const key of changedIds) {
+    if (next[key]) patched.set(filterParam[key], next[key]);
+    else patched.delete(filterParam[key]);
+  }
+  if (archivedChanged) {
+    if (next.includeArchived) patched.set(filterParam.includeArchived, 'true');
+    else patched.delete(filterParam.includeArchived);
+  }
+  return patched;
 }
 
 /** `value` once it has stayed the same for `delayMs`; clearing applies at once. */
@@ -44,7 +98,7 @@ export interface TaskFiltersProps {
   tags?: readonly TagDto[];
 }
 
-const selectClassName = inputClassName('mt-1.5 pr-8');
+const pickerClassName = 'mt-1.5';
 const labelClassName = 'text-sm font-medium text-ink';
 
 export function TaskFilters({ value, onChange, statuses, members, tags = [] }: TaskFiltersProps) {
@@ -62,7 +116,25 @@ export function TaskFilters({ value, onChange, statuses, members, tags = [] }: T
   );
   const selectedTag = tags.find(tag => tag.id === value.tagId);
   const unavailableTag = value.tagId !== '' && !orderedTags.some(tag => tag.id === value.tagId);
+  const unavailableStatus = value.statusId !== '' && !statuses.some(status => status.id === value.statusId);
+  const unavailableParticipant = value.participantMembershipId !== '' && !members.some(member => member.id === value.participantMembershipId);
   const set = (patch: Partial<TaskFilterValue>) => onChange({ ...value, ...patch });
+  // A held choice missing from the catalog stays visible and selected, but cannot be chosen again.
+  const statusOptions: ChoiceOption[] = [
+    { value: '', label: t('tasks.taskFilters.allStatuses') },
+    ...(unavailableStatus ? [{ value: value.statusId, label: t('tasks.taskFilters.statusUnavailable'), disabled: true }] : []),
+    ...orderedStatuses.map(status => ({ value: status.id, label: status.name })),
+  ];
+  const participantOptions: ChoiceOption[] = [
+    { value: '', label: t('tasks.taskFilters.allParticipants') },
+    ...(unavailableParticipant ? [{ value: value.participantMembershipId, label: t('tasks.taskFilters.participantUnavailable'), disabled: true }] : []),
+    ...orderedMembers.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName })),
+  ];
+  const tagOptions: ChoiceOption[] = [
+    { value: '', label: t('tasks.taskFilters.allTags') },
+    ...(unavailableTag ? [{ value: value.tagId, label: selectedTag ? t('tasks.taskFields.valueArchived', { p0: selectedTag.name }) : t('tasks.taskFilters.tagUnavailable'), disabled: true }] : []),
+    ...orderedTags.map(tag => ({ value: tag.id, label: tag.name })),
+  ];
 
   const activeCount = Number(value.statusId !== '') + Number(value.participantMembershipId !== '') + Number(value.tagId !== '') + Number(value.includeArchived);
   const selectedStatus = statuses.find(status => status.id === value.statusId)?.name ?? t('filterSummary.statusUnavailable');
@@ -86,25 +158,15 @@ export function TaskFilters({ value, onChange, statuses, members, tags = [] }: T
         <div className="absolute right-0 z-20 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-3 rounded-xl border border-line bg-surface p-4 shadow-lg">
           <div>
             <label htmlFor={ids.status} className={labelClassName}>{t('tasks.taskFilters.taskStatus')}</label>
-            <select id={ids.status} className={selectClassName} value={value.statusId} onChange={event => set({ statusId: event.target.value })}>
-              <option value="">{t('tasks.taskFilters.allStatuses')}</option>
-              {orderedStatuses.map(status => <option key={status.id} value={status.id}>{status.name}</option>)}
-            </select>
+            <ChoicePicker id={ids.status} label={t('tasks.taskFilters.taskStatus')} className={pickerClassName} value={value.statusId} options={statusOptions} onValueChange={statusId => set({ statusId })} />
           </div>
           <div>
             <label htmlFor={ids.participant} className={labelClassName}>{t('tasks.taskFilters.taskParticipant')}</label>
-            <select id={ids.participant} className={selectClassName} value={value.participantMembershipId} onChange={event => set({ participantMembershipId: event.target.value })}>
-              <option value="">{t('tasks.taskFilters.allParticipants')}</option>
-              {orderedMembers.map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}
-            </select>
+            <ChoicePicker id={ids.participant} label={t('tasks.taskFilters.taskParticipant')} className={pickerClassName} value={value.participantMembershipId} options={participantOptions} onValueChange={participantMembershipId => set({ participantMembershipId })} />
           </div>
           <div>
             <label htmlFor={ids.tag} className={labelClassName}>{t('tasks.taskFilters.taskTag')}</label>
-            <select id={ids.tag} className={selectClassName} value={value.tagId} onChange={event => set({ tagId: event.target.value })}>
-              <option value="">{t('tasks.taskFilters.allTags')}</option>
-              {unavailableTag ? <option value={value.tagId}>{selectedTag ? t('tasks.taskFields.valueArchived', { p0: selectedTag.name }) : t('tasks.taskFilters.tagUnavailable')}</option> : null}
-              {orderedTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-            </select>
+            <ChoicePicker id={ids.tag} label={t('tasks.taskFilters.taskTag')} className={pickerClassName} value={value.tagId} options={tagOptions} onValueChange={tagId => set({ tagId })} />
           </div>
           <label className="flex items-center gap-2 text-sm text-ink-soft" htmlFor={ids.archived}>
             <input id={ids.archived} type="checkbox" className="size-4 rounded border-line accent-accent" checked={value.includeArchived} onChange={event => set({ includeArchived: event.target.checked })} />

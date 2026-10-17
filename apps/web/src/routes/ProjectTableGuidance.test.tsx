@@ -8,8 +8,11 @@ import { beforeAll, expect, it } from 'vitest';
 import { AppRoutes } from '../app/AppRoutes';
 import { SessionProvider } from '../app/session';
 import { createQueryClient } from '../lib/queryClient';
-import { failure, installFakeApi, ok, type RouteTable } from '../test/fakeApi';
+import { alphaMembers, failure, installFakeApi, ok, type RouteTable } from '../test/fakeApi';
+import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
 import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+
+const member = alphaMembers.find(item => item.id === MEMBER_ID); if (!member) throw new Error('Missing member fixture');
 
 async function tableChoice(user: UserEvent, control: HTMLElement, value: 'section' | 'assignee' | 'manual' | 'due_asc') {
   await user.click(control);
@@ -72,7 +75,8 @@ it('keeps keyboard navigation and current URL, filters, selected task and week/p
     await screen.findByRole('table');
     await tableChoice(ui.user, screen.getByRole('combobox', { name: 'Group by' }), 'assignee');
     await ui.user.click(screen.getByText('Filters', { selector: 'summary' }));
-    await ui.user.selectOptions(screen.getByLabelText('Task participant'), MEMBER_ID);
+    await chooseFilter(ui.user, 'Task participant', member.displayName);
+    expect(new URLSearchParams(ui.router.state.location.search).get('participant')).toBe(MEMBER_ID);
     await ui.user.click(screen.getByText('Filters (1)', { selector: 'summary' }));
     await ui.user.click(screen.getByRole('checkbox', { name: `Select for graph: ${task.title}` }));
     await waitFor(() => expect(ui.calls.filter(call => call.path === `${rootPath}/tasks`).at(-1)?.searchParams.get('participantMembershipId')).toBe(MEMBER_ID));
@@ -100,7 +104,7 @@ it('keeps keyboard navigation and current URL, filters, selected task and week/p
     expect(ui.router.state.location).toEqual(before);
     expect(screen.getByRole('combobox', { name: 'Group by' })).toHaveTextContent('Assignee');
     expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveTextContent('Due date');
-    expect(screen.getByLabelText('Task participant')).toHaveValue(MEMBER_ID);
+    expect(filterPicker('Task participant')).toHaveTextContent(member.displayName);
     expect(screen.getByRole('checkbox', { name: `Select for graph: ${task.title}` })).toBeChecked();
     expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A));
     expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', MEMBER_ID));

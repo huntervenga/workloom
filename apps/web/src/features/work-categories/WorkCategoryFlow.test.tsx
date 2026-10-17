@@ -1,9 +1,12 @@
 import { chooseTimeContext, timeContextLabel } from './test/timeContext';
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { alphaMembers, created, installFakeApi, ok, renderApp } from '../../test/fakeApi';
 import { PERIOD_B, lostResponse, weekPath } from '../planning/test/fixtures';
 import { FIELD, MEMBER_ID, OPTION_B, PERIOD_A, PROJECT_ID, TASK_ID, TYPE_RUN, binding, categorized, category, categoryReport, projection, rootPath, tablePath, tableRoutes, task } from './test/fixtures';
+
+// Load the lazy route outside the first interaction's DOM wait, as the other project integration suites do.
+beforeAll(async () => { await import('../../routes/ProjectPage'); });
 
 async function close(user: ReturnType<typeof renderApp>['user'], name: string) {
   const top = within(screen.getByRole('dialog', { name })).getAllByRole('button', { name: "Close" }).find((button) => button.hasAttribute('aria-label'));

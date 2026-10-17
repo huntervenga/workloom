@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, deferred, installFakeApi, ok, renderApp, type RouteTable } from '../../test/fakeApi';
 import { MEMBER_ID, PERIOD_A, PERIOD_B, PROJECT_ID, TASK_ID, STAMP, rootPath, task } from '../planning/test/fixtures';
 import { tablePath, tableRoutes } from '../work-categories/test/fixtures';
+import { choosePicker, outcomeOption } from './test/pickers';
 const MEETING='ab000000-0000-4000-8000-000000000011';
 const ATTENDANCE='ac000000-0000-4000-8000-000000000011';
 const SERIES_ID='ae000000-0000-4000-8000-000000000001';
@@ -37,7 +38,7 @@ describe('recurring meeting occurrence in the P3a drawer',()=>{
   await waitFor(()=>expect(writes).toHaveLength(1));expect(writes[0]).toEqual({expectedMeetingRevision:1,joinUrl:'https://meet.example.test/series',summaryText:'Итог серии'});
   await user.click(within(dialog).getByRole('tab',{name:"Attendance"}));const fill=await within(dialog).findByRole('button',{name:"Meeting followed the plan · fill details"});await waitFor(()=>expect(fill).toBeEnabled());await user.click(fill);await user.click(within(dialog).getByRole('button',{name:"Save actual details"}));
   await waitFor(()=>expect(writes).toHaveLength(2));expect(writes[1]).toEqual({expectedMeetingRevision:2,actualStartAt:PLANNED_START,actualDurationMinutes:45});
-  const result=within(dialog).getByLabelText("Attendance outcome");await waitFor(()=>expect(result).toBeEnabled());await user.selectOptions(result,'present');await user.click(within(dialog).getByRole('button',{name:"Confirm selected person's attendance"}));
+  const result=within(dialog).getByLabelText("Attendance outcome");await waitFor(()=>expect(result).toBeEnabled());await choosePicker(user,dialog,"Attendance outcome",outcomeOption.present);await user.click(within(dialog).getByRole('button',{name:"Confirm selected person's attendance"}));
   await waitFor(()=>expect(calls.some(c=>c.path.endsWith('/attendance/confirm'))).toBe(true));
   expect(calls.find(c=>c.path.endsWith('/attendance/confirm'))?.body).toEqual({expectedMeetingRevision:3,periodId:PERIOD_B,rows:[{attendanceId:ATTENDANCE,expectedAttendanceRevision:1,expectedWorkLogRevision:null,kind:'confirm',status:'present',attributionBasis:'actual_meeting',reason:null}]});
   const writePaths=calls.filter(c=>c.method!=='GET').map(c=>`${c.method} ${c.path}`);

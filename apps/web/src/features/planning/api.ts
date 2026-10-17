@@ -6,7 +6,7 @@ import {
   planningPeriodResponseSchema, planningPeriodListResponseSchema, planningPeriodListQuerySchema,
   planningPackageListResponseSchema, planningPackageListQuerySchema,
   periodCommitmentResponseSchema, periodCommitmentListResponseSchema, periodCommitmentListQuerySchema,
-  planBaselineResponseSchema, planBaselineListResponseSchema, packageBaselineResponseSchema,
+  planBaselineResponseSchema, planBaselineListResponseSchema, packageBaselineResponseSchema, originalPackageEstimateResponseSchema,
   manualPeriodWorkLogResponseSchema, manualPeriodWorkLogListResponseSchema, workLogListQuerySchema,
   weeklyPlanFactReportRunResponseSchema, weeklyPlanFactReportRunListResponseSchema,
   weeklyPlanFactRowListResponseSchema, reportRunListQuerySchema, planningPageQuerySchema,
@@ -16,7 +16,7 @@ import {
   type SetManualPeriodWorkInput, type CreateWeeklyPlanFactReportInput,
   type PlanningPeriodDto, type PlanningPackageDto, type PeriodCommitmentDto,
   type PlanBaselineDto, type ManualPeriodWorkLogDto, type WeeklyPlanFactReportRunDto,
-  type WeeklyPlanFactRowDto,
+  type WeeklyPlanFactRowDto, type OriginalPackageEstimateDto,
 } from '@workloom/contracts';
 import { ApiError, apiGet, apiRequest, prepareMutation, type ResponseParser } from '../../lib/api';
 import { workspacePath } from '../workspace/queries';
@@ -78,6 +78,10 @@ export async function fetchPlanBaseline(workspaceId: string, baselineId: string,
 }
 export async function fetchPackageBaseline(workspaceId: string, baselineId: string, signal?: AbortSignal) {
   return (await apiGet(path(workspaceId, `/package-baselines/${part(baselineId)}`), packageBaselineResponseSchema, signal)).data;
+}
+/** Read-only first-freeze projection of one whole package; it never carries the current estimate. */
+export async function fetchOriginalPackageEstimate(workspaceId: string, packageId: string, signal?: AbortSignal): Promise<OriginalPackageEstimateDto> {
+  return (await apiGet(path(workspaceId, `/planning-packages/${part(packageId)}/original-estimate`), originalPackageEstimateResponseSchema, signal)).data;
 }
 export function fetchPeriodWorkLogs(workspaceId: string, periodId: string, signal?: AbortSignal): Promise<ManualPeriodWorkLogDto[]> {
   return allPages(path(workspaceId, '/worklogs'), workLogListQuerySchema, { periodId }, manualPeriodWorkLogListResponseSchema, signal);

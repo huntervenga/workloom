@@ -3,12 +3,14 @@ import { changedKeys, draftFromTask, emptyDraft, type TaskDraft } from './taskDr
 import type { WorkPackageEntry } from '../task-table/workPackages';
 import type { CreateSession, EditSession } from './useTaskCommands';
 
-export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate' | 'priority' | 'estimate';
+export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate' | 'priority' | 'estimate' | 'sectionId';
 
 /** View/recovery mapping must follow the edited field rather than assume a date fallback. */
 export function taskInlineColumn(field: TaskInlineField) {
   switch (field) {
     case 'title': return field;
+    // The section move is a row action anchored in the pinned title cell.
+    case 'sectionId': return 'title';
     case 'statusId': return 'status';
     case 'responsibleMembershipId': return 'responsible';
     case 'dueDate': return field;
@@ -20,6 +22,11 @@ export function taskInlineColumn(field: TaskInlineField) {
 export function canEditTaskInline(task: TaskDto): boolean {
   // Missing task type belongs to a retained older response and must be refreshed first.
   return task.archivedAt === null && task.meetingId === null;
+}
+
+/** Only an ordinary root task moves between sections; a subtask stays under its parent. */
+export function canMoveTaskSection(task: TaskDto): boolean {
+  return canEditTaskInline(task) && task.parentTaskId === null;
 }
 
 export function defaultTaskStatusId(statuses: readonly TaskStatusDto[]): string | null {
@@ -63,6 +70,7 @@ export function matchesInlineTaskReceipt(current: TaskDto, receipt: TaskDto, fie
     case 'responsibleMembershipId':
     case 'dueDate':
     case 'priority':
+    case 'sectionId':
       return current[field] === receipt[field];
   }
 }

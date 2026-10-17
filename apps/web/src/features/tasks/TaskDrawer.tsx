@@ -26,7 +26,8 @@ import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { TaskCustomFields, type FieldValueDraftStore, type useSetTaskFieldValueMutation } from '../fields';
-import { formatEstimateInput } from '../task-table';
+import { formatEstimate, formatEstimateInput } from '../task-table';
+import { OriginalEstimate } from '../planning/OriginalEstimate';
 import { taskWouldRegress, useReloadTask, useTaskQuery } from './queries';
 import { CreateTagDialog } from './TagDialogs';
 import { TaskFields, fieldLabels, formatDraftValue, type EstimateMode, type TaskLookups } from './TaskFields';
@@ -88,8 +89,24 @@ export interface TaskDrawerProps {
   onCreateChild?: ((parent: TaskDto) => void) | undefined;
   /** Reopens the kept new-task form, e.g. to resolve its unconfirmed create. */
   onResumeCreate: () => void;
+  /** Direct children of the open task among the page's loaded tasks; absent without a current list. */
+  loadedSubtasks?: LoadedSubtasks | undefined;
   onCreated: (task: TaskDto) => void;
   onAnnounce: (message: TranslationMessage) => void;
+}
+
+/**
+ * The page's loaded direct children of one task. It is a view of loaded rows, never a server
+ * count: filters, search, archived exclusion or unloaded pages may hide other children.
+ */
+export interface LoadedSubtasks {
+  parentId: string;
+  /** In manual order. */
+  tasks: readonly TaskDto[];
+  /** Filters, search or unloaded pages may hide other children. */
+  partial: boolean;
+  /** Archived children are loaded only while the archived filter is on. */
+  includesArchived: boolean;
 }
 
 /** Newest copy of every tag by ID, so a renamed tag shows its current name. */
@@ -449,6 +466,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
     setErrors({});
   };
 
+  const estimateId = useId();
   const retainForNavigation=()=>{if(dirty||locked||pending)editSessions.current.set(taskId,session);};
   const canCreateChild=writable&&workspace.role!=='viewer'&&props.project.archivedAt===null&&latest.archivedAt===null&&latest.meetingId===null&&props.onCreateChild!==undefined;
   const keptCreate=commands.createSession.current!==null||commands.create.pendingCommand!==null||commands.create.uncertain!==null;
@@ -469,6 +487,9 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
         </div>:null}
         {canCreateChild&&!keptCreate&&unresolved!==null?<p className="text-xs text-muted">{t('hierarchy.resolveSave')}</p>:null}
         {canCreateChild&&!keptCreate&&draft.estimate!==baseDraft.estimate?<p className="text-xs text-muted">{t('hierarchy.savedEstimateHint')}</p>:null}
+        {props.loadedSubtasks && props.loadedSubtasks.parentId === taskId ? (
+          <SubtaskList parent={latest} scope={props.loadedSubtasks} statuses={statuses} onOpen={id => { retainForNavigation(); onOpenTask(id); }} />
+        ) : null}
 
         {archived ? (
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
@@ -550,6 +571,19 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           />
         </fieldset>
 
+        {/* Saved ordinary tasks only, outside the fieldset so a locked form can still retry the read.
+            The original is read for the whole package and never derived from the current value. */}
+        {latest.meetingId === null ? (
+          <div className="space-y-3 rounded-lg border border-line px-3 py-2.5">
+            <section aria-labelledby={`${estimateId}-heading`} className="space-y-0.5 text-sm">
+              <h3 id={`${estimateId}-heading`} className="text-xs font-medium text-muted">{t('tasks.estimates.current')}</h3>
+              <p className="font-medium tabular-nums">{latest.estimateMinutes === null ? t('tasks.estimates.notSet') : formatEstimate(latest.estimateMinutes)}</p>
+              <p className="text-xs text-muted">{draft.estimate !== baseDraft.estimate ? t('tasks.estimates.unsavedHint') : t('tasks.estimates.currentHint')}</p>
+            </section>
+            <OriginalEstimate actorId={actorId} workspaceId={workspace.id} packageId={latest.workPackageId} />
+          </div>
+        ) : null}
+
         {props.dependencyController ? <DependencyPanel actorId={actorId} workspaceId={workspace.id} project={props.project} task={latest} controller={props.dependencyController} writable={canEdit} onOpenTask={onOpenTask} /> : null}
 
         {/* Values have their own revisions and commands, independent of the task form above. */}
@@ -616,6 +650,44 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
         ) : null}
       </div>
     </form>
+  );
+}
+
+/**
+ * Loaded direct subtasks with their full titles, status and scope. A detail shares the parent's
+ * work package; additional work has its own. Opening one keeps this task's draft first.
+ */
+function SubtaskList({ parent, scope, statuses, onOpen }: { parent: TaskDto; scope: LoadedSubtasks; statuses: readonly TaskStatusDto[]; onOpen: (id: string) => void }) {
+  const { t } = useTranslation();
+  const headingId = useId();
+  const empty = scope.partial ? t('tasks.subtasks.noneLoaded') : scope.includesArchived ? t('tasks.subtasks.none') : t('tasks.subtasks.noneActive');
+  return (
+    <section aria-labelledby={headingId} className="space-y-2">
+      <h3 id={headingId} className="text-sm font-medium text-ink">{t('tasks.subtasks.heading')}</h3>
+      {scope.partial ? <p className="text-xs text-muted">{t('tasks.subtasks.loadedOnly')}</p> : null}
+      {scope.tasks.length === 0 ? <p className="text-sm text-muted">{empty}</p> : (
+        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
+          {scope.tasks.map(child => {
+            const status = statuses.find(item => item.id === child.statusId)?.name ?? t('tasks.taskFields.statusUnavailable');
+            const kind = child.workPackageId === parent.workPackageId ? t('tasks.subtasks.detail') : t('tasks.subtasks.additional');
+            return (
+              <li key={child.id}>
+                <button type="button" onClick={() => onOpen(child.id)}
+                  aria-label={t('tasks.subtasks.open', { title: child.title, status, scope: kind })}
+                  className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent">
+                  <span className="min-w-0 flex-1 text-sm text-ink [overflow-wrap:anywhere]">{child.title}</span>
+                  <span className="flex shrink-0 flex-wrap justify-end gap-1">
+                    <Badge tone="neutral">{status}</Badge>
+                    <Badge tone="muted">{kind}</Badge>
+                    {child.archivedAt !== null ? <Badge tone="muted">{t('tasks.taskDrawer.archived')}</Badge> : null}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 

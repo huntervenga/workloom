@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, deferred, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
 
 // Compile the large lazy route before the first DOM wait; these tests exercise its UI, not module loading.
 beforeAll(async () => { await import('./ProjectPage'); });
@@ -40,16 +41,16 @@ describe('project Board integration', () => {
     const { user } = renderApp(tablePath);
     await screen.findByRole('table');
     await screen.findByRole('button', { name: task.title });
-    await user.click(screen.getByText('Filters', { selector: 'summary' })); await user.selectOptions(screen.getByLabelText('Task status'), NEXT);
+    await user.click(screen.getByText('Filters', { selector: 'summary' })); await chooseFilter(user, 'Task status', 'Stored progress');
     await waitFor(() => expect(screen.queryByRole('button', { name: task.title })).not.toBeInTheDocument());
     await board(user);
-    expect(screen.getByLabelText('Task status')).toHaveValue(NEXT);
+    expect(filterPicker('Task status')).toHaveTextContent('Stored progress');
     expect(screen.getByText('1 loaded task in this view.')).toBeVisible();
     expect(screen.queryByText('More matching tasks may be available. Counts cover only the loaded tasks in this view.')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: other.title }));
     const drawer = await screen.findByRole('dialog', { name: other.title }); expect(within(drawer).getByLabelText('Task name')).toHaveValue(other.title);
     await closeDrawer(user); await user.click(views().getByRole('button', { name: 'Tasks' }));
-    expect(screen.getByRole('table')).toBeInTheDocument(); expect(screen.getByLabelText('Task status')).toHaveValue(NEXT);
+    expect(screen.getByRole('table')).toBeInTheDocument(); expect(filterPicker('Task status')).toHaveTextContent('Stored progress');
     expect(screen.queryByRole('button', { name: task.title })).not.toBeInTheDocument();
     expect(calls.filter(call => call.path.endsWith('/tasks') && call.method === 'GET').at(-1)?.searchParams.get('statusId')).toBe(NEXT);
     expect(calls.filter(call => call.method === 'PUT')).toHaveLength(0);
@@ -62,16 +63,16 @@ describe('project Board integration', () => {
     await screen.findByRole('button', { name: task.title });
     expect(calls.find(call => call.path.endsWith('/tasks'))?.searchParams.has('tagId')).toBe(false);
     await user.click(screen.getByText('Filters', { selector: 'summary' }));
-    await user.selectOptions(screen.getByLabelText('Task status'), NEXT);
-    await user.selectOptions(screen.getByLabelText('Task tag'), tag.id);
+    await chooseFilter(user, 'Task status', 'Stored progress');
+    await chooseFilter(user, 'Task tag', tag.name);
     await waitFor(() => expect(screen.queryByRole('button', { name: task.title })).not.toBeInTheDocument());
-    await board(user); expect(screen.getByLabelText('Task tag')).toHaveValue(tag.id);
+    await board(user); expect(filterPicker('Task tag')).toHaveTextContent(tag.name);
     const matching = calls.filter(call => call.path.endsWith('/tasks')).at(-1);
     expect(matching?.searchParams.get('tagId')).toBe(tag.id); expect(matching?.searchParams.get('statusId')).toBe(NEXT);
-    await user.click(views().getByRole('button', { name: 'Tasks' })); expect(screen.getByLabelText('Task tag')).toHaveValue(tag.id);
+    await user.click(views().getByRole('button', { name: 'Tasks' })); expect(filterPicker('Task tag')).toHaveTextContent(tag.name);
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
     await screen.findByRole('button', { name: task.title });
-    expect(screen.getByLabelText('Task tag')).toHaveValue(''); expect(screen.getByLabelText('Task status')).toHaveValue('');
+    expect(filterPicker('Task tag')).toHaveTextContent('All tags'); expect(filterPicker('Task status')).toHaveTextContent('All statuses');
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 

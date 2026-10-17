@@ -27,21 +27,29 @@ describe('actual project date view and date editor', () => {
       [`GET ${schedulePath}/schedule-context`]: request => ok(scheduleContext(all, request.searchParams.has('baselineId'), '1', task => task.id === extreme.id ? { state: 'captured', startDate: { state: 'set', value: '0001-01-01' }, dueDate: { state: 'set', value: '9999-12-31' } } : { state: 'captured', startDate: { state: 'not_captured' }, dueDate: { state: 'not_set' } })),
     });
     const { user } = renderApp(`${tablePath}?view=gantt`);
-    const gantt = await screen.findByRole('region', { name: "Project timeline" });
+    // The first full-app lookup includes the cold lazy project route, which can exceed 1s under parallel test load.
+    const gantt = await screen.findByRole('region', { name: "Project timeline" }, { timeout: 5000 });
     await within(gantt).findByRole('group', { name: `Calendar dates: ${extreme.title}` });
+    // First open fits the loaded 0001..9999 span: bounded to the first 366 days and explained.
+    expect(within(gantt).getByLabelText("Window start")).toHaveValue('0001-01-01');
+    expect(within(gantt).getByRole('status')).toHaveTextContent(/more than|showing the first 366 from the earliest/);
+    await user.selectOptions(within(gantt).getByLabelText("Days in window"), '28');
     fireEvent.change(within(gantt).getByLabelText("Window start"), { target: { value: '2026-03-28' } });
     const axis = within(gantt).getByRole('list', { name: "Calendar window days" });
     expect(within(axis).getAllByRole('listitem')).toHaveLength(28);
     const full = within(gantt).getByRole('img', { name: "Current: start 0001-01-01, due 9999-12-31" });
     expect(full).toHaveStyle({ left: '0%', width: '100%' });
-    expect(full).toHaveTextContent('‹›');
+    expect(full.textContent?.startsWith('‹')).toBe(true);
+    expect(full.textContent?.endsWith('›')).toBe(true);
     await user.selectOptions(within(gantt).getByLabelText("Days in window"), '366');
     expect(within(axis).getAllByRole('listitem')).toHaveLength(366);
-    expect(axis.parentElement?.parentElement?.style.width).toBe('9024px');
+    // 366 days use the narrowest bounded column: 12px × 366, never a 0001..9999 range width.
+    expect(within(gantt).getByRole('list', { name: "Calendar window days" }).style.width).toBe('4392px');
     const meetRow = within(gantt).getByRole('group', { name: `Calendar dates: ${meeting.title}` });
     expect(within(meetRow).getByRole('button', { name: "Meeting — open calendar" })).toBeInTheDocument();
     expect(within(meetRow).queryByRole('img')).not.toBeInTheDocument();
     expect(within(meetRow).queryByRole('button', { name: "Edit dates" })).not.toBeInTheDocument();
+    await user.click(within(gantt).getByRole('button', { name: "Compare with frozen plan" }));
     await user.selectOptions(within(gantt).getByLabelText("Plan period"), PERIOD_A);
     await waitFor(() => expect(within(gantt).getByRole('combobox', { name: "Frozen plan to compare" })).toBeEnabled());
     await user.selectOptions(within(gantt).getByLabelText("Frozen plan to compare"), BASELINE_ID);
@@ -66,7 +74,7 @@ describe('actual project date view and date editor', () => {
       },
     });
     const { user } = renderApp(`${tablePath}?view=gantt`);
-    const row = await screen.findByRole('group', { name: `Calendar dates: ${current.title}` });
+    const row = await screen.findByRole('group', { name: `Calendar dates: ${current.title}` }, { timeout: 5000 });
     await user.click(within(row).getByRole('button', { name: "Edit dates" }));
     const dialog = await screen.findByRole('dialog', { name: "Edit task dates" });
     fireEvent.change(within(dialog).getByLabelText("Start date"), { target: { value: '2026-04-02' } });

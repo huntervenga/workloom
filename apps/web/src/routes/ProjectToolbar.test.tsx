@@ -1,14 +1,18 @@
 import type { UserEvent } from '@testing-library/user-event';
 import { timeContextLabel } from '../features/work-categories/test/timeContext';
-import type { ColumnChoice, PersonalTablePreferenceDto } from '@workloom/contracts';
+import type { ColumnChoice, PersonalTablePreferenceDto, TaskDto } from '@workloom/contracts';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, expect, it } from 'vitest';
-import { alpha, alphaMembers, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
+import { alpha, alphaMembers, anna, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { graph, layout } from '../features/dependencies/test/fixtures';
 import { scheduleContext } from '../features/schedule/test/fixtures';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { columns, field } from '../features/fields/test/fixtures';
 import { MEMBER_ID, PERIOD_A, PROJECT_ID, categorized, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { queryKeys } from '../lib/queryKeys';
+import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
+
+const member = alphaMembers.find(item => item.id === MEMBER_ID); if (!member) throw new Error('Missing member fixture');
 
 async function tableChoice(user: UserEvent, control: HTMLElement, value: 'section' | 'assignee' | 'manual' | 'due_asc') {
   await user.click(control);
@@ -51,7 +55,7 @@ it('restores retained week/person, search/filter/group/sort and unsaved personal
   const person = alphaMembers[1]?.id; if (!person) throw new Error('Missing colleague');
   const { calls } = installFakeApi(routes()); const { user } = renderApp(`${tablePath}?week=${PERIOD_A}&worker=${person}&other=kept#anchor`);
   await screen.findByRole('button', { name: 'Columns' }); await user.type(screen.getByLabelText('Search tasks'), 'retained search');
-  await user.click(screen.getByText('Filters', { selector: 'summary' })); await user.selectOptions(screen.getByLabelText('Task participant'), MEMBER_ID);
+  await user.click(screen.getByText('Filters', { selector: 'summary' })); await chooseFilter(user, 'Task participant', member.displayName);
   await user.click(screen.getByText('Filters (1)', { selector: 'summary' }));
   await tableChoice(user, screen.getByLabelText('Group by'), 'assignee'); await tableChoice(user, screen.getByLabelText('Sort'), 'due_asc');
   await user.click(screen.getByRole('button', { name: 'Columns' })); await user.click(screen.getByLabelText('Tags')); await user.keyboard('{Escape}');
@@ -64,6 +68,7 @@ it('restores retained week/person, search/filter/group/sort and unsaved personal
   await show(user, 'table');
   expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)); expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', person));
   expect(screen.getByLabelText('Search tasks')).toHaveValue('retained search'); expect(screen.getByText('Filters (1)', { selector: 'summary' })).toBeInTheDocument();
+  expect(filterPicker('Task participant')).toHaveTextContent(member.displayName);
   expect(screen.getByLabelText('Group by')).toHaveTextContent('Assignee'); expect(screen.getByLabelText('Sort')).toHaveTextContent('Due date');
   await user.click(screen.getByRole('button', { name: 'Columns · unsaved' })); expect(screen.getByLabelText('Tags')).not.toBeChecked();
   expect(writes(calls)).toHaveLength(0);
@@ -140,4 +145,23 @@ it.each(['gantt', 'graph', 'import'] as const)('keeps weekly read errors visible
   renderApp(`${tablePath}?view=${view}&week=${PERIOD_A}&worker=${MEMBER_ID}`);
   expect(await screen.findByRole('heading', { name: 'Unable to load weekly time' })).toBeVisible();
   expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument(); expect(screen.queryByText('hidden weekly diagnostic')).not.toBeInTheDocument(); expect(writes(calls)).toHaveLength(0);
+});
+
+
+it('settles the timeline after the page successfully reads an empty task list, before its first dated task arrives', async () => {
+  let loaded: TaskDto[] = [];
+  const { calls } = installFakeApi(routes({
+    [`GET ${rootPath}/tasks`]: () => json(200, { data: loaded, meta: { requestId: 'empty-timeline', nextCursor: null } }),
+    [`GET ${path}/schedule-context`]: () => ok(scheduleContext(loaded)),
+  }));
+  const { queryClient } = renderApp(`${tablePath}?view=gantt`);
+  await screen.findByText('No tasks are loaded; the window stays at 28 days.');
+  await waitFor(() => expect(queryClient.getQueriesData({ queryKey: queryKeys.tasks(anna.id, alpha.id) }).some(([, data]) => data !== undefined)).toBe(true));
+  const opened = (screen.getByLabelText('Window start') as HTMLInputElement).value;
+  loaded = [{ ...task, startDate: '2000-01-10', dueDate: '2000-01-11' }];
+  await act(async () => { await queryClient.invalidateQueries({ queryKey: queryKeys.tasks(anna.id, alpha.id) }); });
+  await screen.findByRole('group', { name: `Calendar dates: ${task.title}` });
+  await screen.findByText(/No loaded dates in this window: 1 earlier, 0 later/);
+  expect(screen.getByLabelText('Window start')).toHaveValue(opened);
+  expect(writes(calls)).toHaveLength(0);
 });

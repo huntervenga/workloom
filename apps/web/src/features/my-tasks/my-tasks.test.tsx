@@ -28,7 +28,10 @@ describe('personal task inbox', () => {
     expect(request?.searchParams.get('relation')).toBe('all');
     expect(request?.searchParams.has('membershipId')).toBe(false);
     expect(request?.searchParams.has('projectId')).toBe(false);
-    expect(calls.some(call => /\/projects$/.test(call.path))).toBe(false);
+    // Project names come from the rows: no per-project read. Only the sidebar's one shared
+    // workspace project list may load, and it never feeds these rows.
+    expect(calls.some(call => /\/projects\/[^/]+/.test(call.path))).toBe(false);
+    expect(calls.filter(call => /\/projects$/.test(call.path)).length).toBeLessThanOrEqual(1);
     expect(calls.every(call => call.method === 'GET')).toBe(true);
   });
 

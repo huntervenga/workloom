@@ -198,7 +198,7 @@
   "sharedTaskEstimatePersonalPlansAreNotChangedAutomatically": "Shared task estimate: {{hours}}. Personal plans are not changed automatically. Preparation is a separate task with its own estimate.",
   "suggestedTheseArePersonalWeeklyHoursSeparateFromThe": "Suggested: {{plannedDurationMinutes}}. These are personal weekly hours, separate from the shared estimate.",
   "current2": "Current: {{hours}} → {{hours2}}",
-  "meetingAllocationRemaining": "Meeting allocation: {{hours2}} · remaining {{hours2}}",
+  "meetingAllocationRemaining": "Meeting allocation: {{hours}} · remaining {{hours2}}",
   "saved3": "Saved: {{actualStartAt}} · {{hours}}",
   "unconfirmedIsDifferentFromZero2": "{{status}}. Unconfirmed is different from zero.",
   "revision2": "Revision {{revision}} · {{status}} · {{hours}}",
@@ -210,5 +210,33 @@
   "editActualDetails": "Edit actual details",
   "hideActualEditor": "Hide editor",
   "personalAttendance": "Individual attendance",
-  "chooseAttendancePerson": "Choose a person"
+  "chooseAttendancePerson": "Choose a person",
+  "prepareFullAttendance": "Everyone attended · prepare review",
+  "prepareFullAttendanceHelp": "Prepares “Attended entire meeting” only for unconfirmed people on the current roster. Saved, partial, absent, and voided entries and your own unsent changes stay as they are. Nothing is saved until you confirm.",
+  "prepareFullAttendanceCancelled": "A cancelled meeting cannot be prepared as attended. Record planned absence for each person instead.",
+  "prepareFullAttendanceNoneLeft": "Everyone on the current roster already has saved attendance. Correct a person with their own controls.",
+  "prepareFullAttendanceReady": {
+    "one": "{{count}} person is prepared for review. Nothing is saved yet.",
+    "other": "{{count}} people are prepared for review. Nothing is saved yet."
+  },
+  "prepareFullAttendanceKeptDrafts": {
+    "one": "{{count}} person with your own unsent changes was left as is; review them with their own controls.",
+    "other": "{{count}} people with your own unsent changes were left as is; review them with their own controls."
+  },
+  "rosterSummary": "Saved attendance by person",
+  "rosterSummaryHelp": "Shows saved attendance entries you can see. Unconfirmed is not zero, and no team total is estimated.",
+  "rosterCountAttended": "Attended: {{count}}",
+  "rosterCountPartial": "Partial: {{count}}",
+  "rosterCountAbsent": "Absent: {{count}}",
+  "rosterCountUnconfirmed": "Unconfirmed: {{count}}",
+  "rosterCountVoided": "Voided: {{count}}",
+  "inReview": " · in review",
+  "planEveryoneAtDuration": "Select everyone you can plan · {{duration}} each",
+  "planResetEdited": {
+    "one": "Reset {{count}} edited plan to {{duration}}",
+    "other": "Reset {{count}} edited plans to {{duration}}"
+  },
+  "planBulkCancelled": "This meeting is cancelled, so everyone is not selected at once. Choose people one by one if a plan is still needed.",
+  "planBulkHelp":"Only fills this draft. Hours you already entered are kept unless you reset them. Preview and Apply are still required.",
+  "planSelectionCount": "Selected: {{selected}} of {{total}}"
 }

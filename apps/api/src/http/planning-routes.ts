@@ -8,6 +8,7 @@ import {
   idSchema,
   manualPeriodWorkLogListResponseSchema,
   manualPeriodWorkLogResponseSchema,
+  originalPackageEstimateResponseSchema,
   packageBaselineResponseSchema,
   periodCommitmentListQuerySchema,
   periodCommitmentListResponseSchema,
@@ -47,6 +48,7 @@ const workspaceParamsSchema = z.object({ workspaceId: idSchema });
 const periodParamsSchema = z.object({ workspaceId: idSchema, periodId: idSchema });
 const commitmentParamsSchema = z.object({ workspaceId: idSchema, periodId: idSchema, commitmentId: idSchema });
 const baselineParamsSchema = z.object({ workspaceId: idSchema, baselineId: idSchema });
+const packageParamsSchema = z.object({ workspaceId: idSchema, packageId: idSchema });
 const reportParamsSchema = z.object({ workspaceId: idSchema, runId: idSchema });
 const manualWorkParamsSchema = z.object({ workspaceId: idSchema, taskId: idSchema, periodId: idSchema, membershipId: idSchema });
 const noQuerySchema = z.strictObject({});
@@ -111,6 +113,12 @@ export function registerPlanningRoutes(app: FastifyInstance, deps: PlanningRoute
     const { query, ctx } = await read(request, workspaceParamsSchema, planningPackageListQuerySchema);
     const page = await deps.planning.listPackages(ctx, query);
     return sendData(request, reply, planningPackageListResponseSchema, page.items, { nextCursor: page.nextCursor });
+  });
+
+  // Read-only first-freeze projection for one package; separate from PlanningPackageDto and snapshots.
+  app.get(`${BASE}/planning-packages/:packageId/original-estimate`, async (request, reply) => {
+    const { params, ctx } = await read(request, packageParamsSchema, noQuerySchema);
+    return sendData(request, reply, originalPackageEstimateResponseSchema, await deps.planning.getOriginalPackageEstimate(ctx, params.packageId));
   });
 
   app.get(`${BASE}/periods/:periodId/commitments`, async (request, reply) => {

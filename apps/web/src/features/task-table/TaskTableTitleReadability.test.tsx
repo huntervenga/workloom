@@ -118,13 +118,16 @@ it('keeps every task on one fixed-height line: long names truncate with the full
   expect(row.querySelector('p')).toBeNull();
 });
 
-it('gives idle names the full flexible budget while details and subtask actions overlay without changing the row flow', () => {
+it('keeps idle names flexible while reserving the real action width before hover or title editing', () => {
   render(<TaskTable tasks={[makeTask({ id: 'overlay', title: titles[0], sectionId: main.id })]} sections={[main]} members={[]} statuses={statuses} {...handlers()} writable />);
   const title = screen.getByRole('button', { name: titles[0] });
   expect(title.className).toContain('flex-1');
   expect(title.className).toContain('min-w-0');
   const actions = title.closest('td')?.querySelector('[data-task-row-actions]');
-  expect(actions).toHaveClass('absolute', 'opacity-0', 'group-focus-within:opacity-100', '[@media(hover:none)]:opacity-100');
+  expect(actions).toHaveClass('flex', 'shrink-0', 'opacity-0', 'group-focus-within:opacity-100', '[@media(hover:none)]:opacity-100');
+  expect(actions).not.toHaveClass('absolute');
+  expect(actions?.parentElement).toBe(title.parentElement);
+  expect(title.parentElement?.className).not.toMatch(/pr-(?:16|24)/);
   expect(within(actions as HTMLElement).getByRole('button', { name: `Open task “${titles[0]}”` })).toBeInTheDocument();
   expect(within(actions as HTMLElement).getByRole('button', { name: `Add subtask to “${titles[0]}”` })).toBeInTheDocument();
 });

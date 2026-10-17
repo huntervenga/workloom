@@ -27,6 +27,13 @@ export interface PackageFreezeObservation {
   readonly workspaceId:string; readonly projectId:string; readonly workPackageId:string;
   readonly estimateMinutes:number|null; readonly packageRevision:number; readonly baselineId:string;
 }
+/** Read-only first-freeze provenance: the immutable observation, its immutable plan-baseline header
+ * (never the full snapshot) and the matching original package baseline when the estimate was known. */
+export interface OriginalPackageEstimateSource {
+  readonly observation:PackageFreezeObservation;
+  readonly origin:{readonly planBaselineId:string;readonly periodId:string;readonly periodLocalStart:string;readonly scope:FreezeScope;readonly mode:'manual'|'cutoff';readonly frozenAt:string};
+  readonly packageBaseline:PackageBaselineDto|null;
+}
 export interface PlanningLock {
   readonly id:string; readonly workspaceId:string; readonly projectId:string; readonly baselineId:string;
   readonly kind:'estimate'|'custom_value'|'commitment';
@@ -56,6 +63,8 @@ export interface PlanningRepository {
   insertPackageBaseline(row:PackageBaselineDto):Promise<void>;
   findPackageObservation(workspaceId:string,packageId:string):Promise<PackageFreezeObservation|null>;
   insertPackageObservation(row:PackageFreezeObservation):Promise<void>;
+  /** One bounded read for one package; null when no related freeze has observed it. */
+  findOriginalPackageEstimateSource(workspaceId:string,packageId:string):Promise<OriginalPackageEstimateSource|null>;
   listLocks(workspaceId:string,filter?:{readonly taskIds:readonly string[];readonly workPackageIds:readonly string[]}):Promise<PlanningLock[]>;
   insertLocks(rows:PlanningLock[]):Promise<void>;
   listMeetings(workspaceId:string,projectId:string):Promise<MeetingDto[]>;

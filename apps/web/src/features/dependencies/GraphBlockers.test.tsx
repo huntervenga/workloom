@@ -221,6 +221,11 @@ describe('Graph canvas blocker control', () => {
 });
 
 describe('Graph blocker task navigation', () => {
+  /** At jsdom's default 1024px width every node has a saved position, so the diagram collapses the cards. */
+  async function diagramCards(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Show task cards and keyboard position controls (2)' }));
+    return screen.findByRole('list', { name: 'Graph tasks and dependencies' });
+  }
   function appRoutes(): RouteTable {
     return { ...tableRoutes(), ...routes(),
       [`GET ${rootPath}/projects`]: () => ok([project(alpha.id, PROJECT_ID, 'Primary'), project(alpha.id, PROJECT_B, 'Other')]),
@@ -238,8 +243,7 @@ describe('Graph blocker task navigation', () => {
   it('opens a same-project drawer above the inspector, then returns focus to its Open task button', async () => {
     installFakeApi(appRoutes());
     const { user } = renderApp(`${tablePath}?view=graph`);
-    // List is always available, including when the lazy diagram cannot measure in jsdom.
-    const list = await screen.findByRole('list', { name: 'Graph tasks and dependencies' });
+    const list = await diagramCards(user);
     await user.click(within(list).getByRole('button', { name: `View blockers (1): ${anchor.title}` }));
     const inspector = await screen.findByRole('dialog', { name: `Blockers for ${anchor.title}` });
     const open = await within(inspector).findByRole('button', { name: `Open task: ${predecessor.title}` });
@@ -259,7 +263,7 @@ describe('Graph blocker task navigation', () => {
     try {
       render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
       const user = userEvent.setup({ pointerEventsCheck: 0 });
-      const list = await screen.findByRole('list', { name: 'Graph tasks and dependencies' });
+      const list = await diagramCards(user);
       await user.click(within(list).getAllByText('Position in my layout')[0] as HTMLElement);
       const right = within(list).getByRole('button', { name: `Right: ${anchor.title}` });
       await waitFor(() => expect(right).toBeEnabled());

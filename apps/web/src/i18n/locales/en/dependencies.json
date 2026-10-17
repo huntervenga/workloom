@@ -83,7 +83,38 @@
     "hasUnfinishedPredecessors": "Has unfinished predecessors",
     "theNextTaskStartsAfterThePreviousTask": "The next task starts after the previous task finishes",
     "dependencyGraph": "Dependency graph",
-    "unfinishedPredecessorsSuffix": ", has unfinished predecessors"
+    "unfinishedPredecessorsSuffix": ", has unfinished predecessors",
+    "doneSuffix": ", done",
+    "statusConflictSuffix": ", status conflicts with the blocking rule",
+    "doneResolvesSuccessors": "Done: dependencies on this task are resolved",
+    "statusConflictsWithBlockingRule": "Status conflicts with the blocking rule",
+    "edgeLabel": "{{relation}}. {{state}}",
+    "edgeUnresolved": "Unresolved: {{predecessor}} is not done yet, so {{successor}} still waits for it",
+    "edgeResolved": "Resolved: {{predecessor}} is done, so {{successor}} no longer waits for it",
+    "legend": "Dependency arrow legend",
+    "legendUnresolved": "Solid amber arrow: the predecessor is not done, so the dependency is unresolved",
+    "legendResolved": "Dashed grey arrow: the predecessor is done, so the dependency is resolved",
+    "legendFocus": "Select a task to highlight its direct predecessors and successors in this diagram.",
+    "focusRegion": "Selected task dependencies",
+    "focusTitle": "Focused on {{title}}. Unrelated tasks and dependencies are dimmed.",
+    "focusPredecessors": {
+      "one": "{{count}} direct predecessor in this diagram, {{unresolved}} not done: {{names}}",
+      "other": "{{count}} direct predecessors in this diagram, {{unresolved}} not done: {{names}}"
+    },
+    "focusNoPredecessors": "No direct predecessors in this diagram.",
+    "focusOutside": {
+      "one": "{{count}} more unfinished predecessor is outside this diagram and still counts for blocking.",
+      "other": "{{count}} more unfinished predecessors are outside this diagram and still count for blocking."
+    },
+    "focusSuccessors": {
+      "one": "{{count}} direct successor in this diagram: {{names}}",
+      "other": "{{count}} direct successors in this diagram: {{names}}"
+    },
+    "focusNoSuccessors": "No direct successors in this diagram.",
+    "focusDone": "{{title}} (done)",
+    "focusNotDone": "{{title}} (not done)",
+    "focusMore": "{{count}} more",
+    "clearFocus": "Clear focus"
   },
   "graphView": {
     "theDiagramCouldNotLoadTheDependencyList": "The diagram could not load. The dependency list is available. Refresh the page to retry the diagram.",
@@ -128,6 +159,16 @@
     "predecessorTask": "Predecessor task",
     "successorTask": "Successor task",
     "removeDependency": "Remove dependency",
+    "dependencyUnresolved": "Unresolved: predecessor not done",
+    "dependencyResolved": "Resolved: predecessor done",
+    "showTaskCards": {
+      "one": "Show task card and keyboard position controls ({{count}})",
+      "other": "Show task cards and keyboard position controls ({{count}})"
+    },
+    "hideTaskCards": {
+      "one": "Hide task card and keyboard position controls ({{count}})",
+      "other": "Hide task cards and keyboard position controls ({{count}})"
+    },
     "moreGraphDependencies": "More graph dependencies",
     "myGraphLayout": "My graph layout",
     "myLayout": "My layout",

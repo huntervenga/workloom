@@ -154,6 +154,21 @@
   "distributionNoActiveEntries": "This selection has no active entries.",
   "distributionNoBuckets": "No category totals are recorded for this selection.",
   "distributionBarLabel": "{{category}}: {{hours}}, {{share}}",
-  "sourcesRemainReportWide": "These source details cover all selected people in this saved report. The chart selection does not filter them."
+  "sourcesRemainReportWide": "These source details cover all selected people in this saved report. The chart selection does not filter them.",
+  "planCell": {
+    "none": "No plan",
+    "notSet": "Not set",
+    "removed": "Removed",
+    "inPackage": "In package",
+    "notAllocated": "Not allocated",
+    "wholePackage": "Whole-package plan, not split by task",
+    "sharesPackagePlan": "Shares one package plan: {{hours}}"
+  },
+  "peopleInBreakdown": { "one": "{{count}} person", "other": "{{count}} people" },
+  "latestBreakdown": "Latest saved breakdown",
+  "latestBreakdownStatus": "Showing the newest saved breakdown. Choose a saved breakdown to pin a different one.",
+  "pinnedBreakdownStatus": "Showing the selected saved breakdown.",
+  "calculateCurrentBreakdown": "Calculate current breakdown",
+  "calculateCurrentBreakdownHint": "Saves a new breakdown for everyone from the hours recorded now. Earlier saved breakdowns stay unchanged."
 
 }

@@ -117,6 +117,27 @@ export function createPlanningRepository(source:Database|WorkloomExecutor):Plann
       return r?{workspaceId:r.workspaceId,projectId:r.projectId,workPackageId:r.workPackageId,estimateMinutes:r.estimateMinutes,packageRevision:r.packageRevision,baselineId:r.baselineId}:null;
     },
     async insertPackageObservation(row:PackageFreezeObservation) {await db.insert(packageFreezeObservations).values(row);},
+    async findOriginalPackageEstimateSource(ws,id) {
+      if(!valid(id))return null;
+      // One row by primary key: the observation, its baseline header (snapshot period start only) and an optional package baseline.
+      const [r]=await db.select({
+        observation:packageFreezeObservations,
+        planBaselineId:planBaselines.id,periodId:planBaselines.periodId,scope:planBaselines.scope,mode:planBaselines.mode,frozenAt:planBaselines.frozenAt,
+        periodLocalStart:sql<string|null>`${planBaselines.snapshot}#>>'{period,localStart}'`,
+        packageBaseline:packageBaselines,
+      }).from(packageFreezeObservations)
+        .innerJoin(planBaselines,and(eq(planBaselines.workspaceId,packageFreezeObservations.workspaceId),eq(planBaselines.projectId,packageFreezeObservations.projectId),eq(planBaselines.id,packageFreezeObservations.baselineId)))
+        .leftJoin(packageBaselines,and(eq(packageBaselines.workspaceId,packageFreezeObservations.workspaceId),eq(packageBaselines.workPackageId,packageFreezeObservations.workPackageId)))
+        .where(and(eq(packageFreezeObservations.workspaceId,ws),eq(packageFreezeObservations.workPackageId,id)));
+      if(!r)return null;
+      if(r.periodLocalStart===null)throw new Error('Stored original estimate provenance is inconsistent.');
+      const o=r.observation;
+      return {
+        observation:{workspaceId:o.workspaceId,projectId:o.projectId,workPackageId:o.workPackageId,estimateMinutes:o.estimateMinutes,packageRevision:o.packageRevision,baselineId:o.baselineId},
+        origin:{planBaselineId:r.planBaselineId,periodId:r.periodId,periodLocalStart:r.periodLocalStart,scope:r.scope,mode:r.mode,frozenAt:iso(r.frozenAt)},
+        packageBaseline:r.packageBaseline?packageBaseline(r.packageBaseline):null,
+      };
+    },
     async listLocks(ws,filter) {if(filter&&filter.taskIds.length===0&&filter.workPackageIds.length===0)return [];return db.select().from(planningLocks).where(and(eq(planningLocks.workspaceId,ws),filter?or(filter.taskIds.length?inArray(planningLocks.taskId,[...filter.taskIds]):sql`false`,filter.workPackageIds.length?inArray(planningLocks.workPackageId,[...filter.workPackageIds]):sql`false`):undefined));},
     async insertLocks(rows:PlanningLock[]) {if(rows.length)await db.insert(planningLocks).values(rows);},
     async listMeetings(ws,projectId) {

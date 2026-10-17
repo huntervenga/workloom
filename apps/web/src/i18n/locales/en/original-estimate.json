@@ -1,0 +1,26 @@
+{
+ "label":"Original estimate",
+ "loading":"Checking the original estimate…",
+ "unavailable":"The original estimate is not available.",
+ "loadFailed":"The original estimate could not be loaded.",
+ "retry":"Try again",
+ "state":{
+  "not_captured_yet":"Not captured yet",
+  "original_unknown":"Unknown"
+ },
+ "badge":{
+  "captured":"Locked at first freeze",
+  "not_captured_yet":"Not in a baseline yet",
+  "original_unknown":"Not set at first freeze"
+ },
+ "help":{
+  "not_captured_yet":"The original is saved by the first plan freeze that includes this work. Until then, estimate edits are not part of any baseline.",
+  "captured":"Saved by the first plan freeze that included this work. Later estimate edits don't change it.",
+  "original_unknown":"No estimate was set when this work was first frozen. A later estimate is not treated as the original."
+ },
+ "origin":{
+  "frozen":"First freeze: {{frozenAt}} · Week of {{week}} · {{scope}} · {{mode}}",
+  "scope":{"self":"Personal plan freeze","project":"Project plan freeze"},
+  "mode":{"manual":"Saved manually","cutoff":"Saved at the cutoff"}
+ }
+}

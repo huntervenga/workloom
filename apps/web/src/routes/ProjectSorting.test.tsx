@@ -13,6 +13,7 @@ import { SessionProvider } from '../app/session';
 import { createQueryClient } from '../lib/queryClient';
 import { alpha, alphaMembers, created, deferred, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
+import { chooseFilter } from '../features/tasks/test/filterPickers';
 import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 
 const pickerCallbacks = vi.hoisted(() => new Map<string, (value: string) => void>());
@@ -74,9 +75,11 @@ it('applies server due paging, preserves grouped hierarchy and Manual positions,
     expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)); expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', MEMBER_ID));
     expect(screen.getByText('Loaded team budget').closest('tr')).toHaveTextContent('3h');
     await ui.user.click(screen.getByText('Filters', { selector: 'summary' }));
-    await ui.user.selectOptions(screen.getByLabelText('Task participant'), owner.id);
+    await chooseFilter(ui.user, 'Task participant', owner.displayName);
+    expect(new URLSearchParams(ui.router.state.location.search).get('participant')).toBe(owner.id);
     await ui.user.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(sort()).toHaveTextContent('Due date'); expect(ui.router.state.location.search).toContain('sort=due_asc');
+    expect(ui.router.state.location.search).not.toContain('participant='); expect(ui.router.state.location.search).toContain('other=kept');
     await tableChoice(ui.user, sort(), 'manual');
     await waitFor(() => expect(rowOrder()[0]).toBe(`Select for graph: ${parent.title}`));
     expect(ui.router.state.location.search).not.toContain('sort='); expect(writes(calls)).toHaveLength(0);

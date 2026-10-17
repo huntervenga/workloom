@@ -4,7 +4,7 @@ import { fetchRecordedWork } from '../meetings/api';
 import type { MeetingSelection, MeetingTab } from '../meetings/useMeetingWorkspace';
 import { fetchTask } from '../tasks/api';
 import { RecordedWorkLabel } from '../../shared/RecordedWorkLabel';
-import type { CategorizedManualWorkLogDto, RecordedWorkLogDto, MembershipDto, PackageTimeRowDto, PlanningPeriodDto, ProjectDto, TaskDto, WorkspaceDto } from '@workloom/contracts';
+import type { CategorizedManualWorkLogDto, RecordedWorkLogDto, MembershipDto, PackageTimeRowDto, PlanningPeriodDto, ProjectDto, TaskDto, TaskTimeRowDto, WorkspaceDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -169,6 +169,22 @@ export function useTaskTimeTable(props: Props) {
   ];
   const representative = new Map<string, string>();
   for (const task of props.tasks) if (!representative.has(task.workPackageId)) representative.set(task.workPackageId, task.id);
+  // One personal plan covers the whole package. Only an explicit allocation is a per-task amount; an unsplit plan
+  // is shown once on the package's first loaded row so loaded rows never read as hours to add up.
+  const planCell = (task: TaskDto, row: TaskTimeRowDto, work: PackageTimeRowDto): { value: string; lines: string[] } => {
+    const plan = work.commitment;
+    if (!plan) return { value: t('work-categories.planCell.none'), lines: [] };
+    const first = representative.get(task.workPackageId) === task.id;
+    const hours = plan.plannedMinutes === null ? t('work-categories.notSet') : formatEstimate(plan.plannedMinutes);
+    const marks = `${plan.baselineIds.length ? t('work-categories.baselineSaved') : ''}${plan.classification === 'added' ? t('work-categories.addedAfterBaseline') : ''}`;
+    if (plan.state === 'removed') return { value: t('work-categories.planCell.removed'), lines: first ? [`${t('work-categories.removedFromCurrentPlanPreviously')}${hours}${marks}`] : [] };
+    if (plan.allocations.length === 0) {
+      if (!first) return { value: t('work-categories.planCell.inPackage'), lines: [t('work-categories.planCell.sharesPackagePlan', { hours })] };
+      return { value: plan.plannedMinutes === null ? t('work-categories.planCell.notSet') : hours, lines: [`${t('work-categories.planCell.wholePackage')}${marks}`] };
+    }
+    const value = row.currentAllocationMinutes === null ? t('work-categories.planCell.notAllocated') : formatEstimate(row.currentAllocationMinutes);
+    return { value, lines: first ? [`${t('work-categories.totalPersonalPlan')}${hours}`, `${t('work-categories.unallocated2')}${plan.unallocatedMinutes === null ? t('work-categories.unknown') : formatEstimate(plan.unallocatedMinutes)}${marks}`] : [] };
+  };
   const ready = period.isSuccess && period.data.projectId === project.id && !projection.isPending && projection.error === null && !denied;
   const cellUnavailable = () => <span className="text-xs text-muted">{projection.isPending || period.isPending ? t('work-categories.loading') : t('work-categories.hoursNotLoaded')}</span>;
   const columns: TaskTableCustomColumn[] = periodId ? [
@@ -176,10 +192,8 @@ export function useTaskTimeTable(props: Props) {
       if (!ready) return cellUnavailable();
       const row = projection.tasks.get(task.id); const work = projection.packages.get(task.workPackageId);
       if (!row || !work) return cellUnavailable();
-      const value = row.currentAllocationMinutes === null ? t('work-categories.unallocated') : formatEstimate(row.currentAllocationMinutes);
-      const firstLine = work.commitment ? `${work.commitment.state === 'removed' ? t('work-categories.removedFromCurrentPlanPreviously') : t('work-categories.totalPersonalPlan')}${work.commitment.plannedMinutes === null ? t('work-categories.notSet') : formatEstimate(work.commitment.plannedMinutes)}` : t('work-categories.noPersonalPlanYet');
-      const secondLine = work.commitment ? `${work.commitment.state === 'removed' ? t('work-categories.previousRemainder') : t('work-categories.unallocated2')}${work.commitment.unallocatedMinutes === null ? t('work-categories.unknown') : formatEstimate(work.commitment.unallocatedMinutes)}${work.commitment.baselineIds.length ? t('work-categories.baselineSaved') : ''}${work.commitment.classification === 'added' ? t('work-categories.addedAfterBaseline') : ''}` : '';
-      return <div className="flex min-w-0 items-center gap-1.5"><Button variant="ghost" size="sm" className="h-9 max-w-24 min-w-0 px-1.5 sm:h-7" title={value} aria-label={t('work-categories.weeklyPlan2', { taskTitle: task.title })} disabled={opening} onClick={() => openPlan(task)}><span className="min-w-0 truncate">{value}</span></Button>{representative.get(task.workPackageId) === task.id ? <p className="min-w-0 flex-1 text-[11px] leading-[14px] text-muted" title={`${firstLine}${secondLine ? ` · ${secondLine}` : ''}`}><span className="block truncate">{firstLine}</span>{secondLine ? <span className="block truncate">{secondLine}</span> : null}</p> : null}</div>;
+      const { value, lines } = planCell(task, row, work);
+      return <div className="flex min-w-0 items-center gap-1.5"><Button variant="ghost" size="sm" className="h-9 max-w-24 min-w-0 px-1.5 sm:h-7" title={value} aria-label={t('work-categories.weeklyPlan2', { taskTitle: task.title })} disabled={opening} onClick={() => openPlan(task)}><span className="min-w-0 truncate">{value}</span></Button>{lines.length ? <p className="min-w-0 flex-1 text-[11px] leading-[14px] text-muted" title={lines.join(' · ')}>{lines.map(line => <span key={line} className="block truncate">{line}</span>)}</p> : null}</div>;
     } },
     { id: 'weekly-fact', label: t('work-categories.weeklyActualHours2', { workerName: workerName }), width: 215, renderCell: (task) => {
       if (!ready) return cellUnavailable();

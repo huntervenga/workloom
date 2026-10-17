@@ -1,7 +1,8 @@
 import { t, useTranslation, type TranslationKey } from '../../i18n';
 import type { AttendanceDto, AttendancePostingDto, AttendancePostingInput, MeetingDto, MembershipDto } from '@workloom/contracts';
-import { Button, TextInput, inputClassName } from '@workloom/ui';
-import { useState } from 'react';
+import { Button, TextInput } from '@workloom/ui';
+import { useId, useState } from 'react';
+import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { formatEstimate, formatEstimateInput, parseEstimateInput } from '../task-table';
 import type { MeetingCommands } from './queries';
@@ -32,6 +33,12 @@ function draftFor(row: AttendanceDto): AttendanceDraft {
     basis: row.workLog?.attribution.basis ?? 'planned_absence',
     reason: '',
   };
+}
+
+/** True when a person's draft holds any input beyond its own saved snapshot. */
+export function attendanceDraftEdited(draft: AttendanceDraft): boolean {
+  const saved = draftFor(draft.base);
+  return draft.status !== saved.status || draft.minutes !== saved.minutes || draft.basis !== saved.basis || draft.reason !== saved.reason;
 }
 
 function sameInstant(a: string | null, b: string | null): boolean {
@@ -86,10 +93,22 @@ function statusLabel(row: AttendancePostingInput): string {
   return row.status === 'present' ? t('meetings.attendedEntireMeeting') : t('meetings.attendedPartOfMeeting');
 }
 
+/** The saved state of one authorized attendance row; unconfirmed is never shown as zero. */
+function savedLabel(row: AttendanceDto): string {
+  if (row.postingState === 'unconfirmed') return t('meetings.attendanceUnconfirmed');
+  if (row.postingState === 'void') return t('meetings.timeEntryVoided');
+  const state = row.status === 'absent'
+    ? row.workLog?.attribution.basis === 'planned_absence' ? t('meetings.plannedAbsence') : t('meetings.absent')
+    : row.status === 'partial' ? t('meetings.partialAttendance') : t('meetings.attended');
+  return t('meetings.saved2', { state, hours: formatEstimate(row.minutes ?? 0) });
+}
+
 /** Controlled drafts and the command live above the drawer; opening this view never posts facts. */
 export function MeetingAttendanceBatch({ meeting, periodLabel, attendance, members, drafts, onChange, selectedIds, onSelectionChange, mutation, writable, blocked = false, onSaved }: MeetingAttendanceBatchProps) {
   const { t } = useTranslation();
+  const pickerId = useId();
   const [validation, setValidation] = useState<TranslationKey | 'reviewErrors' | ''>('');
+  const [fullNotice, setFullNotice] = useState<{ count: number; kept: number } | null>(null);
   const held = mutation.pendingCommand?.variables ?? mutation.uncertain?.variables;
   const own = held?.taskId === meeting.taskId && held.attendanceMode === 'team' ? held : null;
   const locked = !writable || blocked || !!held;
@@ -112,6 +131,16 @@ export function MeetingAttendanceBatch({ meeting, periodLabel, attendance, membe
   const shown = own ? own.input.rows.map(row => ({ row, name: name(attendance.find(item => item.id === row.attendanceId)) })) : review;
   const confirmedMinutes = shown.reduce((total, { row }) => total + (row.kind === 'void' ? 0 : row.minutes ?? 0), 0);
   const saved = (result: AttendancePostingDto, variables: NonNullable<MeetingCommands['attendance']['variables']>) => onSaved(result, variables.input.rows.map(row => row.attendanceId));
+  const actualSaved = meeting.actualStartAt !== null && meeting.actualDurationMinutes !== null;
+  // Full attendance is proposed only for people with no saved source yet; edited drafts keep their own controls.
+  const unconfirmed = roster.filter(row => row.postingState === 'unconfirmed');
+  const fullReady = unconfirmed.filter(row => { const draft = drafts[row.id]; return !draft || !attendanceDraftEdited(draft); });
+  const fullKept = unconfirmed.filter(row => { const draft = drafts[row.id]; return !!draft && attendanceDraftEdited(draft) && !selectedIds.includes(row.id); });
+  const fullBlocked = locked || meeting.state === 'cancelled' || !actualSaved || fullReady.length === 0;
+  const summaryRows = attendance.filter(row => row.rosterActive || row.workLog !== null);
+  const reviewIds = new Set(shown.map(({ row }) => row.attendanceId));
+  const counts = { present: 0, partial: 0, absent: 0, unconfirmed: 0, void: 0 };
+  for (const row of summaryRows) counts[row.postingState === 'active' ? row.status === 'unknown' ? 'unconfirmed' : row.status : row.postingState] += 1;
   const prepare = () => {
     if (locked) return;
     const next = { ...drafts };
@@ -119,6 +148,17 @@ export function MeetingAttendanceBatch({ meeting, periodLabel, attendance, membe
     onChange(next);
     onSelectionChange(roster.map(row => row.id));
     setValidation('');
+    setFullNotice(null);
+  };
+  const prepareFull = () => {
+    if (fullBlocked) return;
+    const next = { ...drafts };
+    // An untouched draft holds no input, so it is rebuilt from the current row instead of an older snapshot.
+    for (const row of fullReady) next[row.id] = { ...draftFor(row), status: 'present', basis: 'actual_meeting' };
+    onChange(next);
+    onSelectionChange([...new Set([...selectedIds, ...fullReady.map(row => row.id)])]);
+    setValidation('');
+    setFullNotice({ count: fullReady.length, kept: fullKept.length });
   };
   const fillPresent = () => {
     if (locked) return;
@@ -133,28 +173,57 @@ export function MeetingAttendanceBatch({ meeting, periodLabel, attendance, membe
     if (errors.length) { setValidation('reviewErrors'); return; }
     if (!review.length || selected.length > 100) { setValidation('meetings.choose1100RowsWithAnExplicitAttendanceOutcome'); return; }
     setValidation('');
+    setFullNotice(null);
     mutation.mutate({ taskId: meeting.taskId, attendanceMode: 'team', input: { expectedMeetingRevision: meeting.revision, periodId: meeting.plannedPeriodId, rows: review.map(item => item.row) } }, { onSuccess: saved });
   };
+  const basisOptions: ChoiceOption[] = [
+    { value: 'planned_absence', label: t('meetings.plannedAbsenceNoActualStartRequired') },
+    { value: 'actual_meeting', label: t('meetings.meetingThatTookPlace') },
+  ];
   return (
     <section aria-label={t('meetings.teamAttendance')} className="space-y-4 rounded-xl border border-line p-4">
       <div className="space-y-2"><h2 className="font-semibold">{t('meetings.teamAttendance')}</h2><p className="text-sm text-muted">{t('meetings.anInvitationDoesNotConfirmAttendanceSelectPeopleChoose')}</p></div>
-      <p className="rounded-lg bg-canvas px-3 py-2 text-xs leading-relaxed text-muted">{meeting.actualStartAt && meeting.actualDurationMinutes !== null ? t('meetings.savedActualDurationHelp', { duration: formatEstimate(meeting.actualDurationMinutes) }) : t('meetings.actualDurationRequiredHelp')}</p>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={locked || !roster.length} onClick={prepare}>{t('meetings.selectTeamMembers')}</Button>
-        {selected.length ? <Button size="sm" disabled={locked || meeting.state === 'cancelled' || !meeting.actualStartAt || meeting.actualDurationMinutes === null} onClick={fillPresent}>{t('meetings.markSelectedAsAttended')}</Button> : null}
+      <p className="rounded-lg bg-canvas px-3 py-2 text-xs leading-relaxed text-muted">{actualSaved ? t('meetings.savedActualDurationHelp', { duration: formatEstimate(meeting.actualDurationMinutes ?? 0) }) : t('meetings.actualDurationRequiredHelp')}</p>
+      {summaryRows.length ? <section aria-label={t('meetings.rosterSummary')} className="space-y-2 rounded-lg border border-line p-3">
+        <h3 className="text-sm font-semibold">{t('meetings.rosterSummary')}</h3>
+        <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+          <span>{t('meetings.rosterCountAttended', { count: counts.present })}</span>
+          <span>{t('meetings.rosterCountPartial', { count: counts.partial })}</span>
+          <span>{t('meetings.rosterCountAbsent', { count: counts.absent })}</span>
+          <span>{t('meetings.rosterCountUnconfirmed', { count: counts.unconfirmed })}</span>
+          {counts.void ? <span>{t('meetings.rosterCountVoided', { count: counts.void })}</span> : null}
+        </p>
+        <ul className="space-y-1 text-sm">{summaryRows.map(row => <li key={row.id} className="flex flex-wrap gap-x-2"><span className="font-medium">{name(row)}</span><span className="text-muted">{savedLabel(row)}{row.rosterActive ? '' : t('meetings.removedFromRoster')}{reviewIds.has(row.id) ? t('meetings.inReview') : ''}</span></li>)}</ul>
+        <p className="text-xs text-muted">{t('meetings.rosterSummaryHelp')}</p>
+      </section> : null}
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="primary" disabled={fullBlocked} onClick={prepareFull}>{t('meetings.prepareFullAttendance')}</Button>
+          <Button size="sm" disabled={locked || !roster.length} onClick={prepare}>{t('meetings.selectTeamMembers')}</Button>
+          {selected.length ? <Button size="sm" disabled={locked || meeting.state === 'cancelled' || !actualSaved} onClick={fillPresent}>{t('meetings.markSelectedAsAttended')}</Button> : null}
+        </div>
+        <p className="text-xs text-muted">{meeting.state === 'cancelled' ? t('meetings.prepareFullAttendanceCancelled') : roster.length && !unconfirmed.length ? t('meetings.prepareFullAttendanceNoneLeft') : t('meetings.prepareFullAttendanceHelp')}</p>
+        {fullNotice && !own ? <p role="status" className="text-sm text-muted">{t('meetings.prepareFullAttendanceReady', { count: fullNotice.count })}{fullNotice.kept ? ` ${t('meetings.prepareFullAttendanceKeptDrafts', { count: fullNotice.kept })}` : ''}</p> : null}
       </div>
       {!own && selectedIds.length ? <fieldset disabled={locked} className="space-y-3"><legend className="mb-2 text-sm font-medium">{t('meetings.reviewSelectedPeople')}</legend>{roster.map(row => {
         const draft = drafts[row.id] ?? draftFor(row);
         const selectedRow = selectedIds.includes(row.id);
         const update = (patch: Partial<AttendanceDraft>) => onChange({ ...drafts, [row.id]: { ...draft, ...patch } });
+        const outcomeId = `${pickerId}-${row.id}-outcome`;
+        const basisId = `${pickerId}-${row.id}-basis`;
+        const outcomes: ChoiceOption[] = [
+          { value: 'unknown', label: t('meetings.skipLeaveUnconfirmed') },
+          { value: 'present', label: t('meetings.attendedEntireMeeting') },
+          { value: 'partial', label: t('meetings.attendedPartOfMeeting') },
+          { value: 'absent', label: t('meetings.absent0Minutes') },
+          ...(draft.base.workLog ? [{ value: 'void', label: t('meetings.voidTimeEntry') }] : []),
+        ];
         return <div key={row.id} className="space-y-3 rounded-lg border border-line p-3">
           <label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={selectedRow} onChange={event => onSelectionChange(event.target.checked ? [...selectedIds, row.id] : selectedIds.filter(id => id !== row.id))} />{name(row)}</label>
           {selectedRow ? <div className="space-y-3">
-            <label className="block space-y-1 text-sm">{t('meetings.attendanceOutcome', { person: name(row) })}<select className={inputClassName()} value={draft.status} onChange={event => update({ status: event.target.value as AttendanceDraft['status'] })}>
-              <option value="unknown">{t('meetings.skipLeaveUnconfirmed')}</option><option value="present">{t('meetings.attendedEntireMeeting')}</option><option value="partial">{t('meetings.attendedPartOfMeeting')}</option><option value="absent">{t('meetings.absent0Minutes')}</option>{draft.base.workLog ? <option value="void">{t('meetings.voidTimeEntry')}</option> : null}
-            </select></label>
+            <div className="space-y-1 text-sm"><label htmlFor={outcomeId} className="block">{t('meetings.attendanceOutcome', { person: name(row) })}</label><ChoicePicker id={outcomeId} label={t('meetings.attendanceOutcome', { person: name(row) })} value={draft.status} options={outcomes} onValueChange={value => update({ status: value as AttendanceDraft['status'] })} /></div>
             {draft.status === 'partial' ? <label className="block space-y-1 text-sm">{t('meetings.timeAttendedHours', { person: name(row) })}<TextInput inputMode="decimal" placeholder={t('meetings.partialTimeExample')} value={draft.minutes} onChange={event => update({ minutes: event.target.value })} /></label> : null}
-            {draft.status === 'absent' ? <label className="block space-y-1 text-sm">{t('meetings.absenceBasis', { person: name(row) })}<select className={inputClassName()} value={draft.basis} onChange={event => update({ basis: event.target.value as AttendanceDraft['basis'] })}><option value="planned_absence">{t('meetings.plannedAbsenceNoActualStartRequired')}</option><option value="actual_meeting">{t('meetings.meetingThatTookPlace')}</option></select></label> : null}
+            {draft.status === 'absent' ? <div className="space-y-1 text-sm"><label htmlFor={basisId} className="block">{t('meetings.absenceBasis', { person: name(row) })}</label><ChoicePicker id={basisId} label={t('meetings.absenceBasis', { person: name(row) })} value={draft.basis} options={basisOptions} onValueChange={value => update({ basis: value as AttendanceDraft['basis'] })} /></div> : null}
             {draft.status !== 'unknown' ? <label className="block space-y-1 text-sm">{t('meetings.attendanceReason', { person: name(row) })}<TextInput aria-label={t('meetings.attendanceReason', { person: name(row) })} maxLength={1000} value={draft.reason} onChange={event => update({ reason: event.target.value })} /><span className="block text-xs text-muted">{t('meetings.aReasonIsRequiredForCorrectionsVoidingRestoringOr')}</span></label> : null}
           </div> : null}
         </div>;

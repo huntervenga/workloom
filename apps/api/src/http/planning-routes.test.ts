@@ -60,6 +60,14 @@ const packageBaseline = contracts.packageBaselineSchema.parse({
   estimateMinutes: 1200, sourcePackageRevision: 1, acceptedAt: TS, sourceBaselineId: ids.baseline,
   provenance: 'first_known_plan_freeze',
 });
+const origin = { planBaselineId: ids.baseline, periodId: ids.period, periodLocalStart: '2026-10-19', scope: 'project', mode: 'manual', frozenAt: TS, packageRevision: 1 } as const;
+const originalTarget = { workspaceId: W, projectId: ids.project, workPackageId: ids.package };
+const originalCaptured = contracts.originalPackageEstimateSchema.parse({
+  state: 'captured', ...originalTarget, estimateMinutes: 0, packageBaselineId: ids.packageBaseline, acceptedAt: TS,
+  provenance: 'first_known_plan_freeze', origin,
+});
+const originalUnknown = contracts.originalPackageEstimateSchema.parse({ state: 'original_unknown', ...originalTarget, estimateMinutes: null, packageBaselineId: null, origin });
+const originalPending = contracts.originalPackageEstimateSchema.parse({ state: 'not_captured_yet', ...originalTarget });
 const preview = contracts.freezePreviewSchema.parse({
   periodId: ids.period, scope: 'project', membershipId: null, previewHash: hash, snapshot, existingBaselineId: null,
 });
@@ -112,6 +120,7 @@ const planning: PlanningApplication = {
   previewFreeze: record('previewFreeze', preview), freezePlan: record('freezePlan', baseline),
   listBaselines: record('listBaselines', page(baseline)), getBaseline: record('getBaseline', baseline),
   getPackageBaseline: record('getPackageBaseline', packageBaseline),
+  getOriginalPackageEstimate: record('getOriginalPackageEstimate', originalCaptured),
   listWorkLogs: record('listWorkLogs', page(workLog)), setManualPeriodWork: record('setManualPeriodWork', workLog),
   listReportRuns: record('listReportRuns', page(reportRun)), createReportRun: record('createReportRun', reportRun),
   getReportRun: record('getReportRun', reportRun), listReportRows: record('listReportRows', page(reportRow)),
@@ -137,6 +146,7 @@ const routes: Route[] = [
   { method: 'GET', path: `/periods/${ids.period}`, service: 'getPeriod', args: [ids.period], result: period },
   { method: 'PATCH', path: `/periods/${ids.period}`, input: { expectedRevision: 2, name: 'Renamed' }, service: 'updatePeriod', args: [ids.period, { expectedRevision: 2, name: 'Renamed' }], result: period },
   { method: 'GET', path: '/planning-packages', query: `projectId=${ids.project}`, service: 'listPackages', args: [{ projectId: ids.project, limit: 50 }], result: [workPackage], paged: true },
+  { method: 'GET', path: `/planning-packages/${ids.package}/original-estimate`, service: 'getOriginalPackageEstimate', args: [ids.package], result: originalCaptured },
   { method: 'GET', path: `/periods/${ids.period}/commitments`, service: 'listCommitments', args: [ids.period, { limit: 50 }], result: [commitment], paged: true },
   { method: 'POST', path: `/periods/${ids.period}/commitments`, input: createCommitmentInput, service: 'createCommitment', args: [ids.period, { ...createCommitmentInput, allocations: [] }], result: commitment, status: 201 },
   { method: 'PUT', path: `/periods/${ids.period}/commitments/${ids.commitment}`, input: updateCommitmentInput, service: 'updateCommitment', args: [ids.period, ids.commitment, updateCommitmentInput], result: commitment },
@@ -292,7 +302,7 @@ describe('P2a planning HTTP adapter', () => {
   });
 
   it('rejects malformed target IDs and foreign origins before the service', async () => {
-    for (const path of [`/periods/not-a-uuid`, `/baselines/not-a-uuid`, `/package-baselines/not-a-uuid`, `/report-runs/not-a-uuid`]) {
+    for (const path of [`/periods/not-a-uuid`, `/baselines/not-a-uuid`, `/package-baselines/not-a-uuid`, `/planning-packages/not-a-uuid/original-estimate`, `/report-runs/not-a-uuid`]) {
       expect((await app.inject({ url: BASE + path, headers: headers() })).statusCode).toBe(400);
     }
     for (const method of ['POST', 'PUT'] as const) {
@@ -358,6 +368,39 @@ describe('P2a planning HTTP adapter', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.args).toEqual([ids.task, ids.period, ids.membership, { expectedRevision: null, minutes: 0, state: 'active', reason: null }]);
     expect(calls[0]?.ctx.idempotencyKey).toBe(KEY);
+  });
+
+  it('returns each original-estimate state unchanged, rejects queries and never accepts a current estimate in the projection', async () => {
+    const path = `${BASE}/planning-packages/${ids.package}/original-estimate`;
+    for (const value of [originalCaptured, originalUnknown, originalPending]) {
+      overrides.set('getOriginalPackageEstimate', () => value);
+      const response = await app.inject({ url: path, headers: headers() });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data).toEqual(value);
+      expect(response.json().data).not.toHaveProperty('currentEstimateMinutes');
+    }
+    for (const query of ['?limit=1', '?estimateMinutes=0', '?projectId=' + ids.project]) {
+      expect((await app.inject({ url: path + query, headers: headers() })).statusCode).toBe(400);
+    }
+    // Invalid service output: an unknown original may not carry a guessed estimate or baseline.
+    overrides.set('getOriginalPackageEstimate', () => ({ ...originalUnknown, estimateMinutes: 120 }));
+    expect((await app.inject({ url: path, headers: headers() })).statusCode).toBe(500);
+    overrides.set('getOriginalPackageEstimate', () => ({ ...originalPending, estimateMinutes: 120, origin }));
+    const pending = await app.inject({ url: path, headers: headers() });
+    expect(pending.statusCode).toBe(200);
+    expect(pending.json().data).toEqual(originalPending);
+    for (const code of ['NOT_FOUND', 'TEMPORARILY_UNAVAILABLE'] as const) {
+      overrides.set('getOriginalPackageEstimate', () => { throw new DomainError(code, code === 'NOT_FOUND' ? NOT_FOUND_MESSAGE : 'Safe rejection'); });
+      expect((await app.inject({ url: path, headers: headers() })).statusCode).toBe(code === 'NOT_FOUND' ? 404 : 503);
+    }
+  });
+
+  it('keeps old package, package-baseline and snapshot DTOs free of original-estimate observations', async () => {
+    expect(Object.keys(contracts.planningPackageSchema.shape).sort()).toEqual(['createdAt', 'estimateMinutes', 'id', 'packageBaselineId', 'projectId', 'revision', 'title']);
+    expect(Object.keys(contracts.packageBaselineSchema.shape).sort()).toEqual(['acceptedAt', 'estimateMinutes', 'id', 'projectId', 'provenance', 'sourceBaselineId', 'sourcePackageRevision', 'workPackageId', 'workspaceId']);
+    expect(contracts.planBaselineSchema.parse(JSON.parse(JSON.stringify(baseline)))).toEqual(baseline);
+    const response = await app.inject({ url: `${BASE}/baselines/${ids.baseline}`, headers: headers() });
+    expect(JSON.stringify(response.json().data)).not.toMatch(/original_unknown|not_captured_yet|"origin"/);
   });
 
   it('redacts unexpected failures and rejects invalid service output', async () => {

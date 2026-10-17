@@ -1,8 +1,9 @@
 import { t, useTranslation } from '../../i18n';
 import type { MeDto } from '@workloom/contracts';
-import { Logomark, cn } from '@workloom/ui';
-import { CheckCheck, FolderKanban, LayoutDashboard, Users } from 'lucide-react';
-import { Link, NavLink } from 'react-router';
+import { Logomark, Skeleton, cn } from '@workloom/ui';
+import { CheckCheck, Folder, FolderKanban, LayoutDashboard, RefreshCw, Users } from 'lucide-react';
+import { Link, NavLink, useLocation } from 'react-router';
+import { useProjectsQuery } from '../../features/projects/queries';
 import type { WorkspaceRole } from '../../features/workspace/roles';
 import { WorkspaceChooser } from '../../features/workspace/WorkspaceChooser';
 import { LocalModeCard } from './LocalModeCard';
@@ -19,6 +20,67 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
     'flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition-colors',
     isActive ? 'bg-accent-soft text-accent-ink' : 'text-ink-soft hover:bg-slate-100 hover:text-ink',
   );
+
+const projectLinkClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    'flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors',
+    isActive ? 'bg-accent-soft font-medium text-accent-ink' : 'text-ink-soft hover:bg-slate-100 hover:text-ink',
+  );
+
+/**
+ * Active projects of the workspace, in server order. It shares the Projects page query and cache,
+ * reads nothing else and never writes. A long list scrolls inside its own bounded area.
+ */
+function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string; workspaceId: string; onNavigate?: (() => void) | undefined }) {
+  useTranslation();
+  const projects = useProjectsQuery(actorId, workspaceId);
+  const location = useLocation();
+  const active = projects.data?.projects.filter(project => project.archivedAt === null) ?? [];
+  return (
+    <nav aria-label={t('shell.activeProjects')}>
+      <p aria-hidden="true" className="px-2.5 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-subtle uppercase">{t('shell.activeProjects')}</p>
+      {projects.isPending ? (
+        <div role="status" className="space-y-1.5 px-2.5">
+          <span className="sr-only">{t('shell.loadingProjects')}</span>
+          <Skeleton className="h-4 w-36" />
+          <Skeleton className="h-4 w-28" />
+        </div>
+      ) : projects.isError ? (
+        // Errors win over cached rows, so a denied refetch hides the list. The page itself shows details.
+        <div className="space-y-1 px-2.5 text-xs text-muted">
+          <p>{t('shell.projectsUnavailable')}</p>
+          <button type="button" onClick={() => void projects.refetch()} disabled={projects.isFetching} className="inline-flex items-center gap-1 rounded font-medium text-accent-strong hover:underline disabled:text-muted disabled:no-underline">
+            <RefreshCw size={12} aria-hidden="true" className={projects.isFetching ? 'motion-safe:animate-spin' : undefined} />
+            {t('shell.retryProjects')}
+          </button>
+        </div>
+      ) : active.length === 0 ? (
+        <p className="px-2.5 text-xs text-muted">{t('shell.noActiveProjects')}</p>
+      ) : (
+        <ul data-sidebar-projects="" className="max-h-[min(40dvh,20rem)] space-y-0.5 overflow-y-auto overscroll-contain">
+          {active.map(project => {
+            const pathname = `/w/${workspaceId}/projects/${project.id}`;
+            // On this project's own task page the link keeps the current filters, week, person,
+            // view and open task, and a plain click changes nothing. Other pages open it clean.
+            const here = location.pathname.replace(/\/$/, '').toLowerCase() === pathname.toLowerCase();
+            return (
+              <li key={project.id}>
+                <NavLink to={here ? { pathname: location.pathname, search: location.search, hash: location.hash } : pathname} className={projectLinkClass}
+                  onClick={event => {
+                    if (here && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) event.preventDefault();
+                    onNavigate?.();
+                  }}>
+                  <Folder size={16} aria-hidden="true" className="shrink-0" />
+                  <span className="min-w-0 truncate" title={project.name}>{project.name}</span>
+                </NavLink>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </nav>
+  );
+}
 
 export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarContentProps) {
   useTranslation();
@@ -53,7 +115,8 @@ export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarCon
                   </NavLink>
                 </li>
                 <li>
-                  <NavLink to={`/w/${workspaceId}/projects`} className={navLinkClass} onClick={onNavigate}>
+                  {/* Exact: on a project page only that project's entry below is current. */}
+                  <NavLink to={`/w/${workspaceId}/projects`} end className={navLinkClass} onClick={onNavigate}>
                     <FolderKanban size={18} aria-hidden="true" />
 
                     {t('routes.projects')}
@@ -72,6 +135,9 @@ export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarCon
             )}
           </ul>
         </nav>
+
+        {/* Only for a workspace the current actor has opened; its role is known from that read. */}
+        {workspaceId && role ? <SidebarProjects actorId={me.actor.id} workspaceId={workspaceId} onNavigate={onNavigate} /> : null}
 
         <div className="mt-auto">
           <LocalModeCard me={me} role={role} />

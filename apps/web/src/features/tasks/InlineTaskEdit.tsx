@@ -1,4 +1,4 @@
-import { taskPrioritySchema, type MembershipDto, type TaskDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup } from '@workloom/contracts';
+import { taskPrioritySchema, type MembershipDto, type SectionDto, type TaskDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup } from '@workloom/contracts';
 import { Button, cn } from '@workloom/ui';
 import { Expand, LoaderCircle, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
@@ -35,6 +35,8 @@ export interface InlineTaskEditProps {
   field: TaskInlineField;
   statuses: readonly TaskStatusDto[];
   members: readonly MembershipDto[];
+  /** Project sections for the section move; only active ones are offered. */
+  sections?: readonly SectionDto[] | undefined;
   commands: TaskCommands;
   writable: boolean;
   estimatePackages?: ReadonlyMap<string, WorkPackageEntry> | undefined;
@@ -47,7 +49,7 @@ export interface InlineTaskEditProps {
 
 const statusColors: Record<TaskStatusGroup, string> = { todo: '#94a3b8', in_progress: '#6366f1', done: '#10b981', cancelled: '#cbd5e1' };
 const priorityColors: Partial<Record<TaskPriority, string>> = { low: '#94a3b8', medium: '#64748b', high: '#d97706', urgent: '#e11d48' };
-const choiceFields = new Set<TaskInlineField>(['statusId', 'priority', 'responsibleMembershipId']);
+const choiceFields = new Set<TaskInlineField>(['statusId', 'priority', 'responsibleMembershipId', 'sectionId']);
 
 /** A fixed-height cell control: it fills the cell and never changes the row or column size. */
 const cellInputClassName = cn('block h-8 w-full min-w-0 border border-accent-line bg-surface px-2 text-sm text-ink outline-none ring-2 ring-accent-soft placeholder:text-subtle read-only:bg-canvas read-only:text-muted aria-[invalid=true]:border-red-300 aria-[invalid=true]:ring-red-100', 'rounded');
@@ -57,7 +59,7 @@ const iconActionClassName = cn('inline-flex size-7 shrink-0 items-center justify
  * Uses the exact seen task revision; only this cell's field can enter the update. Choices save
  * at once through the same command; text saves on Enter or when focus leaves the editor.
  */
-export function InlineTaskEdit({ task, field, statuses, members, commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
+export function InlineTaskEdit({ task, field, statuses, members, sections = [], commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
@@ -224,7 +226,7 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
   };
   const choose = (value: string) => {
     chose.current = true;
-    const patch: Partial<TaskDraft> | null = field === 'statusId' ? { statusId: value } : field === 'responsibleMembershipId' ? { responsibleMembershipId: value || null } : (() => {
+    const patch: Partial<TaskDraft> | null = field === 'statusId' ? { statusId: value } : field === 'responsibleMembershipId' ? { responsibleMembershipId: value || null } : field === 'sectionId' ? { sectionId: value || null } : (() => {
       const priority = taskPrioritySchema.safeParse(value);
       return priority.success ? { priority: priority.data } : null;
     })();
@@ -256,11 +258,22 @@ export function InlineTaskEdit({ task, field, statuses, members, commands, writa
     ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName })),
   ];
   const priorityOptions: ChoiceOption[] = taskPrioritySchema.options.map(priority => ({ value: priority, label: priorityLabels[priority], color: priorityColors[priority] }));
+  // Active sections in their project order. A current archived or unknown section stays visible
+  // and selected, but is never offered as a move target.
+  const draftSection = session.draft.sectionId;
+  const heldSection = draftSection === null ? undefined : sections.find(section => section.id === draftSection);
+  const heldUnavailable = draftSection !== null && (heldSection === undefined || heldSection.archivedAt !== null);
+  const sectionOptions: ChoiceOption[] = [
+    { value: '', label: t('tasks.taskFields.noSection') },
+    ...(heldUnavailable ? [{ value: draftSection ?? '', label: heldSection ? t('tasks.taskFields.valueArchived', { p0: heldSection.name }) : t('tasks.taskFields.sectionUnavailable'), disabled: true }] : []),
+    ...sections.filter(section => section.archivedAt === null).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)).map(section => ({ value: section.id, label: section.name })),
+  ];
   const picker = (label: string, value: string, options: readonly ChoiceOption[], searchable?: boolean) => <ChoicePicker compact autoFocus={shouldFocus} label={label} value={value} options={options} searchable={searchable}
     disabled={frozen || needsReview} aria-describedby={describedBy} aria-invalid={Boolean(currentError) || undefined} onValueChange={choose} />;
   const control = field === 'statusId' ? picker(t('tasks.taskFields.status'), session.draft.statusId, statusOptions)
     : field === 'priority' ? picker(t('tasks.taskFields.priority'), session.draft.priority, priorityOptions)
     : field === 'responsibleMembershipId' ? picker(t('tasks.taskFields.assignee'), session.draft.responsibleMembershipId ?? '', assigneeOptions, true)
+    : field === 'sectionId' ? picker(t('tasks.taskFields.section'), draftSection ?? '', sectionOptions)
     : field === 'estimate' ? <input {...textProps} type="text" aria-label={t('tasks.inlineEstimate.label')} value={session.draft.estimate} onChange={event => change({ estimate: event.target.value })} />
     : field === 'title' ? <input {...textProps} type="text" aria-label={t('tasks.taskFields.taskName')} maxLength={TASK_TITLE_MAX} value={session.draft.title} onChange={event => change({ title: event.target.value })} />
     : <input {...textProps} type="date" aria-label={t('tasks.taskFields.dueDate')} min="0001-01-01" max="9999-12-31" className={cn(cellInputClassName, 'px-1')} value={session.draft.dueDate} onChange={event => change({ dueDate: event.target.value })} />;

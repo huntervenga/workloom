@@ -168,6 +168,35 @@ export const createWeeklyPlanFactReportInputSchema = z.strictObject({
   baselineId: idSchema, membershipIds: uniqueIds.default([]), knownEstimatesOnly: z.boolean().default(false),
 });
 
+/** Separate read-only projection of a package's first related plan freeze. It is never embedded in
+ * PlanningPackageDto, snapshots, previews, freeze hashes or replayed command outputs, and it has no
+ * current estimate: a later fill or edit is not an original. Every origin value comes from the
+ * immutable first-freeze observation and its plan baseline, never from the current read time.
+ */
+export const originalEstimateOriginSchema = z.object({
+  planBaselineId: idSchema, periodId: idSchema,
+  /** Immutable snapshot copy of the period start, not a current period join. */
+  periodLocalStart: calendarDateSchema,
+  scope: freezeScopeSchema, mode: z.enum(['manual', 'cutoff']), frozenAt: utcTimestampSchema,
+  packageRevision: revisionSchema,
+});
+const originalEstimateTargetSchema = { workspaceId: idSchema, projectId: idSchema, workPackageId: idSchema };
+export const originalPackageEstimateSchema = z.discriminatedUnion('state', [
+  /** No related freeze has observed this package yet; any current estimate may still change. */
+  z.object({ state: z.literal('not_captured_yet'), ...originalEstimateTargetSchema }),
+  /** Known at the first related freeze, including 0. */
+  z.object({
+    state: z.literal('captured'), ...originalEstimateTargetSchema,
+    estimateMinutes: minutesSchema, packageBaselineId: idSchema, acceptedAt: utcTimestampSchema,
+    provenance: z.literal('first_known_plan_freeze'), origin: originalEstimateOriginSchema,
+  }),
+  /** Unknown at the first related freeze; it stays unknown even after a later estimate fill. */
+  z.object({
+    state: z.literal('original_unknown'), ...originalEstimateTargetSchema,
+    estimateMinutes: z.null(), packageBaselineId: z.null(), origin: originalEstimateOriginSchema,
+  }),
+]);
+
 export const planningPeriodResponseSchema = envelopeSchema(planningPeriodSchema);
 export const planningPeriodListResponseSchema = envelopeSchema(z.array(planningPeriodSchema));
 export const periodCommitmentResponseSchema = envelopeSchema(periodCommitmentSchema);
@@ -177,6 +206,7 @@ export const freezePreviewResponseSchema = envelopeSchema(freezePreviewSchema);
 export const planBaselineResponseSchema = envelopeSchema(planBaselineSchema);
 export const planBaselineListResponseSchema = envelopeSchema(z.array(planBaselineSchema));
 export const packageBaselineResponseSchema = envelopeSchema(packageBaselineSchema);
+export const originalPackageEstimateResponseSchema = envelopeSchema(originalPackageEstimateSchema);
 export const manualPeriodWorkLogResponseSchema = envelopeSchema(manualPeriodWorkLogSchema);
 export const manualPeriodWorkLogListResponseSchema = envelopeSchema(z.array(manualPeriodWorkLogSchema));
 export const weeklyPlanFactReportRunResponseSchema = envelopeSchema(weeklyPlanFactReportRunSchema);
@@ -198,6 +228,8 @@ export type CreatePeriodCommitmentInput = z.infer<typeof createPeriodCommitmentI
 export type UpdatePeriodCommitmentInput = z.infer<typeof updatePeriodCommitmentInputSchema>;
 export type PlanningPackageDto = z.infer<typeof planningPackageSchema>;
 export type PackageBaselineDto = z.infer<typeof packageBaselineSchema>;
+export type OriginalEstimateOriginDto = z.infer<typeof originalEstimateOriginSchema>;
+export type OriginalPackageEstimateDto = z.infer<typeof originalPackageEstimateSchema>;
 export type PlanningSnapshotDto = z.infer<typeof planningSnapshotSchema>;
 export type FreezeScope = z.infer<typeof freezeScopeSchema>;
 export type FreezePreviewInput = z.infer<typeof freezePreviewInputSchema>;

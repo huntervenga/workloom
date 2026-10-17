@@ -6,6 +6,8 @@
  "deadline":"Baseline deadline: {{time}} · {{timezone}}",
  "savedAt":"Requested cutoff: {{requestedAt}} · Baseline saved: {{frozenAt}}",
  "checkedAt":"Status checked: {{time}}",
+ "details":"Freeze details",
+ "detailsHelp":"This status is read when the page loads or when you refresh it. It does not update live.",
  "status":{"planning":"Planning","overdue_waiting":"Deadline passed · baseline not saved","preparing_calendar":"Calendar preparation needed","blocked":"Automatic freeze needs attention","frozen":"Project baseline saved"},
  "waitingHelp":"The deadline has passed. No project baseline has been saved yet.",
  "preparingHelp":"Registered meeting occurrences still need preparation before the baseline can be saved.",

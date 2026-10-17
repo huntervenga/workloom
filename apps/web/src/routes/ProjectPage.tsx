@@ -1,6 +1,6 @@
 import { ChoicePicker } from '../shared/ChoicePicker';
 import { DialogReturnFocus } from '../shared/DialogShell';
-import { orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
+import { compareTaskRows, orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
 import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
 import { TaskCompletionAction } from '../features/tasks/TaskCompletionAction';
 import { TaskCompletionFeedback } from '../features/tasks/TaskCompletionFeedback';
@@ -17,7 +17,7 @@ import { QuickTaskAdd, type QuickAddCloseReason } from '../features/tasks/QuickT
 import { InlineTaskEdit, type InlineCloseReason, type InlineSaveIntent } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
 import { SaveFeedback } from '../shared/SaveFeedback';
-import { canEditTaskInline, isCurrentEstimateProjection, matchesInlineTaskReceipt, taskInlineColumn, type TaskInlineField } from '../features/tasks/tableEditing';
+import { canEditTaskInline, canMoveTaskSection, isCurrentEstimateProjection, matchesInlineTaskReceipt, taskInlineColumn, type TaskInlineField } from '../features/tasks/tableEditing';
 import { message, type TranslationMessage } from '../i18n';
 import { useTranslation } from '../i18n';
 import { ImportView, ImportNotices } from '../features/imports/ImportView';
@@ -61,11 +61,13 @@ import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMu
 import { CreateSectionDialog, RenameSectionDialog } from '../features/projects/SectionDialogs';
 import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, type TaskTableCustomColumn } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
-import { TaskDrawer } from '../features/tasks/TaskDrawer';
+import { TaskDrawer, type LoadedSubtasks } from '../features/tasks/TaskDrawer';
 import {
   TaskFilters,
   emptyTaskFilters,
   hasActiveTaskFilters,
+  patchTaskFilterParams,
+  readTaskFilterParams,
   useDebouncedValue,
   type TaskFilterValue,
 } from '../features/tasks/TaskFilters';
@@ -262,9 +264,18 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   }, [invalidateInlineSave]);
   const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean } } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
-  const [filters, setFilters] = useState<TaskFilterValue>(emptyTaskFilters);
-  const search = useDebouncedValue(filters.search.trim(), SEARCH_DEBOUNCE_MS);
+  // Status, participant, tag and archived are validated URL state; search text stays in memory.
+  const [searchText, setSearchText] = useState(emptyTaskFilters.search);
+  const search = useDebouncedValue(searchText.trim(), SEARCH_DEBOUNCE_MS);
   const [searchParams, setSearchParams] = useCurrentSearchParams();
+  const urlFilters = readTaskFilterParams(searchParams);
+  const filters: TaskFilterValue = { ...urlFilters, search: searchText };
+  const changeFilters = (next: TaskFilterValue) => {
+    invalidateInlineSave();
+    setSearchText(next.search);
+    // Only changed filters are patched onto the current URL head; a search edit never navigates.
+    setSearchParams(before => patchTaskFilterParams(before, urlFilters, next));
+  };
   const sortMode: TaskSortMode = searchParams.getAll('sort').length === 1 && searchParams.get('sort') === 'due_asc' ? 'due_asc' : 'manual';
   const taskId = searchParams.get('task');
   const boardMode = searchParams.get('view') === 'board';
@@ -474,6 +485,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         // The command/session ledger already confirmed this precise submitted draft.
         setActiveInline(null);
         setAnnouncement(message('tasks.taskDrawer.taskSaved'));
+        if (field === 'sectionId') {
+          // The row leaves its group: say where it went and keep that group open to show it.
+          const target = confirmed.sectionId === null ? null : sections.data?.find(section => section.id === confirmed.sectionId);
+          setAnnouncement(message('taskTable.sectionMove.moved', { title: confirmed.title, section: confirmed.sectionId === null ? t('tasks.taskFields.noSection') : target?.name ?? t('tasks.taskFields.sectionUnavailable') }));
+          if (origin.grouping === 'section') expandQuickSection(confirmed.sectionId);
+        }
         if (field === 'responsibleMembershipId' && origin.grouping === 'assignee') {
           inlineReceipt.current = { task: confirmed, field, generation, presentationKey: origin.presentationKey };
         }
@@ -593,6 +610,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setQuickAddSection(targetSection);
   };
   const startInline = (task: TaskDto, field: TaskInlineField) => {
+    // Only an ordinary root task moves between sections.
+    if (field === 'sectionId' && !canMoveTaskSection(task)) return;
     const held = unresolvedTaskCommand(commands);
     const kept = commands.editSessions.current.get(task.id);
     // Only the held cell itself may reopen for recovery; another task's or field's command must resolve first.
@@ -670,6 +689,17 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   useEffect(() => {
     if (queuedInline) settleQueued.current(queuedInline);
   }, [queuedInline, heldKey, commands.quickVersion, tasks.isFetching, tasks.isRefetching, tasks.isError, shownTasks]);
+  // The open task's direct children among the loaded rows only. Without a current list nothing is
+  // claimed; a filter, search or unloaded page labels the list as a subset.
+  // Including archived tasks only widens the list; every other filter narrows it.
+  const filtered = hasActiveTaskFilters({ ...filters, includeArchived: false });
+  const loadedSubtasks = useMemo((): LoadedSubtasks | undefined => {
+    if (taskId === null || !isUuid(taskId) || tasks.data === undefined || (tasks.isError && !tasks.isFetchNextPageError)) return undefined;
+    const parentId = taskId.toLowerCase();
+    const children = dedupeTasks(shownTasks).filter(task => task.parentTaskId?.toLowerCase() === parentId).sort((left, right) => compareTaskRows(left, right, 'manual'));
+    const partial = filtered || !loadedTaskScope(tasks.data).complete || tasks.isFetchNextPageError;
+    return { parentId, tasks: children, partial, includesArchived: urlFilters.includeArchived };
+  }, [taskId, tasks.data, tasks.isError, tasks.isFetchNextPageError, shownTasks, filtered, urlFilters.includeArchived]);
   const closeDrawer = () => {
     setCreating(null);
     if (taskId !== null) setTaskParam(null);
@@ -745,9 +775,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         <Button ref={boardMode ? activeViewControl : undefined} size="sm" variant={boardMode ? 'primary' : 'ghost'} aria-current={boardMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'board'); return next; })}>{t('projects.projectPage.board')}</Button>
         <Button ref={graphMode ? activeViewControl : undefined} size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
         <Button ref={ganttMode ? activeViewControl : undefined} size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
-        {canManageImports ? <Button ref={importMode ? activeViewControl : undefined} size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
+        {/* The daily Week route comes before the occasional import, so narrow screens show it first. */}
         <Link to={weeklyPlanningHref(workspace.id, project.id, { periodId: taskTime.context.periodId, workerId: taskTime.context.workerId, explicitEmptyPeriod: true })} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>
           <CalendarDays size={16} aria-hidden="true" />{t('projects.projectPage.week')}</Link>
+        {canManageImports ? <Button ref={importMode ? activeViewControl : undefined} size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
       </nav>
 
       <div role="status" aria-live="polite" className="sr-only">
@@ -785,7 +816,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           ) : null}
           {tableMode ? taskTime.controls : taskTime.notices}
           <div className="flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
-            {showTaskFilters ? <div className="min-w-0 basis-full sm:basis-0 sm:flex-1"><TaskFilters value={filters} onChange={next => { invalidateInlineSave(); setFilters(next); }} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
+            {showTaskFilters ? <div className="min-w-0 basis-full sm:basis-0 sm:flex-1"><TaskFilters value={filters} onChange={changeFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
             {!boardMode && !graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
               {t('taskTable.grouping.label')}
               <ChoicePicker compact label={t('taskTable.grouping.label')} value={grouping}
@@ -827,7 +858,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               onRetry={() => void fieldsError.query.refetch()}
             />
           ) : null}
-          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
+          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} tasksSettled={tasks.isSuccess} selectedIds={selectedTaskIds} onSelect={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
             renderCompletionAction={completionAction}
             boardMode={boardMode}
             sortMode={sortMode}
@@ -839,7 +870,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onEditTaskField={startInline}
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
-            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
             quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} commands={commands} writable={writable} onClose={reason => closeQuickAdd(quickAddSection ?? null, reason)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={task => setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }))} /> } : undefined}
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
@@ -885,6 +916,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onOpenTask={openTask}
             onCreateChild={parent => startCreate({ sectionId: parent.sectionId, parent })}
             onResumeCreate={() => startCreate({ sectionId: null, parent: null })}
+            loadedSubtasks={loadedSubtasks}
             onCreated={(task) => {
               closeDrawer();
               setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }));

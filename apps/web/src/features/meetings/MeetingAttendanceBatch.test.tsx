@@ -25,20 +25,30 @@ function posted(row: AttendanceDto): AttendanceDto {
   return { ...row, revision: 4, postingState: 'active', status: 'present', minutes: 60, confirmedMeetingRevision: 1, workLog };
 }
 const path = `POST ${rootPath}/tasks/${TASK_ID}/attendance/confirm`;
-function mount({ current = meeting(), rows = attendance(), writable = true, blocked = false }: { current?: MeetingDto; rows?: AttendanceDto[]; writable?: boolean; blocked?: boolean } = {}) {
+function mount({ current = meeting(), rows = attendance(), writable = true, blocked = false, initialDrafts = {} }: { current?: MeetingDto; rows?: AttendanceDto[]; writable?: boolean; blocked?: boolean; initialDrafts?: Record<string, AttendanceDraft> } = {}) {
   const onSaved = vi.fn();
+  let replaceRows: (next: AttendanceDto[]) => void = () => undefined;
   function Harness() {
-    const [drafts, setDrafts] = useState<Record<string, AttendanceDraft>>({});
+    const [drafts, setDrafts] = useState<Record<string, AttendanceDraft>>(initialDrafts);
+    const [liveRows, setLiveRows] = useState(rows);
+    replaceRows = setLiveRows;
     const [selected, setSelected] = useState<string[]>([]);
     const [open, setOpen] = useState(true);
     const commands = useMeetingCommands(anna.id, alpha.id, PROJECT_ID);
-    return <><button onClick={() => setOpen(!open)}>Переключить панель</button><button onClick={() => commands.attendance.mutate({ taskId: TASK_ID, input: { expectedMeetingRevision: current.revision, periodId: PERIOD_A, rows: [{ attendanceId: rows[0]?.id ?? '', expectedAttendanceRevision: 1, expectedWorkLogRevision: null, kind: 'confirm', status: 'absent', attributionBasis: 'planned_absence' }] } })}>Личная отправка</button>{open ? <MeetingAttendanceBatch meeting={current} periodLabel="Неделя команды" attendance={rows} members={members} drafts={drafts} onChange={setDrafts} selectedIds={selected} onSelectionChange={setSelected} mutation={commands.attendance} writable={writable} blocked={blocked} onSaved={onSaved} /> : null}</>;
+    return <><button onClick={() => setOpen(!open)}>Переключить панель</button><button onClick={() => commands.attendance.mutate({ taskId: TASK_ID, input: { expectedMeetingRevision: current.revision, periodId: PERIOD_A, rows: [{ attendanceId: rows[0]?.id ?? '', expectedAttendanceRevision: 1, expectedWorkLogRevision: null, kind: 'confirm', status: 'absent', attributionBasis: 'planned_absence' }] } })}>Личная отправка</button>{open ? <MeetingAttendanceBatch meeting={current} periodLabel="Неделя команды" attendance={liveRows} members={members} drafts={drafts} onChange={setDrafts} selectedIds={selected} onSelectionChange={setSelected} mutation={commands.attendance} writable={writable} blocked={blocked} onSaved={onSaved} /> : null}</>;
   }
   render(<QueryClientProvider client={createQueryClient({ retry: false })}><Harness /></QueryClientProvider>);
-  return { user: userEvent.setup(), onSaved };
+  return { user: userEvent.setup(), onSaved, refetch: (next: AttendanceDto[]) => act(() => replaceRows(next)) };
 }
 async function prepare(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: "Select team members" }));
+}
+const outcomeLabels = { unknown: 'Skip · leave unconfirmed', present: 'Attended entire meeting', partial: 'Attended part of meeting', absent: 'Absent · 0 minutes', void: 'Void time entry' } as const;
+/** Chooses one person's outcome through the shared picker, exactly as a pointer user does. */
+async function outcome(user: ReturnType<typeof userEvent.setup>, person: string, value: keyof typeof outcomeLabels) {
+  const label = `Attendance outcome: ${person}`;
+  await user.click(screen.getByRole('combobox', { name: label }));
+  await user.click(within(screen.getByRole('listbox', { name: label })).getByRole('option', { name: outcomeLabels[value] }));
 }
 
 describe('controlled team attendance review and command boundary', () => {
@@ -48,7 +58,7 @@ describe('controlled team attendance review and command boundary', () => {
     expect(screen.queryByLabelText("Attendance outcome: Участник 1")).not.toBeInTheDocument();
     await prepare(user);
     expect(screen.getAllByRole('combobox')).toHaveLength(5);
-    expect(screen.getByLabelText("Attendance outcome: Участник 1")).toHaveValue('unknown');
+    expect(screen.getByLabelText("Attendance outcome: Участник 1")).toHaveTextContent(outcomeLabels.unknown);
     expect(screen.queryByText('Участник 6')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
     expect(calls).toHaveLength(0);
@@ -61,9 +71,9 @@ describe('controlled team attendance review and command boundary', () => {
     const { user, onSaved } = mount({ rows, current });
     await prepare(user);
     await user.click(screen.getByRole('button', { name: "Mark selected as attended" }));
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 4"), 'partial');
+    await outcome(user, 'Участник 4', 'partial');
     await user.type(screen.getByLabelText("Time attended, hours: Участник 4"), '0:30');
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 5"), 'absent');
+    await outcome(user, 'Участник 5', 'absent');
     const review = screen.getByRole('region', { name: "Review team attendance" });
     expect(within(review).getByText(/Confirmed time: 3h 30m/)).toBeInTheDocument();
     expect(calls).toHaveLength(0);
@@ -80,7 +90,7 @@ describe('controlled team attendance review and command boundary', () => {
     const { calls } = installFakeApi({ [path]: () => ok(response) });
     const { user, onSaved } = mount({ rows }); await prepare(user);
     for (let i = 2; i <= 5; i++) await user.click(screen.getByRole('checkbox', { name: `Участник ${i}` }));
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'absent');
+    await outcome(user, 'Участник 1', 'absent');
     await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
     expect(calls[0]?.body).toMatchObject({ rows: [{ attendanceId: rows[0]?.id, status: 'absent' }] });
@@ -92,10 +102,10 @@ describe('controlled team attendance review and command boundary', () => {
     const { user } = mount({ current: meeting({ actualStartAt: null, actualDurationMinutes: null }) });
     await prepare(user);
     expect(screen.getByRole('button', { name: "Mark selected as attended" })).toBeDisabled();
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'present');
+    await outcome(user, 'Участник 1', 'present');
     expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
     expect(screen.getByText(/Save the meeting's actual start/)).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'absent');
+    await outcome(user, 'Участник 1', 'absent');
     await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toMatchObject({ rows: [{ status: 'absent', minutes: 0, attributionBasis: 'planned_absence' }] });
@@ -108,7 +118,7 @@ describe('controlled team attendance review and command boundary', () => {
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: rows.slice(0, 1) }) });
     const { user } = mount({ rows });
     await prepare(user);
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'partial');
+    await outcome(user, 'Участник 1', 'partial');
     const minutes = screen.getByLabelText("Time attended, hours: Участник 1");
     await user.clear(minutes); await user.type(minutes, '0:30');
     expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
@@ -122,15 +132,15 @@ describe('controlled team attendance review and command boundary', () => {
   it('requires reason for void and rejects partial0 or duration overflow without any network write', async () => {
     const rows = attendance(); const first = rows[0]; if (!first) throw new Error('Missing fixture'); rows[0] = posted(first);
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: [] }) }); const { user } = mount({ rows }); await prepare(user);
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'void');
+    await outcome(user, 'Участник 1', 'void');
     expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
     await user.type(screen.getByLabelText("Attendance reason: Участник 1"), 'Ошибка');
     expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeEnabled();
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'partial');
+    await outcome(user, 'Участник 1', 'partial');
     const minutes = screen.getByLabelText("Time attended, hours: Участник 1");
     for (const value of ['0', '1:01']) { await user.clear(minutes); await user.type(minutes, value); expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled(); }
     expect(calls).toHaveLength(0);
-    await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'void');
+    await outcome(user, 'Участник 1', 'void');
     await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toMatchObject({ rows: [{ kind: 'void', expectedAttendanceRevision: 4, expectedWorkLogRevision: 9, reason: 'Ошибка' }] });
@@ -139,7 +149,7 @@ describe('controlled team attendance review and command boundary', () => {
   it('allows truthful cancelled planned absence only with a reason and no invented actual start', async () => {
     const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: [] }) });
     const { user } = mount({ current: meeting({ state: 'cancelled', actualStartAt: null, actualDurationMinutes: null }) });
-    await prepare(user); await user.selectOptions(screen.getByLabelText("Attendance outcome: Участник 1"), 'absent');
+    await prepare(user); await outcome(user, 'Участник 1', 'absent');
     expect(screen.getByRole('button', { name: "Confirm team attendance" })).toBeDisabled();
     await user.type(screen.getByLabelText("Attendance reason: Участник 1"), 'Встреча отменена');
     await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
@@ -155,7 +165,7 @@ describe('controlled team attendance review and command boundary', () => {
     const { user, onSaved } = mount(); await prepare(user); await user.click(screen.getByRole('button', { name: "Mark selected as attended" }));
     await user.click(screen.getByRole('button', { name: 'Переключить панель' }));
     await user.click(screen.getByRole('button', { name: 'Переключить панель' }));
-    expect(screen.getByLabelText("Attendance outcome: Участник 1")).toHaveValue('present');
+    expect(screen.getByLabelText("Attendance outcome: Участник 1")).toHaveTextContent(outcomeLabels.present);
     await user.click(screen.getByRole('button', { name: "Confirm team attendance" }));
     await waitFor(() => expect(attempts).toBe(1));
     expect(screen.getByRole('button', { name: "Select team members" })).toBeDisabled();
@@ -205,5 +215,101 @@ describe('controlled team attendance review and command boundary', () => {
     const submit = screen.getByRole('button', { name: "Confirm team attendance" }); await user.dblClick(submit);
     await waitFor(() => expect(calls).toHaveLength(1)); expect(screen.getByText(/Submitted rows are locked/)).toBeInTheDocument();
     await act(async () => gate.resolve(ok({ meeting: meeting(), attendances: [] })));
+  });
+});
+
+const prepareFull = "Everyone attended · prepare review";
+function savedAs(row: AttendanceDto, patch: Partial<AttendanceDto>, log: Partial<AttendanceWorkLogDto> = {}): AttendanceDto {
+  const source = posted(row);
+  if (!source.workLog) throw new Error('Missing work log');
+  return { ...source, ...patch, workLog: { ...source.workLog, ...log } };
+}
+
+describe('explicit full-attendance preparation and saved roster summary', () => {
+  it('prepares attended drafts only for unconfirmed active roster rows; saved sources and custom drafts stay, and nothing is sent before confirm', async () => {
+    const rows = attendance();
+    const [r0, r1, r2, r3, r4] = rows; if (!r0 || !r1 || !r2 || !r3 || !r4) throw new Error('Missing fixture');
+    rows[0] = posted(r0);
+    rows[1] = savedAs(r1, { status: 'partial', minutes: 30 }, { minutes: 30 });
+    rows[2] = savedAs(r2, { postingState: 'void' }, { state: 'void' });
+    const custom: AttendanceDraft = { base: r3, status: 'absent', minutes: '', basis: 'planned_absence', reason: 'Болел' };
+    const { calls } = installFakeApi({ [path]: () => ok({ meeting: meeting(), attendances: rows.slice(0, 5) }) });
+    const { user, onSaved } = mount({ rows, initialDrafts: { [r3.id]: custom } });
+
+    const summary = screen.getByRole('region', { name: 'Saved attendance by person' });
+    for (const text of ['Attended: 1', 'Partial: 1', 'Absent: 0', 'Unconfirmed: 2', 'Voided: 1']) expect(summary).toHaveTextContent(text);
+    expect(within(summary).getAllByRole('listitem')).toHaveLength(5);
+    expect(within(summary).queryByText('Участник 6')).not.toBeInTheDocument();
+    // Per-person saved values only: no team total (1h + 30m) is derived from the visible rows.
+    expect(summary).not.toHaveTextContent('1h 30m');
+    expect(screen.queryByRole('region', { name: 'Review team attendance' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: prepareFull }));
+    expect(calls).toHaveLength(0);
+    const review = screen.getByRole('region', { name: 'Review team attendance' });
+    expect(review).toHaveTextContent('Rows to save: 1');
+    expect(within(review).getAllByRole('listitem').map(item => item.textContent)).toEqual(['Участник 5: Attended entire meeting · 1h']);
+    expect(screen.getByText(/1 person is prepared for review\. Nothing is saved yet\. 1 person with your own unsent changes was left as is/)).toBeInTheDocument();
+    for (const person of ['Участник 1', 'Участник 2', 'Участник 3', 'Участник 4']) expect(screen.getByRole('checkbox', { name: person })).not.toBeChecked();
+    expect(within(summary).getByText(/Attendance unconfirmed · in review/)).toBeInTheDocument();
+
+    // The custom draft is untouched and reachable only through its own explicit controls.
+    await user.click(screen.getByRole('checkbox', { name: 'Участник 4' }));
+    expect(screen.getByLabelText('Attendance outcome: Участник 4')).toHaveTextContent(outcomeLabels.absent);
+    expect(screen.getByLabelText('Attendance reason: Участник 4')).toHaveValue('Болел');
+    await user.click(screen.getByRole('checkbox', { name: 'Участник 4' }));
+
+    await user.click(screen.getByRole('button', { name: 'Confirm team attendance' }));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.body).toEqual({ expectedMeetingRevision: 3, periodId: PERIOD_A, rows: [{ attendanceId: r4.id, expectedAttendanceRevision: r4.revision, expectedWorkLogRevision: null, kind: 'confirm', status: 'present', attributionBasis: 'actual_meeting', minutes: 60, reason: null }] });
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.anything(), [r4.id]));
+  });
+
+  it.each([
+    { name: 'cancelled', current: meeting({ state: 'cancelled', actualStartAt: null, actualDurationMinutes: null }), help: /A cancelled meeting cannot be prepared as attended/ },
+    { name: 'actual details unsaved', current: meeting({ actualStartAt: null, actualDurationMinutes: null }), help: /Save the actual start and duration above/ },
+    { name: 'viewer or archived', current: meeting(), writable: false, help: /only for unconfirmed people/ },
+    { name: 'another command held', current: meeting(), blocked: true, help: /only for unconfirmed people/ },
+  ])('cannot prepare full attendance: $name', async ({ current, writable = true, blocked = false, help }) => {
+    const { calls } = installFakeApi({});
+    const { user } = mount({ current, writable, blocked });
+    const button = screen.getByRole('button', { name: prepareFull });
+    expect(button).toBeDisabled();
+    await user.click(button);
+    expect(screen.getByText(help)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Review team attendance' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirm team attendance' })).not.toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('never rebases prepared drafts over a roster refetch and retries a lost confirmation with the exact original body and key', async () => {
+    const rows = attendance();
+    const [, r1, r2] = rows; if (!r1 || !r2) throw new Error('Missing fixture');
+    const gate = lostResponse(); let attempts = 0;
+    const { calls } = installFakeApi({ [path]: () => ++attempts === 1 ? gate.promise : ok({ meeting: meeting(), attendances: rows.slice(0, 5) }) });
+    const { user, onSaved, refetch } = mount({ rows });
+    await user.click(screen.getByRole('button', { name: prepareFull }));
+    expect(screen.getByRole('region', { name: 'Review team attendance' })).toHaveTextContent('Rows to save: 5');
+
+    // Someone else saved a partial entry for person 2 and person 3 left the roster.
+    refetch(rows.map(row => row.id === r1.id ? { ...savedAs(row, { status: 'partial', minutes: 30 }, { minutes: 30 }), revision: 7 } : row.id === r2.id ? { ...row, rosterActive: false } : row));
+    expect(screen.getByRole('region', { name: 'Review team attendance' })).toHaveTextContent('Rows to save: 4');
+    expect(within(screen.getByRole('region', { name: 'Saved attendance by person' })).getByText(/Saved: partial attendance · 30m · in review/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: prepareFull })).toBeDisabled();
+    expect(calls).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Confirm team attendance' }));
+    await waitFor(() => expect(attempts).toBe(1));
+    const sent = calls[0]?.body as { rows: { attendanceId: string; expectedAttendanceRevision: number }[] };
+    expect(sent.rows.map(row => row.attendanceId)).toEqual(rows.filter(row => row.rosterActive && row.id !== r2.id).map(row => row.id));
+    // The held snapshot goes to the server unchanged; its guard, not a silent rebase, decides.
+    expect(sent.rows.find(row => row.attendanceId === r1.id)?.expectedAttendanceRevision).toBe(r1.revision);
+    await act(async () => gate.lose());
+    expect(screen.getByRole('button', { name: prepareFull })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Retry original team attendance' }));
+    await waitFor(() => expect(attempts).toBe(2));
+    expect(calls[1]?.body).toEqual(calls[0]?.body);
+    expect(calls[1]?.headers.get('Idempotency-Key')).toBe(calls[0]?.headers.get('Idempotency-Key'));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
   });
 });

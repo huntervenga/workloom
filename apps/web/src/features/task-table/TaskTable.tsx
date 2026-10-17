@@ -1,4 +1,4 @@
-import { canEditTaskInline, isCurrentEstimateProjection, type TaskInlineField } from '../tasks/tableEditing';
+import { canEditTaskInline, canMoveTaskSection, isCurrentEstimateProjection, type TaskInlineField } from '../tasks/tableEditing';
 import { t, useTranslation, formatDate } from '../../i18n';
 import type {
   MembershipDto,
@@ -10,7 +10,7 @@ import type {
   TaskStatusGroup,
 } from '@workloom/contracts';
 import { Avatar, Badge, Button, cn } from '@workloom/ui';
-import { ChevronDown, ChevronRight, Flag, Link2, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
+import { ChevronDown, ChevronRight, Flag, FolderInput, Link2, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useId, useMemo, useState, Fragment, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import { visibleTaskRows, type TaskTreeNode } from './taskTree';
@@ -429,6 +429,10 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   const titleEditor = ctx.renderTaskFieldEditor?.(task, 'title');
   const editingTitle = titleEditor !== undefined && titleEditor !== null;
   const editable = ctx.onEditTaskField !== undefined && canEditTaskInline(task);
+  // The section editor overlays the fixed title cell; the action buttons keep their own flow space.
+  const sectionEditor = ctx.renderTaskFieldEditor?.(task, 'sectionId');
+  const movingSection = sectionEditor !== undefined && sectionEditor !== null;
+  const movable = ctx.onEditTaskField !== undefined && canMoveTaskSection(task);
   const isEditing = (field: TaskInlineField) => ctx.activeFieldEditor?.taskId === task.id && ctx.activeFieldEditor.field === field;
   const cell = (field: TaskInlineField, content: ReactNode): ReactNode => {
     const editor = ctx.renderTaskFieldEditor?.(task, field);
@@ -462,7 +466,8 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
         style={{ paddingLeft: 12 }}>
         <div className="relative flex h-10 min-w-0 items-center gap-1">
           {ctx.onSelectTask ? <span className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center border-r border-line pr-2"><input type="checkbox" aria-label={t('taskTable.taskTable.selectForGraphValue', { p0: task.title })} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /></span> : null}
-          <div className={cn("flex min-w-0 flex-1 items-center gap-1 [@media(hover:none)]:pr-16", editingTitle && 'pr-16')} style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
+          {/* Actions reserve exactly their rendered width in every pointer mode, including before title editing. */}
+          <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
             {childCount > 0 ? (
               <button
                 type="button"
@@ -486,7 +491,16 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
                 className={cn(titleClassName, 'hover:text-accent-ink hover:underline')}>{task.title}</button>
               <span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span>
             </>}
-            <span data-task-row-actions="" className={cn('absolute right-0 top-1 flex h-8 items-center gap-0.5 rounded bg-surface pl-1 shadow-[-6px_0_6px_var(--color-surface)]', rowActionClassName)}>
+            {movingSection ? <span data-task-section-editor="" className="absolute right-0 top-1 z-[2] flex h-8 w-52 max-w-full items-center rounded bg-surface pl-1 shadow-[-6px_0_6px_var(--color-surface)]">
+              <div className="min-w-0 flex-1">{sectionEditor}</div>
+            </span> : null}
+            <span data-task-row-actions="" className={cn('flex h-8 shrink-0 items-center gap-0.5 rounded bg-surface pl-1 shadow-[-6px_0_6px_var(--color-surface)]', rowActionClassName, movingSection && 'invisible')}>
+            {movable ? (
+              <button type="button" data-task-cell={`${task.id}:sectionId`} aria-label={t('taskTable.sectionMove.action', { title: task.title })} title={t('taskTable.sectionMove.short')}
+                onClick={() => ctx.onEditTaskField?.(task, 'sectionId')} className={cn(iconButtonClassName, 'size-7 text-muted')}>
+                <FolderInput size={15} aria-hidden="true" />
+              </button>
+            ) : null}
             <button type="button" aria-label={t('taskTable.taskTable.openTask', { title: task.title })} title={t('taskTable.taskTable.openDetails')}
               onClick={() => ctx.onOpenTask(task.id)} className={cn(iconButtonClassName, 'size-7 text-muted')}>
               <PanelRightOpen size={15} aria-hidden="true" />

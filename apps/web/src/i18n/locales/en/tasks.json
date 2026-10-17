@@ -176,7 +176,25 @@
     "filters": "Filters",
     "taskTag": "Task tag",
     "allTags": "All tags",
-    "tagUnavailable": "Tag unavailable"
+    "tagUnavailable": "Tag unavailable",
+    "statusUnavailable": "Status unavailable",
+    "participantUnavailable": "Participant unavailable"
+  },
+  "estimates": {
+    "current": "Current shared estimate",
+    "notSet": "Not estimated",
+    "currentHint": "The whole team’s current budget for this work; detail subtasks share it.",
+    "unsavedHint": "Saved value. Your unsaved estimate is in the form above."
+  },
+  "subtasks": {
+    "heading": "Subtasks",
+    "loadedOnly": "Showing only subtasks among the tasks loaded in this view. Filters, search or unloaded pages may hide others.",
+    "none": "No subtasks.",
+    "noneActive": "No active subtasks. Archived subtasks are hidden.",
+    "noneLoaded": "No subtasks among the loaded tasks in this view.",
+    "detail": "Detail",
+    "additional": "Additional work",
+    "open": "Open subtask “{{title}}” · {{status}} · {{scope}}"
   },
   "taskDraft": {
     "enterATaskName": "Enter a task name.",

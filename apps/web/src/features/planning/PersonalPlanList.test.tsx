@@ -6,6 +6,7 @@ import type { PeriodCommitmentDto } from '@workloom/contracts';
 import { alphaMembers, anna, installFakeApi, ok, renderApp } from '../../test/fakeApi';
 import { PersonalPlanList } from './PersonalPlanList';
 import { BASELINE_ID, MEMBER_ID, PACKAGE_ID, PERIOD_A, commitment, rootPath, routes, task, weekPath, work } from './test/fixtures';
+import { personPicker, personLabel } from './test/pickers';
 
 const colleague = alphaMembers[1];
 if (!colleague) throw new Error('Missing colleague fixture');
@@ -105,16 +106,16 @@ describe('compact personal plans', () => {
     await user.click(within(target).getByRole('button', { name: 'Edit plan' }));
     let dialog = await screen.findByRole('dialog', { name: 'Personal weekly plan' });
     expect(within(dialog).getByRole('region', { name: 'Time entry context' })).toHaveTextContent(otherName);
-    expect(within(dialog).getByLabelText('Whole task')).toHaveValue(other.workPackageId);
+    expect(within(dialog).getByLabelText('Whole task')).toHaveTextContent(otherWork.title);
     expect(within(dialog).getByLabelText('Planned hours')).toHaveValue('1:30');
-    expect(screen.getByLabelText('Time entry for')).toHaveValue(MEMBER_ID);
+    expect(personPicker()).toHaveTextContent(personLabel(MEMBER_ID));
     const close = within(dialog).getAllByRole('button', { name: 'Close' }).find(button => button.hasAttribute('aria-label'));
     if (!close) throw new Error('Missing close button');
     await user.click(close);
     await user.click(within(table).getByRole('button', { name: 'View plan' }));
     dialog = await screen.findByRole('dialog', { name: 'Personal weekly plan' });
     expect(within(dialog).getByRole('region', { name: 'Time entry context' })).toHaveTextContent(anna.displayName);
-    expect(within(dialog).getByLabelText('Whole task')).toHaveValue(PACKAGE_ID);
+    expect(within(dialog).getByLabelText('Whole task')).toHaveTextContent(work.title);
     expect(within(dialog).getByLabelText('Planned hours')).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: 'Save personal plan' })).toBeDisabled();
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);

@@ -5,7 +5,7 @@ import {
   periodCommitmentSchema,planBaselineSchema,planningPackageListQuerySchema,planningPageQuerySchema,
   planningPeriodListQuerySchema,planningPeriodSchema,reportRunListQuerySchema,setManualPeriodWorkInputSchema,
   updatePeriodCommitmentInputSchema,updatePlanningPeriodInputSchema,weeklyPlanFactReportRunSchema,workLogListQuerySchema,
-  type ManualPeriodWorkLogDto,type PeriodCommitmentDto,type PlanningPageQuery,type PlanningPeriodDto,
+  type ManualPeriodWorkLogDto,type OriginalPackageEstimateDto,type PeriodCommitmentDto,type PlanningPageQuery,type PlanningPeriodDto,
   type WeeklyPlanFactRowDto,type WeeklyPlanFactSummaryDto,
 } from '@workloom/contracts';
 import { authorizeWorkspace } from '../access/access-queries.js';
@@ -15,7 +15,7 @@ import { capabilityRequiredError,DomainError,notFoundError,unauthenticatedError 
 import { canonicalJson } from '../tasks/service.js';
 import type { PlanningApplication,PlanningPage } from './application.js';
 import { captureFreezeSnapshot,createPlanningMutationGuard,freezePreviewHash,isCommittedPlanningRejection,performFreeze,unwrapPlanningOutcome } from './freeze.js';
-import type { PlanningApplicationDependencies,PlanningApplicationWriteScope,PlanningMutationCommand,PlanningRepository,PlanningWriteScope } from './ports.js';
+import type { OriginalPackageEstimateSource,PlanningApplicationDependencies,PlanningApplicationWriteScope,PlanningMutationCommand,PlanningRepository,PlanningWriteScope } from './ports.js';
 
 interface Parser<T> {safeParse(value:unknown):{success:true;data:T}|{success:false;error:{issues:readonly {path:readonly PropertyKey[]}[]}}}
 function parse<T>(schema:Parser<T>,value:unknown):T {const p=schema.safeParse(value);if(p.success)return p.data;throw new DomainError('VALIDATION_FAILED','The input is invalid.',{details:{fields:p.error.issues.map(i=>i.path.join('.'))}});}
@@ -24,6 +24,22 @@ function rule(message:string):DomainError {return new DomainError('DOMAIN_VALIDA
 function revision(actual:number,expected:number):void {if(actual!==expected)throw new DomainError('REVISION_CONFLICT','The resource changed. Reload it before saving.');}
 function normalize(ctx:CommandContext):CommandContext {if(!ctx.actor||!idSchema.safeParse(ctx.actor.userId).success)throw unauthenticatedError();return {...ctx,workspaceId:parse(idSchema,ctx.workspaceId),actor:{...ctx.actor,userId:parse(idSchema,ctx.actor.userId)}};}
 function requireCap(scope:PlanningWriteScope,cap:Capability):void {if(!roleHasCapability(scope.access.membership.role,cap))throw capabilityRequiredError();}
+function sameId(left:string,right:string):boolean {return left.toLowerCase()===right.toLowerCase();}
+/** First related freeze only; never the current estimate. Inconsistent immutable provenance is an internal error, never a guessed state. */
+function originalEstimateOf(pkg:{readonly id:string;readonly workspaceId:string;readonly projectId:string},source:OriginalPackageEstimateSource|null):OriginalPackageEstimateDto {
+  const target={workspaceId:pkg.workspaceId,projectId:pkg.projectId,workPackageId:pkg.id};
+  if(source===null)return {state:'not_captured_yet',...target};
+  const {observation:o,origin:from,packageBaseline:pb}=source,inconsistent=()=>new Error('Stored original estimate provenance is inconsistent.');
+  if(!sameId(o.workspaceId,pkg.workspaceId)||!sameId(o.projectId,pkg.projectId)||!sameId(o.workPackageId,pkg.id)||!sameId(o.baselineId,from.planBaselineId))throw inconsistent();
+  const origin={...from,packageRevision:o.packageRevision};
+  if(o.estimateMinutes===null) {
+    // Unknown at the first related freeze stays unknown forever, even after a later fill or another period's freeze.
+    if(pb!==null)throw inconsistent();
+    return {state:'original_unknown',...target,estimateMinutes:null,packageBaselineId:null,origin};
+  }
+  if(pb===null||!sameId(pb.workPackageId,pkg.id)||!sameId(pb.projectId,pkg.projectId)||!sameId(pb.sourceBaselineId,o.baselineId)||pb.estimateMinutes!==o.estimateMinutes||pb.sourcePackageRevision!==o.packageRevision)throw inconsistent();
+  return {state:'captured',...target,estimateMinutes:pb.estimateMinutes,packageBaselineId:pb.id,acceptedAt:pb.acceptedAt,provenance:'first_known_plan_freeze',origin};
+}
 function summary(rows:WeeklyPlanFactRowDto[]):WeeklyPlanFactSummaryDto {
   const original=rows.filter(r=>r.scope==='original');
   const known=original.filter(r=>r.plannedMinutes!==null),recorded=original.filter(r=>r.factRecorded);
@@ -175,6 +191,14 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
     async listBaselines(ctx,id,input) {const periodId=parse(idSchema,id),q=parse(planningPageQuerySchema,input);return read(ctx,async(repo,c)=>{found(await repo.findPeriod(c.workspaceId,periodId));return page(repo,c,await repo.listBaselines(c.workspaceId,periodId),q,{kind:'baselines',periodId});});},
     async getBaseline(ctx,id) {const target=parse(idSchema,id);return read(ctx,async(repo,c)=>found(await repo.findBaseline(c.workspaceId,target)));},
     async getPackageBaseline(ctx,id) {const target=parse(idSchema,id);return read(ctx,async(repo,c)=>found(await repo.findPackageBaseline(c.workspaceId,target)));},
+    async getOriginalPackageEstimate(ctx,id) {
+      const target=parse(idSchema,id);
+      // Current workspace access (UOW), then the current package and its project, before any freeze observation.
+      return read(ctx,async(repo,c)=>{
+        const pkg=found(await repo.tasks.findWorkPackage(c.workspaceId,target));found(await repo.tasks.findProject(c.workspaceId,pkg.projectId));
+        return originalEstimateOf(pkg,await repo.findOriginalPackageEstimateSource(c.workspaceId,pkg.id));
+      });
+    },
     async listWorkLogs(ctx,input) {const q=parse(workLogListQuerySchema,input);return read(ctx,async(repo,c)=>{found(await repo.findPeriod(c.workspaceId,q.periodId));let rows=await repo.listWorkLogs(c.workspaceId,q.periodId);if(q.taskId)rows=rows.filter(r=>r.taskId===q.taskId);if(q.membershipId)rows=rows.filter(r=>r.membershipId===q.membershipId);return page(repo,c,rows,q,{kind:'worklogs',periodId:q.periodId,taskId:q.taskId??null,membershipId:q.membershipId??null});});},
     async setManualPeriodWork(ctx,taskId,periodId,memberId,input) {
       const tid=parse(idSchema,taskId),pid=parse(idSchema,periodId),mid=parse(idSchema,memberId),p=parse(setManualPeriodWorkInputSchema,input);

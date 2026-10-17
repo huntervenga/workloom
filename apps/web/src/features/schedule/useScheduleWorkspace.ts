@@ -6,8 +6,9 @@ import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { fetchPlanningPeriod } from '../planning/api';
 import { fetchScheduleContext, previewSchedule } from './api';
-import { shiftDay, todayIn } from './dates';
+import { shiftDay, todayIn, type LoadedFit } from './dates';
 import { useApplySchedule } from './queries';
+export type WindowFit = Exclude<LoadedFit, { kind: 'none' }> & { origin: 'initial' | 'explicit' };
 export interface ScheduleDraftRow { taskId: string; title: string; expectedRevision: number; startDate: string; dueDate: string; baseStart: string; baseDue: string; editable: boolean }
 export interface ScheduleDraft { id: string; rows: ScheduleDraftRow[]; preview: TaskSchedulePreviewDto | null; previewFingerprint: string | null; error: Error | null }
 const fingerprint = (input: TaskScheduleBatchInput) => JSON.stringify(input);
@@ -27,8 +28,21 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
   const latestDrafts = useRef(drafts); latestDrafts.current = drafts;
   const latestActive = useRef(activeId); latestActive.current = activeId;
   const requests = useRef<Record<string, number>>({});
-  const [windowStart, setWindowStart] = useState(() => todayIn(timezone));
-  const [windowSize, setWindowSize] = useState(28);
+  const [windowStart, setWindowStartState] = useState(() => todayIn(timezone));
+  const [windowSize, setWindowSizeState] = useState(28);
+  const [windowFit, setWindowFit] = useState<WindowFit | null>(null);
+  // Page-owned and synchronous: any explicit window choice settles the window before a late context read can.
+  const windowSettled = useRef(false);
+  const setWindowStart = useCallback((value: string) => { windowSettled.current = true; setWindowStartState(value); }, []);
+  const setWindowSize = useCallback((value: number) => { windowSettled.current = true; setWindowSizeState(value); }, []);
+  const applyFit = useCallback((fit: LoadedFit, origin: WindowFit['origin']) => {
+    windowSettled.current = true;
+    if (fit.kind === 'none') return;
+    setWindowStartState(fit.start); setWindowSizeState(fit.days); setWindowFit({ ...fit, origin });
+  }, []);
+  const fitWindow = useCallback((fit: LoadedFit) => applyFit(fit, 'explicit'), [applyFit]);
+  /** One shot per controller; callers pass only a complete, authorized loaded snapshot. No dates also settles it. */
+  const initializeWindow = useCallback((fit: LoadedFit) => { if (!windowSettled.current) applyFit(fit, 'initial'); }, [applyFit]);
   const [baselinePeriodId, setBaselinePeriodId] = useState('');
   const [baselineId, setBaselineId] = useState('');
   const mutation = useApplySchedule(actorId, workspaceId, projectId, variables => {
@@ -124,7 +138,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
   const dirty = Object.values(drafts).some(draft => draft.rows.some(row => row.startDate !== row.baseStart || row.dueDate !== row.baseDue));
   useProtectedDraft(dirty); useUnsavedChangesWarning(dirty);
   return { drafts, active, activeId, setActiveId, open, change, shift, preview, previewing, rebase, rebasing, apply, discard, mutation, held, denied, noteReadDenied, clearDenial, openingRecovery, resolveRecoveryPeriod,
-    windowStart, setWindowStart, windowSize, setWindowSize, baselinePeriodId, setBaselinePeriodId, baselineId, setBaselineId };
+    windowStart, setWindowStart, windowSize, setWindowSize, windowFit, fitWindow, initializeWindow, baselinePeriodId, setBaselinePeriodId, baselineId, setBaselineId };
 }
 export type ScheduleWorkspace = ReturnType<typeof useScheduleWorkspace>;
 export const scheduleConflict = (error: unknown) => error instanceof ApiError && error.kind === 'conflict';

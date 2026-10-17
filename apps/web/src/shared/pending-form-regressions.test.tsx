@@ -112,7 +112,7 @@ describe('pending and uncertain name forms', () => {
     expect(await screen.findByLabelText("Project name")).toHaveValue('Запуск сайта');
 
     await user.click(within(dialog()).getByRole('button', { name: "Retry same change" }));
-    expect(await screen.findByRole('link', { name: 'Запуск сайта' })).toBeInTheDocument();
+    expect(await within(screen.getByRole('main')).findByRole('link', { name: 'Запуск сайта' })).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
     const { bodies, keys } = writesOf(calls, 'POST');

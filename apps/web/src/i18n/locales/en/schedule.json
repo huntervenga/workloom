@@ -18,7 +18,6 @@
     "dueDateWasNotCapturedInThisPlan": "Due date was not captured in this plan",
     "valueStartValueDueValue": "{{p0}}: start {{p1}}, due {{p2}}",
     "valueOnlyValue": "{{p0}}; only {{p1}}",
-    "outsideWindowShowDate": "Outside window · show date",
     "datesWereNotFullyCaptured": "Dates were not fully captured",
     "noDates": "No dates",
     "checkDates": "Check dates",
@@ -26,9 +25,6 @@
     "checkTimelineAccess": "Check timeline access",
     "projectTimeline": "Project timeline",
     "timelineGantt": "Timeline · Gantt",
-    "fromLoadedTasks": "From loaded tasks:",
-    "morePagesAvailable": " · more pages available",
-    "datesDoNotChangeTheTeamEstimatePersonal": ". Dates do not change the team estimate, personal plan, or actual hours.",
     "windowStart": "Window start",
     "daysInWindow": "Days in window",
     "28Days": "28 days",
@@ -36,12 +32,8 @@
     "366Days": "366 days",
     "previousWindow": "Previous window",
     "nextWindow": "Next window",
-    "showing": "Showing",
-    "inclusiveCalendarDates": ", inclusive. Calendar dates ·",
-    "windowIsIndependentOfTaskDates": "; window is independent of task dates.",
     "enterADateFrom00010101To": "Enter a date from 0001-01-01 to 9999-12-31. Maximum window: 366 days.",
     "compareWithAFrozenPlan": "Compare with a frozen plan",
-    "frozenPlan": "Frozen plan",
     "planPeriod": "Plan period",
     "chooseAPeriodToCompare": "Choose a period to compare",
     "frozenPlanToCompare": "Frozen plan to compare",
@@ -62,24 +54,18 @@
     "personalSourceValueDetailsNotLoaded": "Personal source {{p0}}: details not loaded",
     "noLinkedPersonalSources": "No linked personal sources.",
     "chooseAPlanExplicitlyDatesMissingFromAn": "Choose a plan explicitly. Dates missing from an older plan are never replaced with current dates.",
-    "editSelectedDates": "Edit selected dates (",
     "someSelectedTasksAreHiddenByTheCurrent": "Some selected tasks are hidden by the current filter. Return to them or deselect them. Hidden tasks are not excluded from the change automatically.",
     "loadingCurrentDates": "Loading current dates…",
     "loadedTaskCalendar": "Loaded task calendar",
-    "taskOriginalDates": "Task · original dates",
     "calendarWindowDays": "Calendar window days",
     "taskDatesHaveNotLoadedYet": "Task dates have not loaded yet.",
     "calendarDatesValue": "Calendar dates: {{p0}}",
     "selectDatesValue": "Select dates: {{p0}}",
     "meetingOpenCalendar": "Meeting — open calendar",
-    "start": "Start:",
-    "due": "Due:",
     "editDates": "Edit dates",
     "datesCannotBeEdited": "Dates cannot be edited.",
     "taskIsNotIncludedInThisPlan": "Task is not included in this plan",
-    "planStart": "Plan · start:",
     "meetingScheduleIsInTheCalendarWithoutA": "Meeting schedule is in the calendar, without a task bar",
-    "unfinishedPredecessors": "Unfinished predecessors:",
     "noTasksMatchTheCurrentFilter": "No tasks match the current filter.",
     "loadMoreTimelineTasks": "Load more timeline tasks",
     "current": "Current",
@@ -87,7 +73,6 @@
     "dueDate": "due date",
     "originalPlanMember": "original plan member",
     "frozenDatesLabel": "Frozen",
-    "startValue": "Start: {{date}}",
     "dueValue": "Due: {{date}}",
     "planStartValue": "Plan · start: {{date}}",
     "unfinishedPredecessorCount": {
@@ -97,7 +82,102 @@
     "editSelectedDateCount": {
       "one": "Edit selected date ({{count}} task)",
       "other": "Edit selected dates ({{count}} tasks)"
-    }
+    },
+    "outsideWindowShowValue": "Outside window · show {{date}}",
+    "editShort": "Edit",
+    "readOnlyShort": "Read-only",
+    "datesSummary": "Start: {{start}} · Due: {{due}}",
+    "datesDoNotChangePlans": "Dates do not change the team estimate, personal plan, or actual hours.",
+    "today": "Today",
+    "todayHint": "Start the window today, {{date}}, in the workspace calendar",
+    "todayDayLabel": "{{date}} (today)",
+    "fitLoadedTasks": "Fit loaded tasks",
+    "fitLoadedTasksHint": "Choose a 28-, 84- or 366-day window around the current dates of the loaded tasks. Task dates are not changed.",
+    "useFitLoadedTasks": "Use Fit loaded tasks to show them.",
+    "noLoadedDatesToFit": "No loaded task has a start or due date; the window stays at {{days}} days.",
+    "noLoadedTasksToFit": "No tasks are loaded; the window stays at {{days}} days.",
+    "comparingWith": "Comparing with {{plan}}",
+    "legendCurrent": "Current dates",
+    "legendFrozen": "Frozen plan",
+    "legendToday": "Today",
+    "legendWeekend": "Weekend",
+    "noDatesGroup": {
+      "one": "No dates · {{count}} task",
+      "other": "No dates · {{count}} tasks"
+    },
+    "noDatesGroupHint": "Not drawn on the timeline. Use Edit to add a start or due date.",
+    "scopeLine": "{{range}} · {{scope}}",
+    "loadedScope": {
+      "one": "{{count}} loaded task",
+      "other": "{{count}} loaded tasks"
+    },
+    "loadedScopeMore": {
+      "one": "{{count}} loaded task · more not loaded",
+      "other": "{{count}} loaded tasks · more not loaded"
+    },
+    "windowRangeDetail": {
+      "one": "Window {{startIso}} to {{endIso}}, {{count}} calendar day inclusive, workspace calendar {{timezone}}.",
+      "other": "Window {{startIso}} to {{endIso}}, {{count}} calendar days inclusive, workspace calendar {{timezone}}."
+    },
+    "aboutTimeline": "About timeline",
+    "aboutWindow": {
+      "one": "The window shows {{count}} calendar day, {{startIso}} to {{endIso}} inclusive, in the workspace calendar ({{timezone}}). It holds at most 366 days. It opens once at the loaded task dates and then moves only when you change it, use Today, or use Fit.",
+      "other": "The window shows {{count}} calendar days, {{startIso}} to {{endIso}} inclusive, in the workspace calendar ({{timezone}}). It holds at most 366 days. It opens once at the loaded task dates and then moves only when you change it, use Today, or use Fit."
+    },
+    "aboutLoaded": "Only loaded tasks that match the current filters are drawn. Opening and Fit use their current start and due dates — never unloaded pages, meetings, or frozen plans — and never change any date.",
+    "initialFitStatus": {
+      "one": "Opened at {{count}} dated task: {{range}}.",
+      "other": "Opened at {{count}} dated tasks: {{range}}."
+    },
+    "fittedStatus": {
+      "one": "Fitted to {{count}} dated task: {{range}}.",
+      "other": "Fitted to {{count}} dated tasks: {{range}}."
+    },
+    "fitWide": "Dates span {{span}} days ({{range}}); showing the first 366 from the earliest.",
+    "fitScopeLoaded": "Loaded, filtered tasks only.",
+    "fitScopeMore": "Loaded, filtered tasks only; more pages not loaded.",
+    "missedWindow": "No loaded dates in this window: {{before}} earlier, {{after}} later.",
+    "compareWithFrozenPlan": "Compare with frozen plan",
+    "editComparison": "Edit comparison",
+    "clearComparison": "Clear comparison",
+    "comparingSelected": "Comparing with the selected frozen plan",
+    "comparisonPeriodOnly": "Period chosen — pick a frozen plan",
+    "taskCurrentDates": "Task · current dates",
+    "taskCurrentAndFrozenDates": "Task · current and frozen dates",
+    "connectorsLegend": "Dependency arrows",
+    "connectorsTitle": "Dependency arrows:",
+    "connectorAligned": {
+      "one": "{{count}} aligned",
+      "other": "{{count}} aligned"
+    },
+    "connectorConflicts": {
+      "one": "{{count}} date conflict",
+      "other": "{{count}} date conflicts"
+    },
+    "connectorsNotDrawn": "Not drawn: {{reasons}}.",
+    "connectorSkipMeeting": {
+      "one": "{{count}} with a meeting (see calendar)",
+      "other": "{{count}} with meetings (see calendar)"
+    },
+    "connectorSkipMissingDate": {
+      "one": "{{count}} missing a date",
+      "other": "{{count}} missing dates"
+    },
+    "connectorSkipNotLoaded": {
+      "one": "{{count}} to a task not loaded here",
+      "other": "{{count}} to tasks not loaded here"
+    },
+    "connectorSkipOutsideWindow": {
+      "one": "{{count}} outside this window",
+      "other": "{{count}} outside this window"
+    },
+    "connectorSkipNotCurrent": {
+      "one": "{{count}} waiting for current dates",
+      "other": "{{count}} waiting for current dates"
+    },
+    "reviewDependencyChecks": "Review dependency checks",
+    "connectorsSvgLabel": "Dependency arrows — aligned: {{aligned}}, date conflicts: {{conflicts}}",
+    "connectorsAbout": "Dependency arrows run from a predecessor’s current due date to its successor’s current start, only when both tasks are loaded here and both dates are in the window. Dashed orange arrows are date conflicts. Arrows only show the date check: they never move tasks, change dates or decide blocking."
   },
   "scheduleDialog": {
     "editTaskDates": "Edit task dates",

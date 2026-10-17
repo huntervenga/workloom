@@ -1,11 +1,13 @@
 import { useTranslation , type TranslationKey } from '../../i18n';
 import type { MembershipDto, PeriodCommitmentDto, PlanningPackageDto, PlanningPeriodDto, TaskDto } from '@workloom/contracts';
-import { Badge, Button, TextInput, inputClassName } from '@workloom/ui';
+import { Badge, Button, TextInput } from '@workloom/ui';
 import { useId, useState, type FormEvent } from 'react';
 import { ApiError } from '../../lib/api';
+import { ChoicePicker } from '../../shared/ChoicePicker';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { formatEstimate, formatEstimateInput, parseEstimateInput } from '../task-table';
+import { OriginalEstimate } from './OriginalEstimate';
 import { PlanningEntryContext } from './PlanningEntryContext';
 import type { PlanningCommands } from './queries';
 
@@ -33,6 +35,9 @@ export function commitmentSession(period: PlanningPeriodDto, commitment: PeriodC
 }
 
 interface Props {
+  /** With both, a saved commitment shows its package's read-only original estimate. */
+  actorId?: string | undefined;
+  workspaceId?: string | undefined;
   session: CommitmentSession | null;
   open: boolean;
   packages: readonly PlanningPackageDto[];
@@ -70,6 +75,7 @@ export function CommitmentDialog(props: Props) {
   const shownHours = heldHere ? formatEstimateInput(heldHere.input.plannedMinutes) : session.hours;
   const shownAllocations = heldHere ? Object.fromEntries(heldHere.input.allocations.map((allocation) => [allocation.taskId, formatEstimateInput(allocation.minutes)])) : session.allocations;
   const selectedPackage = props.packages.find((item) => item.id === session.packageId);
+  const sharedEstimate = selectedPackage?.estimateMinutes ?? null;
   const packageTasks = props.tasks.filter((task) => task.workPackageId === session.packageId);
   const taskChoices = new Map(packageTasks.map((task) => [task.id, { id: task.id, title: task.title }]));
   for (const taskId of Object.keys(shownAllocations)) {
@@ -129,10 +135,17 @@ export function CommitmentDialog(props: Props) {
         {session.base?.baselineIds.length ? <p className="rounded-lg bg-canvas p-3 text-sm">{t('planning.theBaselineIsSavedNewWorkIsAddedSeparately')}</p> : null}
         {blocked ? <p role="status" className="text-sm text-amber-800">{t('planning.anotherPlanIsStillSavingOrItsResultIs')}</p> : null}
         {session.base?.classification === 'added' ? <Badge tone="muted">{t('planning.addedAfterBaseline')}</Badge> : null}
+        {/* Saved commitments only: a new draft never reads an original. Outside the fieldset so a locked plan can still retry the read. */}
+        {session.base && props.actorId && props.workspaceId ? <div className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-2">
+          <section aria-labelledby={`${id}-current-estimate`} className="space-y-1.5 text-sm"><h3 id={`${id}-current-estimate`} className="text-xs font-medium text-muted">{t('planning.currentSharedEstimate')}</h3><p className="font-medium tabular-nums">{selectedPackage ? selectedPackage.estimateMinutes === null ? t('planning.notSet2') : formatEstimate(selectedPackage.estimateMinutes) : t('planning.savedWorkUnavailableForSelection')}</p><p className="text-xs text-muted">{t('planning.currentSharedEstimateHint')}</p></section>
+          <OriginalEstimate actorId={props.actorId} workspaceId={props.workspaceId} packageId={session.base.workPackageId} />
+        </div> : null}
         <fieldset disabled={locked || !editableMember} className="min-w-0 space-y-4">
-          {!props.fixedContext ? <div className="space-y-1.5"><label htmlFor={`${id}-package`} className="text-sm font-medium">{t('planning.wholeTask')}</label><select id={`${id}-package`} className={inputClassName()} value={session.packageId} disabled={session.base !== null || props.fixedContext} onChange={(event) => { props.onChange({ ...session, packageId: event.target.value, allocations: {} }); setValidation(null); }}><option value="">{t('planning.chooseWork')}</option>{props.packages.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}{session.packageId && !selectedPackage ? <option value={session.packageId}>{t('planning.savedWorkUnavailableForSelection')}</option> : null}</select>{selectedPackage ? <p className="text-xs text-muted">{t('planning.totalWorkThisIsASharedWorkBudgetSeparate', { hours: selectedPackage.estimateMinutes === null ? t('planning.estimateNotSet') : formatEstimate(selectedPackage.estimateMinutes) })}</p> : null}</div> : null}
-          {!props.fixedContext && !props.fixedMember ? <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">{t('planning.whosePlan')}</label><select id={`${id}-member`} className={inputClassName()} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers || props.fixedContext} onChange={(event) => props.onChange({ ...session, membershipId: event.target.value })}><option value="">{t('planning.chooseAPerson')}</option>{props.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}{!knownMember && session.membershipId ? <option value={session.membershipId}>{t('planning.savedPersonMissingFromCurrentList')}</option> : null}</select></div> : null}
-          <div className="space-y-1.5"><label htmlFor={`${id}-hours`} className="text-sm font-medium">{t('planning.plannedHours')}</label><TextInput id={`${id}-hours`} autoFocus={props.fixedContext} value={shownHours} onChange={(event) => props.onChange({ ...session, hours: event.target.value })} inputMode="decimal" placeholder={t('planning.forExample6Or130')} /><p className="text-xs text-muted">{t('planning.leaveBlankForAnUnknownPlanEnter0To')}</p></div>
+          {!props.fixedContext ? <div className="space-y-1.5"><label htmlFor={`${id}-package`} className="text-sm font-medium">{t('planning.wholeTask')}</label><ChoicePicker id={`${id}-package`} label={t('planning.wholeTask')} value={session.packageId} disabled={session.base !== null || props.fixedContext} options={[{ value: '', label: t('planning.chooseWork') }, ...props.packages.map(item => ({ value: item.id, label: item.title })), ...(session.packageId && !selectedPackage ? [{ value: session.packageId, label: t('planning.savedWorkUnavailableForSelection') }] : [])]} onValueChange={value => { props.onChange({ ...session, packageId: value, allocations: {} }); setValidation(null); }} />{selectedPackage ? <p className="text-xs text-muted">{t('planning.totalWorkThisIsASharedWorkBudgetSeparate', { hours: selectedPackage.estimateMinutes === null ? t('planning.estimateNotSet') : formatEstimate(selectedPackage.estimateMinutes) })}</p> : null}</div> : null}
+          {!props.fixedContext && !props.fixedMember ? <div className="space-y-1.5"><label htmlFor={`${id}-member`} className="text-sm font-medium">{t('planning.whosePlan')}</label><ChoicePicker id={`${id}-member`} label={t('planning.whosePlan')} value={session.membershipId} disabled={session.base !== null || !props.canWriteOthers || props.fixedContext} options={[{ value: '', label: t('planning.chooseAPerson') }, ...props.members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName })), ...(!knownMember && session.membershipId ? [{ value: session.membershipId, label: t('planning.savedPersonMissingFromCurrentList') }] : [])]} onValueChange={value => props.onChange({ ...session, membershipId: value })} /></div> : null}
+          <div className="space-y-1.5"><label htmlFor={`${id}-hours`} className="text-sm font-medium">{t('planning.plannedHours')}</label><TextInput id={`${id}-hours`} autoFocus={props.fixedContext} value={shownHours} onChange={(event) => props.onChange({ ...session, hours: event.target.value })} inputMode="decimal" placeholder={t('planning.forExample6Or130')} /><p className="text-xs text-muted">{t('planning.leaveBlankForAnUnknownPlanEnter0To')}</p>
+            {/* Copies the shared whole-task estimate into this draft only; the personal plan is saved separately and explicitly. */}
+            {!editableMember || locked ? null : sharedEstimate !== null ? <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><Button size="sm" aria-describedby={`${id}-shared-estimate`} onClick={() => { props.onChange({ ...session, hours: formatEstimateInput(sharedEstimate) }); setValidation(null); }}>{t('planning.useSharedEstimate', { hours: formatEstimate(sharedEstimate) })}</Button><span id={`${id}-shared-estimate`} className="text-xs text-muted">{t('planning.useSharedEstimateHint')}</span></div> : selectedPackage && props.fixedContext ? <p className="text-xs text-muted">{t('planning.sharedEstimateNotSet')}</p> : null}</div>
           <fieldset className="space-y-2"><legend className="mb-2 text-sm font-medium">{t('planning.allocateHoursToTasks')}</legend><p className="text-xs text-muted">{t('planning.optionalRemainingHoursStayUnallocatedAParentAndIts')}</p>{[...taskChoices.values()].map((task) => <div key={task.id} className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3"><label htmlFor={`${id}-${task.id}`} className="text-sm [overflow-wrap:anywhere]">{task.title}</label><TextInput id={`${id}-${task.id}`} aria-label={t('planning.allocation', { taskTitle: task.title })} inputMode="decimal" value={shownAllocations[task.id] ?? ''} onChange={(event) => props.onChange({ ...session, allocations: { ...session.allocations, [task.id]: event.target.value } })} /></div>)}{props.hasMoreTasks ? <Button size="sm" disabled={props.loadingMoreTasks} onClick={props.onLoadTasks}>{t('planning.loadMoreTasksToAllocate')}</Button> : null}</fieldset>
           {session.base ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={heldHere && 'state' in heldHere.input ? heldHere.input.state === 'removed' : session.state === 'removed'} onChange={(event) => props.onChange({ ...session, state: event.target.checked ? 'removed' : 'active' })} />{t('planning.removeFromCurrentPlan')}</label> : null}
         </fieldset>

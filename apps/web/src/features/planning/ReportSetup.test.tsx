@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { alphaMembers, anna, created, deferred, installFakeApi, ok, renderApp } from '../../test/fakeApi';
 import { categoryReport, TYPE_RUN } from '../work-categories/test/fixtures';
 import { BASELINE_ID, PERIOD_A, PERIOD_B, RUN_ID, baseline, lostResponse, period, report, rootPath, routes, weekPath } from './test/fixtures';
+import { choosePeriod, choosePicker, periodPicker, periodLabel } from './test/pickers';
 
 beforeAll(async () => { await import('../../routes/WeeklyPage'); });
 
@@ -53,13 +54,14 @@ describe('results-first saved reports', () => {
     if (dirty) await user.click(screen.getByRole('checkbox', { name: /Compare only known personal plans/ }));
     const setup = screen.getByRole('region', { name: 'New report settings' });
     expect(within(setup).getByRole('checkbox', { name: /Compare only known personal plans/ })).toHaveProperty('checked', dirty);
-    await user.selectOptions(screen.getByLabelText('Period', { exact: true }), PERIOD_B);
+    await choosePeriod(user, PERIOD_B);
     expect(await screen.findByText('Loading selected week…')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Weekly report' })).not.toBeInTheDocument();
     await act(async () => gate.resolve(ok(period(PERIOD_B))));
     await screen.findByText('Save a personal or project baseline before calculating a comparison.');
-    await user.selectOptions(screen.getByLabelText('Period', { exact: true }), PERIOD_A);
-    await user.selectOptions(await screen.findByRole('combobox', { name: /^Saved report$/ }), RUN_ID);
+    await choosePeriod(user, PERIOD_A);
+    await screen.findByRole('combobox', { name: /^Saved report$/ });
+    await choosePicker(user, /^Saved report$/, /· Project plan · all selected people$/);
     const restored = screen.getByRole('region', { name: 'New report settings' });
     expect(within(restored).getByRole('checkbox', { name: /Compare only known personal plans/ })).toHaveProperty('checked', dirty);
     if (dirty) {
@@ -76,13 +78,14 @@ describe('results-first saved reports', () => {
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&view=work-types&typeRun=${TYPE_RUN}`);
     await user.click(await screen.findByRole('button', { name: 'Set up new report' }));
     await user.click(within(screen.getByRole('region', { name: 'New report settings' })).getByRole('checkbox', { name: colleague.displayName }));
-    await user.selectOptions(screen.getByLabelText('Period', { exact: true }), PERIOD_B);
+    await choosePeriod(user, PERIOD_B);
     expect(await screen.findByText('Loading selected week…')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Recorded hours breakdown' })).not.toBeInTheDocument();
     await act(async () => gate.resolve(ok(period(PERIOD_B))));
     await screen.findByRole('button', { name: 'Calculate hours breakdown' });
-    await user.selectOptions(screen.getByLabelText('Period', { exact: true }), PERIOD_A);
-    await user.selectOptions(await screen.findByRole('combobox', { name: /^Saved breakdown$/ }), TYPE_RUN);
+    await choosePeriod(user, PERIOD_A);
+    await screen.findByRole('combobox', { name: /^Saved breakdown$/ });
+    await choosePicker(user, /^Saved breakdown$/, /· 2h$/);
     const setup = screen.getByRole('region', { name: 'New report settings' });
     expect(within(setup).getByRole('checkbox', { name: colleague.displayName })).toBeChecked();
     expect(within(setup).getByText('Report settings have unsaved changes.')).toBeInTheDocument();
@@ -105,16 +108,17 @@ describe('results-first saved reports', () => {
 
   it('does not replace another explicitly selected saved breakdown with a late calculation result', async () => {
     const gate = deferred<Response>();
-    const other = { ...categoryReport(), id: 'fb000000-0000-4000-8000-000000000002' };
+    // A distinct saved total keeps the two picker options distinguishable by their visible text.
+    const other = { ...categoryReport(), id: 'fb000000-0000-4000-8000-000000000002', totalActualMinutes: 60 };
     installFakeApi({ ...reportRoutes(), [`GET ${rootPath}/work-type-report-runs`]: () => ok([categoryReport(), other]), [`GET ${rootPath}/work-type-report-runs/${other.id}`]: () => ok(other), [`GET ${rootPath}/work-type-report-runs/${other.id}/rows`]: () => ok([]), [`POST ${rootPath}/work-type-report-runs`]: () => gate.promise });
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&view=work-types&typeRun=${TYPE_RUN}`);
     await user.click(await screen.findByRole('button', { name: 'Set up new report' }));
     await user.click(screen.getByRole('button', { name: 'Calculate hours breakdown' }));
-    await user.selectOptions(screen.getByRole('combobox', { name: /^Saved breakdown$/ }), other.id);
+    await choosePicker(user, /^Saved breakdown$/, /· 1h$/);
     await screen.findByRole('region', { name: 'Saved breakdown' });
     await act(async () => gate.resolve(created(categoryReport())));
     await waitFor(() => expect(screen.queryByText('These settings stay visible until the calculation is confirmed.')).not.toBeInTheDocument());
-    expect(screen.getByRole('combobox', { name: /^Saved breakdown$/ })).toHaveValue(other.id);
+    expect(screen.getByRole('combobox', { name: /^Saved breakdown$/ })).toHaveTextContent(/· 1h$/);
   });
 
   it.each([
@@ -127,12 +131,12 @@ describe('results-first saved reports', () => {
     await user.click(await screen.findByRole('button', { name: 'Set up new report' }));
     await user.click(within(screen.getByRole('region', { name: 'New report settings' })).getByRole('button', { name: calculate }));
     await waitFor(() => expect(calls.filter(call => call.method === 'POST')).toHaveLength(1));
-    await user.selectOptions(screen.getByLabelText('Period', { exact: true }), PERIOD_B);
-    await waitFor(() => expect(screen.getByLabelText('Period', { exact: true })).toHaveValue(PERIOD_B));
+    await choosePeriod(user, PERIOD_B);
+    await waitFor(() => expect(periodPicker()).toHaveTextContent(periodLabel(PERIOD_B)));
     await screen.findByRole('region', { name: 'New report settings' });
     await act(async () => gate.resolve(created(response())));
     await waitFor(() => expect(screen.queryByText('These settings stay visible until the calculation is confirmed.')).not.toBeInTheDocument());
-    expect(screen.getByLabelText('Period', { exact: true })).toHaveValue(PERIOD_B);
+    expect(periodPicker()).toHaveTextContent(periodLabel(PERIOD_B));
     expect(screen.getByRole('button', { name: view === 'report' ? /^Report$/ : /^Work types$/ })).toHaveAttribute('aria-current', 'page');
     expect(screen.queryByRole('region', { name: view === 'report' ? 'Saved report' : 'Saved breakdown' })).not.toBeInTheDocument();
     expect(calls.filter(call => call.method === 'POST')).toHaveLength(1);
@@ -153,11 +157,11 @@ describe('results-first saved reports', () => {
     await waitFor(() => expect(attempts).toBe(1));
     expect(screen.getByRole('button', { name: 'Hide report setup' })).toBeDisabled();
     expect(within(setup).getByRole('checkbox', { name: colleague.displayName })).toBeDisabled();
-    await user.selectOptions(screen.getByLabelText('Period', { exact: true }), PERIOD_B);
+    await choosePeriod(user, PERIOD_B);
     await act(async () => gate.lose());
     await user.click(await screen.findByRole('button', { name: 'Open original save' }));
     setup = await screen.findByRole('region', { name: 'New report settings' });
-    expect(screen.getByLabelText('Period', { exact: true })).toHaveValue(PERIOD_A);
+    expect(periodPicker()).toHaveTextContent(periodLabel(PERIOD_A));
     expect(within(setup).getByRole('checkbox', { name: colleague.displayName })).toBeChecked();
     await user.click(within(setup).getByRole('button', { name: 'Retry original save' }));
     await waitFor(() => expect(attempts).toBe(2));

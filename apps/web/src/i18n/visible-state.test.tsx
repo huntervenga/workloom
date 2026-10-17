@@ -63,7 +63,7 @@ describe('localized visible form and announcement state', () => {
     const writesBefore = calls.filter(call => call.method === 'POST').length;
     act(() => localization.setLocale('de'));
     expect(screen.getByRole('status')).toHaveTextContent(`Projekt „${name}“ erstellt.`);
-    expect(screen.getByRole('link', { name })).toBeInTheDocument();
+    expect(within(screen.getByRole('main')).getByRole('link', { name })).toBeInTheDocument();
     expect(calls.filter(call => call.method === 'POST')).toHaveLength(writesBefore);
     expect(projects[0]?.name).toBe(name);
   });
