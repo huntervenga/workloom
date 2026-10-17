@@ -66,26 +66,26 @@ The private `.local/postgres/README.md` contains the current exact-cluster resta
 | 10:48:12.221–10:50:24.848 | Genuine retained old-tab build transition | Original9460856 page retained across build; unloaded old Weekly chunk404, route fails; zero writes, explicit upgrade limitation |
 | 10:49:54.408–10:49:55.671 | Fresh BEFORE0013 backup and actual restore | All56tables/20,280rows +13migrationrows match restored copy; exact owned copy removed, main0013 still unauthorized at this gate |
 | 10:52:53.760–10:52:54.376 | Reviewed MAIN0013 | Old56tables/20,280rows +13migrationprefix unchanged; exactlyfournewemptycutofftables and14threceipt |
-| 10:53:02.864–10:53:42.101 | Sixth controlled restart | All60tables/20,280rows exact; newcutoffAPIstrictGET200,14assetsfrozen, workerOFF |
+| 10:53:02.864–10:53:42.101 | Sixth controlled restart | All60tables/20,280rows exact; newcutoffAPIstrictGET200,14assetsfrozen, worker OFF |
 | 10:58:51.218–10:58:55.461 | Compiled populated Board geometry | Five settled Studio GET-onlyframes; oldmobile284pxoverflow→0, laterDone2tasks/duelabels preserved |
 | 10:59:26.453–10:59:51.760 | Complete completion/cutoff/My tasks browser gate | Final8/8PASS25.0s; priorharnessfailures preserved separately, exact logtimestamps in25 |
 | 11:01:19.557 | Browser asset comparison | All14assets unchanged, readinessok; oldtabfailure remains separate |
 | 11:02:00.630–11:02:19.857 | Explicit cutoff queue registration | Two→fourqueues; oldregistrations/7jobs/7receipts and60publictables/21,416rows exact |
-| 11:02:42.849–11:02:43.172 | Fresh read-only worker inventory |22recurrencepending+12supersededcutoffpending, noactivecutoffgrant; Studioinvolvement0, workerOFF |
+| 11:02:42.849–11:02:43.172 | Fresh read-only worker inventory |22recurrencepending+12supersededcutoffpending, noactivecutoffgrant; Studioinvolvement0, worker OFF |
 | 11:05:16.274–11:06:22.540 | Normal worker start/backlog proof |22recurrenceACK/receipts,6stalecutoffACK+6futuredeferred;57domain tables exact, Studioeffects0 |
 | 11:08:27.398–11:10:00.915 | Real worker deadline/browser observation | Lastenable thenGET-onlydualviewport; deadline11:09:57.204, jobfrozen11:09:59.005,90planned/180estimated,1testPASS |
-| 11:10:20.465–11:10:20.671 | Normal worker SIGTERM/drain/stop | Clean15msruntime drain, exactownedprocessabsent;6futurejobs preserved, workerOFF |
+| 11:10:20.465–11:10:20.671 | Normal worker SIGTERM/drain/stop | Clean15msruntime drain, exactownedprocessabsent;6futurejobs preserved, worker OFF |
 | 11:12:07.164 | Final PhaseB asset/readiness comparison | All14assets unchanged, APIready/ownedserviceshealthy; oldtablimitation separate |
 | 11:23:25.977–11:26:39.110 | Managed worker-only lifecycle | Start/doctor/plain-start reuse/clean stop/OFF passed;59of60publictables exact, only discovery checkpoint changed;42jobs/sixfuturejobs and14assets unchanged |
 | 11:27:41.318–11:29:02.910 | Genuine old-tab transition and explicit refresh | Retained oldWeekchunk404/genericfailure; visibleRefreshloadsnewentry/samefullURL, noautoreload orwrites; upgraded-copy separate |
 | 11:30:11.376–11:30:15.686 | New compact Board Studio geometry | Desktopfirstcard342px/mobile334px; noWeek/Personbox,12actualtasks/fourlanes,0globaloverflow, allGETonly |
 | 11:38:03–11:38:29 | Complete title/hierarchy/Board-context gate |6/6PASS25.6s after documented harness corrections; exact lostACK/draft/focus and actualnativeguard covered |
 | 11:39:05–11:39:23 | Native guard page-error accounting |2/2PASS17.7s, realbeforeunload+dismiss/sameDoc/unsentdraft, expectedcanceledreloadtimeoutrecorded,0pageerrors |
-| 11:39:59.768 | Seventh compiled window released | All14newassets unchanged, readybodies/ownedserviceshealthy, workerOFF; updated-entry detection needslatergenuinebuild |
+| 11:39:59.768 | Seventh compiled window released | All14newassets unchanged, readybodies/ownedserviceshealthy, worker OFF; updated-entry detection needslatergenuinebuild |
 | 11:58:27.999–11:59:46.885 | Genuine upgraded-entry transition | Retained634entry showsactualupdated-appheadingafteroldWeekchunk404; explicitRefreshloadsnewentry/sameURL, noautoreload/writes |
 | 12:01:38–12:04:50 | Eighth compiled browser gate, partial |6of8acceptedacrossfocusedruns; compactstatus/completionlane-movefocusactualRED, nofull8passclaim |
 | 12:03:20.376–12:03:23.706 | Studio Board320/390/1440 |12tasks/fullDue labels/localhorizontalscrolling,0globaloverflow; firstcard334/334/342px |
-| 12:07:07.262 | Eighth window released |14assets unchanged/strictreadiness/ownedserviceshealthy, workerOFF; focusfixrequiresnextcompiledverification |
+| 12:07:07.262 | Eighth window released |14assets unchanged/strictreadiness/ownedserviceshealthy, worker OFF; focusfixrequiresnextcompiledverification |
 
 Initial audit evidence and ranked findings are in [25](25-ux-verification.md). Record each actual gate there, including initial failures and fixes. A skipped or blocked check is never a pass. Do not claim browser, authorization, old-tab compatibility or durable restart from a build or root HTTP status alone.
 
@@ -265,3 +265,17 @@ The doctor check passed for PostgreSQL, API and web. The worker stays **OFF** as
 - **Code.** The current accepted bounded local UX is compiled code commit `5ca0487`. `35ec787` is now the previous checkpoint, and its gates stand as recorded above.
 - **Not done.** Physical touch/IME, Safari, native 403/503, real Auth/private ACL, full Asana migration and production are outside accepted scope.
 - **Links.** Runtime links contain no IDs in these docs. Root provides them to the user directly.
+
+## Night first UI checkpoint — 17 October 2026, accepted `5708be0`
+
+Root accepted compiled code **`5708be0`** for the first night milestone's 103 source paths. Later live-refresh/change-head files and app wiring are outside this checkpoint; [70](70-workspace-live-refresh.md) remains **PROPOSED**. The behavioral contract and root matrix are in [69](69-night-daily-ux.md), with the full evidence ledger in [25](25-ux-verification.md).
+
+- **Source gates.** Full build, global lint/boundaries/localization and root types passed before the final mobile title style fix. After that fix, final web build including web `tsc` and ESLint on 93 changed TypeScript files passed. No global-check claim covers the later phase2 working tree.
+- **Frozen web.** 1,216 passed in 155 suites, 365.74s.
+- **Backend and database.** Backend unit: 1,321 in 79 suites, 23.63s. Real PostgreSQL original-estimate oracle: 8 in 7.51s; pure oracle: 4 in 99ms, not PG cases. Separate planning/cutoff/field-policy PG regressions: 16 in 3 suites, 13.55s.
+- **Compiled native.** New frozen night 25/25 in 1.6min; unchanged legacy Asana 39/39 in 1.6min; legacy meeting/time-context 4/4 in 33.2s. These are **68 distinct cases**. The earlier focused connector pair is included in the final 25, never added again.
+- **Preserved failures.** The earlier mixed/interim full-web failures, hover/label harness failures and real mobile title/action overlap RED remain in 25. The title fix reserves actual action width in flow. A review P1 on cached original estimates after 403/404 was fixed with primed-cache regressions. Quota/error responses are not completed reviews.
+- **Actual demo.** Four read-only views had zero writes/errors/overflow: saved plan 94h, baseline fact 84h 45m, all fact 88h; known original 121h versus current loaded 123h.
+- **Runtime, separate.** An API-only restart at 00:22:01.655 UTC conserved that snapshot's 60 public tables/31,305 rows and unchanged digest, preserved PG/Vite identities and left worker OFF. This predates later additive QA and is not current inventory or an OS-reboot gate. Doctor passed.
+
+`5ca0487` remains the previous accepted checkpoint. Old-tab upgrade, real Auth/private ACL, physical touch/IME, Safari and production were not rerun or claimed. Source, compiled browser, PostgreSQL, runtime and old-tab evidence remain separate. There is no accepted cross-client synchronization claim from this milestone.

@@ -1,8 +1,8 @@
 # Asana-like table editing
 
-**Status: accepted as bounded local UX on compiled `5ca0487`.** That root commit contains all the agent fixes. The English UI uses JSON catalogs. Not claimed: physical touch, IME, Safari, native 403/503, authenticated flows and production. The exact gates and the preserved failures are in [25](25-ux-verification.md).
+**Status: originally accepted as bounded local UX on compiled `5ca0487`; the first night additions below are accepted on compiled `5708be0`.** The earlier `5ca0487` root commit contains that milestone’s agent fixes. The English UI uses JSON catalogs. Not claimed: physical touch, IME, Safari, native 403/503, authenticated flows and production. The exact gates and the preserved failures are in [25](25-ux-verification.md).
 
-Asana's list view and its [task actions and keyboard help](https://help.asana.com/s/article/task-actions?language=en_US) served as interaction inspiration. Workloom does not claim feature or shortcut parity. It uses its own commands, retry rules and limits. This page supersedes the 288px editor-column widening described in [65](65-inline-editor-layout.md). 65 and the [66](66-team-quick-start.md) walkthrough stay as historical design.
+Asana's list view and its [task actions and keyboard help](https://help.asana.com/s/article/task-actions?language=en_US) served as interaction inspiration. Workloom does not claim feature or shortcut parity. It uses its own commands, retry rules and limits. This page supersedes the 288px editor-column widening described in [65](65-inline-editor-layout.md). 65 retains the historical design; the [66](66-team-quick-start.md) walkthrough is maintained for current interaction guidance. The first night additions and their exact root matrix are recorded in [69](69-night-daily-ux.md); later live-refresh work is outside that checkpoint.
 
 ## Title editing
 
@@ -94,6 +94,12 @@ How it behaves:
 - **Week and Person** are compact pickers. The week starts as **Choose a week explicitly**. Time writes still need an explicitly selected period, and no week is ever inferred. The person picker changes only whose hours are shown. It does not change the task list or the acting user.
 - The **Loaded team budget** footer sums the current package estimates of loaded tasks, counting each package once. A filtered or incomplete scope adds **Budget covers loaded tasks only.** (see [63](63-table-guidance.md)). It is not the pinned report baseline.
 - On the [67](67-asana-style-demo.md) demo, the footer shows the current 123h. The pinned report has its own baseline and plan/fact totals.
+
+## Night addition: moving one root task to a section
+
+**Accepted in the bounded first night UI checkpoint `5708be0`.** The row action **Move to section** opens the same guarded inline choice editor. It applies only to an editable ordinary root task; a detail/additional subtask remains under its parent, and meeting, archived and read-only rows cannot use it. Choices are active sections in project order plus **No section**. An archived or unavailable current section stays labelled but is not a new destination.
+
+An explicit choice sends only the existing task `sectionId` update with its current revision and retained command rules. It does not move the task to another project, reparent it or change status, participants, package estimate, plans or facts. On confirmation the destination section is expanded and the move is announced. Rejection or unknown outcome uses the same retained recovery and exact retry; there is no section drag and drop. A real mobile title/action overlap was caught by the legacy native gate. For `5708be0`, row actions reserve their actual rendered width in the title row in every pointer mode, superseding the absolute-overlay rule in the historical geometry section above. The section editor itself remains an overlay. Row height and column geometry remain fixed; all 39 legacy native assertions passed unchanged. Test/browser acceptance and the preserved RED belong to [69](69-night-daily-ux.md) and [25](25-ux-verification.md).
 
 ## Acceptance summary
 

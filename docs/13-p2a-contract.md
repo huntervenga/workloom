@@ -21,6 +21,7 @@ P2a реализует недельный период, персональные
 | GET `/periods/:periodId` | — | `planningPeriodResponseSchema` / getPeriod(ctx,periodId) |
 | PATCH `/periods/:periodId` | `updatePlanningPeriodInputSchema` | `planningPeriodResponseSchema` / updatePeriod(ctx,periodId,input) |
 | GET `/planning-packages` | `planningPackageListQuerySchema` | `planningPackageListResponseSchema` / listPackages(ctx,query) |
+| GET `/planning-packages/:packageId/original-estimate` | без query | `originalPackageEstimateResponseSchema` / getOriginalPackageEstimate(ctx,packageId) |
 | GET `/periods/:periodId/commitments` | `periodCommitmentListQuerySchema` | `periodCommitmentListResponseSchema` / listCommitments(ctx,periodId,query) |
 | POST `/periods/:periodId/commitments` (201) | `createPeriodCommitmentInputSchema` | `periodCommitmentResponseSchema` / createCommitment(ctx,periodId,input) |
 | PUT `/periods/:periodId/commitments/:commitmentId` | `updatePeriodCommitmentInputSchema` | `periodCommitmentResponseSchema` / updateCommitment(ctx,periodId,commitmentId,input) |
@@ -59,6 +60,26 @@ Composition: `@workloom/db createPlanningApplication(databaseOrExecutor, options
 Выбранное отсутствующее значение хранится `{taskId,fieldId,value:null}`; присутствующее typed-null — полноценный value DTO. Lock связан с task/field ID даже без value-row. Estimate lock связан с WorkPackage ID, включая неизвестный estimate. Снятие участника/reparent не снимают lock. Обычная поздняя правка этих значений отклоняется; явное принятие/коррекция поздней оценки отложено. Прочие текущие поля могут меняться, не переписывая snapshot. Архив задачи сохраняет прежние allocations и snapshots; новые allocations на архивную задачу запрещены. Reparent проверяет, что текущий commitment не получает одновременно ancestor/descendant. Пакетная оценка через любого detail child защищена тем же ID.
 
 Каждый новый task/field/planning write после ACL и idempotent replay выполняет ensureDuePeriodsFrozen под общим workspace barrier. Typed exhaustive intent проверяется ДО вызова handler; неизвестной permissive ветви нет. Наступивший cutoff фиксирует старое состояние. При запрете предлагаемый handler не вызывается, в той же транзакции сохраняется tagged idempotent rejection, транзакция коммитится; только затем наружу выходит 409 FIELD_LOCKED с `details:{committed:true,baselineIds:[...]}`. Повтор возвращает тот же отказ без новых snapshots/events. Неожиданная ошибка откатывает freeze и все изменения. Запрещено ловить позднюю ошибку вокруг уже писавшего handler и коммитить его частичные записи. Старые plain DTO idempotent results P1a/P1b остаются совместимы.
+
+## Чтение исходной общей оценки пакета
+
+Дополнение первого night checkpoint от 17 октября 2026 года принято как bounded local UX на compiled **`5708be0`**; матрица и границы — в [69](69-night-daily-ux.md). Исторические freeze semantics выше сохраняются.
+
+`GET /planning-packages/:packageId/original-estimate` — отдельное авторизованное чтение одного WorkPackage. Domain read заново проверяет текущий workspace access, capability `task.read`, существующий package и его project перед чтением immutable observation. Невалидный UUID отклоняется; отсутствующий/чужой target не раскрывается. Архивирование не стирает provenance и само по себе не делает этот GET командой редактирования. Query-параметров нет, `Idempotency-Key` не требуется. GET не выполняет cutoff guard, freeze, materialization, audit/outbox или запись receipt, даже если дедлайн уже наступил.
+
+`OriginalPackageEstimateDto` содержит `workspaceId`, `projectId`, `workPackageId` и один из трёх вариантов:
+
+| `state` | Смысл и поля |
+| --- | --- |
+| `not_captured_yet` | Ещё нет первой связанной фиксации пакета. Полей minutes/origin/packageBaselineId нет; текущая оценка не подставляется |
+| `captured` | При первой связанной фиксации оценка была известна, включая **0**. Есть `estimateMinutes`, `packageBaselineId`, `acceptedAt`, `provenance:first_known_plan_freeze` и `origin` |
+| `original_unknown` | Первая связанная фиксация наблюдала неизвестную оценку. `estimateMinutes:null`, `packageBaselineId:null`, есть `origin`; позднее заполнение или freeze другого периода это состояние не меняют |
+
+`origin` хранит `planBaselineId`, `periodId`, `periodLocalStart`, `scope:self|project`, `mode:manual|cutoff`, `frozenAt`, `packageRevision`. Дата начала недели берётся из snapshot исходной фиксации; timestamp и scope — из её immutable header; package revision — из первой observation. Это не время чтения и не текущие period/package значения. Известная observation и PackageBaseline должны совпадать по source baseline/package/revision/minutes; несогласованность закрывает read ошибкой, без fallback к current estimate.
+
+Проекция не добавляется в `PlanningPackageDto`, snapshots, previews, freeze hashes или старые command outputs/replay JSON. Detail child использует общий `workPackageId` родителя; additional scope — собственный пакет. Она не измеряет личный план, факт или точность завершённого пакета.
+
+UI показывает **Original estimate** рядом с отдельно подписанной текущей общей оценкой в существующей карточке задачи и в просмотре сохранённого personal plan. Пустой новый plan draft не запускает этот read. После подтверждённого freeze инвалидируется workspace/actor prefix original-estimate queries; клиент перечитывает сервер, а не создаёт original локально. Неизвестно, ещё не зафиксировано, известный ноль и недоступный read различаются. Отказ доступа скрывает сохранённое значение; временную ошибку чтения можно повторить явно.
 
 ## Факт и отчёт
 

@@ -791,3 +791,44 @@ The first manual probe used ARIA roles. The open modal hides the background from
 **Runtime.** The helper doctor reported PostgreSQL, API and web ready. The worker stays **OFF**; it is optional. There was no runtime restart and no new migration. Auth and the old-tab upgrade were not rerun. Backend `6ff13df` (1,307 + 45) was not rerun, because no backend files changed.
 
 **Outcome.** Compiled `5ca0487` is the current accepted bounded local UX. The `35ec787` V16 gates above remain as the previous checkpoint. Not claimed: physical touch/IME, Safari, native 403/503, authenticated flows and production.
+
+### V19 compiled `5708be0`: night first UI checkpoint — REDs preserved, accepted
+
+**Status: accepted as bounded local UX by root on compiled code `5708be0`.** The source behavior is described in [69](69-night-daily-ux.md). The first milestone contains 103 source paths; later workspace change-head/live-refresh files and app wiring are outside this checkpoint. [70](70-workspace-live-refresh.md) remains a proposal, with no acceptance inherited from this entry.
+
+**Scope and provenance.** The first milestone covers compact Week/report controls and people lenses, a pure original-estimate GET and read-only UI, timeline initial current-date fit/axis/connectors, Graph clarity, explicit meeting preparation, loaded subtasks, section moves and navigation/filter state. Source authoring used Claude Opus plus the authorized Codex fallback. Claude reported quota around 00:26 UTC with reset 04:00 UTC; `is_error`/quota outcomes do not count as completed reviews. Root supplied the evidence aggregates below; docs authoring does not imply independent browser, database or runtime execution.
+
+**Preserved failures and corrections.**
+
+1. The first full-web attempt had 12 failures while geometry/denial fixes and lazy-route test setup were still changing. The second had 1 failure involving the old cached TaskTable/interim test. Neither run was accepted. The affected first-case table suites now await the lazy ProjectPage import in `beforeAll`, preserving their interaction waits and body/key assertions.
+2. Initial night-native failures included 3 hover-harness cases before Open details and then 2 ambiguous implicit-label **Plan period** selections. The harness selects the intended controls explicitly; skipped/failed cases are not passes. The interim 23/25 plus a separate 2-case connector run does not substitute for the final frozen 25-case run below.
+3. A **real product regression** in the legacy Asana gate passed 28 cases, failed 3 mobile cases and skipped 8: row actions overlapped the mobile title. `/private/tmp/workloom-night-checkpoint-asana.log` preserves the RED. The fix reserves the actual rendered action width in the title row; the final 39-case native run keeps the original assertions.
+4. Independent review found a P1: a denied 403/404 original-estimate refetch could leave a cached original visible. Error handling now takes priority over cached originals, with primed-cache regression tests. Other completed requested reviews reported no actionable findings; quota/error responses are incomplete, not review approval.
+
+**Final root gate results for the first night UI checkpoint.**
+
+| Gate | Result and exact scope | Evidence |
+| --- | --- | --- |
+| Code identity | Compiled code **`5708be0`** | First milestone committed separately from later live-refresh work |
+| Full build | Pass before the final mobile title style correction | `/private/tmp/workloom-night-checkpoint-build.log` |
+| Global lint/boundaries/localization and root types | Pass before the final style correction; not a claim over later phase2 source | Root aggregate |
+| Final web build, including web `tsc` | Pass after the title-flow correction | `/private/tmp/workloom-night-title-fix-build.log` |
+| Final changed-source ESLint | Pass on 93 changed TypeScript files | `/private/tmp/workloom-night-checkpoint-owned-eslint.log` |
+| Frozen full web | **1,216 passed in 155 suites, 365.74s**; jsdom logged its unimplemented non-hash navigation diagnostic, with no failing test | `/private/tmp/workloom-night-checkpoint-web-frozen.log` |
+| Backend unit | **1,321 passed in 79 suites, 23.63s** | `/private/tmp/workloom-night-backend-unit.log` |
+| Original-estimate real PostgreSQL oracle | **8 passed, 7.51s** | `/private/tmp/workloom-night-original-pg-oracle-green.log` |
+| Original-estimate pure oracle | **4 passed, 99ms**; these are not PostgreSQL cases | `/private/tmp/workloom-night-checkpoint-oracle-green.log` |
+| Planning/cutoff/field-policy PostgreSQL regressions | **16 passed in 3 suites, 13.55s**, separate scope from the original-estimate oracle | Root aggregate |
+| Legacy Asana compiled native | **39/39 passed, 1.6min**, unchanged assertions after the real mobile-title fix | `/private/tmp/workloom-night-title-fix-native.log` |
+| Legacy meeting and time-context native | **4/4 passed, 33.2s** | `/private/tmp/workloom-night-legacy-week-meeting.log` |
+| Final frozen new night compiled native | **25/25 passed, 1.6min**; includes desktop/mobile connector attachment within 1.5px through baseline rows, resize and real scroll, and denial hiding | `/private/tmp/workloom-night-checkpoint-native-frozen.log`; `test-results/night-ux-frozen` |
+
+The 8 PostgreSQL original cases plus 4 pure cases must not be called 12 PostgreSQL tests. Each suite retains its own scope and timing. Global checks preceding the last title style fix are distinguished from the final web rebuild and changed-file ESLint; these gates do not validate the later live-refresh working tree.
+
+**Actual demo, read only.** Root reviewed four screenshot views in `test-results/night-visual-checkpoint`: zero writes, page errors and overflow. The core saved-report truth remains **94h plan  / 84h 45m baseline fact  / 88h all recorded fact**. Original-estimate observations are **20 captured, 1 original-unknown and 1 not-captured-yet**, with **121h known original**; the current loaded budget is **123h**. Current estimates do not rewrite originals or pinned report totals.
+
+**Separate runtime preservation.** At **2026-10-17T00:22:01.655Z**, an API-only restart preserved the gate's snapshot of **60 public tables and 31,305 rows** with unchanged SHA256 `0af3721c57ff2664551c2566e512bfecce18ba14b3c34f7c2f4e07d9172d93fd` before/after. Proof: `/private/tmp/workloom-night-api-restart-proof.json`. PostgreSQL and Vite identities were preserved; the worker remained **OFF**. Doctor passed. This count predates later additive QA fixtures and is not the current inventory. It proves neither an OS reboot nor a new PostgreSQL/Vite restart gate.
+
+**Excluded claims.** Old-tab upgrade, real Auth/private ACL, physical touch/IME, Safari and production were not rerun or accepted here. Timeline date pointer drag/resize, automatic scheduling, full Asana parity/migration and the proposed live-refresh phase remain outside this bounded checkpoint.
+
+**Outcome.** Root accepted compiled `5708be0` as the current bounded local night UI checkpoint. The three final native runs cover **68 distinct cases: 25 new night + 39 legacy Asana + 4 legacy meeting/time-context**. The earlier focused connector pair is already in the final 25 and is not counted again. `5ca0487` and its V18 gates remain the previous accepted checkpoint. This acceptance excludes every later live-refresh/change-head source file and app wiring; [70](70-workspace-live-refresh.md) remains **PROPOSED**.
