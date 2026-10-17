@@ -1,8 +1,10 @@
 # Workloom
 
+Ограниченный локальный shared Auth **`be63752`** принят и включён: backend/isolated-PG/fake-provider Chrome gates прошли, живой redirect достиг Google. Пользовательский Google login не завершён. Общий web gate отдельно остаётся RED (1534 passed / 5 failed). Настройка, собственный server-only `AUTH_SESSION_KEY`, действующие upstream origins и отдельные gates — в [76](docs/76-shared-auth-local.md). Production/Railway остаются закрыты.
+
 Текущий route/landing checkpoint — **`9e13b63`**, compiled entry `app-DTmpv0na.js` ([75](docs/75-hosting-and-auth-setup.md)); базовый daily UX — **`bd8ce21`**: baseline `7b9a712`, перенос текста Graph `2f71ad8` и исправление Graph locale/accessibility labels. Широкие **1367 web / 171 набор** и **101 разный compiled native (97 + 4 отдельно)** относятся к DG baseline. BRg отдельно прошёл перекрывающиеся 25 night cases, 15 dense views и 30-минутный read-only soak четырёх страниц. Финальный Tdb прошёл global check/build, два actual-provider locale tests, 15 dense views, английский Chrome keyboard/live/Discard и сохранение данных/процессов/assets. Полный 1367/101 заново не заявляется. UI остаётся English/LTR; virtual DE — unit fixture, не готовая локализация или physical AT. Точные scopes и RED — в [71](docs/71-night-verification.md), практический следующий шаг — в [74](docs/74-next-team-pilot.md). Resize, automatic scheduling, Auth/private ACL, physical touch/IME, Safari и production не заявлены.
 
-Локальное разделение root landing / `/app` принято на **`9e13b63`**: build/check, 23 HTTP checks, 30 Chrome assertions, 10 isolated-PG cases и API-only preservation прошли. Адреса, scopes, будущие Auth callbacks и optional analytics CLI — в [75](docs/75-hosting-and-auth-setup.md). Реальный Auth, callback/SDK/BFF и hosted production остаются не реализованы; CLI не выполнялась.
+Локальное разделение root landing / `/app` принято на **`9e13b63`**: build/check, 23 HTTP checks, 30 Chrome assertions, 10 isolated-PG cases и API-only preservation прошли. Адреса, scopes, Auth origins/внутренний callback и optional analytics CLI — в [75](docs/75-hosting-and-auth-setup.md). Новый включённый local shared Auth имеет отдельную приёмку при сохранённом общем web RED в [76](docs/76-shared-auth-local.md); hosted production остаётся не реализован, analytics CLI не выполнялась.
 
 Рабочее название собственного командного трекера: привычная таблица задач, история оценок, недельные планы, общие созвоны, зависимости и автоматические отчёты.
 
@@ -151,7 +153,7 @@ React + TypeScript + Vite для клиента, Node.js + TypeScript + Fastify 
 ### Ограниченный P4b: даты и простой Gantt
 
 - У обычной задачи есть nullable дата начала и срок без времени. Представление «Сроки» показывает загруженные задачи в явно выбранном окне28/84/366 календарных дней; одна дата остаётся точкой, дальние даты обрезаются по окну. Часы не превращаются в календарную длительность.
-- Даты одной или до100 задач меняются вводом полей или сдвигом на день, затем серверным review и атомарным apply. Устаревшие версии/источники требуют нового review, потерянный ответ повторяется с исходным ключом и содержимым. Pointer drag пока не реализован; автоматического каскада дат нет.
+- Даты одной или до100 задач меняются вводом полей или сдвигом на день, затем серверным review и атомарным apply. Устаревшие версии/источники требуют нового review, потерянный ответ повторяется с исходным ключом и содержимым. Ограниченный pointer move принят через preview и явный Apply ([72](docs/72-gantt-date-move.md)); resize и автоматического каскада дат нет.
 - Текущие зависимости показывают inclusive date conflicts, missing dates и отдельный meeting-calendar unknown. Даты встреч меняются через их календарь. Date edit не меняет оценку, личный план или факт.
 - Явно выбранный immutable personal/project baseline даёт отдельную исходную полосу и происхождение. Старое отсутствие startDate показывается как «не сохранялась», а не подменяется текущей датой; not-set и not-in-baseline различаются. Cutoff сначала сохраняет исходный план, затем требует нового review до proposed date writes.
 
@@ -173,7 +175,7 @@ Compiled stdio adapter предоставляет семь чтений и keyed
 
 MCP запускается отдельным клиентом непосредственно через Node, без npm banner и без DATABASE_URL. `npm run dev` его не запускает; конфигурация клиента автоматически не изменяется. Пример безопасной конфигурации — [apps/mcp/README](apps/mcp/README.md), точный контракт — [20](docs/20-p5b-mcp-contract.md), текущий handoff — [21](docs/21-local-pilot-handoff.md).
 
-Ещё не реализовано: приватные ACL, общий Auth, сохранённые представления, массовые операции и полная история встроенных полей (полный P1); закрытие факта и исправления закрытых периодов, полная точность завершённого пакета, принятие поздней неизвестной оценки, полноценные split/replace/transfer/carryover и дневной факт (полный P2); полный P3/My Tasks, Gantt date pointer resize и остальной P4, полный импорт, остальные MCP tools и remote MCP, календарные connectors и deployment. Текущий интерфейс не является завершённым MVP.
+Ещё не реализовано: приватные ACL, production-развёртывание общего Auth, сохранённые представления, массовые операции и полная история встроенных полей (полный P1); закрытие факта и исправления закрытых периодов, полная точность завершённого пакета, принятие поздней неизвестной оценки, полноценные split/replace/transfer/carryover и дневной факт (полный P2); полный P3/My Tasks, Gantt date pointer resize и остальной P4, полный импорт, остальные MCP tools и remote MCP, календарные connectors и deployment. Текущий интерфейс не является завершённым MVP.
 
 ### Неопределённый результат записи
 

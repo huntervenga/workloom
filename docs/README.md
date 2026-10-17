@@ -1,5 +1,7 @@
 # Документация Workloom
 
+Ограниченный локальный shared Auth **`be63752`** принят и включён; backend/PG/fake-provider browser gates прошли, общий web отдельно остаётся RED (1534 passed / 5 failed) — [76](76-shared-auth-local.md). Upstream base origins уже разрешены; public production не включён.
+
 Текущий route/landing checkpoint — **`9e13b63`**, compiled entry `app-DTmpv0na.js` ([75](75-hosting-and-auth-setup.md)); базовый daily UX — **`bd8ce21`**: baseline `7b9a712`, перенос текста Graph `2f71ad8` и исправление Graph locale/accessibility labels. Широкие **1367 web / 171 набор** и **101 разный compiled native (97 + 4 отдельно)** относятся к DG baseline. BRg отдельно прошёл перекрывающиеся 25 night cases, 15 dense views и 30-минутный read-only soak четырёх страниц. Финальный Tdb прошёл global check/build, два actual-provider locale tests, 15 dense views, английский Chrome keyboard/live/Discard и сохранение данных/процессов/assets. Полный 1367/101 заново не заявляется. UI остаётся English/LTR; virtual DE — unit fixture, не готовая локализация или physical AT. Точные scopes и RED — в [71](71-night-verification.md), практический следующий шаг — в [74](74-next-team-pilot.md). Resize, automatic scheduling, Auth/private ACL, physical touch/IME, Safari и production не заявлены.
 
 Пакет подготовки реализации от 16 октября 2026 года. Пользователь подтвердил PostgreSQL, React/TypeScript, Node.js/TypeScript, одну монорепу и возможность первых версий без авторизации. Railway — планируемая площадка.
@@ -80,7 +82,8 @@
 | [72 Gantt date move](72-gantt-date-move.md) | Bounded move-only source: saved bar → ghost → server preview → explicit Apply, retained lease/unknown recovery; DG compiled native 10/10 accepted on `7b9a712` |
 | [73 Task completion filter](73-task-completion-filter.md) | `a906767` optional server `completion=open`, todo/in_progress groups before paging, URL/cache/cursor and retained-owner rules; DG compiled native 4/4 accepted on `7b9a712` |
 | [74 Следующий командный пилот](74-next-team-pilot.md) | Короткая приёмка Павлом, UX go/no-go, отдельные Auth/Railway gates и ручной перенос нескольких задач; исправленный Graph wrap, ручная приёмка и следующие реальные задачи |
-| [75 Hosting и подготовка Auth](75-hosting-and-auth-setup.md) | `9e13b63`: локальные root landing + `/app` приняты; 23 HTTP/30 Chrome/10 isolated-PG, два будущих callback, optional analytics CLI; shared Auth/production не реализованы |
+| [75 Hosting и подготовка Auth](75-hosting-and-auth-setup.md) | `9e13b63`: локальные root landing + `/app` приняты; 23 HTTP/30 Chrome/10 isolated-PG, два origin и внутренний callback, optional analytics CLI; новый local shared Auth с отдельной приёмкой и общим web RED — в76, production не реализован |
+| [76 Локальный shared Auth](76-shared-auth-local.md) | `be63752`: настройка origin и server session key, вход в своё пустое workspace; локально принят/включён, backend/PG/6 fake-provider Chrome PASS; общий web RED сохраняется |
 
 Продуктовые требования находятся в 01. Документы 02–08 уточняют реализацию и этапность: весь командный пилот из 01 не должен появиться в первой локальной версии. Если конкретные DTO и физическая схема конфликтуют с продуктовым поведением, согласовать исправление до реализации, а не изменять требования молча.
 

@@ -1,6 +1,8 @@
 # Workloom: адреса сайта, приложения и подготовка Auth
 
-**Статус: локальное разделение landing/app принято на `9e13b63`; Auth остаётся планом.** Product commit `9e13b63b943498a80c5ff2d4029027837c8a9e1e` содержит 21 файл; локальные build/HTTP/Chrome/изолированные PostgreSQL gates прошли. Общий Auth, настоящий Google login, публичный выпуск и production-окружение этим не реализованы и не проверены. Конфигурация Workloom по-прежнему допускает только `APP_ENV=local`, `AUTH_MODE=dev`, loopback и синтетическую базу; Railway markers и `AUTH_MODE=shared` отклоняются ([config](../apps/api/src/config.ts)). Исторический UX evidence остаётся в [71](71-night-verification.md); ниже записаны только новые gates маршрутизации.
+**Текущий Auth-срез — `be63752`:** локальный `AUTH_MODE=shared`, callback/BFF и собственная server session локально приняты и включены; backend/PG/fake-provider browser gates прошли, общий web RED сохранён отдельно — [76](76-shared-auth-local.md). Upstream allowlist двух базовых origins уже действует. Production/Railway guards остаются, публичный выпуск не выполнен.
+
+**Принятый предыдущий routing checkpoint — `9e13b63`.** Product commit `9e13b63b943498a80c5ff2d4029027837c8a9e1e` содержит 21 файл; локальные build/HTTP/Chrome/изолированные PostgreSQL gates прошли. На момент этого checkpoint был реализован только `AUTH_MODE=dev`; эти результаты ниже подтверждают маршрутизацию, а не новый Auth. Исторический UX evidence остаётся в [71](71-night-verification.md).
 
 ## Два адреса и место приложения
 
@@ -8,7 +10,7 @@
 | --- | --- | --- |
 | Landing | `https://workloom.pavelignatov.com/` | `http://127.0.0.1:4310/` |
 | Приложение | `https://workloom.pavelignatov.com/app` | `http://127.0.0.1:4310/app` |
-| Будущий browser Auth callback | `https://workloom.pavelignatov.com/app/auth/callback` | `http://127.0.0.1:4310/app/auth/callback` |
+| Внутренний browser Auth callback | `https://workloom.pavelignatov.com/app/auth/callback` | `http://127.0.0.1:4310/app/auth/callback` |
 
 Production использует обычный HTTPS без публичного `:4310`. Порт 4310 — локальная собранная версия или внутренний порт будущего сервиса. `4311` остаётся вторичным Vite development origin; его не регистрируем для Auth без отдельной необходимой allowlist entry. Для проверки итогового compiled UI используем **4310**, а не 4311.
 
@@ -16,28 +18,28 @@ Production использует обычный HTTPS без публичного
 
 ## Что понадобится для login
 
-По проверке исходников Auth координатором, browser login **не требует `client_secret`, service key или выдачи нового серверного секрета**. Проверка токенов использует **RS256/JWKS**, issuer **`https://auth.pavelignatov.com`**, audience **`pet-projects`**. Service registration из следующего раздела относится к analytics, а не к разрешению войти.
+По проверке исходников Auth координатором, browser login **не требует Auth `client_secret` или service key**. Собственный server-only `AUTH_SESSION_KEY` Workloom нужен для хранения session tokens; он описан отдельно в [76](76-shared-auth-local.md). Проверка токенов использует **RS256/JWKS**, issuer **`https://auth.pavelignatov.com`**, audience **`pet-projects`**. Service registration из следующего раздела относится к analytics, а не к разрешению войти.
 
-Для будущего включения Workloom добавить в разрешённые browser callbacks именно эти две записи:
+Пользователь уже добавил в upstream allowlist **два базовых origin**:
 
 ```text
-https://workloom.pavelignatov.com/app/auth/callback
-http://127.0.0.1:4310/app/auth/callback
+https://workloom.pavelignatov.com
+http://127.0.0.1:4310
 ```
 
-Оператор добавляет эти строки в **существующий `ALLOWED_REDIRECT_URIS` Auth**, сохраняя entries других продуктов. Auth читает конфигурацию при старте, поэтому изменение вступает в силу после обычного разрешённого restart/redeploy Auth. В этом шаге allowlist не менялась.
+При последующих изменениях оператор дополняет **существующий `ALLOWED_REDIRECT_URIS` Auth**, сохраняя entries других продуктов. Auth читает конфигурацию при старте; обычный разрешённый restart/redeploy применяет новое значение. Текущий Workloom-срез не требует повторно добавлять уже действующие origin entries; полные callback paths отдельно не регистрировались.
 
-В browser SDK **`appUrl` задаётся явно тем же полным callback URL** соответствующего окружения: production использует HTTPS-строку выше, локальная сборка — строку с `127.0.0.1:4310`. Не полагаться на вычисление appUrl из текущего landing URL и не заменять его `/`, `/app` или 4311.
+Внутренний адрес возврата Workloom — **`/app/auth/callback`** на выбранном origin: локально `http://127.0.0.1:4310/app/auth/callback`, после отдельного production release — `https://workloom.pavelignatov.com/app/auth/callback`. Он допускается текущей origin/prefix-настройкой. При использовании SDK его `appUrl` указывает этот внутренний callback явно; пользователь открывает базовый сайт или `/app`, а не callback. Локальный BFF строит адрес из `AUTH_APP_ORIGIN`, без участия 4311.
 
-Это рекомендуемые точные значения настройки, **не утверждение об exact-path enforcement Auth**. Текущий `isAllowedRedirect` в Auth (`src/http/redirectAllowlist.ts`, строки 24–29) сравнивает нормализованный origin и затем raw pathname prefix. CORS origins выводятся из разрешённых origins. Поэтому нельзя описывать allowlist как строгое сравнение полного callback path или считать настройку callback отдельным доказательством безопасной Workloom session. Здесь приведены результаты source review; чужой Auth repository в этом шаге не меняется.
+Это **не exact-path enforcement Auth**. Текущий `isAllowedRedirect` в Auth (`src/http/redirectAllowlist.ts`, строки 24–29) сравнивает нормализованный origin и затем raw pathname prefix. CORS origins выводятся из разрешённых origins. Поэтому нельзя описывать allowlist как строгое сравнение полного callback path или считать настройку callback отдельным доказательством безопасной Workloom session. Здесь приведены результаты source review; чужой Auth repository в этом шаге не меняется.
 
-## План совместимого browser → BFF flow
+## Browser → BFF: исходный план и текущая реализация
 
 Нынешний Auth возвращает результат во **fragment браузерного callback**, а не через OAuth authorization-code exchange. Будущий Workloom flow должен сначала обработать fragment на callback, до обычной app-навигации, затем убрать его из адреса и передать результат **same-origin POST** в собственный BFF. Нельзя выдавать это за уже реализованный code/token endpoint или заменять протокол придуманным `client_secret`.
 
 BFF должен проверить подпись/issuer/audience и необходимые claims, связать Auth `sub` с Workloom user/membership без подмены синтетического actor и создать собственную **HttpOnly session**. Refresh остаётся серверным и сериализуется на session, чтобы параллельные запросы не соревновались за refresh token. Hand-off и дальнейшие изменения требуют CSRF/source-origin защиты; возвращаемая навигация не должна открывать произвольный redirect. Workspace isolation, текущие роли/членство и отзыв доступа продолжают проверяться серверными командами. Browser JS не получает private service key или собственный session/refresh secret для ручной вставки.
 
-Это **план следующего Auth-среза**, а не функциональность нынешнего Workloom. До его реализации/проверки нельзя открывать synthetic dev identity публике, отключать запрет Railway или считать landing доказательством работающего входа. План эксплуатации и отдельного разрешённого выпуска — [08](08-railway-and-operations.md); общий/shared scope пилота и условные private ACL — [74](74-next-team-pilot.md).
+Этот план routing checkpoint теперь реализуется отдельным локальным Auth-срезом [76](76-shared-auth-local.md); ограниченный shared-режим локально принят и включён при сохранённом отдельном общем web RED. Нельзя открывать synthetic dev identity публике, отключать запрет Railway или считать landing доказательством работающего входа. План эксплуатации и отдельного разрешённого выпуска — [08](08-railway-and-operations.md); общий/shared scope пилота и условные private ACL — [74](74-next-team-pilot.md).
 
 ## Необязательный analytics service key: команда один раз
 
@@ -51,7 +53,7 @@ node dist/scripts/register-service.js workloom "Workloom" 'https://workloom.pave
 
 `sk` нужен только в серверном environment при включённой analytics-интеграции; в landing, SPA, JSON, URL и логи его не добавляют. `pk` — browser identifier analytics и не login secret. Для login сама эта команда не нужна и redirect allowlist не заменяет: DB registry analytics и redirect configuration независимы; регистрация не редактирует allowlist и не требует restart collector. Не присылайте в чат private key, session или refresh token; подтверждения выполнения без их значений достаточно.
 
-**В этом шаге команда не выполняется:** Auth configuration, DNS, hosting, deploy и платные ресурсы не меняются. Наличие операторской инструкции не означает, что service или callbacks уже зарегистрированы.
+**В этом шаге команда не выполняется:** Auth configuration, DNS, hosting, deploy и платные ресурсы не меняются. Analytics service этой командой не регистрировался; действующие Auth origin entries не зависят от analytics registry.
 
 ## Проверено локально — `9e13b63`
 
@@ -63,4 +65,4 @@ Root HTTP прошёл **23/23 checks** (`/private/tmp/workloom-hosting-http-pro
 
 API-only restart прошёл **09:00:06.106 → 09:00:12.567 UTC** (`/private/tmp/workloom-hosting-api-restart-proof.json`): API **88227 → 41985**, PostgreSQL **46630** и Vite **46683** сохранены, worker **OFF**. Снимок **73 total / 60 public tables / 37,949 public rows**, data SHA256 **`d695234f107927a7bab6e8497853374c5cc944f6bbdf60d0520108862c982a81`** и catalog SHA256 **`36cc073a04760ff7acc19b9fc70c00d4e9732407c51e2299e5994d116ea1bc37`** совпали до/после. Проверены реальные bytes/MIME **17 JS/CSS/HTML resources**, readiness body и doctor. После всех Chrome/private-PG gates дополнительно прошёл read-only `/private/tmp/workloom-hosting-final-preservation-proof.json`: те же data/catalog, 73/60 tables и 37,949 public rows, все 17 served-resource bytes/MIME и main process identities сохранены, worker OFF. Это отдельная финальная conservation-проверка; API-only restart выше не является restart PostgreSQL/Vite, OS reboot или release.
 
-GREEN означает **локальное разделение сайта/приложения**. Callback route, SDK/BFF и настоящий Auth flow пока не реализованы. Для них отдельно потребуются callback/fragment hand-off, session/refresh, CSRF, sub mapping, роли/выход/отзыв доступа и browser end-to-end. Google login, public DNS/HTTPS, deployment и hosted production этим шагом **не проверены**. Две callback-строки выше — подготовленная настройка; optional analytics CLI не выполнялась, ключи не выпускались.
+GREEN `9e13b63` означает **локальное разделение сайта/приложения**. Callback/BFF, session/refresh, CSRF и real-user mapping добавлены следующим локальным срезом с отдельной приёмкой [76](76-shared-auth-local.md); прежние routing gates не подтверждают их работу. Настоящий Google login, public DNS/HTTPS, deployment и hosted production этим routing-шагом **не проверены**. Optional analytics CLI не выполнялась, ключи не выпускались.
