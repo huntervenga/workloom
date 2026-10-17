@@ -20,7 +20,7 @@ const page = (rows: TaskDto[]) => json(200, { data: rows, meta: { requestId: 'se
 type Calls = ReturnType<typeof installFakeApi>['calls'];
 const patches = (calls: Calls) => calls.filter(call => call.method === 'PATCH');
 const writes = (calls: Calls) => calls.filter(call => call.method !== 'GET');
-const moveButton = (title: string) => screen.queryByRole('button', { name: `Move “${title}” to another section` });
+const actionsButton = (title: string) => screen.queryByRole('button', { name: `Task actions: ${title}` });
 const groupOf = (title: string) => screen.getByRole('button', { name: title }).closest('tbody');
 const groupBody = (name: string) => screen.getByRole('button', { name: `Collapse section “${name}”` }).closest('tbody');
 
@@ -44,10 +44,20 @@ function server(patch?: (body: { expectedRevision: number; sectionId?: string | 
   return { routes, confirm: (next: Partial<TaskDto>) => { current = { ...current, ...next, revision: current.revision + 1 }; return ok(current); } };
 }
 
+async function moveAction(user: ReturnType<typeof renderApp>['user'], title: string) {
+  await user.click(await screen.findByRole('button', { name: `Task actions: ${title}` }));
+  return within(await screen.findByRole('menu')).queryByRole('menuitem', { name: 'Move to section…' });
+}
+
+async function requestMove(user: ReturnType<typeof renderApp>['user'], title = root.title) {
+  const action = await moveAction(user, title);
+  if (!action) throw new Error('Missing move action');
+  await user.click(action);
+}
+
 async function openMove(user: ReturnType<typeof renderApp>['user'], title = root.title) {
   await screen.findByRole('button', { name: title });
-  const action = moveButton(title); if (!action) throw new Error('Missing move action');
-  await user.click(action);
+  await requestMove(user, title);
   return within(await screen.findByRole('listbox', { name: 'Section' }));
 }
 
@@ -73,7 +83,7 @@ describe('root task section move', () => {
     expect(groupOf(child.title)).toBe(groupBody('Second section'));
     expect(within(screen.getByRole('button', { name: child.title }).closest('tr') as HTMLElement).getByText('Section: First section')).toBeInTheDocument();
     expect(await screen.findByText('Moved “Movable root” to Second section.')).toBeInTheDocument();
-    await waitFor(() => expect(moveButton(root.title)).toHaveFocus());
+    await waitFor(() => expect(actionsButton(root.title)).toHaveFocus());
     expect(writes(calls)).toHaveLength(1);
   });
 
@@ -105,14 +115,18 @@ describe('root task section move', () => {
 
   it('offers the move only on ordinary, unarchived root tasks', async () => {
     installFakeApi(server().routes);
-    renderApp(`${tablePath}?includeArchived=true`);
+    const { user } = renderApp(`${tablePath}?includeArchived=true`);
     await screen.findByRole('button', { name: root.title });
-    expect(moveButton(root.title)).toBeInTheDocument();
-    expect(moveButton(peer.title)).toBeInTheDocument();
-    expect(moveButton(child.title)).toBeNull();
-    expect(moveButton(meeting.title)).toBeNull();
+    expect(await moveAction(user, root.title)).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(await moveAction(user, peer.title)).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(await moveAction(user, child.title)).toBeNull();
+    await user.keyboard('{Escape}');
+    expect(await moveAction(user, meeting.title)).toBeNull();
+    await user.keyboard('{Escape}');
     await screen.findByRole('button', { name: archivedRoot.title });
-    expect(moveButton(archivedRoot.title)).toBeNull();
+    expect(await moveAction(user, archivedRoot.title)).toBeNull();
   });
 
   it.each(['viewer', 'archived project'] as const)('offers no move for a %s', async context => {
@@ -120,9 +134,11 @@ describe('root task section move', () => {
       ? { [`GET /api/v1/workspaces/${alpha.id}`]: () => ok({ ...alpha, role: 'viewer' }), 'GET /api/v1/workspaces': () => ok([{ ...alpha, role: 'viewer' }]) }
       : { [`GET ${rootPath}/projects/${PROJECT_ID}`]: () => ok({ ...project(alpha.id, PROJECT_ID, 'Archived project'), archivedAt: STAMP }) };
     const { calls } = installFakeApi(server(undefined, extra).routes);
-    renderApp(tablePath);
+    const { user } = renderApp(tablePath);
     await screen.findByRole('button', { name: root.title });
-    expect(moveButton(root.title)).toBeNull(); expect(moveButton(peer.title)).toBeNull();
+    expect(await moveAction(user, root.title)).toBeNull();
+    await user.keyboard('{Escape}');
+    expect(await moveAction(user, peer.title)).toBeNull();
     expect(writes(calls)).toHaveLength(0);
   });
 
@@ -175,7 +191,7 @@ describe('root task section move', () => {
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
     const row = screen.getByRole('button', { name: root.title }).closest('tr');
     expect(row).toHaveClass('h-10'); expect(row?.querySelector('[data-task-section-editor]')).toHaveClass('absolute', 'w-52');
-    await user.click(screen.getByRole('button', { name: `Move “${peer.title}” to another section` }));
+    await requestMove(user, peer.title);
     expect(screen.queryByRole('listbox', { name: 'Section' })).not.toBeInTheDocument();
     await act(async () => gate.resolve(fixture.confirm({ sectionId: B })));
     await waitFor(() => expect(groupOf(root.title)).toBe(groupBody('Second section')));

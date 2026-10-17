@@ -3,6 +3,8 @@ import type {
   ArchiveTaskInput,
   CreateTagInput,
   CreateTaskInput,
+  CreateTaskRowInput,
+  MoveTaskInput,
   RestoreTaskInput,
   TagDto,
   TaskDto,
@@ -18,9 +20,11 @@ import {
   archiveTaskRequest,
   createTagRequest,
   createTaskRequest,
+  createTaskRowRequest,
   fetchTags,
   fetchTask,
   fetchTaskPage,
+  moveTaskRequest,
   normalizeTaskFilters,
   restoreTaskRequest,
   updateTagRequest,
@@ -214,13 +218,41 @@ export function useUpdateTagMutation(actorId: string, workspaceId: string) {
 
 export interface CreateTaskVariables extends IdempotentVariables {
   input: CreateTaskInput;
+  /**
+   * First custom field values and explicit plan/actual of the new row. When present the task is
+   * created atomically through `POST …/tasks/rows`; without it the legacy `POST …/tasks` is sent.
+   */
+  initial?: Omit<CreateTaskRowInput, 'task'> | undefined;
+}
+
+/** True when `initial` carries anything the legacy task create cannot. */
+function hasInitialRowData(initial: CreateTaskVariables['initial']): initial is Omit<CreateTaskRowInput, 'task'> {
+  return initial !== undefined && ((initial.fields?.length ?? 0) > 0 || initial.plan !== undefined || initial.actual !== undefined);
+}
+
+/**
+ * Field values, plans and actuals of every period and project the row may touch. A confirmed
+ * atomic row is never patched into them: they refetch from the server.
+ */
+export function invalidateTaskRowProjections(queryClient: QueryClient, actorId: string, workspaceId: string) {
+  const workspace = queryKeys.workspace(actorId, workspaceId);
+  void queryClient.invalidateQueries({ queryKey: queryKeys.fields(actorId, workspaceId) });
+  void queryClient.invalidateQueries({ queryKey: [...workspace, 'planning'] });
+  void queryClient.invalidateQueries({ queryKey: [...workspace, 'workCategories'] });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.timeSummaries(actorId, workspaceId) });
 }
 
 export function useCreateTaskMutation(actorId: string, workspaceId: string) {
   const queryClient = useQueryClient();
   return useIdempotentMutation({
-    prepare: ({ input }: CreateTaskVariables) => createTaskRequest(workspaceId, input),
-    onSuccess: (task) => void storeTask(queryClient, actorId, workspaceId, task),
+    prepare: ({ input, initial }: CreateTaskVariables) =>
+      hasInitialRowData(initial)
+        ? createTaskRowRequest(workspaceId, { task: input, ...initial })
+        : createTaskRequest(workspaceId, input),
+    onSuccess: (task, { initial }) => {
+      if (hasInitialRowData(initial)) invalidateTaskRowProjections(queryClient, actorId, workspaceId);
+      void storeTask(queryClient, actorId, workspaceId, task);
+    },
   });
 }
 
@@ -246,6 +278,23 @@ export function useArchiveTaskMutation(actorId: string, workspaceId: string) {
   const queryClient = useQueryClient();
   return useIdempotentMutation({
     prepare: ({ taskId, input }: ArchiveTaskVariables) => archiveTaskRequest(workspaceId, taskId, input),
+    onSuccess: (task) => void storeTask(queryClient, actorId, workspaceId, task),
+  });
+}
+
+export interface MoveTaskVariables extends IdempotentVariables {
+  taskId: string;
+  input: MoveTaskInput;
+}
+
+/**
+ * A move renumbers siblings too, so no loaded list position is patched: the confirmed task is
+ * stored like any other write and every task list and head projection of the workspace refetches.
+ */
+export function useMoveTaskMutation(actorId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useIdempotentMutation({
+    prepare: ({ taskId, input }: MoveTaskVariables) => moveTaskRequest(workspaceId, taskId, input),
     onSuccess: (task) => void storeTask(queryClient, actorId, workspaceId, task),
   });
 }

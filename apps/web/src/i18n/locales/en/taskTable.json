@@ -1,4 +1,21 @@
 {
+  "rowActions": {
+    "trigger": "Task actions: {{title}}",
+    "openDetails": "Open details",
+    "moveSection": "Move to section…",
+    "addSubtask": "Add subtask",
+    "moveUp": "Move up",
+    "moveDown": "Move down"
+  },
+  "move": {
+    "handle": "Move task: {{title}}",
+    "handleHint": "Drag to reorder, or press Arrow Up or Arrow Down.",
+    "moving": "Moving “{{title}}”…",
+    "moved": "Moved “{{title}}”.",
+    "wait": "Wait until the current save is confirmed, then move the task again.",
+    "draft": "Save or discard the changes to “{{title}}” before moving it.",
+    "dismiss": "Dismiss"
+  },
   "sectionMove": {
     "action": "Move “{{title}}” to another section",
     "short": "Move to section",

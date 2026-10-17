@@ -4,6 +4,7 @@ import type {
   CreateSectionInput,
   CreateTagInput,
   CreateTaskInput,
+  MoveTaskInput,
   ProjectDto,
   RestoreTaskInput,
   SectionDto,
@@ -61,4 +62,6 @@ export interface TaskApplication {
   updateTask(context: CommandContext, taskId: string, input: UpdateTaskInput): Promise<TaskDto>;
   archiveTask(context: CommandContext, taskId: string, input: ArchiveTaskInput): Promise<TaskDto>;
   restoreTask(context: CommandContext, taskId: string, input: RestoreTaskInput): Promise<TaskDto>;
+  /** Manual reorder next to an active sibling; see `moveTaskInputSchema`. */
+  moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<TaskDto>;
 }

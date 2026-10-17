@@ -160,3 +160,17 @@ export type {
   SharedAuthLoginAttemptConsumeInput,
   SharedAuthStore,
 } from './identity/shared-auth.js';
+
+export { createWorkspaceCreateService } from './workspaces/create.js';
+export type {
+  WorkspaceCreateApplication,
+  WorkspaceCreateContext,
+  WorkspaceCreationReceipt,
+  NewWorkspacePlan,
+  WorkspaceCreateScope,
+  WorkspaceCreateUnitOfWork,
+  WorkspaceCreateServiceDependencies,
+} from './workspaces/create.js';
+
+export type { TaskRowApplication, TaskRowUnitOfWork, TaskRowApplicationDependencies } from './task-rows/ports.js';
+export { createTaskRowApplication } from './task-rows/service.js';

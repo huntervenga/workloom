@@ -5,6 +5,7 @@ import {
   createTagInputSchema,
   createTaskInputSchema,
   idSchema,
+  moveTaskInputSchema,
   projectListResponseSchema,
   projectResponseSchema,
   restoreTaskInputSchema,
@@ -179,5 +180,10 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskRouteDependen
   app.post(`${BASE}/tasks/:taskId/restore`, async (request, reply) => {
     const { params, input, ctx } = await write(request, taskParamsSchema, restoreTaskInputSchema);
     return sendData(request, reply, taskResponseSchema, await deps.tasks.restoreTask(ctx, params.taskId, input));
+  });
+
+  app.post(`${BASE}/tasks/:taskId/move`, async (request, reply) => {
+    const { params, input, ctx } = await write(request, taskParamsSchema, moveTaskInputSchema);
+    return sendData(request, reply, taskResponseSchema, await deps.tasks.moveTask(ctx, params.taskId, input));
   });
 }

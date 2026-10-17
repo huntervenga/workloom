@@ -10,5 +10,30 @@
   "owner": "Owner",
   "admin": "Admin",
   "member": "Member",
-  "viewer": "Viewer"
+  "viewer": "Viewer",
+  "create": {
+    "open": "New workspace",
+    "title": "New workspace",
+    "description": "A new, empty workspace. You will be its owner.",
+    "name": "Workspace name",
+    "nameRequired": "Enter a workspace name.",
+    "nameTooLong": "Name must be {{max}} characters or fewer.",
+    "timezone": "Time zone",
+    "timezoneHint": "Used for dates and weekly plans, for example Europe/Berlin or UTC.",
+    "timezoneInvalid": "Choose a time zone from the list, for example Europe/Berlin or UTC.",
+    "submit": "Create workspace",
+    "creating": "Creating…",
+    "retry": "Retry",
+    "discard": "Discard",
+    "uncertainTitle": "The new workspace was not confirmed",
+    "uncertain": "It may already have been created. Retry sends the same request again and will not create a second workspace.",
+    "identityChangedTitle": "Your sign-in changed",
+    "identityChanged": "Nothing was opened or changed here. Once you are signed in again, retry to confirm the new workspace.",
+    "failedTitle": "Could not create the workspace",
+    "failed": "Your entries are kept. Try again in a moment.",
+    "rejectedInput": "Check the name and time zone, then try again.",
+    "notAllowed": "Your account cannot create workspaces.",
+    "signedOut": "Your session has ended. Sign in again, then try again.",
+    "rateLimited": "Too many attempts. Wait a moment, then try again."
+  }
 }

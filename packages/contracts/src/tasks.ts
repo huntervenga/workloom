@@ -25,6 +25,7 @@ import { sqlCalendarDateSchema } from './common/sql-date.js';
  * - `PATCH /tasks/:taskId` (`updateTaskInputSchema`) → `taskResponseSchema`
  * - `POST /tasks/:taskId/archive` (`archiveTaskInputSchema`) → `taskResponseSchema`
  * - `POST /tasks/:taskId/restore` (`restoreTaskInputSchema`) → `taskResponseSchema`
+ * - `POST /tasks/:taskId/move` (`moveTaskInputSchema`) → `taskResponseSchema`
  *
  * Every mutation requires an `Idempotency-Key` header. The actor is resolved by the server and
  * never read from a body; the workspace comes from the path. Write bodies are strict: unknown
@@ -232,10 +233,23 @@ export const updateTagInputSchema = z
   })
   .refine((input) => hasAnyField(input, ['name', 'color', 'archived']), noChangeError);
 
+const taskPlacementSchema = z.enum(['before', 'after']);
+
+/**
+ * Manual placement next to an active sibling: same project, same `parentTaskId` and same section
+ * (`null` included) as the placed task. The server renumbers the whole sibling list, archived and
+ * unloaded rows included, so clients never send list indexes.
+ */
+export const taskInsertionSchema = z.strictObject({
+  anchorTaskId: idSchema,
+  placement: taskPlacementSchema,
+});
+
 /**
  * A subtask (`parentTaskId` set) with the default `detail` scope joins the parent's work package,
  * so it cannot bring its own estimate: copying the parent budget would double-count it.
- * `added_scope` subtasks create a new package and may set one.
+ * `added_scope` subtasks create a new package and may set one. `insertion` and `position` are
+ * mutually exclusive; without either the task is appended after the project's last position.
  */
 export const createTaskInputSchema = z
   .strictObject({
@@ -254,6 +268,7 @@ export const createTaskInputSchema = z
     estimateMinutes: minutesSchema.nullable().optional(),
     position: positionSchema.optional(),
     workScope: taskWorkScopeSchema.optional(),
+    insertion: taskInsertionSchema.optional(),
   })
   .superRefine((input, ctx) => {
     const scope = input.workScope ?? 'detail';
@@ -263,6 +278,9 @@ export const createTaskInputSchema = z
         path: ['estimateMinutes'],
         message: 'A detail subtask uses its parent work package estimate; use workScope "added_scope" for new work.',
       });
+    }
+    if (input.insertion !== undefined && input.position !== undefined) {
+      ctx.addIssue({ code: 'custom', path: ['insertion'], message: 'Send either position or insertion, not both.' });
     }
   });
 
@@ -349,6 +367,17 @@ export const restoreTaskInputSchema = z.strictObject({
   expectedRevision: revisionSchema,
 });
 
+/**
+ * Manual reorder next to an active sibling with the same parent. A subtask also keeps its section;
+ * a root task takes the anchor's section. Status, parent, dates and estimates never change.
+ * `expectedRevision` guards the moved task only; siblings are re-read under the workspace barrier.
+ */
+export const moveTaskInputSchema = z.strictObject({
+  expectedRevision: revisionSchema,
+  anchorTaskId: idSchema,
+  placement: taskPlacementSchema,
+});
+
 /** Query strings carry booleans as text; only `true`/`false` are accepted (never truthy coercion). */
 const queryBooleanSchema = z.union([
   z.boolean(),
@@ -408,6 +437,8 @@ export type CreateTaskInput = z.infer<typeof createTaskInputSchema>;
 export type UpdateTaskInput = z.infer<typeof updateTaskInputSchema>;
 export type ArchiveTaskInput = z.infer<typeof archiveTaskInputSchema>;
 export type RestoreTaskInput = z.infer<typeof restoreTaskInputSchema>;
+export type TaskInsertion = z.infer<typeof taskInsertionSchema>;
+export type MoveTaskInput = z.infer<typeof moveTaskInputSchema>;
 export type TaskListQuery = z.infer<typeof taskListQuerySchema>;
 
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;

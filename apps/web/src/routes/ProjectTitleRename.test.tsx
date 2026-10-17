@@ -78,16 +78,16 @@ describe('project inline task title rename', () => {
     expect(next).toHaveValue('Unsent after queue'); expect(search).toHaveFocus();
     expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
     expect(calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: task.revision, title: 'Held rename then next' });
-    expect(calls.find(call => call.method === 'POST')?.body).toEqual({ projectId: PROJECT_ID, title: 'Queued after rename', statusId: task.statusId });
+    expect(calls.find(call => call.method === 'POST')?.body).toEqual({ projectId: PROJECT_ID, title: 'Queued after rename', statusId: task.statusId, insertion: { anchorTaskId: task.id, placement: 'after' } });
   });
 
-  it('continues an unchanged plain Enter into the next quick task and Escape returns to the add row without writes', async () => {
+  it('continues an unchanged plain Enter into the next quick task and Escape returns to its source title without writes', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await user.click(await rename()); await user.keyboard('{Enter}');
     const quick = await screen.findByRole('form', { name: 'Add a task to No section' });
     await waitFor(() => expect(within(quick).getByRole('textbox', { name: 'Task name' })).toHaveFocus());
     await user.keyboard('{Escape}');
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Add task without a section' })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('button', { name: task.title })).toHaveFocus());
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 

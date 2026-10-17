@@ -1,3 +1,4 @@
+import {DomainError,notFoundError} from '../errors.js';
 import type {PlanningMutationIntent,PlanningRepository} from '../planning/ports.js';
 import type {RecurrenceAffectedFootprint,RecurrenceGuardIntent,RecurrenceRepository} from './ports.js';
 
@@ -37,9 +38,24 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
     case 'section.update':return projects((await repo.tasks.findSection(ws,text(i.target,'section')))?.projectId);
     case 'tag.update':return allProjects();
     case 'task.create':return projects((await repo.tasks.findProject(ws,text(record(i.input,'task input')['projectId'],'task project')))?.id);
-    case 'task.update':case 'task.archive':case 'task.restore':return projects(await taskProject(text(i.target,'task')));
+    case 'task.update':case 'task.archive':case 'task.restore':case 'task.move':return projects(await taskProject(text(i.target,'task')));
     default:return never(i);
    }
+  case 'task_row':{
+   // The target is composed from the same parsed input; a mismatch is a wiring defect, never user input.
+   if(i.target.projectId!==i.input.task.projectId)throw new Error('Unknown recurrence footprint: task row target and input project differ.');
+   const projectId=(await repo.tasks.findProject(ws,i.input.task.projectId))?.id;
+   if(!projectId)return none;
+   // The service preflights these too; the typed boundary still fails closed before any census or freeze.
+   // The new task, its values and its package do not exist yet, so the explicit periods are the only other sources.
+   for(const ref of [i.input.plan,i.input.actual]){
+    if(!ref)continue;
+    const period=await repo.findPeriod(ws,ref.periodId);
+    if(!period)throw notFoundError();
+    if(period.projectId!==projectId)throw new DomainError('DOMAIN_VALIDATION_FAILED','The period belongs to another project.');
+   }
+   return projects(projectId);
+  }
   case 'field':
    switch(i.command){
     case 'field.create':return projects((await repo.tasks.findProject(ws,text(record(i.input,'field input')['projectId'],'field project')))?.id);

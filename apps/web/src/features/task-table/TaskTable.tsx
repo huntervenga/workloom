@@ -1,3 +1,4 @@
+import { resolveDraftPlacement, type DraftPlacementSnapshot } from './draftPlacement';
 import { canEditTaskInline, canMoveTaskSection, isCurrentEstimateProjection, type TaskInlineField } from '../tasks/tableEditing';
 import { t, useTranslation, formatDate } from '../../i18n';
 import type {
@@ -10,14 +11,16 @@ import type {
   TaskStatusGroup,
 } from '@workloom/contracts';
 import { Avatar, Badge, Button, cn } from '@workloom/ui';
-import { ChevronDown, ChevronRight, Flag, FolderInput, Link2, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
-import { useCallback, useId, useMemo, useState, Fragment, type ReactNode } from 'react';
+import * as Menu from '@radix-ui/react-dropdown-menu';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
+import { useCallback, useId, useMemo, useRef, useState, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import { visibleTaskRows, type TaskTreeNode } from './taskTree';
 import { buildTableGroups, type TableTaskGroup, type TaskGroupingMode } from './taskGrouping';
 import { dedupeTasks } from './workPackages';
 import type { TaskSortMode } from './taskOrdering';
 import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
+import { usePointerRowDrag, type DropTarget } from './usePointerRowDrag';
 
 /** A column supplied by the parent, shown after «Приоритет» and before the estimate. */
 export interface TaskTableCustomColumn {
@@ -27,6 +30,30 @@ export interface TaskTableCustomColumn {
   /** Column width in pixels. */
   width: number;
   renderCell: (task: TaskDto) => ReactNode;
+}
+
+/** `draft` is the one unsent input row; submitted rows wait as `pending` or `uncertain`. */
+export type TaskTableDraftRowState = 'draft' | 'pending' | 'uncertain';
+/** Renders one normal table row: one cell per visible column, filled by `renderCell(columnId)`. */
+export type TaskTableDraftRow = (renderCell: (columnId: string) => ReactNode) => ReactNode;
+export type TaskDropPlacement = 'before' | 'after';
+
+export interface TaskTableQuickAdd {
+  placement?: DraftPlacementSnapshot | undefined;
+  sectionId: string | null;
+  /**
+   * Manual order only: the rows sit right after this loaded task and its visible subtree instead
+   * of closing the section. An anchor that is not visible falls back to the section's end.
+   */
+  afterTaskId?: string | null | undefined;
+  /** The new rows are subtasks of this task; they are indented like their siblings. */
+  parentTaskId?: string | null | undefined;
+  /** Confirmed creates the list has not loaded yet; shown read-only in place until it does. */
+  confirmedTasks?: readonly TaskDto[] | undefined;
+  /** Legacy single-cell content spanning every column. */
+  content?: ReactNode;
+  /** Full rows; `draftRow(state)` renders one normal row per visible column. Wins over `content`. */
+  render?: ((draftRow: (state: TaskTableDraftRowState) => TaskTableDraftRow) => ReactNode) | undefined;
 }
 
 export interface TaskTableProps {
@@ -74,7 +101,15 @@ export interface TaskTableProps {
    */
   activeFieldEditor?: { taskId: string; field: TaskInlineField } | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
-  quickAdd?: { sectionId: string | null; content: ReactNode } | undefined;
+  quickAdd?: TaskTableQuickAdd | undefined;
+  /**
+   * Persists a manual reorder: `task` goes right before/after `anchor` (same parent; a subtask also
+   * stays in its section). Offered only in manual order grouped by section. The rows never move
+   * locally: the refetched list is the authoritative order.
+   */
+  onMoveTask?: ((task: TaskDto, anchor: TaskDto, placement: TaskDropPlacement) => void) | undefined;
+  /** A task command is still being sent or unconfirmed: reordering is refused until it resolves. */
+  moveBlocked?: boolean | undefined;
   /** Orders rows within the existing group/parent structure. */
   sortMode?: TaskSortMode | undefined;
   grouping?: TaskGroupingMode | undefined;
@@ -144,6 +179,17 @@ const cellButtonClassName = cn(
  */
 const stickyEstimateClassName =
   'lg:sticky lg:right-0 lg:z-[1] lg:shadow-[inset_1px_0_0_var(--color-line),-8px_0_8px_-8px_rgb(15_23_42/0.18)]';
+
+/** The title cell of every row, real or draft: pinned left from `lg`. */
+const titleCellClassName =
+  'h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]';
+
+const menuItemClassName = 'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-highlighted:bg-accent-soft data-disabled:cursor-default data-disabled:opacity-50';
+
+/** Editors and text fields keep their native context menu and keyboard. */
+function ownsNativeMenu(target: EventTarget): boolean {
+  return target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [data-editing], [role="menu"], [role="listbox"], [role="dialog"]') !== null;
+}
 
 const statusDotClasses: Record<TaskStatusGroup, string> = {
   todo: 'bg-slate-400',
@@ -400,6 +446,20 @@ interface RowContext {
   /** Grid line classes of a visible column, shared by its header and body cells. */
   columnLine: (id: string) => string | undefined;
   activeFieldEditor: TaskTableProps['activeFieldEditor'];
+  /** Manual reorder: null when this table offers none. */
+  move: RowMove | null;
+  /** The pointer drag's current valid drop, drawn on the anchor row. */
+  dropTarget: DropTarget | null;
+  draggingTaskId: string | null;
+}
+
+interface RowMove {
+  canMove: (task: TaskDto) => boolean;
+  blocked: boolean;
+  /** The previous/next sibling a keyboard move would pass, if any. */
+  neighbour: (task: TaskDto, direction: -1 | 1) => TaskDto | undefined;
+  move: (task: TaskDto, anchor: TaskDto, placement: TaskDropPlacement) => void;
+  startDrag: (task: TaskDto, event: ReactPointerEvent<HTMLButtonElement>) => void;
 }
 
 function sectionLabel(sectionId: string | null, sectionById: ReadonlyMap<string, SectionDto>): string {
@@ -458,15 +518,49 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     {task.archivedAt !== null ? chip('muted', t('taskTable.taskTable.archived2')) : null}
   </>;
   const describedBy = node.depth > 0 ? hierarchyDescriptionId : undefined;
-  const titleClassName = cn('min-w-0 flex-1 truncate px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', 'rounded', finished ? 'text-muted' : 'text-ink');
+  // The name is only as wide as its text; the free area to its right opens the task.
+  const titleClassName = cn('min-w-0 max-w-full shrink truncate px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', 'rounded', finished ? 'text-muted' : 'text-ink');
+  const [menuOpen, setMenuOpen] = useState(false);
+  // An action that opens its own editor keeps focus there instead of on the trigger.
+  const keepMenuFocus = useRef(false);
+  const canAddChild = ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null;
+  const movableHere = ctx.move !== null && ctx.move.canMove(task);
+  const previous = movableHere ? ctx.move?.neighbour(task, -1) : undefined;
+  const next = movableHere ? ctx.move?.neighbour(task, 1) : undefined;
+  const moveBy = (direction: -1 | 1) => {
+    const anchor = direction < 0 ? previous : next;
+    if (anchor && ctx.move && !ctx.move.blocked) ctx.move.move(task, anchor, direction < 0 ? 'before' : 'after');
+  };
+  const openMenuFromRow = (event: ReactMouseEvent | ReactKeyboardEvent) => {
+    if (ownsNativeMenu(event.target)) return;
+    event.preventDefault();
+    setMenuOpen(true);
+  };
+  const drop = ctx.dropTarget?.taskId === task.id ? ctx.dropTarget.placement : undefined;
   const builtinCells: Record<string, ReactNode> = {
     title: (      <td
         data-editing={isEditing('title') ? '' : undefined}
-        className={cn('h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]')}
+        className={titleCellClassName}
         style={{ paddingLeft: 12 }}>
         <div className="relative flex h-10 min-w-0 items-center gap-1">
+          {/* Boundaries of this row for a pointer drop; hit-testing reads the whole row. */}
+          <span aria-hidden="true" data-task-drop-before={task.id} className="pointer-events-none absolute inset-x-0 top-0 h-1/2" />
+          <span aria-hidden="true" data-task-drop-after={task.id} className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2" />
+          {movableHere ? (
+            <button type="button" data-task-move-handle={task.id} aria-label={t('taskTable.move.handle', { title: task.title })} title={t('taskTable.move.handleHint')}
+              aria-disabled={ctx.move?.blocked || undefined} aria-describedby={`${hierarchyDescriptionId}-move`}
+              onPointerDown={event => ctx.move?.startDrag(task, event)}
+              onKeyDown={event => {
+                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+                event.preventDefault();
+                moveBy(event.key === 'ArrowUp' ? -1 : 1);
+              }}
+              className={cn('absolute -left-3 top-2 flex h-6 w-3 cursor-grab touch-none items-center justify-center rounded text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing', rowActionClassName, ctx.draggingTaskId === task.id && 'pointer-events-auto opacity-100')}>
+              <GripVertical size={12} aria-hidden="true" />
+              <span id={`${hierarchyDescriptionId}-move`} className="sr-only">{t('taskTable.move.handleHint')}</span>
+            </button>
+          ) : null}
           {ctx.onSelectTask ? <span className="mr-1 flex h-8 w-8 shrink-0 items-center justify-center border-r border-line pr-2"><input type="checkbox" aria-label={t('taskTable.taskTable.selectForGraphValue', { p0: task.title })} checked={ctx.selectedTaskIds.includes(task.id)} disabled={ctx.selectedTaskIds.length >= 100 && !ctx.selectedTaskIds.includes(task.id)} onChange={event => ctx.onSelectTask?.(task.id, event.target.checked)} /></span> : null}
-          {/* Actions reserve exactly their rendered width in every pointer mode, including before title editing. */}
           <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
             {childCount > 0 ? (
               <button
@@ -481,41 +575,59 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
             ) : <span aria-hidden="true" className="size-6 shrink-0" />}
             {ctx.renderCompletionAction?.(task)}
             {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
-            {editingTitle ? <><div className="min-w-0 flex-1">{titleEditor}</div><span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span></> : editable ? <>
-              {/* Clicking the visible name renames in place (Asana-style); details have their own action. */}
-              <button type="button" data-task-cell={`${task.id}:title`} title={task.title} aria-describedby={describedBy}
+            {editingTitle ? <><div className="min-w-0 flex-1">{titleEditor}</div><span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span></> : <>
+              {/* Clicking the visible name renames in place (Asana-style); read-only rows open details. */}
+              {editable ? <button type="button" data-task-cell={`${task.id}:title`} title={task.title} aria-describedby={describedBy}
                 onClick={() => ctx.onEditTaskField?.(task, 'title')} className={cn(titleClassName, 'cursor-text hover:bg-slate-100')}>{task.title}</button>
-              <span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span>
-            </> : <>
-              <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title} aria-describedby={describedBy}
-                className={cn(titleClassName, 'hover:text-accent-ink hover:underline')}>{task.title}</button>
-              <span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span>
+                : <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title} aria-describedby={describedBy}
+                  className={cn(titleClassName, 'hover:text-accent-ink hover:underline')}>{task.title}</button>}
+              <span className="flex max-w-[35%] min-w-0 shrink-0 items-center gap-1 overflow-hidden">{meta}</span>
+              {/* Everything right of the name opens the task; it never wraps the row's other controls. */}
+              <button type="button" data-task-open-area={task.id} aria-label={t('taskTable.taskTable.openTask', { title: task.title })} title={t('taskTable.taskTable.openDetails')}
+                onClick={() => ctx.onOpenTask(task.id)}
+                className="group/open flex h-8 min-w-4 flex-1 items-center justify-end rounded px-1 text-subtle outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
+                <PanelRightOpen size={14} aria-hidden="true" className="opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible/open:opacity-100" />
+              </button>
             </>}
             {movingSection ? <span data-task-section-editor="" className="absolute right-0 top-1 z-[2] flex h-8 w-52 max-w-full items-center rounded bg-surface pl-1 shadow-[-6px_0_6px_var(--color-surface)]">
               <div className="min-w-0 flex-1">{sectionEditor}</div>
             </span> : null}
-            <span data-task-row-actions="" className={cn('flex h-8 shrink-0 items-center gap-0.5 rounded bg-surface pl-1 shadow-[-6px_0_6px_var(--color-surface)]', rowActionClassName, movingSection && 'invisible')}>
-            {movable ? (
-              <button type="button" data-task-cell={`${task.id}:sectionId`} aria-label={t('taskTable.sectionMove.action', { title: task.title })} title={t('taskTable.sectionMove.short')}
-                onClick={() => ctx.onEditTaskField?.(task, 'sectionId')} className={cn(iconButtonClassName, 'size-7 text-muted')}>
-                <FolderInput size={15} aria-hidden="true" />
-              </button>
-            ) : null}
-            <button type="button" aria-label={t('taskTable.taskTable.openTask', { title: task.title })} title={t('taskTable.taskTable.openDetails')}
-              onClick={() => ctx.onOpenTask(task.id)} className={cn(iconButtonClassName, 'size-7 text-muted')}>
-              <PanelRightOpen size={15} aria-hidden="true" />
-            </button>
             {node.depth > 0 ? <span id={hierarchyDescriptionId} className="sr-only">
               {t('taskTable.taskTable.hierarchyDepth', { depth: node.depth })}
               {parent ? ` ${t('taskTable.taskTable.parentContext', { title: parent.title })}` : null}
             </span> : null}
-            {ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null ? (
-              <button type="button" aria-label={t('taskTable.taskTable.addSubtaskToValue', { p0: task.title })}
-                onClick={() => ctx.onCreateChild?.(task)} className={cn(iconButtonClassName, 'size-7 text-subtle hover:text-muted')}>
-                <Plus size={16} aria-hidden="true" />
-              </button>
-            ) : null}
-            </span>
+            {/* Section, subtask and details actions; also on right click and Shift+F10 anywhere in the row. */}
+            <Menu.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
+              <Menu.Trigger asChild>
+                <button type="button" data-task-row-actions="" data-task-cell={movable ? `${task.id}:sectionId` : undefined} aria-label={t('taskTable.rowActions.trigger', { title: task.title })}
+                  className={cn(iconButtonClassName, 'size-7 text-muted data-[state=open]:pointer-events-auto data-[state=open]:opacity-100', rowActionClassName, movingSection && 'invisible')}>
+                  <MoreHorizontal size={15} aria-hidden="true" />
+                </button>
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Content data-task-row-menu={task.id} align="end" sideOffset={4}
+                  onCloseAutoFocus={event => { if (keepMenuFocus.current) { keepMenuFocus.current = false; event.preventDefault(); } }}
+                  className="z-50 min-w-48 max-w-72 rounded-lg border border-line bg-surface p-1 shadow-lg">
+                  <Menu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onOpenTask(task.id); }}>
+                    <PanelRightOpen size={14} aria-hidden="true" />{t('taskTable.rowActions.openDetails')}
+                  </Menu.Item>
+                  {movable ? <Menu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onEditTaskField?.(task, 'sectionId'); }}>
+                    <FolderInput size={14} aria-hidden="true" />{t('taskTable.rowActions.moveSection')}
+                  </Menu.Item> : null}
+                  {canAddChild ? <Menu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onCreateChild?.(task); }}>
+                    <Plus size={14} aria-hidden="true" />{t('taskTable.rowActions.addSubtask')}
+                  </Menu.Item> : null}
+                  {movableHere ? <>
+                    <Menu.Item className={menuItemClassName} disabled={!previous || ctx.move?.blocked === true} onSelect={() => moveBy(-1)}>
+                      <ArrowUp size={14} aria-hidden="true" />{t('taskTable.rowActions.moveUp')}
+                    </Menu.Item>
+                    <Menu.Item className={menuItemClassName} disabled={!next || ctx.move?.blocked === true} onSelect={() => moveBy(1)}>
+                      <ArrowDown size={14} aria-hidden="true" />{t('taskTable.rowActions.moveDown')}
+                    </Menu.Item>
+                  </> : null}
+                </Menu.Content>
+              </Menu.Portal>
+            </Menu.Root>
           </div>
         </div>
       </td>),
@@ -527,7 +639,10 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     priority: td('priority', 'priority', cell('priority', <PriorityCell priority={task.priority} />)),
     estimate: td('estimate', 'estimate', cell('estimate', <EstimateCell task={task} summary={ctx.summary} />), cn('text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && stickyEstimateClassName)),
   };
-  return <tr data-task-row={task.id} className="group h-10 border-t border-line hover:bg-canvas/70">{ctx.columnIds.map(id => {
+  return <tr data-task-row={task.id} data-task-drop={drop} data-task-dragging={ctx.draggingTaskId === task.id ? '' : undefined}
+    onContextMenu={openMenuFromRow}
+    onKeyDown={event => { if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') openMenuFromRow(event); }}
+    className={cn('group h-10 border-t border-line hover:bg-canvas/70', drop === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]', drop === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]', ctx.draggingTaskId === task.id && 'opacity-60')}>{ctx.columnIds.map(id => {
     const custom = ctx.customColumns.find(column => column.id === id);
     // Supplied cells bring their own control padding; the row height still bounds them.
     return <Fragment key={id}>{builtinCells[id] ?? (custom ? td(id, null, <div className="flex h-10 min-w-0 items-center overflow-hidden">{custom.renderCell(task)}</div>, 'min-w-0') : null)}</Fragment>;
@@ -700,6 +815,7 @@ export function TaskTable({
   columnPreset = 'expanded',
   columnIds,
   onEditTaskField, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd,
+  onMoveTask, moveBlocked = false,
   grouping = 'section',
   sortMode = 'manual',
   collapsedTaskIds,
@@ -726,7 +842,11 @@ export function TaskTable({
   const columns = orderedIds.flatMap(id => { const column = byColumnId.get(id); return column ? [column] : []; });
   const visibleIds = columns.map(column => column.id);
   const columnCount = columns.length;
-  const groups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale, sortMode), [tasks, sections, members, grouping, locale, sortMode]);
+  const loadedGroups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale, sortMode), [tasks, sections, members, grouping, locale, sortMode]);
+  // Retain a captured empty group while its unsent row owns this presentation.
+  const capturedPlacement = quickAdd?.placement;
+  const groups = useMemo<readonly TableTaskGroup[]>(() => capturedPlacement && !loadedGroups.some(group => group.key === capturedPlacement.groupKey)
+    ? [...loadedGroups, { ...capturedPlacement.group, roots: [], taskCount: 0 }] : loadedGroups, [loadedGroups, capturedPlacement]);
   const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
   // Widths never depend on an open editor: the grid stays still while any cell is edited.
   const otherColumnsWidth = columns.reduce((sum, column) => sum + (column.id === 'title' ? 0 : column.width), 0);
@@ -769,7 +889,35 @@ export function TaskTable({
     });
   }, [collapsedIds, onTaskCollapsedChange]);
 
+  // Manual reorder within one parent; only the server's answer and the refetched list move a row.
+  const moveEnabled = onMoveTask !== undefined && writable && sortMode === 'manual' && grouping === 'section';
+  const treeOrder = useMemo(() => groups.flatMap(group => visibleTaskRows(group.roots, new Set()).map(node => node.task)), [groups]);
+  const activeSection = (sectionId: string | null) => sectionId === null || sectionById.get(sectionId)?.archivedAt === null;
+  const siblingsOf = (task: TaskDto) => treeOrder.filter(item => item.parentTaskId === task.parentTaskId && item.sectionId === task.sectionId);
+  const dropAllowed = (source: TaskDto, anchor: TaskDto, placement: TaskDropPlacement): boolean => {
+    if (anchor.id === source.id || anchor.parentTaskId !== source.parentTaskId || !canEditTaskInline(anchor) || !activeSection(anchor.sectionId)) return false;
+    // A root may land in another section next to its anchor; a subtask keeps parent and section.
+    if (anchor.sectionId !== source.sectionId) return source.parentTaskId === null;
+    const siblings = siblingsOf(source);
+    const index = siblings.findIndex(item => item.id === source.id);
+    // Dropping right next to itself changes nothing and sends nothing.
+    return placement === 'after' ? siblings[index - 1]?.id !== anchor.id : siblings[index + 1]?.id !== anchor.id;
+  };
+  const { drag, startDrag } = usePointerRowDrag({ taskById, dropAllowed, onMove: onMoveTask, blocked: moveBlocked });
+  const move: RowMove | null = moveEnabled ? {
+    canMove: task => canEditTaskInline(task) && activeSection(task.sectionId),
+    blocked: moveBlocked,
+    neighbour: (task, direction) => {
+      const siblings = siblingsOf(task);
+      const candidate = siblings[siblings.findIndex(item => item.id === task.id) + direction];
+      return candidate && dropAllowed(task, candidate, direction < 0 ? 'before' : 'after') ? candidate : undefined;
+    },
+    move: (task, anchor, placement) => { if (!moveBlocked && dropAllowed(task, anchor, placement)) onMoveTask?.(task, anchor, placement); },
+    startDrag,
+  } : null;
+
   const ctx: RowContext = {
+    move, dropTarget: drag?.target ?? null, draggingTaskId: drag?.taskId ?? null,
     grouping, taskById,
     selectedTaskIds,
     onSelectTask,
@@ -791,6 +939,58 @@ export function TaskTable({
     activeFieldEditor: activeFieldEditor && taskById.has(activeFieldEditor.taskId) ? activeFieldEditor : undefined,
   };
   const quickAddRow = (content: ReactNode) => <tr data-quick-add-row="" className="h-10 border-t border-line bg-surface"><td colSpan={columnCount} className="h-10 p-0"><div className="sticky left-0 flex h-10 w-[min(100cqw,44rem)] max-w-full items-center pr-2 pl-[42px]">{content}</div></td></tr>;
+  // A draft is a normal row of the same grid: one cell per visible column, same widths and sticky edges.
+  const draftRow = (depth: number) => (state: TaskTableDraftRowState): TaskTableDraftRow => renderCell => (
+    <tr data-task-draft-row="" data-task-draft-state={state} data-quick-add-row={state === 'draft' ? '' : undefined}
+      aria-busy={state === 'pending' || undefined} className={cn('group h-10 border-t border-line', state === 'draft' ? 'bg-surface' : 'text-muted')}>
+      {visibleIds.map(id => id === 'title' ? (
+        <td key={id} className={titleCellClassName} style={{ paddingLeft: 12 }}>
+          <div className="flex h-10 min-w-0 items-center gap-1">
+            {onSelectTask ? <span aria-hidden="true" className="mr-1 h-8 w-8 shrink-0 border-r border-line" /> : null}
+            <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(depth, 2) * 20 }}>
+              <span aria-hidden="true" className="size-6 shrink-0" />
+              {renderCell(id)}
+            </div>
+          </div>
+        </td>
+      ) : (
+        <td key={id} className={cn(cellClassName, columnLine(id), id === 'estimate' && cn('text-right lg:bg-surface', stickyEstimate && stickyEstimateClassName))}>
+          <div className="flex h-10 min-w-0 items-center overflow-hidden">{renderCell(id)}</div>
+        </td>
+      ))}
+    </tr>
+  );
+  // Confirmed rows the list has not loaded yet stay in place, read-only, so the next input never jumps.
+  const confirmedCtx: RowContext = { ...ctx, onEditTaskField: undefined, renderTaskFieldEditor: undefined, activeFieldEditor: undefined, onCreateChild: null, move: null, renderCompletionAction: () => <span aria-hidden="true" className="size-7 shrink-0" /> };
+  const quickRows = (group: TableTaskGroup | null, depth: number): ReactNode => quickAdd ? <>
+    {group === null ? null : (quickAdd.confirmedTasks ?? []).filter(task => !taskById.has(task.id)).map(task => <TaskRow key={task.id} node={{ task, depth, children: [], detachedReason: null }} group={group} ctx={confirmedCtx} />)}
+    {quickAdd.render ? quickAdd.render(draftRow(depth)) : quickAddRow(quickAdd.content)}
+  </> : null;
+  // The visible group row the anchored rows follow: after the anchor and its whole visible subtree.
+  const anchored = (() => {
+    if (quickAdd?.placement) {
+      const resolved = resolveDraftPlacement(quickAdd.placement, groups, collapsedIds);
+      const group = groups.find(item => item.key === resolved.groupKey);
+      const rows = group ? visibleTaskRows(group.roots, collapsedIds) : [];
+      const index = resolved.position.taskId === null ? -1 : rows.findIndex(node => node.task.id === resolved.position.taskId);
+      return { groupKey: resolved.groupKey, end: index < 0 ? 0 : index + (resolved.position.placement === 'after' ? 1 : 0), depth: resolved.depth };
+    }
+    const anchorId = grouping === 'section' ? quickAdd?.afterTaskId : undefined;
+    if (!anchorId) return null;
+    for (const group of groups) {
+      if (collapsedGroups.has(group.key)) continue;
+      const rows = visibleTaskRows(group.roots, collapsedIds);
+      const index = rows.findIndex(node => node.task.id === anchorId);
+      const anchor = rows[index];
+      if (!anchor) continue;
+      let end = index + 1;
+      while (end < rows.length && (rows[end]?.depth ?? 0) > anchor.depth) end += 1;
+      // Rows anchored on their own parent (its first subtask) sit one level below it.
+      const depth = !quickAdd?.parentTaskId ? 0 : quickAdd.parentTaskId === anchorId ? anchor.depth + 1 : anchor.depth;
+      return { groupKey: group.key, end, depth };
+    }
+    return null;
+  })();
 
   return (
     <div data-task-table-scroll="" className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
@@ -820,22 +1020,21 @@ export function TaskTable({
                 }}
                 onRenameSection={onRenameSection}
               />
-              {collapsed ? null : rows.length === 0 ? (
-                <tr className="h-10 border-t border-line">
-                  <td colSpan={columnCount} className="h-10 py-0 pr-3 pl-[42px] text-sm text-muted">
-                    {partial ? t('taskTable.taskTable.noLoadedTasksInThisSection') : t('taskTable.taskTable.noTasksYet')}
-                  </td>
-                </tr>
-              ) : (
-                rows.map((node) => <TaskRow key={node.task.id} node={node} group={group} ctx={ctx} />)
-              )}
+              {collapsed ? null : (() => {
+                const items = rows.map((node) => <TaskRow key={node.task.id} node={node} group={group} ctx={ctx} />);
+                // One keyed block among the rows: when the list grows above it, the block (and its
+                // unsent input, focus and selection) stays mounted instead of being recreated.
+                if (anchored?.groupKey === group.key) items.splice(anchored.end, 0, <Fragment key={quickAdd?.placement?.blockKey ?? 'quick-add'}>{quickRows(group, anchored.depth)}</Fragment>);
+                if (items.length === 0) return <tr className="h-10 border-t border-line"><td colSpan={columnCount} className="h-10 py-0 pr-3 pl-[42px] text-sm text-muted">{partial ? t('taskTable.taskTable.noLoadedTasksInThisSection') : t('taskTable.taskTable.noTasksYet')}</td></tr>;
+                return items;
+              })()}
               {/* Asana-style: the quick row, or a persistent Add task row, closes every expanded section. */}
-              {grouping !== 'section' || collapsed ? null : quickAdd?.sectionId === group.sectionId ? quickAddRow(quickAdd.content)
+              {grouping !== 'section' || collapsed ? null : anchored === null && quickAdd?.sectionId === group.sectionId ? quickRows(group, 0)
                 : acceptsNewTasks(group, writable) ? <AddTaskRow sectionId={group.sectionId} label={addTaskLabel(group)} columnCount={columnCount} onCreate={() => onCreateTask(group.sectionId)} /> : null}
             </tbody>
           );
         })}
-        {grouping === 'section' && quickAdd && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody>{quickAddRow(quickAdd.content)}</tbody> : null}
+        {grouping === 'section' && quickAdd && anchored === null && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody>{quickRows(null, 0)}</tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
           <SummaryRow summary={summary} partial={partial} columnCount={columnCount} />
         </tfoot>

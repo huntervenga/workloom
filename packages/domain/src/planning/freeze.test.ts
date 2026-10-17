@@ -1,8 +1,8 @@
-import type { PeriodCommitmentDto, PlanBaselineDto, PlanningPeriodDto, PlanningSnapshotDto, TaskDto, TaskFieldDefinitionDto } from '@workloom/contracts';
+import type { CreateTaskRowInput, PeriodCommitmentDto, PlanBaselineDto, PlanningPeriodDto, PlanningSnapshotDto, TaskDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { describe, expect, it } from 'vitest';
 import type { CommandContext } from '../access/context.js';
 import { captureFreezeSnapshot, createPlanningMutationGuard, freezePreviewHash, unwrapPlanningOutcome } from './freeze.js';
-import type { PlanningRepository, PlanningTools, PlanningWriteScope, ProjectPlanningSources } from './ports.js';
+import type { PlanningMutationIntent, PlanningRepository, PlanningTools, PlanningWriteScope, ProjectPlanningSources } from './ports.js';
 
 const clone=<T>(value:T):T=>JSON.parse(JSON.stringify(value)) as T;
 const id=(n:number)=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -75,5 +75,73 @@ describe('planning identity guards and committed outcome',()=>{
     const scope={context:ctx,repository:repo,barrierAt:new Date(time),recurrenceCensus} as PlanningWriteScope;
     const result=await createPlanningMutationGuard(scope,tools).check({family:'task',command:'task.update',target:taskId,input:{estimateMinutes:0}});
     expect(result?.details.baselineIds).toEqual([baselineId]);
+  });
+});
+
+describe('atomic task row aggregate guard',()=>{
+  const lockedFieldId=id(70),otherProject=id(72);
+  const lockedField:TaskFieldDefinitionDto={...field,id:lockedFieldId,locked:true};
+  const overdue:PlanningPeriodDto={...period,id:id(71),cutoffAt:'2026-10-15T00:00:00.000Z',protectedFieldIds:[lockedFieldId]};
+  // A fresh project: no packages, tasks or members, so the cutoff freeze has no personal freezes to fan out.
+  const empty:ProjectPlanningSources={packages:[],tasks:[],memberships:[],activeMembershipIds:[],fields:[lockedField],values:[]};
+  const rowInput=(fields?:CreateTaskRowInput['fields'],task:Partial<CreateTaskRowInput['task']>={}):CreateTaskRowInput=>({task:{projectId:project,title:'New row',statusId:id(9),...task},...(fields?{fields}:{})});
+  const rowIntent=(input:CreateTaskRowInput):PlanningMutationIntent=>({family:'task_row',command:'task.row.create',target:{projectId:input.task.projectId},input});
+  const selected=(fid:string)=>({fieldId:fid,expectedDefinitionRevision:1,value:{type:'text' as const,value:'Draft'}});
+
+  function rowGuard(periods:PlanningPeriodDto[],definitions:TaskFieldDefinitionDto[],parent?:TaskDto) {
+    const writes:string[]=[],baselines:PlanBaselineDto[]=[];
+    let stored=[...periods],next=200;
+    const repo=repository({
+      captureProject:async()=>clone(empty),listCommitments:async()=>[],
+      listPeriods:async()=>stored,findPeriod:async(_ws,pid)=>stored.find(p=>p.id===pid)??null,
+      listBaselines:async(_ws,pid)=>baselines.filter(b=>b.periodId===pid),
+      insertBaseline:async row=>{writes.push(`baseline:${row.id}`);baselines.push(row);},
+      insertLocks:async rows=>{writes.push(`locks:${rows.length}`);},
+      savePeriod:async row=>{writes.push(`period:${row.state}`);stored=stored.map(p=>p.id===row.id?row:p);},
+      saveCommitment:async()=>{writes.push('commitment');},saveManualWork:async()=>{writes.push('work');},
+      // Read-only doubles: any task core or field value write would fail as a missing method.
+      tasks:{permissionEpoch:async()=>'0',findTask:async(_ws:string,tid:string)=>parent?.id===tid?parent:null} as unknown as PlanningRepository['tasks'],
+      fields:{findField:async(_ws:string,fid:string)=>definitions.find(f=>f.id===fid)??null} as unknown as PlanningRepository['fields'],
+    });
+    const recordChange=(async(change:{entityType:string;action:string})=>{writes.push(`${change.entityType}:${change.action}`);return {changeSeq:7n};}) as unknown as PlanningWriteScope['recordChange'];
+    const scope={context:ctx,repository:repo,barrierAt:new Date(time),recurrenceCensus,recordChange} as PlanningWriteScope;
+    return {guard:createPlanningMutationGuard(scope,{...tools,newId:()=>id(next++)}),writes,baselines,periods:()=>stored};
+  }
+
+  it('first commits the overdue cutoff freeze, then rejects a manually locked selected field with that baseline',async()=>{
+    const {guard,writes,baselines,periods}=rowGuard([overdue],[lockedField]);
+    const outcome=await guard.check(rowIntent(rowInput([selected(lockedFieldId)])));
+    const baselineId=baselines[0]?.id;
+    expect(baselineId).toBeDefined();
+    expect(outcome).toEqual({__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[baselineId]}});
+    expect(()=>unwrapPlanningOutcome(outcome)).toThrow(expect.objectContaining({code:'FIELD_LOCKED',details:{committed:true,baselineIds:[baselineId]}}));
+    expect(writes).toEqual(['plan_baseline:frozen',`baseline:${baselineId}`,'locks:0','period:frozen']);
+    expect(baselines).toHaveLength(1);
+    expect(baselines[0]).toMatchObject({periodId:overdue.id,scope:'project',membershipId:null,mode:'cutoff'});
+    expect(baselines[0]?.snapshot.fieldDefinitions.map(f=>f.id)).toEqual([lockedFieldId]);
+    expect(periods()[0]).toMatchObject({id:overdue.id,state:'frozen',projectBaselineId:baselineId,revision:overdue.revision+1});
+  });
+
+  it('rejects a locked field as committed with empty baseline IDs when nothing is overdue',async()=>{
+    const {guard,writes}=rowGuard([period],[lockedField]);
+    expect(await guard.check(rowIntent(rowInput([selected(lockedFieldId)])))).toEqual({__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[]}});
+    expect(writes).toEqual([]);
+  });
+
+  it('passes unlocked, absent and cross-project definitions to the service preflight',async()=>{
+    const foreign={...lockedField,id:id(74),projectId:otherProject};
+    const {guard,writes}=rowGuard([period],[{...field,locked:false},foreign]);
+    expect(await guard.check(rowIntent(rowInput([selected(fieldId)])))).toBeNull();
+    expect(await guard.check(rowIntent(rowInput([selected(foreign.id),selected(id(76))])))).toBeNull();
+    expect(await guard.check(rowIntent(rowInput()))).toBeNull();
+    expect(writes).toEqual([]);
+  });
+
+  it('keeps a generic row out of a meeting package as task.create does',async()=>{
+    const meetingTask:TaskDto={...task,id:id(73),meetingId:id(75)};
+    const {guard,writes}=rowGuard([period],[],meetingTask);
+    await expect(guard.check(rowIntent(rowInput(undefined,{parentTaskId:meetingTask.id})))).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED'});
+    expect(await guard.check(rowIntent(rowInput(undefined,{parentTaskId:meetingTask.id,workScope:'added_scope'})))).toBeNull();
+    expect(writes).toEqual([]);
   });
 });

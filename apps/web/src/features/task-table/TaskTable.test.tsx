@@ -29,6 +29,12 @@ function rowOf(title: string): HTMLElement {
   return row;
 }
 
+/** Add subtask lives in the row's Task actions menu. */
+async function openTaskActions(user: ReturnType<typeof userEvent.setup>, title: string): Promise<HTMLElement> {
+  await user.click(screen.getByRole('button', { name: `Task actions: ${title}` }));
+  return screen.findByRole('menu');
+}
+
 function summaryRow(): HTMLElement {
   const row = screen.getByText("Loaded team budget").closest('tr');
   if (row === null) throw new Error('No summary row');
@@ -206,11 +212,13 @@ describe('TaskTable people, tags and budget', () => {
 });
 
 describe('TaskTable actions', () => {
-  it('offers create actions only when writable', () => {
+  it('offers create actions only when writable', async () => {
+    const user = userEvent.setup();
     renderTable({ tasks: [launch], onRenameSection: vi.fn() });
 
     expect(screen.queryByRole('button', { name: /Add/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Rename/ })).not.toBeInTheDocument();
+    expect(within(await openTaskActions(user, launch.title)).queryByRole('menuitem', { name: 'Add subtask' })).not.toBeInTheDocument();
   });
 
   it('passes the real task and section to the parent callbacks', async () => {
@@ -218,7 +226,7 @@ describe('TaskTable actions', () => {
     const onRenameSection = vi.fn();
     const handlers = renderTable({ tasks: [launch, layout], writable: true, onRenameSection });
 
-    await user.click(screen.getByRole('button', { name: "Add subtask to “Запуск сайта”" }));
+    await user.click(within(await openTaskActions(user, 'Запуск сайта')).getByRole('menuitem', { name: 'Add subtask' }));
     expect(handlers.onCreateChild).toHaveBeenCalledWith(launch);
 
     await user.click(screen.getByRole('button', { name: "Add task to “Дизайн”" }));
@@ -232,12 +240,14 @@ describe('TaskTable actions', () => {
     expect(handlers.onOpenTask).toHaveBeenCalledWith('layout');
   });
 
-  it('does not offer a subtask under an archived task', () => {
+  it('does not offer a subtask under an archived task', async () => {
+    const user = userEvent.setup();
     const archived = makeTask({ id: 'old', title: 'Старый запуск', archivedAt: '2026-10-05T09:00:00Z' });
     renderTable({ tasks: [launch, archived], writable: true });
 
-    expect(screen.getByRole('button', { name: "Add subtask to “Запуск сайта”" })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: "Add subtask to “Старый запуск”" })).not.toBeInTheDocument();
+    expect(within(await openTaskActions(user, 'Запуск сайта')).getByRole('menuitem', { name: 'Add subtask' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(within(await openTaskActions(user, 'Старый запуск')).queryByRole('menuitem', { name: 'Add subtask' })).not.toBeInTheDocument();
   });
 });
 
@@ -352,7 +362,8 @@ describe('section disclosure', () => {
 });
 
 describe('TaskTable assignee grouping', () => {
-  it('keeps loaded parent/own section context in flat rows and counts each shared package once', () => {
+  it('keeps loaded parent/own section context in flat rows and counts each shared package once', async () => {
+    const user = userEvent.setup();
     const parent = { ...launch, responsibleMembershipId: anna.id };
     const child = { ...layout, responsibleMembershipId: boris.id };
     renderTable({ tasks: [parent, child], grouping: 'assignee', writable: true, quickAdd: { sectionId: null, content: <span>Unexpected quick row</span> } });
@@ -362,9 +373,9 @@ describe('TaskTable assignee grouping', () => {
     expect(screen.queryByTitle('Parent task is outside the loaded set')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /subtasks of/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Add task to|Add task without|Rename section/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: `Add subtask to “${child.title}”` })).toBeEnabled();
     expect(screen.queryByText('Unexpected quick row')).not.toBeInTheDocument();
     expect(summaryRow()).toHaveTextContent('10h');
+    expect(within(await openTaskActions(user, child.title)).getByRole('menuitem', { name: 'Add subtask' })).not.toHaveAttribute('aria-disabled');
   });
 
   it('distinguishes unavailable member groups and honestly describes unloaded parents', async () => {

@@ -21,13 +21,15 @@ import {
   createPersonalTablePreferenceApplication,
   createTaskFieldApplication,
   createTaskScheduleApplication,
+  createTaskRowApplication,
   createWorkCategoryApplication,
+  createWorkspaceCreateApplication,
   describeErrorForLog,
   FIXTURE_ACTOR_IDS,
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { JWTVerifyGetKey } from 'jose';
 
@@ -50,6 +52,8 @@ import { registerScheduleRoutes } from './http/schedule-routes.js';
 import { assertAllowedHost, assertTrustedOrigin, type RequestGuardOptions } from './http/request-guards.js';
 import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './http/routes.js';
 import { registerTaskRoutes } from './http/task-routes.js';
+import { registerTaskRowRoutes } from './http/task-row-routes.js';
+import { registerWorkspaceCreateRoutes } from './http/workspace-create-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
 import { registerWorkspaceChangeHeadRoutes } from './http/workspace-change-head-routes.js';
 import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
@@ -68,6 +72,10 @@ export interface AppDependencies {
    * database (P0 HTTP tests), the P1a task routes are not registered.
    */
   readonly taskApplication?: TaskApplication;
+  /** Atomic table-row creation (task, first values, explicit plan/actual); same existing pool. */
+  readonly taskRowApplication?: TaskRowApplication;
+  /** Real-user workspace creation; registered only for shared identity. Same existing pool. */
+  readonly workspaceCreateApplication?: WorkspaceCreateApplication;
   /** Self-only workspace task inbox; reads share one read-only snapshot. */
   readonly myTasksApplication?: MyTasksApplication;
   /** Authorized current-workspace head; uses one read-only snapshot. */
@@ -156,6 +164,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   // Reuses the same pool; no additional connection is opened.
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
+  const taskRowApplication = dependencies.taskRowApplication ?? (database === undefined ? undefined : createTaskRowApplication(database));
+  const workspaceCreateApplication =
+    dependencies.workspaceCreateApplication ?? (database === undefined ? undefined : createWorkspaceCreateApplication(database));
   const myTasksApplication = dependencies.myTasksApplication ?? (database === undefined ? undefined : createMyTasksApplication(database));
   const workspaceChangeHeadApplication = dependencies.workspaceChangeHeadApplication ?? (database === undefined ? undefined : createWorkspaceChangeHeadApplication(database));
   const taskCommentsApplication = dependencies.taskCommentsApplication ?? (database === undefined ? undefined : createTaskCommentsApplication(database));
@@ -289,8 +300,14 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     registerSharedAuthRoutes(app, { service: sharedAuth });
   }
   registerApiRoutes(app, routeDeps);
+  if (identity.mode === 'shared' && workspaceCreateApplication !== undefined) {
+    registerWorkspaceCreateRoutes(app, { identity, workspaces: workspaceCreateApplication });
+  }
   if (taskApplication !== undefined) {
     registerTaskRoutes(app, { identity, tasks: taskApplication });
+  }
+  if (taskRowApplication !== undefined) {
+    registerTaskRowRoutes(app, { identity, rows: taskRowApplication });
   }
   if (workspaceChangeHeadApplication !== undefined) {
     registerWorkspaceChangeHeadRoutes(app, { identity, workspaceChangeHead: workspaceChangeHeadApplication });

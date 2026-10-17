@@ -50,6 +50,8 @@ const IDS = {
   tag: '5eed0000-0000-4000-8000-000000000404',
   task: '5eed0000-0000-4000-8000-000000000405',
   workPackage: '5eed0000-0000-4000-8000-000000000406',
+  /** Has a letter so upper-case input proves canonicalization. */
+  anchor: '5eed0000-0000-4000-8000-00000000040a',
   membership: '5eed0000-0000-4000-8000-000000000301',
 };
 const PARAMS: Record<string, string> = {
@@ -128,6 +130,7 @@ const tasks: TaskApplication = {
   updateTask: recorder('updateTask', () => task),
   archiveTask: recorder('archiveTask', () => task),
   restoreTask: recorder('restoreTask', () => task),
+  moveTask: recorder('moveTask', () => task),
 };
 
 // Only identity lookups are needed: the real dev identity adapter resolves the actor.
@@ -245,6 +248,15 @@ const CATALOG: RouteCase[] = [
     body: { expectedRevision: 4 },
     call: 'restoreTask',
     args: [IDS.task, { expectedRevision: 4 }],
+    status: 200,
+    schema: taskResponseSchema,
+  },
+  {
+    method: 'POST',
+    path: '/tasks/:taskId/move',
+    body: { expectedRevision: 3, anchorTaskId: IDS.anchor, placement: 'after' },
+    call: 'moveTask',
+    args: [IDS.task, { expectedRevision: 3, anchorTaskId: IDS.anchor, placement: 'after' }],
     status: 200,
     schema: taskResponseSchema,
   },
@@ -468,6 +480,10 @@ describe('P1a task routes (HTTP adapter)', () => {
     { call: 'updateTag', error: new DomainError('CAPABILITY_REQUIRED', 'Not permitted.'), status: 403 },
     { call: 'listTasks', error: new DomainError('VALIDATION_FAILED', 'The cursor is no longer valid. Reload the list.'), status: 400 },
     { call: 'createTask', error: new DomainError('DOMAIN_VALIDATION_FAILED', 'The status belongs to another project.'), status: 422 },
+    { call: 'moveTask', error: new DomainError('REVISION_CONFLICT', 'The task was changed.', { details: { currentRevision: 4 } }), status: 409 },
+    { call: 'moveTask', error: new DomainError('IDEMPOTENCY_KEY_REUSED', 'The key was used with another request.'), status: 409 },
+    { call: 'moveTask', error: new DomainError('DOMAIN_VALIDATION_FAILED', 'The anchor has another parent.'), status: 422 },
+    { call: 'moveTask', error: notFoundError(), status: 404 },
   ] as const)('maps $error.code from $call to $status', async ({ call, error, status }) => {
     overrides.set(call, () => {
       throw error;
@@ -497,6 +513,69 @@ describe('P1a task routes (HTTP adapter)', () => {
       expectRejected(response, 400, 'VALIDATION_FAILED');
     }
     expect(calls).toHaveLength(0);
+  });
+
+  it('keeps the old create body without an insertion and forwards a parsed insertion exactly', async () => {
+    const create = routeFor('createTask');
+    expect((await send(app, create)).statusCode).toBe(201);
+    expect(Object.hasOwn(calls[0]?.args[0] as object, 'insertion')).toBe(false);
+
+    const insertion = { anchorTaskId: IDS.anchor.toUpperCase(), placement: 'before' };
+    expect((await send(app, create, { body: { ...create.body, insertion } })).statusCode).toBe(201);
+    expect(calls[1]?.args).toStrictEqual([
+      { projectId: IDS.project, title: 'Write spec', statusId: IDS.status, insertion: { anchorTaskId: IDS.anchor, placement: 'before' } },
+    ]);
+    expect(calls[1]?.ctx.idempotencyKey).toBe(KEY);
+  });
+
+  it('rejects malformed create insertions and position with insertion before the service', async () => {
+    const create = routeFor('createTask');
+    const valid = { anchorTaskId: IDS.anchor, placement: 'after' };
+    for (const extra of [
+      { insertion: valid, position: 0 },
+      { insertion: null },
+      { insertion: IDS.anchor },
+      { insertion: { anchorTaskId: IDS.anchor } },
+      { insertion: { ...valid, placement: 'inside' } },
+      { insertion: { ...valid, anchorTaskId: 'nope' } },
+      { insertion: { ...valid, sectionId: IDS.section } },
+    ]) {
+      expectRejected(await send(app, create, { body: { ...create.body, ...extra } }), 400, 'VALIDATION_FAILED');
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it('forwards a canonical move and rejects open-ended move bodies, keys and origins before the service', async () => {
+    const move = routeFor('moveTask');
+    const response = await send(app, move, { body: { expectedRevision: 3, anchorTaskId: IDS.anchor.toUpperCase(), placement: 'before' } });
+    expect(response.statusCode).toBe(200);
+    expect(taskResponseSchema.parse(response.json()).data).toEqual(task);
+    expect(calls.map((call) => [call.method, call.args])).toStrictEqual([
+      ['moveTask', [IDS.task, { expectedRevision: 3, anchorTaskId: IDS.anchor, placement: 'before' }]],
+    ]);
+
+    const valid = { expectedRevision: 3, anchorTaskId: IDS.anchor, placement: 'after' };
+    for (const body of [
+      {},
+      { anchorTaskId: IDS.anchor, placement: 'after' },
+      { expectedRevision: 3, placement: 'after' },
+      { expectedRevision: 3, anchorTaskId: IDS.anchor },
+      { ...valid, expectedRevision: 0 },
+      { ...valid, expectedRevision: '3' },
+      { ...valid, placement: 'inside' },
+      { ...valid, placement: null },
+      { ...valid, anchorTaskId: 'nope' },
+      { ...valid, position: 0 },
+      { ...valid, sectionId: IDS.section },
+      { ...valid, parentTaskId: IDS.task },
+      { ...valid, insertion: { anchorTaskId: IDS.anchor, placement: 'after' } },
+    ]) {
+      expectRejected(await send(app, move, { body }), 400, 'VALIDATION_FAILED');
+    }
+    expectRejected(await send(app, move, { idempotencyKey: null }), 400, 'VALIDATION_FAILED');
+    expectRejected(await send(app, move, { headers: { origin: 'http://evil.example' } }), 403, 'ORIGIN_NOT_ALLOWED');
+    expectRejected(await send(app, move, { headers: { host: 'evil.example:4310' } }), 421, 'HOST_NOT_ALLOWED');
+    expect(calls).toHaveLength(1);
   });
 
   it('refuses to send a service result that breaks the response contract', async () => {

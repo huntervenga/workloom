@@ -1,10 +1,13 @@
 import type { TranslationParameters } from '../../i18n';
 import type { EstimateValidationKey } from '../task-table/estimate';
+import type { InitialTaskCellsData } from './InitialTaskCells';
 import {
   sqlCalendarDateSchema,
   createTaskInputSchema,
+  createTaskRowInputSchema,
   updateTaskInputSchema,
   type CreateTaskInput,
+  type CreateTaskRowInput,
   type TaskDto,
   type TaskPriority,
   type TaskWorkScope,
@@ -210,6 +213,34 @@ export function buildCreateInput(projectId: string, draft: TaskDraft, options: C
 
   if (!createTaskInputSchema.safeParse(input).success) return { ok: false, errors: { form: taskDraftIssue('tasks.taskDraft.checkTheCompletedFields') } };
   return { ok: true, input };
+}
+
+/** Values created in the same atomic command as the task; absent when nothing was staged. */
+export type InitialCreateExtras = Omit<CreateTaskRowInput, 'task'>;
+
+/**
+ * The atomic create extras for validated staged cells, or `undefined` when nothing is staged, so
+ * the task alone keeps its existing create. Helper-only metadata is dropped. A plan for the new
+ * row's own package expects no commitment yet (`null`); a plan for a shared parent package needs
+ * the captured parent commitment revision and is refused without one, never assumed absent.
+ * Blank hours leave `plan`/`actual` out; `0` is sent as an explicit zero.
+ */
+export function buildInitialCreateExtras(input: CreateTaskInput, data: InitialTaskCellsData, sharesParentPackage: boolean): BuildResult<InitialCreateExtras | undefined> {
+  const initial: InitialCreateExtras = {};
+  if (data.fields.length > 0) initial.fields = data.fields.map(({ fieldId, expectedDefinitionRevision, value }) => ({ fieldId, expectedDefinitionRevision, value }));
+  const { time } = data;
+  if (time !== null && time.plannedMinutes !== undefined) {
+    let expectedRevision: number | null = null;
+    if (sharesParentPackage) {
+      if (time.expectedPlanRevision === undefined) return { ok: false, errors: { form: taskDraftIssue('tasks.taskDraft.checkTheCompletedFields') } };
+      expectedRevision = time.expectedPlanRevision;
+    }
+    initial.plan = { periodId: time.periodId, membershipId: time.membershipId, expectedRevision, plannedMinutes: time.plannedMinutes };
+  }
+  if (time !== null && time.actualMinutes !== undefined) initial.actual = { periodId: time.periodId, membershipId: time.membershipId, minutes: time.actualMinutes };
+  if (Object.keys(initial).length === 0) return { ok: true, input: undefined };
+  if (!createTaskRowInputSchema.safeParse({ task: input, ...initial }).success) return { ok: false, errors: { form: taskDraftIssue('tasks.taskDraft.checkTheCompletedFields') } };
+  return { ok: true, input: initial };
 }
 
 /**

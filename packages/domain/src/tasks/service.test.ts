@@ -1,5 +1,6 @@
 import type {
   CreateTaskInput,
+  MoveTaskInput,
   ProjectDto,
   SectionDto,
   TagDto,
@@ -81,6 +82,11 @@ function harness() {
     epoch: 'epoch-1',
     /** Filters the service forwarded to `listTasks`, in call order. */
     listInputs: [] as TaskListQuery[],
+    /** Test knob: arguments of every planning guard check, in call order. */
+    planningChecks: [] as unknown[][],
+    /** Test knob: task row writes made outside a unit-of-work run; must stay 0. */
+    writesOutsideRun: 0,
+    inRun: false,
   };
   const events: ChangeEventInput[] = [];
 
@@ -175,8 +181,14 @@ function harness() {
           : row.position > after.position || (row.position === after.position && row.id > after.id)))
         .slice(0, take);
     },
-    insertTaskCore: async (row) => void db.state.tasks.set(row.id, row),
-    saveTaskCore: async (row) => void db.state.tasks.set(row.id, row),
+    insertTaskCore: async (row) => {
+      db.writesOutsideRun += db.inRun ? 0 : 1;
+      db.state.tasks.set(row.id, row);
+    },
+    saveTaskCore: async (row) => {
+      db.writesOutsideRun += db.inRun ? 0 : 1;
+      db.state.tasks.set(row.id, row);
+    },
     async saveParticipants(_ws, taskId, rows) {
       const byMember = new Map((db.state.participants.get(taskId) ?? []).map((row) => [row.membershipId, row]));
       for (const row of rows) byMember.set(row.membershipId, row);
@@ -198,13 +210,19 @@ function harness() {
       );
       const snapshot = cloneState(db.state);
       const eventCount = events.length;
+      db.inRun = true;
       try {
         return await work({
           context,
           access: loaded,
           barrierAt: new Date(Date.UTC(2026, 9, 16, 9, 0, (second += 1))),
           repository,
-          planningGuard: { async check() { return null; } },
+          planningGuard: {
+            async check(...args: unknown[]) {
+              db.planningChecks.push(args);
+              return null;
+            },
+          },
           statusTransitions:{async assertTransition(){}},
           async recordChange(event) {
             events.push(event);
@@ -215,6 +233,8 @@ function harness() {
         db.state = snapshot;
         events.length = eventCount;
         throw error;
+      } finally {
+        db.inRun = false;
       }
     },
   };
@@ -254,6 +274,8 @@ function harness() {
     key: () => `key-${(keys += 1)}`,
     /** Owner context with a fresh idempotency key. */
     owner: () => ctx(users.owner, `key-${(keys += 1)}`),
+    /** Every stored task row as the adapter projects it, archived rows included. */
+    projected: (): Map<string, TaskDto> => new Map([...db.state.tasks.values()].map((row) => [row.id, project(row)])),
   };
 }
 
@@ -853,5 +875,417 @@ describe('server task due sorting', () => {
     expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { ...base, sort: 'due_asc', cursor }))).code).toBe('VALIDATION_FAILED');
     expect((await errorOf(s.app.listTasks(s.ctx(users.revoked), { ...base, sort: 'due_asc', cursor: 'bad' }))).code).toBe('NOT_FOUND');
     expect((await errorOf(s.app.listTasks(s.ctx(users.owner), { ...base, projectId: uuid(990), sort: 'due_asc', cursor: 'bad' }))).code).toBe('NOT_FOUND');
+  });
+});
+
+
+type OrderFixture = Awaited<ReturnType<typeof setup>>;
+type Placement = MoveTaskInput['placement'];
+interface OrderSnapshot {
+  readonly rows: Map<string, TaskDto>;
+  readonly events: number;
+  readonly side: string;
+}
+
+const ARCHIVED_AT = '2026-10-01T09:00:00.000Z';
+/** Everything but task rows and receipts; an order write must leave all of it alone. */
+const SIDE_TABLES = ['projects', 'sections', 'statuses', 'tags', 'packages', 'participants', 'taskTags'] as const;
+
+const dumpOf = (state: State, ...names: readonly (keyof State)[]): string =>
+  JSON.stringify(names.map((name) => Array.from(state[name] as Map<string, unknown>)));
+const idsOf = (...tasks: readonly TaskDto[]): string[] => tasks.map((task) => task.id);
+const insertion = (anchorTaskId: string, placement: Placement) => ({ insertion: { anchorTaskId, placement } });
+/** Task fields an order write never touches; position, revision and updatedAt are the write itself. */
+const semantic = (row: TaskDto) => ({ ...row, position: 0, revision: 0, updatedAt: '' });
+
+/** The order model: every row of the project, archived and never-loaded ones included, by (position, id). */
+function globalOrder(rows: ReadonlyMap<string, TaskDto>, projectId: string): string[] {
+  return [...rows.values()]
+    .filter((row) => row.workspaceId === WS && row.projectId === projectId)
+    .sort((left, right) => left.position - right.position || (left.id < right.id ? -1 : 1))
+    .map((row) => row.id);
+}
+
+/** Stores a copy of `template` directly, like a legacy or never-loaded row: no command, receipt or audit. */
+function seedTask(s: OrderFixture, template: TaskDto, n: number, patch: Partial<TaskDto> = {}): TaskDto {
+  const row: TaskDto = { ...(s.db.state.tasks.get(template.id) as TaskDto), id: uuid(n), title: `Seeded ${n}`, ...patch };
+  s.db.state.tasks.set(row.id, row);
+  return row;
+}
+
+/** Moves with the current stored revision of the source. */
+function moveTo(s: OrderFixture, taskId: string, anchorTaskId: string, placement: Placement, context = s.owner()) {
+  const expectedRevision = (s.db.state.tasks.get(taskId) as TaskDto).revision;
+  return s.app.moveTask(context, taskId, { expectedRevision, anchorTaskId, placement });
+}
+
+function orderSnapshot(s: OrderFixture): OrderSnapshot {
+  return { rows: s.projected(), events: s.events.length, side: dumpOf(s.db.state, ...SIDE_TABLES) };
+}
+
+/**
+ * Asserts the project now reads `order` with distinct integer positions, and that the command wrote
+ * nothing but order: every earlier row keeps its semantic fields (the moved root may take a new
+ * section) and bumps its revision, with one audit event, exactly when its position changed. A
+ * moved source always bumps. `createEvents` is the audit of a plain create, for insertions.
+ */
+function expectOrderWrite(
+  s: OrderFixture,
+  before: OrderSnapshot,
+  order: readonly string[],
+  moved: { readonly id: string; readonly sectionId?: string | null } | null,
+  options: { readonly createEvents?: number } = {},
+): void {
+  const after = s.projected();
+  expect(globalOrder(after, s.project.id)).toEqual(order);
+  const positions = order.map((id) => (after.get(id) as TaskDto).position);
+  expect(positions.every(Number.isInteger)).toBe(true);
+  expect(new Set(positions).size).toBe(positions.length);
+
+  let bumped = 0;
+  for (const [id, old] of before.rows) {
+    const row = after.get(id) as TaskDto;
+    const isSource = moved !== null && moved.id === id;
+    const sectionId = moved !== null && moved.id === id && moved.sectionId !== undefined ? moved.sectionId : old.sectionId;
+    expect(semantic(row)).toEqual(semantic({ ...old, sectionId }));
+    const delta = isSource || row.position !== old.position ? 1 : 0;
+    expect({ id, revisionDelta: row.revision - old.revision }).toEqual({ id, revisionDelta: delta });
+    bumped += delta;
+  }
+  expect(s.events.length - before.events).toBe((options.createEvents ?? 0) + bumped);
+  if (options.createEvents === undefined) expect(dumpOf(s.db.state, ...SIDE_TABLES)).toBe(before.side);
+  expect(s.db.writesOutsideRun).toBe(0);
+}
+
+/** A placement that keeps the ID order and section returns the original task and stores only a receipt. */
+async function expectNoop(s: OrderFixture, taskId: string, anchorTaskId: string, placement: Placement) {
+  const original = await s.app.getTask(s.ctx(users.owner), taskId);
+  const rows = dumpOf(s.db.state, 'tasks', ...SIDE_TABLES);
+  const events = s.events.length;
+  const receipts = s.db.state.idempotency.size;
+  const input = { expectedRevision: original.revision, anchorTaskId, placement };
+
+  const context = s.owner();
+  expect(await s.app.moveTask(context, taskId, input)).toEqual(original);
+  expect(await s.app.moveTask(s.ctx(users.owner, context.idempotencyKey), taskId, input)).toEqual(original);
+  const stale = await errorOf(s.app.moveTask(s.owner(), taskId, { ...input, expectedRevision: original.revision + 1 }));
+  expect(stale.code).toBe('REVISION_CONFLICT');
+
+  expect(dumpOf(s.db.state, 'tasks', ...SIDE_TABLES)).toBe(rows);
+  expect(s.events).toHaveLength(events);
+  expect(s.db.state.idempotency.size).toBe(receipts + 1);
+}
+
+async function expectRejectedWithoutWrites(s: OrderFixture, label: string, run: () => Promise<unknown>, code: string) {
+  const state = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES);
+  const events = s.events.length;
+  expect({ label, code: (await errorOf(run())).code }).toEqual({ label, code });
+  expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(state);
+  expect(s.events).toHaveLength(events);
+}
+
+describe('manual task order', () => {
+  it('creates tasks next to an anchor and keeps the plain create append path', async () => {
+    const s = await setup();
+    const a = await s.createTask({ title: 'A' });
+    const b = await s.createTask({ title: 'B' });
+    const eventsBefore = s.events.length;
+    const c = await s.createTask({ title: 'C' });
+    const createEvents = s.events.length - eventsBefore;
+
+    let before = orderSnapshot(s);
+    const x = await s.createTask({ title: 'X', ...insertion(b.id, 'after') });
+    expect(x).toMatchObject({ title: 'X', revision: 1, sectionId: null, parentTaskId: null });
+    expect(x).toEqual(await s.app.getTask(s.ctx(users.owner), x.id));
+    expectOrderWrite(s, before, idsOf(a, b, x, c), null, { createEvents });
+
+    before = orderSnapshot(s);
+    const y = await s.createTask({ title: 'Y', ...insertion(x.id, 'after') });
+    expectOrderWrite(s, before, idsOf(a, b, x, y, c), null, { createEvents });
+
+    before = orderSnapshot(s);
+    const z = await s.createTask({ title: 'Z' });
+    expectOrderWrite(s, before, idsOf(a, b, x, y, c, z), null, { createEvents });
+  });
+
+  it('replays an insertion receipt and binds the anchor and placement into its key', async () => {
+    const s = await setup();
+    const a = await s.createTask({ title: 'A' });
+    const b = await s.createTask({ title: 'B' });
+    const key = s.key();
+    const plain = { projectId: s.project.id, statusId: s.statusId, title: 'X' };
+    const input = { ...plain, ...insertion(a.id, 'after') };
+    const first = await s.app.createTask(s.ctx(users.owner, key), input);
+    const state = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES);
+    const events = s.events.length;
+
+    expect(JSON.stringify(await s.app.createTask(s.ctx(users.owner, key), input))).toBe(JSON.stringify(first));
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(state);
+    expect(s.events).toHaveLength(events);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(idsOf(a, first, b));
+
+    for (const [label, body] of [
+      ['other placement', { ...plain, ...insertion(a.id, 'before') }],
+      ['other anchor', { ...plain, ...insertion(b.id, 'after') }],
+      ['no insertion', plain],
+    ] as const) {
+      await expectRejectedWithoutWrites(s, label, () => s.app.createTask(s.ctx(users.owner, key), body), 'IDEMPOTENCY_KEY_REUSED');
+    }
+  });
+
+  it('moves a root task before or after the first and last siblings', async () => {
+    const s = await setup();
+    const a = await s.createTask({ title: 'A' });
+    const b = await s.createTask({ title: 'B' });
+    const c = await s.createTask({ title: 'C' });
+    const d = await s.createTask({ title: 'D' });
+    const steps: [TaskDto, TaskDto, Placement, TaskDto[]][] = [
+      [d, a, 'before', [d, a, b, c]],
+      [d, c, 'after', [a, b, c, d]],
+      [a, d, 'after', [b, c, d, a]],
+      [a, b, 'before', [a, b, c, d]],
+    ];
+    for (const [source, anchor, placement, order] of steps) {
+      const before = orderSnapshot(s);
+      const planningChecks = s.db.planningChecks.length;
+      const moved = await moveTo(s, source.id, anchor.id, placement);
+      expect(moved).toEqual(await s.app.getTask(s.ctx(users.owner), source.id));
+      expectOrderWrite(s, before, idsOf(...order), { id: source.id });
+      expect(s.db.planningChecks.length).toBeGreaterThan(planningChecks);
+    }
+  });
+
+  it('treats a placement that keeps the ID order and section as a receipt-only no-op', async () => {
+    const s = await setup();
+    const a = await s.createTask({ title: 'A' });
+    const b = await s.createTask({ title: 'B' });
+    const c = await s.createTask({ title: 'C' });
+
+    await expectNoop(s, b.id, a.id, 'after');
+    await expectNoop(s, b.id, c.id, 'before');
+    await expectNoop(s, a.id, b.id, 'before');
+    await expectNoop(s, c.id, b.id, 'after');
+  });
+
+  it('keeps legacy ties on a no-op and bumps the source on a real reorder even if its key could stay', async () => {
+    const s = await setup();
+    const head = await s.createTask({ title: 'Head' });
+    s.db.state.tasks.set(head.id, { ...(s.db.state.tasks.get(head.id) as TaskDto), position: 0 });
+    const first = seedTask(s, head, 5001, { position: 1 });
+    const tiedLow = seedTask(s, head, 5002, { position: 2 });
+    const tiedHigh = seedTask(s, head, 5003, { position: 2 });
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(idsOf(head, first, tiedLow, tiedHigh));
+
+    await expectNoop(s, tiedHigh.id, tiedLow.id, 'after');
+    await expectNoop(s, tiedLow.id, tiedHigh.id, 'before');
+    await expectNoop(s, first.id, tiedLow.id, 'before');
+
+    // Renumbered 0..3 the source would keep position 2; the order still changed, so it bumps.
+    const before = orderSnapshot(s);
+    await moveTo(s, tiedHigh.id, tiedLow.id, 'before');
+    expectOrderWrite(s, before, idsOf(head, first, tiedHigh, tiedLow), { id: tiedHigh.id });
+  });
+
+  it('splices roots and subtasks into the project-global order around other sections, parents and archived rows', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Later' });
+    const a = await s.createTask({ title: 'A' });
+    const inSection = await s.createTask({ title: 'In section', sectionId: section.id });
+    const p = await s.createTask({ title: 'P', estimateMinutes: 120 });
+    const p1 = await s.createTask({ title: 'P1', parentTaskId: p.id });
+    const b = await s.createTask({ title: 'B' });
+    const q = await s.createTask({ title: 'Q' });
+    const q1 = await s.createTask({ title: 'Q1', parentTaskId: q.id });
+    const archived = await s.createTask({ title: 'Archived' });
+    await s.app.archiveTask(s.owner(), archived.id, { expectedRevision: 1 });
+    const p2 = await s.createTask({ title: 'P2', parentTaskId: p.id });
+    const eventsBefore = s.events.length;
+    const c = await s.createTask({ title: 'C' });
+    const createEvents = s.events.length - eventsBefore;
+
+    let before = orderSnapshot(s);
+    await moveTo(s, c.id, a.id, 'after');
+    expectOrderWrite(s, before, idsOf(a, c, inSection, p, p1, b, q, q1, archived, p2), { id: c.id });
+
+    before = orderSnapshot(s);
+    await moveTo(s, a.id, q.id, 'after');
+    expectOrderWrite(s, before, idsOf(c, inSection, p, p1, b, q, a, q1, archived, p2), { id: a.id });
+
+    before = orderSnapshot(s);
+    const child = await moveTo(s, p2.id, p1.id, 'before');
+    expect(child).toMatchObject({ parentTaskId: p.id, workPackageId: p.workPackageId, estimateMinutes: 120 });
+    expectOrderWrite(s, before, idsOf(c, inSection, p, p2, p1, b, q, a, q1, archived), { id: p2.id });
+
+    before = orderSnapshot(s);
+    const x = await s.createTask({ title: 'X', ...insertion(b.id, 'before') });
+    expectOrderWrite(s, before, idsOf(c, inSection, p, p2, p1, x, b, q, a, q1, archived), null, { createEvents });
+
+    // The archived row keeps its relative place above, but can be neither source nor anchor.
+    const archivedRevision = (s.db.state.tasks.get(archived.id) as TaskDto).revision;
+    await expectRejectedWithoutWrites(s, 'archived source', () =>
+      s.app.moveTask(s.owner(), archived.id, { expectedRevision: archivedRevision, anchorTaskId: b.id, placement: 'after' }),
+    'DOMAIN_VALIDATION_FAILED');
+    await expectRejectedWithoutWrites(s, 'archived anchor', () => moveTo(s, b.id, archived.id, 'after'), 'DOMAIN_VALIDATION_FAILED');
+    await expectRejectedWithoutWrites(s, 'archived insertion anchor', () => s.createTask(insertion(archived.id, 'before')), 'DOMAIN_VALIDATION_FAILED');
+  });
+
+  it('lets a root task take the anchor section and writes a section-only change', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Later' });
+    const a = await s.createTask({ title: 'A' });
+    const b = await s.createTask({ title: 'B', sectionId: section.id });
+    const c = await s.createTask({ title: 'C' });
+
+    let before = orderSnapshot(s);
+    expect((await moveTo(s, c.id, b.id, 'before')).sectionId).toBe(section.id);
+    expectOrderWrite(s, before, idsOf(a, c, b), { id: c.id, sectionId: section.id });
+
+    // Same ID order, other section: a real write, not a no-op.
+    before = orderSnapshot(s);
+    expect((await moveTo(s, c.id, a.id, 'after')).sectionId).toBeNull();
+    expectOrderWrite(s, before, idsOf(a, c, b), { id: c.id, sectionId: null });
+  });
+
+  it('keeps subtasks under their parent and in their section, without reparenting', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Later' });
+    const p = await s.createTask({ title: 'P' });
+    const p1 = await s.createTask({ title: 'P1', parentTaskId: p.id });
+    const q = await s.createTask({ title: 'Q' });
+    const q1 = await s.createTask({ title: 'Q1', parentTaskId: q.id });
+    const p2 = seedTask(s, p1, 5101, {
+      position: (s.db.state.tasks.get(q1.id) as TaskDto).position + 1,
+      sectionId: section.id,
+    });
+
+    for (const [label, source, anchor] of [
+      ['subtask next to another parent child', p1, q1],
+      ['subtask next to its parent', p1, p],
+      ['root next to a subtask', q, p1],
+      ['subtask next to a sibling in another section', p1, p2],
+    ] as const) {
+      await expectRejectedWithoutWrites(s, label, () => moveTo(s, source.id, anchor.id, 'after'), 'DOMAIN_VALIDATION_FAILED');
+    }
+    await expectRejectedWithoutWrites(s, 'subtask create next to another parent child', () =>
+      s.createTask({ parentTaskId: p.id, ...insertion(q1.id, 'after') }), 'DOMAIN_VALIDATION_FAILED');
+    await expectRejectedWithoutWrites(s, 'root create in another section than the anchor', () =>
+      s.createTask({ sectionId: section.id, ...insertion(q.id, 'before') }), 'DOMAIN_VALIDATION_FAILED');
+  });
+
+  it('rejects self, missing, foreign, cross-project, stale, unauthorized and closed-project moves without writes', async () => {
+    const s = await setup();
+    const a = await s.createTask({ title: 'A' });
+    const b = await s.createTask({ title: 'B' });
+    const other = await s.app.createProject(s.owner(), { name: 'Other project' });
+    const [otherStatus] = await s.app.listStatuses(s.ctx(users.owner), other.id);
+    const otherProjectTask = await s.createTask({ projectId: other.id, statusId: otherStatus?.id ?? '' });
+    const otherWorkspaceTask = seedTask(s, b, 5201, { workspaceId: uuid(902), projectId: uuid(903) });
+    const valid = { expectedRevision: 1, anchorTaskId: a.id, placement: 'before' } as const;
+
+    const cases: [string, () => Promise<unknown>, string][] = [
+      ['self anchor', () => moveTo(s, a.id, a.id, 'after'), 'DOMAIN_VALIDATION_FAILED'],
+      ['missing anchor', () => moveTo(s, b.id, uuid(999), 'before'), 'NOT_FOUND'],
+      ['anchor in another workspace', () => moveTo(s, b.id, otherWorkspaceTask.id, 'before'), 'NOT_FOUND'],
+      ['anchor in another project', () => moveTo(s, b.id, otherProjectTask.id, 'before'), 'DOMAIN_VALIDATION_FAILED'],
+      ['missing source', () => s.app.moveTask(s.owner(), uuid(998), valid), 'NOT_FOUND'],
+      ['stale revision', () => s.app.moveTask(s.owner(), b.id, { ...valid, expectedRevision: 2 }), 'REVISION_CONFLICT'],
+      ['viewer', () => moveTo(s, b.id, a.id, 'before', s.ctx(users.viewer, s.key())), 'CAPABILITY_REQUIRED'],
+      ['revoked member', () => moveTo(s, b.id, a.id, 'before', s.ctx(users.revoked, s.key())), 'NOT_FOUND'],
+      ['other workspace context', () => moveTo(s, b.id, a.id, 'before', s.ctx(users.owner, s.key(), uuid(902))), 'NOT_FOUND'],
+      ['missing idempotency key', () => moveTo(s, b.id, a.id, 'before', s.ctx(users.owner)), 'VALIDATION_FAILED'],
+      ['unparsed placement', () => s.app.moveTask(s.owner(), b.id, { ...valid, placement: 'inside' } as unknown as MoveTaskInput), 'VALIDATION_FAILED'],
+      ['position in a direct call', () => s.app.moveTask(s.owner(), b.id, { ...valid, position: 0 } as unknown as MoveTaskInput), 'VALIDATION_FAILED'],
+    ];
+    for (const [label, run, code] of cases) await expectRejectedWithoutWrites(s, label, run, code);
+
+    await s.app.updateProject(s.owner(), s.project.id, { expectedRevision: 1, archived: true });
+    await expectRejectedWithoutWrites(s, 'archived project', () => moveTo(s, b.id, a.id, 'before'), 'DOMAIN_VALIDATION_FAILED');
+  });
+
+  it('replays a move receipt exactly, binds it to the body and target, and checks access first', async () => {
+    const s = await setup();
+    const a = await s.createTask({ title: 'A' });
+    const b = await s.createTask({ title: 'B' });
+    const c = await s.createTask({ title: 'C' });
+    const key = s.key();
+    const input = { expectedRevision: 1, anchorTaskId: a.id, placement: 'before' } as const;
+    const first = await s.app.moveTask(s.ctx(users.owner, key), c.id, input);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(idsOf(c, a, b));
+    const state = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES);
+    const events = s.events.length;
+
+    // The receipt wins over the now stale expectedRevision.
+    expect(JSON.stringify(await s.app.moveTask(s.ctx(users.owner, key), c.id, input))).toBe(JSON.stringify(first));
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(state);
+    expect(s.events).toHaveLength(events);
+
+    const reuses: [string, () => Promise<unknown>][] = [
+      ['other placement', () => s.app.moveTask(s.ctx(users.owner, key), c.id, { ...input, placement: 'after' })],
+      ['other anchor', () => s.app.moveTask(s.ctx(users.owner, key), c.id, { ...input, anchorTaskId: b.id })],
+      ['other revision', () => s.app.moveTask(s.ctx(users.owner, key), c.id, { ...input, expectedRevision: 2 })],
+      ['other target', () => s.app.moveTask(s.ctx(users.owner, key), b.id, input)],
+    ];
+    for (const [label, run] of reuses) await expectRejectedWithoutWrites(s, label, run, 'IDEMPOTENCY_KEY_REUSED');
+
+    const restore = revokeMembership(members.owner);
+    try {
+      await expectRejectedWithoutWrites(s, 'replay after revocation', () => s.app.moveTask(s.ctx(users.owner, key), c.id, input), 'NOT_FOUND');
+    } finally {
+      restore();
+    }
+    expect(JSON.stringify(await s.app.moveTask(s.ctx(users.owner, key), c.id, input))).toBe(JSON.stringify(first));
+  });
+
+  it('keeps the old create payload hash and replays its stored receipt unchanged', async () => {
+    const s = await setup();
+    const key = s.key();
+    const input = { projectId: s.project.id, statusId: s.statusId, title: 'Draft plan' };
+    const first = await s.app.createTask(s.ctx(users.owner, key), input);
+    const receipt = [...s.db.state.idempotency.values()].find((row) => row.idempotencyKey === key);
+    // Literal pre-insertion encoding of {command,target,input}: an insertion default or null would change this hash.
+    expect(receipt?.payloadHash).toBe(
+      `digest:{"command":"task.create","input":{"projectId":"${s.project.id}","statusId":"${s.statusId}","title":"Draft plan"},"target":null}`,
+    );
+    const state = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES);
+    const events = s.events.length;
+
+    expect(JSON.stringify(await s.app.createTask(s.ctx(users.owner, key), { ...input }))).toBe(JSON.stringify(first));
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(state);
+    expect(s.events).toHaveLength(events);
+    await expectRejectedWithoutWrites(s, 'insertion on the old key', () =>
+      s.app.createTask(s.ctx(users.owner, key), { ...input, ...insertion(first.id, 'after') }), 'IDEMPOTENCY_KEY_REUSED');
+  });
+
+  it('renumbers the whole project past one 200-row page and keeps every hidden row in place', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Later' });
+    const head = await s.createTask({ title: 'Head', estimateMinutes: 15 });
+    const eventsBefore = s.events.length;
+    const parent = await s.createTask({ title: 'Parent' });
+    const createEvents = s.events.length - eventsBefore;
+    const start = (s.db.state.tasks.get(parent.id) as TaskDto).position + 1;
+    // Pairs share a legacy position; kinds rotate root, root, root, other section, subtask, archived.
+    const seeded = Array.from({ length: 240 }, (_, index) =>
+      seedTask(s, parent, 6000 + index, {
+        position: start + Math.floor(index / 2),
+        ...(index % 6 === 3 ? { sectionId: section.id } : {}),
+        ...(index % 6 === 4 ? { parentTaskId: parent.id } : {}),
+        ...(index % 6 === 5 ? { archivedAt: ARCHIVED_AT } : {}),
+      }),
+    );
+    const seededIds = (from: number, to?: number) => idsOf(...seeded.slice(from, to));
+    expect(globalOrder(s.projected(), s.project.id)).toEqual([head.id, parent.id, ...seededIds(0)]);
+
+    let before = orderSnapshot(s);
+    await moveTo(s, head.id, (seeded[234] as TaskDto).id, 'after');
+    const moved = [parent.id, ...seededIds(0, 235), head.id, ...seededIds(235)];
+    expect(moved).toHaveLength(242);
+    expectOrderWrite(s, before, moved, { id: head.id });
+
+    before = orderSnapshot(s);
+    const late = await s.createTask({ title: 'Late', ...insertion((seeded[228] as TaskDto).id, 'before') });
+    expectOrderWrite(s, before, [parent.id, ...seededIds(0, 228), late.id, ...seededIds(228, 235), head.id, ...seededIds(235)], null, {
+      createEvents,
+    });
   });
 });

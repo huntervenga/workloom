@@ -52,7 +52,8 @@ it('keeps full deep title names, loaded depth and the authorized parent while re
   await user.keyboard('{Enter}');
   expect(calls.onOpenTask).toHaveBeenCalledExactlyOnceWith('depth-8');
   expect(calls.onEditTaskField).toHaveBeenCalledTimes(1);
-  await user.click(within(row).getByRole('button', { name: `Add subtask to “${title}”` }));
+  await user.click(within(row).getByRole('button', { name: `Task actions: ${title}` }));
+  await user.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Add subtask' }));
   expect(calls.onCreateChild).toHaveBeenCalledExactlyOnceWith(tasks[8]);
   await user.click(within(row).getByRole('checkbox', { name: `Select for graph: ${title}` }));
   expect(calls.onSelectTask).toHaveBeenCalledExactlyOnceWith('depth-8', true);
@@ -118,16 +119,28 @@ it('keeps every task on one fixed-height line: long names truncate with the full
   expect(row.querySelector('p')).toBeNull();
 });
 
-it('keeps idle names flexible while reserving the real action width before hover or title editing', () => {
+it('keeps idle names flexible while reserving the real action width before hover or title editing', async () => {
+  const user = userEvent.setup();
   render(<TaskTable tasks={[makeTask({ id: 'overlay', title: titles[0], sectionId: main.id })]} sections={[main]} members={[]} statuses={statuses} {...handlers()} writable />);
   const title = screen.getByRole('button', { name: titles[0] });
-  expect(title.className).toContain('flex-1');
+  // The name shrinks to fit; the open area to its right takes the free width.
+  expect(title.className).toContain('shrink');
   expect(title.className).toContain('min-w-0');
-  const actions = title.closest('td')?.querySelector('[data-task-row-actions]');
-  expect(actions).toHaveClass('flex', 'shrink-0', 'opacity-0', 'group-focus-within:opacity-100', '[@media(hover:none)]:opacity-100');
+  const actions = title.closest('td')?.querySelector<HTMLElement>('[data-task-row-actions]');
+  if (!actions) throw Error('Task actions trigger required.');
+  expect(actions).toHaveAccessibleName(`Task actions: ${titles[0]}`);
+  expect(actions).toHaveClass('inline-flex', 'shrink-0', 'opacity-0', 'group-focus-within:opacity-100', '[@media(hover:none)]:opacity-100');
   expect(actions).not.toHaveClass('absolute');
-  expect(actions?.parentElement).toBe(title.parentElement);
+  expect(actions.parentElement).toBe(title.parentElement);
   expect(title.parentElement?.className).not.toMatch(/pr-(?:16|24)/);
-  expect(within(actions as HTMLElement).getByRole('button', { name: `Open task “${titles[0]}”` })).toBeInTheDocument();
-  expect(within(actions as HTMLElement).getByRole('button', { name: `Add subtask to “${titles[0]}”` })).toBeInTheDocument();
+  const open = within(title.parentElement as HTMLElement).getByRole('button', { name: `Open task “${titles[0]}”` });
+  expect(open).toHaveClass('flex-1');
+  expect(open).not.toHaveClass('absolute');
+  expect(open.parentElement).toBe(title.parentElement);
+  for (const control of [open, actions]) {
+    expect(control.contains(title)).toBe(false);
+    expect(title.contains(control)).toBe(false);
+  }
+  await user.click(actions);
+  expect(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Add subtask' })).toBeInTheDocument();
 });

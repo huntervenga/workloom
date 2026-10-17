@@ -121,15 +121,17 @@ describe('a cell clicked while explicit quick creates are still queued', () => {
     await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
     await user.type(quickBox('First section'), 'Queued one{Enter}Queued two{Enter}');
     await waitFor(() => expect(writes(calls, 'POST')).toHaveLength(1));
-    await user.click(screen.getByRole('button', { name: `Edit status for ${rootB.title}` }));
-    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+    const savedTargetRow = () => within(screen.getByRole('button', { name: rootB.title }).closest('tr') as HTMLTableRowElement);
+    await user.click(savedTargetRow().getByRole('button', { name: `Edit status for ${rootB.title}` }));
+    // The normal next draft has its own editable Status; only this saved cell waits for the queue.
+    expect(savedTargetRow().queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
     await act(async () => first.resolve(new Response()));
     await waitFor(() => expect(writes(calls, 'POST')).toHaveLength(2));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
     // The first answer momentarily leaves no held command while the second create is sent.
-    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+    expect(savedTargetRow().queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
     await act(async () => second.resolve(new Response()));
-    const picker = await screen.findByRole('combobox', { name: 'Status' });
+    const picker = await savedTargetRow().findByRole('combobox', { name: 'Status' });
     await waitFor(() => expect(picker).toHaveFocus());
     expect(screen.getByRole('listbox', { name: 'Status' })).toBeInTheDocument();
     expect(writes(calls, 'PATCH')).toHaveLength(0);

@@ -3,7 +3,7 @@ import type {DependencyMutationCommand,TaskStatusTransitionPolicy} from '../depe
 import type {MeetingMutationCommand} from '../meetings/ports.js';
 import type { WorkCategoryResolver, WorkCategoryMutationCommand } from '../categories/ports.js';
 import type {
-  FreezeScope,RecurrenceSnapshotSectionDto,MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
+  CreateTaskRowInput,FreezeScope,RecurrenceSnapshotSectionDto,MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
   PlanningPackageDto, PlanningPeriodDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto,
   WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto,
 } from '@workloom/contracts';
@@ -109,7 +109,7 @@ export interface PlanningApplicationDependencies {
 }
 
 /** Commands are exhaustive: adding a mutation requires an explicit policy decision. */
-export type TaskMutationCommand = 'project.create'|'project.update'|'section.create'|'section.update'|'tag.create'|'tag.update'|'task.create'|'task.update'|'task.archive'|'task.restore';
+export type TaskMutationCommand = 'project.create'|'project.update'|'section.create'|'section.update'|'tag.create'|'tag.update'|'task.create'|'task.update'|'task.archive'|'task.restore'|'task.move';
 export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set';
 export type PlanningMutationCommand = 'period.create'|'period.update'|'commitment.create'|'commitment.update'|'plan.freeze'|'work.set'|'report.create';
 export type PlanningMutationIntent =
@@ -120,6 +120,8 @@ export type PlanningMutationIntent =
  | {readonly family:'import';readonly command:'import.project.apply';readonly target:{readonly projectId:string};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>}
  | {readonly family:'schedule';readonly command:'task.schedule.apply';readonly target:{readonly projectId:string;readonly affectedProjectIds:readonly string[]};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>}
  | {readonly family:'task';readonly command:TaskMutationCommand;readonly target:string|null;readonly input:unknown}
+ /** Atomic table row: its own typed aggregate, never folded into the task commands or their preview hashes. */
+ | {readonly family:'task_row';readonly command:'task.row.create';readonly target:{readonly projectId:string};readonly input:CreateTaskRowInput}
  | {readonly family:'field';readonly command:FieldMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'planning';readonly command:PlanningMutationCommand;readonly target:unknown;readonly input:unknown}
  | {readonly family:'meeting';readonly command:MeetingMutationCommand;readonly target:unknown;readonly input:unknown}

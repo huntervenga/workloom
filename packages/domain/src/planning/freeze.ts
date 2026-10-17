@@ -192,8 +192,9 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
             break;
           }
           // They still run overdue freeze first. These edits do not rewrite protected value identities.
+          // task.move rewrites only position/section/revision metadata of one sibling list.
           case 'project.create':case 'project.update':case 'section.create':case 'section.update':
-          case 'tag.create':case 'tag.update':break;
+          case 'tag.create':case 'tag.update':case 'task.move':break;
           case 'task.create': {
             if(typeof input['parentTaskId']==='string'&&input['workScope']!=='added_scope') {
               const parent=await repo.tasks.findTask(ws,input['parentTaskId']);
@@ -209,6 +210,22 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
           default:never(intent);
         }
         break;
+      case 'task_row': {
+        // Ordinary new-task metadata plus first values: no protected task, package, value or fact exists yet.
+        // The composer guards an existing protected commitment separately before it creates anything.
+        const row=intent.input.task;
+        if(typeof row.parentTaskId==='string'&&row.workScope!=='added_scope') {
+          const parent=await repo.tasks.findTask(ws,row.parentTaskId);
+          if(parent?.meetingId)throw rule('Meeting preparation needs an explicit separate work package.');
+        }
+        // A manually locked definition wins before revision/archival/type, as in field.value.set. Missing or
+        // cross-project definitions are service preflight errors, never a committed rejection.
+        for(const selected of intent.input.fields??[]) {
+          const definition=await repo.fields.findField(ws,selected.fieldId);
+          if(definition?.projectId===row.projectId&&definition.locked)return {__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
+        }
+        break;
+      }
       case 'field':
         switch(intent.command) {
           case 'field.value.set':blocked=locks.filter(l=>l.kind==='custom_value'&&l.taskId===target['taskId']&&l.fieldId===target['fieldId']).map(l=>l.baselineId);break;

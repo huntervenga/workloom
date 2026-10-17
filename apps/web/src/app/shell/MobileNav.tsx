@@ -24,7 +24,8 @@ export function MobileNav({ children }: { children: (close: () => void) => React
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
-        <Button variant="ghost" size="sm" className="-ml-1.5 px-2 lg:hidden" aria-label={t('shell.openMenu')}>
+        {/* Stable markers: a dialog opened from inside the drawer returns focus here once it is gone. */}
+        <Button variant="ghost" size="sm" className="-ml-1.5 px-2 lg:hidden" aria-label={t('shell.openMenu')} data-mobile-nav-trigger="">
           <Menu size={18} aria-hidden="true" />
         </Button>
       </Dialog.Trigger>
@@ -32,6 +33,7 @@ export function MobileNav({ children }: { children: (close: () => void) => React
         <Dialog.Overlay className="fixed inset-0 z-40 bg-slate-900/30" />
         <Dialog.Content
           aria-describedby={undefined}
+          data-mobile-nav=""
           className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-surface shadow-xl outline-none"
         >
           <Dialog.Title className="sr-only">{t('shell.navigation')}</Dialog.Title>

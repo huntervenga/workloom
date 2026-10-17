@@ -65,7 +65,13 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
     expect(before['command_idempotency']?.length).toBeGreaterThan(0);
     expect(before['memberships']?.length).toBeGreaterThan(0);
     const receipts = await db.sql`select * from drizzle.__drizzle_migrations order by id`;
-    const upgraded = await runMigrations(target.url, { requireLoopback: true });
+    // Keep this historical Auth upgrade bounded to0014 as later additive migrations arrive.
+    const authPrefix = journal.entries.filter(entry => entry.idx <= 14);
+    for (const entry of authPrefix.filter(entry => entry.idx === 14)) {
+      await copyFile(join(migrations, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
+    }
+    await writeFile(join(folder, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: authPrefix }));
+    const upgraded = await runMigrations(target.url, { requireLoopback: true, migrationsFolder: folder });
     expect(upgraded.appliedNow).toEqual(['0014_shared_auth']);
     expect(await legacyRows()).toEqual(before);
     const afterReceipts = await db.sql`select * from drizzle.__drizzle_migrations order by id`;
@@ -81,7 +87,7 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
     expect(await db.sql`select id from tasks where workspace_id=${principal.workspaceId}`).toHaveLength(0);
     expect(await legacyRows().then(rows => Object.fromEntries(tables.filter(table => !['users', 'workspaces', 'memberships'].includes(table.name)).map(table => [table.name, rows[table.name]]))))
       .toEqual(Object.fromEntries(tables.filter(table => !['users', 'workspaces', 'memberships'].includes(table.name)).map(table => [table.name, before[table.name]])));
-    expect((await runMigrations(target.url, { requireLoopback: true })).appliedNow).toEqual([]);
+    expect((await runMigrations(target.url, { requireLoopback: true, migrationsFolder: folder })).appliedNow).toEqual([]);
   } finally {
     await db?.close();
     await target?.drop();

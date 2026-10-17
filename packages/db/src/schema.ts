@@ -858,6 +858,7 @@ export const REQUIRED_TABLES = [
   'recurrence_instances','recurrence_exception_versions','recurrence_calendar_locks',
   'task_dependencies','project_dependency_policies','graph_layouts','graph_layout_positions',
   'project_imports','external_import_references',
+  'workspace_creation_receipts',
 ] as const;
 
 
@@ -1465,4 +1466,20 @@ export const sharedAuthLoginAttempts = pgTable('shared_auth_login_attempts', {
   index('shared_auth_login_attempts_expiry_idx').on(t.expiresAt),
   check('shared_auth_login_attempts_values', sql`${t.stateHash} ~ '^[a-f0-9]{64}$' and ${t.browserHash} ~ '^[a-f0-9]{64}$' and char_length(${t.returnTo}) between 1 and 2048`),
   check('shared_auth_login_attempts_times', sql`isfinite(${t.expiresAt}) and isfinite(${t.createdAt})`),
+]);
+
+/**
+ * Actor-scoped replay receipt for workspace creation. command_idempotency needs an existing
+ * workspace membership, so creation keeps its own key space; no plaintext input is stored.
+ */
+export const workspaceCreationReceipts = pgTable('workspace_creation_receipts', {
+  actorUserId: uuid('actor_user_id').notNull(), idempotencyKey: text('idempotency_key').notNull(),
+  workspaceId: uuid('workspace_id').notNull(), payloadHash: text('payload_hash').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  primaryKey({ name: 'workspace_creation_receipts_pk', columns: [t.actorUserId, t.idempotencyKey] }),
+  foreignKey({ name: 'workspace_creation_receipts_actor_fk', columns: [t.actorUserId], foreignColumns: [users.id] }),
+  foreignKey({ name: 'workspace_creation_receipts_workspace_fk', columns: [t.workspaceId], foreignColumns: [workspaces.id] }),
+  unique('workspace_creation_receipts_workspace_unique').on(t.workspaceId),
+  check('workspace_creation_receipts_values', sql`${t.idempotencyKey} ~ '^[!-~]{1,128}$' and ${t.payloadHash} ~ '^[0-9a-f]{64}$' and isfinite(${t.createdAt})`),
 ]);

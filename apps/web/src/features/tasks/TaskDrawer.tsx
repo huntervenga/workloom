@@ -11,6 +11,7 @@ import type {
   SectionDto,
   TagDto,
   TaskDto,
+  TaskFieldDefinitionDto,
   TaskStatusDto,
   TaskWorkScope,
   WorkspaceDto,
@@ -26,10 +27,22 @@ import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { TaskCustomFields, type FieldValueDraftStore, type useSetTaskFieldValueMutation } from '../fields';
-import { formatEstimate, formatEstimateInput } from '../task-table';
+import { formatEstimate, formatEstimateInput, type TaskTableCustomColumn } from '../task-table';
 import { OriginalEstimate } from '../planning/OriginalEstimate';
 import { taskWouldRegress, useReloadTask, useTaskQuery } from './queries';
 import { CreateTagDialog } from './TagDialogs';
+import { DrawerSubtasks } from './DrawerSubtasks';
+import {
+  emptyInitialTaskCellsDraft,
+  hasInitialTaskCells,
+  InitialCustomFieldCell,
+  InitialTaskTimeCell,
+  sameTimeContext,
+  type InitialTaskCellsDraft,
+  type InitialTaskCellsIssue,
+  type InitialTimeContext,
+} from './InitialTaskCells';
+import { buildInitialTaskPayload, snapshotInitialTaskPayload } from './initialTaskPayload';
 import { TaskFields, fieldLabels, formatDraftValue, type EstimateMode, type TaskLookups } from './TaskFields';
 import {
   activeParticipantIds,
@@ -45,6 +58,7 @@ import {
   type TaskDraftErrors,
 } from './taskDraft';
 import {
+  resolveQuickCreateInput,
   unresolvedTaskCommand,
   type CreateRequest,
   type CreateSession,
@@ -93,6 +107,33 @@ export interface TaskDrawerProps {
   loadedSubtasks?: LoadedSubtasks | undefined;
   onCreated: (task: TaskDto) => void;
   onAnnounce: (message: TranslationMessage) => void;
+  /**
+   * Current field definitions of the project. Values staged on a new row are kept and checked
+   * against them; without it the staged snapshots are still sent only after their own validation.
+   */
+  initialFields?: readonly TaskFieldDefinitionDto[] | undefined;
+  /**
+   * The explicitly selected week and person for hours of a new row under `parent` (null for a
+   * root) with `workScope`, or `null`. Never a fallback; a shared parent plan carries its loaded
+   * commitment revision only for a detail child.
+   */
+  initialTimeContextFor?: ((parent: TaskDto | null, workScope: TaskWorkScope) => InitialTimeContext | null) | undefined;
+  /** The actor may stage plan and actual hours for that context. */
+  initialTimeWritable?: boolean | undefined;
+  /** The context comes from a current projection; a stale one is never captured. */
+  initialTimeCurrent?: boolean | undefined;
+  /** Visible custom and weekly columns of the page table, shown by the subtask rows too. */
+  subtaskColumns?: readonly TaskTableCustomColumn[] | undefined;
+}
+
+/** The context new hours may capture now, or `null` when none may be captured. */
+export function capturableTimeContext(
+  props: Pick<TaskDrawerProps, 'initialTimeContextFor' | 'initialTimeWritable' | 'initialTimeCurrent'>,
+  parent: TaskDto | null,
+  workScope: TaskWorkScope,
+): InitialTimeContext | null {
+  if (props.initialTimeWritable !== true || props.initialTimeCurrent !== true) return null;
+  return props.initialTimeContextFor?.(parent, workScope) ?? null;
 }
 
 /**
@@ -107,6 +148,9 @@ export interface LoadedSubtasks {
   partial: boolean;
   /** Archived children are loaded only while the archived filter is on. */
   includesArchived: boolean;
+  /** When the list behind `tasks` was loaded, and whether a newer one is being fetched. */
+  loadedAt?: number | undefined;
+  fetching?: boolean | undefined;
 }
 
 /** Newest copy of every tag by ID, so a renamed tag shows its current name. */
@@ -471,8 +515,25 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
   const canCreateChild=writable&&workspace.role!=='viewer'&&props.project.archivedAt===null&&latest.archivedAt===null&&latest.meetingId===null&&props.onCreateChild!==undefined;
   const keptCreate=commands.createSession.current!==null||commands.create.pendingCommand!==null||commands.create.uncertain!==null;
   const unavailableParticipantIds = activeParticipantIds(base).filter((id) => !memberIds.has(id));
+  const subtasksShown = props.loadedSubtasks !== undefined && props.loadedSubtasks.parentId === taskId;
+  // Add subtask opens the inline row below; the full create form stays its More details.
+  const [subtaskAddRequest, setSubtaskAddRequest] = useState(0);
 
-  return (
+  return (<>
+    {/* Subtask rows carry their own forms, so they sit beside this form rather than inside it. */}
+    {props.loadedSubtasks && subtasksShown ? (
+      <div className="mt-3 max-h-[45%] min-h-0 shrink-0 overflow-y-auto px-1 pb-1">
+        <DrawerSubtasks parent={latest} scope={props.loadedSubtasks} projectId={props.project.id} statuses={statuses} members={props.members} sections={props.sections} tags={props.tags}
+          commands={commands} writable={canCreateChild && props.hierarchyCurrent}
+          extraColumns={props.subtaskColumns} initialFields={props.initialFields}
+          initialTimeContext={props.initialTimeContextFor?.(latest, 'detail') ?? null} initialTimeWritable={props.initialTimeWritable} initialTimeCurrent={props.initialTimeCurrent}
+          addRequest={subtaskAddRequest}
+          onOpen={id => { retainForNavigation(); onOpenTask(id); }}
+          onMoreDetails={() => { retainForNavigation(); props.onCreateChild?.(latest); }}
+          onAnnounce={onAnnounce}
+          onCreated={task => onAnnounce(message('projects.projectPage.taskValueCreated', { p0: task.title }))} />
+      </div>
+    ) : null}
     <form noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, canEdit && !busy && !locked)} className="mt-3 flex min-h-0 flex-1 flex-col">
       <div className={formBodyClassName}>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
@@ -483,13 +544,10 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
 
         {latest.parentTaskId!==null||canCreateChild?<div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {latest.parentTaskId!==null?<ParentTaskAction actorId={actorId} workspaceId={workspace.id} projectId={props.project.id} sourceId={taskId} parentId={latest.parentTaskId} beforeOpen={retainForNavigation} intent={session} onOpenTask={onOpenTask} disabled={!props.hierarchyCurrent}/>:null}
-          {canCreateChild?keptCreate?<Button size="sm" variant="ghost" onClick={()=>{retainForNavigation();onResumeCreate();}}>{t('hierarchy.resumeDraft')}</Button>:<Button size="sm" variant="ghost" disabled={!props.hierarchyCurrent||unresolved!==null} onClick={()=>{if(!props.hierarchyCurrent||unresolvedTaskCommand(commands)!==null)return;retainForNavigation();props.onCreateChild?.(latest);}}>{t('hierarchy.addSubtask')}</Button>:null}
+          {canCreateChild?keptCreate?<Button size="sm" variant="ghost" onClick={()=>{retainForNavigation();onResumeCreate();}}>{t('hierarchy.resumeDraft')}</Button>:<Button size="sm" variant="ghost" disabled={!props.hierarchyCurrent||unresolved!==null} onClick={()=>{if(!props.hierarchyCurrent||unresolvedTaskCommand(commands)!==null)return;if(subtasksShown){setSubtaskAddRequest(count=>count+1);return;}retainForNavigation();props.onCreateChild?.(latest);}}>{t('hierarchy.addSubtask')}</Button>:null}
         </div>:null}
         {canCreateChild&&!keptCreate&&unresolved!==null?<p className="text-xs text-muted">{t('hierarchy.resolveSave')}</p>:null}
         {canCreateChild&&!keptCreate&&draft.estimate!==baseDraft.estimate?<p className="text-xs text-muted">{t('hierarchy.savedEstimateHint')}</p>:null}
-        {props.loadedSubtasks && props.loadedSubtasks.parentId === taskId ? (
-          <SubtaskList parent={latest} scope={props.loadedSubtasks} statuses={statuses} onOpen={id => { retainForNavigation(); onOpenTask(id); }} />
-        ) : null}
 
         {archived ? (
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
@@ -650,45 +708,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
         ) : null}
       </div>
     </form>
-  );
-}
-
-/**
- * Loaded direct subtasks with their full titles, status and scope. A detail shares the parent's
- * work package; additional work has its own. Opening one keeps this task's draft first.
- */
-function SubtaskList({ parent, scope, statuses, onOpen }: { parent: TaskDto; scope: LoadedSubtasks; statuses: readonly TaskStatusDto[]; onOpen: (id: string) => void }) {
-  const { t } = useTranslation();
-  const headingId = useId();
-  const empty = scope.partial ? t('tasks.subtasks.noneLoaded') : scope.includesArchived ? t('tasks.subtasks.none') : t('tasks.subtasks.noneActive');
-  return (
-    <section aria-labelledby={headingId} className="space-y-2">
-      <h3 id={headingId} className="text-sm font-medium text-ink">{t('tasks.subtasks.heading')}</h3>
-      {scope.partial ? <p className="text-xs text-muted">{t('tasks.subtasks.loadedOnly')}</p> : null}
-      {scope.tasks.length === 0 ? <p className="text-sm text-muted">{empty}</p> : (
-        <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line">
-          {scope.tasks.map(child => {
-            const status = statuses.find(item => item.id === child.statusId)?.name ?? t('tasks.taskFields.statusUnavailable');
-            const kind = child.workPackageId === parent.workPackageId ? t('tasks.subtasks.detail') : t('tasks.subtasks.additional');
-            return (
-              <li key={child.id}>
-                <button type="button" onClick={() => onOpen(child.id)}
-                  aria-label={t('tasks.subtasks.open', { title: child.title, status, scope: kind })}
-                  className="flex w-full min-w-0 items-start gap-2 px-3 py-2 text-left hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent">
-                  <span className="min-w-0 flex-1 text-sm text-ink [overflow-wrap:anywhere]">{child.title}</span>
-                  <span className="flex shrink-0 flex-wrap justify-end gap-1">
-                    <Badge tone="neutral">{status}</Badge>
-                    <Badge tone="muted">{kind}</Badge>
-                    {child.archivedAt !== null ? <Badge tone="muted">{t('tasks.taskDrawer.archived')}</Badge> : null}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
+  </>);
 }
 
 interface ReviewPanelProps {
@@ -809,14 +829,19 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
     setErrors({});
   }, [confirmed, session, statusId]);
   const [errors, setErrors] = useState<TaskDraftErrors>({});
+  const [initialIssues, setInitialIssues] = useState<readonly InitialTaskCellsIssue[]>([]);
+  /** The row this create follows has no confirmed task yet, so its place cannot be sent. */
+  const [anchorUnresolved, setAnchorUnresolved] = useState(false);
   const { tagsById } = useLookups(props, []);
 
   const locked = create.uncertain !== null;
   const pristine = session && statusId !== null ? freshCreateSession(session.request, statusId) : null;
+  // Values staged in a quick row count even with an empty title, so opening this form never drops them.
+  const staged = session?.initialCells !== undefined && hasInitialTaskCells(session.initialCells);
   const dirty =
     session !== null &&
     pristine !== null &&
-    (changedKeys(pristine.draft, session.draft).length > 0 || session.workScope !== pristine.workScope);
+    (changedKeys(pristine.draft, session.draft).length > 0 || session.workScope !== pristine.workScope || staged);
 
   useEffect(() => {
     if (!confirmed) createSession.current = session !== null && (dirty || locked) ? session : null;
@@ -847,24 +872,52 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
   const setDraft = (patch: Partial<TaskDraft>) =>
     setSession((current) => (current ? { ...current, draft: { ...current.draft, ...patch } } : current));
   const setScope = (next: TaskWorkScope) => setSession((current) => (current ? { ...current, workScope: next } : current));
+  const setInitialCells = (initialCells: InitialTaskCellsDraft) => {
+    setSession((current) => (current ? { ...current, initialCells } : current));
+    setInitialIssues([]);
+  };
+  const sharesParentPackage = inheritsEstimate(options);
+  const timeContext = capturableTimeContext(props, parent, workScope);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (event.target !== event.currentTarget || confirmed || busy) return;
     if (locked) {
+      // The held variables are sent again unchanged, never a remap of the current draft.
       create.retryUncertain({ onSuccess: done });
       return;
     }
+    // Every built-in and staged value is checked before anything is sent.
     const result = buildCreateInput(project.id, draft, options);
-    if (!result.ok) {
-      setErrors(result.errors);
-      return;
-    }
-    setErrors({});
-    create.mutate({ input: result.input }, { onSuccess: done });
+    const extras = buildInitialTaskPayload(result.ok ? result.input : null, session.initialCells, {
+      definitions: props.initialFields,
+      currentContext: timeContext,
+      sharesParentPackage,
+      parentWorkPackageId: sharesParentPackage ? parent?.workPackageId : undefined,
+    });
+    setErrors(result.ok ? {} : result.errors);
+    setInitialIssues(extras.ok ? [] : extras.issues);
+    if (!result.ok || !extras.ok) return;
+    // A quick row keeps its place: right after its row, or after the earlier create it follows.
+    const placed = resolveQuickCreateInput({ session, input: result.input });
+    setAnchorUnresolved(placed === null);
+    if (placed === null) return;
+    const initial = snapshotInitialTaskPayload(extras.initial);
+    create.mutate({ input: placed, ...(initial ? { initial } : {}) }, { onSuccess: done });
   };
 
-  return (
+  return (<>
+    {/* Staged values carry their own popover editors, so they sit beside the form rather than inside it. */}
+    <StagedInitialCells
+      cells={session.initialCells}
+      fields={props.initialFields}
+      members={members}
+      context={timeContext}
+      sharesParentPackage={sharesParentPackage}
+      issues={initialIssues}
+      disabled={locked || busy}
+      onChange={setInitialCells}
+    />
     <form noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, !busy && !locked)} className="mt-3 flex min-h-0 flex-1 flex-col">
       <div className={formBodyClassName}>
         {parent ? (
@@ -948,6 +1001,7 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
         </fieldset>
 
         {errors.form ? <p className="text-sm text-red-700">{t(errors.form.key, errors.form.params)}</p> : null}
+        {anchorUnresolved && !pending && !locked ? <p role="status" className="text-sm text-amber-900">{t('tasks.taskDrawer.createPending')}</p> : null}
         <SaveFeedback error={create.error} uncertainError={create.uncertain?.error ?? null} subject="taskSave" />
       </div>
 
@@ -958,5 +1012,77 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
         </Button>
       </div>
     </form>
+  </>);
+}
+
+interface StagedInitialCellsProps {
+  cells: InitialTaskCellsDraft | undefined;
+  fields: readonly TaskFieldDefinitionDto[] | undefined;
+  members: readonly MembershipDto[];
+  /** What new hours may capture now; captured hours keep their own context. */
+  context: InitialTimeContext | null;
+  sharesParentPackage: boolean;
+  issues: readonly InitialTaskCellsIssue[];
+  disabled: boolean;
+  onChange: (cells: InitialTaskCellsDraft) => void;
+}
+
+/**
+ * Custom values and weekly hours of the new task, staged locally and created with it atomically.
+ * Values staged in a quick row are shown here for review and stay editable; nothing is saved
+ * before the task is created.
+ */
+function StagedInitialCells({ cells, fields, members, context, sharesParentPackage, issues, disabled, onChange }: StagedInitialCellsProps) {
+  const { t } = useTranslation();
+  const headingId = useId();
+  const draft = cells ?? emptyInitialTaskCellsDraft();
+  const captured = draft.time.context;
+  const target = captured ?? context;
+  // Staged entries keep their snapshot even after the column changed or left, so they can be reviewed.
+  const shown = new Map<string, TaskFieldDefinitionDto>();
+  for (const entry of Object.values(draft.fields)) shown.set(entry.field.id, entry.field);
+  for (const field of fields ?? []) if (field.archivedAt === null && !shown.has(field.id)) shown.set(field.id, field);
+  if (shown.size === 0 && target === null) return null;
+  const hours = (kind: 'planned' | 'fact') =>
+    target === null
+      ? ''
+      : t(kind === 'fact' ? 'taskRows.time.factLabel' : sharesParentPackage ? 'taskRows.time.parentPlannedLabel' : 'taskRows.time.plannedLabel', {
+          period: target.periodName,
+          member: target.memberName,
+        });
+
+  return (
+    <section aria-labelledby={headingId} className="mt-3 max-h-[35%] min-h-0 shrink-0 space-y-2 overflow-y-auto rounded-lg border border-line px-3 py-2">
+      <h3 id={headingId} className="text-xs font-medium text-muted">{t('taskRows.field.staged')}</h3>
+      <dl className="grid grid-cols-[minmax(0,10rem)_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-sm">
+        {[...shown.values()].map((field) => (
+          <div key={field.id} className="contents">
+            <dt className="truncate text-ink-soft" title={field.name}>{field.name}</dt>
+            <dd className="h-9 min-w-0"><InitialCustomFieldCell field={field} draft={draft} onChange={onChange} members={members} disabled={disabled} /></dd>
+          </div>
+        ))}
+        {target !== null ? (['planned', 'fact'] as const).map((kind) => (
+          <div key={kind} className="contents">
+            <dt className="truncate text-ink-soft" title={hours(kind)}>{hours(kind)}</dt>
+            <dd className="h-9 min-w-0">
+              <InitialTaskTimeCell kind={kind} draft={draft} onChange={onChange} context={context} sharesParentPackage={sharesParentPackage} disabled={disabled} />
+            </dd>
+          </div>
+        )) : null}
+      </dl>
+      {captured !== null && context !== null && !sameTimeContext(captured, context) ? (
+        <p role="status" className="text-xs text-muted">{t('taskRows.time.contextChanged', { period: captured.periodName, member: captured.memberName })}</p>
+      ) : null}
+      {issues.length > 0 ? (
+        <ul role="alert" className="space-y-0.5 text-sm text-red-700">
+          {issues.map((issue, index) => (
+            <li key={index}>
+              {issue.kind === 'field' ? `${shown.get(issue.fieldId)?.name ?? ''}: ` : ''}
+              {issue.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
   );
 }

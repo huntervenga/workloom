@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { cn } from '@workloom/ui';
 import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { Check, Circle, CircleSlash, LoaderCircle } from 'lucide-react';
+import { Check, CircleSlash, LoaderCircle } from 'lucide-react';
 import { useTranslation } from '../../i18n';
 import { taskCompletion } from './taskCompletion';
 
@@ -14,9 +14,11 @@ export function TaskCompletionAction({ task, statuses, writable, blocked, pendin
   useLayoutEffect(() => { const target = triggerRef.current; return target ? onTargetReady?.(task, target) : undefined; }, [onTargetReady, task, statuses, writable, blocked, pending, hasDraft, editing]);
   const decision = taskCompletion(task, statuses);
   const state = !decision.current ? t('tasks.completion.refresh') : decision.completed ? t('tasks.completion.completedState', { title: task.title }) : decision.cancelled ? t('tasks.completion.cancelledState', { title: task.title }) : t('tasks.completion.incompleteState', { title: task.title });
-  const icon = pending ? <LoaderCircle size={16} className="animate-spin" /> : decision.completed ? <Check size={14} /> : decision.cancelled ? <CircleSlash size={16} /> : <Circle size={17} />;
-  const style = cn('inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:opacity-50', decision.completed ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-transparent text-muted');
-  if (!writable || !decision.eligible) return <span role="img" aria-label={state} title={decision.current ? state : t('tasks.completion.refresh')} className={style}><span aria-hidden="true">{icon}</span></span>;
+  // One clean circle in a 28px target: an outlined check that previews completion on hover, filled once done.
+  const icon = pending ? <LoaderCircle size={14} className="animate-spin" /> : !decision.completed && decision.cancelled ? <CircleSlash size={18} />
+    : <span className={cn('inline-flex size-[18px] items-center justify-center rounded-full border transition-colors', decision.completed ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-line-strong text-transparent group-hover/complete:border-emerald-600 group-hover/complete:text-emerald-600')}><Check size={12} strokeWidth={3} /></span>;
+  const style = cn('group/complete inline-flex size-7 shrink-0 items-center justify-center rounded-full text-muted transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink disabled:opacity-50');
+  if (!writable || !decision.eligible) return <span role="img" aria-label={state} title={decision.current ? state : t('tasks.completion.refresh')} className={style}><span aria-hidden="true" className="inline-flex">{icon}</span></span>;
   const label = pending ? t('tasks.completion.saving', { title: task.title }) : editing ? t('tasks.completion.finishEdit') : hasDraft ? t('tasks.completion.resume', { title: task.title }) : blocked ? t('tasks.completion.otherCommand') : decision.choices.length === 0 ? decision.reopening ? t('tasks.completion.noActive') : t('tasks.completion.noDone') : decision.reopening ? t('tasks.completion.reopen', { title: task.title }) : t('tasks.completion.complete', { title: task.title });
   const directChoice = decision.choices[0];
   const canChoose = !hasDraft && !editing && !pending && !blocked && !decision.direct && decision.choices.length > 0;
@@ -24,7 +26,7 @@ export function TaskCompletionAction({ task, statuses, writable, blocked, pendin
     if (blocked || pending || editing) return;
     if (hasDraft) onReview(task.id);
     else if (decision.direct && directChoice) onChoose(task, directChoice.id, triggerRef.current);
-  }}><span aria-hidden="true">{icon}</span></button>;
+  }}><span aria-hidden="true" className="inline-flex">{icon}</span></button>;
   // Keep one native button across idle/pending/confirmed renders. Aria-disabled remains
   // focusable while the explicit handler and command gate refuse any second write.
   return <Menu.Root modal={false} open={canChoose && open} onOpenChange={next => setOpen(canChoose && next)}>

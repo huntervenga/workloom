@@ -149,7 +149,7 @@ describe('page-owned section collapse', () => {
     const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
     await user.type(screen.getByLabelText('Task name'), 'Original first-section draft');
-    await user.click(quickForm().getByRole('button', { name: 'Add task' })); await waitFor(() => expect(attempts).toBe(1));
+    await user.click(quickForm().getByRole('textbox', { name: 'Task name' })); await user.keyboard('{Enter}'); await waitFor(() => expect(attempts).toBe(1));
     await user.type(screen.getByLabelText('Task name'), 'Next unsent title');
     await user.click(collapse()); await user.click(collapse('Second section'));
     await act(async () => first.lose()); await screen.findByRole('button', { name: 'Resume original editor' });
@@ -174,8 +174,10 @@ describe('page-owned section collapse', () => {
     await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
     await user.type(screen.getByLabelText('Task name'), 'Rejected task{Enter}Replacement draft');
     await screen.findByRole('button', { name: 'Discard rejected task' });
-    await user.click(screen.getByRole('button', { name: 'Collapse editor' }));
+    // Escape would discard the unsent replacement; collapsing its section hides and retains it.
+    await user.click(collapse());
     await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
+    expect(collapse()).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Task name')).toHaveValue('Replacement draft');
     await user.click(screen.getByRole('button', { name: 'Discard rejected task' }));
@@ -193,7 +195,7 @@ describe('page-owned section collapse', () => {
       await waitFor(() => expect(writes(calls)).toHaveLength(1));
       await waitFor(() => expect(unloadPrevented()).toBe(false));
     }
-    await user.click(screen.getByRole('button', { name: 'Collapse editor' }));
+    await user.click(quickForm().getByRole('textbox', { name: 'Task name' })); await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Add task to “Second section”' }));
     const row = within(screen.getByRole('form', { name: 'Add a task to Second section' }));
     expect(row.getByRole('textbox', { name: 'Task name' })).toHaveValue('');
@@ -212,7 +214,8 @@ describe('page-owned section collapse', () => {
       await user.keyboard('{Control>}{Enter}{/Control}');
     } else {
       await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
-      await user.type(screen.getByLabelText('Task name'), 'Confirmed hidden title'); await user.click(quickForm().getByRole('button', { name: 'Add task' }));
+      await user.type(screen.getByLabelText('Task name'), 'Confirmed hidden title');
+      await user.click(quickForm().getByRole('textbox', { name: 'Task name' })); await user.keyboard('{Enter}');
     }
     await waitFor(() => expect(writes(calls)).toHaveLength(1)); await user.click(collapse());
     expect(expand()).toHaveFocus(); await screen.findByRole('button', { name: 'Resume original editor' });
@@ -221,7 +224,7 @@ describe('page-owned section collapse', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument());
     expect(expand()).toHaveFocus(); expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument(); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await user.click(expand()); expect(screen.getByLabelText('Task name')).toHaveValue(kind === 'quick' ? '' : 'Confirmed hidden title');
-    if (kind === 'quick') await user.click(quickForm().getByRole('button', { name: 'Add task' }));
+    if (kind === 'quick') { await user.click(quickForm().getByRole('textbox', { name: 'Task name' })); await user.keyboard('{Enter}'); }
     else { await user.click(screen.getByLabelText('Task name')); await user.keyboard('{Control>}{Enter}{/Control}'); }
     expect(writes(calls)).toHaveLength(1);
   });

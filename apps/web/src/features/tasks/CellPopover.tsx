@@ -5,6 +5,7 @@ const EDGE = 8;
 const GAP = 4;
 // Selectors are written without spaces: they are DOM queries, never displayed copy.
 const MODAL = '[role="dialog"],[role="alertdialog"]';
+const HIDDEN = '[hidden],[inert]';
 
 function supportsTopLayer(node: HTMLElement): boolean {
   return typeof node.showPopover === 'function' && typeof node.hidePopover === 'function';
@@ -13,9 +14,15 @@ function supportsTopLayer(node: HTMLElement): boolean {
 /**
  * True while the newest open dialog is not the one holding `anchor`. Top-layer feedback would
  * otherwise paint above that dialog; feedback of a cell inside the topmost dialog stays shown.
+ * A popover that is itself a dialog never counts against itself or dialogs inside it. An anchor
+ * under a hidden or inert ancestor (such as a frame covered by sign-in) also hides it, since the
+ * top layer would otherwise keep showing it.
  */
-function coveredByDialog(anchor: HTMLElement): boolean {
-  const open = [...anchor.ownerDocument.querySelectorAll<HTMLElement>(MODAL)].filter(dialog => !dialog.hidden && dialog.dataset.state !== 'closed');
+function coveredByDialog(anchor: HTMLElement, self: HTMLElement | null): boolean {
+  if (anchor.closest(HIDDEN) !== null) return true;
+  const open = [...anchor.ownerDocument.querySelectorAll<HTMLElement>(MODAL)].filter(
+    dialog => !dialog.hidden && dialog.dataset.state !== 'closed' && !(self?.contains(dialog) ?? false),
+  );
   const top = open.at(-1);
   return top !== undefined && !top.contains(anchor);
 }
@@ -27,12 +34,16 @@ function coveredByDialog(anchor: HTMLElement): boolean {
  * takes layout space, so a cell, its row and the grid keep their size; it never takes focus itself.
  * While a later dialog is open elsewhere it is only hidden: its content, the command it describes
  * and its actions stay mounted and reappear unchanged when that dialog closes.
+ * With `role="dialog"` it is a non-modal editor panel; the owner moves focus into it on open.
  */
-export function CellPopover({ anchor, side = 'bottom', className, children }: {
+export function CellPopover({ anchor, side = 'bottom', className, id, role, ariaLabel, children }: {
   anchor: HTMLElement | null;
   /** Choice pickers open their menu below, so their feedback prefers the space above. */
   side?: 'bottom' | 'top' | undefined;
   className?: string | undefined;
+  id?: string | undefined;
+  role?: 'dialog' | undefined;
+  ariaLabel?: string | undefined;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -40,11 +51,11 @@ export function CellPopover({ anchor, side = 'bottom', className, children }: {
   useLayoutEffect(() => {
     if (!anchor) return undefined;
     const doc = anchor.ownerDocument;
-    const check = () => setCovered(coveredByDialog(anchor));
+    const check = () => setCovered(coveredByDialog(anchor, ref.current));
     check();
     // Dialogs are portalled to the body; their mount, unmount and state changes are all mutations.
     const observer = new MutationObserver(check);
-    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'data-state', 'hidden'] });
+    observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role', 'data-state', 'hidden', 'inert'] });
     return () => observer.disconnect();
   }, [anchor]);
   useLayoutEffect(() => {
@@ -95,6 +106,9 @@ export function CellPopover({ anchor, side = 'bottom', className, children }: {
   return (
     <div
       ref={ref}
+      id={id}
+      role={role}
+      aria-label={ariaLabel}
       data-cell-popover=""
       hidden={covered || undefined}
       style={{ position: 'fixed', inset: 'auto', margin: 0, top: 0, left: 0 }}

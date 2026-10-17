@@ -10,6 +10,10 @@ export interface FakeSharedAuthIdentity {
   readonly name: string;
 }
 
+export interface RegisteredFakeSharedAuthIdentity extends FakeSharedAuthIdentity {
+  readonly buttonName: string;
+}
+
 export interface FakeSharedAuthStats {
   readonly logins: number;
   readonly completedLogins: number;
@@ -23,6 +27,8 @@ export interface FakeSharedAuthStats {
 export interface FakeSharedAuth {
   readonly origin: string;
   readonly identities: { readonly a: FakeSharedAuthIdentity; readonly b: FakeSharedAuthIdentity };
+  /** Adds a fresh subject without replacing the provider key/JWKS used by the running API. */
+  registerIdentity(label: string): RegisteredFakeSharedAuthIdentity;
   stats(): FakeSharedAuthStats;
   close(): Promise<void>;
 }
@@ -97,6 +103,10 @@ export async function startFakeSharedAuth(options: { port: number; appOrigin: st
     [identities.a.id, identities.a],
     [identities.b.id, identities.b],
   ]);
+  const accounts = new Map<string, { identity: FakeSharedAuthIdentity; buttonName: string }>([
+    ['a', { identity: identities.a, buttonName: 'Continue as account A' }],
+    ['b', { identity: identities.b, buttonName: 'Continue as account B' }],
+  ]);
   const tickets = new Map<string, { callback: string; state: string; expiresAt: number }>();
   const refreshTokens = new Map<string, FakeSharedAuthIdentity>();
   const counters = { logins: 0, completedLogins: 0, refreshes: 0, refreshRejects: 0, logouts: 0, meReads: 0, jwksReads: 0 };
@@ -156,11 +166,11 @@ export async function startFakeSharedAuth(options: { port: number; appOrigin: st
   }
 
   function renderChooser(ticket: string): string {
-    const form = (account: 'a' | 'b', label: string) =>
+    const form = (account: string, label: string) =>
       `<form method="get" action="/auth/continue"><input type="hidden" name="ticket" value="${escapeHtml(ticket)}">` +
-      `<input type="hidden" name="account" value="${account}"><button type="submit">${escapeHtml(label)}</button></form>`;
+      `<input type="hidden" name="account" value="${escapeHtml(account)}"><button type="submit">${escapeHtml(label)}</button></form>`;
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Private test identity</title></head>` +
-      `<body><main><h1>Private test identity</h1>${form('a', 'Continue as account A')}${form('b', 'Continue as account B')}</main></body></html>`;
+      `<body><main><h1>Private test identity</h1>${[...accounts].map(([account, entry]) => form(account, entry.buttonName)).join('')}</main></body></html>`;
   }
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -199,12 +209,13 @@ export async function startFakeSharedAuth(options: { port: number; appOrigin: st
       const ticketId = single(url.searchParams, 'ticket');
       const account = single(url.searchParams, 'account');
       const ticket = ticketId ? tickets.get(ticketId) : undefined;
-      if (!ticketId || !ticket || (account !== 'a' && account !== 'b')) {
+      const chosen = account === null ? undefined : accounts.get(account);
+      if (!ticketId || !ticket || !chosen) {
         return send(res, 400, 'Invalid or used login ticket', 'text/plain');
       }
       tickets.delete(ticketId);
       if (ticket.expiresAt < Date.now()) return send(res, 400, 'Invalid or used login ticket', 'text/plain');
-      const tokens = issueTokens(identities[account]);
+      const tokens = issueTokens(chosen.identity);
       const fragment = new URLSearchParams({ ...tokens, expires_in: String(tokens.expires_in), state: ticket.state });
       counters.completedLogins += 1;
       res.writeHead(302, { location: `${ticket.callback}#${fragment.toString()}` }).end();
@@ -264,11 +275,23 @@ export async function startFakeSharedAuth(options: { port: number; appOrigin: st
   return {
     origin,
     identities,
+    registerIdentity: (label) => {
+      const clean = label.trim();
+      if (!clean || clean.length > 80 || [...clean].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) throw new Error('Invalid private test identity label.');
+      const identity = { id: randomUUID(), email: QA_EMAIL, name: QA_NAME };
+      const buttonName = `Continue as ${clean}`;
+      if ([...accounts.values()].some(entry => entry.buttonName === buttonName)) throw new Error('Private test identity label is already registered.');
+      identityById.set(identity.id, identity);
+      accounts.set(opaque(), { identity, buttonName });
+      return { ...identity, buttonName };
+    },
     stats: () => ({ ...counters }),
     close: () =>
       (closing ??= new Promise<void>((resolve, reject) => {
         tickets.clear();
         refreshTokens.clear();
+        accounts.clear();
+        identityById.clear();
         server.close((error) => (error ? reject(error) : resolve()));
         server.closeAllConnections();
       })),

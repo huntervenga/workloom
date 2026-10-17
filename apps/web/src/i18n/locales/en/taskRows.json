@@ -1,0 +1,40 @@
+{
+  "field": {
+    "editLabel": "{{field}} for the new task",
+    "notStaged": "Not set when the task is created",
+    "staged": "Will be saved with the new task",
+    "unstagedHint": "The task is created without this value.",
+    "stagedHint": "This value will be saved together with the new task.",
+    "leaveUnset": "Leave unset",
+    "done": "Done",
+    "definitionChanged": "This column changed after you entered a value. Leave it unset, then enter the value again.",
+    "definitionUnavailable": "This column is no longer available. Leave it unset to add the task."
+  },
+  "time": {
+    "plannedLabel": "Planned hours for the new task: {{period}}, {{member}}",
+    "parentPlannedLabel": "Planned hours for the whole parent package: {{period}}, {{member}}",
+    "factLabel": "Actual hours for the new task: {{period}}, {{member}}",
+    "chooseContext": "Choose a week and a person to enter hours.",
+    "sharesParentPackage": "Planned in the parent package",
+    "sharedPackagePlan": "Planned hours belong to the parent package. Clear this value to add the subtask.",
+    "sharedPackageTotal": "Sets the planned total of the whole parent package for this week and person, not a separate amount for this subtask.",
+    "contextMissing": "Choose a week and a person before entering hours.",
+    "contextChanged": "Kept for {{period}}, {{member}}. The table now shows another week or person.",
+    "tooLarge": "These hours are too large.",
+    "tooLong": "This value is too long.",
+    "negative": "Hours cannot be negative.",
+    "clockMinutes": "In H:MM format, minutes must be between 00 and 59.",
+    "wholeMinutes": "Use whole minutes, such as 1.5 or 1:30.",
+    "format": "Enter hours such as 1.5 or 1:30. Blank leaves hours unset; 0 records zero."
+  },
+  "quickRow": {
+    "actions": "New task actions",
+    "addNext": "Add and start the next task",
+    "moreDetails": "More details",
+    "discard": "Discard draft",
+    "escapeHint": "Escape discards this unsent draft.",
+    "keysHint": "Escape discards this unsent draft. Shift+F10 opens more actions, including details.",
+    "detailsBlocked": "An earlier task is still being saved or needs your decision. Use its recovery on the page before opening this draft in details.",
+    "detailsKeepExtras": "Details can't keep this draft's custom values or hours yet. Add the task here, or clear those cells first."
+  }
+}

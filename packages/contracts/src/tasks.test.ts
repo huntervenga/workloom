@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   createSectionInputSchema,
   createTaskInputSchema,
+  moveTaskInputSchema,
+  taskInsertionSchema,
   taskListQuerySchema,
   taskSchema,
   updateProjectInputSchema,
@@ -134,6 +136,113 @@ describe('createTaskInputSchema fields', () => {
 
   it('rejects a blank title after trimming', () => {
     expect(createTaskInputSchema.safeParse({ ...rootTask, title: '   ' }).success).toBe(false);
+  });
+});
+
+describe('createTaskInputSchema insertion', () => {
+  /** Has letters so upper-case input proves canonicalization. */
+  const anchor = 'abcdef00-0000-4000-8000-000000003001';
+
+  it('parses the old literal body to exactly its old keys, adding no insertion', () => {
+    const parsed = createTaskInputSchema.parse({ projectId: ids.project, title: 'Draft the onboarding checklist', statusId: ids.status });
+
+    expect(parsed).toStrictEqual(rootTask);
+    expect(Object.keys(parsed).sort()).toEqual(['projectId', 'statusId', 'title']);
+    expect(Object.hasOwn(parsed, 'insertion')).toBe(false);
+    const explicitUndefined = createTaskInputSchema.safeParse({ ...rootTask, insertion: undefined });
+    expect(explicitUndefined.success).toBe(true);
+    expect(explicitUndefined.data?.insertion).toBeUndefined();
+  });
+
+  it('accepts one canonical anchor before or after, for root tasks and subtasks', () => {
+    for (const placement of ['before', 'after'] as const) {
+      const expected = { anchorTaskId: anchor, placement };
+      expect(taskInsertionSchema.parse({ anchorTaskId: anchor.toUpperCase(), placement })).toStrictEqual(expected);
+      expect(createTaskInputSchema.parse({ ...rootTask, insertion: { anchorTaskId: anchor.toUpperCase(), placement } }).insertion).toStrictEqual(expected);
+      expect(createTaskInputSchema.parse({ ...subtask, insertion: expected }).insertion).toStrictEqual(expected);
+    }
+  });
+
+  it('rejects malformed or open-ended insertions', () => {
+    for (const insertion of [
+      null,
+      anchor,
+      [anchor],
+      {},
+      { anchorTaskId: anchor },
+      { placement: 'after' },
+      { anchorTaskId: anchor, placement: 'inside' },
+      { anchorTaskId: anchor, placement: 'AFTER' },
+      { anchorTaskId: anchor, placement: '' },
+      { anchorTaskId: anchor, placement: null },
+      { anchorTaskId: 'task-1', placement: 'after' },
+      { anchorTaskId: null, placement: 'after' },
+      { anchorTaskId: anchor, placement: 'after', index: 2 },
+      { anchorTaskId: anchor, placement: 'after', sectionId: ids.parent },
+    ]) {
+      expect(createTaskInputSchema.safeParse({ ...rootTask, insertion }).success).toBe(false);
+    }
+  });
+
+  it('keeps position and insertion mutually exclusive', () => {
+    for (const position of [0, 7]) {
+      const result = createTaskInputSchema.safeParse({ ...rootTask, position, insertion: { anchorTaskId: anchor, placement: 'before' } });
+      expect(issuePaths(result)).toEqual(['insertion']);
+    }
+    expect(createTaskInputSchema.parse({ ...rootTask, position: 7 }).position).toBe(7);
+  });
+
+  it('is not an update field', () => {
+    const insertion = { anchorTaskId: anchor, placement: 'after' };
+    expect(updateTaskInputSchema.safeParse({ expectedRevision: 3, insertion }).success).toBe(false);
+    expect(updateTaskInputSchema.safeParse({ expectedRevision: 3, title: 'Renamed', insertion }).success).toBe(false);
+  });
+});
+
+describe('moveTaskInputSchema', () => {
+  const anchor = 'abcdef00-0000-4000-8000-000000003001';
+  const move = { expectedRevision: 3, anchorTaskId: anchor, placement: 'after' } as const;
+
+  it('parses exactly a guarded canonical anchor and placement', () => {
+    expect(moveTaskInputSchema.parse(move)).toStrictEqual(move);
+    expect(moveTaskInputSchema.parse({ ...move, anchorTaskId: anchor.toUpperCase(), placement: 'before' })).toStrictEqual({
+      ...move,
+      placement: 'before',
+    });
+  });
+
+  it('requires every field, so even a no-op carries expectedRevision', () => {
+    for (const body of [
+      {},
+      { anchorTaskId: anchor, placement: 'after' },
+      { expectedRevision: 3, placement: 'after' },
+      { expectedRevision: 3, anchorTaskId: anchor },
+    ]) {
+      expect(moveTaskInputSchema.safeParse(body).success).toBe(false);
+    }
+    for (const expectedRevision of [0, -1, 1.5, '3', null]) {
+      expect(moveTaskInputSchema.safeParse({ ...move, expectedRevision }).success).toBe(false);
+    }
+    for (const placement of ['inside', 'first', 'BEFORE', '', null]) {
+      expect(moveTaskInputSchema.safeParse({ ...move, placement }).success).toBe(false);
+    }
+    for (const anchorTaskId of ['task-1', '', null]) {
+      expect(moveTaskInputSchema.safeParse({ ...move, anchorTaskId }).success).toBe(false);
+    }
+  });
+
+  it('rejects fields that would change anything but the order', () => {
+    for (const extra of [
+      { position: 0 },
+      { sectionId: ids.parent },
+      { parentTaskId: ids.parent },
+      { statusId: ids.status },
+      { insertion: { anchorTaskId: anchor, placement: 'after' } },
+      { actor: ids.memberA },
+      { workspaceId: ids.workspace },
+    ]) {
+      expect(moveTaskInputSchema.safeParse({ ...move, ...extra }).success).toBe(false);
+    }
   });
 });
 

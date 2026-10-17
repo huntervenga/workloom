@@ -1,11 +1,12 @@
 import { t, useTranslation } from '../../i18n';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Avatar, Button, Skeleton } from '@workloom/ui';
-import { Check, ChevronsUpDown, RefreshCw } from 'lucide-react';
-import { useId } from 'react';
+import { Check, ChevronsUpDown, Plus, RefreshCw } from 'lucide-react';
+import { useId, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { roleLabels } from './roles';
 import { useWorkspacesQuery } from './queries';
+import { useWorkspaceCreation } from './WorkspaceCreation';
 
 const sectionLabel = 'px-2.5 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-subtle uppercase';
 
@@ -19,8 +20,12 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
   useTranslation();
   const workspaces = useWorkspacesQuery(actorId);
   const navigate = useNavigate();
+  const creation = useWorkspaceCreation();
   const labelId = useId();
   const valueId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // The menu closes as the dialog opens; its focus return must not pull focus out of the dialog.
+  const openingCreation = useRef(false);
 
   if (workspaces.isPending) {
     return (
@@ -54,10 +59,23 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
 
   if (workspaces.data.length === 0) {
     return (
-      <p className="rounded-xl border border-dashed border-line-strong px-3 py-2.5 text-xs text-muted">
-
-        {t('workspace.noneAvailable')}
-      </p>
+      <div className="rounded-xl border border-dashed border-line-strong px-3 py-2.5">
+        <p className="text-xs text-muted">{t('workspace.noneAvailable')}</p>
+        {creation.canCreate ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="-ml-1 mt-1"
+            onClick={(event) => {
+              creation.show(event.currentTarget);
+              onNavigate?.();
+            }}
+          >
+            <Plus size={16} aria-hidden="true" />
+            {t('workspace.create.open')}
+          </Button>
+        ) : null}
+      </div>
     );
   }
 
@@ -72,6 +90,7 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
       <DropdownMenu.Root>
         <DropdownMenu.Trigger asChild>
           <button
+            ref={triggerRef}
             type="button"
             aria-labelledby={`${labelId} ${valueId}`}
             className="flex w-full items-center gap-2.5 rounded-xl border border-line bg-surface p-2 text-left shadow-xs transition-colors hover:border-line-strong data-[state=open]:border-accent-line data-[state=open]:ring-4 data-[state=open]:ring-accent-soft"
@@ -95,6 +114,11 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
             align="start"
             sideOffset={6}
             collisionPadding={12}
+            onCloseAutoFocus={(event) => {
+              if (!openingCreation.current) return;
+              openingCreation.current = false;
+              event.preventDefault();
+            }}
             className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] w-[var(--radix-dropdown-menu-trigger-width)] min-w-56 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-line bg-surface p-1.5 shadow-lg shadow-slate-900/5"
           >
             <DropdownMenu.Label className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-subtle uppercase">
@@ -127,6 +151,22 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
                 </DropdownMenu.RadioItem>
               ))}
             </DropdownMenu.RadioGroup>
+            {creation.canCreate ? (
+              <>
+                <DropdownMenu.Separator className="my-1.5 h-px bg-line" />
+                <DropdownMenu.Item
+                  className="flex cursor-default items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm font-medium text-ink outline-none select-none data-[highlighted]:bg-slate-100"
+                  onSelect={() => {
+                    openingCreation.current = true;
+                    creation.show(triggerRef.current);
+                    onNavigate?.();
+                  }}
+                >
+                  <Plus size={16} aria-hidden="true" className="text-subtle" />
+                  {t('workspace.create.open')}
+                </DropdownMenu.Item>
+              </>
+            ) : null}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>

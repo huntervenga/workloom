@@ -191,6 +191,18 @@
   },
   "subtasks": {
     "heading": "Subtasks",
+    "addInline": "New subtask row",
+    "columns": {
+      "title": "Subtask",
+      "status": "Status",
+      "responsible": "Assignee",
+      "participants": "Participants",
+      "startDate": "Start",
+      "dueDate": "Due",
+      "priority": "Priority",
+      "tags": "Tags",
+      "estimate": "Estimate"
+    },
     "loadedOnly": "Showing only subtasks among the tasks loaded in this view. Filters, search or unloaded pages may hide others.",
     "none": "No subtasks.",
     "noneActive": "No active subtasks. Archived subtasks are hidden.",

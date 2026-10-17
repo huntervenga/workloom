@@ -96,7 +96,7 @@ describe('page-owned task grouping', () => {
     const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: 'Add task to “Original section”' }));
     await user.type(screen.getByLabelText('Task name'), 'Original quick command');
-    await user.click(within(screen.getByRole('form', { name: 'Add a task to Original section' })).getByRole('button', { name: 'Add task' }));
+    await user.click(within(screen.getByRole('form', { name: 'Add a task to Original section' })).getByRole('textbox', { name: 'Task name' })); await user.keyboard('{Enter}');
     await waitFor(() => expect(attempts).toBe(1)); await tableChoice(user, groupControl(), 'assignee');
     await act(async () => first.lose()); await user.click(await screen.findByRole('button', { name: 'Resume original editor' }));
     expect(groupControl()).toHaveTextContent('Section'); expect(screen.getByLabelText('Task name')).toHaveValue(''); expect(screen.getByText('Submitted task: Original quick command')).toBeInTheDocument();
@@ -209,6 +209,7 @@ describe('page-owned task grouping', () => {
     await tableChoice(first.user, groupControl(), 'assignee');
     expect(screen.queryByRole('button', { name: `Edit assignee for ${parent.title}` })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add task' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add task to “Original section”' })).not.toBeInTheDocument();
     first.unmount(); renderApp(tablePath); await screen.findByRole('button', { name: parent.title });
     expect(groupControl()).toHaveTextContent('Section'); expect(writes(calls)).toHaveLength(0);
   });

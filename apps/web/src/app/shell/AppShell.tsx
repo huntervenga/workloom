@@ -8,6 +8,7 @@ import { LoginScreen } from '../../features/auth/LoginScreen';
 import { MeProvider, useMe, useMeQuery } from '../../features/identity/identity';
 import { useWorkspaceQuery } from '../../features/workspace/queries';
 import { useWorkspaceLiveRefresh } from '../../features/workspace/useWorkspaceLiveRefresh';
+import { WorkspaceCreationProvider } from '../../features/workspace/WorkspaceCreation';
 import { discardWorkspaceData } from '../../lib/cacheScope';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { useSession } from '../session';
@@ -38,7 +39,10 @@ export function AppShell() {
       <>
         <div hidden={covered} inert={covered}>
           <MeProvider me={previous}>
-            <ShellFrame key={previous.actor.id} sessionActive={!covered} />
+            {/* Above the frame, so a new-workspace draft outlives the mobile menu that opened it. */}
+            <WorkspaceCreationProvider key={previous.actor.id}>
+              <ShellFrame key={previous.actor.id} sessionActive={!covered} />
+            </WorkspaceCreationProvider>
           </MeProvider>
         </div>
         {expired ? (
@@ -58,7 +62,9 @@ export function AppShell() {
 
   return (
     <MeProvider me={me.data}>
-      <ShellFrame />
+      <WorkspaceCreationProvider>
+        <ShellFrame />
+      </WorkspaceCreationProvider>
     </MeProvider>
   );
 }

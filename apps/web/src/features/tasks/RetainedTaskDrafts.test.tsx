@@ -42,7 +42,9 @@ describe('actual ordinary retained draft protection',()=>{
   expect(onParent).toEqual({beforeUnload:true,draftRegistry:true,commandRegistry:false});expect(ui.router.state.location.pathname).toBe(tablePath);await screen.findByRole('dialog',{name:'Leave this page?'});expect(ui.calls.filter(c=>c.method!=='GET')).toHaveLength(0);
  });
  it('protects an unsaved child create after Back to parent without claiming a command was sent',async()=>{
-  const ui=setup();await ui.user.click(await screen.findByRole('button',{name:'Add subtask'}));fireEvent.change(await screen.findByLabelText('Task name'),{target:{value:'Hidden real new child'}});expect(unload()).toBe(true);
+  // Add subtask opens the drawer's inline row; its More details is the full New subtask form.
+  const ui=setup();const subtasks=await screen.findByRole('region',{name:'Subtasks'});await ui.user.click(screen.getByRole('button',{name:'Add subtask'}));await ui.user.click(await within(subtasks).findByRole('textbox',{name:'Task name'}));await ui.user.keyboard('{Shift>}{F10}{/Shift}');await ui.user.click(within(await screen.findByRole('menu',{name:'New task actions'})).getByRole('menuitem',{name:'More details'}));
+  fireEvent.change(within(await screen.findByRole('dialog',{name:'New subtask'})).getByLabelText('Task name'),{target:{value:'Hidden real new child'}});expect(unload()).toBe(true);
   await ui.user.click(screen.getByRole('button',{name:'Back to parent'}));expect(await screen.findByDisplayValue(child.title)).toBeVisible();
   const onParent={beforeUnload:unload(),draftRegistry:protectedDraftsFor(ui.client).protecting,commandRegistry:protectedCommandsFor(ui.client).protecting};
   await act(async()=>{await ui.router.navigate('/outside-repro');});
@@ -55,7 +57,7 @@ it('does not warn after clean quick creation opens More details in its original 
  const sectionId='e1000000-0000-4000-8000-000000000007';
  const ui=setup(tablePath,{[`GET ${rootPath}/projects/${task.projectId}/sections`]:()=>ok([{id:sectionId,workspaceId:task.workspaceId,projectId:task.projectId,name:'Original section',position:0,revision:1,archivedAt:null}])});
  await ui.user.click(await screen.findByRole('button',{name:'Add task to “Original section”'}));expect(unload()).toBe(false);expect(protectedDraftsFor(ui.client).protecting).toBe(false);
- await ui.user.click(screen.getByRole('button',{name:'More details'}));const dialog=await screen.findByRole('dialog',{name:'New task'});
+ await ui.user.click(screen.getByRole('textbox',{name:'Task name'}));await ui.user.keyboard('{Shift>}{F10}{/Shift}');await ui.user.click(within(await screen.findByRole('menu',{name:'New task actions'})).getByRole('menuitem',{name:'More details'}));const dialog=await screen.findByRole('dialog',{name:'New task'});
  const toggle=within(dialog).getByText('More details',{selector:'summary'});await ui.user.click(toggle);
  expect(within(dialog).getByRole('combobox',{name:'Section'})).toHaveTextContent('Original section');expect(unload()).toBe(false);expect(protectedDraftsFor(ui.client).protecting).toBe(false);
  await ui.user.keyboard('{Escape}');await act(async()=>{await ui.router.navigate('/outside-repro');});expect(ui.router.state.location.pathname).toBe('/outside-repro');expect(screen.queryByRole('dialog')).not.toBeInTheDocument();expect(ui.calls.filter(c=>c.method!=='GET')).toHaveLength(0);
@@ -64,7 +66,7 @@ it('does not warn after clean quick creation opens More details in its original 
 it('protects an explicit status-only new-task choice even while its title is still empty', async () => {
  const other='f6000000-0000-4000-8000-000000000008';
  const ui=setup(tablePath,{[`GET ${rootPath}/projects/${task.projectId}/statuses`]:()=>ok([{id:task.statusId,workspaceId:task.workspaceId,projectId:task.projectId,name:'Original status',group:'todo',position:0,revision:1},{id:other,workspaceId:task.workspaceId,projectId:task.projectId,name:'Chosen status',group:'in_progress',position:1,revision:1}])});
- await ui.user.click(await screen.findByRole('button',{name:'Add task'}));await ui.user.click(screen.getByRole('button',{name:'More details'}));await screen.findByRole('dialog',{name:'New task'});
+ await ui.user.click(await screen.findByRole('button',{name:'Add task'}));await ui.user.click(screen.getByRole('textbox',{name:'Task name'}));await ui.user.keyboard('{Shift>}{F10}{/Shift}');await ui.user.click(within(await screen.findByRole('menu',{name:'New task actions'})).getByRole('menuitem',{name:'More details'}));await screen.findByRole('dialog',{name:'New task'});
  await ui.user.click(screen.getByRole('combobox',{name:'Status'}));await ui.user.click(screen.getByRole('option',{name:'Chosen status'}));expect(screen.getByLabelText('Task name')).toHaveValue('');await ui.user.keyboard('{Escape}');await waitFor(()=>expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
  expect(unload()).toBe(true);expect(protectedCommandsFor(ui.client).protecting).toBe(false);
  await act(async()=>{await ui.router.navigate('/outside-repro');});const guard=await screen.findByRole('dialog',{name:'Leave this page?'});await ui.user.click(within(guard).getByRole('button',{name:'Stay'}));

@@ -231,5 +231,15 @@ export function useTaskTimeTable(props: Props) {
       {breakdown ? <div className="mt-5 space-y-4"><dl className="space-y-2 text-sm"><div><dt className="text-muted">{t('work-categories.selectedPersonWholeWorkPackage')}</dt><dd className="font-semibold">{breakdown.packageRow.subjectActiveSourceCount ? formatEstimate(breakdown.packageRow.subjectActualMinutes) : t('work-categories.notRecorded')}</dd></div><div><dt className="text-muted">{t('work-categories.everyoneWholeWorkPackage')}</dt><dd className="font-semibold">{breakdown.packageRow.totalActiveSourceCount ? formatEstimate(breakdown.packageRow.totalActualMinutes) : t('work-categories.notRecorded')}</dd></div></dl><p className="text-xs text-muted">{t('work-categories.theseTotalsCombineSeparateEntriesChooseASpecificSource')}</p>{breakdown.logs.map((log) => <div key={log.id} className="space-y-2 rounded-lg border border-line p-3 text-sm"><p className="font-medium">{props.tasks.find((task) => task.id === log.taskId)?.title ?? t('work-categories.taskForThisEntry')}</p><p className="text-xs text-muted">{props.members.find((member) => member.id === log.membershipId)?.displayName ?? t('work-categories.savedPerson')} · {formatEstimate(log.minutes)} · {log.state === 'void' ? t('work-categories.voided') : <RecordedWorkLabel log={log}/>}</p><CategoryBadge category={log.category} />{writable && (canWriteOthers || log.membershipId === ownMembershipId) ? <Button size="sm" disabled={opening} onClick={() => editExistingLog(log, breakdown.period)}>{t('work-categories.editThisTimeEntry')}</Button> : null}</div>)}<Link to={weeklyPlanningHref(workspace.id, project.id, { periodId: breakdown.period.id, workerId: breakdown.workerId })} className="block rounded text-sm font-medium text-accent-ink">{t('work-categories.openWeeklyPlanAndReports')}</Link></div> : null}
     </DialogShell>
   </>;
-  return { controls, notices, columns, dialogs, context: { periodId, workerId } as const };
+  // A deliberate edit in a new row captures the explicitly selected week and the resolved
+  // person shown by this lens. Merely displaying this context never stages or writes hours.
+  const initialRowContext = {
+    periodId: params.get('week'),
+    membershipId: props.members.some(member => member.id === workerId) ? workerId : null,
+    period: period.isSuccess ? period.data : null,
+    packages: projection.packages,
+    writable: canWriteSubject && !denied,
+    current: ready && !period.isFetching && !projection.isFetching,
+  } as const;
+  return { controls, notices, columns, dialogs, context: { periodId, workerId } as const, initialRowContext };
 }

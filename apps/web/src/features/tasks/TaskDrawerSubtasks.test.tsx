@@ -31,17 +31,22 @@ describe('drawer loaded subtasks', () => {
     const { calls } = installFakeApi(routes([additional, parent, grandchild, detail, unrelated]));
     renderApp(`${tablePath}?task=${PARENT}`);
     const list = await subtasks();
-    const buttons = await list.findAllByRole('button');
+    const buttons = await list.findAllByRole('button', { name: /^Open subtask “/ });
     expect(buttons.map(button => button.getAttribute('aria-label'))).toEqual([
       `Open subtask “${longTitle}” · ${STATUS} · Detail`,
       `Open subtask “${additional.title}” · ${STATUS} · Additional work`,
     ]);
-    // The full title is visible text, not cut to one line.
-    const full = list.getByText(longTitle);
-    expect(full.className).not.toContain('truncate');
+    // The fixed-height row truncates visually but preserves the complete name and tooltip.
+    const full = list.getByRole('button', { name: longTitle });
+    expect(full).toHaveTextContent(longTitle);
+    expect(full).toHaveAttribute('title', longTitle);
+    expect(full).toHaveAccessibleName(longTitle);
+    expect(full).toHaveClass('truncate');
+    expect(full.closest('tr')).toHaveAttribute('data-task-row', detail.id);
+    expect(full.closest('tr')).toHaveClass('h-[41px]');
     expect(list.queryByText(grandchild.title)).not.toBeInTheDocument(); expect(list.queryByText(unrelated.title)).not.toBeInTheDocument();
     expect(list.queryByText(/loaded in this view/)).not.toBeInTheDocument();
-    // The explicit Detail / Additional work choice stays in the separate Add subtask flow.
+    // The explicit Detail / Additional work choice stays in the Add subtask flow (its inline row's More details).
     expect(screen.getByRole('button', { name: 'Add subtask' })).toBeInTheDocument();
     expect(writes(calls)).toHaveLength(0);
   });

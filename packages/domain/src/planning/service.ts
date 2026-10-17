@@ -15,7 +15,7 @@ import { capabilityRequiredError,DomainError,notFoundError,unauthenticatedError 
 import { canonicalJson } from '../tasks/service.js';
 import type { PlanningApplication,PlanningPage } from './application.js';
 import { captureFreezeSnapshot,createPlanningMutationGuard,freezePreviewHash,isCommittedPlanningRejection,performFreeze,unwrapPlanningOutcome } from './freeze.js';
-import type { OriginalPackageEstimateSource,PlanningApplicationDependencies,PlanningApplicationWriteScope,PlanningMutationCommand,PlanningRepository,PlanningWriteScope } from './ports.js';
+import type { OriginalPackageEstimateSource,PlanningApplicationDependencies,PlanningApplicationWriteScope,PlanningMutationCommand,PlanningRepository,PlanningTools,PlanningWriteScope } from './ports.js';
 
 interface Parser<T> {safeParse(value:unknown):{success:true;data:T}|{success:false;error:{issues:readonly {path:readonly PropertyKey[]}[]}}}
 function parse<T>(schema:Parser<T>,value:unknown):T {const p=schema.safeParse(value);if(p.success)return p.data;throw new DomainError('VALIDATION_FAILED','The input is invalid.',{details:{fields:p.error.issues.map(i=>i.path.join('.'))}});}
@@ -50,6 +50,73 @@ function summary(rows:WeeklyPlanFactRowDto[]):WeeklyPlanFactSummaryDto {
     factCoverage:{recordedItemCount:recorded.length,totalItemCount:count,ratio:count?recorded.length/count:null,complete:count>0&&recorded.length===count},
     totalVarianceMinutes:complete?actualMinutes-knownPlannedMinutes:null,totalVariancePercent:complete&&knownPlannedMinutes>0?(actualMinutes-knownPlannedMinutes)/knownPlannedMinutes*100:null,
     addedActualMinutes:rows.filter(r=>r.scope==='added_scope').reduce((a,r)=>a+r.actualMinutes,0),unplannedActualMinutes:rows.filter(r=>r.scope==='unplanned').reduce((a,r)=>a+r.actualMinutes,0),totalActualMinutes:rows.reduce((a,r)=>a+r.actualMinutes,0)};
+}
+async function validateAllocations(repo:PlanningRepository,ws:string,projectId:string,packageId:string,planned:number|null,allocations:{taskId:string;minutes:number}[],previous:readonly {taskId:string;minutes:number}[]=[]):Promise<void> {
+  const total=allocations.reduce((a,v)=>a+v.minutes,0);
+  if(planned===null?total>0:total>planned)throw rule('Allocations cannot exceed the known personal weekly plan.');
+  const sources=await repo.captureProject(ws,projectId),chosen=new Set(allocations.map(a=>a.taskId));
+  for(const a of allocations) {
+    const task=found(await repo.tasks.findTask(ws,a.taskId));
+    if(task.projectId!==projectId||task.workPackageId!==packageId)throw rule('An allocation must target a task of the same project and package.');
+    if(task.archivedAt!==null) {const retained=previous.find(old=>old.taskId===a.taskId);if(!retained||a.minutes>retained.minutes)throw rule('An archived task cannot receive a new or increased allocation.');}
+    let parent=task.parentTaskId;const seen=new Set<string>();
+    while(parent) {if(seen.has(parent))throw rule('Task hierarchy has a cycle.');seen.add(parent);if(chosen.has(parent))throw rule('Allocate either an ancestor or its descendant, not both.');parent=sources.tasks.find(t=>t.id===parent)?.parentTaskId??null;}
+  }
+}
+async function requireOpenProject(repo:PlanningRepository,ws:string,id:string):Promise<void> {if(found(await repo.tasks.findProject(ws,id)).archivedAt!==null)throw rule('The project is archived.');}
+type PlanningIdTools=Pick<PlanningTools,'newId'>;
+const scopedNewId=(tools:PlanningIdTools)=>()=>parse(idSchema,tools.newId());
+
+/** Current-membership + self/others capability check of a plan or time target. Callers own currentauth, guard and receipt. */
+export async function authorizePlanningMemberInScope(scope:PlanningWriteScope,memberId:string,kind:'plan'|'time'):Promise<void> {
+  const members=await scope.repository.tasks.access.listActiveMemberships(scope.context.workspaceId);
+  // Existing historical targets may be revoked; membership lookup in capture preserves them.
+  const access=members.find(m=>m.id===memberId);
+  if(!access) {
+    const periods=await scope.repository.listPeriods(scope.context.workspaceId);
+    const project=periods[0];
+    if(!project||!(await scope.repository.captureProject(scope.context.workspaceId,project.projectId)).memberships.some(m=>m.id===memberId))throw notFoundError();
+  }
+  requireCap(scope,memberId===scope.access.membership.id?`${kind}.write_self`:`${kind}.write_others`);
+}
+/** `commitment.create` work body only: no authorization, guard or receipt. */
+export async function createCommitmentInScope(scope:PlanningWriteScope,id:string,input:unknown,tools:PlanningIdTools):Promise<PeriodCommitmentDto> {
+  const periodId=parse(idSchema,id),p=parse(createPeriodCommitmentInputSchema,input),newId=scopedNewId(tools),now=scope.barrierAt.toISOString();
+  const repo=scope.repository,ws=scope.context.workspaceId,period=found(await repo.findPeriod(ws,periodId));await requireOpenProject(repo,ws,period.projectId);
+  const pkg=found(await repo.tasks.findWorkPackage(ws,p.workPackageId));if(pkg.projectId!==period.projectId)throw rule('The package belongs to another project.');
+  const sources=await repo.captureProject(ws,period.projectId);if(!sources.activeMembershipIds.includes(p.membershipId))throw notFoundError();
+  const current=await repo.listCommitments(ws,periodId);if(current.some(c=>c.workPackageId===p.workPackageId&&c.membershipId===p.membershipId))throw new DomainError('REVISION_CONFLICT','This personal commitment already exists.');
+  await validateAllocations(repo,ws,period.projectId,p.workPackageId,p.plannedMinutes,p.allocations);
+  const baselines=await repo.listBaselines(ws,periodId),added=baselines.some(b=>b.scope==='project'||b.membershipId===p.membershipId);
+  const row:PeriodCommitmentDto={id:newId(),workspaceId:ws,projectId:period.projectId,periodId,workPackageId:p.workPackageId,membershipId:p.membershipId,plannedMinutes:p.plannedMinutes,allocations:p.allocations,unallocatedMinutes:p.plannedMinutes===null?null:p.plannedMinutes-p.allocations.reduce((a,v)=>a+v.minutes,0),state:'active',revision:1,classification:added?'added':'planned',baselineIds:[],createdAt:now,updatedAt:now};
+  await repo.saveCommitment(row);const change=await scope.recordChange({entityType:'period_commitment',entityId:row.id,action:'created',entityRevision:1,diff:{after:row},outbox:{type:'period_commitment.created',payload:{commitmentId:row.id,periodId,classification:row.classification}}});await repo.insertCommitmentRevision(row,scope.context.actor.userId,change.changeSeq,newId());return row;
+}
+/** `commitment.update` work body only: no authorization, guard or receipt. */
+export async function updateCommitmentInScope(scope:PlanningWriteScope,id:string,commitmentId:string,input:unknown,tools:PlanningIdTools):Promise<PeriodCommitmentDto> {
+  const periodId=parse(idSchema,id),cid=parse(idSchema,commitmentId),p=parse(updatePeriodCommitmentInputSchema,input),newId=scopedNewId(tools),now=scope.barrierAt.toISOString();
+  const repo=scope.repository,row=found(await repo.findCommitment(scope.context.workspaceId,cid));if(row.periodId!==periodId)throw notFoundError();revision(row.revision,p.expectedRevision);
+  await validateAllocations(repo,row.workspaceId,row.projectId,row.workPackageId,p.plannedMinutes,p.allocations,row.allocations);
+  const unchanged=row.plannedMinutes===p.plannedMinutes&&row.state===p.state&&canonicalJson([...row.allocations].sort((a,b)=>a.taskId.localeCompare(b.taskId)))===canonicalJson([...p.allocations].sort((a,b)=>a.taskId.localeCompare(b.taskId)));
+  if(unchanged)return row;
+  const relevant=(await repo.listBaselines(row.workspaceId,periodId)).filter(b=>b.scope==='project'||b.membershipId===row.membershipId);
+  const restoredAdded=p.state==='active'&&relevant.length>0&&!relevant.some(b=>b.snapshot.commitments.some(c=>c.id===row.id));
+  const next={...row,...p,classification:row.classification==='added'||restoredAdded?'added' as const:'planned' as const,unallocatedMinutes:p.plannedMinutes===null?null:p.plannedMinutes-p.allocations.reduce((a,v)=>a+v.minutes,0),revision:row.revision+1,updatedAt:now};delete (next as Partial<typeof p>).expectedRevision;
+  await repo.saveCommitment(next);const change=await scope.recordChange({entityType:'period_commitment',entityId:row.id,action:'updated',entityRevision:next.revision,diff:{before:row,after:next},outbox:{type:'period_commitment.updated',payload:{commitmentId:row.id,periodId,revision:next.revision}}});await repo.insertCommitmentRevision(next,scope.context.actor.userId,change.changeSeq,newId());return next;
+}
+/** `work.set` work body only: no authorization, guard or receipt. */
+export async function setManualPeriodWorkInScope(scope:PlanningApplicationWriteScope,taskId:string,periodId:string,memberId:string,input:unknown,tools:PlanningIdTools):Promise<ManualPeriodWorkLogDto> {
+  const tid=parse(idSchema,taskId),pid=parse(idSchema,periodId),mid=parse(idSchema,memberId),p=parse(setManualPeriodWorkInputSchema,input),newId=scopedNewId(tools),now=scope.barrierAt.toISOString();
+  const repo=scope.repository,ws=scope.context.workspaceId,period=found(await repo.findPeriod(ws,pid)),task=found(await repo.tasks.findTask(ws,tid));if(task.projectId!==period.projectId)throw rule('The task belongs to another project.');
+  const old=await repo.findManualWork(ws,tid,pid,mid);
+  if(old===null?p.expectedRevision!==null:p.expectedRevision!==old.revision)throw new DomainError('REVISION_CONFLICT','The manual work source changed.');
+  if(old&&old.minutes===p.minutes&&old.state===p.state)return old;
+  if((old!==null||p.state==='void')&&p.reason===null)throw rule('A correction or void requires a reason.');
+  if(old===null&&p.state==='void')throw rule('An absent work source cannot be voided.');
+  const sources=await repo.captureProject(ws,period.projectId);if(old===null&&!sources.activeMembershipIds.includes(mid))throw notFoundError();
+  const id=old?.id??newId(),rev=(old?.revision??0)+1;
+  const change=await scope.recordChange({entityType:'work_log',entityId:id,action:old?'revised':'created',entityRevision:rev,diff:{taskId:tid,workPackageId:task.workPackageId,membershipId:mid,periodId:pid,before:old?{minutes:old.minutes,state:old.state,revision:old.revision}:null,after:{minutes:p.minutes,state:p.state,revision:rev}},...(p.reason===null?{}:{reason:p.reason}),outbox:{type:'work_log.revised',payload:{workLogId:id,periodId:pid,revision:rev}}});
+  const row:ManualPeriodWorkLogDto={id,workspaceId:ws,projectId:period.projectId,taskId:tid,workPackageId:old?.workPackageId??task.workPackageId,membershipId:mid,periodId:pid,sourceKind:'manual_period',sourceKey:`${tid}:${mid}:${pid}`,precision:'period',revision:rev,revisionId:newId(),minutes:p.minutes,state:p.state,reason:p.reason,actorUserId:scope.context.actor.userId,recordedAt:now,changeSeq:change.changeSeq.toString(),category:old===null?await scope.categoryResolver.resolve(tid):canonicalWorkCategory(old)};
+  await repo.saveManualWork(row);await repo.insertWorkRevision(row);return row;
 }
 
 export function createPlanningApplication(deps:PlanningApplicationDependencies):PlanningApplication {
@@ -93,30 +160,7 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
     });
     return unwrapPlanningOutcome(outcome);
   }
-  async function authorizeMember(scope:PlanningWriteScope,memberId:string,kind:'plan'|'time'):Promise<void> {
-    const members=await scope.repository.tasks.access.listActiveMemberships(scope.context.workspaceId);
-    // Existing historical targets may be revoked; membership lookup in capture preserves them.
-    const access=members.find(m=>m.id===memberId);
-    if(!access) {
-      const periods=await scope.repository.listPeriods(scope.context.workspaceId);
-      const project=periods[0];
-      if(!project||!(await scope.repository.captureProject(scope.context.workspaceId,project.projectId)).memberships.some(m=>m.id===memberId))throw notFoundError();
-    }
-    requireCap(scope,memberId===scope.access.membership.id?`${kind}.write_self`:`${kind}.write_others`);
-  }
-  async function validateAllocations(repo:PlanningRepository,ws:string,projectId:string,packageId:string,planned:number|null,allocations:{taskId:string;minutes:number}[],previous:readonly {taskId:string;minutes:number}[]=[]):Promise<void> {
-    const total=allocations.reduce((a,v)=>a+v.minutes,0);
-    if(planned===null?total>0:total>planned)throw rule('Allocations cannot exceed the known personal weekly plan.');
-    const sources=await repo.captureProject(ws,projectId),chosen=new Set(allocations.map(a=>a.taskId));
-    for(const a of allocations) {
-      const task=found(await repo.tasks.findTask(ws,a.taskId));
-      if(task.projectId!==projectId||task.workPackageId!==packageId)throw rule('An allocation must target a task of the same project and package.');
-      if(task.archivedAt!==null) {const retained=previous.find(old=>old.taskId===a.taskId);if(!retained||a.minutes>retained.minutes)throw rule('An archived task cannot receive a new or increased allocation.');}
-      let parent=task.parentTaskId;const seen=new Set<string>();
-      while(parent) {if(seen.has(parent))throw rule('Task hierarchy has a cycle.');seen.add(parent);if(chosen.has(parent))throw rule('Allocate either an ancestor or its descendant, not both.');parent=sources.tasks.find(t=>t.id===parent)?.parentTaskId??null;}
-    }
-  }
-  async function requireOpenProject(repo:PlanningRepository,ws:string,id:string):Promise<void> {if(found(await repo.tasks.findProject(ws,id)).archivedAt!==null)throw rule('The project is archived.');}
+  const authorizeMember=authorizePlanningMemberInScope;
 
   return {
     async listPeriods(ctx,input) {const q=parse(planningPeriodListQuerySchema,input);return read(ctx,async(repo,c)=>{found(await repo.tasks.findProject(c.workspaceId,q.projectId));return page(repo,c,await repo.listPeriods(c.workspaceId,q.projectId),q,{kind:'periods',projectId:q.projectId});});},
@@ -145,29 +189,11 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
     async listCommitments(ctx,id,input) {const periodId=parse(idSchema,id),q=parse(periodCommitmentListQuerySchema,input);return read(ctx,async(repo,c)=>{found(await repo.findPeriod(c.workspaceId,periodId));let rows=await repo.listCommitments(c.workspaceId,periodId);if(q.membershipId)rows=rows.filter(r=>r.membershipId===q.membershipId);return page(repo,c,rows,q,{kind:'commitments',periodId,membershipId:q.membershipId??null});});},
     async createCommitment(ctx,id,input) {
       const periodId=parse(idSchema,id),p=parse(createPeriodCommitmentInputSchema,input);
-      return mutate(ctx,'plan.write_self','commitment.create',{periodId},p,periodCommitmentSchema,async(scope,now)=>{
-        const repo=scope.repository,ws=scope.context.workspaceId,period=found(await repo.findPeriod(ws,periodId));await requireOpenProject(repo,ws,period.projectId);
-        const pkg=found(await repo.tasks.findWorkPackage(ws,p.workPackageId));if(pkg.projectId!==period.projectId)throw rule('The package belongs to another project.');
-        const sources=await repo.captureProject(ws,period.projectId);if(!sources.activeMembershipIds.includes(p.membershipId))throw notFoundError();
-        const current=await repo.listCommitments(ws,periodId);if(current.some(c=>c.workPackageId===p.workPackageId&&c.membershipId===p.membershipId))throw new DomainError('REVISION_CONFLICT','This personal commitment already exists.');
-        await validateAllocations(repo,ws,period.projectId,p.workPackageId,p.plannedMinutes,p.allocations);
-        const baselines=await repo.listBaselines(ws,periodId),added=baselines.some(b=>b.scope==='project'||b.membershipId===p.membershipId);
-        const row:PeriodCommitmentDto={id:newId(),workspaceId:ws,projectId:period.projectId,periodId,workPackageId:p.workPackageId,membershipId:p.membershipId,plannedMinutes:p.plannedMinutes,allocations:p.allocations,unallocatedMinutes:p.plannedMinutes===null?null:p.plannedMinutes-p.allocations.reduce((a,v)=>a+v.minutes,0),state:'active',revision:1,classification:added?'added':'planned',baselineIds:[],createdAt:now,updatedAt:now};
-        await repo.saveCommitment(row);const change=await scope.recordChange({entityType:'period_commitment',entityId:row.id,action:'created',entityRevision:1,diff:{after:row},outbox:{type:'period_commitment.created',payload:{commitmentId:row.id,periodId,classification:row.classification}}});await repo.insertCommitmentRevision(row,scope.context.actor.userId,change.changeSeq,newId());return row;
-      },scope=>authorizeMember(scope,p.membershipId,'plan'));
+      return mutate(ctx,'plan.write_self','commitment.create',{periodId},p,periodCommitmentSchema,scope=>createCommitmentInScope(scope,periodId,p,tools),scope=>authorizeMember(scope,p.membershipId,'plan'));
     },
     async updateCommitment(ctx,id,commitmentId,input) {
       const periodId=parse(idSchema,id),cid=parse(idSchema,commitmentId),p=parse(updatePeriodCommitmentInputSchema,input);
-      return mutate(ctx,'plan.write_self','commitment.update',{periodId,commitmentId:cid},p,periodCommitmentSchema,async(scope,now)=>{
-        const repo=scope.repository,row=found(await repo.findCommitment(scope.context.workspaceId,cid));if(row.periodId!==periodId)throw notFoundError();revision(row.revision,p.expectedRevision);
-        await validateAllocations(repo,row.workspaceId,row.projectId,row.workPackageId,p.plannedMinutes,p.allocations,row.allocations);
-        const unchanged=row.plannedMinutes===p.plannedMinutes&&row.state===p.state&&canonicalJson([...row.allocations].sort((a,b)=>a.taskId.localeCompare(b.taskId)))===canonicalJson([...p.allocations].sort((a,b)=>a.taskId.localeCompare(b.taskId)));
-        if(unchanged)return row;
-        const relevant=(await repo.listBaselines(row.workspaceId,periodId)).filter(b=>b.scope==='project'||b.membershipId===row.membershipId);
-        const restoredAdded=p.state==='active'&&relevant.length>0&&!relevant.some(b=>b.snapshot.commitments.some(c=>c.id===row.id));
-        const next={...row,...p,classification:row.classification==='added'||restoredAdded?'added' as const:'planned' as const,unallocatedMinutes:p.plannedMinutes===null?null:p.plannedMinutes-p.allocations.reduce((a,v)=>a+v.minutes,0),revision:row.revision+1,updatedAt:now};delete (next as Partial<typeof p>).expectedRevision;
-        await repo.saveCommitment(next);const change=await scope.recordChange({entityType:'period_commitment',entityId:row.id,action:'updated',entityRevision:next.revision,diff:{before:row,after:next},outbox:{type:'period_commitment.updated',payload:{commitmentId:row.id,periodId,revision:next.revision}}});await repo.insertCommitmentRevision(next,scope.context.actor.userId,change.changeSeq,newId());return next;
-      },async scope=>{const row=found(await scope.repository.findCommitment(scope.context.workspaceId,cid));if(row.periodId!==periodId)throw notFoundError();await authorizeMember(scope,row.membershipId,'plan');});
+      return mutate(ctx,'plan.write_self','commitment.update',{periodId,commitmentId:cid},p,periodCommitmentSchema,scope=>updateCommitmentInScope(scope,periodId,cid,p,tools),async scope=>{const row=found(await scope.repository.findCommitment(scope.context.workspaceId,cid));if(row.periodId!==periodId)throw notFoundError();await authorizeMember(scope,row.membershipId,'plan');});
     },
     async previewFreeze(ctx,id,input) {
       const periodId=parse(idSchema,id),p=parse(freezePreviewInputSchema,input),c=normalize(ctx);
@@ -202,19 +228,7 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
     async listWorkLogs(ctx,input) {const q=parse(workLogListQuerySchema,input);return read(ctx,async(repo,c)=>{found(await repo.findPeriod(c.workspaceId,q.periodId));let rows=await repo.listWorkLogs(c.workspaceId,q.periodId);if(q.taskId)rows=rows.filter(r=>r.taskId===q.taskId);if(q.membershipId)rows=rows.filter(r=>r.membershipId===q.membershipId);return page(repo,c,rows,q,{kind:'worklogs',periodId:q.periodId,taskId:q.taskId??null,membershipId:q.membershipId??null});});},
     async setManualPeriodWork(ctx,taskId,periodId,memberId,input) {
       const tid=parse(idSchema,taskId),pid=parse(idSchema,periodId),mid=parse(idSchema,memberId),p=parse(setManualPeriodWorkInputSchema,input);
-      return mutate(ctx,'time.write_self','work.set',{taskId:tid,periodId:pid,membershipId:mid},p,manualPeriodWorkLogSchema,async(scope,now)=>{
-        const repo=scope.repository,ws=scope.context.workspaceId,period=found(await repo.findPeriod(ws,pid)),task=found(await repo.tasks.findTask(ws,tid));if(task.projectId!==period.projectId)throw rule('The task belongs to another project.');
-        const old=await repo.findManualWork(ws,tid,pid,mid);
-        if(old===null?p.expectedRevision!==null:p.expectedRevision!==old.revision)throw new DomainError('REVISION_CONFLICT','The manual work source changed.');
-        if(old&&old.minutes===p.minutes&&old.state===p.state)return old;
-        if((old!==null||p.state==='void')&&p.reason===null)throw rule('A correction or void requires a reason.');
-        if(old===null&&p.state==='void')throw rule('An absent work source cannot be voided.');
-        const sources=await repo.captureProject(ws,period.projectId);if(old===null&&!sources.activeMembershipIds.includes(mid))throw notFoundError();
-        const id=old?.id??newId(),rev=(old?.revision??0)+1;
-        const change=await scope.recordChange({entityType:'work_log',entityId:id,action:old?'revised':'created',entityRevision:rev,diff:{taskId:tid,workPackageId:task.workPackageId,membershipId:mid,periodId:pid,before:old?{minutes:old.minutes,state:old.state,revision:old.revision}:null,after:{minutes:p.minutes,state:p.state,revision:rev}},...(p.reason===null?{}:{reason:p.reason}),outbox:{type:'work_log.revised',payload:{workLogId:id,periodId:pid,revision:rev}}});
-        const row:ManualPeriodWorkLogDto={id,workspaceId:ws,projectId:period.projectId,taskId:tid,workPackageId:old?.workPackageId??task.workPackageId,membershipId:mid,periodId:pid,sourceKind:'manual_period',sourceKey:`${tid}:${mid}:${pid}`,precision:'period',revision:rev,revisionId:newId(),minutes:p.minutes,state:p.state,reason:p.reason,actorUserId:scope.context.actor.userId,recordedAt:now,changeSeq:change.changeSeq.toString(),category:old===null?await scope.categoryResolver.resolve(tid):canonicalWorkCategory(old)};
-        await repo.saveManualWork(row);await repo.insertWorkRevision(row);return row;
-      },scope=>authorizeMember(scope,mid,'time'));
+      return mutate(ctx,'time.write_self','work.set',{taskId:tid,periodId:pid,membershipId:mid},p,manualPeriodWorkLogSchema,scope=>setManualPeriodWorkInScope(scope,tid,pid,mid,p,tools),scope=>authorizeMember(scope,mid,'time'));
     },
     async listReportRuns(ctx,input) {const q=parse(reportRunListQuerySchema,input);return read(ctx,async(repo,c)=>{found(await repo.findPeriod(c.workspaceId,q.periodId));return page(repo,c,await repo.listReportRuns(c.workspaceId,q.periodId),q,{kind:'reports',periodId:q.periodId});},'reports.read');},
     async createReportRun(ctx,input) {

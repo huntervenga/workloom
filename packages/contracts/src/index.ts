@@ -26,3 +26,8 @@ export type { TaskTableBuiltinColumn, TableColumnRef, ColumnChoice, PersonalTabl
 export * from './cutoff.js';
 
 export * from './workspace-change-head.js';
+
+export { createWorkspaceInputSchema, isSupportedWorkspaceTimezone } from './workspace-create.js';
+export type { CreateWorkspaceInput } from './workspace-create.js';
+
+export * from './task-row.js';

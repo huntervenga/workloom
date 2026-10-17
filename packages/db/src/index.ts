@@ -129,3 +129,7 @@ export { createWorkspaceChangeHeadApplication } from './workspace-change-head/ap
 export { createWorkspaceChangeHeadReadRepository } from './workspace-change-head/repository.js';
 
 export { createSharedAuthStore } from './shared-auth/store.js';
+
+export { createWorkspaceCreateApplication } from './workspaces/create.js';
+
+export { createTaskRowApplication } from './task-rows/task-row-application.js';

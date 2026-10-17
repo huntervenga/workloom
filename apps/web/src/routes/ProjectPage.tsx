@@ -1,3 +1,4 @@
+import { captureDraftPlacement, type DraftPlacementSnapshot } from '../features/task-table/draftPlacement';
 import { ChoicePicker } from '../shared/ChoicePicker';
 import { DialogReturnFocus } from '../shared/DialogShell';
 import { compareTaskRows, orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
@@ -13,7 +14,7 @@ import { usePersonalTablePreference } from '../features/task-table/usePersonalTa
 import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/task-comments';
 import { ProjectActions } from '../features/projects/ProjectActions';
 import { weeklyPlanningHref } from '../features/planning/navigation';
-import { QuickTaskAdd, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
+import { QuickTaskAdd, QuickTaskDraftPreview, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
 import { InlineTaskEdit, type InlineCloseReason, type InlineSaveIntent } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
 import { SaveFeedback } from '../shared/SaveFeedback';
@@ -41,8 +42,10 @@ import type {
   TaskFieldDefinitionDto,
   TaskFieldValueDto,
   TaskStatusDto,
+  TaskWorkScope,
   WorkspaceDto,
 } from '@workloom/contracts';
+import { explicitTimeContext, type InitialTimeContext } from '../features/tasks/InitialTaskCells';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
@@ -59,7 +62,7 @@ import {
 import { RenameProjectDialog } from '../features/projects/ProjectDialogs';
 import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMutation } from '../features/projects/queries';
 import { CreateSectionDialog, RenameSectionDialog } from '../features/projects/SectionDialogs';
-import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, type TaskTableCustomColumn } from '../features/task-table';
+import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, type TaskDropPlacement, type TaskTableCustomColumn, type TaskTableDraftRow, type TaskTableQuickAdd } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
 import { TaskDrawer, type LoadedSubtasks } from '../features/tasks/TaskDrawer';
 import {
@@ -113,6 +116,36 @@ interface QueuedInline {
   receipts: readonly (TaskDto | undefined)[];
 }
 
+
+/**
+ * Enter-continued creation right after a task in manual order. New rows stay at this anchor
+ * instead of closing the section; each queued create is placed after its predecessor.
+ */
+interface QuickInsertion {
+  placement?: DraftPlacementSnapshot | null;
+  anchorTaskId: string;
+  request: CreateRequest;
+  /** The unsent input row is shown; submitted rows stay visible after it closes until they resolve. */
+  open: boolean;
+  /** Confirmed creates of this chain, kept in place until a list loaded after them arrives. */
+  confirmed: readonly { task: TaskDto; at: number }[];
+}
+
+/** A queued create started from this insertion chain (same section and parent, anchored). */
+function belongsToInsertion(request: CreateRequest, insertion: QuickInsertion): boolean {
+  return request.sectionId === insertion.request.sectionId && (request.parent?.id ?? null) === (insertion.request.parent?.id ?? null)
+    && (request.insertion !== undefined || request.insertionAnchor !== undefined || continuesInPlace(request));
+}
+
+/**
+ * A first subtask under a parent with no loaded child: drawn right below the parent but sent
+ * without an insertion anchor (the parent is not a sibling), so the first body is the legacy
+ * parent create and each next row follows the previous confirmed one. Read by the create queue.
+ */
+type FirstChildRequest = CreateRequest & { continueInPlace?: true };
+function continuesInPlace(request: CreateRequest): boolean {
+  return (request as FirstChildRequest).continueInPlace === true;
+}
 
 function fieldValueKey(taskId: string, fieldId: string): string {
   return `${taskId.toLowerCase()}:${fieldId.toLowerCase()}`;
@@ -217,6 +250,15 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
   const [quickAddSection, setQuickAddSection] = useState<string | null | undefined>(undefined);
+  const [insertion, setInsertion] = useState<QuickInsertion | null>(null);
+  const queuedRowKeys = useRef({ next: 0, keys: new WeakMap<object, string>() });
+  const queuedRowKey = (session: object) => {
+    const known = queuedRowKeys.current.keys.get(session);
+    if (known) return known;
+    const key = `queued-${++queuedRowKeys.current.next}`;
+    queuedRowKeys.current.keys.set(session, key);
+    return key;
+  };
   const inlineGeneration = useRef(0);
   const inlineReceipt = useRef<{ task: TaskDto; field: TaskInlineField; generation: number; presentationKey: string } | null>(null);
   const inlineFocusReturn = useRef<{ task: TaskDto; field: TaskInlineField; generation: number; presentationKey: string; ownsFocus: () => boolean; dispose: () => void } | null>(null);
@@ -418,8 +460,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   }, [taskPresentationKey, invalidateInlineSave]);
   const completion = useTaskCompletion(commands, { tasks: dedupeTasks(shownTasks), statuses: statuses.data ?? [], writable: completionWritable, editingTaskId: activeInline?.taskId ?? null, focusScope: taskPresentationKey }, () => setAnnouncement(message('tasks.completion.saved')));
 
-  const inlineHead = useRef({ activeInline, loadedPackages, grouping, presentationKey: taskPresentationKey, completionWritable });
-  useLayoutEffect(() => { inlineHead.current = { activeInline, loadedPackages, grouping, presentationKey: taskPresentationKey, completionWritable }; });
+  const inlineHead = useRef({ activeInline, loadedPackages, grouping, sortMode, shownTasks, presentationKey: taskPresentationKey, completionWritable });
+  useLayoutEffect(() => { inlineHead.current = { activeInline, loadedPackages, grouping, sortMode, shownTasks, presentationKey: taskPresentationKey, completionWritable }; });
   // Plain Enter on a saved or unchanged root-task title continues with a new task in its section.
   const nextTaskSection = (task: TaskDto): string | null | undefined => {
     const head = inlineHead.current;
@@ -427,6 +469,34 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     if (task.sectionId === null) return null;
     const section = sections.data?.find(item => item.id === task.sectionId);
     return section && section.archivedAt === null ? section.id : undefined;
+  };
+  // In manual order the new task goes right after the task (root or subtask), as its sibling.
+  // Other orders keep the section-end row; the person's sort and filters are never reset.
+  const insertionTarget = (task: TaskDto): { sectionId: string | null; parent: TaskDto | null } | undefined => {
+    const head = inlineHead.current;
+    if (head.sortMode !== 'manual' || !head.completionWritable || !canEditTaskInline(task)) return undefined;
+    if (task.sectionId !== null && sections.data?.find(item => item.id === task.sectionId)?.archivedAt !== null) return undefined;
+    if (task.parentTaskId === null) return { sectionId: task.sectionId, parent: null };
+    // The child request carries the full loaded parent, so detail estimates inherit as in the drawer.
+    const parent = dedupeTasks(head.shownTasks).find(item => item.id === task.parentTaskId);
+    return parent && parent.archivedAt === null && parent.meetingId === null ? { sectionId: task.sectionId, parent } : undefined;
+  };
+  const insertionAfter = (anchor: TaskDto, target: { sectionId: string | null; parent: TaskDto | null }): QuickInsertion => {
+    const group = taskGroups.find(item => visibleTaskRows(item.roots, new Set()).some(node => node.task.id === anchor.id));
+    const placement = group ? captureDraftPlacement(group, anchor.id) : null;
+    return {
+      anchorTaskId: anchor.id, placement,
+      request: { sectionId: target.sectionId, parent: target.parent, insertion: { anchorTaskId: anchor.id, placement: 'after' },
+        ...(placement?.defaultResponsibleMembershipId !== undefined ? { defaultResponsibleMembershipId: placement.defaultResponsibleMembershipId } : {}) },
+      open: true, confirmed: [],
+    };
+  };
+  const continuable = (task: TaskDto) => insertionTarget(task) !== undefined || nextTaskSection(task) !== undefined;
+  const continueAfter = (task: TaskDto) => {
+    const target = insertionTarget(task);
+    if (target) { startInsertion(task, target); return; }
+    const next = nextTaskSection(task);
+    if (next !== undefined) startQuickAdd(next);
   };
   const beginInlineSave = (form: HTMLFormElement, intent: InlineSaveIntent) => {
     inlineFocusReturn.current?.dispose();
@@ -452,16 +522,20 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     inlineLeases.current.add(dispose);
     const sourceTask = origin.activeInline?.field === 'title' && intent.continueWithNext
       ? dedupeTasks(shownTasks).find(task => task.id === origin.activeInline?.taskId) : undefined;
-    const immediateNext = sourceTask ? nextTaskSection(sourceTask) : undefined;
+    const immediateInsertion = sourceTask ? insertionTarget(sourceTask) : undefined;
+    const immediateNext = immediateInsertion !== undefined ? immediateInsertion.sectionId : sourceTask ? nextTaskSection(sourceTask) : undefined;
     const continuedSession = sourceTask ? commands.editSessions.current.get(sourceTask.id) : undefined;
     const continued = immediateNext !== undefined && ownsFocus && sourceTask !== undefined && continuedSession !== undefined;
     if (continued) {
       // The update keeps its original retained session, while the next row accepts unsent
       // titles immediately. Its create queue waits for this update's confirmed result.
-      // As in startQuickAdd, a retained quick draft keeps its own section.
+      // As in startQuickAdd, a retained quick draft keeps its own section and place.
       const kept = commands.createSession.current;
-      const target = kept?.origin === 'quick' ? kept.request.sectionId : immediateNext;
+      const resumes = kept !== null && kept.origin === 'quick';
+      const target = resumes ? kept.request.sectionId : immediateNext;
       setContinuation({ taskId: sourceTask.id, session: continuedSession });
+      if (!resumes && immediateInsertion !== undefined && commands.quick.queue.length === 0) setInsertion(insertionAfter(sourceTask, immediateInsertion));
+      else setInsertion(before => before && { ...before, open: kept !== null && kept.origin === 'quick' && belongsToInsertion(kept.request, before) });
       expandQuickSection(target);
       setActiveInline(null);
       setQuickAddSection(target);
@@ -496,8 +570,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           inlineReceipt.current = { task: confirmed, field, generation, presentationKey: origin.presentationKey };
         }
         if (!ownsFocus) return;
-        const next = intent.continueWithNext && field === 'title' ? nextTaskSection(confirmed) : undefined;
-        if (next !== undefined) { dispose(); startQuickAdd(next); return; }
+        if (intent.continueWithNext && field === 'title' && continuable(confirmed)) { dispose(); continueAfter(confirmed); return; }
         waitingForHead = true;
         inlineFocusReturn.current = { task: confirmed, field, generation, presentationKey: origin.presentationKey, ownsFocus: () => ownsFocus, dispose };
       },
@@ -588,6 +661,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       setGrouping('section');
       setCreating(null);
       expandQuickSection(kept.request.sectionId);
+      setInsertion(before => before && { ...before, open: belongsToInsertion(kept.request, before) });
       setQuickAddSection(kept.request.sectionId);
       setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); next.delete('task'); return next; });
       return;
@@ -607,8 +681,48 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setActiveInline(null);
     const kept = commands.createSession.current;
     const targetSection = kept?.origin === 'quick' ? kept.request.sectionId : sectionId;
+    // A retained draft of an insertion chain reopens at its own place; otherwise at the section end.
+    setInsertion(before => before && { ...before, open: kept !== null && kept.origin === 'quick' && belongsToInsertion(kept.request, before) });
     expandQuickSection(targetSection);
     setQuickAddSection(targetSection);
+  };
+  const startInsertion = (anchor: TaskDto, target: { sectionId: string | null; parent: TaskDto | null }) => {
+    // A retained quick draft, or titles still being sent, keep their own place.
+    if (commands.createSession.current?.origin === 'quick' || commands.quick.queue.length > 0) { startQuickAdd(target.sectionId); return; }
+    invalidateInlineSave();
+    if (!writable || !metadataReady) return;
+    setTaskParam(null);
+    setCreating(null);
+    setActiveInline(null);
+    setInsertion(insertionAfter(anchor, target));
+    setQuickAddSection(target.sectionId);
+  };
+  // Add subtask: an inline row under the expanded parent, after its last loaded subtask. With none
+  // loaded the row is drawn right below the parent but sent without an anchor, since the parent is
+  // not a sibling. The full form stays the row's More details.
+  const startChildInline = (parent: TaskDto) => {
+    if (parent.archivedAt !== null || parent.meetingId !== null) return;
+    if (grouping !== 'section' || !tableMode) { startCreate({ sectionId: parent.sectionId, parent }); return; }
+    // A retained quick draft, or titles still being sent, keep their own place, context and draft.
+    if (commands.createSession.current?.origin === 'quick' || commands.quick.queue.length > 0) { startQuickAdd(commands.createSession.current?.request.sectionId ?? parent.sectionId); return; }
+    // A kept full-form draft or an unresolved create is resumed where it was, never replaced.
+    if (commands.createSession.current !== null || commands.create.pendingCommand !== null || commands.create.uncertain !== null) { startCreate({ sectionId: parent.sectionId, parent }); return; }
+    invalidateInlineSave();
+    if (!writable || !metadataReady) return;
+    const last = sortMode === 'manual'
+      ? dedupeTasks(shownTasks).filter(task => task.parentTaskId === parent.id && task.archivedAt === null).sort((left, right) => compareTaskRows(left, right, 'manual')).at(-1)
+      : undefined;
+    const sectionId = last?.sectionId ?? parent.sectionId;
+    if (sectionId !== null && sections.data?.find(item => item.id === sectionId)?.archivedAt !== null) { startCreate({ sectionId: parent.sectionId, parent }); return; }
+    const first: FirstChildRequest = { sectionId, parent, continueInPlace: true };
+    const request: CreateRequest = last ? { sectionId, parent, insertion: { anchorTaskId: last.id, placement: 'after' } } : first;
+    setTaskParam(null);
+    setCreating(null);
+    setActiveInline(null);
+    if (collapsedTaskIds.has(parent.id)) changeTaskCollapsed(parent.id, false);
+    expandQuickSection(sectionId);
+    setInsertion({ anchorTaskId: (last ?? parent).id, request, open: true, confirmed: [] });
+    setQuickAddSection(sectionId);
   };
   const startInline = (task: TaskDto, field: TaskInlineField) => {
     // Only an ordinary root task moves between sections.
@@ -641,16 +755,19 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     invalidateInlineSave();
     setActiveInline(null);
     if (reason === 'blur') return;
-    const next = reason === 'next' ? nextTaskSection(task) : undefined;
-    if (next !== undefined) { startQuickAdd(next); return; }
+    if (reason === 'next' && continuable(task)) { continueAfter(task); return; }
     requestAnimationFrame(() => {
       if (document.activeElement === null || document.activeElement === document.body) document.querySelector<HTMLButtonElement>(`button[data-task-cell="${task.id}:${field}"]`)?.focus();
     });
   };
-  const closeQuickAdd = (sectionId: string | null, reason: QuickAddCloseReason = 'cancel') => {
+  const closeQuickAdd = (sectionId: string | null, reason: QuickAddCloseReason = 'cancel', returnTaskId: string | null = null) => {
     setQuickAddSection(undefined);
+    // Submitted rows of the chain stay visible until they resolve; only the unsent input closes.
+    setInsertion(before => before && { ...before, open: false });
     if (reason === 'cancel') requestAnimationFrame(() => {
-      if (document.activeElement === null || document.activeElement === document.body) document.querySelector<HTMLButtonElement>(`button[data-add-task-row="${sectionId ?? ''}"]`)?.focus();
+      if (document.activeElement !== null && document.activeElement !== document.body) return;
+      const target = returnTaskId === null ? null : document.querySelector<HTMLButtonElement>(`button[data-task-cell="${returnTaskId}:title"]`);
+      (target ?? document.querySelector<HTMLButtonElement>(`button[data-add-task-row="${sectionId ?? ''}"]`))?.focus();
     });
   };
   const heldCommand = unresolvedTaskCommand(commands);
@@ -717,14 +834,14 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const parentId = taskId.toLowerCase();
     const children = dedupeTasks(shownTasks).filter(task => task.parentTaskId?.toLowerCase() === parentId).sort((left, right) => compareTaskRows(left, right, 'manual'));
     const partial = filtered || !loadedTaskScope(tasks.data).complete || tasks.isFetchNextPageError;
-    return { parentId, tasks: children, partial, includesArchived: urlFilters.includeArchived };
-  }, [taskId, tasks.data, tasks.isError, tasks.isFetchNextPageError, shownTasks, filtered, urlFilters.includeArchived]);
+    return { parentId, tasks: children, partial, includesArchived: urlFilters.includeArchived, loadedAt: tasks.dataUpdatedAt, fetching: tasks.isFetching };
+  }, [taskId, tasks.data, tasks.isError, tasks.isFetchNextPageError, tasks.dataUpdatedAt, tasks.isFetching, shownTasks, filtered, urlFilters.includeArchived]);
   const closeDrawer = () => {
     setCreating(null);
     if (taskId !== null) setTaskParam(null);
   };
-  const quickEditorHidden = grouping !== 'section' || quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode
-    || taskGroups.some(group => group.sectionId === quickAddSection && collapsedGroupKeys.has(group.key));
+  const quickEditorHidden = (grouping !== 'section' && insertion?.placement?.group.kind !== 'assignee') || quickAddSection === undefined || boardMode || graphMode || ganttMode || importMode
+    || (insertion?.placement ? collapsedGroupKeys.has(insertion.placement.groupKey) : taskGroups.some(group => group.sectionId === quickAddSection && collapsedGroupKeys.has(group.key)));
   const inlineEditorHidden = activeInline === null || personalColumns.denied || graphMode || ganttMode || importMode
     || !shownTasks.some(task => task.id === activeInline.taskId)
     || (boardMode ? activeInline.field !== 'statusId' : !visibleColumnIds.includes(taskInlineColumn(activeInline.field)) || sectionHiddenTaskIds.has(activeInline.taskId));
@@ -744,6 +861,88 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     // or unknown outcome has its own alert with the same recovery.
     && !(continuedOnly && ((continuedPending && !quickEditorHidden) || (continuedFeedback && (!quickEditorHidden || commands.createSession.current === null))));
   const draftTaskIds = new Set([...commands.editSessions.current.keys()].filter(id => !(continuedPending && id === continued?.taskId)));
+
+  // The insertion chain: queued titles, then confirmed rows the list has not loaded yet, sit right
+  // after the last of its tasks the list shows, so the next input never jumps to the section end.
+  const listedTaskIds = new Set(shownTasks.map(task => task.id));
+  const chainQueue = insertion ? commands.quick.queue.filter(entry => belongsToInsertion(entry.session.request, insertion)) : [];
+  const chainRetained = insertion ? insertion.confirmed.filter(entry => !listedTaskIds.has(entry.task.id) && (tasks.isFetching || tasks.dataUpdatedAt < entry.at)) : [];
+  const chainAnchorId = insertion ? [insertion.anchorTaskId, ...insertion.confirmed.map(entry => entry.task.id)].filter(id => listedTaskIds.has(id)).at(-1) ?? insertion.anchorTaskId : null;
+  const insertionOpen = insertion !== null && insertion.open && quickAddSection !== undefined;
+  const recordInsertion = (task: TaskDto) => setInsertion(before => before && task.parentTaskId === (before.request.parent?.id ?? null)
+    ? { ...before, confirmed: [...before.confirmed, { task, at: Date.now() }] } : before);
+
+  // Hours of a new row: only the explicitly selected week and the person the table shows. A hours
+  // edit there is the consent; nothing falls back to a current week or person.
+  const rowContext = taskTime.initialRowContext;
+  const rowContextKey = `${rowContext.periodId ?? ''}:${rowContext.membershipId ?? ''}`;
+  const currentRowContext = useRef<string | null>(null);
+  if (rowContext.current) currentRowContext.current = rowContextKey;
+  // A confirmed write refetches the projection; an input already shown for the same week and
+  // person stays usable meanwhile, while a changed selection waits for its own current read.
+  const initialTimeCurrent = rowContext.current || (currentRowContext.current === rowContextKey && rowContext.period !== null);
+  const initialTimeContextFor = (parent: TaskDto | null, workScope: TaskWorkScope): InitialTimeContext | null => {
+    const { periodId, membershipId, period } = rowContext;
+    if (periodId === null || membershipId === null || period === null || period.id.toLowerCase() !== periodId.toLowerCase()) return null;
+    const member = members.data?.find(item => item.id === membershipId);
+    if (member === undefined) return null;
+    // A detail subtask plans its parent's whole package: only a current projection row of exactly
+    // that package tells its commitment revision, or that none exists. A removed one is never «absent».
+    const packages = rowContext.packages;
+    const row = parent !== null && workScope === 'detail' && rowContext.current && 'get' in packages
+      ? packages.get(parent.workPackageId) ?? packages.get(parent.workPackageId.toLowerCase()) : undefined;
+    const plan = parent === null || row === undefined || row.commitment?.state === 'removed'
+      ? null : { workPackageId: parent.workPackageId, expectedRevision: row.commitment?.revision ?? null };
+    return explicitTimeContext({ periodId: period.id, membershipId: member.id, periodName: period.name, memberName: member.displayName, plan });
+  };
+  const initialFields = fieldDefinitions.isSuccess ? fieldDefinitions.data : undefined;
+  // The page table's visible custom and weekly columns, in its order; drawer subtask rows show them too.
+  const visibleExtraColumns = [...taskTime.columns, ...customColumns].filter(column => visibleColumnIds.includes(column.id));
+  // More details keeps the row's place: its whole request, not only its section and parent.
+
+  const quickTaskAdd = (request: CreateRequest, key: string, renderRow: TaskTableDraftRow, anchored: boolean) => <QuickTaskAdd key={key} projectId={project.id} sectionId={request.sectionId}
+    sectionName={sections.data?.find(section => section.id === request.sectionId)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data ?? []} members={members.data ?? []} tags={tags.data ?? []} sections={sections.data ?? []}
+    commands={commands} writable={writable} request={request} renderRow={renderRow} detailsKeepInitialCells
+    initialFields={initialFields} initialTimeContext={initialTimeContextFor(request.parent, 'detail')} initialTimeWritable={rowContext.writable} initialTimeCurrent={initialTimeCurrent}
+    onClose={reason => closeQuickAdd(request.sectionId, reason, anchored ? chainAnchorId : null)}
+    onMoreDetails={() => startCreate(request)}
+    onCreated={task => { if (anchored) recordInsertion(task); quickTaskCreated(task); }} />;
+  const quickAdd: TaskTableQuickAdd | undefined = insertion !== null && (insertionOpen || (quickAddSection === undefined && (chainQueue.length > 0 || chainRetained.length > 0))) ? {
+    sectionId: insertion.request.sectionId,
+    afterTaskId: chainAnchorId,
+    placement: insertion.placement ? { ...insertion.placement, anchorTaskId: chainAnchorId ?? insertion.anchorTaskId } : undefined,
+    parentTaskId: insertion.request.parent?.id ?? null,
+    confirmedTasks: chainRetained.map(entry => entry.task),
+    render: draftRow => <>
+      {chainQueue.map((entry, index) => {
+        const uncertain = index === 0 && commands.create.uncertain !== null;
+        return <QuickTaskDraftPreview key={queuedRowKey(entry.session)} session={entry.session} renderRow={draftRow(uncertain ? 'uncertain' : 'pending')} pending={!uncertain} uncertain={uncertain} />;
+      })}
+      {insertionOpen ? quickTaskAdd(insertion.request, `insert:${insertion.anchorTaskId}`, draftRow('draft'), true) : null}
+    </>,
+  } : quickAddSection !== undefined ? {
+    sectionId: quickAddSection,
+    render: draftRow => quickTaskAdd({ sectionId: quickAddSection, parent: null }, quickAddSection ?? 'none', draftRow('draft'), false),
+  } : undefined;
+
+  // Manual reorder: one guarded move at a time, after every other task command has resolved.
+  const moveBlocked = !completionWritable || unresolvedTaskCommand(commands) !== null || commands.move.pendingCommand !== null || commands.move.uncertain !== null
+    || commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching;
+  const moveTask = (task: TaskDto, anchor: TaskDto, placement: TaskDropPlacement) => {
+    if (!completionWritable || sortMode !== 'manual' || grouping !== 'section') return;
+    if (commands.editSessions.current.has(task.id)) { setAnnouncement(message('taskTable.move.draft', { title: task.title })); return; }
+    if (moveBlocked) { setAnnouncement(message('taskTable.move.wait')); return; }
+    invalidateInlineSave();
+    setActiveInline(null);
+    setAnnouncement(message('taskTable.move.moving', { title: task.title }));
+    commands.move.mutate({ taskId: task.id, input: { expectedRevision: task.revision, anchorTaskId: anchor.id, placement } }, {
+      onSuccess: moved => setAnnouncement(message('taskTable.move.moved', { title: moved.title })),
+    });
+  };
+
+  // The open drawer's subtask rows show and retry their own reorder; the page shows every other one.
+  const heldMoveTaskId = commands.move.uncertain?.variables.taskId ?? commands.move.variables?.taskId ?? null;
+  const drawerShowsMove = taskId !== null && heldMoveTaskId !== null && (loadedSubtasks?.tasks.some(task => task.id === heldMoveTaskId) ?? false);
 
   // A rename still being sent or unconfirmed keeps its section: reopening shows that one.
   const heldSectionId =
@@ -780,6 +979,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
       {continuedFeedback ? <SaveFeedback subject="taskSave" error={continuedError} uncertainError={continuedUncertain}
         action={<Button size="sm" onClick={() => openTask(continued.taskId)}>{t('tasks.recovery.resume')}</Button>} /> : null}
+      {/* A refused or unknown reorder: the list keeps the server's order; an unknown one resends exactly. */}
+      {!drawerShowsMove && (commands.move.uncertain !== null || (commands.move.error !== null && commands.move.pendingCommand === null)) ? <>
+        <SaveFeedback subject="taskSave" error={commands.move.uncertain === null ? commands.move.error : null} uncertainError={commands.move.uncertain?.error ?? null}
+          action={<Button size="sm" variant="ghost" onClick={() => commands.move.reset()}>{t('taskTable.move.dismiss')}</Button>} />
+        {commands.move.uncertain !== null ? <Button size="sm" aria-disabled={commands.move.pendingCommand !== null || undefined} onClick={() => { if (commands.move.pendingCommand === null) commands.move.retryUncertain(); }}>{t('tasks.quickAdd.retry')}</Button> : null}
+      </> : null}
       {showTaskRecovery ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
@@ -901,7 +1106,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
-            quickAdd={quickAddSection !== undefined ? { sectionId: quickAddSection, content: <QuickTaskAdd key={quickAddSection ?? 'none'} projectId={project.id} sectionId={quickAddSection} sectionName={sections.data.find(section => section.id === quickAddSection)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data} commands={commands} writable={writable} onClose={reason => closeQuickAdd(quickAddSection ?? null, reason)} onMoreDetails={() => startCreate({ sectionId: quickAddSection, parent: null })} onCreated={quickTaskCreated} /> } : undefined}
+            quickAdd={quickAdd}
+            onMoveTask={moveTask}
+            moveBlocked={moveBlocked}
             selectedTaskIds={selectedTaskIds}
             onSelectTask={(id, selected) => setSelectedTaskIds(before => selected ? before.includes(id) || before.length >= 100 ? before : [...before, id] : before.filter(item => item !== id))}
             query={tasks}
@@ -916,7 +1123,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
-            onCreateChild={(parent) => startCreate({ sectionId: parent.sectionId, parent })}
+            onCreateChild={startChildInline}
             onRenameSection={writable ? renameSection : undefined}
           />}
           <TaskDrawer
@@ -947,6 +1154,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onCreateChild={parent => startCreate({ sectionId: parent.sectionId, parent })}
             onResumeCreate={() => startCreate({ sectionId: null, parent: null })}
             loadedSubtasks={loadedSubtasks}
+            subtaskColumns={visibleExtraColumns}
+            initialFields={initialFields}
+            initialTimeContextFor={initialTimeContextFor}
+            initialTimeWritable={rowContext.writable}
+            initialTimeCurrent={initialTimeCurrent}
             onCreated={(task) => {
               closeDrawer();
               setAnnouncement(message('projects.projectPage.taskValueCreated', { p0: task.title }));
@@ -999,6 +1211,8 @@ interface TaskListProps {
   activeFieldEditor: ComponentProps<typeof TaskTable>['activeFieldEditor'];
   draftTaskIds: ReadonlySet<string>;
   quickAdd: ComponentProps<typeof TaskTable>['quickAdd'];
+  onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
+  moveBlocked: boolean;
   writable: boolean;
   onOpenTask: (taskId: string) => void;
   onCreateTask: (sectionId?: string | null) => void;

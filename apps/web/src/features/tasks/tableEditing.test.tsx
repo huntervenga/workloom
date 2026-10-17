@@ -1,4 +1,4 @@
-import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
+import type { CreateTaskInput, TaskDto, TaskStatusDto } from '@workloom/contracts';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
@@ -9,8 +9,8 @@ import { InlineTaskEdit, type InlineCloseReason } from './InlineTaskEdit';
 import { QuickTaskAdd } from './QuickTaskAdd';
 import { TaskDrawer } from './TaskDrawer';
 import { draftFromTask, emptyDraft } from './taskDraft';
-import type { TaskInlineField } from './tableEditing';
-import { useTaskCommands, type CreateSession, type EditSession, type TaskCommands } from './useTaskCommands';
+import { canResumeQuickSession, freshQuickSession, nextQuickRequest, quickDraftChanges, quickSessionHasValues, type TaskInlineField } from './tableEditing';
+import { resolveQuickCreateInput, useTaskCommands, type CreateRequest, type CreateResultAnchor, type CreateSession, type EditSession, type TaskCommands } from './useTaskCommands';
 
 const SECTION = 'e1000000-0000-4000-8000-000000000001';
 const STATUS_PROGRESS = 'f6000000-0000-4000-8000-000000000002';
@@ -19,14 +19,14 @@ const statuses: TaskStatusDto[] = [
   { id: STATUS_PROGRESS, workspaceId: alpha.id, projectId: PROJECT_ID, name: 'Stored progress', group: 'in_progress', position: 1, revision: 1 },
 ];
 
-function quick(seed?: CreateSession) {
+function quick(seed?: CreateSession, request?: CreateRequest) {
   const onCreated = vi.fn(); const onMoreDetails = vi.fn(); const onClosed = vi.fn();
   let current: TaskCommands | null = null;
   function Example() {
     const commands = useTaskCommands(anna.id, alpha.id);
     current = commands;
     const [open, setOpen] = useState(() => { if (seed) commands.createSession.current = seed; return true; });
-    return <>{open ? <QuickTaskAdd projectId={PROJECT_ID} sectionId={SECTION} sectionName="Stored section" statuses={statuses} commands={commands} writable onClose={reason => { onClosed(reason); setOpen(false); }} onMoreDetails={onMoreDetails} onCreated={onCreated} /> : null}<button onClick={() => setOpen(true)}>Resume QA create</button><button>Outside focus</button></>;
+    return <>{open ? <QuickTaskAdd projectId={PROJECT_ID} sectionId={SECTION} sectionName="Stored section" statuses={statuses} commands={commands} writable request={request} onClose={reason => { onClosed(reason); setOpen(false); }} onMoreDetails={onMoreDetails} onCreated={onCreated} /> : null}<button onClick={() => setOpen(true)}>Resume QA create</button><button>Outside focus</button></>;
   }
   const view = renderFieldUi(<Example />);
   return { ...view, onCreated, onMoreDetails, onClosed, commands: () => { if (!current) throw new Error('No command harness'); return current; } };
@@ -132,7 +132,7 @@ describe('section quick creation', () => {
     expect(ui.onClosed).not.toHaveBeenCalled();
   });
 
-  it('closes an untouched row when focus leaves, but keeps a typed draft open and uncreated', async () => {
+  it('closes an untouched row when focus leaves, keeps a typed draft open and uncreated, and discards it only on Escape', async () => {
     const { calls } = installFakeApi({});
     const ui = quick();
     await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
@@ -148,7 +148,13 @@ describe('section quick creation', () => {
     await ui.user.click(screen.getByLabelText('Task name'));
     await ui.user.keyboard('{Escape}');
     expect(ui.onClosed).toHaveBeenLastCalledWith('cancel');
-    expect(ui.commands().createSession.current?.draft.title).toBe('Typed but not sent');
+    // Escape is the explicit discard of a never-sent draft: nothing keeps or brings it back.
+    expect(ui.commands().createSession.current).toBeNull();
+    expect(ui.commands().quick.draft).toBeNull();
+    await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
+    expectNextTitle(screen.getByLabelText('Task name'));
+    expect(screen.queryByRole('button', { name: 'Resume draft' })).not.toBeInTheDocument();
+    expect(calls).toHaveLength(0);
   });
 
   it('retains an escaped draft and retries an unknown create with its original values and key after reopening', async () => {
@@ -221,7 +227,7 @@ describe('section quick creation', () => {
     expect(calls).toHaveLength(1);
   });
 
-  it('holds queued creates behind an unknown response and preserves queued/current titles across remount and exact retry', async () => {
+  it('holds queued creates behind an unknown response, keeps them exact across Escape and remount, and discards only the unsent title', async () => {
     const first = lost(); let attempt = 0;
     const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => ++attempt === 1 ? first.promise : created({ ...task, title: (request.body as { title: string }).title }) });
     const ui = quick();
@@ -232,15 +238,19 @@ describe('section quick creation', () => {
     expect(calls).toHaveLength(1);
     expect(ui.commands().quick.queue.map(entry => entry.input.title)).toEqual(['First unknown', 'Second queued']);
     await ui.user.keyboard('{Escape}');
+    // Only the never-sent third title is gone; the unknown front and the queued follower stay as sent.
+    expect(ui.commands().quick.queue.map(entry => entry.input.title)).toEqual(['First unknown', 'Second queued']);
+    expect(ui.commands().createSession.current?.draft.title).toBe('First unknown');
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
-    expectNextTitle(screen.getByLabelText('Task name'), 'Third unsent');
+    expectNextTitle(screen.getByLabelText('Task name'));
     await ui.user.click(screen.getByRole('button', { name: 'Retry original' }));
     await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(2));
     expect(calls).toHaveLength(3);
     assertExactRetry(calls.slice(0, 2));
     expect(calls[2]?.body).toEqual({ projectId: PROJECT_ID, sectionId: SECTION, title: 'Second queued', statusId: task.statusId });
     expect(calls[2]?.headers.get('Idempotency-Key')).not.toBe(calls[0]?.headers.get('Idempotency-Key'));
-    expectNextTitle(screen.getByLabelText('Task name'), 'Third unsent');
+    expectNextTitle(screen.getByLabelText('Task name'));
+    expect(ui.onCreated).toHaveBeenCalledTimes(2);
   });
 
   it('keeps a definitely rejected front for explicit retry or discard and never drops the next typed title', async () => {
@@ -271,6 +281,68 @@ describe('section quick creation', () => {
     expect(ui.onMoreDetails).toHaveBeenCalledTimes(1);
     expect(ui.commands().createSession.current).toEqual(seed);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('quick create row context', () => {
+  const GROUP_MEMBER = alphaMembers[1]?.id ?? 'missing-member';
+  const OTHER_MEMBER = alphaMembers[0]?.id ?? 'missing-member';
+  const inGroup = (responsible: string | null): CreateRequest => ({ sectionId: SECTION, parent: null, defaultResponsibleMembershipId: responsible });
+
+  it('starts a group row with that group’s assignee as its pristine baseline, and counts only the person’s own change', () => {
+    const fresh = freshQuickSession(SECTION, task.statusId, inGroup(GROUP_MEMBER));
+    expect(fresh.draft.responsibleMembershipId).toBe(GROUP_MEMBER);
+    expect(quickDraftChanges(fresh)).toEqual([]);
+    expect(quickSessionHasValues(fresh)).toBe(false);
+    const unassigned = { ...fresh, draft: { ...fresh.draft, responsibleMembershipId: null } };
+    expect(quickDraftChanges(unassigned)).toEqual(['responsibleMembershipId']);
+    expect(quickSessionHasValues(unassigned)).toBe(true);
+    // Without a group nothing is invented, and an explicit Unassigned group starts unassigned.
+    expect(freshQuickSession(SECTION, task.statusId).draft.responsibleMembershipId).toBeNull();
+    expect(quickSessionHasValues(freshQuickSession(SECTION, task.statusId, inGroup(null)))).toBe(false);
+  });
+
+  it('resumes a group draft only in the same group row, never retargeting it to another group or the plain section', () => {
+    const typed = freshQuickSession(SECTION, task.statusId, inGroup(GROUP_MEMBER));
+    const draft = { ...typed, draft: { ...typed.draft, title: 'Group draft' } };
+    expect(canResumeQuickSession(draft, SECTION, inGroup(GROUP_MEMBER))).toBe(true);
+    expect(canResumeQuickSession(draft, SECTION, inGroup(OTHER_MEMBER))).toBe(false);
+    expect(canResumeQuickSession(draft, SECTION, inGroup(null))).toBe(false);
+    expect(canResumeQuickSession(draft, SECTION)).toBe(false);
+  });
+
+  it('sends the group’s assignee in the body as the draft’s own value and never the row-local context', async () => {
+    const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => created({ ...task, sectionId: SECTION, responsibleMembershipId: GROUP_MEMBER, title: (request.body as { title: string }).title }) });
+    const ui = quick(undefined, inGroup(GROUP_MEMBER));
+    // Untouched, the group default is no draft: leaving closes the row and protects nothing.
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await waitFor(() => expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('blur'));
+    expect(ui.commands().createSession.current).toBeNull();
+    await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
+    await ui.user.type(screen.getByLabelText('Task name'), 'Grouped task{Enter}');
+    await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(1));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body).toEqual({ projectId: PROJECT_ID, sectionId: SECTION, title: 'Grouped task', statusId: task.statusId, responsibleMembershipId: GROUP_MEMBER });
+  });
+
+  it('chains a first child without an anchor: its body has no place, each next one waits for and follows the confirmed child', () => {
+    const parent: TaskDto = { ...task, sectionId: SECTION };
+    const body = (title: string): CreateTaskInput => ({ projectId: PROJECT_ID, sectionId: SECTION, parentTaskId: parent.id, workScope: 'detail', title, statusId: task.statusId });
+    const first = freshQuickSession(null, task.statusId, { sectionId: null, parent, continueInPlace: true });
+    expect(first.request.sectionId).toBe(SECTION);
+    expect(resolveQuickCreateInput({ session: first, input: body('First child') })).toEqual(body('First child'));
+    const anchor: CreateResultAnchor = { taskId: null };
+    const second = freshQuickSession(null, task.statusId, nextQuickRequest(first.request, anchor));
+    expect(resolveQuickCreateInput({ session: second, input: body('Second child') })).toBeNull();
+    anchor.taskId = 'f2000000-0000-4000-8000-0000000000c9';
+    expect(resolveQuickCreateInput({ session: second, input: body('Second child') })).toEqual({ ...body('Second child'), insertion: { anchorTaskId: anchor.taskId, placement: 'after' } });
+    // The section's bottom row keeps adding at the end instead of chaining.
+    const bottom = freshQuickSession(SECTION, task.statusId);
+    expect(resolveQuickCreateInput({ session: freshQuickSession(SECTION, task.statusId, nextQuickRequest(bottom.request, anchor)), input: body('Bottom') })).toEqual(body('Bottom'));
+    // A first-child draft belongs to that continuation only.
+    const typed = { ...first, draft: { ...first.draft, title: 'Typed child' } };
+    expect(canResumeQuickSession(typed, null, { sectionId: null, parent, continueInPlace: true })).toBe(true);
+    expect(canResumeQuickSession(typed, null, { sectionId: null, parent })).toBe(false);
   });
 });
 

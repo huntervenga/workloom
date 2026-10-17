@@ -8,6 +8,7 @@ import {
   createTagInputSchema,
   createTaskInputSchema,
   idSchema,
+  moveTaskInputSchema,
   projectSchema,
   restoreTaskInputSchema,
   sectionSchema,
@@ -23,11 +24,13 @@ import {
   type CreateSectionInput,
   type CreateTagInput,
   type CreateTaskInput,
+  type MoveTaskInput,
   type ProjectDto,
   type RestoreTaskInput,
   type SectionDto,
   type TagDto,
   type TaskDto,
+  type TaskInsertion,
   type TaskListQuery,
   type TaskParticipantDto,
   type TaskStatusDto,
@@ -490,6 +493,47 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         return setTaskArchivedAt(scope, task, null, now, 'restored');
       });
     },
+
+    async moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<TaskDto> {
+      const id = parsePathId(taskId);
+      const parsed = parseInput<MoveTaskInput>(moveTaskInputSchema, input);
+      return mutate(context, 'task.edit', 'task.move', id, parsed, taskSchema, async (scope, ws, now) => {
+        const repo = scope.repository;
+        const task = requireFound(await repo.findTask(ws, id));
+        expectRevision(task.revision, parsed.expectedRevision);
+        if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before moving.', 'taskId');
+        if (parsed.anchorTaskId === id) throw ruleError('A task cannot be placed next to itself.', 'anchorTaskId');
+        await requireOpenProject(repo, ws, task.projectId);
+        const anchor = await requireOrderAnchor(repo, ws, task.projectId, task.parentTaskId, parsed.anchorTaskId, 'anchorTaskId');
+
+        // A subtask stays in its section; a root task joins the anchor's section. Never reparented.
+        let sectionId = task.sectionId;
+        if (task.parentTaskId === null) {
+          sectionId = anchor.sectionId;
+          if (sectionId !== null) await requireAssignableSection(repo, ws, task.projectId, sectionId);
+        } else if (anchor.sectionId !== task.sectionId) {
+          throw ruleError('A subtask can only be moved within its own section.', 'anchorTaskId');
+        }
+
+        const projectOrder = await listOrderScope(repo, ws, task.projectId);
+        const order = placeInOrder(projectOrder, id, anchor.id, parsed.placement, 'anchorTaskId');
+        // Already in place: no write and no audit; the receipt still records the unchanged task.
+        const unchanged = sectionId === task.sectionId && order.every((row, rank) => (row?.id ?? id) === projectOrder[rank]?.id);
+        if (unchanged) return task;
+
+        // The moved task always gets a new revision, even when legacy ties leave its number unchanged.
+        await repo.saveTaskCore({ ...task, sectionId, position: order.indexOf(null), revision: task.revision + 1, updatedAt: now });
+        const updated = await reloadTask(repo, ws, id);
+        const diff = {
+          ...changedFields(task, updated, ['sectionId', 'position']),
+          revision: { from: task.revision, to: updated.revision },
+          anchor: { taskId: anchor.id, placement: parsed.placement },
+        };
+        await record(scope, 'task', id, 'updated', updated.revision, diff, taskEventIds(updated));
+        await saveShiftedTasks(scope, order, now);
+        return updated;
+      });
+    },
   };
 }
 
@@ -789,6 +833,17 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
         const tagIds = parsed.tagIds ?? [];
         await requireAssignableTags(repo, ws, tagIds, []);
 
+        // Only an explicit insertion renumbers the project order; otherwise the legacy append below is unchanged.
+        let order: (TaskDto | null)[] | null = null;
+        if (parsed.insertion !== undefined) {
+          const sectionId = parsed.sectionId ?? null;
+          const parentTaskId = parent?.id ?? null;
+          const field = 'insertion.anchorTaskId';
+          const anchor = await requireOrderAnchor(repo, ws, projectId, parentTaskId, parsed.insertion.anchorTaskId, field);
+          if (anchor.sectionId !== sectionId) throw ruleError('The anchor task is in another section.', field);
+          order = placeInOrder(await listOrderScope(repo, ws, projectId), null, anchor.id, parsed.insertion.placement, field);
+        }
+
         // Root tasks and added scope get a new package; a detail subtask shares its parent's.
         let workPackage: WorkPackageRecord | null = null;
         if (parent === null || parsed.workScope === 'added_scope') {
@@ -807,12 +862,14 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
         }
         const workPackageId = workPackage?.id ?? requireParentPackage(parent);
         const position =
-          parsed.position ??
-          nextPosition(
-            (await repo.listTasks(ws, { projectId, includeArchived: true, limit: 200 }, null, MAX_POSITION)).map(
-              (task) => task.position,
-            ),
-          );
+          order !== null
+            ? order.indexOf(null)
+            : parsed.position ??
+              nextPosition(
+                (await repo.listTasks(ws, { projectId, includeArchived: true, limit: 200 }, null, MAX_POSITION)).map(
+                  (task) => task.position,
+                ),
+              );
 
         const id = newId();
         await repo.insertTaskCore({
@@ -868,8 +925,69 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
               revision: task.workPackageRevision,
               estimateMinutes: task.estimateMinutes,
             },
+            ...(parsed.insertion === undefined ? {} : { position: task.position, insertion: parsed.insertion }),
           },
           taskEventIds(task),
         );
+        if (order !== null) await saveShiftedTasks(scope, order, now);
         return task;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Manual order
+
+/**
+ * The complete project-global manual order: every task of the project, all parents and sections,
+ * archived rows included, sorted by (position, id). Manual position is one sequence per project,
+ * so no parent/section filter applies. The take is MAX_POSITION so no page limit hides rows.
+ */
+async function listOrderScope(repo: TaskRepository, ws: string, projectId: string): Promise<TaskDto[]> {
+  const rows = await repo.listTasks(ws, { projectId, includeArchived: true, limit: 200 }, null, MAX_POSITION);
+  return rows.sort((a, b) => a.position - b.position || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/** An active sibling of the placed task; archived rows keep their place but cannot anchor. */
+async function requireOrderAnchor(
+  repo: TaskRepository,
+  ws: string,
+  projectId: string,
+  parentTaskId: string | null,
+  anchorId: string,
+  field: string,
+): Promise<TaskDto> {
+  const anchor = requireFound(await repo.findTask(ws, anchorId));
+  requireSameProject(anchor, projectId, field);
+  if (anchor.archivedAt !== null) throw ruleError('The anchor task is archived.', field);
+  if (anchor.parentTaskId !== parentTaskId) throw ruleError('The anchor task has a different parent.', field);
+  return anchor;
+}
+
+/**
+ * Full project order with the placed task as `null` directly before/after the anchor; every other
+ * row (other sections, parents, hidden, archived or unloaded) keeps its relative order.
+ */
+function placeInOrder(
+  projectOrder: readonly TaskDto[],
+  placedId: string | null,
+  anchorId: string,
+  placement: TaskInsertion['placement'],
+  field: string,
+): (TaskDto | null)[] {
+  const order: (TaskDto | null)[] = projectOrder.filter((row) => row.id !== placedId);
+  const at = order.findIndex((row) => row?.id === anchorId);
+  if (at < 0) throw new Error('The order anchor is missing from its own project order.');
+  order.splice(placement === 'before' ? at : at + 1, 0, null);
+  if (order.length - 1 > MAX_POSITION) throw ruleError('The list is too long to reorder.', field);
+  return order;
+}
+
+/** Renumbers the full project order to 0..N-1; each changed existing row gets one position/revision event. */
+async function saveShiftedTasks(scope: TaskWriteScope, order: readonly (TaskDto | null)[], now: string): Promise<void> {
+  for (const [position, row] of order.entries()) {
+    if (row === null || row.position === position) continue;
+    const revision = row.revision + 1;
+    await scope.repository.saveTaskCore({ ...row, position, revision, updatedAt: now });
+    const diff = { position: { from: row.position, to: position }, revision: { from: row.revision, to: revision } };
+    await record(scope, 'task', row.id, 'updated', revision, diff, taskEventIds(row));
+  }
 }

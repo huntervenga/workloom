@@ -2,6 +2,9 @@ import {
   archiveTaskInputSchema,
   createTagInputSchema,
   createTaskInputSchema,
+  createTaskRowInputSchema,
+  taskRowResponseSchema,
+  moveTaskInputSchema,
   restoreTaskInputSchema,
   tagListResponseSchema,
   tagResponseSchema,
@@ -13,6 +16,8 @@ import {
   type ArchiveTaskInput,
   type CreateTagInput,
   type CreateTaskInput,
+  type CreateTaskRowInput,
+  type MoveTaskInput,
   type RestoreTaskInput,
   type TagDto,
   type TaskDto,
@@ -20,7 +25,7 @@ import {
   type UpdateTagInput,
   type UpdateTaskInput,
 } from '@workloom/contracts';
-import { ApiError, apiGet, prepareMutation, sendMutation, type MutationOptions } from '../../lib/api';
+import { ApiError, apiGet, prepareMutation, sendMutation, type MutationOptions, type ResponseParser } from '../../lib/api';
 import { workspacePath } from '../workspace/queries';
 
 /** Page size for task lists; the contract allows up to 200. */
@@ -117,6 +122,30 @@ export function createTaskRequest(workspaceId: string, input: CreateTaskInput) {
   });
 }
 
+/**
+ * Validates the whole row envelope with the real `taskRowResponseSchema`, then hands on only the
+ * confirmed task, so a row create resolves exactly like `createTaskRequest`. Field values, plan and
+ * actual are not patched into any cache; the caller refetches their projections.
+ */
+const taskRowAsTaskResponse: ResponseParser<{ data: TaskDto }> = {
+  safeParse(input: unknown) {
+    const parsed = taskRowResponseSchema.safeParse(input);
+    if (!parsed.success) return { success: false };
+    return { success: true, data: { ...parsed.data, data: parsed.data.data.task } };
+  },
+};
+
+/** One atomic task row create: the task with its first field values and optional plan/actual. */
+export function createTaskRowRequest(workspaceId: string, input: CreateTaskRowInput) {
+  return prepareMutation({
+    method: 'POST',
+    path: `${workspacePath(workspaceId)}/tasks/rows`,
+    input,
+    inputSchema: createTaskRowInputSchema,
+    responseSchema: taskRowAsTaskResponse,
+  });
+}
+
 export function updateTaskRequest(workspaceId: string, taskId: string, input: UpdateTaskInput) {
   return prepareMutation({
     method: 'PATCH',
@@ -133,6 +162,17 @@ export function archiveTaskRequest(workspaceId: string, taskId: string, input: A
     path: `${taskPath(workspaceId, taskId)}/archive`,
     input,
     inputSchema: archiveTaskInputSchema,
+    responseSchema: taskResponseSchema,
+  });
+}
+
+/** Places the task right before/after its anchor under the same parent; a root may take the anchor's section. */
+export function moveTaskRequest(workspaceId: string, taskId: string, input: MoveTaskInput) {
+  return prepareMutation({
+    method: 'POST',
+    path: `${taskPath(workspaceId, taskId)}/move`,
+    input,
+    inputSchema: moveTaskInputSchema,
     responseSchema: taskResponseSchema,
   });
 }
@@ -180,6 +220,15 @@ export async function archiveTask(
   options: MutationOptions,
 ): Promise<TaskDto> {
   return (await sendMutation(archiveTaskRequest(workspaceId, taskId, input), options)).data;
+}
+
+export async function moveTask(
+  workspaceId: string,
+  taskId: string,
+  input: MoveTaskInput,
+  options: MutationOptions,
+): Promise<TaskDto> {
+  return (await sendMutation(moveTaskRequest(workspaceId, taskId, input), options)).data;
 }
 
 export async function restoreTask(
