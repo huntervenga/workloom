@@ -16,8 +16,15 @@ export const APP_PREFIX = '/app';
 /** Pre-landing SPA workspace routes; HTML navigations move under APP_PREFIX. */
 const LEGACY_APP_PREFIX = '/w';
 
+/** Auth callback route; tokens arrive in its fragment, so its document is never stored. */
+export const AUTH_CALLBACK_PATH = `${APP_PREFIX}/auth/callback`;
+
 const IMMUTABLE_ASSET = 'public, max-age=31536000, immutable';
+const REVALIDATE = 'no-cache';
+const NO_STORE = 'no-store';
 const CANONICAL_REDIRECT = 308;
+
+type DocumentCachePolicy = typeof REVALIDATE | typeof NO_STORE;
 
 type NavigationRequest = Pick<FastifyRequest, 'method' | 'url' | 'headers'>;
 
@@ -62,10 +69,10 @@ export function legacyAppLocation(request: NavigationRequest): string | null {
   return isUnder(path, LEGACY_APP_PREFIX) ? `${APP_PREFIX}${path}${query}` : null;
 }
 
-export function sendSpaIndex(reply: FastifyReply): FastifyReply {
+export function sendSpaIndex(reply: FastifyReply, cacheControl: DocumentCachePolicy = REVALIDATE): FastifyReply {
   return reply
     .header('x-robots-tag', 'noindex')
-    .header('cache-control', 'no-cache')
+    .header('cache-control', cacheControl)
     .type('text/html; charset=utf-8')
     .sendFile(SPA_DOCUMENT);
 }
@@ -78,7 +85,8 @@ export function sendLanding(reply: FastifyReply): FastifyReply {
 export function replyWebNavigation(request: NavigationRequest, reply: FastifyReply): FastifyReply | null {
   const legacy = legacyAppLocation(request);
   if (legacy !== null) return reply.redirect(legacy, CANONICAL_REDIRECT);
-  return shouldServeSpa(request) ? sendSpaIndex(reply) : null;
+  if (!shouldServeSpa(request)) return null;
+  return sendSpaIndex(reply, splitTarget(request.url).path === AUTH_CALLBACK_PATH ? NO_STORE : REVALIDATE);
 }
 
 /**
@@ -103,8 +111,11 @@ export async function registerStaticWeb(app: FastifyInstance, distDir: string): 
     cacheControl: false,
     dotfiles: 'deny',
     allowedPath: isAllowedStaticPath,
+    // Runs inside sendFile after the route set its headers: assets are immutable, other files
+    // revalidate, but a route's explicit no-store (the auth callback document) must survive.
     setHeaders(reply, filePath) {
-      reply.header('cache-control', filePath.includes(`${sep}assets${sep}`) ? IMMUTABLE_ASSET : 'no-cache');
+      if (filePath.includes(`${sep}assets${sep}`)) reply.header('cache-control', IMMUTABLE_ASSET);
+      else if (reply.getHeader('cache-control') !== NO_STORE) reply.header('cache-control', REVALIDATE);
     },
   });
   app.get('/', async (_request, reply) => sendLanding(reply));

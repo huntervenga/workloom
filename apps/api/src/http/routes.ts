@@ -42,8 +42,8 @@ function toActorDto(actor: Pick<Actor, 'userId' | 'displayName' | 'kind'>): Acto
   return { id: actor.userId, displayName: actor.displayName, kind: actor.kind };
 }
 
-function toMe(actor: Actor): MeDto {
-  return { actor: toActorDto(actor), authMode: 'dev' };
+function toMe(actor: Actor, authMode: IdentityAdapter['mode']): MeDto {
+  return { actor: toActorDto(actor), authMode };
 }
 
 export function registerHealthRoutes(app: FastifyInstance, readiness: ReadinessProbe): void {
@@ -67,7 +67,12 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDependencies)
   app.get('/api/v1/me', async (request, reply) => {
     const context = await actorContext(request);
     const user = await getCurrentActor(deps.repository, context);
-    return sendData(request, reply, meResponseSchema, toMe({ userId: user.id, displayName: user.displayName, kind: user.kind }));
+    return sendData(
+      request,
+      reply,
+      meResponseSchema,
+      toMe({ userId: user.id, displayName: user.displayName, kind: user.kind }, deps.identity.mode),
+    );
   });
 
   app.get('/api/v1/workspaces', async (request, reply) => {
@@ -149,6 +154,6 @@ export function registerDevRoutes(app: FastifyInstance, deps: RouteDependencies)
     const token = deps.devSessions.create(user.id);
     reply.header('set-cookie', serializeSessionCookie(token, deps.devSessionTtlSeconds));
     request.log.info({ event: 'dev_session_switched' }, 'development actor switched');
-    return sendData(request, reply, meResponseSchema, toMe({ userId: user.id, displayName: user.displayName, kind: user.kind }));
+    return sendData(request, reply, meResponseSchema, toMe({ userId: user.id, displayName: user.displayName, kind: user.kind }, 'dev'));
   });
 }

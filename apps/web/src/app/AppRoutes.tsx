@@ -18,8 +18,8 @@ const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPa
 
 export function AppRoutes() {
   useTranslation();
-  const { switching } = useSession();
-  if (switching) return <SwitchingScreen />;
+  const { switching, signingOut } = useSession();
+  if (switching) return <SwitchingScreen signingOut={signingOut} />;
 
   return (
     <Routes>
@@ -40,14 +40,15 @@ export function AppRoutes() {
   );
 }
 
-function SwitchingScreen() {
+/** `signingOut` marks the cleanup after a confirmed shared logout rather than a dev actor switch. */
+function SwitchingScreen({ signingOut }: { signingOut: boolean }) {
   useTranslation();
   return (
     <div role="status" className="grid min-h-dvh place-items-center px-4">
       <p className="flex items-center gap-2.5 text-sm text-muted">
         <LoaderCircle size={18} aria-hidden="true" className="text-accent motion-safe:animate-spin" />
 
-        {t('shell.switchingActor')}
+        {signingOut ? t('auth.signingOut') : t('shell.switchingActor')}
       </p>
     </div>
   );

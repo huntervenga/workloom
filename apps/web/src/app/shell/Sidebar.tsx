@@ -140,7 +140,16 @@ export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarCon
         {workspaceId && role ? <SidebarProjects actorId={me.actor.id} workspaceId={workspaceId} onNavigate={onNavigate} /> : null}
 
         <div className="mt-auto">
-          <LocalModeCard me={me} role={role} />
+          {me.authMode === 'shared' ? (
+            // A real account: who is signed in, without any local demo framing.
+            <div className="rounded-xl border border-line bg-surface px-3 py-2.5">
+              <p className="truncate text-sm font-medium text-ink" title={me.actor.displayName}>
+                {t('auth.signedInAs', { name: me.actor.displayName })}
+              </p>
+            </div>
+          ) : (
+            <LocalModeCard me={me} role={role} />
+          )}
         </div>
       </div>
     </div>

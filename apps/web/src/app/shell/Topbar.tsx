@@ -12,9 +12,13 @@ export interface TopbarProps {
   workspaceId: string | null;
   workspaceName: string | null;
   menu: ReactNode;
+  /** Shows the local demo badge; off for a real shared session. Defaults to on. */
+  localMode?: boolean | undefined;
+  /** The signed-in account and its sign-out, placed last. */
+  account?: ReactNode;
 }
 
-export function Topbar({ actorId, workspaceId, workspaceName, menu }: TopbarProps) {
+export function Topbar({ actorId, workspaceId, workspaceName, menu, localMode = true, account }: TopbarProps) {
   useTranslation();
   const queryClient = useQueryClient();
   const onOverview = useMatch('/w/:workspaceId') !== null;
@@ -64,15 +68,18 @@ export function Topbar({ actorId, workspaceId, workspaceName, menu }: TopbarProp
         </ol>
       </nav>
       <LanguageSelector />
-      <Badge tone="warning" title={t('shell.localModeTitle')}>
-        <FlaskConical size={14} aria-hidden="true" />
-        <span className="sm:hidden">{t('shell.testShort')}</span>
-        <span className="hidden sm:inline">{t('shell.localDemo')}</span>
-      </Badge>
+      {localMode ? (
+        <Badge tone="warning" title={t('shell.localModeTitle')}>
+          <FlaskConical size={14} aria-hidden="true" />
+          <span className="sm:hidden">{t('shell.testShort')}</span>
+          <span className="hidden sm:inline">{t('shell.localDemo')}</span>
+        </Badge>
+      ) : null}
       <Button size="sm" onClick={refresh} aria-disabled={fetching || undefined}>
         <RefreshCw size={16} aria-hidden="true" className={fetching ? 'motion-safe:animate-spin' : undefined} />
         <span className="sr-only sm:not-sr-only">{t('shell.refresh')}</span>
       </Button>
+      {account}
     </header>
   );
 }

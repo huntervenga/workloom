@@ -23,18 +23,29 @@ export const DOMAIN_ERROR_STATUS: Readonly<Record<DomainErrorCode, number>> = {
   TEMPORARILY_UNAVAILABLE: 503,
 };
 
-/** Transport-level rejection raised by the HTTP adapter itself (guards, parsing). */
+export interface HttpErrorOptions {
+  /** Defaults to false; never set it for outcomes where replaying a mutation is unsafe. */
+  readonly retryable?: boolean;
+  /** Set-Cookie values the error response must carry, e.g. clearing a dead session. */
+  readonly setCookies?: readonly string[];
+}
+
+/** Transport-level rejection raised by the HTTP adapter itself (guards, parsing, shared Auth). */
 export class HttpError extends Error {
   override readonly name = 'HttpError';
   readonly statusCode: number;
   readonly code: string;
   readonly details: Record<string, unknown> | undefined;
+  readonly retryable: boolean;
+  readonly setCookies: readonly string[] | undefined;
 
-  constructor(statusCode: number, code: string, message: string, details?: Record<string, unknown>) {
+  constructor(statusCode: number, code: string, message: string, details?: Record<string, unknown>, options: HttpErrorOptions = {}) {
     super(message);
     this.statusCode = statusCode;
     this.code = code;
     this.details = details;
+    this.retryable = options.retryable ?? false;
+    this.setCookies = options.setCookies;
   }
 }
 
@@ -63,7 +74,7 @@ export function mapError(error: unknown): MappedError {
     return { statusCode: DOMAIN_ERROR_STATUS[error.code], body: body(error.code, error.message, error.retryable, details), unexpected: false };
   }
   if (error instanceof HttpError) {
-    return { statusCode: error.statusCode, body: body(error.code, error.message, false, error.details), unexpected: false };
+    return { statusCode: error.statusCode, body: body(error.code, error.message, error.retryable, error.details), unexpected: false };
   }
   if (isDatabaseUnavailableError(error)) {
     return {

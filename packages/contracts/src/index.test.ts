@@ -34,13 +34,14 @@ describe('meResponseSchema', () => {
     expect(meResponseSchema.parse(body)).toEqual(body);
   });
 
-  it('rejects any auth mode other than dev', () => {
-    const body = { data: { actor, authMode: 'shared' }, meta: { requestId: 'req_1' } };
+  it('accepts shared Auth with a real actor and rejects unknown auth modes', () => {
+    const body = { data: { actor: { ...actor, kind: 'real' }, authMode: 'shared' }, meta: { requestId: 'req_1' } };
 
-    expect(meResponseSchema.safeParse(body).success).toBe(false);
+    expect(meResponseSchema.parse(body)).toEqual(body);
+    expect(meResponseSchema.safeParse({ ...body, data: { ...body.data, authMode: 'unknown' } }).success).toBe(false);
   });
 
-  it('rejects actors that are not fixtures', () => {
+  it('rejects unrecognized actor kinds', () => {
     expect(actorSchema.safeParse({ ...actor, kind: 'user' }).success).toBe(false);
   });
 });
@@ -50,6 +51,10 @@ describe('development identity DTOs', () => {
     const body = { data: [actor], meta: { requestId: 'req_7' } };
 
     expect(devActorListResponseSchema.parse(body)).toEqual(body);
+  });
+
+  it('keeps real users out of the fixture discovery DTO', () => {
+    expect(devActorListResponseSchema.safeParse({ data: [{ ...actor, kind: 'real' }], meta: { requestId: 'req_real' } }).success).toBe(false);
   });
 
   it('accepts a session request with only a UUID actorId', () => {

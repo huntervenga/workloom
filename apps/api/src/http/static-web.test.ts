@@ -198,6 +198,23 @@ describe('API app routing the landing and /app SPA', () => {
     }
   });
 
+  it('serves the auth callback SPA with no-store while other /app documents keep no-cache', async () => {
+    for (const method of ['GET', 'HEAD'] as const) {
+      const callback = await request(app, method, '/app/auth/callback?x=1');
+      expect(callback.statusCode).toBe(200);
+      expect(callback.headers['content-type']).toMatch(/^text\/html/);
+      expect(callback.headers['x-robots-tag']).toBe('noindex');
+      expect(callback.headers['cache-control']).toBe('no-store');
+      expect(callback.headers['referrer-policy']).toBe('no-referrer');
+      if (method === 'GET') expect(callback.body).toBe(SPA_HTML);
+      else expect(Number(callback.headers['content-length'])).toBe(Buffer.byteLength(SPA_HTML));
+
+      const ordinary = await request(app, method, '/app/w');
+      expect(ordinary.statusCode).toBe(200);
+      expect(ordinary.headers['cache-control']).toBe('no-cache');
+    }
+  });
+
   it('redirects legacy /w HTML navigations to /app with the raw query and no fragment', async () => {
     const query = '?view=board&filter=a%2Cb&q=caf%C3%A9&plus=a+b&empty=&flag&&dup=1&dup=2';
     const cases: ReadonlyArray<readonly [string, string]> = [

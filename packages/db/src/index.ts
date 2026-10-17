@@ -127,3 +127,5 @@ export {CUTOFF_QUEUE,CUTOFF_DEAD_LETTER_QUEUE,CUTOFF_QUEUE_OPTIONS,CUTOFF_DEAD_L
 
 export { createWorkspaceChangeHeadApplication } from './workspace-change-head/application.js';
 export { createWorkspaceChangeHeadReadRepository } from './workspace-change-head/repository.js';
+
+export { createSharedAuthStore } from './shared-auth/store.js';

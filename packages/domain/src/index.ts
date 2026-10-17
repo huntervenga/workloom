@@ -149,3 +149,14 @@ export {createCutoffWorkerFacade,cutoffOutcome,blockedCutoffOutcome} from './cut
 export type { WorkspaceChangeHeadApplication } from './workspace-change-head/application.js';
 export type { WorkspaceChangeHeadRecord, WorkspaceChangeHeadReadRepository, WorkspaceChangeHeadReadUnitOfWork } from './workspace-change-head/ports.js';
 export { createWorkspaceChangeHeadApplication } from './workspace-change-head/service.js';
+
+export type {
+  SharedAuthIdentityInput,
+  SharedAuthIdentity,
+  SharedAuthSessionRecord,
+  SharedAuthSessionInput,
+  SharedAuthSessionUpdate,
+  SharedAuthLoginAttemptInput,
+  SharedAuthLoginAttemptConsumeInput,
+  SharedAuthStore,
+} from './identity/shared-auth.js';

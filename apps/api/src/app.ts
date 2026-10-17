@@ -15,6 +15,7 @@ import {
   createProjectImportApplication,
   createReadinessProbe,
   createRecurrenceApplication,
+  createSharedAuthStore,
   createTaskApplication,
   createTaskCommentsApplication,
   createPersonalTablePreferenceApplication,
@@ -26,13 +27,16 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
+import type { CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, WorkCategoryApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
+import type { JWTVerifyGetKey } from 'jose';
 
 import type { AppConfig } from './config.js';
 import { createDevSessionStore, type DevSessionStore } from './identity/dev-sessions.js';
 import { createDevIdentityAdapter, type IdentityAdapter } from './identity/identity-adapter.js';
-import { mapError } from './http/errors.js';
+import { createSharedAuthService, type AuthFetch, type SharedAuthService } from './identity/shared-auth.js';
+import { registerAuthConfigRoute, registerSharedAuthRoutes } from './http/auth-routes.js';
+import { HttpError, mapError } from './http/errors.js';
 import { registerCutoffRoutes } from './http/cutoff-routes.js';
 import { registerCategoryRoutes } from './http/category-routes.js';
 import { registerFieldRoutes } from './http/field-routes.js';
@@ -95,6 +99,14 @@ export interface AppDependencies {
   readonly localMcpApplication?: LocalMcpApplication;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
+  /** AUTH_MODE=shared store; without it the store is built from the database (never in-memory). */
+  readonly sharedAuthStore?: SharedAuthStore;
+  /** JWT key resolver for focused crypto tests; default is the remote JWKS. */
+  readonly authJwtKey?: JWTVerifyGetKey;
+  /** Auth refresh/logout HTTP seam for focused tests; JWT verification never uses it. */
+  readonly authFetch?: AuthFetch;
+  /** Shared Auth clock for focused tests. */
+  readonly clock?: () => Date;
   /** Web dist directory; null disables static serving. Default: apps/web/dist when config.serveWeb. */
   readonly webDistDir?: string | null;
   /** false disables logging (tests). */
@@ -103,6 +115,29 @@ export interface AppDependencies {
 
 const DEV_SESSION_TTL_SECONDS = 8 * 60 * 60;
 const BODY_LIMIT_BYTES = 16 * 1024;
+
+/** Defense in depth: the request serializer below already omits headers, bodies and query strings. */
+const LOG_REDACT_PATHS = [
+  'req.headers.cookie',
+  'req.headers.authorization',
+  'res.headers["set-cookie"]',
+  'req.body.accessToken',
+  'req.body.refreshToken',
+  'req.body.state',
+  'req.query.returnTo',
+  'req.query.state',
+  'body.accessToken',
+  'body.refreshToken',
+  'body.state',
+];
+
+/** Logs method and path only; the query string (returnTo, state) never reaches the log. */
+function serializeRequestForLog(request: { readonly method?: string | undefined; readonly url?: string | undefined }): {
+  method: string;
+  url: string;
+} {
+  return { method: request.method ?? '', url: (request.url ?? '').split(/[?#]/, 1)[0] ?? '' };
+}
 
 /**
  * Builds the Fastify app without listening. Opens a database pool only when
@@ -145,8 +180,29 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const localCredentialApplication=dependencies.localCredentialApplication??(database===undefined?undefined:createLocalCredentialApplication(database,{enableTaskWrites:true}));
   const localMcpApplication=dependencies.localMcpApplication??(database===undefined?undefined:createLocalMcpApplication(database,{enableTaskWrites:true}));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
+
+  let sharedAuth: SharedAuthService | undefined;
+  if (config.authMode === 'shared') {
+    if (config.sharedAuth === undefined) {
+      throw new Error('AUTH_MODE=shared requires the shared Auth configuration.');
+    }
+    const store = dependencies.sharedAuthStore ?? (database === undefined ? undefined : createSharedAuthStore(database));
+    if (store === undefined) {
+      throw new Error('AUTH_MODE=shared needs a database or an injected sharedAuthStore.');
+    }
+    sharedAuth = createSharedAuthService({
+      config: config.sharedAuth,
+      store,
+      repository,
+      ...(dependencies.authFetch === undefined ? {} : { fetch: dependencies.authFetch }),
+      ...(dependencies.authJwtKey === undefined ? {} : { jwtKey: dependencies.authJwtKey }),
+      ...(dependencies.clock === undefined ? {} : { now: dependencies.clock }),
+    });
+  }
+
   const identity =
     dependencies.identityAdapter ??
+    sharedAuth?.identity ??
     createDevIdentityAdapter({ defaultActorId: config.devActorId, allowlist: FIXTURE_ACTOR_IDS, sessions: devSessions, repository });
 
   const app = Fastify({
@@ -155,8 +211,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
         ? false
         : {
             level: config.logLevel,
+            serializers: { req: serializeRequestForLog },
             redact: {
-              paths: ['req.headers.cookie', 'req.headers.authorization', 'res.headers["set-cookie"]'],
+              paths: LOG_REDACT_PATHS,
               censor: '[redacted]',
             },
           },
@@ -201,6 +258,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     } else if (mapped.statusCode >= 500) {
       request.log.warn({ err: describeErrorForLog(error), code: mapped.body.error.code }, 'request unavailable');
     }
+    if (error instanceof HttpError && error.setCookies !== undefined) {
+      reply.header('set-cookie', [...error.setCookies]);
+    }
     return reply.code(mapped.statusCode).type('application/json; charset=utf-8').send({ ...mapped.body, meta: { requestId: request.id } });
   });
 
@@ -224,6 +284,10 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
 
   const routeDeps = { repository, identity, readiness, devSessions, devSessionTtlSeconds: DEV_SESSION_TTL_SECONDS };
   registerHealthRoutes(app, readiness);
+  registerAuthConfigRoute(app, config.authMode);
+  if (sharedAuth !== undefined) {
+    registerSharedAuthRoutes(app, { service: sharedAuth });
+  }
   registerApiRoutes(app, routeDeps);
   if (taskApplication !== undefined) {
     registerTaskRoutes(app, { identity, tasks: taskApplication });

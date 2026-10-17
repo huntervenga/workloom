@@ -56,7 +56,7 @@ export function validateLocalEnvironment(environment) {
   try { url = new URL(environment.DATABASE_URL); } catch { throw new Error('DATABASE_URL is missing or invalid; its value is never printed.'); }
   if (!['postgres:', 'postgresql:'].includes(url.protocol) || url.hostname !== '127.0.0.1' || url.port !== '55432'
     || !url.pathname || url.pathname === '/' || url.search || url.hash) throw new Error('DATABASE_URL must target this existing cluster on 127.0.0.1:55432 without URL options.');
-  if (environment.APP_ENV !== 'local' || environment.AUTH_MODE !== 'dev') throw new Error('Only APP_ENV=local and AUTH_MODE=dev are supported.');
+  if (environment.APP_ENV !== 'local' || !['dev', 'shared'].includes(environment.AUTH_MODE)) throw new Error('Only APP_ENV=local with AUTH_MODE=dev or shared is supported.');
   if (environment.HOST && environment.HOST !== '127.0.0.1') throw new Error('HOST must be 127.0.0.1.');
   if (environment.PORT && environment.PORT !== '4310') throw new Error('PORT must be 4310.');
   return true;

@@ -1,17 +1,25 @@
 import { t, useTranslation } from '../../i18n';
 import { useQueryClient } from '@tanstack/react-query';
-import { Logomark, Skeleton } from '@workloom/ui';
+import { Button, Logomark, Skeleton } from '@workloom/ui';
+import { LogOut } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Outlet, useMatch, useNavigate } from 'react-router';
+import { LoginScreen } from '../../features/auth/LoginScreen';
 import { MeProvider, useMe, useMeQuery } from '../../features/identity/identity';
 import { useWorkspaceQuery } from '../../features/workspace/queries';
 import { useWorkspaceLiveRefresh } from '../../features/workspace/useWorkspaceLiveRefresh';
 import { discardWorkspaceData } from '../../lib/cacheScope';
 import { QueryErrorState } from '../../shared/QueryErrorState';
+import { useSession } from '../session';
 import { MobileNav } from './MobileNav';
 import { SidebarContent } from './Sidebar';
 import { SwitchErrorNotice } from './SwitchErrorNotice';
 import { Topbar } from './Topbar';
+
+/** The identity read was answered without a session. */
+function isUnauthorized(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'status' in error && error.status === 401;
+}
 
 export function AppShell() {
   useTranslation();
@@ -20,30 +28,98 @@ export function AppShell() {
 
   if (me.isPending) return <ShellLoading />;
 
-  if (me.isError) {
+  const previous = me.data;
+  if (previous !== undefined && previous.authMode === 'shared') {
+    // One stable wrapper for every shared state: an expired session hides the frame behind the
+    // sign-in gate without unmounting it, so unsent drafts and uncertain writes keep their owners.
+    const expired = me.isError && isUnauthorized(me.error);
+    const covered = me.isError;
     return (
-      <div className="grid min-h-dvh place-items-center px-4 py-10">
-        <div className="w-full max-w-md">
-          <div className="mb-6 flex items-center justify-center gap-2.5">
-            <Logomark className="size-7" />
-            <span className="text-[15px] font-semibold tracking-tight">{t('common.brand')}</span>
-          </div>
-          <QueryErrorState
-            error={me.error}
-            subject="identity"
-            headingLevel={1}
-            retrying={me.isFetching}
-            onRetry={() => void me.refetch()}
-          />
+      <>
+        <div hidden={covered} inert={covered}>
+          <MeProvider me={previous}>
+            <ShellFrame key={previous.actor.id} sessionActive={!covered} />
+          </MeProvider>
         </div>
-      </div>
+        {expired ? (
+          <LoginScreen mode="shared" identityError={me.error} retryingIdentity={me.isFetching} onRetryIdentity={() => void me.refetch()} />
+        ) : covered ? (
+          <IdentityError error={me.error} retrying={me.isFetching} onRetry={() => void me.refetch()} />
+        ) : null}
+      </>
     );
   }
+
+  if (me.isError && isUnauthorized(me.error)) {
+    return <LoginScreen identityError={me.error} retryingIdentity={me.isFetching} onRetryIdentity={() => void me.refetch()} />;
+  }
+
+  if (me.isError) return <IdentityError error={me.error} retrying={me.isFetching} onRetry={() => void me.refetch()} />;
 
   return (
     <MeProvider me={me.data}>
       <ShellFrame />
     </MeProvider>
+  );
+}
+
+function IdentityError({ error, retrying, onRetry }: { error: unknown; retrying: boolean; onRetry: () => void }) {
+  useTranslation();
+  return (
+    <div className="grid min-h-dvh place-items-center px-4 py-10">
+      <div className="w-full max-w-md">
+        <div className="mb-6 flex items-center justify-center gap-2.5">
+          <Logomark className="size-7" />
+          <span className="text-[15px] font-semibold tracking-tight">{t('common.brand')}</span>
+        </div>
+        <QueryErrorState error={error} subject="identity" headingLevel={1} retrying={retrying} onRetry={onRetry} />
+      </div>
+    </div>
+  );
+}
+
+/** The real actor's name and sign-out, at every width; only for a shared session. */
+function AccountControls({ name }: { name: string }) {
+  useTranslation();
+  const session = useSession();
+  const label = t('auth.signedInAs', { name });
+  return (
+    <div className="flex min-w-0 shrink items-center gap-2">
+      <p className="min-w-0">
+        <span className="sr-only">{label}</span>
+        <span aria-hidden="true" title={label} className="hidden max-w-48 truncate text-sm text-ink-soft md:block">
+          {name}
+        </span>
+      </p>
+      <Button
+        size="sm"
+        onClick={() => {
+          if (!session.signingOut) void session.signOut();
+        }}
+        aria-disabled={session.signingOut || undefined}
+      >
+        <LogOut size={16} aria-hidden="true" />
+        <span className="sr-only sm:not-sr-only">{session.signingOut ? t('auth.signingOut') : t('auth.signOut')}</span>
+      </Button>
+    </div>
+  );
+}
+
+/** Logout was not confirmed: everything stays, and only the user sends it again. */
+function SignOutNotice() {
+  useTranslation();
+  const session = useSession();
+  if (session.logoutError === null || session.signingOut) return null;
+  return (
+    <div role="alert" className="mb-4 rounded-xl border border-line bg-surface p-4 text-sm">
+      <p className="font-medium text-ink">{t('auth.signOutFailed')}</p>
+      <p className="mt-1 leading-relaxed text-ink-soft">{t('auth.signOutUnknown')}</p>
+      <div className="mt-3">
+        <Button size="sm" onClick={() => void session.signOut()}>
+          {t('auth.tryAgain')}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -81,7 +157,8 @@ function useDiscardPreviousWorkspace(actorId: string, workspaceId: string | null
   }, [actorId, workspaceId, queryClient]);
 }
 
-function ShellFrame() {
+/** `sessionActive` is false while a shared frame is kept mounted behind the sign-in gate. */
+function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
   useTranslation();
   const me = useMe();
   const actorId = me.actor.id;
@@ -89,7 +166,10 @@ function ShellFrame() {
   const workspace = useWorkspaceQuery(actorId, workspaceId);
   const currentWorkspace = workspace.isSuccess ? workspace.data : null;
   useDiscardPreviousWorkspace(actorId, workspaceId);
-  useWorkspaceLiveRefresh(actorId, workspaceId, workspace.isSuccess && workspace.headDenial === null);
+  // A covered frame stays mounted for its drafts but must not keep polling workspace heads.
+  useWorkspaceLiveRefresh(actorId, workspaceId, sessionActive && workspace.isSuccess && workspace.headDenial === null);
+
+  const shared = me.authMode === 'shared';
 
   const sidebar = (onNavigate?: () => void) => (
     <SidebarContent me={me} workspaceId={workspaceId} role={currentWorkspace?.role ?? null} onNavigate={onNavigate} />
@@ -116,6 +196,8 @@ function ShellFrame() {
           workspaceId={workspaceId}
           workspaceName={currentWorkspace?.name ?? null}
           menu={<MobileNav>{(close) => sidebar(close)}</MobileNav>}
+          localMode={!shared}
+          account={shared ? <AccountControls name={me.actor.displayName} /> : undefined}
         />
         <main
           id="main"
@@ -123,6 +205,7 @@ function ShellFrame() {
           className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-4 outline-none sm:px-6 sm:py-5 lg:px-8 lg:py-6"
         >
           <SwitchErrorNotice />
+          {shared ? <SignOutNotice /> : null}
           <Outlet />
         </main>
       </div>

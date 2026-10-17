@@ -30,6 +30,7 @@
     "@workloom/db": "*",
     "@workloom/domain": "*",
     "fastify": "^5.6.1",
+    "jose": "6.2.12",
     "zod": "4.6.7"
   },
   "devDependencies": {

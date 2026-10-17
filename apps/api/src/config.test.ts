@@ -1,3 +1,5 @@
+import { inspect } from 'node:util';
+
 import { DEFAULT_DEV_ACTOR_ID } from '@workloom/db';
 import { describe, expect, it } from 'vitest';
 
@@ -9,6 +11,10 @@ const base = {
   AUTH_MODE: 'dev',
   DATABASE_URL: `postgres://workloom:${SECRET}@127.0.0.1:54329/workloom`,
 };
+/** Synthetic 32-byte key; never a real secret. */
+const SESSION_KEY_TEXT = 'workloom-synthetic-test-key-0032';
+const SESSION_KEY = Buffer.from(SESSION_KEY_TEXT, 'utf8').toString('base64url');
+const shared = { ...base, AUTH_MODE: 'shared', AUTH_SESSION_KEY: SESSION_KEY };
 
 function issuesOf(env: Record<string, string | undefined>): readonly string[] {
   try {
@@ -49,8 +55,8 @@ describe('loadConfig', () => {
     [{ APP_ENV: 'production' }, /APP_ENV=production is not supported/],
     [{ APP_ENV: 'dev' }, /APP_ENV must be "local"/],
     [{ AUTH_MODE: undefined }, /AUTH_MODE is required/],
-    [{ AUTH_MODE: 'shared' }, /AUTH_MODE=shared is not implemented/],
-    [{ AUTH_MODE: 'none' }, /AUTH_MODE must be "dev"/],
+    [{ AUTH_MODE: 'shared' }, /AUTH_SESSION_KEY is required for AUTH_MODE=shared/],
+    [{ AUTH_MODE: 'none' }, /AUTH_MODE must be "dev" or "shared"/],
     [{ NODE_ENV: 'prod' }, /NODE_ENV/],
   ])('rejects unsafe or unsupported modes %o', (override, pattern) => {
     expect(issuesOf({ ...base, ...override }).join('\n')).toMatch(pattern);
@@ -96,5 +102,103 @@ describe('loadConfig', () => {
 
   it('reports every problem at once', () => {
     expect(issuesOf({ APP_ENV: 'production', AUTH_MODE: 'shared', HOST: '0.0.0.0', RAILWAY_ENVIRONMENT: 'x' }).length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('keeps the dev shape free of shared Auth settings', () => {
+    const config = loadConfig({ ...base, AUTH_SESSION_KEY: SESSION_KEY, AUTH_BASE_URL: 'http://127.0.0.1:4999' });
+    expect(Object.keys(config).includes('sharedAuth')).toBe(false);
+    expect(config.appOrigins).toEqual(['http://127.0.0.1:4311', 'http://localhost:4311']);
+  });
+});
+
+describe('loadConfig AUTH_MODE=shared', () => {
+  it('uses the shared Auth defaults and adds the local app origin to the trusted origins', () => {
+    const config = loadConfig(shared);
+    expect(config.authMode).toBe('shared');
+    expect(config.sharedAuth).toMatchObject({
+      baseUrl: 'https://auth.pavelignatov.com',
+      issuer: 'https://auth.pavelignatov.com',
+      audience: 'pet-projects',
+      jwksUrl: 'https://auth.pavelignatov.com/.well-known/jwks.json',
+      appOrigin: 'http://127.0.0.1:4310',
+      secureCookies: false,
+    });
+    expect(config.sharedAuth?.sessionKey.bytes().equals(Buffer.from(SESSION_KEY_TEXT, 'utf8'))).toBe(true);
+    expect(config.appOrigins).toEqual(['http://127.0.0.1:4311', 'http://localhost:4311', 'http://127.0.0.1:4310']);
+  });
+
+  it('accepts a loopback HTTP fake Auth and keeps the issuer literal exact', () => {
+    const config = loadConfig({
+      ...shared,
+      AUTH_BASE_URL: 'http://127.0.0.1:4999',
+      AUTH_ISSUER: 'https://auth.example.test/',
+      AUTH_AUDIENCE: 'workloom-test',
+      AUTH_APP_ORIGIN: 'https://localhost:4310',
+    });
+    expect(config.sharedAuth).toMatchObject({
+      baseUrl: 'http://127.0.0.1:4999',
+      issuer: 'https://auth.example.test/',
+      audience: 'workloom-test',
+      jwksUrl: 'http://127.0.0.1:4999/.well-known/jwks.json',
+      appOrigin: 'https://localhost:4310',
+      secureCookies: true,
+    });
+    expect(loadConfig({ ...shared, AUTH_BASE_URL: 'http://localhost:4999/' }).sharedAuth?.issuer).toBe('http://localhost:4999');
+  });
+
+  it.each([
+    ['AUTH_BASE_URL', 'http://auth.example.test'],
+    ['AUTH_BASE_URL', 'https://user:pw@auth.example.test'],
+    ['AUTH_BASE_URL', 'https://auth.example.test/?tenant=x'],
+    ['AUTH_BASE_URL', 'https://auth.example.test/#frag'],
+    ['AUTH_BASE_URL', 'ftp://auth.example.test'],
+    ['AUTH_BASE_URL', 'not a url'],
+    ['AUTH_ISSUER', 'http://auth.example.test'],
+    ['AUTH_ISSUER', 'https://auth.example.test?tenant=x'],
+    ['AUTH_AUDIENCE', 'pet projects'],
+    ['AUTH_AUDIENCE', 'a'.repeat(201)],
+    ['AUTH_APP_ORIGIN', 'https://app.example.com'],
+    ['AUTH_APP_ORIGIN', 'http://192.168.1.10:4310'],
+    ['AUTH_APP_ORIGIN', 'http://127.0.0.1:4310/app'],
+    ['AUTH_APP_ORIGIN', 'http://127.0.0.1:4310?x=1'],
+    ['AUTH_APP_ORIGIN', 'http://127.0.0.1:4310#x'],
+    ['AUTH_APP_ORIGIN', 'http://u:p@127.0.0.1:4310'],
+    ['AUTH_APP_ORIGIN', '*'],
+  ])('rejects %s=%s without echoing it', (key, value) => {
+    const issues = issuesOf({ ...shared, [key]: value }).join('\n');
+    expect(issues).toMatch(new RegExp(`${key} must`));
+    expect(issues.includes(value)).toBe(false);
+  });
+
+  it.each([
+    ['short', 'too-short-key'],
+    ['padded', `${SESSION_KEY}=`],
+    ['truncated', SESSION_KEY.slice(0, 42)],
+    ['33 bytes', Buffer.alloc(33, 1).toString('base64url')],
+    ['standard base64', Buffer.alloc(32, 0xfb).toString('base64')],
+    ['non-canonical', `${'A'.repeat(42)}B`],
+  ])('rejects a %s AUTH_SESSION_KEY without echoing it', (_label, value) => {
+    const issues = issuesOf({ ...shared, AUTH_SESSION_KEY: value }).join('\n');
+    expect(issues).toMatch(/AUTH_SESSION_KEY must be exactly 32 bytes/);
+    expect(issues.includes(value)).toBe(false);
+  });
+
+  it('never exposes the session key through JSON, inspection or string conversion', () => {
+    const config = loadConfig(shared);
+    const forms = [SESSION_KEY, SESSION_KEY_TEXT, Buffer.from(SESSION_KEY_TEXT, 'utf8').toString('hex')];
+    for (const text of [JSON.stringify(config), inspect(config, { depth: 10 }), String(config.sharedAuth?.sessionKey)]) {
+      expect(forms.some((form) => text.includes(form))).toBe(false);
+    }
+  });
+
+  it.each([
+    [{ RAILWAY_ENVIRONMENT: 'production' }, /Railway environment detected/],
+    [{ DATABASE_URL: `postgres://u:${SECRET}@db.example.com:5432/workloom` }, /loopback/],
+    [{ HOST: '0.0.0.0' }, /HOST must be a loopback/],
+    [{ APP_ENV: 'production' }, /APP_ENV=production is not supported/],
+  ])('still enforces the local-only guards with a valid key %o', (override, pattern) => {
+    const issues = issuesOf({ ...shared, ...override }).join('\n');
+    expect(issues).toMatch(pattern);
+    expect(issues.includes(SESSION_KEY)).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import { protectedDraftsFor } from '../lib/protectedDrafts';
 import { protectedCommandsFor } from '../lib/protectedCommands';
 import { useUnsavedChangesWarning } from '../lib/useUnsavedChangesWarning';
 import { DialogShell } from '../shared/DialogShell';
+import { useSessionAction } from './session';
 
 /**
  * Asks before anything discards a write that is still being sent or has an unknown outcome:
@@ -50,6 +51,17 @@ export function ProtectedNavigationGuard() {
   }, [registry,drafts]);
 
   const asking = blocker.state === 'blocked' ? 'route' : switchRequest ? 'switch' : null;
+  // Signing in or out asks the same question in its own words; dev switches keep theirs.
+  const sessionAction = useSessionAction();
+  const auth = asking === 'switch' ? sessionAction : null;
+  const title =
+    auth === 'signOut' ? t('auth.signOutQuestion') : auth === 'signIn' ? t('auth.signInQuestion') : asking === 'switch' ? t('shell.switchQuestion') : t('shell.leaveQuestion');
+  const leaveLabel =
+    auth === 'signOut'
+      ? protecting ? t('auth.leaveUnconfirmedSignOut') : t('auth.leaveUnsavedSignOut')
+      : auth === 'signIn'
+        ? protecting ? t('auth.leaveUnconfirmedSignIn') : t('auth.leaveUnsavedSignIn')
+        : asking === 'switch' ? protecting ? t('shell.switchUnconfirmed') : t('shell.switchDiscard') : protecting ? t('shell.leaveUnconfirmed') : t('shell.leaveUnsaved');
 
   const stay = () => {
     if (blocker.state === 'blocked') blocker.reset();
@@ -64,7 +76,7 @@ export function ProtectedNavigationGuard() {
 
   return (
     <DialogShell
-      title={asking === 'switch' ? t('shell.switchQuestion') : t('shell.leaveQuestion')}
+      title={title}
       description={protecting?t('shell.unconfirmed'):t('shell.unsaved')}
       open={asking !== null}
       onOpenChange={(next) => {
@@ -74,12 +86,12 @@ export function ProtectedNavigationGuard() {
       <div className="mt-4 space-y-2 text-sm leading-relaxed text-ink-soft">
         {protecting?<><p>{t('shell.mayHaveSaved')}</p>
         <p>
-          {t(asking === 'switch' ? 'shell.switchRetryHelp' : 'shell.leaveRetryHelp')}
+          {t(asking === 'switch' && auth === null ? 'shell.switchRetryHelp' : 'shell.leaveRetryHelp')}
         </p>
         <p>{t('shell.stayToRetry')}</p></>:<p>{t('shell.draftLeaveHelp')}</p>}
       </div>
       <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        <Button onClick={leave}>{asking === 'switch' ? protecting?t('shell.switchUnconfirmed'):t('shell.switchDiscard') : protecting?t('shell.leaveUnconfirmed'):t('shell.leaveUnsaved')}</Button>
+        <Button onClick={leave}>{leaveLabel}</Button>
         <Button variant="primary" onClick={stay}>
 
           {t('shell.stay')}

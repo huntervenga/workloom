@@ -2,6 +2,47 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Set before any asset loads: no referrer goes to other sites, and the callback fragment is stripped below. -->
+    <meta name="referrer" content="same-origin" />
+    <script>
+      // Runs before any other resource: takes sign-in tokens out of the callback fragment and
+      // removes them from the address bar. They stay in this closure until the entry script takes them once.
+      (function (w) {
+        var path = w.location.pathname;
+        if (path !== '/app/auth/callback' && path !== '/app/auth/callback/') return;
+        var fragment = w.location.hash;
+        try {
+          w.history.replaceState(null, '', path);
+        } catch (e) {
+          fragment = '';
+        }
+        if (w.location.hash !== '') fragment = '';
+        var tokens = read(fragment);
+        fragment = '';
+        Object.defineProperty(w, '__workloomTakeAuthCallback', {
+          configurable: true,
+          value: function () {
+            var taken = tokens;
+            tokens = null;
+            delete w.__workloomTakeAuthCallback;
+            return taken;
+          }
+        });
+
+        function read(hash) {
+          if (hash.length < 2 || hash.length > 65536) return null;
+          var params = new URLSearchParams(hash.slice(1));
+          var names = ['access_token', 'refresh_token', 'state'];
+          var values = [];
+          for (var i = 0; i < names.length; i += 1) {
+            var all = params.getAll(names[i]);
+            if (all.length !== 1 || all[0].length === 0 || all[0].length > 16384) return null;
+            values.push(all[0]);
+          }
+          return { accessToken: values[0], refreshToken: values[1], state: values[2] };
+        }
+      })(window);
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#f8fafc" />
     <meta name="robots" content="noindex" />

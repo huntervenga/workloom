@@ -33,7 +33,8 @@ test('PostgreSQL ownership requires exact existing data directory and command', 
 test('runtime environment refuses remote or alternate cluster, URL options and nonlocal identity mode', () => {
   const env = { DATABASE_URL: 'postgres://synthetic:placeholder@127.0.0.1:55432/workloom_dev', APP_ENV: 'local', AUTH_MODE: 'dev' };
   assert.equal(validateLocalEnvironment(env), true);
-  for (const change of [{ DATABASE_URL: 'postgres://user:placeholder@remote.invalid:55432/workloom' }, { DATABASE_URL: 'postgres://user:placeholder@127.0.0.1:5432/workloom' }, { DATABASE_URL: `${env.DATABASE_URL}?host=remote.invalid` }, { DATABASE_URL: 'invalid' }, { APP_ENV: 'production' }, { AUTH_MODE: 'shared' }, { PORT: '4312' }, { HOST: '0.0.0.0' }]) assert.throws(() => validateLocalEnvironment({ ...env, ...change }));
+  assert.equal(validateLocalEnvironment({ ...env, AUTH_MODE: 'shared' }), true);
+  for (const change of [{ DATABASE_URL: 'postgres://user:placeholder@remote.invalid:55432/workloom' }, { DATABASE_URL: 'postgres://user:placeholder@127.0.0.1:5432/workloom' }, { DATABASE_URL: `${env.DATABASE_URL}?host=remote.invalid` }, { DATABASE_URL: 'invalid' }, { APP_ENV: 'production' }, { AUTH_MODE: 'unknown' }, { PORT: '4312' }, { HOST: '0.0.0.0' }]) assert.throws(() => validateLocalEnvironment({ ...env, ...change }));
 });
 
 

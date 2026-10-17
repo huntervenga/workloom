@@ -8,7 +8,7 @@ export interface IdentityRequest {
 }
 
 export interface IdentityAdapter {
-  readonly mode: 'dev';
+  readonly mode: 'dev' | 'shared';
   /** Resolves the trusted actor for a request or throws UNAUTHENTICATED. */
   resolveActor(request: IdentityRequest): Promise<Actor>;
 }

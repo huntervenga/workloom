@@ -29,12 +29,12 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-export const userKindEnum = pgEnum('user_kind', ['fixture']);
+export const userKindEnum = pgEnum('user_kind', ['fixture', 'real']);
 export const workspaceRoleEnum = pgEnum('workspace_role', ['owner', 'admin', 'member', 'viewer']);
 export const membershipStateEnum = pgEnum('membership_state', ['active', 'revoked']);
 export const commandSourceEnum = pgEnum('command_source', ['web', 'api', 'mcp', 'job', 'import']);
 
-/** Internal identities. P0 holds synthetic fixture users only (kind = 'fixture'). */
+/** Internal real identities remain distinct from synthetic fixture users. */
 export const users = pgTable(
   'users',
   {
@@ -813,6 +813,7 @@ export const taskFieldValueHistory = pgTable(
 
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'shared_auth_identities', 'shared_auth_sessions', 'shared_auth_login_attempts',
   'local_mcp_credentials',
   'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
   'users',
@@ -1426,4 +1427,42 @@ export const planningCutoffDiscoveryState = pgTable('planning_cutoff_discovery_s
   leaseOwner: uuid('lease_owner'), leaseUntil: timestamp('lease_until', { withTimezone: true }), completedAt: timestamp('completed_at', { withTimezone: true }),
 }, t => [
   check('planning_cutoff_discovery_state_values', sql`${t.key}='project_cutoff.v1' and ${t.revision} >= 1 and isfinite(${t.cycleAt}) and ((${t.afterCutoffAt} is null) = (${t.afterPeriodId} is null)) and ((${t.leaseOwner} is null) = (${t.leaseUntil} is null)) and (${t.afterCutoffAt} is null or isfinite(${t.afterCutoffAt})) and (${t.leaseUntil} is null or isfinite(${t.leaseUntil})) and (${t.completedAt} is null or isfinite(${t.completedAt}))`),
+]);
+
+
+/** External verified subject mapping; never resolved by a profile name or email. */
+export const sharedAuthIdentities = pgTable('shared_auth_identities', {
+  issuer: text('issuer').notNull(), subject: text('subject').notNull(), userId: uuid('user_id').notNull(),
+  workspaceId: uuid('workspace_id').notNull(), membershipId: uuid('membership_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  primaryKey({ name: 'shared_auth_identities_pk', columns: [t.issuer, t.subject] }),
+  unique('shared_auth_identities_user_unique').on(t.userId),
+  foreignKey({ name: 'shared_auth_identities_user_fk', columns: [t.userId], foreignColumns: [users.id] }),
+  foreignKey({ name: 'shared_auth_identities_workspace_fk', columns: [t.workspaceId], foreignColumns: [workspaces.id] }),
+  foreignKey({ name: 'shared_auth_identities_membership_fk', columns: [t.workspaceId, t.membershipId, t.userId], foreignColumns: [memberships.workspaceId, memberships.id, memberships.userId] }),
+  check('shared_auth_identities_values', sql`char_length(${t.issuer}) between 1 and 2048 and char_length(${t.subject}) between 1 and 255`),
+]);
+
+/** Opaque session hashes and API-encrypted payloads only; no token plaintext. */
+export const sharedAuthSessions = pgTable('shared_auth_sessions', {
+  sessionHash: text('session_hash').primaryKey(), userId: uuid('user_id').notNull(), encryptedTokens: text('encrypted_tokens').notNull(),
+  accessExpiresAt: timestamp('access_expires_at', { withTimezone: true }).notNull(), expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revision: integer('revision').notNull().default(1), revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  foreignKey({ name: 'shared_auth_sessions_user_fk', columns: [t.userId], foreignColumns: [users.id] }),
+  index('shared_auth_sessions_user_idx').on(t.userId), index('shared_auth_sessions_expiry_idx').on(t.expiresAt),
+  check('shared_auth_sessions_values', sql`${t.sessionHash} ~ '^[a-f0-9]{64}$' and octet_length(${t.encryptedTokens}) between 1 and 1048576 and ${t.revision} >= 1`),
+  check('shared_auth_sessions_times', sql`isfinite(${t.accessExpiresAt}) and isfinite(${t.expiresAt}) and (${t.revokedAt} is null or isfinite(${t.revokedAt})) and isfinite(${t.createdAt}) and isfinite(${t.updatedAt})`),
+]);
+
+/** Restart-safe, single-use browser-bound login transaction; raw state/cookie never stored. */
+export const sharedAuthLoginAttempts = pgTable('shared_auth_login_attempts', {
+  stateHash: text('state_hash').primaryKey(), browserHash: text('browser_hash').notNull(), returnTo: text('return_to').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  index('shared_auth_login_attempts_expiry_idx').on(t.expiresAt),
+  check('shared_auth_login_attempts_values', sql`${t.stateHash} ~ '^[a-f0-9]{64}$' and ${t.browserHash} ~ '^[a-f0-9]{64}$' and char_length(${t.returnTo}) between 1 and 2048`),
+  check('shared_auth_login_attempts_times', sql`isfinite(${t.expiresAt}) and isfinite(${t.createdAt})`),
 ]);

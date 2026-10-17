@@ -5,8 +5,8 @@
 export const COMMAND_SOURCES = ['web', 'api', 'mcp', 'job', 'import'] as const;
 export type CommandSource = (typeof COMMAND_SOURCES)[number];
 
-/** P0 knows only synthetic fixture identities; P6 adds real identities. */
-export type ActorKind = 'fixture';
+/** Internal identities keep real shared-Auth principals distinct from synthetic fixtures. */
+export type ActorKind = 'fixture' | 'real';
 
 export interface Actor {
   /** Internal Workloom user ID (UUID). */

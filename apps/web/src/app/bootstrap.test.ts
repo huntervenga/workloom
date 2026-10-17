@@ -65,6 +65,24 @@ describe('getAppEntry', () => {
       expect(getAppEntry(locationFor(href))).toEqual({ kind: 'public' });
     },
   );
+
+  it.each(['/app/auth/callback', '/app/auth/callback/', '/app/auth/callback?from=idp'])(
+    'treats %s as the sign-in callback',
+    (href) => {
+      expect(getAppEntry(locationFor(href))).toEqual({ kind: 'callback' });
+    },
+  );
+
+  it.each(['/app/auth', '/app/auth/callbackx', '/app/auth/callback/extra', '/app/auth/callback//', '/app/auth/CALLBACK'])(
+    'keeps lookalike %s in the ordinary app',
+    (href) => {
+      expect(getAppEntry(locationFor(href))).toEqual({ kind: 'app' });
+    },
+  );
+
+  it.each(['/auth/callback', '/callback'])('leaves %s public', (href) => {
+    expect(getAppEntry(locationFor(href))).toEqual({ kind: 'public' });
+  });
 });
 
 describe('runBootstrap', () => {
@@ -121,6 +139,55 @@ describe('runBootstrap', () => {
 
       expect(loader.calls).toBe(0);
       expect(location.replaced).toEqual([]);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['/app/auth/callback', '/app/auth/callback/'])(
+    'loads only the callback entry for %s, never the app',
+    async (href) => {
+      const location = locationFor(href);
+      const app = recordingLoader();
+      const callback = recordingLoader();
+
+      await expect(runBootstrap(location, app.load, callback.load)).resolves.toEqual({ kind: 'callback' });
+
+      expect(callback.calls).toBe(1);
+      expect(app.calls).toBe(0);
+      expect(location.replaced).toEqual([]);
+    },
+  );
+
+  it('loads nothing at the callback for callers without a callback loader', async () => {
+    const app = recordingLoader();
+
+    await expect(runBootstrap(locationFor('/app/auth/callback'), app.load)).resolves.toEqual({ kind: 'callback' });
+
+    expect(app.calls).toBe(0);
+  });
+
+  it('keeps app paths on the app loader when a callback loader is given', async () => {
+    const app = recordingLoader();
+    const callback = recordingLoader();
+
+    await runBootstrap(locationFor('/app/w/team?d=2026-10-17#top'), app.load, callback.load);
+
+    expect(app.calls).toBe(1);
+    expect(callback.calls).toBe(0);
+  });
+
+  it.each(['/', '/pricing', '/w/team'])(
+    'never loads the callback entry or sends a request on %s',
+    async (href) => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      const app = recordingLoader();
+      const callback = recordingLoader();
+
+      await runBootstrap(locationFor(href), app.load, callback.load);
+
+      expect(callback.calls).toBe(0);
+      expect(app.calls).toBe(0);
       expect(fetchSpy).not.toHaveBeenCalled();
     },
   );
