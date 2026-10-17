@@ -1,16 +1,24 @@
 import { useTranslation } from '../../i18n';
 import { taskScheduleBatchInputSchema, type TaskDto, type TaskScheduleContextRowDto, type TaskSchedulePreviewDto, type TaskScheduleBatchInput } from '@workloom/contracts';
-import { useCallback, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { ApiError, isAccessDenied } from '../../lib/api';
+import { protectedCommandsFor } from '../../lib/protectedCommands';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { fetchPlanningPeriod } from '../planning/api';
 import { fetchScheduleContext, previewSchedule } from './api';
 import { shiftDay, todayIn, type LoadedFit } from './dates';
+import type { DateMoveProposal } from './dateGesture';
 import { useApplySchedule } from './queries';
+import type { DateMoveProtection } from './useGanttMove';
 export type WindowFit = Exclude<LoadedFit, { kind: 'none' }> & { origin: 'initial' | 'explicit' };
 export interface ScheduleDraftRow { taskId: string; title: string; expectedRevision: number; startDate: string; dueDate: string; baseStart: string; baseDue: string; editable: boolean }
-export interface ScheduleDraft { id: string; rows: ScheduleDraftRow[]; preview: TaskSchedulePreviewDto | null; previewFingerprint: string | null; error: Error | null }
+/** `origin: 'move'` marks a draft staged by a Gantt bar drop; it is otherwise an ordinary retained draft. */
+export interface ScheduleDraft { id: string; rows: ScheduleDraftRow[]; preview: TaskSchedulePreviewDto | null; previewFingerprint: string | null; error: Error | null; origin?: 'move' }
+/** Why a bar move cannot start or stage now; the manual date editor stays available either way. */
+export type MoveGate = 'draft' | 'command' | 'denied' | 'scope' | null;
+export interface MoveScope { actorId: string; workspaceId: string; projectId: string }
 const fingerprint = (input: TaskScheduleBatchInput) => JSON.stringify(input);
 export function scheduleDraftInput(draft: ScheduleDraft): TaskScheduleBatchInput | null {
   const parsed = taskScheduleBatchInputSchema.safeParse({ rows: draft.rows.map(row => ({ taskId: row.taskId, expectedRevision: row.expectedRevision, startDate: row.startDate || null, dueDate: row.dueDate || null })) });
@@ -28,6 +36,23 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
   const latestDrafts = useRef(drafts); latestDrafts.current = drafts;
   const latestActive = useRef(activeId); latestActive.current = activeId;
   const requests = useRef<Record<string, number>>({});
+  const client = useQueryClient();
+  // Synchronous mirror of retained draft IDs: a drop in the same tick as open/discard sees them before React renders.
+  const draftIds = useRef(new Set<string>());
+  // Refresh leases transferred by Gantt drops. Only apply success, explicit discard or scope cleanup release them;
+  // closing the dialog, switching views or unmounting the bar never does.
+  const moveLeases = useRef(new Map<string, DateMoveProtection>());
+  const liveScope = useRef<MoveScope | null>(null);
+  const releaseMove = useCallback((id: string) => {
+    const lease = moveLeases.current.get(id);
+    if (!lease) return;
+    moveLeases.current.delete(id); lease.dispose();
+  }, []);
+  useLayoutEffect(() => {
+    liveScope.current = { actorId, workspaceId, projectId };
+    const leases = moveLeases.current;
+    return () => { liveScope.current = null; for (const lease of leases.values()) lease.dispose(); leases.clear(); };
+  }, [actorId, workspaceId, projectId]);
   const [windowStart, setWindowStartState] = useState(() => todayIn(timezone));
   const [windowSize, setWindowSizeState] = useState(28);
   const [windowFit, setWindowFit] = useState<WindowFit | null>(null);
@@ -46,6 +71,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
   const [baselinePeriodId, setBaselinePeriodId] = useState('');
   const [baselineId, setBaselineId] = useState('');
   const mutation = useApplySchedule(actorId, workspaceId, projectId, variables => {
+    draftIds.current.delete(variables.draftId); releaseMove(variables.draftId);
     setDrafts(current => Object.fromEntries(Object.entries(current).filter(([id]) => id !== variables.draftId)));
     setActiveId(current => current === variables.draftId ? null : current);
   });
@@ -61,9 +87,10 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
       if (!context) throw new Error(t('schedule.useScheduleWorkspace.authorizedContextMissing'));
       return { taskId: task.id, title: task.title, expectedRevision: context.taskRevision, startDate: context.current.startDate ?? '', dueDate: context.current.dueDate ?? '', baseStart: context.current.startDate ?? '', baseDue: context.current.dueDate ?? '', editable: context.editableDates };
     }) };
+    draftIds.current.add(draft.id);
     setDrafts(current => ({ ...current, [draft.id]: draft })); setActiveId(draft.id);
   };
-  const change = (id: string, taskId: string, patch: Partial<Pick<ScheduleDraftRow, 'startDate' | 'dueDate'>>) => {
+  const change =(id: string, taskId: string, patch: Partial<Pick<ScheduleDraftRow, 'startDate' | 'dueDate'>>) => {
     if (held?.draftId === id) return;
     setDrafts(current => { const draft = current[id]; return draft ? { ...current, [id]: { ...draft, rows: draft.rows.map(row => row.taskId === taskId ? { ...row, ...patch } : row), preview: null, previewFingerprint: null, error: null } } : current; });
   };
@@ -104,7 +131,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
     if (!input || held || denied || rebasing !== null || !draft.preview || draft.previewFingerprint !== fingerprint(input) || draft.preview.protectedTargets.length || draft.preview.recoveryPeriodIds.length) return;
     mutation.mutate({ draftId: draft.id, input: { ...input, previewHash: draft.preview.previewHash } });
   };
-  const discard = (id: string) => { if (held?.draftId === id) return; setDrafts(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== id))); setActiveId(current => current === id ? null : current); };
+  const discard = (id: string) => { if (held?.draftId === id) return; draftIds.current.delete(id); releaseMove(id); setDrafts(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== id))); setActiveId(current => current === id ? null : current); };
   const denied = readDenied || isAccessDenied(mutation.error) || Object.values(drafts).some(draft => isAccessDenied(draft.error));
   const clearDenial = async (canReveal: () => boolean) => {
     // Filter/view changes must not authorize a privately retained draft by reading other tasks.
@@ -137,7 +164,35 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
   };
   const dirty = Object.values(drafts).some(draft => draft.rows.some(row => row.startDate !== row.baseStart || row.dueDate !== row.baseDue));
   useProtectedDraft(dirty); useUnsavedChangesWarning(dirty);
-  return { drafts, active, activeId, setActiveId, open, change, shift, preview, previewing, rebase, rebasing, apply, discard, mutation, held, denied, noteReadDenied, clearDenial, openingRecovery, resolveRecoveryPeriod,
+  const deniedNow = useRef(denied); deniedNow.current = denied;
+  const heldNow = useRef(held); heldNow.current = held;
+  const latestPreview = useRef(preview); latestPreview.current = preview;
+  /**
+   * Synchronous refs only. Any pending/unknown command of this QueryClient and every retained schedule draft
+   * refuse a move: a drop never reuses, opens or previews an older draft. Unrelated task drafts keep their own owners,
+   * and the gesture's own transferred lease is not a reason to refuse.
+   */
+  const moveGate = useCallback((): MoveGate => {
+    if (!liveScope.current) return 'scope';
+    if (protectedCommandsFor(client).protecting || heldNow.current) return 'command';
+    if (draftIds.current.size || moveLeases.current.size || Object.keys(latestDrafts.current).length) return 'draft';
+    return deniedNow.current ? 'denied' : null;
+  }, [client]);
+  /** Atomic drop handoff: rechecks the gate, creates exactly one new draft and previews that exact input. True adopts the lease. */
+  const stageMove = useCallback((proposal: DateMoveProposal, lease: DateMoveProtection, scope: MoveScope): boolean => {
+    const live = liveScope.current, { source } = proposal;
+    if (moveGate() !== null || !live || live.actorId !== scope.actorId || live.workspaceId !== scope.workspaceId || live.projectId !== scope.projectId) return false;
+    if (proposal.dayDelta === 0 || (source.startDate === null) !== (proposal.startDate === null) || (source.dueDate === null) !== (proposal.dueDate === null)) return false;
+    const draft: ScheduleDraft = { id: crypto.randomUUID(), origin: 'move', preview: null, previewFingerprint: null, error: null, rows: [{
+      taskId: source.taskId, title: source.title, expectedRevision: source.expectedRevision, startDate: proposal.startDate ?? '', dueDate: proposal.dueDate ?? '',
+      baseStart: source.startDate ?? '', baseDue: source.dueDate ?? '', editable: true }] };
+    if (!scheduleDraftInput(draft)) return false;
+    draftIds.current.add(draft.id); moveLeases.current.set(draft.id, lease);
+    setDrafts(current => ({ ...current, [draft.id]: draft })); setActiveId(draft.id);
+    void latestPreview.current(draft);
+    return true;
+  }, [moveGate]);
+  return { drafts, active, activeId, setActiveId, open, change, shift, preview, previewing, rebase, rebasing, apply, discard, mutation, held, denied, noteReadDenied, clearDenial, openingRecovery, resolveRecoveryPeriod, moveGate, stageMove,
     windowStart, setWindowStart, windowSize, setWindowSize, windowFit, fitWindow, initializeWindow, baselinePeriodId, setBaselinePeriodId, baselineId, setBaselineId };
 }
 export type ScheduleWorkspace = ReturnType<typeof useScheduleWorkspace>;

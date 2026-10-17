@@ -1,8 +1,9 @@
 import { t, useTranslation } from '../../i18n';
 import type { BaselineDateValueDto, MembershipDto, PlanningPeriodDto, PlanBaselineDto, ProjectDto, TaskDto, TaskScheduleContextRowDto, WorkspaceDto } from '@workloom/contracts';
-import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { Button, TextInput, inputClassName } from '@workloom/ui';
 import { isAccessDenied } from '../../lib/api';
+import { protectedCommandsFor } from '../../lib/protectedCommands';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { useQueryClient } from '@tanstack/react-query';
 import { planningKeys, usePlanBaselinesQuery } from '../planning/queries';
@@ -14,6 +15,9 @@ import { planConnectors, skippedCounts, type ConnectorPlan, type ConnectorRow } 
 import { GanttConnectors, connectorStyles } from './GanttConnectors';
 import { anchorAttribute, useConnectorAnchors } from './useConnectorAnchors';
 import { pointStyle } from './barGeometry';
+import { dateMoveSource, type DateMoveProposal } from './dateGesture';
+import { GanttMoveBar, type MoveHandle, type ProposedDates } from './GanttMoveBar';
+import type { DateMoveProtection } from './useGanttMove';
 
 const baselineValue = (value: BaselineDateValueDto, start: boolean) => value.state === 'set' ? value.value : value.state === 'not_set' ? t('schedule.ganttView.notSet') : start ? t('schedule.ganttView.startDateWasNotCapturedInThisPlan') : t('schedule.ganttView.dueDateWasNotCapturedInThisPlan');
 const frozenAt = (value: string) => value.replace('T', ' ').replace('Z', ' UTC');
@@ -24,13 +28,16 @@ const noConnectors: ConnectorPlan = { drawn: [], skipped: [] };
 /** Day separators plus Saturday/Sunday shading as two repeating backgrounds, aligned to the window's first weekday. */
 const TRACK_BACKGROUND = '[background-image:linear-gradient(90deg,#e2e8f0_1px,transparent_1px),linear-gradient(90deg,transparent_calc(var(--gantt-day)*5px),#f1f5f9_calc(var(--gantt-day)*5px),#f1f5f9_calc(var(--gantt-day)*7px))] [background-size:calc(var(--gantt-day)*1px)_100%,calc(var(--gantt-day)*7px)_100%] [background-position:0_0,calc(var(--gantt-shift)*1px)_0]';
 const trackBackground = (width: number, firstWeekday: number) => ({ '--gantt-day': width, '--gantt-shift': -(firstWeekday - 1) * width }) as CSSProperties;
-export function ScheduleBar({ start, due, window, baseline = false, onFocus, startLabel, dueLabel, incomplete = false, title, anchor }: { start: string | null; due: string | null; window: CalendarWindow; baseline?: boolean; startLabel?: string; dueLabel?: string; incomplete?: boolean; title?: string; anchor?: string; onFocus: (date: string) => void }) {
+export function ScheduleBar({ start, due, window, baseline = false, onFocus, startLabel, dueLabel, incomplete = false, title, anchor, handle = null }: { start: string | null; due: string | null; window: CalendarWindow; baseline?: boolean; startLabel?: string; dueLabel?: string; incomplete?: boolean; title?: string; anchor?: string; onFocus: (date: string) => void; handle?: MoveHandle | null }) {
   const { t } = useTranslation();
   const clipped = clipDates(start, due, window);
   const label = t('schedule.ganttView.valueStartValueDueValue', { p0: baseline ? t('schedule.ganttView.frozenDatesLabel') : t('schedule.ganttView.current'), p1: startLabel ?? start ?? t('schedule.ganttView.notSet'), p2: dueLabel ?? due ?? t('schedule.ganttView.notSet') });
+  // The move handle sits on the saved body itself; the body keeps its saved dates while a ghost shows the proposal.
+  // data-gantt-movable carries the source task ID only while a move could start now; blocked bodies keep the handle for guidance.
+  const body = handle ? { onPointerDown: handle.onPointerDown, onClickCapture: handle.onClickCapture, 'data-gantt-move-handle': '', ...(handle.movable ? { 'data-gantt-movable': handle.movable } : {}) } : {};
   return <div aria-label={label} className="relative h-6" {...(anchor ? { [anchorAttribute]: anchor } : {})}>
-    {clipped.kind === 'range' ? <div role="img" aria-label={label} title={title ? `${title} · ${label}` : label} className={`absolute top-0.5 z-[2] flex h-5 items-center gap-0.5 overflow-hidden rounded px-0.5 text-[11px] leading-5 ${baseline ? 'border border-dashed border-slate-500 bg-slate-100 text-slate-700' : 'bg-indigo-500 text-white shadow-xs'}`} style={{ left: `${clipped.left}%`, width: `${clipped.width}%`, minWidth: 2 }}><span aria-hidden="true">{clipped.continuesBefore ? '‹' : ''}</span>{title ? <span aria-hidden="true" className="min-w-0 flex-1 truncate">{title}</span> : <span className="flex-1" />}<span aria-hidden="true">{clipped.continuesAfter ? '›' : ''}</span></div>
-      : clipped.kind === 'point' ? <span role="img" aria-label={t('schedule.ganttView.valueOnlyValue', { p0: label, p1: clipped.endpoint === 'start' ? t('schedule.ganttView.startDate') : t('schedule.ganttView.dueDate') })} title={label} className={`absolute top-1 z-[2] rounded-sm ${baseline ? 'border border-slate-500 bg-slate-100' : 'bg-indigo-500'}`} style={{ ...pointStyle, left: `${clipped.left}%` }} />
+    {clipped.kind === 'range' ? <div role="img" aria-label={label} title={title ? `${title} · ${label}` : label} className={`absolute top-0.5 z-[2] flex h-5 items-center gap-0.5 overflow-hidden rounded px-0.5 text-[11px] leading-5 ${baseline ? 'border border-dashed border-slate-500 bg-slate-100 text-slate-700' : 'bg-indigo-500 text-white shadow-xs'} ${handle ? 'cursor-grab touch-none select-none active:cursor-grabbing' : ''}`} style={{ left: `${clipped.left}%`, width: `${clipped.width}%`, minWidth: 2 }} {...body}><span aria-hidden="true">{clipped.continuesBefore ? '‹' : ''}</span>{title ? <span aria-hidden="true" className="min-w-0 flex-1 truncate">{title}</span> : <span className="flex-1" />}<span aria-hidden="true">{clipped.continuesAfter ? '›' : ''}</span></div>
+      : clipped.kind === 'point' ? <span role="img" aria-label={t('schedule.ganttView.valueOnlyValue', { p0: label, p1: clipped.endpoint === 'start' ? t('schedule.ganttView.startDate') : t('schedule.ganttView.dueDate') })} title={label} className={`absolute top-1 z-[2] rounded-sm ${baseline ? 'border border-slate-500 bg-slate-100' : 'bg-indigo-500'} ${handle ? 'cursor-grab touch-none select-none active:cursor-grabbing' : ''}`} style={{ ...pointStyle, left: `${clipped.left}%` }} {...body} />
       : clipped.kind === 'outside' ? <button type="button" className="rounded px-1 text-xs leading-6 text-muted underline" onClick={() => onFocus(clipped.endpoint)}>{t('schedule.ganttView.outsideWindowShowValue', { date: clipped.endpoint })}</button>
       : <span className="px-1 text-xs leading-6 text-muted">{clipped.kind === 'none' ? incomplete ? t('schedule.ganttView.datesWereNotFullyCaptured') : t('schedule.ganttView.noDates') : t('schedule.ganttView.checkDates')}</span>}
   </div>;
@@ -55,6 +62,12 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
   const noteReadDenied = c.noteReadDenied;
   const authoritativeDenial = context.anyAccessDenied || isAccessDenied(baselines.error);
   useLayoutEffect(() => { if (authoritativeDenial) noteReadDenied(); }, [authoritativeDenial, noteReadDenied]);
+  // Re-render when any pending/unknown command of this client starts or settles, so move guidance stays current.
+  const commands = protectedCommandsFor(queryClient);
+  useSyncExternalStore(commands.subscribe, commands.getSnapshot);
+  const moveGate = c.moveGate();
+  const [moveRefused, setMoveRefused] = useState(false);
+  useLayoutEffect(() => { if (moveRefused && moveGate === null) setMoveRefused(false); }, [moveRefused, moveGate]);
   const axis = useMemo(() => { const window = calendarWindow(c.windowStart, c.windowSize); return window ? { window, ...calendarAxis(window) } : null; }, [c.windowStart, c.windowSize]);
   // Calendar-only values are formatted at UTC midnight so the viewer's zone never shifts a day.
   const formats = useMemo(() => ({
@@ -126,6 +139,21 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
     skipped.not_current ? t('schedule.ganttView.connectorSkipNotCurrent', { count: skipped.not_current }) : '',
   ].filter(Boolean);
   const checksId = `${fitHelpId}-checks`;
+  // Any window, zoom, filter/loaded scope or comparison change cancels an active move gesture.
+  const viewportKey = window ? [window.start, window.days, width, c.baselinePeriodId, c.baselineId, accessScope].join('|') : '';
+  const movedDrafts = new Map<string, ProposedDates>();
+  for (const draft of Object.values(c.drafts)) {
+    const first = draft.rows[0];
+    if (draft.origin === 'move' && draft.rows.length === 1 && first) movedDrafts.set(first.taskId, { startDate: first.startDate || null, dueDate: first.dueDate || null });
+  }
+  const canStartMove = () => c.moveGate() === null;
+  const refuseMove = () => setMoveRefused(true);
+  // A drop only stages a page-owned draft and its server preview; Apply dates stays an explicit step.
+  const dropMove = (proposal: DateMoveProposal, lease: DateMoveProtection) => {
+    const staged = c.stageMove(proposal, lease, { actorId, workspaceId: workspace.id, projectId: project.id });
+    if (!staged) setMoveRefused(true);
+    return staged;
+  };
   const renderRow = (task: TaskDto) => {
     const row = context.rows.get(task.id);
     if (!row || !window) return <div key={task.id} className="px-3 py-2 text-xs text-muted">{t('schedule.ganttView.taskDatesHaveNotLoadedYet')}</div>;
@@ -144,9 +172,12 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
         {base.state === 'not_in_baseline' ? <p className="truncate text-[11px] leading-4 text-muted">{t('schedule.ganttView.taskIsNotIncludedInThisPlan')}</p> : base.state === 'captured' ? <p className="text-[11px] leading-4 text-slate-600">{t('schedule.ganttView.planStartValue', { date: baselineValue(base.startDate, true) })}<br />{t('schedule.ganttView.dueValue', { date: baselineValue(base.dueDate, false) })}</p> : null}
         {row.blocking.isBlocked ? <p className="text-[11px] leading-4 text-amber-900">{t('schedule.ganttView.unfinishedPredecessorCount', { count: row.blocking.unresolvedCount })}</p> : null}
       </div>
-      <div className={`relative shrink-0 py-1.5 ${TRACK_BACKGROUND}`} style={{ width: window.days * width, ...background }}>
+      <div data-gantt-track="" className={`relative shrink-0 py-1.5 ${TRACK_BACKGROUND}`} style={{ width: window.days * width, ...background }}>
         {todayOffset !== null ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-0.5 bg-rose-500/70" style={{ left: (todayOffset + 0.5) * width - 1 }} /> : null}
-        {row.meetingId ? <p className="px-1 text-xs leading-6 text-muted">{t('schedule.ganttView.meetingScheduleIsInTheCalendarWithoutA')}</p> : <ScheduleBar start={row.current.startDate} due={row.current.dueDate} title={task.title} anchor={task.id} window={window} onFocus={c.setWindowStart} />}
+        {row.meetingId ? <p className="px-1 text-xs leading-6 text-muted">{t('schedule.ganttView.meetingScheduleIsInTheCalendarWithoutA')}</p>
+          : <GanttMoveBar actorId={actorId} workspaceId={workspace.id} source={dateMoveSource(task, row, { projectId: project.id, writable, ready: snapshotReady })} viewportKey={viewportKey} pixelsPerDay={width} window={window} staged={movedDrafts.get(task.id) ?? null} canStart={canStartMove} onRefused={refuseMove} onDrop={dropMove}>
+            {handle => <ScheduleBar start={row.current.startDate} due={row.current.dueDate} title={task.title} anchor={task.id} window={window} onFocus={c.setWindowStart} handle={handle} />}
+          </GanttMoveBar>}
         {base.state === 'captured' && !row.meetingId ? <ScheduleBar start={baseStart} due={baseDue} startLabel={baselineValue(base.startDate, true)} dueLabel={baselineValue(base.dueDate, false)} incomplete={base.startDate.state === 'not_captured' || base.dueDate.state === 'not_captured'} window={window} baseline onFocus={c.setWindowStart} /> : null}
       </div>
     </div>;
@@ -164,6 +195,7 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
       {window ? <p>{t('schedule.ganttView.aboutWindow', { count: window.days, startIso: window.start, endIso: window.end, timezone: workspace.timezone })}</p> : null}
       <p>{t('schedule.ganttView.aboutLoaded')}</p>
       <p>{t('schedule.ganttView.datesDoNotChangePlans')}</p>
+      <p>{t('schedule.ganttMoveBar.aboutMove')}</p>
       <p>{t('schedule.ganttView.connectorsAbout')}</p>
       <p className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]"><span className="inline-flex items-center gap-1"><span aria-hidden="true" className="inline-block h-2.5 w-4 rounded-sm bg-indigo-500" />{t('schedule.ganttView.legendCurrent')}</span><span className="inline-flex items-center gap-1"><span aria-hidden="true" className="inline-block h-2.5 w-4 rounded-sm border border-dashed border-slate-500 bg-slate-100" />{t('schedule.ganttView.legendFrozen')}</span><span className="inline-flex items-center gap-1"><span aria-hidden="true" className="inline-block h-2.5 w-0.5 bg-rose-500" />{t('schedule.ganttView.legendToday')}</span><span className="inline-flex items-center gap-1"><span aria-hidden="true" className="inline-block h-2.5 w-4 rounded-sm bg-slate-100 ring-1 ring-line" />{t('schedule.ganttView.legendWeekend')}</span></p>
     </div>
@@ -196,6 +228,7 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
       </div>
     </section>
     {writable && selectedIds.length ? <div className="space-y-2"><Button disabled={hiddenSelection || context.pending || !!context.error || selected.length > 100} onClick={() => c.open(selected, context.rows)}>{t('schedule.ganttView.editSelectedDateCount', { count: selectedIds.length })}</Button>{hiddenSelection ? <p className="text-xs text-muted">{t('schedule.ganttView.someSelectedTasksAreHiddenByTheCurrent')}</p> : null}</div> : null}
+    {moveRefused && (moveGate === 'draft' || moveGate === 'command') ? <p role="status" className="text-xs text-amber-900">{t(moveGate === 'command' ? 'schedule.ganttMoveBar.blockedByCommand' : 'schedule.ganttMoveBar.blockedByDraft')}</p> : null}
     {contextReady && window && context.comparisons.length ? <div role="group" aria-label={t('schedule.ganttView.connectorsLegend')} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
       <span className="font-medium text-ink-soft">{t('schedule.ganttView.connectorsTitle')}</span>
       <span className="inline-flex items-center gap-1"><svg aria-hidden="true" width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke={connectorStyles.compatible.stroke} strokeWidth={connectorStyles.compatible.strokeWidth} /></svg>{t('schedule.ganttView.connectorAligned', { count: aligned })}</span>

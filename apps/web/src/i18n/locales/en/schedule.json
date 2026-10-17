@@ -179,6 +179,13 @@
     "connectorsSvgLabel": "Dependency arrows — aligned: {{aligned}}, date conflicts: {{conflicts}}",
     "connectorsAbout": "Dependency arrows run from a predecessor’s current due date to its successor’s current start, only when both tasks are loaded here and both dates are in the window. Dashed orange arrows are date conflicts. Arrows only show the date check: they never move tasks, change dates or decide blocking."
   },
+  "ganttMoveBar": {
+    "proposedDates": "Proposed, not applied: {{start}} — {{due}}",
+    "proposedOutsideWindow": "{{dates}} (outside this window)",
+    "aboutMove": "Drag a current task bar to propose moving its dates by whole days. The saved bar and arrows stay put; nothing changes until you review the preview and choose Apply dates. Edit dates offers the same move by keyboard.",
+    "blockedByDraft": "Continue or discard the retained date draft before moving another bar. Edit dates is still available.",
+    "blockedByCommand": "A change is still being submitted or is unconfirmed. Resolve it before moving a bar. Edit dates is still available."
+  },
   "scheduleDialog": {
     "editTaskDates": "Edit task dates",
     "enterCalendarDatesReviewChangesAndApplyThem": "Enter calendar dates, review changes, and apply them together. Team estimates, personal plans, and actual hours are separate.",
