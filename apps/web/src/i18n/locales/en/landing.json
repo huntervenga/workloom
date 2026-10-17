@@ -1,0 +1,98 @@
+{
+  "brand": "Workloom",
+  "seo": {
+    "title": "Workloom — Team Task Management and Weekly Planning",
+    "description": "Bring tasks, weekly plans, recorded work, team meetings and dependencies into one connected workspace."
+  },
+  "nav": {
+    "label": "Main navigation",
+    "features": "Features",
+    "how": "How it works",
+    "openApp": "Open app",
+    "skip": "Skip to content"
+  },
+  "hero": {
+    "eyebrow": "A little more clarity. Every week.",
+    "title": "Give every week a clear thread.",
+    "description": "Connect the tasks ahead with the work that actually happens. Keep owners, weekly plans, meetings and dependencies in view, together.",
+    "secondary": "See how it works",
+    "note": "Tasks, plans and recorded work, connected."
+  },
+  "example": {
+    "label": "An illustrative workspace",
+    "eyebrow": "A connected week",
+    "project": "Project launch",
+    "tasks": "Tasks",
+    "week": "This week",
+    "taskColumn": "Task & owner",
+    "statusColumn": "Status",
+    "taskOne": "Shape the first draft",
+    "ownerOne": "Design team",
+    "statusOne": "In progress",
+    "taskTwo": "Review the details",
+    "ownerTwo": "Project team",
+    "statusTwo": "To do",
+    "taskThree": "Share the next steps",
+    "ownerThree": "Project team",
+    "statusThree": "To do",
+    "planLabel": "Plan with intention",
+    "planDescription": "Choose the work you want to take on.",
+    "factLabel": "Record what happened",
+    "factDescription": "Keep actual work alongside the plan.",
+    "connection": "Dependencies keep the next step in context.",
+    "caption": "Illustration with example tasks. Your workspace starts with your own work."
+  },
+  "features": {
+    "eyebrow": "The whole thread",
+    "title": "Less piecing things together. More shared understanding.",
+    "description": "Move between the details of a task and the shape of the week without losing the context.",
+    "tasks": {
+      "tag": "Tasks",
+      "title": "Make the next step clear.",
+      "description": "Keep tasks, owners, statuses and dates together. Use the table or board to find the work that needs attention."
+    },
+    "planning": {
+      "tag": "Plan & fact",
+      "title": "Give the week an honest picture.",
+      "description": "Set personal weekly plans and record work against tasks. Compare the plan with what was actually recorded."
+    },
+    "meetings": {
+      "tag": "Team meetings",
+      "title": "Keep meetings in the picture.",
+      "description": "Bring scheduled meetings, personal plans and recorded attendance into the same weekly context."
+    },
+    "dependencies": {
+      "tag": "Dependencies",
+      "title": "See what comes before what.",
+      "description": "Connect tasks across projects, see unfinished predecessors and explore the graph or dated timeline."
+    }
+  },
+  "how": {
+    "eyebrow": "A rhythm you can follow",
+    "title": "From a task to a clearer week.",
+    "one": {
+      "number": "01",
+      "title": "Lay out the work.",
+      "description": "Create a project, add tasks and make ownership clear. Connect the tasks that depend on one another."
+    },
+    "two": {
+      "number": "02",
+      "title": "Make room for the week.",
+      "description": "Choose personal commitments in an explicit weekly period, with meetings in the same context."
+    },
+    "three": {
+      "number": "03",
+      "title": "Keep the picture honest.",
+      "description": "Record work and review plan versus fact. Use the context to decide what comes next."
+    }
+  },
+  "closing": {
+    "eyebrow": "Pick up the thread",
+    "title": "A clearer view of the work ahead.",
+    "description": "Bring your tasks and your week into one workspace."
+  },
+  "footer": {
+    "note": "A connected workspace for tasks, plans and recorded work.",
+    "top": "Back to top"
+  }
+}

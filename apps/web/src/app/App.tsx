@@ -14,8 +14,8 @@ function Root() {
 }
 
 // A data router only so that departures can be blocked; the routes themselves stay in AppRoutes.
-// Created once, outside render, as React Router expects.
-const router = createBrowserRouter([{ path: '*', element: <Root /> }]);
+// Created once, outside render, as React Router expects. The app lives under /app; the site root is public.
+const router = createBrowserRouter([{ path: '*', element: <Root /> }], { basename: '/app' });
 
 export function App({ queryClient }: { queryClient: QueryClient }) {
   return (

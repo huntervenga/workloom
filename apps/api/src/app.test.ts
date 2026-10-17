@@ -273,6 +273,7 @@ describe('API app serving the web build', () => {
     dist = mkdtempSync(join(tmpdir(), 'workloom-web-dist-'));
     mkdirSync(join(dist, 'assets'));
     writeFileSync(join(dist, 'index.html'), '<!doctype html><div id="root"></div><script type="module" src="/assets/app-abc.js"></script>');
+    writeFileSync(join(dist, 'landing.html'), '<!doctype html><main id="landing">Workloom</main>');
     writeFileSync(join(dist, 'assets', 'app-abc.js'), 'console.log(1);');
     writeFileSync(join(dist, 'assets', 'app-abc.css'), 'body{}');
     app = await createApp(config({ NODE_ENV: 'production' }), { accessRepository: repository, readiness, logger: false, webDistDir: dist });
@@ -283,11 +284,14 @@ describe('API app serving the web build', () => {
     rmSync(dist, { recursive: true, force: true });
   });
 
-  it('serves index and hashed assets with correct content types', async () => {
-    const index = await get(app, '/', { accept: 'text/html' });
-    expect(index.statusCode).toBe(200);
-    expect(index.headers['content-type']).toMatch(/text\/html/);
-    expect(index.headers['cache-control']).toBe('no-cache');
+  it('serves the landing at the root and hashed assets with correct content types', async () => {
+    const landing = await get(app, '/', { accept: 'text/html' });
+    expect(landing.statusCode).toBe(200);
+    expect(landing.headers['content-type']).toMatch(/text\/html/);
+    expect(landing.headers['cache-control']).toBe('no-cache');
+    expect(landing.headers['x-robots-tag']).toBeUndefined();
+    expect(landing.body).toContain('<main id="landing">');
+    expect(landing.body).not.toContain('<div id="root">');
 
     const js = await get(app, '/assets/app-abc.js');
     expect(js.statusCode).toBe(200);
@@ -296,10 +300,22 @@ describe('API app serving the web build', () => {
     expect((await get(app, '/assets/app-abc.css')).headers['content-type']).toMatch(/text\/css/);
   });
 
-  it('falls back to the SPA only for extensionless HTML navigations', async () => {
-    const route = await get(app, `/w/${FIXTURE_WORKSPACE_IDS.team}/members`, { accept: 'text/html,application/xhtml+xml' });
+  it('falls back to the SPA only for extensionless HTML navigations under /app', async () => {
+    const legacy = await get(app, `/w/${FIXTURE_WORKSPACE_IDS.team}/members`, { accept: 'text/html,application/xhtml+xml' });
+    expect(legacy.statusCode).toBe(308);
+    expect(legacy.headers.location).toBe(`/app/w/${FIXTURE_WORKSPACE_IDS.team}/members`);
+    expect(legacy.body).not.toContain('<div id="root">');
+
+    const route = await get(app, `/app/w/${FIXTURE_WORKSPACE_IDS.team}/members`, { accept: 'text/html,application/xhtml+xml' });
     expect(route.statusCode).toBe(200);
+    expect(route.headers['content-type']).toMatch(/text\/html/);
+    expect(route.headers['x-robots-tag']).toBe('noindex');
+    expect(route.headers['cache-control']).toBe('no-cache');
     expect(route.body).toContain('<div id="root">');
+
+    const outsideApp = await get(app, '/anything', { accept: 'text/html' });
+    expect(outsideApp.statusCode).toBe(404);
+    expect(outsideApp.headers['content-type']).toMatch(/application\/json/);
 
     const missingAsset = await get(app, '/assets/missing.js', { accept: '*/*' });
     expect(missingAsset.statusCode).toBe(404);

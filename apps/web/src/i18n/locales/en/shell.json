@@ -54,5 +54,6 @@
   "demoHelp": "About this demo",
   "routeFilesFailedHelp": "The page files could not be loaded. Check your connection and try again. If Workloom was updated, refresh this tab.",
   "appUpdated": "Workloom has been updated",
-  "appUpdatedHelp": "This tab is using an older version. Refresh it to open the page with the current version. Your current page address will be kept."
+  "appUpdatedHelp": "This tab is using an older version. Refresh it to open the page with the current version. Your current page address will be kept.",
+  "appRootMissing": "The application could not find its root element."
 }

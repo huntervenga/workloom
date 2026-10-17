@@ -8,36 +8,92 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 /** apps/web/dist resolved from this module (apps/api/{src,dist}/http → apps/web/dist). */
 export const DEFAULT_WEB_DIST_DIR = fileURLToPath(new URL('../../../web/dist/', import.meta.url));
 
+/** Public landing document served at '/'. */
+export const LANDING_DOCUMENT = 'landing.html';
+/** SPA document served only for navigations under APP_PREFIX. */
+export const SPA_DOCUMENT = 'index.html';
+export const APP_PREFIX = '/app';
+/** Pre-landing SPA workspace routes; HTML navigations move under APP_PREFIX. */
+const LEGACY_APP_PREFIX = '/w';
+
 const IMMUTABLE_ASSET = 'public, max-age=31536000, immutable';
+const CANONICAL_REDIRECT = 308;
 
-/** Returns the dist directory when it contains a built index.html, otherwise null. */
+type NavigationRequest = Pick<FastifyRequest, 'method' | 'url' | 'headers'>;
+
+/** Returns the dist directory when it contains both built documents, otherwise null. */
 export function resolveWebDist(dir: string): string | null {
-  return existsSync(join(dir, 'index.html')) ? dir : null;
+  return existsSync(join(dir, SPA_DOCUMENT)) && existsSync(join(dir, LANDING_DOCUMENT)) ? dir : null;
 }
 
-function isReservedPath(path: string): boolean {
-  return path === '/api' || path.startsWith('/api/') || path === '/healthz' || path.startsWith('/healthz/');
+/** Splits the raw request target into its path and raw query ('' or '?…'); a fragment is never kept. */
+function splitTarget(url: string): { readonly path: string; readonly query: string } {
+  const target = url.split('#', 1)[0] ?? '';
+  const queryStart = target.indexOf('?');
+  return queryStart === -1 ? { path: target, query: '' } : { path: target.slice(0, queryStart), query: target.slice(queryStart) };
 }
 
-/**
- * SPA fallback applies only to GET/HEAD navigations: outside /api and /healthz,
- * no file extension in the last segment, and an HTML-accepting client.
- */
-export function shouldServeSpa(request: Pick<FastifyRequest, 'method' | 'url' | 'headers'>): boolean {
+function isUnder(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+/** GET/HEAD from an HTML-accepting client with no file extension in the last segment. */
+function isHtmlNavigation(request: NavigationRequest): boolean {
   if (request.method !== 'GET' && request.method !== 'HEAD') return false;
-  const path = request.url.split('?')[0] ?? '';
-  if (isReservedPath(path)) return false;
+  const { path } = splitTarget(request.url);
   const lastSegment = path.slice(path.lastIndexOf('/') + 1);
   if (lastSegment.includes('.')) return false;
   const accept = request.headers.accept ?? '';
   return accept.includes('text/html') || accept.includes('*/*');
 }
 
-export function sendSpaIndex(reply: FastifyReply): FastifyReply {
-  return reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8').sendFile('index.html');
+/** SPA fallback applies only to HTML navigations at /app or below; everything else stays a JSON 404. */
+export function shouldServeSpa(request: NavigationRequest): boolean {
+  return isHtmlNavigation(request) && isUnder(splitTarget(request.url).path, APP_PREFIX);
 }
 
-/** Registers hashed assets and the root index. Missing files fall through to the not-found handler. */
+/**
+ * Origin-relative /app location for a legacy /w HTML navigation, or null. The raw query is kept
+ * byte-for-byte; no fragment is emitted, so the browser carries its own fragment over.
+ */
+export function legacyAppLocation(request: NavigationRequest): string | null {
+  if (!isHtmlNavigation(request)) return null;
+  const { path, query } = splitTarget(request.url);
+  return isUnder(path, LEGACY_APP_PREFIX) ? `${APP_PREFIX}${path}${query}` : null;
+}
+
+export function sendSpaIndex(reply: FastifyReply): FastifyReply {
+  return reply
+    .header('x-robots-tag', 'noindex')
+    .header('cache-control', 'no-cache')
+    .type('text/html; charset=utf-8')
+    .sendFile(SPA_DOCUMENT);
+}
+
+export function sendLanding(reply: FastifyReply): FastifyReply {
+  return reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8').sendFile(LANDING_DOCUMENT);
+}
+
+/** Not-found fallback for web navigations: legacy redirect or the /app SPA; null leaves the JSON 404. */
+export function replyWebNavigation(request: NavigationRequest, reply: FastifyReply): FastifyReply | null {
+  const legacy = legacyAppLocation(request);
+  if (legacy !== null) return reply.redirect(legacy, CANONICAL_REDIRECT);
+  return shouldServeSpa(request) ? sendSpaIndex(reply) : null;
+}
+
+/**
+ * The two HTML documents are served only through their canonical routes: the landing at '/', the
+ * SPA under /app. Direct or encoded file requests for either fall through to the not-found handler.
+ */
+function isAllowedStaticPath(pathName: string, _root: string, request: FastifyRequest): boolean {
+  const name = pathName.replace(/^\/+|\/+$/g, '').toLowerCase();
+  const { path } = splitTarget(request.url);
+  if (name === SPA_DOCUMENT) return isUnder(path, APP_PREFIX);
+  if (name === LANDING_DOCUMENT) return path === '/';
+  return true;
+}
+
+/** Registers assets and SEO files, the root landing and canonical document aliases. Missing files fall through to the not-found handler. */
 export async function registerStaticWeb(app: FastifyInstance, distDir: string): Promise<void> {
   await app.register(fastifyStatic, {
     root: distDir,
@@ -46,9 +102,12 @@ export async function registerStaticWeb(app: FastifyInstance, distDir: string): 
     index: false,
     cacheControl: false,
     dotfiles: 'deny',
+    allowedPath: isAllowedStaticPath,
     setHeaders(reply, filePath) {
       reply.header('cache-control', filePath.includes(`${sep}assets${sep}`) ? IMMUTABLE_ASSET : 'no-cache');
     },
   });
-  app.get('/', async (_request, reply) => sendSpaIndex(reply));
+  app.get('/', async (_request, reply) => sendLanding(reply));
+  app.get(`/${SPA_DOCUMENT}`, async (request, reply) => reply.redirect(`${APP_PREFIX}${splitTarget(request.url).query}`, CANONICAL_REDIRECT));
+  app.get(`/${LANDING_DOCUMENT}`, async (request, reply) => reply.redirect(`/${splitTarget(request.url).query}`, CANONICAL_REDIRECT));
 }

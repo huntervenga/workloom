@@ -50,7 +50,7 @@ import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
 import { registerWorkspaceChangeHeadRoutes } from './http/workspace-change-head-routes.js';
 import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
 import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-routes.js';
-import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, resolveWebDist, sendSpaIndex, shouldServeSpa } from './http/static-web.js';
+import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, replyWebNavigation, resolveWebDist } from './http/static-web.js';
 
 export interface AppDependencies {
   /** Shared database. When given, the app does NOT close it. */
@@ -209,8 +209,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const webDist = webDistCandidate === null ? null : resolveWebDist(webDistCandidate);
 
   app.setNotFoundHandler((request, reply) => {
-    if (webDist !== null && shouldServeSpa(request)) {
-      return sendSpaIndex(reply);
+    const navigation = webDist === null ? null : replyWebNavigation(request, reply);
+    if (navigation !== null) {
+      return navigation;
     }
     return reply
       .code(404)

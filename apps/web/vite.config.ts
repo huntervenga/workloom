@@ -2,6 +2,8 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
+import { landingPlugin } from './build/landing';
 
 // Local loopback only: the web dev server proxies the API so cookies stay same-origin.
 const apiProxy = {
@@ -9,7 +11,7 @@ const apiProxy = {
 };
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [landingPlugin(), react(), tailwindcss()],
   server: {
     host: '127.0.0.1',
     port: 4311,
@@ -25,6 +27,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: { input: { app: fileURLToPath(new URL('./index.html', import.meta.url)), landing: fileURLToPath(new URL('./landing.html', import.meta.url)) } },
   },
   test: {
     // Locale resources are discovered from directory contents with import.meta.glob.
