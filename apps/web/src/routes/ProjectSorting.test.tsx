@@ -146,7 +146,7 @@ it('keeps a held quick command and its exact retry through a sort change without
   const { calls } = installFakeApi(routes({ [`POST ${rootPath}/tasks`]: () => ++attempts === 1 ? first.promise : created({ ...parent, title: 'Original quick draft' }) }));
   const { user } = renderApp(tablePath); await user.click(await screen.findByRole('button', { name: 'Add task to “First section”' }));
   await user.type(screen.getByLabelText('Task name'), 'Original quick draft');
-  await user.click(within(screen.getByRole('form', { name: 'Add a task to First section' })).getByRole('button', { name: 'Add task' }));
+  await user.keyboard('{Enter}');
   await waitFor(() => expect(attempts).toBe(1)); await tableChoice(user, sort(), 'due_asc'); await act(async () => first.lose());
   const retry = await screen.findByRole('button', { name: 'Retry original' }); expect(screen.getByLabelText('Task name')).toHaveValue(''); expect(screen.getByText('Submitted task: Original quick draft')).toBeInTheDocument();
   await user.click(retry); await waitFor(() => expect(writes(calls)).toHaveLength(2)); await waitFor(() => expect(screen.getByLabelText('Task name')).toHaveValue(''));
