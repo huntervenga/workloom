@@ -196,6 +196,21 @@ async function settledViewport(diagram: Locator) {
   await expect.poll(async () => { const now = JSON.stringify((await graphState(diagram)).viewport); equal = now === previous ? equal + 1 : 0; previous = now; return equal >= 2; }).toBe(true);
 }
 
+/** Read-only painted box of a control against the viewport, the page overflow, and whether its label is clipped. */
+function controlGeometry(control: Locator) {
+  return control.evaluate(el => {
+    const r = el.getBoundingClientRect();
+    return { viewport: document.documentElement.clientWidth, left: r.left, right: r.right, width: r.width, height: r.height, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight, pageOverflow: document.documentElement.scrollWidth - innerWidth };
+  });
+}
+async function expectControlFits(control: Locator) {
+  const g = await controlGeometry(control), at = JSON.stringify(g);
+  expect(g.left, at).toBeGreaterThanOrEqual(0); expect(g.right, at).toBeLessThanOrEqual(g.viewport);
+  expect(g.pageOverflow, at).toBeLessThanOrEqual(0);
+  expect(g.scrollWidth, at).toBeLessThanOrEqual(g.clientWidth); expect(g.scrollHeight, at).toBeLessThanOrEqual(g.clientHeight);
+  return g;
+}
+
 async function projectTasks(f: Daily) {
   const r = await f.request.get(`${f.prefix}/tasks`, { params: { projectId: f.project.id, limit: 200, includeArchived: 'true' } });
   expect(r.status(), await r.text()).toBe(200);
@@ -524,13 +539,32 @@ for (const [name, size] of viewports) test.describe(`Night UX ${name}`, () => {
     const cards = graph.getByRole('list', { name: 'Graph tasks and dependencies', exact: true });
     const showCards = graph.getByRole('button', { name: 'Show task cards and keyboard position controls (3)', exact: true });
     const hideCards = graph.getByRole('button', { name: 'Hide task cards and keyboard position controls (3)', exact: true });
+    // Each disclosure state is measured from real DOM boxes: inside the viewport, no page overflow, no clipped label.
+    const disclosure: Record<string, unknown> = {}; evidence.disclosure = disclosure;
     await expect(showCards).toHaveAttribute('aria-expanded', 'false'); await expect(cards).toBeHidden();
+    disclosure[`${size.width}-initial`] = await expectControlFits(showCards);
     await showCards.click();
     await expect(hideCards).toHaveAttribute('aria-expanded', 'true'); await expect(cards).toBeVisible(); await expect(cards.getByRole('listitem')).toHaveCount(3);
+    disclosure[`${size.width}-show`] = await expectControlFits(hideCards);
     const controls = await hideCards.getAttribute('aria-controls');
     expect(controls).toBeTruthy(); expect(await cards.evaluate((list, id) => list.closest(`[id="${id}"]`) !== null, controls)).toBe(true);
     await expect(hideCards).toBeFocused(); await page.keyboard.press('Space');
     await expect(showCards).toHaveAttribute('aria-expanded', 'false'); await expect(cards).toBeHidden();
+    disclosure[`${size.width}-hide`] = await expectControlFits(showCards);
+    // Mobile: the long label must wrap at every narrow width while the diagram stays active.
+    if (name === 'mobile') {
+      for (const width of [320, 375, 390]) {
+        await page.setViewportSize({ width, height: size.height });
+        await expect(diagram).toBeVisible(); await expect(showCards).toHaveAttribute('aria-expanded', 'false');
+        await showCards.click();
+        await expect(hideCards).toHaveAttribute('aria-expanded', 'true'); await expect(cards).toBeVisible();
+        disclosure[`${width}-show`] = await expectControlFits(hideCards);
+        await expect(hideCards).toBeFocused(); await page.keyboard.press('Space');
+        await expect(showCards).toHaveAttribute('aria-expanded', 'false'); await expect(cards).toBeHidden();
+        disclosure[`${width}-hide`] = await expectControlFits(showCards);
+      }
+      await page.setViewportSize(size); await settledViewport(diagram);
+    }
 
     // Automatic layout follows with a viewport fit: zoom in until nodes leave the frame, then arrange.
     const zoomIn = diagram.getByRole('button', { name: 'Zoom in', exact: true });
