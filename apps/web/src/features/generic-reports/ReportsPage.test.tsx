@@ -94,4 +94,26 @@ describe('ordinary fields and saved full-scope reports', () => {
     expect(calls.some(call => call.path.endsWith('/query'))).toBe(false); expect(writes(calls)).toHaveLength(0);
   });
 
+  it.each([null, '2026-10-18T10:00:00.000Z'])('blocks an existing active or archived column name before any template write (%s)', async archivedAt => {
+    const reserved = { ...plan, archivedAt };
+    const { calls } = installFakeApi(routes({ [`GET ${rootPath}/fields`]: () => ok([reserved, fact]) }));
+    const { user } = renderApp(uiPath); const preview = await screen.findByRole('button', { name: 'Preview Plan and fact' }); await waitFor(() => expect(preview).toBeEnabled()); await user.click(preview);
+    const name = screen.getByRole('textbox', { name: 'Plan column name' }); await user.clear(name); await user.type(name, '  bUdGeT  ');
+    expect(screen.getByText('A column named “Budget” already exists, including archived columns. Choose a unique name. To compare existing columns, use New report.')).toBeVisible(); expect(screen.getByRole('button', { name: 'Apply template' })).toBeDisabled(); expect(writes(calls)).toHaveLength(0);
+    await user.clear(name); await user.type(name, 'Budget 2'); expect(screen.getByRole('button', { name: 'Apply template' })).toBeEnabled(); expect(writes(calls)).toHaveLength(0);
+  });
+  it('keeps a held template retry exact when the first attempt may already have reserved its names', async () => {
+    const gate = heldResponse(); let attempts = 0;
+    const madePlan = { ...plan, id: '90000000-0000-4000-8000-000000000003', name: 'A' }, madeFact = { ...fact, id: '90000000-0000-4000-8000-000000000004', name: 'B' };
+    let catalog = [plan, fact];
+    const response = { fields: [madePlan, madeFact], columns: { workspaceId: alpha.id, projectId: PROJECT_ID, revision: 5, columns: [plan, fact, madePlan, madeFact].map((field, position) => ({ fieldId: field.id, position, width: 160, visible: true })) }, report: definition() };
+    const { calls } = installFakeApi(routes({ [`GET ${rootPath}/fields`]: () => ok(catalog), [`POST ${rootPath}/projects/${PROJECT_ID}/plan-fact-template`]: () => { attempts++; catalog = [plan, fact, madePlan, madeFact]; return attempts === 1 ? gate.promise : created(response); } }));
+    const { user, queryClient } = renderApp(uiPath); const preview = await screen.findByRole('button', { name: 'Preview Plan and fact' }); await waitFor(() => expect(preview).toBeEnabled()); await user.click(preview);
+    for (const [label, value] of [['Plan column name', 'A'], ['Fact column name', 'B']] as const) { const input = screen.getByRole('textbox', { name: label }); await user.clear(input); await user.type(input, value); }
+    await user.click(screen.getByRole('button', { name: 'Apply template' })); await waitFor(() => expect(attempts).toBe(1));
+    await act(async () => queryClient.invalidateQueries({ queryKey: queryKeys.fieldDefinitions('11111111-1111-4111-8111-111111111111', alpha.id, PROJECT_ID), exact: true })); await act(async () => gate.lose());
+    const retry = await screen.findByRole('button', { name: 'Retry exact submission' }); await waitFor(() => expect(retry).toBeEnabled()); await user.click(retry); await waitFor(() => expect(attempts).toBe(2));
+    const requests = writes(calls); expect(requests).toHaveLength(2); expect(requests[1]?.body).toEqual(requests[0]?.body); expect(requests[1]?.headers.get('Idempotency-Key')).toBe(requests[0]?.headers.get('Idempotency-Key')); expect(requests[0]?.body).toEqual({ planName: 'A', factName: 'B', reportName: 'Plan and fact', expectedColumnsRevision: 3 });
+  });
+
 });

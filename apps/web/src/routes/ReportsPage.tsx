@@ -78,7 +78,7 @@ function ReportsContent({ actorId, workspaceId, project, writable }: { actorId: 
     {denied ? <Button size="sm" variant="ghost" disabled={held} onClick={reloadAccess}>{t('genericReports.reloadAccess')}</Button> : null}
     {listError ? <QueryErrorState error={listError} subject="fields" headingLevel={2} onRetry={() => { void reports.refetch(); void fields.refetch(); void members.refetch(); void tags.refetch(); }}/> : null}
     {!selectedId && !edit && reports.isSuccess ? <p className="text-sm text-muted">{t(reports.data.length ? 'genericReports.selectHint' : 'genericReports.noReports')}</p> : null}
-    <PlanFactTemplate actorId={actorId} workspaceId={workspaceId} project={project} writable={canWrite && (access === 'owner' || access === 'admin') && edit === null} columns={columns.data} command={commands.template} onCreated={saved}/>
+    <PlanFactTemplate actorId={actorId} workspaceId={workspaceId} project={project} writable={canWrite && (access === 'owner' || access === 'admin') && edit === null} columns={columns.isSuccess && !columns.isFetching ? columns.data : undefined} fields={fields.isSuccess && !fields.isFetching ? fields.data : undefined} command={commands.template} onCreated={saved}/>
     {scopeMismatch ? <p role="alert" className="rounded-lg border border-line p-3 text-sm text-muted">{t('genericReports.wrongProject')}</p> : null}
     {definition.isError ? <QueryErrorState error={definition.error} subject="project" headingLevel={2} onRetry={() => void definition.refetch()}/> : null}
     {edit ? <section aria-label={t('genericReports.reportEditor')} className="space-y-4 rounded-xl border border-line bg-surface p-4">

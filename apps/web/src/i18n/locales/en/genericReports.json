@@ -77,7 +77,7 @@
   "defaultComparison": "Plan and fact",
   "planName": "Plan column name",
   "factName": "Fact column name",
-  "templatePreview": "Creates two new ordinary duration columns and one saved comparison in {{project}}. Existing same-name fields stay separate. No week, hours or initial snapshot is created.",
+  "templatePreview": "Creates two new ordinary duration columns and one saved comparison in {{project}}. Existing columns are not reused. Names must be unique across active and archived columns. No week, hours or initial snapshot is created.",
   "applyTemplate": "Apply template",
   "minutes": "minutes",
   "coverage": "{{filled}}/{{tasks}} filled · {{missing}} missing · {{nulls}} cleared · {{zero}} zero",
@@ -173,5 +173,7 @@
   "assigneeScope": "Primary assignee: {{name}}",
   "tagScope": "With all tags: {{tags}}",
   "unavailableTag": "Unavailable tag",
-  "unavailableGroup": "Unavailable group"
+  "unavailableGroup": "Unavailable group",
+  "templateNameConflict": "A column named “{{name}}” already exists, including archived columns. Choose a unique name. To compare existing columns, use New report.",
+  "templateDistinctNames": "Choose different names for the two new columns."
 }
