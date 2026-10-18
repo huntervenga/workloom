@@ -41,10 +41,15 @@ export const users = pgTable(
     id: uuid('id').primaryKey(),
     displayName: text('display_name').notNull(),
     kind: userKindEnum('kind').notNull(),
+    /** Verified shared-Auth profile photo, normalized by safeProfilePhotoUrl; never fetched server-side. */
+    avatarUrl: text('avatar_url'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  () => [check('users_display_name_length', sql`char_length(btrim(display_name)) between 1 and 200`)],
+  () => [
+    check('users_display_name_length', sql`char_length(btrim(display_name)) between 1 and 200`),
+    check('users_avatar_url_shape', sql`avatar_url is null or (char_length(avatar_url) between 9 and 2048 and avatar_url like 'https://%')`),
+  ],
 );
 
 /** The workspace row doubles as the write barrier (SELECT … FOR UPDATE). */

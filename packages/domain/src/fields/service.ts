@@ -737,9 +737,9 @@ function record(
 }
 
 /** Shared validated value primitive, preserving current field policy/history in the caller's open transaction. */
-export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:string,fieldId:string,input:SetTaskFieldValueInput,tools:Pick<TaskFieldApplicationDependencies['tools'],'newId'>):Promise<TaskFieldValueDto> {
+/** Read-only validation shared by an ordinary value write and the atomic selected-row composer. */
+export async function preflightTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:string,fieldId:string,input:SetTaskFieldValueInput) {
  const tid=parsePathId(taskId),fid=parsePathId(fieldId),parsed=parseInput<SetTaskFieldValueInput>(setTaskFieldValueInputSchema,input),ws=scope.context.workspaceId,now=scope.barrierAt.toISOString();
- const newId=()=>idSchema.parse(tools.newId());
         const repo = scope.repository;
         const task = requireFound(await repo.tasks.findTask(ws, tid));
         const field = requireFound(await repo.findField(ws, fid));
@@ -760,6 +760,12 @@ export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:
         if (parsed.value.type !== field.type) throw ruleError('The value type does not match the field type.', 'value.type');
         await requireAssignableReferences(repo, ws, field, parsed.value, current?.value ?? null);
 
+ return { tid, fid, parsed, ws, now, repo, task, field, current };
+}
+
+export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:string,fieldId:string,input:SetTaskFieldValueInput,tools:Pick<TaskFieldApplicationDependencies['tools'],'newId'>):Promise<TaskFieldValueDto> {
+ const { tid, fid, parsed, ws, now, repo, task, field, current } = await preflightTaskFieldValueInScope(scope,taskId,fieldId,input);
+ const newId=()=>idSchema.parse(tools.newId());
         if (current !== null && canonicalJson(current.value) === canonicalJson(parsed.value)) return current;
 
         const next: TaskFieldValueDto = {
@@ -788,7 +794,8 @@ export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:
           tid,
           current === null ? 'created' : 'updated',
           next.revision,
-          metadata,
+          // Audit-only flag: lets the timeline tell an opt-out from a legacy uncaptured row. Outbox stays unchanged.
+          { ...metadata, historyCaptured: field.historyEnabled },
           { projectId: task.projectId, ...metadata },
         );
         if (field.historyEnabled) {

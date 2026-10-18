@@ -156,24 +156,24 @@ for (const [name, viewport] of sizes) test.describe(`Workspace live refresh ${na
       sameFrame(before, await frame(b.page)); readonly(b);
 
       const drawer = await openDrawer(b.page, edited.saved);
-      await drawer.getByRole('tab', { name: /^Discussion/ }).click();
-      await expect(drawer.getByRole('region', { name: 'Discussion', exact: true })).toBeVisible();
+      await expect(drawer.getByRole('region', { name: 'Activity', exact: true })).toBeVisible();
       const commentBody = `${f.token} literal colleague comment`, commentPath = `${f.prefix}/tasks/${task.id}/comments`, key = randomUUID();
       const posted = await a.context.request.post(commentPath, { headers: { origin: f.origin, 'idempotency-key': key }, data: { body: commentBody } });
       expect(posted.status(), await posted.text()).toBe(201); const comment = taskCommentResponseSchema.parse(await posted.json()).data;
       expect(comment).toMatchObject({ body: commentBody, authorUserId: a.actorId, authorMembershipId: a.membershipId });
       receipts.push({ method: 'POST', path: commentPath, key, body: { body: commentBody }, status: posted.status(), result: comment });
-      const commentReads = b.net.reads(commentPath), headIndex = b.net.heads.length, headReads = b.net.reads(headPath(f));
+      const timelinePath = `${f.prefix}/tasks/${task.id}/timeline`;
+      const commentReads = b.net.reads(timelinePath), headIndex = b.net.heads.length, headReads = b.net.reads(headPath(f));
       const commentHead = await currentHead(a, f); await protectedCycles(a, b, f, headReads);
       await expect(drawer.getByText(commentBody, { exact: true })).toHaveCount(0);
-      expect(b.net.reads(commentPath)).toBe(commentReads); // Open pristine dialogs suspend head and content reads.
+      expect(b.net.reads(timelinePath)).toBe(commentReads); // Open pristine dialogs suspend head and content reads.
       const listReads = b.net.reads(taskListPath(f));
       await drawer.getByRole('button', { name: 'Close', exact: true }).first().click(); await expect(drawer).toHaveCount(0);
       await expect.poll(() => b.net.reads(headPath(f)), eventual).toBeGreaterThan(headReads);
       await observed(b, commentHead, headIndex);
-      // A live list read proves safe catch-up after fresh release authorization; inactive discussion rereads on mount.
+      // A live list read proves safe catch-up after fresh release authorization; the invalidated unified timeline rereads on mount.
       await expect.poll(() => b.net.reads(taskListPath(f)), eventual).toBeGreaterThan(listReads);
-      const reopened = await openDrawer(b.page, edited.saved); await reopened.getByRole('tab', { name: /^Discussion/ }).click();
+      const reopened = await openDrawer(b.page, edited.saved); await expect(reopened.getByRole('region', { name: 'Activity', exact: true })).toBeVisible();
       await expect(reopened.getByText(commentBody, { exact: true })).toBeVisible();
       const stored = await a.context.request.get(`${commentPath}?limit=50`); expect(stored.status()).toBe(200);
       expect(taskCommentsResponseSchema.parse(await stored.json()).data).toEqual([comment]);

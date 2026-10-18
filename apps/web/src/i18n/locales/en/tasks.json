@@ -129,6 +129,7 @@
     "description": "Description",
     "status": "Status",
     "section": "Section",
+    "project": "Project",
     "assignee": "Assignee",
     "participants": "Participants",
     "startDate": "Start date",

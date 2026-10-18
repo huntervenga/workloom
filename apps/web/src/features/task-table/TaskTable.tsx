@@ -1,3 +1,4 @@
+import { UserAvatar } from '../../shared/UserAvatar';
 import { TaskDragPreview } from './TaskDragPreview';
 import { selectTaskRows, type SelectionModifiers } from './taskSelection';
 import { resolveDraftPlacement, type DraftPlacementSnapshot } from './draftPlacement';
@@ -12,7 +13,7 @@ import type {
   TaskStatusDto,
   TaskStatusGroup,
 } from '@workloom/contracts';
-import { Avatar, Badge, Button, cn } from '@workloom/ui';
+import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useId, useMemo, useRef, useState, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
@@ -65,6 +66,8 @@ export interface TaskTableProps {
   dragScope?: string | undefined;
   onSelectionChange?: ((ids: string[]) => void) | undefined;
   onSelectTask?: ((id: string, selected: boolean) => void) | undefined;
+  /** An Escape nothing in the table handled; returns whether the owner cleared its selection. */
+  onClearSelection?: (() => boolean) | undefined;
   /** Loaded tasks of one project. The table never fetches or invents tasks. */
   tasks: readonly TaskDto[];
   /** Project sections; archived ones are shown only while loaded tasks sit in them. */
@@ -130,8 +133,11 @@ export interface TaskTableProps {
   className?: string | undefined;
 }
 
-/** The scroller container gives desktop names room while leaving medium/mobile browsing usable. */
-const titleWidth = 'clamp(280px, 42cqw, 460px)';
+/**
+ * The scroller container gives desktop names room while leaving medium/mobile browsing usable.
+ * A surrounding layout may narrow it through `--task-title-width`; the column and minimum width share it.
+ */
+const titleWidth = 'var(--task-title-width, clamp(280px, 42cqw, 460px))';
 const noCustomColumns: readonly TaskTableCustomColumn[] = [];
 
 /**
@@ -276,7 +282,7 @@ function MemberName({ membershipId, memberById }: { membershipId: string; member
   }
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <Avatar name={member.displayName} seed={member.userId} size="sm" />
+      <UserAvatar name={member.displayName} seed={member.userId} avatarUrl={member.avatarUrl} size="sm" />
       <span className="truncate text-ink-soft" title={member.displayName}>
         {member.displayName}
       </span>
@@ -313,7 +319,7 @@ function ParticipantsCell({
               <UserRound size={14} />
             </span>
           ) : (
-            <Avatar key={id} name={member.displayName} seed={member.userId} size="sm" className="ring-2 ring-surface" />
+            <UserAvatar key={id} name={member.displayName} seed={member.userId} avatarUrl={member.avatarUrl} size="sm" className="ring-2 ring-surface" />
           );
         })}
       </span>
@@ -829,7 +835,7 @@ function SummaryRow({ summary, partial, columnCount }: { summary: WorkPackageSum
  */
 export function TaskTable({
   selectedTaskIds = [],
-  onSelectTask, onSelectionChange, selectionDisabled = false, dragScope,
+  onSelectTask, onSelectionChange, onClearSelection, selectionDisabled = false, dragScope,
   tasks,
   sections,
   statuses,
@@ -982,6 +988,14 @@ export function TaskTable({
     if (onSelectionChange) onSelectionChange(next.ids);
     else { for (const changed of new Set([...selectedTaskIds, ...next.ids])) if (selectedTaskIds.includes(changed) !== next.ids.includes(changed)) onSelectTask?.(changed, next.ids.includes(changed)); }
   } : undefined;
+  // Bubbles last: an editor, picker, menu, listbox, dialog or text field keeps its own Escape, and
+  // only a neutral one that nothing handled (e.g. on a focused gutter) clears the selection.
+  const clearSelectionOnEscape = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    if (!onClearSelection || selectionDisabled || selectedTaskIds.length === 0 || drag !== null) return;
+    if (ownsNativeMenu(event.target) || (event.target instanceof Element && event.target.closest('form, [data-task-section-editor], [data-choice-picker-menu], [role="combobox"][aria-expanded="true"], [aria-haspopup][aria-expanded="true"]') !== null)) return;
+    if (onClearSelection()) event.preventDefault();
+  };
   const move: RowMove | null = moveEnabled ? {
     canMove: task => canEditTaskInline(task) && activeSection(task.sectionId),
     blocked: moveBlocked,
@@ -1071,7 +1085,7 @@ export function TaskTable({
   })();
 
   return (
-    <div data-task-table-scroll="" className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
+    <div data-task-table-scroll="" onKeyDown={clearSelectionOnEscape} className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
       {selectionLimit ? <div role="status" className="fixed right-3 bottom-24 z-[70] max-w-sm rounded-lg border border-line bg-surface p-3 text-sm shadow-lg">{t('taskTable.selection.limit')}<Button size="sm" variant="ghost" onClick={() => setSelectionLimit(false)}>{t('taskTable.selection.dismiss')}</Button></div> : null}
       {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} /> : null}
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>

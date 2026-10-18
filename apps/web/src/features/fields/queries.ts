@@ -9,6 +9,7 @@ import type {
   UpdateTaskFieldOptionInput,
 } from '@workloom/contracts';
 import { isUuid } from '../../lib/format';
+import { invalidateTaskTimelines } from '../task-comments/queries';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import {
@@ -126,6 +127,7 @@ export function invalidateProjectColumns(queryClient: QueryClient, actorId: stri
 /** A changed value: the task's values, the project's batches and that field's history. */
 export function invalidateFieldValue(queryClient: QueryClient, actorId: string, workspaceId: string, value: TaskFieldValueDto) {
   return Promise.all([
+    invalidateTaskTimelines(queryClient, actorId, workspaceId, [value.taskId]),
     queryClient.invalidateQueries({ queryKey: queryKeys.taskFieldValues(actorId, workspaceId, value.taskId), exact: true }),
     queryClient.invalidateQueries({ queryKey: queryKeys.projectFieldValues(actorId, workspaceId, value.projectId) }),
     queryClient.invalidateQueries({

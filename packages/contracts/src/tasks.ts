@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
 import { sqlCalendarDateSchema } from './common/sql-date.js';
+import { createTaskFieldDataSchema } from './common/task-field-data.js';
 
 /**
  * P1a projects, sections, statuses, tags and tasks.
@@ -396,16 +397,49 @@ export const moveTaskInputSchema = z.strictObject({
   }
 });
 
-/** One atomic patch to an explicit selection; omission leaves a field unchanged, null clears it. */
+/**
+ * One atomic patch to an explicit selection; omission leaves a field unchanged, null clears it.
+ * Every selected row gets the same `statusId`, `priority` and complete `tagIds` set. `sectionId`
+ * moves root tasks only; a selected subtask whose section would change rejects the whole command.
+ * No field has a default, so legacy bodies keep their exact canonical hash.
+ */
+const bulkCustomFieldSchema = z.strictObject({
+  fieldId: idSchema,
+  expectedDefinitionRevision: revisionSchema,
+  value: createTaskFieldDataSchema({ calendarDateSchema, minutesSchema }),
+});
 export const bulkUpdateTasksInputSchema = z.strictObject({
   projectId: idSchema,
-  tasks: z.array(z.strictObject({ taskId: idSchema, expectedRevision: revisionSchema })).min(1).max(100)
+  tasks: z.array(z.strictObject({
+    taskId: idSchema,
+    expectedRevision: revisionSchema,
+    expectedWorkPackageRevision: revisionSchema.optional(),
+    expectedFieldValueRevision: z.number().int().min(0).optional(),
+  })).min(1).max(100)
     .refine(rows => hasUniqueIds(rows.map(row => row.taskId)), { error: 'Task IDs must be unique.' }),
   changes: z.strictObject({
     responsibleMembershipId: idSchema.nullable().optional(),
     startDate: sqlCalendarDateSchema.nullable().optional(),
     dueDate: sqlCalendarDateSchema.nullable().optional(),
-  }).refine(input => hasAnyField(input, ['responsibleMembershipId', 'startDate', 'dueDate']), noChangeError),
+    statusId: idSchema.optional(),
+    priority: taskPrioritySchema.optional(),
+    tagIds: tagIdListSchema.optional(),
+    sectionId: idSchema.nullable().optional(),
+    estimateMinutes: minutesSchema.nullable().optional(),
+    customField: bulkCustomFieldSchema.optional(),
+  }).refine(input => hasAnyField(input, ['responsibleMembershipId', 'startDate', 'dueDate', 'statusId', 'priority', 'tagIds', 'sectionId', 'estimateMinutes', 'customField']), noChangeError),
+}).superRefine((input, ctx) => {
+  for (const [index, row] of input.tasks.entries()) {
+    for (const [field, present, guard] of [
+      ['estimateMinutes', input.changes.estimateMinutes !== undefined, 'expectedWorkPackageRevision'],
+      ['customField', input.changes.customField !== undefined, 'expectedFieldValueRevision'],
+    ] as const) {
+      if (present !== (row[guard] !== undefined)) ctx.addIssue({
+        code: 'custom', path: ['tasks', index, guard],
+        message: guard + (present ? ' is required when ' : ' is only allowed with ') + field + '.',
+      });
+    }
+  }
 });
 
 /** Query strings carry booleans as text; only `true`/`false` are accepted (never truthy coercion). */

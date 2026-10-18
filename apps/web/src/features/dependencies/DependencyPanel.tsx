@@ -18,6 +18,8 @@ export interface DependencyPanelProps {
   task: TaskDto;
   controller: DependencyWorkspace;
   writable: boolean;
+  /** Flat parameter-style presentation in the saved task pane; other callers keep the card. */
+  compact?: boolean | undefined;
   onOpenTask: (taskId: string) => void;
 }
 export function DependencyPanel(p: DependencyPanelProps) {
@@ -40,9 +42,9 @@ export function DependencyPanel(p: DependencyPanelProps) {
   const summary = blocking.data?.pages[0]?.data.summary;
   const edges = [...new Map((dependencies.data?.pages ?? []).flatMap(page => page.data).map(edge => [edge.id, edge])).values()];
   const blockedRows = (blocking.data?.pages ?? []).flatMap(page => page.data.blockers);
-  if (denied) return <section aria-label={t('dependencies.dependencyPanel.taskDependencies')} className="rounded-xl border border-line p-4"><QueryErrorState error={denied} subject="task" headingLevel={3} /><Button disabled={checkingAccess} onClick={() => void checkAccess()}>{t('dependencies.dependencyPanel.checkDependencyAccess')}</Button></section>;
-  return <section aria-label={t('dependencies.dependencyPanel.taskDependencies')} className="space-y-3 rounded-xl border border-line p-4">
-    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">{t('dependencies.dependencyPanel.taskDependencies')}</h3>{p.writable && !p.task.archivedAt ? <Button size="sm" onClick={() => p.controller.openCreate(p.task)}>{t('dependencies.dependencyPanel.addDependency')}</Button> : null}</div>
+  if (denied) return <section aria-label={t('dependencies.dependencyPanel.taskDependencies')} className={p.compact ? 'space-y-2' : 'rounded-xl border border-line p-4'}><QueryErrorState error={denied} subject="task" headingLevel={3} /><Button disabled={checkingAccess} onClick={() => void checkAccess()}>{t('dependencies.dependencyPanel.checkDependencyAccess')}</Button></section>;
+  return <section aria-label={t('dependencies.dependencyPanel.taskDependencies')} className={p.compact ? 'space-y-1.5' : 'space-y-3 rounded-xl border border-line p-4'}>
+    <div className="flex flex-wrap items-center justify-between gap-2"><h3 className={p.compact ? 'text-sm font-medium' : 'font-semibold'}>{t('dependencies.dependencyPanel.taskDependencies')}</h3>{p.writable && !p.task.archivedAt ? <Button size="sm" onClick={() => p.controller.openCreate(p.task)}>{t('dependencies.dependencyPanel.addDependency')}</Button> : null}</div>
     {blocking.isError ? <QueryErrorState error={blocking.error} subject="task" headingLevel={3} onRetry={() => void blocking.refetch({ cancelRefetch: true })} /> : summary ? <div className="space-y-2">
       <div className="flex flex-wrap gap-2"><Badge tone={summary.isBlocked ? 'warning' : 'muted'}>{summary.isBlocked ? t('dependencies.dependencyPanel.unfinishedPredecessorsValue', { p0: summary.unresolvedCount }) : t('dependencies.dependencyPanel.noUnfinishedPredecessors')}</Badge><Badge tone="muted">{summary.policy.mode === 'enforce' ? t('dependencies.dependencyPanel.startingAndCompletionBlocked') : t('dependencies.dependencyPanel.warning')}</Badge></div>
       {summary.isBlocked ? <p className="text-xs leading-relaxed text-muted">{summary.policy.mode === 'enforce' ? t('dependencies.dependencyPanel.completeAllPredecessorsBeforeStartingOrCompletingThis') : t('dependencies.dependencyPanel.checkPredecessorsBeforeStartingOrCompletingThisTask')} {t('dependencies.dependencyPanel.theCheckIncludesDependenciesOutsideTheCurrentList')}</p> : null}
@@ -52,7 +54,7 @@ export function DependencyPanel(p: DependencyPanelProps) {
     </div> : <p role="status" className="text-xs text-muted">{t('dependencies.dependencyPanel.checkingPredecessors')}</p>}
     {p.controller.commands.update.variables?.anchorTaskId === p.task.id ? <SaveFeedback subject="taskSave" error={p.controller.commands.update.error} uncertainError={p.controller.commands.update.uncertain?.error ?? null} /> : null}
     <details open={expanded} onToggle={e => setExpanded(e.currentTarget.open)}>
-      <summary className="cursor-pointer rounded text-sm font-medium">{t('dependencies.dependencyPanel.allDependenciesIncludingRemoved')}</summary>
+      <summary className={p.compact ? 'cursor-pointer rounded text-xs font-medium text-muted' : 'cursor-pointer rounded text-sm font-medium'}>{t('dependencies.dependencyPanel.allDependenciesIncludingRemoved')}</summary>
       <div className="mt-3 space-y-3">{dependencies.isError ? <><QueryErrorState error={dependencies.error} subject="task" headingLevel={3} /><Button size="sm" onClick={() => { void dependencies.refetch({ cancelRefetch: true }); }}>{t('dependencies.dependencyPanel.restartDependencyList')}</Button></> : dependencies.isPending ? <p role="status" className="text-xs text-muted">{t('dependencies.dependencyPanel.loadingDependencies')}</p> : edges.length === 0 ? <p className="text-sm text-muted">{t('dependencies.dependencyPanel.noDependenciesYet')}</p> : <ul className="space-y-3">{edges.map(edge => <EdgeRow key={edge.id} edge={edge} {...p} />)}</ul>}
         {dependencies.hasNextPage ? <Button size="sm" disabled={dependencies.isFetchingNextPage} onClick={() => void dependencies.fetchNextPage()}>{t('dependencies.dependencyPanel.moreDependencies')}</Button> : null}
       </div>

@@ -1,3 +1,4 @@
+import type { TaskFieldRepository } from '../fields/ports.js';
 import type {TaskStatusTransitionPolicy} from '../dependencies/ports.js';
 import type { PlanningMutationGuard } from '../planning/ports.js';
 import type {
@@ -139,6 +140,8 @@ export interface TaskRepository {
 }
 
 export interface TaskWriteScope extends WorkspaceWriteScope {
+  /** Same workspace-barrier transaction; required whenever a bulk custom field is requested. */
+  readonly fieldRepository?: TaskFieldRepository;
   readonly statusTransitions:TaskStatusTransitionPolicy;
   /** Required by every real composition; tests must inject an explicit policy fake. */
   readonly planningGuard: PlanningMutationGuard;

@@ -70,7 +70,7 @@ describe('inline team package estimate', () => {
   it('keeps rich drawer edits Resume-only even when only the estimate changed', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Open task “${base.title}”` }));
-    const drawer = within(await screen.findByRole('dialog')); await user.click(drawer.getByText('More details', { selector: 'summary' }));
+    const drawer = within(await screen.findByRole('dialog'));
     fireEvent.change(drawer.getByLabelText('Team estimate, hours'), { target: { value: '3,5' } });
     await user.click(drawer.getByLabelText('Close', { selector: 'button' })); await user.click(await edit());
     expect(screen.queryByLabelText('Team estimate (hours)')).not.toBeInTheDocument(); await user.click(screen.getByRole('button', { name: 'Resume draft' }));

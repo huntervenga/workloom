@@ -149,6 +149,9 @@ export function installFakeApi(table: RouteTable): { calls: FakeRequest[]; backg
       const member = currentMemberships.get(workspaceId)?.find(row => row.userId.toLowerCase() === currentActorId && row.workspaceId.toLowerCase() === workspaceId);
       if (member) return ok({ workspaceId, projectId, membershipId: member.id.toLowerCase(), revision: 0, columns: null });
     }
+    // Legacy fixtures with no history model receive a bounded empty feed. Registered handlers
+    // always win above, including errors, pagination and all activity-specific regression tests.
+    if (request.method === 'GET' && /^\/api\/v1\/workspaces\/[^/]+\/tasks\/[^/]+\/timeline$/.test(request.path)) return json(200, { data: [], meta: { requestId: 'fixture-timeline', nextCursor: null } });
     return defaultFieldRoute(request) ?? failure(404, 'NOT_FOUND', 'Route not found');
   });
   vi.stubGlobal('fetch', fetchMock);

@@ -1,3 +1,4 @@
+import { authorizeBulkFieldTarget, prepareBulkExtras, applyBulkExtras } from './bulk-extras.js';
 import {assertTaskDateRange,assertOrdinaryTaskDates} from './dates.js';
 import type { TaskMutationCommand } from '../planning/ports.js';
 import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
@@ -48,6 +49,7 @@ import type { Capability } from '../access/capabilities.js';
 import type { CommandContext } from '../access/context.js';
 import { DomainError, notFoundError, unauthenticatedError } from '../errors.js';
 import type { RecordedChange } from '../transactions/ports.js';
+import { loadTaskActivityLabels, taskActivityDiff } from './activity.js';
 import type { TaskApplication, TaskPage } from './application.js';
 import type { TaskApplicationDependencies, TaskCursorAnchor, TaskRepository, TaskWriteScope, WorkPackageRecord } from './ports.js';
 
@@ -467,7 +469,9 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         if (coreTouched) diff.revision = { from: task.revision, to: next.revision };
 
         const updated = await reloadTask(repo, ws, id);
-        await record(scope, 'task', id, 'updated', updated.revision, diff, taskEventIds(updated));
+        const activityPair = { before: task, after: updated };
+        const labels = await loadTaskActivityLabels(scope, [activityPair]);
+        await record(scope, 'task', id, 'updated', updated.revision, taskActivityDiff(activityPair, diff, labels), taskEventIds(updated));
         return updated;
       });
     },
@@ -514,6 +518,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           requireSameProject(task, parsed.projectId, 'tasks');
           targets.push(task);
         }
+        await authorizeBulkFieldTarget(scope, parsed);
         const existing = await repo.findIdempotency(ws, ctx.actor.userId, command, key);
         if (existing !== null) {
           if (existing.payloadHash !== payloadHash) throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This Idempotency-Key was already used for a different request.');
@@ -525,28 +530,68 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         await requireOpenProject(repo, ws, parsed.projectId);
         const changes = parsed.changes;
         if (changes.responsibleMembershipId !== undefined) await requireActiveMembers(repo, ws, changes.responsibleMembershipId, []);
+        // The shared section is validated even when it equals a row's current one, as in an ordinary update.
+        if (isSet(changes.sectionId)) await requireAssignableSection(repo, ws, parsed.projectId, changes.sectionId);
         // Complete preflight before cutoff prerequisites or proposed writes. Revisions are not rechecked on exact replay.
         for (const [index, task] of targets.entries()) {
           expectRevision(task.revision, parsed.tasks[index]?.expectedRevision ?? 0);
           if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before editing.', 'tasks');
           assertTaskDateRange(changes.startDate === undefined ? task.startDate : changes.startDate, changes.dueDate === undefined ? task.dueDate : changes.dueDate);
+          // One target status for every row; each transition is asserted even when the row already has it.
+          if (changes.statusId !== undefined) {
+            await scope.statusTransitions.assertTransition(task, changes.statusId);
+            requireSameProject(requireFound(await repo.findStatus(ws, changes.statusId)), task.projectId, 'statusId');
+          }
+          // Sections move root tasks only; a subtask never leaves its parent's section or lineage.
+          if (changes.sectionId !== undefined && task.parentTaskId !== null && changes.sectionId !== task.sectionId) {
+            throw ruleError('A subtask can only stay in its own section.', 'sectionId');
+          }
+          // Archived tags may stay only on the rows that already carry them.
+          if (changes.tagIds !== undefined) await requireAssignableTags(repo, ws, changes.tagIds, task.tags.map(tag => tag.id));
         }
+        const extras = await prepareBulkExtras(scope, parsed, targets);
         const now = scope.barrierAt.toISOString();
         const rejected = await scope.planningGuard.check({ family: 'task_bulk', command, target: { projectId: parsed.projectId }, input: parsed });
+        const sameIds = (left: readonly string[], right: readonly string[]) => left.length === right.length && right.every(id => left.includes(id));
         const updated: TaskDto[] = [];
-        if (rejected === null) for (const task of targets) {
-          const next: TaskDto = { ...task,
-            ...(changes.responsibleMembershipId !== undefined ? { responsibleMembershipId: changes.responsibleMembershipId } : {}),
-            ...(changes.startDate !== undefined ? { startDate: changes.startDate } : {}),
-            ...(changes.dueDate !== undefined ? { dueDate: changes.dueDate } : {}),
-          };
-          const diff = changedFields(task, next, ['responsibleMembershipId', 'startDate', 'dueDate']);
-          if (Object.keys(diff).length > 0) {
-            await repo.saveTaskCore({ ...next, revision: task.revision + 1, updatedAt: now });
-            const confirmed = await reloadTask(repo, ws, task.id);
-            await record(scope, 'task', task.id, 'updated', confirmed.revision, { ...diff, revision: { from: task.revision, to: confirmed.revision } }, taskEventIds(confirmed));
+        const audit: { before: TaskDto; after: TaskDto; diff: Record<string, unknown> }[] = [];
+        const recordedPackages = new Set<string>();
+        if (rejected === null) {
+          await applyBulkExtras(scope, parsed, targets, extras, tools);
+          for (const task of targets) {
+            const next: TaskDto = { ...task,
+              ...(changes.responsibleMembershipId !== undefined ? { responsibleMembershipId: changes.responsibleMembershipId } : {}),
+              ...(changes.startDate !== undefined ? { startDate: changes.startDate } : {}),
+              ...(changes.dueDate !== undefined ? { dueDate: changes.dueDate } : {}),
+              ...(changes.statusId !== undefined ? { statusId: changes.statusId } : {}),
+              ...(changes.priority !== undefined ? { priority: changes.priority } : {}),
+              ...(changes.sectionId !== undefined ? { sectionId: changes.sectionId } : {}),
+            };
+            const diff: Record<string, unknown> = changedFields(task, next, ['responsibleMembershipId', 'startDate', 'dueDate', 'statusId', 'priority', 'sectionId']);
+            const currentTagIds = task.tags.map(tag => tag.id);
+            const tagIds = changes.tagIds !== undefined && !sameIds(currentTagIds, changes.tagIds) ? changes.tagIds : null;
+            if (tagIds !== null) diff.tagIds = { from: currentTagIds, to: tagIds };
+            const coreChanged = Object.keys(diff).length > 0;
+            if (coreChanged) {
+              await repo.saveTaskCore({ ...next, revision: task.revision + 1, updatedAt: now });
+              if (tagIds !== null) await repo.setTaskTagIds(ws, task.id, tagIds);
+              diff.revision = { from: task.revision, to: task.revision + 1 };
+            }
+            const pack = extras.packages.get(task.workPackageId);
+            if (pack && !recordedPackages.has(task.workPackageId)) {
+              recordedPackages.add(task.workPackageId);
+              diff.workPackage = { id: pack.before.id,
+                revision: { from: pack.before.revision, to: pack.after.revision },
+                estimateMinutes: { from: pack.before.estimateMinutes, to: pack.after.estimateMinutes } };
+            }
+            const confirmed = coreChanged || pack ? await reloadTask(repo, ws, task.id) : task;
             updated.push(confirmed);
-          } else updated.push(task);
+            if (Object.keys(diff).length > 0) audit.push({ before: task, after: confirmed, diff });
+          }
+          // Batch reference labels once. Audit-only snapshots never enter the outbox or receipt.
+          const labels = await loadTaskActivityLabels(scope, audit);
+          for (const pair of audit) await record(scope, 'task', pair.after.id, 'updated', pair.after.revision,
+            taskActivityDiff(pair, pair.diff, labels), taskEventIds(pair.after));
         }
         const result = rejected ?? updated;
         await repo.insertIdempotency({ workspaceId: ws, actorUserId: ctx.actor.userId, command, idempotencyKey: key, payloadHash, result, createdAt: now });
@@ -609,7 +654,9 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           revision: { from: task.revision, to: updated.revision },
           anchor: { taskId: anchor?.id ?? null, placement: parsed.placement },
         };
-        await record(scope, 'task', id, 'updated', updated.revision, diff, taskEventIds(updated));
+        const activityPair = { before: task, after: updated };
+        const labels = await loadTaskActivityLabels(scope, [activityPair]);
+        await record(scope, 'task', id, 'updated', updated.revision, taskActivityDiff(activityPair, diff, labels), taskEventIds(updated));
         if (renumber) await saveShiftedTasks(scope, order, now);
         return updated;
       });
@@ -985,13 +1032,15 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
         if (tagIds.length > 0) await repo.setTaskTagIds(ws, id, tagIds);
 
         const task = await reloadTask(repo, ws, id);
+        const activityPair = { before: null, after: task };
+        const labels = await loadTaskActivityLabels(scope, [activityPair]);
         await record(
           scope,
           'task',
           id,
           'created',
           task.revision,
-          {
+          taskActivityDiff(activityPair, {
             title: task.title,
             parentTaskId: task.parentTaskId,
             statusId: task.statusId,
@@ -1006,7 +1055,7 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
               estimateMinutes: task.estimateMinutes,
             },
             ...(parsed.insertion === undefined ? {} : { position: task.position, insertion: parsed.insertion }),
-          },
+          }, labels),
           taskEventIds(task),
         );
         if (order !== null) await saveShiftedTasks(scope, order, now);

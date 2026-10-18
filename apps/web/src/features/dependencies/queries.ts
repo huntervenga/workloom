@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CreateTaskDependencyInput, UpdateTaskDependencyInput, UpdateDependencyPolicyInput, SetGraphLayoutInput, TaskDependencyDto, GraphLayoutDto, ProjectDependencyPolicyDto, DependencyGraphDto } from '@workloom/contracts';
 import { isUuid } from '../../lib/format';
+import { invalidateTaskTimelines } from '../task-comments/queries';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import { fetchDependencyPage, fetchTaskBlocking, fetchDependencyGraph, fetchDependencyPolicy, fetchGraphLayout, createDependencyRequest, updateDependencyRequest, updatePolicyRequest, setLayoutRequest } from './api';
@@ -35,7 +36,7 @@ export function useDependencyCommands(a: string, w: string, p: string, callbacks
   onPolicy?: ((data: ProjectDependencyPolicyDto, variables: PolicyVariables) => void) | undefined;
 } = {}) {
   const client = useQueryClient();
-  const refresh = () => { void client.invalidateQueries({ queryKey: dependencyKeys.root(a, w) }); void client.invalidateQueries({ queryKey: queryKeys.tasks(a, w) }); };
+  const refresh = () => { void invalidateTaskTimelines(client, a, w); void client.invalidateQueries({ queryKey: dependencyKeys.root(a, w) }); void client.invalidateQueries({ queryKey: queryKeys.tasks(a, w) }); };
   const create = useIdempotentMutation({ prepare: (v: EdgeCreateVariables) => createDependencyRequest(w, v.input), onSuccess: (data, variables) => { callbacks.onCreate?.(data, variables); refresh(); } });
   const update = useIdempotentMutation({ prepare: (v: EdgeUpdateVariables) => updateDependencyRequest(w, v.edge.id, v.input), onSuccess: refresh });
   const policy = useIdempotentMutation({ prepare: (v: PolicyVariables) => updatePolicyRequest(w, p, v.input), onSuccess: (data, variables) => { callbacks.onPolicy?.(data, variables); refresh(); } });

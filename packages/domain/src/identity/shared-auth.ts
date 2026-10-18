@@ -7,6 +7,8 @@ export interface SharedAuthIdentityInput {
   readonly displayName: string;
   readonly workspaceName: string;
   readonly timezone: string;
+  /** Verified `picture` claim: omitted preserves the stored photo, null clears it. */
+  readonly avatarUrl?: string | null;
 }
 
 export interface SharedAuthIdentity {
@@ -28,7 +30,13 @@ export interface SharedAuthSessionRecord {
 
 export type SharedAuthSessionInput = Omit<SharedAuthSessionRecord, 'revision' | 'revokedAt'>;
 export type SharedAuthSessionUpdate = Partial<Pick<SharedAuthSessionRecord,
-  'encryptedTokens' | 'accessExpiresAt' | 'expiresAt' | 'revokedAt'>>;
+  'encryptedTokens' | 'accessExpiresAt' | 'expiresAt' | 'revokedAt'>> & {
+  /**
+   * Verified refresh `picture` for the session's own user, committed in the same locked
+   * transaction as the token patch. Omitted preserves the stored photo, null clears it.
+   */
+  readonly profileAvatarUrl?: string | null;
+};
 
 export interface SharedAuthLoginAttemptInput {
   readonly stateHash: string;

@@ -16,6 +16,7 @@ import { useCallback } from 'react';
 import { isUuid } from '../../lib/format';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
+import { invalidateTaskTimelines } from '../task-comments/queries';
 import {
   bulkUpdateTasksRequest,
   TASK_PAGE_SIZE,
@@ -134,6 +135,7 @@ export function invalidateTags(queryClient: QueryClient, actorId: string, worksp
  * a task write may change other tasks too (a shared work package estimate).
  */
 export function invalidateTasks(queryClient: QueryClient, actorId: string, workspaceId: string, projectId?: string) {
+  if (projectId === undefined) void invalidateTaskTimelines(queryClient, actorId, workspaceId);
   return queryClient.invalidateQueries({
     queryKey: projectId
       ? queryKeys.projectTaskLists(actorId, workspaceId, projectId)
@@ -141,7 +143,9 @@ export function invalidateTasks(queryClient: QueryClient, actorId: string, works
   });
 }
 
+/** The exact detail plus its history stream; comment and activity sub-queries stay untouched. */
 export function invalidateTask(queryClient: QueryClient, actorId: string, workspaceId: string, taskId: string) {
+  void invalidateTaskTimelines(queryClient, actorId, workspaceId, [taskId]);
   return queryClient.invalidateQueries({ queryKey: queryKeys.task(actorId, workspaceId, taskId), exact: true });
 }
 
@@ -319,20 +323,30 @@ export function useBulkUpdateTasksMutation(actorId: string, workspaceId: string)
   const client = useQueryClient();
   return useIdempotentMutation({
     prepare: ({ input }: BulkUpdateTaskVariables) => bulkUpdateTasksRequest(workspaceId, input),
-    onSuccess: tasks => { void storeConfirmedTasks(client, actorId, workspaceId, tasks); },
+    onSuccess: (tasks, variables) => {
+      void storeConfirmedTasks(client, actorId, workspaceId, tasks, variables.input.changes.estimateMinutes !== undefined);
+      // The task projection does not carry independently revisioned custom values. Invalidate
+      // their whole scoped family once, never once per selected row or with a fabricated value.
+      if (variables.input.changes.customField !== undefined) {
+        void client.invalidateQueries({ queryKey: queryKeys.fieldValues(actorId, workspaceId) });
+        void client.invalidateQueries({ queryKey: [...queryKeys.fields(actorId, workspaceId), 'history'] });
+      }
+    },
   });
 }
 
 /** An atomic batch updates detail caches without one refetch storm per returned row. */
-export function storeConfirmedTasks(client: QueryClient, actorId: string, workspaceId: string, tasks: readonly TaskDto[]) {
+export function storeConfirmedTasks(client: QueryClient, actorId: string, workspaceId: string, tasks: readonly TaskDto[], sharedEstimate = false) {
   const knownTags = client.getQueryData<TagDto[]>(queryKeys.tags(actorId, workspaceId)) ?? [];
   for (const task of tasks) {
     const key = queryKeys.task(actorId, workspaceId, task.id);
     const cached = client.getQueryData<TaskDto>(key);
     if (!cached) continue;
-    if (taskWouldRegress(cached, task) || tagsWouldRegress(task, [...cached.tags, ...knownTags])) void invalidateTask(client, actorId, workspaceId, task.id);
+    if (taskWouldRegress(cached, task) || tagsWouldRegress(task, [...cached.tags, ...knownTags])) void client.invalidateQueries({ queryKey: key, exact: true });
     else client.setQueryData(key, task);
   }
+  // Histories of all returned rows refresh in one predicate pass, cached detail or not.
+  void invalidateTaskTimelines(client, actorId, workspaceId, sharedEstimate ? undefined : tasks.map(task => task.id));
   const workspace = queryKeys.workspace(actorId, workspaceId);
   void client.invalidateQueries({ queryKey: [...workspace, 'schedule'] });
   void client.invalidateQueries({ queryKey: [...workspace, 'dependencies'] });

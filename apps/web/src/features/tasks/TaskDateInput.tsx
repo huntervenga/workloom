@@ -1,7 +1,7 @@
 import { sqlCalendarDateSchema } from '@workloom/contracts';
 import { cn } from '@workloom/ui';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Temporal } from 'temporal-polyfill';
 import { useTranslation } from '../../i18n';
 import { CellPopover } from './CellPopover';
@@ -63,6 +63,19 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
   const dueRef = useRef<HTMLInputElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  useEffect(() => {
+    if (!calendarPopover || !calendarOpen) return undefined;
+    const view = rootRef.current?.ownerDocument.defaultView ?? window;
+    // Radix modal Escape runs at document capture, before the calendar's React
+    // bubble handler. Claim only this open calendar's own key at window capture;
+    // the existing bubble handler still closes it and restores endpoint focus.
+    const claimCalendarEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.isComposing && event.target instanceof Node && rootRef.current?.contains(event.target)) event.preventDefault();
+    };
+    view.addEventListener('keydown', claimCalendarEscape, true);
+    return () => view.removeEventListener('keydown', claimCalendarEscape, true);
+  }, [calendarPopover, calendarOpen]);
+
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const [expanded, setExpanded] = useState(initialShowStart || startDate !== '');
   const [active, setActive] = useState<'startDate' | 'dueDate'>('dueDate');

@@ -1,8 +1,8 @@
-import { taskPrioritySchema, type MembershipDto, type SectionDto, type TagDto, type TaskDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup } from '@workloom/contracts';
+import { taskPrioritySchema, type MembershipDto, type SectionDto, type TagDto, type TaskDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup, type UpdateTaskInput, type BulkUpdateTasksInput } from '@workloom/contracts';
 import { Button, cn } from '@workloom/ui';
 import { Expand, LoaderCircle, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
-import { useTranslation } from '../../i18n';
+import { useTranslation, type TranslationMessage } from '../../i18n';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
@@ -15,6 +15,7 @@ import { useInlineTagCreateBinding } from './inlineTagCreate';
 import { buildUpdateInput, changedKeys, draftFromTask, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors } from './taskDraft';
 import { revealInlineEditor } from '../task-table/TaskTable';
 import type { WorkPackageEntry } from '../task-table/workPackages';
+import { parseEstimateInput } from '../task-table/estimate';
 import { canEditTaskInline, canResumeInlineSession, isCurrentEstimateProjection, type TaskInlineField } from './tableEditing';
 import { unresolvedTaskCommand, type EditSession, type TaskCommands } from './useTaskCommands';
 
@@ -29,6 +30,57 @@ export type InlineCloseReason = 'cancel' | 'blur' | 'next';
 export interface InlineSaveIntent {
   /** Plain Enter in the title: continue with a new task below when the page finds it appropriate. */
   continueWithNext: boolean;
+}
+
+/** The keys one selected cell may apply to its whole selection; never a title, description or personal hours. */
+export type InlineBulkChanges = BulkUpdateTasksInput['changes'];
+/** `unchanged`: every target already holds the value; `refused`: nothing was sent and the port's notice says why. */
+export type InlineBulkVerdict = 'sent' | 'unchanged' | 'refused';
+export interface InlineBulkCallbacks {
+  /** The exact submitted session; it is confirmed only once the whole batch is. */
+  session?: EditSession;
+  onConfirmed?: (origin: TaskDto) => void;
+  onSuccess: (origin: TaskDto) => void;
+  onSettled: () => void;
+}
+/**
+ * Page-owned submission for a cell opened in a selected row of a multi-selection: one atomic
+ * batch to the selection frozen at open. While it is given, this editor never writes the row alone.
+ */
+export interface InlineBulkEditPort {
+  count: number;
+  pending: boolean;
+  uncertain: boolean;
+  /** The batch's own definite or unknown failure. */
+  error: Error | null;
+  /** Why nothing was sent, or why this field stays single-task only. */
+  notice: TranslationMessage | null;
+  /** The field cannot be applied to a selection yet; the cell only explains that. */
+  unsupported: boolean;
+  submit: (changes: InlineBulkChanges, callbacks: InlineBulkCallbacks) => InlineBulkVerdict;
+  retry: (callbacks: InlineBulkCallbacks) => void;
+}
+
+/** Only this cell's own keys reach a selection; an explicit choice applies even where this row already holds it. */
+function bulkChanges(field: TaskInlineField, draft: TaskDraft, input: UpdateTaskInput | null, chosen: boolean, touched: ReadonlySet<keyof TaskDraft>): InlineBulkChanges | null {
+  switch (field) {
+    case 'statusId': return chosen || input?.statusId !== undefined ? { statusId: draft.statusId } : null;
+    case 'priority': return chosen || input?.priority !== undefined ? { priority: draft.priority } : null;
+    case 'responsibleMembershipId': return chosen || input?.responsibleMembershipId !== undefined ? { responsibleMembershipId: draft.responsibleMembershipId } : null;
+    case 'sectionId': return chosen || input?.sectionId !== undefined ? { sectionId: draft.sectionId } : null;
+    case 'tagIds': return touched.has('tagIds') ? { tagIds: [...draft.tagIds] } : null;
+    // Only deliberately edited endpoints propagate; typing the origin's existing value is still intentional.
+    case 'dueDate':
+      return touched.has('startDate') || touched.has('dueDate') ? {
+        ...(touched.has('startDate') ? { startDate: draft.startDate || null } : {}),
+        ...(touched.has('dueDate') ? { dueDate: draft.dueDate || null } : {}),
+      } : null;
+    case 'estimate': {
+      const parsed = parseEstimateInput(draft.estimate);
+      return touched.has('estimate') && parsed.valid ? { estimateMinutes: parsed.minutes } : null;
+    }
+    case 'title': return null;
+  }
 }
 
 export interface InlineTaskEditProps {
@@ -51,6 +103,9 @@ export interface InlineTaskEditProps {
   onSaved: (task: TaskDto) => void;
   /** Page-owned completion survives a row moving to another group or Board lane. */
   onSaveStarted?: ((form: HTMLFormElement, intent: InlineSaveIntent) => { onSuccess: (task: TaskDto) => void; onSettled: () => void }) | undefined;
+  /** Given only for a selected row of a multi-selection; absent keeps the single-task command. */
+  bulkEdit?: InlineBulkEditPort | undefined;
+  singleOnly?: boolean | undefined;
 }
 
 const statusColors: Record<TaskStatusGroup, string> = { todo: '#94a3b8', in_progress: '#6366f1', done: '#10b981', cancelled: '#cbd5e1' };
@@ -65,7 +120,7 @@ const iconActionClassName = cn('inline-flex size-7 shrink-0 items-center justify
  * Uses the exact seen task revision; only this cell's field can enter the update. Choices save
  * at once through the same command; text saves on Enter or when focus leaves the editor.
  */
-export function InlineTaskEdit({ task, field, statuses, members, sections = [], tags = [], commands, writable, onClose, onMoreDetails, onSaved, focusClaim, titleCaret, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
+export function InlineTaskEdit({ task, field, statuses, members, sections = [], tags = [], commands, writable, onClose, onMoreDetails, onSaved, focusClaim, titleCaret, onSaveStarted, estimatePackages, bulkEdit, singleOnly }: InlineTaskEditProps) {
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
@@ -105,6 +160,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     kept.draftId ??= crypto.randomUUID();
     return kept;
   });
+  const touched = useRef(new Set<keyof TaskDraft>());
   const [errors, setErrors] = useState<TaskDraftErrors>({});
   const id = useId();
   const mounted = useRef(true);
@@ -118,10 +174,12 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   }, [confirmed, field]);
   const choice = choiceFields.has(field);
   const unresolved = unresolvedTaskCommand(commands);
-  const pending = update.pendingCommand?.variables.taskId === task.id;
-  const uncertain = update.uncertain?.variables.taskId === task.id;
+  // A selection port answers for its own batch first; any other held command still blocks this cell.
+  const pending = update.pendingCommand?.variables.taskId === task.id || bulkEdit?.pending === true;
+  const uncertain = update.uncertain?.variables.taskId === task.id || bulkEdit?.uncertain === true;
   const blocked = unresolved !== null && !pending && !uncertain;
-  const ownError = update.variables?.taskId === task.id && update.variables.input.expectedRevision === session.base.revision ? update.error : null;
+  const ownError = bulkEdit ? (bulkEdit.uncertain ? null : bulkEdit.error)
+    : update.variables?.taskId === task.id && update.variables.input.expectedRevision === session.base.revision ? update.error : null;
   const denied = isAccessDenied(ownError);
   const needsReview = ownError instanceof ApiError && ownError.kind === 'conflict';
   const editable = writable && canEditTaskInline(task) && !denied;
@@ -141,9 +199,9 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   const creation = useInlineTagCreateBinding(commands.inlineTags, {
     origin: { id: tagOriginId, taskId: task.id, label: task.title },
     canAttach: field === 'tagIds' && !foreignDraft && editable && !frozen && !needsReview && !pending && !uncertain,
-    onSelect: tag => setSession(before => before.draftId !== tagDraftId || before.base.revision !== tagBaseRevision ? before
+    onSelect: tag => { touched.current.add('tagIds'); setSession(before => before.draftId !== tagDraftId || before.base.revision !== tagBaseRevision ? before
       : before.draft.tagIds.some(kept => kept.toLowerCase() === tag.id.toLowerCase()) ? before
-      : { ...before, draft: { ...before.draft, tagIds: [...before.draft.tagIds, tag.id] } }),
+      : { ...before, draft: { ...before.draft, tagIds: [...before.draft.tagIds, tag.id] } }); },
   });
   // This cell's own unanswered create holds its submit; other cells and recovery are unaffected.
   const tagHeld = field === 'tagIds' && creation.held;
@@ -151,7 +209,9 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   const isTagHeld = () => field === 'tagIds' && commands.inlineTags.isHeld(tagOriginId);
 
   const currentError = errors.dueDate ?? errors.form ?? errors.title ?? errors.description ?? errors.startDate ?? errors.estimate;
-  const hasFeedback = staleEstimate || Boolean(currentError) || blocked || ownError !== null || uncertain;
+  const bulkNotice = bulkEdit?.notice ?? null;
+  const bulkCopy = bulkEdit && !bulkEdit.unsupported ? t('bulkInline.appliesTo', { count: bulkEdit.count }) : null;
+  const hasFeedback = staleEstimate || Boolean(currentError) || blocked || ownError !== null || uncertain || bulkNotice !== null;
 
   const saved = (submitted: EditSession, result: TaskDto, bridge?: ReturnType<NonNullable<InlineTaskEditProps['onSaveStarted']>>) => {
     if (!commands.confirmSession(submitted, result)) return;
@@ -162,8 +222,19 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     setErrors({});
     onClose();
   };
+  /** The selection's one batch: never a single-task write, and the session is retained exactly as sent. */
+  const submitBulk = (form: HTMLFormElement, current: EditSession, changes: InlineBulkChanges | null) => {
+    if (!bulkEdit || bulkEdit.unsupported) return;
+    if (changes === null) { editSessions.current.delete(task.id); onClose('cancel'); return; }
+    editSessions.current.set(task.id, current);
+    const bridge = onSaveStarted?.(form, { continueWithNext: false });
+    const verdict = bulkEdit.submit(changes, { session: current, onSuccess: origin => saved(current, origin, bridge), onSettled: () => bridge?.onSettled() });
+    if (verdict === 'sent') return;
+    bridge?.onSettled();
+    if (verdict === 'unchanged') { editSessions.current.delete(task.id); onClose('cancel'); }
+  };
   /** One explicit submission of exactly this session object; its identity is the confirmation key. */
-  const submitSession = (current: EditSession, intent: InlineSaveIntent) => {
+  const submitSession = (current: EditSession, intent: InlineSaveIntent, chosen = false) => {
     const form = formRef.current;
     if (!form || confirmed || pending || blocked || !editable || needsReview || staleEstimate || isTagHeld()) return;
     // A drawer or another cell's draft must never be submitted through this control.
@@ -171,6 +242,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     const result = buildUpdateInput(current.base, draftFromTask(current.base), current.draft);
     if (!result.ok) { setErrors(result.errors); return; }
     setErrors({});
+    if (bulkEdit) { submitBulk(form, current, bulkChanges(field, current.draft, result.input, chosen, touched.current)); return; }
     if (result.input === null) { editSessions.current.delete(task.id); onClose(intent.continueWithNext ? 'next' : 'cancel'); return; }
     // Retain the sent session before rendering, so recovery and confirmation see the same object.
     editSessions.current.set(task.id, current);
@@ -181,6 +253,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     const form = formRef.current;
     if (!form || !uncertain) return;
     const bridge = onSaveStarted?.(form, { continueWithNext: false });
+    if (bulkEdit?.uncertain) { bulkEdit.retry({ session, onSuccess: result => saved(session, result, bridge), onSettled: () => bridge?.onSettled() }); return; }
     update.retryUncertain({ onSuccess: result => saved(session, result, bridge), onSettled: () => bridge?.onSettled() });
   };
 
@@ -245,19 +318,22 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     <button type="button" className={iconActionClassName} title={t('tasks.quickAdd.collapse')} aria-label={t('tasks.quickAdd.collapse')} onClick={() => onClose('cancel')}><X size={14} aria-hidden="true" /></button>
   </div>;
 
+  // A selection cannot take this field yet: the cell explains that and sends nothing, not even for this row.
+  const bulkUnsupported = bulkEdit?.unsupported === true && !foreignDraft && editable;
   // Recovery-only states keep the cell one line; their explanation and actions sit in the popover.
-  if (foreignDraft || (!editable && !uncertain)) return <div ref={attach} onKeyDown={escape} className="flex h-8 min-w-0 items-center px-1.5">
-    <span className="truncate rounded-full bg-amber-50 px-1.5 py-px text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">{foreignDraft ? t('tasks.inlineEdit.draft') : t('tasks.inlineEdit.notEditableShort')}</span>
+  if (foreignDraft || (!editable && !uncertain) || bulkUnsupported) return <div ref={attach} onKeyDown={escape} className="flex h-8 min-w-0 items-center px-1.5">
+    <span className="truncate rounded-full bg-amber-50 px-1.5 py-px text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">{foreignDraft ? t('tasks.inlineEdit.draft') : bulkUnsupported ? t('bulkInline.unsupportedShort') : t('tasks.inlineEdit.notEditableShort')}</span>
     <CellPopover anchor={anchor}>
-      <p>{foreignDraft ? t('tasks.inlineEdit.existingDraft') : t('tasks.inlineEdit.notEditable')}</p>
+      <p>{foreignDraft ? t('tasks.inlineEdit.existingDraft') : bulkUnsupported ? bulkNotice ? t(bulkNotice.key, bulkNotice.params) : t('bulkInline.estimateUnsupported') : t('tasks.inlineEdit.notEditable')}</p>
       <div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1">
-        <Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{foreignDraft ? t('tasks.quickAdd.resumeDraft') : t('tasks.quickAdd.moreDetails')}</Button>
-        <Button size="sm" variant="ghost" onClick={() => onClose('cancel')}>{t('tasks.quickAdd.collapse')}</Button>
+        {bulkUnsupported ? null : <Button autoFocus={shouldFocus} size="sm" onClick={onMoreDetails}>{foreignDraft ? t('tasks.quickAdd.resumeDraft') : t('tasks.quickAdd.moreDetails')}</Button>}
+        <Button autoFocus={bulkUnsupported && shouldFocus} size="sm" variant="ghost" onClick={() => onClose('cancel')}>{t('tasks.quickAdd.collapse')}</Button>
       </div>
     </CellPopover>
   </div>;
 
   const change = (patch: Partial<TaskDraft>) => {
+    for (const key of Object.keys(patch) as (keyof TaskDraft)[]) touched.current.add(key);
     setSession(before => ({ ...before, draft: { ...before.draft, ...patch } }));
     setErrors({});
   };
@@ -271,7 +347,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     const next: EditSession = { ...session, draft: { ...session.draft, ...patch } };
     setSession(next);
     setErrors({});
-    submitSession(next, { continueWithNext: false });
+    submitSession(next, { continueWithNext: false }, true);
   };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -292,7 +368,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   const assigneeOptions: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFields.unassigned') },
     ...(session.draft.responsibleMembershipId && !members.some(member => member.id === session.draft.responsibleMembershipId) ? [{ value: session.draft.responsibleMembershipId, label: t('tasks.taskFields.memberUnavailable'), disabled: true }] : []),
-    ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName })),
+    ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
   ];
   const priorityOptions: ChoiceOption[] = taskPrioritySchema.options.map(priority => ({ value: priority, label: priorityLabels[priority], color: priorityColors[priority] }));
   // Active sections in their project order. A current archived or unknown section stays visible
@@ -323,6 +399,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   const primary = uncertain ? <Button size="sm" className="h-7 px-2" variant="primary" type="submit">{t('tasks.inlineEdit.retry')}</Button>
     : choice ? null
     : <Button size="sm" className="h-7 px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || staleEstimate || tagHeld || undefined}>{pending ? t('tasks.inlineEdit.saving') : t('tasks.inlineEdit.save')}</Button>;
+  const popoverShown = (hasFeedback || singleOnly || bulkCopy !== null || field === 'estimate' || field === 'dueDate' || field === 'tagIds') && !pickerOpen;
   return <form ref={attach} noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} aria-busy={pending || undefined} onSubmit={submit}
     // A held press on a date/tag panel's static content must not blur into the deferred autosave below.
     onMouseDown={field === 'dueDate' || field === 'tagIds' ? keepFocusOnPopoverPress : undefined}
@@ -354,10 +431,15 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     className="relative flex h-8 min-w-0 items-center">
     {control}
     {pending ? <><LoaderCircle size={14} aria-hidden="true" className="pointer-events-none absolute right-2 text-muted motion-safe:animate-spin" /><span role="status" className="sr-only">{t('tasks.inlineEdit.saving')}</span></> : null}
-    {(hasFeedback || field === 'estimate' || field === 'dueDate' || field === 'tagIds') && !pickerOpen ? <CellPopover anchor={anchor} side={choice ? 'top' : 'bottom'}
+    {/* The selection count overlays the fixed cell; while an open list hides the popover, it is also the live copy. */}
+    {bulkCopy !== null ? <span aria-hidden="true" data-bulk-count="" className="pointer-events-none absolute right-7 rounded-full bg-accent-soft px-1.5 text-[11px] font-medium leading-4 text-accent-ink tabular-nums">{t('bulkInline.badge', { count: bulkEdit?.count ?? 0 })}</span> : null}
+    {bulkCopy !== null && !popoverShown ? <span role="status" className="sr-only">{bulkCopy}</span> : null}
+    {popoverShown ? <CellPopover anchor={anchor} side={choice ? 'top' : 'bottom'}
       className={field === 'dueDate' ? 'max-h-[calc(100dvh-16px)] overflow-y-auto' : undefined}
       role={field === 'dueDate' || field === 'tagIds' ? 'dialog' : undefined}
       ariaLabel={field === 'dueDate' ? t('tasks.dates.edit') : field === 'tagIds' ? t('tasks.tags.edit') : undefined}>
+      {singleOnly ? <p role="status" className="font-medium text-muted">{t('bulkInline.singleOnly')}</p> : null}
+      {bulkCopy !== null ? <p role="status" className="font-medium text-accent-ink">{bulkCopy}</p> : null}
       {field === 'dueDate' ? <TaskDateInput startDate={session.draft.startDate ?? ''} dueDate={session.draft.dueDate} onChange={change} disabled={frozen || needsReview}
         autoFocus={shouldFocus} errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} /> : null}
       {field === 'tagIds' ? <TaskTagPicker tags={tagCatalog} values={session.draft.tagIds} onChange={tagIds => change({ tagIds })} disabled={frozen || needsReview} autoFocus={shouldFocus}
@@ -368,7 +450,8 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
       {staleEstimate ? <p id={`${id}-estimate-source`} role="status" className="text-amber-800">{t('tasks.inlineEstimate.refreshRequired')}</p> : null}
       {currentError && !(field === 'dueDate' && (errors.startDate || errors.dueDate)) ? <p role="alert" id={`${id}-error`} className="text-red-700">{t(currentError.key, currentError.params)}</p> : null}
       {blocked ? <p role="status" className="text-amber-800">{t('tasks.quickAdd.otherCommand')}</p> : null}
-      <SaveFeedback subject="taskSave" error={ownError} uncertainError={uncertain ? update.uncertain?.error ?? null : null} />
+      {bulkNotice !== null ? <p role="alert" className="text-red-700">{t(bulkNotice.key, bulkNotice.params)}</p> : null}
+      <SaveFeedback subject="taskSave" error={ownError} uncertainError={uncertain ? (bulkEdit?.uncertain ? bulkEdit.error : update.uncertain?.error) ?? null : null} />
       {actions(primary)}
     </CellPopover> : null}
   </form>;

@@ -17,8 +17,14 @@ describe('atomic assignee move and bulk contracts', () => {
     const parsed = bulkUpdateTasksInputSchema.parse(bulk);
     expect(parsed).toEqual(bulk);
     expect(Object.keys(parsed.changes)).toEqual(['dueDate']);
-    for (const changes of [{}, { participantMembershipIds: [] }, { position: 0 }, { statusId: id(4) }]) expect(bulkUpdateTasksInputSchema.safeParse({ ...bulk, changes }).success).toBe(false);
+    for (const changes of [{}, { title: 'No mass rename' }, { description: 'No mass overwrite' }, { participantMembershipIds: [] }, { position: 0 }, { unknownField: true }]) expect(bulkUpdateTasksInputSchema.safeParse({ ...bulk, changes }).success).toBe(false);
     expect(bulkUpdateTasksInputSchema.safeParse({ ...bulk, actor: id(5) }).success).toBe(false);
+  });
+  it.each([{ statusId: id(4) }, { priority: 'urgent' }, { tagIds: [] }, { sectionId: null }, { sectionId: id(6) }])('accepts the supported chosen-value patch without adding unrelated defaults: %j', changes => {
+    const input = { ...bulk, changes };
+    expect(bulkUpdateTasksInputSchema.parse(input)).toEqual(input);
+    expect(JSON.stringify(bulkUpdateTasksInputSchema.parse(input))).toBe(JSON.stringify(input));
+    expect(Object.keys(bulkUpdateTasksInputSchema.parse(input).changes)).toEqual(Object.keys(changes));
   });
   it('requires one to100 unique canonical task IDs and actual date-only values', () => {
     for (const tasks of [[], Array.from({ length: 101 }, (_, i) => ({ taskId: id(i + 10), expectedRevision: 1 })), [bulk.tasks[0], bulk.tasks[0]]]) expect(bulkUpdateTasksInputSchema.safeParse({ ...bulk, tasks }).success).toBe(false);

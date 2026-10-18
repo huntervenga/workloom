@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TaskActivityDto, TaskCommentDto } from '@workloom/contracts';
+import type { TaskActivityDto, TaskCommentDto, TaskTimelineItemDto } from '@workloom/contracts';
 import { authorizeWorkspace } from '../access/access-queries.js';
 import type { CommandContext } from '../access/context.js';
 import type { AccessRepository, WorkspaceAccessRecord } from '../access/ports.js';
@@ -14,7 +14,7 @@ const ctx: CommandContext = { workspaceId: id(1), actor: { userId: id(2), displa
 function setup() {
   let access: WorkspaceAccessRecord | null = { workspace: { id: id(1), name: 'Test', timezone: 'UTC', weekStart: 1 }, membership: { id: id(3), workspaceId: id(1), userId: id(2), displayName: 'Trusted author', role: 'member', state: 'active', revision: 1 } };
   let current: CommentTarget | null = { id: id(4), projectId: id(5), visibility: 'workspace', archivedAt: null, projectArchivedAt: null };
-  const order: string[] = [], receipts = new Map<string, IdempotencyRecord>(), comments: TaskCommentDto[] = [], activities: TaskActivityDto[] = [];
+  const order: string[] = [], receipts = new Map<string, IdempotencyRecord>(), comments: TaskCommentDto[] = [], activities: TaskActivityDto[] = [], timeline: TaskTimelineItemDto[] = [];
   const accessRepo = { findWorkspaceAccess: async () => { order.push('access'); return access; } } as unknown as AccessRepository;
   const repo: TaskCommentsRepository = {
     access: accessRepo, permissionEpoch: async () => '3',
@@ -23,6 +23,7 @@ function setup() {
     insertIdempotency: vi.fn(async row => { receipts.set(row.idempotencyKey, row); }),
     insertComment: vi.fn(async row => { comments.push(row); }),
     listComments: vi.fn(async () => comments), listActivity: vi.fn(async () => activities),
+    listTimeline: vi.fn(async () => timeline),
   };
   const record = vi.fn(async () => ({ changeSeq: 1n, eventOrdinal: 1 }));
   const guard = createPlanningMutationGuard({} as PlanningWriteScope, { newId: () => id(6), digest: value => value });
@@ -35,7 +36,7 @@ function setup() {
     },
   };
   const tools: TaskCommentsTools = { newId: () => id(6), digest: value => value, encodeCursor: value => JSON.stringify(value), decodeCursor: vi.fn(value => { order.push('decode'); return JSON.parse(value) as TaskTimelineCursor; }) };
-  return { app: createTaskCommentsApplication(unit, tools), repo, tools, order, comments, activities, receipts, record, check, setAccess: (value: WorkspaceAccessRecord | null) => { access = value; }, getAccess: () => access as WorkspaceAccessRecord, setTarget: (value: CommentTarget | null) => { current = value; }, getTarget: () => current as CommentTarget };
+  return { app: createTaskCommentsApplication(unit, tools), repo, tools, order, comments, activities, timeline, receipts, record, check, setAccess: (value: WorkspaceAccessRecord | null) => { access = value; }, getAccess: () => access as WorkspaceAccessRecord, setTarget: (value: CommentTarget | null) => { current = value; }, getTarget: () => current as CommentTarget };
 }
 describe('create-only comments and safe task timeline domain', () => {
   it('uses server-authoritative author/time and exact text, with metadata-only events and an inert intent', async () => {
@@ -99,5 +100,44 @@ describe('create-only comments and safe task timeline domain', () => {
     expect(page.items).toEqual([row]);
     await test.app.listActivity(ctx, id(4), { limit: 1, cursor: page.nextCursor as string });
     expect(test.repo.listActivity).toHaveBeenLastCalledWith(id(1), id(4), { changeSeq: row.changeSeq, eventOrdinal: 2 }, 2);
+  });
+  describe('unified timeline', () => {
+    const activity = (n: number, changeSeq: string, eventOrdinal: number): TaskTimelineItemDto => ({ type: 'activity', id: id(n), workspaceId: id(1), taskId: id(4), changeSeq, eventOrdinal, occurredAt: time, kind: 'updated', actorUserId: id(2), actorMembershipId: id(3), actorDisplayName: 'Current label', detail: 'uncaptured', changes: [] }) as TaskTimelineItemDto;
+    it('pages one keyset with limit + 1 and a task-timeline cursor bound to seq/ordinal text', async () => {
+      const test = setup(); test.timeline.push(activity(20, '9007199254740993', 2), activity(21, '9007199254740993', 1));
+      const page = await test.app.listTimeline(ctx, id(4), { limit: 1 });
+      expect(page.items.map(item => item.id)).toEqual([id(20)]);
+      expect(test.repo.listTimeline).toHaveBeenLastCalledWith(id(1), id(4), null, 2);
+      const cursor = JSON.parse(page.nextCursor as string) as Record<string, unknown>;
+      expect(cursor).toEqual({ version: 1, kind: 'task-timeline', workspaceId: id(1), taskId: id(4), actorUserId: id(2), membershipId: id(3), permissionEpoch: '3', limit: 1, changeSeq: '9007199254740993', eventOrdinal: 2 });
+      await test.app.listTimeline(ctx, id(4), { limit: 1, cursor: page.nextCursor as string });
+      expect(test.repo.listTimeline).toHaveBeenLastCalledWith(id(1), id(4), { changeSeq: '9007199254740993', eventOrdinal: 2 }, 2);
+      test.timeline.length = 1;
+      expect((await test.app.listTimeline(ctx, id(4), { limit: 1 })).nextCursor).toBeNull();
+    });
+    it('rejects any cross-actor/task/workspace/membership/epoch/limit/kind cursor', async () => {
+      const test = setup(); test.timeline.push(activity(20, '5', 2), activity(21, '5', 1));
+      const cursor = JSON.parse((await test.app.listTimeline(ctx, id(4), { limit: 1 })).nextCursor as string) as Record<string, unknown>;
+      for (const [key, value] of Object.entries({ kind: 'task-activity', version: 2, workspaceId: id(99), taskId: id(99), actorUserId: id(99), membershipId: id(99), permissionEpoch: '4', limit: 2 })) await expect(test.app.listTimeline(ctx, id(4), { limit: 1, cursor: JSON.stringify({ ...cursor, [key]: value }) })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+      // A timeline cursor is not accepted by the old feeds either.
+      await expect(test.app.listActivity(ctx, id(4), { limit: 1, cursor: JSON.stringify(cursor) })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+      await expect(test.app.listTimeline(ctx, id(4), { limit: 1, unknown: 'x' } as never)).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    });
+    it('denies revoked access and hidden targets before decoding a cursor', async () => {
+      const test = setup(); test.setTarget(null);
+      await expect(test.app.listTimeline(ctx, id(4), { cursor: 'stolen' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      test.setTarget({ id: id(4), projectId: id(5), visibility: 'workspace', archivedAt: null, projectArchivedAt: null }); test.setAccess(null);
+      await expect(test.app.listTimeline(ctx, id(4), { cursor: 'stolen' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      expect(test.tools.decodeCursor).not.toHaveBeenCalled(); expect(test.repo.listTimeline).not.toHaveBeenCalled();
+    });
+    it('adds a trusted HTTPS avatar only when membership carries one; receipts without it replay with no key', async () => {
+      const plain = setup(), first = await plain.app.createComment(ctx, id(4), { body: 'Old' });
+      expect(Object.hasOwn(first, 'authorAvatarUrl')).toBe(false);
+      expect(Object.hasOwn(await plain.app.createComment(ctx, id(4), { body: 'Old' }), 'authorAvatarUrl')).toBe(false);
+      const withAvatar = setup(); withAvatar.setAccess({ ...withAvatar.getAccess(), membership: { ...withAvatar.getAccess().membership, avatarUrl: 'https://cdn.example.com/a.png' } as never });
+      expect((await withAvatar.app.createComment(ctx, id(4), { body: 'New' })).authorAvatarUrl).toBe('https://cdn.example.com/a.png');
+      const unsafe = setup(); unsafe.setAccess({ ...unsafe.getAccess(), membership: { ...unsafe.getAccess().membership, avatarUrl: 'http://user:pw@evil.test/a.png' } as never });
+      expect((await unsafe.app.createComment(ctx, id(4), { body: 'New' })).authorAvatarUrl).toBeNull();
+    });
   });
 });

@@ -31,3 +31,10 @@ export { createWorkspaceInputSchema, isSupportedWorkspaceTimezone } from './work
 export type { CreateWorkspaceInput } from './workspace-create.js';
 
 export * from './task-row.js';
+
+export { safeProfilePhotoUrl, profilePhotoUrlSchema, MAX_PROFILE_PHOTO_URL_LENGTH } from './profile-photo.js';
+export type { ProfilePhotoUrl } from './profile-photo.js';
+
+// One bounded comments-and-actions feed; legacy comments/activity exports remain unchanged.
+export { taskTimelineQuerySchema, taskTimelineItemSchema, taskTimelineResponseSchema, taskTimelineActivityKindSchema, taskActivityChangeSchema, taskActivityLabelRefSchema, taskActivityTaskRefSchema } from './task-comments.js';
+export type { TaskTimelineQueryInput, TaskTimelineItemDto, TaskTimelineResponse, TaskActivityChangeDto, TaskActivityLabelRef, TaskActivityTaskRef } from './task-comments.js';

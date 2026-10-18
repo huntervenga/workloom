@@ -1,11 +1,12 @@
 // An owned synthetic child only: populated pre-Auth schema -> additive Auth migration.
-import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDatabase, createSharedAuthStore, createTaskApplication, runMigrations, seedDemoData, FIXTURE_USER_IDS, FIXTURE_WORKSPACE_IDS, type Database } from '@workloom/db';
+import { createDatabase, createSharedAuthStore, runMigrations, FIXTURE_USER_IDS, FIXTURE_WORKSPACE_IDS, type Database } from '@workloom/db';
 import { expect, it } from 'vitest';
+import { seedLegacyDemoData, createLegacyProject, createLegacySection, createLegacyTag, createLegacyTask,
+  insertLegacyFixtureOwner } from './support/legacy-upgrade-fixture.js';
 import { createThrowawayDatabase, type ThrowawayDatabase } from './support/test-database.js';
 import { requireTestDatabaseUrl } from './support/test-database-url.js';
 
@@ -30,22 +31,20 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
     const old = await runMigrations(target.url, { requireLoopback: true, migrationsFolder: folder });
     expect(old.state.appliedCount).toBe(14);
     db = createDatabase(target.url, { requireLoopback: true });
-    await seedDemoData(db);
-    // The base identity seed deliberately has no tasks. Populate the old schema
-    // through its ordinary domain commands before taking the preservation snapshot.
-    const app = createTaskApplication(db);
-    const context = () => ({ workspaceId: FIXTURE_WORKSPACE_IDS.team,
-      actor: { userId: FIXTURE_USER_IDS.owner, displayName: 'Synthetic Owner', kind: 'fixture' as const },
-      source: 'web' as const, requestId: randomUUID(), idempotencyKey: randomUUID() });
-    const project = await app.createProject(context(), { name: 'Populated pre-Auth project' });
-    const todo = (await app.listStatuses(context(), project.id)).find(status => status.group === 'todo');
-    if (!todo) throw new Error('Expected a default todo status on the old schema.');
-    const section = await app.createSection(context(), project.id, { name: 'Preserved legacy section' });
-    const tag = await app.createTag(context(), { name: 'Preserved legacy tag' });
-    const parent = await app.createTask(context(), { projectId: project.id, statusId: todo.id, sectionId: section.id,
+    await seedLegacyDemoData(db.sql);
+    // Current stores read columns from later migrations, so populate the old schema through explicit
+    // old-schema SQL (fixture actor, project/statuses, section, tag, parent + child sharing its work
+    // package, audit events and command receipts) before taking the preservation snapshot.
+    const actor = await insertLegacyFixtureOwner(db.sql, { userId: FIXTURE_USER_IDS.owner, workspaceId: FIXTURE_WORKSPACE_IDS.team,
+      displayName: 'Synthetic Owner', workspaceName: 'Synthetic team' });
+    const project = await createLegacyProject(db.sql, actor, 'Populated pre-Auth project');
+    const section = await createLegacySection(db.sql, actor, project.id, 'Preserved legacy section');
+    const tag = await createLegacyTag(db.sql, actor, 'Preserved legacy tag');
+    const parent = await createLegacyTask(db.sql, actor, { projectId: project.id, statusId: project.todoStatusId, sectionId: section.id,
       title: 'Preserved parent', estimateMinutes: 120, dueDate: '2026-10-24', tagIds: [tag.id] });
-    await app.createTask(context(), { projectId: project.id, statusId: todo.id, parentTaskId: parent.id,
+    const child = await createLegacyTask(db.sql, actor, { projectId: project.id, statusId: project.todoStatusId, parentTaskId: parent.id,
       title: 'Preserved child sharing its work package', dueDate: '2026-10-23' });
+    expect(child.workPackageId).toBe(parent.workPackageId);
     const tables = await db.sql<{ name: string }[]>`select tablename as name from pg_tables where schemaname='public' order by tablename`;
     expect(tables).toHaveLength(60);
     const sql = db.sql;
@@ -54,7 +53,7 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
       for (const { name } of tables) {
         // Names come only from pg_catalog; escape identifiers rather than interpolating values as SQL.
         const quoted = `"${name.replaceAll('"', '""')}"`;
-        const values = await sql.unsafe<{ row: unknown }[]>(`select to_jsonb(t) as row from public.${quoted} t`);
+        const values = await sql.unsafe<{ row: unknown }[]>(`select ${name === 'users' ? "to_jsonb(t) - 'avatar_url'" : 'to_jsonb(t)'} as row from public.${quoted} t`);
         rows[name] = values.map(value => JSON.stringify(value.row)).sort();
       }
       return rows;
@@ -81,7 +80,20 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
       const count = await db.sql.unsafe<{ count: number }[]>(`select count(*)::int as count from public.${name}`);
       expect(count).toEqual([{ count: 0 }]);
     }
-    // The committed enum value must also work after the additive migration completes.
+    // The historical0013→0014 preservation oracle above is complete. Explicitly add the
+    // remaining current migrations before exercising today's shared Auth application.
+    const currentPrefix = journal.entries.filter(entry => entry.idx <= 16);
+    expect(currentPrefix).toHaveLength(17);
+    for (const entry of currentPrefix.filter(entry => entry.idx > 14)) {
+      await copyFile(join(migrations, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
+    }
+    await writeFile(join(folder, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: currentPrefix }));
+    expect((await runMigrations(target.url, { requireLoopback: true, migrationsFolder: folder })).appliedNow)
+      .toEqual(['0015_workspace_creation', '0016_user_profile_photos']);
+    expect(await legacyRows()).toEqual(before);
+    const currentReceipts = await db.sql`select * from drizzle.__drizzle_migrations order by id`;
+    expect(currentReceipts.slice(0, afterReceipts.length)).toEqual(afterReceipts);
+    expect(currentReceipts).toHaveLength(afterReceipts.length + 2);
     const principal = await createSharedAuthStore(db).provisionIdentity({ issuer: 'https://auth.example.test', subject: 'upgrade-user', displayName: 'Upgrade user', workspaceName: 'Empty upgraded workspace', timezone: 'UTC' });
     expect(principal.user.kind).toBe('real');
     expect(await db.sql`select id from tasks where workspace_id=${principal.workspaceId}`).toHaveLength(0);

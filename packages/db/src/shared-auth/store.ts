@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, gt, sql } from 'drizzle-orm';
+import { safeProfilePhotoUrl } from '@workloom/contracts';
 import type { SharedAuthStore, SharedAuthSessionRecord, SharedAuthSessionUpdate } from '@workloom/domain';
 import type { Database } from '../client.js';
 import { users, workspaces, memberships, sharedAuthIdentities, sharedAuthSessions, sharedAuthLoginAttempts } from '../schema.js';
@@ -27,6 +28,12 @@ function internalReturnTo(value: string): string {
       (target.pathname !== '/app' && !target.pathname.startsWith('/app/'))) throw invalid();
   return value;
 }
+/** undefined = preserve, null = clear; anything but an already-normalized safe URL is rejected (value never logged). */
+function avatar(value: string | null | undefined): string | null | undefined {
+  if (value === undefined || value === null) return value;
+  if (safeProfilePhotoUrl(value) !== value) throw invalid();
+  return value;
+}
 function record(row: typeof sharedAuthSessions.$inferSelect): SharedAuthSessionRecord {
   return { sessionHash: row.sessionHash, userId: row.userId, encryptedTokens: row.encryptedTokens,
     accessExpiresAt: row.accessExpiresAt.toISOString(), expiresAt: row.expiresAt.toISOString(),
@@ -46,6 +53,14 @@ export function createSharedAuthStore(source: Database): SharedAuthStore {
         if (!row) throw invalid();
         const update = decision.update;
         if (row.revokedAt !== null && update.revokedAt === null) throw invalid();
+        const profileAvatarUrl = avatar(update.profileAvatarUrl);
+        if (profileAvatarUrl !== undefined) {
+          // Only a live, non-revoking session may write its own real user's photo; never matched by profile fields.
+          if (row.revokedAt !== null || update.revokedAt !== undefined) throw invalid();
+          const [user] = await tx.update(users).set({ avatarUrl: profileAvatarUrl, updatedAt: new Date() })
+            .where(and(eq(users.id, row.userId), eq(users.kind, 'real'))).returning({ id: users.id });
+          if (!user) throw invalid();
+        }
         const patch: Partial<typeof sharedAuthSessions.$inferInsert> = {};
         if (update.encryptedTokens !== undefined) patch.encryptedTokens = cipher(update.encryptedTokens);
         if (update.accessExpiresAt !== undefined) patch.accessExpiresAt = instant(update.accessExpiresAt);
@@ -64,6 +79,7 @@ export function createSharedAuthStore(source: Database): SharedAuthStore {
       const issuer = text(input.issuer, 2048), subject = text(input.subject, 255);
       const displayName = text(input.displayName, 200).trim(), workspaceName = text(input.workspaceName, 200).trim();
       const timezone = text(input.timezone, 64);
+      const avatarUrl = avatar(input.avatarUrl);
       try { new Intl.DateTimeFormat('en', { timeZone: timezone }).format(0); } catch { throw invalid(); }
       return source.db.transaction(async tx => {
         // Unambiguous scoped lock and unique composite key protect first login across API processes.
@@ -73,18 +89,21 @@ export function createSharedAuthStore(source: Database): SharedAuthStore {
           .where(and(eq(sharedAuthIdentities.issuer, issuer), eq(sharedAuthIdentities.subject, subject)));
         if (existing) {
           if (existing.user.kind !== 'real') throw invalid();
-          if (existing.user.displayName !== displayName) await tx.update(users).set({ displayName, updatedAt: new Date() }).where(eq(users.id, existing.user.id));
-          return { user: { id: existing.user.id, displayName, kind: 'real' as const },
+          const nextAvatarUrl = avatarUrl === undefined ? existing.user.avatarUrl : avatarUrl;
+          if (existing.user.displayName !== displayName || existing.user.avatarUrl !== nextAvatarUrl) {
+            await tx.update(users).set({ displayName, avatarUrl: nextAvatarUrl, updatedAt: new Date() }).where(eq(users.id, existing.user.id));
+          }
+          return { user: { id: existing.user.id, displayName, kind: 'real' as const, avatarUrl: nextAvatarUrl },
             workspaceId: existing.identity.workspaceId, membershipId: existing.identity.membershipId };
         }
         let userId = randomUUID();
         while (userId.toLowerCase() === subject.toLowerCase()) userId = randomUUID();
         const workspaceId = randomUUID(), membershipId = randomUUID();
-        await tx.insert(users).values({ id: userId, displayName, kind: 'real' });
+        await tx.insert(users).values({ id: userId, displayName, kind: 'real', avatarUrl: avatarUrl ?? null });
         await tx.insert(workspaces).values({ id: workspaceId, name: workspaceName, timezone });
         await tx.insert(memberships).values({ id: membershipId, workspaceId, userId, role: 'owner', state: 'active', revision: 1 });
         await tx.insert(sharedAuthIdentities).values({ issuer, subject, userId, workspaceId, membershipId });
-        return { user: { id: userId, displayName, kind: 'real' as const }, workspaceId, membershipId };
+        return { user: { id: userId, displayName, kind: 'real' as const, avatarUrl: avatarUrl ?? null }, workspaceId, membershipId };
       });
     },
     async createSession(input) {

@@ -1,13 +1,12 @@
 // Real local API/DB comments; dropped responses occur only after a real backend commit.
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { meResponseSchema, taskActivityResponseSchema, taskCommentResponseSchema, taskCommentsResponseSchema } from '@workloom/contracts';
+import { meResponseSchema, taskTimelineResponseSchema, taskCommentResponseSchema, taskCommentsResponseSchema } from '@workloom/contracts';
 import { apiCall, dailyFixture, gate } from './support/daily-fixture.js';
 
 async function discussion(page: Page, title: string): Promise<Locator> {
   const drawer = page.getByRole('dialog', { name: title, exact: true });
-  await drawer.getByRole('tab', { name: /^Discussion/ }).click();
-  await expect(drawer.getByRole('region', { name: 'Discussion', exact: true })).toBeVisible();
+  await expect(drawer.getByRole('region', { name: 'Activity', exact: true })).toBeVisible();
   return drawer;
 }
 async function comments(f: Awaited<ReturnType<typeof dailyFixture>>, taskId: string) {
@@ -17,17 +16,17 @@ async function comments(f: Awaited<ReturnType<typeof dailyFixture>>, taskId: str
 for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mobile', { width: 390, height: 844 }]] as const) {
   test.describe(`Comments ${name}`, () => {
     test.use({ viewport });
-    test('details draft survives sibling tabs; Ctrl+Enter posts exact literal text once, plain Enter does not post, reload persists and activity is lazy', async ({ page, request, baseURL }, info) => {
+    test('details and comment drafts coexist; Ctrl+Enter posts exact literal text once, plain Enter does not post, reload persists and one unified feed loads', async ({ page, request, baseURL }, info) => {
       const f = await dailyFixture(request, baseURL, 'Comments literal');
       const task = await f.createTask(`${f.token} details`);
-      const writes: string[] = [], activityReads: string[] = [];
-      page.on('request', r => { if (r.method() === 'POST' && new URL(r.url()).pathname.endsWith('/comments')) writes.push(r.postData() ?? ''); if (new URL(r.url()).pathname.endsWith('/activity')) activityReads.push(r.url()); });
+      const writes: string[] = [], legacyActivityReads: string[] = [], timelineReads: string[] = [];
+      page.on('request', r => { if (r.method() === 'POST' && new URL(r.url()).pathname.endsWith('/comments')) writes.push(r.postData() ?? ''); if (new URL(r.url()).pathname.endsWith('/activity')) legacyActivityReads.push(r.url()); if (new URL(r.url()).pathname.endsWith('/timeline')) timelineReads.push(r.url()); });
       await page.goto(`${f.path}?task=${task.id}`);
       const drawer = page.getByRole('dialog', { name: task.title, exact: true });
       await drawer.getByLabel('Task name', { exact: true }).fill(`${task.title} unsaved`);
       await drawer.getByLabel('Description', { exact: true }).fill('Retained details draft');
       await discussion(page, task.title);
-      expect(activityReads).toEqual([]);
+      expect(legacyActivityReads).toEqual([]); expect(timelineReads.length).toBeGreaterThan(0);
       await drawer.getByRole('button', { name: 'Add comment', exact: true }).click();
       await expect(drawer.getByRole('alert')).toContainText('Write a comment before posting.'); expect(writes).toEqual([]);
       const bodyInput = drawer.getByLabel('Comment', { exact: true });
@@ -35,7 +34,7 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mo
       await expect(bodyInput).toHaveValue('first line\nsecond line'); expect(writes).toEqual([]);
       const body = `  ${f.token} <b>literal</b> <script>window.unwantedCommentScript=1</script>\n**not bold** [link](https://example.test/comment)  `;
       await bodyInput.fill(body);
-      await drawer.getByRole('tab', { name: 'Details', exact: true }).click();
+      await drawer.getByLabel('Task name', { exact: true }).focus();
       await expect(drawer.getByLabel('Task name', { exact: true })).toHaveValue(`${task.title} unsaved`);
       await expect(drawer.getByLabel('Description', { exact: true })).toHaveValue('Retained details draft');
       await discussion(page, task.title); await expect(bodyInput).toHaveValue(body);
@@ -44,15 +43,16 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mo
       const comment = taskCommentResponseSchema.parse(await response.json()).data;
       expect(comment.body).toBe(body); expect(comment.authorMembershipId).toBe(f.own.id); expect(comment.authorUserId).toBe(f.live.me.actor.id);
       await expect(bodyInput).toHaveValue(''); expect(writes).toHaveLength(1); expect(JSON.parse(writes[0] ?? '{}')).toEqual({ body });
-      const literal = drawer.getByRole('region', { name: 'Discussion', exact: true }).getByText(body, { exact: true });
+      const literal = drawer.getByRole('region', { name: 'Activity', exact: true }).getByText(body, { exact: true });
       await expect(literal).toBeVisible(); expect(await literal.textContent()).toBe(body); await expect(literal.locator('b,script,a')).toHaveCount(0);
       expect(await page.evaluate(() => Object.hasOwn(window, 'unwantedCommentScript'))).toBe(false);
       expect((await f.task(task.id)).revision).toBe(task.revision);
-      expect(activityReads).toEqual([]);
-      const activity = page.waitForResponse(r => apiCall(r, 'GET', `${f.prefix}/tasks/${task.id}/activity`));
-      await drawer.locator('summary').filter({ hasText: /^Activity$/ }).click();
-      const events = taskActivityResponseSchema.parse(await (await activity).json()).data;
+      expect(legacyActivityReads).toEqual([]); expect(timelineReads.length).toBeGreaterThan(0);
+      const responseFeed = await f.request.get(`${f.prefix}/tasks/${task.id}/timeline?limit=50`); expect(responseFeed.status()).toBe(200);
+      const feed = taskTimelineResponseSchema.parse(await responseFeed.json()).data;
+      const events = feed.filter(event => event.type === 'activity');
       expect(events.some(event => event.kind === 'created')).toBe(true); expect(JSON.stringify(events)).not.toContain(body);
+      expect(feed.filter(event => event.type === 'comment' && event.comment.id === comment.id)).toHaveLength(1);
       await page.screenshot({ path: info.outputPath(`comments-literal-${name}.png`) });
       page.once('dialog', d => d.accept()); await page.reload(); await discussion(page, task.title);
       await expect(page.getByRole('dialog').getByText(body, { exact: true })).toBeVisible();
@@ -71,7 +71,7 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mo
         await drawer.getByLabel('Comment', { exact: true }).fill('Pending exact comment'); await drawer.getByRole('button', { name: 'Add comment', exact: true }).click(); await committed.wait;
         expect(await comments(f, task.id)).toHaveLength(1);
         await drawer.locator('button[aria-label="Close"]').first().click();
-        await page.getByRole('button', { name: task.title, exact: true }).click(); drawer = await discussion(page, task.title);
+        await page.getByRole('button', { name: `Open task “${task.title}”`, exact: true }).click(); drawer = await discussion(page, task.title);
         await expect(drawer.getByLabel('Comment', { exact: true })).toHaveValue('Pending exact comment'); await expect(drawer.getByLabel('Comment', { exact: true })).toBeDisabled();
         held.release(); await expect(drawer.getByLabel('Comment', { exact: true })).toHaveValue(''); await expect(drawer.getByLabel('Comment', { exact: true })).toBeEnabled(); expect(count).toBe(1);
         await page.unroute(routePath);
@@ -88,7 +88,7 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mo
       } finally { held.release(); }
     });
 
-    test('API-created allowlisted viewer session reads real feed without composer; injected current403 hides previously loaded feed (UI simulation)', async ({ browser, request, baseURL }, info) => {
+    test('API-created allowlisted viewer session reads real feed without composer; injected current403 on reload hides the prior feed (UI simulation)', async ({ browser, request, baseURL }, info) => {
       const f = await dailyFixture(request, baseURL, 'Comments viewer'); const task = await f.createTask(`${f.token} viewer`);
       const body = `Visible prior feed ${f.token}`; await f.post(`/tasks/${task.id}/comments`, { body }, taskCommentResponseSchema);
       const viewer = f.members.find(member => member.role === 'viewer'); if (!viewer) throw new Error('Existing allowlisted viewer required.');
@@ -101,9 +101,10 @@ for (const [name, viewport] of [['desktop', { width: 1440, height: 1000 }], ['mo
         await page.goto(`${f.path}?task=${task.id}`); const drawer = await discussion(page, task.title);
         await expect(drawer.getByText(body, { exact: true })).toBeVisible(); await expect(drawer.getByLabel('Comment', { exact: true })).toHaveCount(0);
         await expect(drawer).toContainText('You can read this discussion. Commenting is unavailable with your current access.');
-        await page.route(`**${f.prefix}/tasks/${task.id}/comments?**`, route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: 'Not available' }, meta: { requestId: 'qa-current-denial' } }) }));
-        const denialResponse = page.waitForResponse(r => apiCall(r, 'GET', `${f.prefix}/tasks/${task.id}/comments`) && r.status() === 403);
-        await drawer.getByRole('button', { name: 'Refresh discussion', exact: true }).click(); await denialResponse;
+        await page.route(`**${f.prefix}/tasks/${task.id}/timeline?**`, route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'FORBIDDEN', message: 'Not available' }, meta: { requestId: 'qa-current-denial' } }) }));
+        const denialResponse = page.waitForResponse(r => apiCall(r, 'GET', `${f.prefix}/tasks/${task.id}/timeline`) && r.status() === 403);
+        // Reload is the explicit native recheck; same-cache denial remains a separate component oracle.
+        await page.reload(); await denialResponse;
         await expect(drawer.getByText(body, { exact: true })).toHaveCount(0); await expect(drawer.getByLabel('Comment', { exact: true })).toHaveCount(0);
         expect(writes).toEqual([]); expect(await comments(f, task.id)).toHaveLength(1);
         await page.screenshot({ path: info.outputPath(`comments-viewer-denial-${name}.png`) });

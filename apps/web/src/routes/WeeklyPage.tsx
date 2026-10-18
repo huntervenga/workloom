@@ -128,11 +128,11 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   const selectedFact = factKey === null ? null : factDrafts[factKey] ?? null;
   useUnsavedChangesWarning(Object.keys(planDrafts).length > 0 || Object.keys(factDrafts).length > 0);
   const periodOptions = [{ value: '', label: t('planning.chooseWeek') }, ...orderedPeriods.map((item) => ({ value: item.id, label: `${item.name} · ${item.localStart} — ${lastIncludedDate(item.localEndExclusive)}` })), ...(periodId && !orderedPeriods.some((item) => item.id === periodId) ? [{ value: periodId, label: t('planning.selectedPeriodUnavailable') }] : [])];
-  const personOptions = [{ value: '', label: t('planning.chooseAPerson') }, ...(members.data ?? []).map((member) => ({ value: member.id, label: member.displayName, avatarName: member.displayName })), ...(entryMembershipId && !entryMember ? [{ value: entryMembershipId, label: t('planning.selectedPersonUnavailable') }] : [])];
+  const personOptions = [{ value: '', label: t('planning.chooseAPerson') }, ...(members.data ?? []).map((member) => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })), ...(entryMembershipId && !entryMember ? [{ value: entryMembershipId, label: t('planning.selectedPersonUnavailable') }] : [])];
   // A display lens over the loaded full lists; a removed person falls back to everyone rather than an empty view.
   const [peopleLens, setPeopleLens] = useState('');
   const lensId = (members.data ?? []).some((member) => member.id === peopleLens) ? peopleLens : '';
-  const lensOptions = [{ value: '', label: t('planning.peopleLens.all') }, ...[...(members.data ?? [])].sort((a, b) => Number(b.id === ownMembershipId) - Number(a.id === ownMembershipId)).map((member) => ({ value: member.id, label: member.id === ownMembershipId ? t('planning.peopleLens.me', { person: member.displayName }) : member.displayName, avatarName: member.displayName }))];
+  const lensOptions = [{ value: '', label: t('planning.peopleLens.all') }, ...[...(members.data ?? [])].sort((a, b) => Number(b.id === ownMembershipId) - Number(a.id === ownMembershipId)).map((member) => ({ value: member.id, label: member.id === ownMembershipId ? t('planning.peopleLens.me', { person: member.displayName }) : member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl }))];
   const inLens = (membershipId: string) => lensId === '' || membershipId.toLowerCase() === lensId.toLowerCase();
   const shownCommitments = (commitments.data ?? []).filter((item) => inLens(item.membershipId));
   const shownWorklogs = (worklogs.data ?? []).filter((log) => inLens(log.membershipId));

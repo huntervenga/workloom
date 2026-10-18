@@ -1,8 +1,10 @@
 import { useTranslation } from '../i18n';
-import { Avatar, cn } from '@workloom/ui';
+import { cn } from '@workloom/ui';
 import { Check, ChevronDown, Search, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
+
+import { UserAvatar } from './UserAvatar';
 
 /** One choice. Clear states such as Unassigned or Not set are ordinary options with their own value. */
 export interface ChoiceOption {
@@ -12,6 +14,8 @@ export interface ChoiceOption {
   description?: string | undefined;
   /** Initials for a person. When any option has one, options without it get an empty person slot. */
   avatarName?: string | undefined;
+  /** Profile photo shown instead of the `avatarName` initials when it loads. */
+  avatarUrl?: string | null | undefined;
   /** A `#rgb`/`#rrggbb` dot for statuses and enum options; other values draw a neutral ring. */
   color?: string | undefined;
   /** Shown but never selectable, e.g. a retained archived option. */
@@ -101,7 +105,7 @@ function isPrintable(event: ReactKeyboardEvent): boolean {
 function ChoiceMark({ option, mark }: { option: ChoiceOption; mark: Mark }) {
   if (mark === 'avatar') {
     return option.avatarName ? (
-      <Avatar name={option.avatarName} seed={option.value} size="sm" />
+      <UserAvatar name={option.avatarName} seed={option.value} avatarUrl={option.avatarUrl} size="sm" />
     ) : (
       <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong text-subtle">
         <UserRound size={12} />

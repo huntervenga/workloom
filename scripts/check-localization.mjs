@@ -2,6 +2,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const web = join(root, 'apps/web/src');
@@ -64,6 +65,120 @@ literalExemptions.set("apps/web/src/features/dependencies/graphPresentation.ts:0
 literalExemptions.set("apps/web/src/features/tasks/TaskTagPicker.tsx:rounded px-1 py-1 text-xs font-medium text-accent-ink hover:bg-canvas aria-disabled:text-muted", "Shared actionClassName CSS tokens assigned only to button className; never user-visible copy.");
 literalExemptions.set("apps/web/src/features/theme/ThemeManager.ts:(prefers-color-scheme: dark)", "DARK_QUERY media query passed only to matchMedia; never rendered as user copy.");
 const readSource = path => readFileSync(join(root, path), 'utf8');
+// Finite descriptor sources below are inspected as syntax, never executed. New computed
+// producers must get an explicit domain instead of inheriting every English catalog key.
+const unwrap = node => ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node) ? unwrap(node.expression) : node;
+const parsedSource = source => ts.createSourceFile('audited.ts', source, ts.ScriptTarget.Latest, true);
+function namedInitializer(source, name) {
+  let found;
+  const visit = node => { if (ts.isVariableDeclaration(node) && node.name.getText() === name) found = node.initializer; ts.forEachChild(node, visit); };
+  visit(parsedSource(source));
+  if (!found) throw new Error(`Missing finite descriptor source ${name}`);
+  return unwrap(found);
+}
+function literalKeyLeaves(source, name) {
+  const leaves = node => {
+    node = unwrap(node);
+    if (node.kind === ts.SyntaxKind.NullKeyword) return [];
+    if (ts.isStringLiteralLike(node)) return [node.text];
+    if (ts.isObjectLiteralExpression(node)) return node.properties.flatMap(property => {
+      if (!ts.isPropertyAssignment(property)) throw new Error(`Nonliteral descriptor table ${name}`);
+      return leaves(property.initializer);
+    });
+    throw new Error(`Nonliteral descriptor table leaf ${name}`);
+  };
+  return leaves(namedInitializer(source, name));
+}
+function schemaPropertyDomain(source, schemaName, propertyName) {
+  const values = [];
+  const visit = node => {
+    if (ts.isPropertyAssignment(node) && node.name.getText() === propertyName) {
+      const value = unwrap(node.initializer);
+      if (!ts.isCallExpression(value)) throw new Error(`Nonfinite ${schemaName}.${propertyName}`);
+      const argument = value.arguments[0];
+      if (value.expression.getText() === 'z.literal' && argument && ts.isStringLiteralLike(argument)) values.push(argument.text);
+      else if (value.expression.getText() === 'z.enum' && argument && ts.isArrayLiteralExpression(argument)) {
+        for (const entry of argument.elements) { if (!ts.isStringLiteralLike(entry)) throw new Error(`Nonliteral enum ${schemaName}`); values.push(entry.text); }
+      } else throw new Error(`Unsupported finite schema ${schemaName}.${propertyName}`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(namedInitializer(source, schemaName));
+  if (!values.length) throw new Error(`Missing finite schema ${schemaName}.${propertyName}`);
+  return values;
+}
+function stringUnionDomain(source, typeName) {
+  let values;
+  const visit = node => {
+    if (ts.isTypeAliasDeclaration(node) && node.name.text === typeName) {
+      if (!ts.isUnionTypeNode(node.type)) throw new Error(`Nonfinite type ${typeName}`);
+      values = node.type.types.map(type => { if (!ts.isLiteralTypeNode(type) || !ts.isStringLiteralLike(type.literal)) throw new Error(`Nonliteral type ${typeName}`); return type.literal.text; });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsedSource(source));
+  if (!values?.length) throw new Error(`Missing finite type ${typeName}`);
+  return values;
+}
+function namedFunction(source, name) {
+  let found;
+  const visit = node => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node;
+    if (ts.isVariableDeclaration(node) && node.name.getText() === name && node.initializer && ts.isArrowFunction(unwrap(node.initializer))) found = unwrap(node.initializer);
+    ts.forEachChild(node, visit);
+  };
+  visit(parsedSource(source));
+  if (!found?.body) throw new Error(`Missing finite key function ${name}`);
+  return found;
+}
+function functionResultKeys(source, name, domains) {
+  const values = node => {
+    node = unwrap(node);
+    if (ts.isStringLiteralLike(node)) return [node.text];
+    if (node.kind === ts.SyntaxKind.NullKeyword) return [];
+    if (ts.isConditionalExpression(node)) return [...values(node.whenTrue), ...values(node.whenFalse)];
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) return [...values(node.left), ...values(node.right)];
+    const known = domains.get(node.getText());
+    if (!known) throw new Error(`Unaudited ${name} return producer ${node.getText()}`);
+    return known;
+  };
+  const body = namedFunction(source, name).body;
+  if (!ts.isBlock(body)) return values(body);
+  const keys = [];
+  const visit = node => {
+    if (ts.isReturnStatement(node)) { if (!node.expression) throw new Error(`Empty key return ${name}`); keys.push(...values(node.expression)); }
+    else if (!ts.isFunctionLike(node)) ts.forEachChild(node, visit);
+  };
+  visit(body);
+  if (!keys.length) throw new Error(`No finite key returns ${name}`);
+  return keys;
+}
+function parameterDefaultKey(source, name, parameter) {
+  const value = namedFunction(source, name).parameters.find(item => item.name.getText() === parameter)?.initializer;
+  if (!value || !ts.isStringLiteralLike(unwrap(value))) throw new Error(`Nonliteral default key ${name}.${parameter}`);
+  return unwrap(value).text;
+}
+function descriptorPropertyKeys(source, domains) {
+  const keys = [];
+  const alternatives = input => {
+    const node = unwrap(input);
+    if (ts.isStringLiteralLike(node)) return [node.text];
+    if (ts.isConditionalExpression(node)) return [...alternatives(node.whenTrue), ...alternatives(node.whenFalse)];
+    const known = domains.get(node.getText());
+    if (!known?.length) throw new Error(`Unaudited descriptor key producer ${node.getText()}`);
+    return known;
+  };
+  const visit = node => {
+    if (ts.isPropertyAssignment(node) && ['key', 'note'].includes(node.name.getText())) {
+      // A note can itself be a Phrase object; its nested key is visited separately.
+      if (!ts.isObjectLiteralExpression(unwrap(node.initializer))) keys.push(...alternatives(node.initializer));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parsedSource(source));
+  return keys;
+}
+
 const dynamicKeys = new Map([
   ['apps/web/src/features/cutoff/CutoffPanel.tsx', new Map([
     ['readinessKeys[data.readiness]', { keys: tableTranslationKeys(readSource('apps/web/src/features/cutoff/CutoffPanel.tsx'), 'readinessKeys'), reason: 'Exhaustive finite cutoff readiness enum maps to literal catalog keys; persisted frozen/baseline consistency is validated by the response schema.' }],
@@ -155,6 +270,58 @@ for (const [file, expressions, sources] of [
   for (const expression of expressions) rules.set(expression, { keys, reason: `Message descriptor keys are extracted from literal message(...) factories in: ${sources.join(', ')}.` });
   dynamicKeys.set(file, rules);
 }
+
+// The original-estimate union owns exactly three states; captured has a numeric
+// state label, while badge/help copy exists for all three immutable states.
+const originalStates = schemaPropertyDomain(readSource('packages/contracts/src/planning.ts'), 'originalPackageEstimateSchema', 'state');
+dynamicKeys.set('apps/web/src/features/planning/OriginalEstimate.tsx', new Map([
+  ['`original-estimate.state.${state}`', { keys: originalStates.filter(state => state !== 'captured').map(state => `original-estimate.state.${state}`), reason: 'Finite discriminated schema states; the captured branch renders minutes instead of calling this state label.' }],
+  ['`original-estimate.badge.${state}`', { keys: originalStates.map(state => `original-estimate.badge.${state}`), reason: 'Every original-estimate state comes from the named validated response union.' }],
+  ['`original-estimate.help.${state}`', { keys: originalStates.map(state => `original-estimate.help.${state}`), reason: 'Every original-estimate state comes from the named validated response union.' }],
+]));
+
+const presentationSource = readSource('apps/web/src/features/task-comments/presentation.ts');
+const milestones = stringUnionDomain(presentationSource, 'Milestone');
+const customAvailability = schemaPropertyDomain(readSource('packages/contracts/src/task-comments.ts'), 'customChangeSchema', 'availability');
+const activityDomains = new Map([
+  ['priorityKeys[priority]', tableTranslationKeys(presentationSource, 'priorityKeys')],
+  ['workStates[state]', tableTranslationKeys(presentationSource, 'workStates')],
+  ['empty', [parameterDefaultKey(presentationSource, 'minutesShown', 'empty'), ...callTranslationKeys(presentationSource, 'minutesShown', 1)]],
+  ['absent', callTranslationKeys(presentationSource, 'customShown', 2)],
+  ['`activity.milestone.${milestone}`', milestones.map(value => `activity.milestone.${value}`)],
+  ['`activity.custom.${change.availability}`', customAvailability.filter(value => value !== 'history').map(value => `activity.custom.${value}`)],
+]);
+const fieldKeys = callTranslationKeys(presentationSource, 'field', 0, false, false, new Map([
+  ['labelFields[change.field]', tableTranslationKeys(presentationSource, 'labelFields')],
+  ['dependencyKeys[change.op][change.direction]', literalKeyLeaves(presentationSource, 'dependencyKeys')],
+  ['workKeys[change.op]', tableTranslationKeys(presentationSource, 'workKeys')],
+]));
+const descriptors = [...descriptorPropertyKeys(presentationSource, activityDomains), ...fieldKeys];
+const streamPath = 'apps/web/src/features/task-comments/TaskActivityStream.tsx';
+const streamRules = new Map();
+for (const expression of ['value.key', 'value.note', 'change.label.key', 'change.note.key']) streamRules.set(expression, {
+  keys: descriptors, reason: 'Phrase/Shown producers are AST-extracted from presentation.ts property descriptors, finite field factories and explicit checked schema/union template domains; arbitrary new producers fail extraction.',
+});
+streamRules.set('headline(item)', { keys: functionResultKeys(presentationSource, 'headline', new Map([['kindKeys[item.kind]', tableTranslationKeys(presentationSource, 'kindKeys')], ['`activity.kind.${milestone}`', milestones.map(value => `activity.kind.${value}`)]])), reason: 'Headline uses the finite kindKeys dictionary (including its updated fallback) or the two checked Milestone union members.' });
+streamRules.set('note', { keys: functionResultKeys(presentationSource, 'detailNote', new Map([['detailKeys[item.detail]', literalKeyLeaves(presentationSource, 'detailKeys')]])), reason: 'detailNote indexes the finite detailKeys table; null means no note and is handled before translation.' });
+streamRules.set('problemKeys[problem]', { keys: tableTranslationKeys(readSource(streamPath), 'problemKeys'), reason: 'Finite local comment validation dictionary; no server prose or arbitrary key input.' });
+dynamicKeys.set(streamPath, streamRules);
+
+const bulkSource = readSource('apps/web/src/features/task-table/useBulkInlineEdit.ts');
+const bulkRefusals = callTranslationKeys(bulkSource, 'refuse', 1);
+const bulkMessages = callTranslationKeys(bulkSource, 'message', 0, false, false, new Map([['key', bulkRefusals]]));
+for (const [file, expressions, keys] of [
+  ['apps/web/src/features/task-table/useBulkInlineEdit.ts', ['key'], bulkRefusals],
+  ['apps/web/src/features/task-table/BulkCustomFieldCell.tsx', ['bulk.notice.key'], bulkMessages],
+  ['apps/web/src/features/tasks/InlineTaskEdit.tsx', ['bulkNotice.key'], bulkMessages],
+  ['apps/web/src/routes/ProjectPage.tsx', ['bulkInline.completionNotice.key'], bulkMessages],
+]) {
+  const rules = dynamicKeys.get(file) ?? new Map();
+  for (const expression of expressions) rules.set(expression, { keys, reason: 'Bulk notices originate only in useBulkInlineEdit message(...) calls; the one key parameter is derived from every literal refuse(capture,key) caller, with dynamic callers rejected.' });
+  dynamicKeys.set(file, rules);
+}
+literalExemptions.set('apps/web/src/features/task-table/TaskTable.tsx:var(--task-title-width, clamp(280px, 42cqw, 460px))', 'Exact CSS custom-property expression used only by the task title column width; never displayed as copy.');
+
 let checked = 0, calls = 0;
 for (const file of [...files(web), ...files(join(root, 'packages/ui/src'))]) {
   if (!/\.[cm]?[jt]sx?$/.test(file) || /(?:\.test\.|\/test\/|\/i18n\/|Fixtures\.[cm]?[jt]sx?$)/.test(file)) continue;

@@ -302,7 +302,7 @@ it('renders exact personal column order and keeps package totals independent of 
 it('keeps a one-column personal view usable without forcing the old full table width or hiding budget provenance', () => {
   renderTable({ tasks: [launch], columnIds: ['title'] });
   expect(screen.getAllByRole('columnheader')).toHaveLength(1);
-  expect(screen.getByRole('table')).toHaveStyle({ minWidth: 'calc(clamp(280px, 42cqw, 460px) + 0px)' });
+  expect(screen.getByRole('table')).toHaveStyle({ minWidth: 'calc(var(--task-title-width, clamp(280px, 42cqw, 460px)) + 0px)' });
   expect(within(summaryRow()).getByRole('cell')).toHaveAttribute('colspan', '1');
   expect(within(summaryRow()).getByText('Loaded team budget')).toBeInTheDocument();
 });

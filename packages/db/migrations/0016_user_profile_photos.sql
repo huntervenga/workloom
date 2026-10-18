@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "avatar_url" text;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_avatar_url_shape" CHECK (avatar_url is null or (char_length(avatar_url) between 9 and 2048 and avatar_url like 'https://%'));

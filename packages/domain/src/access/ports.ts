@@ -7,6 +7,8 @@ export interface UserRecord {
   readonly id: string;
   readonly displayName: string;
   readonly kind: ActorKind;
+  /** Safe normalized profile photo URL; null or absent renders initials. */
+  readonly avatarUrl?: string | null;
 }
 
 export interface WorkspaceRecord {
@@ -23,6 +25,8 @@ export interface MembershipRecord {
   readonly workspaceId: string;
   readonly userId: string;
   readonly displayName: string;
+  /** The member user's current profile photo URL. */
+  readonly avatarUrl?: string | null;
   readonly role: WorkspaceRole;
   readonly state: MembershipState;
   readonly revision: number;

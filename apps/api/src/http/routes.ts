@@ -4,6 +4,7 @@ import {
   idSchema,
   meResponseSchema,
   membershipListResponseSchema,
+  safeProfilePhotoUrl,
   workspaceListResponseSchema,
   workspaceResponseSchema,
   type ActorDto,
@@ -43,7 +44,7 @@ function toActorDto(actor: Pick<Actor, 'userId' | 'displayName' | 'kind'>): Acto
 }
 
 function toMe(actor: Actor, authMode: IdentityAdapter['mode']): MeDto {
-  return { actor: toActorDto(actor), authMode };
+  return { actor: { ...toActorDto(actor), avatarUrl: safeProfilePhotoUrl(actor.avatarUrl) }, authMode };
 }
 
 export function registerHealthRoutes(app: FastifyInstance, readiness: ReadinessProbe): void {
@@ -71,7 +72,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDependencies)
       request,
       reply,
       meResponseSchema,
-      toMe({ userId: user.id, displayName: user.displayName, kind: user.kind }, deps.identity.mode),
+      toMe({ userId: user.id, displayName: user.displayName, kind: user.kind, avatarUrl: user.avatarUrl ?? null }, deps.identity.mode),
     );
   });
 
@@ -111,6 +112,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDependencies)
         workspaceId: member.workspaceId,
         userId: member.userId,
         displayName: member.displayName,
+        avatarUrl: safeProfilePhotoUrl(member.avatarUrl),
         role: member.role,
       })),
       { list: true },

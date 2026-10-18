@@ -4,6 +4,7 @@ import type { TaskCommentsRepository } from '@workloom/domain';
 import type { WorkloomExecutor } from '../client.js';
 import { auditEvents, memberships, projects, taskComments, tasks, users } from '../schema.js';
 import { createTaskRepository } from '../repositories/task-repository.js';
+import { listTimeline, safeAvatarUrl } from './timeline.js';
 const bounded = (take: number) => { if (!Number.isSafeInteger(take) || take < 1 || take > 101) throw new TypeError('Task timeline pages are bounded to 101 read rows.'); };
 /** Explicit public projection: activity never SELECTs diff/reason/credentials/raw event payload. */
 export function createTaskCommentsRepository(db: WorkloomExecutor): TaskCommentsRepository {
@@ -17,9 +18,11 @@ export function createTaskCommentsRepository(db: WorkloomExecutor): TaskComments
     },
     async listComments(workspaceId, taskId, after, take) {
       bounded(take);
-      const rows = await db.select().from(taskComments).where(and(eq(taskComments.workspaceId, workspaceId), eq(taskComments.taskId, taskId), after ? or(lt(taskComments.createdAt, new Date(after.createdAt)), and(eq(taskComments.createdAt, new Date(after.createdAt)), lt(taskComments.id, after.id))) : undefined)).orderBy(desc(taskComments.createdAt), desc(taskComments.id)).limit(take);
-      return rows.map((row): TaskCommentDto => ({ ...row, createdAt: row.createdAt.toISOString() }));
+      const rows = await db.select({ comment: taskComments, avatarUrl: users.avatarUrl }).from(taskComments).leftJoin(users, eq(users.id, taskComments.authorUserId)).where(and(eq(taskComments.workspaceId, workspaceId), eq(taskComments.taskId, taskId), after ? or(lt(taskComments.createdAt, new Date(after.createdAt)), and(eq(taskComments.createdAt, new Date(after.createdAt)), lt(taskComments.id, after.id))) : undefined)).orderBy(desc(taskComments.createdAt), desc(taskComments.id)).limit(take);
+      // Current author avatar, HTTPS-only per the contract policy; never stored with the comment.
+      return rows.map(({ comment, avatarUrl }): TaskCommentDto => ({ ...comment, createdAt: comment.createdAt.toISOString(), authorAvatarUrl: safeAvatarUrl(avatarUrl) }));
     },
+    listTimeline(workspaceId, taskId, after, take) { return listTimeline(db, workspaceId, taskId, after, take); },
     async listActivity(workspaceId, taskId, after, take) {
       bounded(take);
       const rows = await db.select({ id: auditEvents.id, workspaceId: auditEvents.workspaceId, taskId: auditEvents.entityId, action: auditEvents.action, actorUserId: auditEvents.actorUserId, actorMembershipId: auditEvents.actorMembershipId, actorDisplayName: users.displayName, occurredAt: auditEvents.recordedAt, changeSeq: auditEvents.changeSeq, eventOrdinal: auditEvents.eventOrdinal })
@@ -30,6 +33,6 @@ export function createTaskCommentsRepository(db: WorkloomExecutor): TaskComments
         .orderBy(desc(auditEvents.changeSeq), desc(auditEvents.eventOrdinal)).limit(take);
       return rows.map(({ action, ...row }) => ({ ...row, kind: taskActivityKindSchema.parse(action), occurredAt: row.occurredAt.toISOString(), changeSeq: row.changeSeq.toString() }));
     },
-    async insertComment(comment) { await db.insert(taskComments).values({ ...comment, createdAt: new Date(comment.createdAt) }); },
+    async insertComment({ authorAvatarUrl: _avatar, ...comment }) { await db.insert(taskComments).values({ ...comment, createdAt: new Date(comment.createdAt) }); },
   };
 }

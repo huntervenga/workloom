@@ -3,7 +3,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, deferred, failure, installFakeApi, ok, renderApp, type RouteTable } from '../../test/fakeApi';
 import { BASELINE_ID, PACKAGE_ID, PERIOD_A, PROJECT_ID, STAMP, rootPath, task } from '../planning/test/fixtures';
-import { formatEstimate } from '../task-table';
+import { formatEstimate, formatEstimateInput } from '../task-table';
 import { tablePath, tableRoutes } from '../work-categories/test/fixtures';
 
 beforeAll(async () => { await import('../../routes/ProjectPage'); });
@@ -29,15 +29,15 @@ const originalReads = (calls: Calls) => calls.filter(call => call.path.endsWith(
 const writes = (calls: Calls) => calls.filter(call => call.method !== 'GET');
 async function drawer(title: string) {
   const dialog = within(await screen.findByRole('dialog', { name: title }));
-  return { dialog, current: dialog.getByRole('region', { name: 'Current shared estimate' }), original: dialog.getByRole('region', { name: 'Original estimate' }) };
+  return { dialog, current: dialog.getByLabelText('Team estimate, hours'), original: dialog.getByRole('region', { name: 'Original estimate' }) };
 }
 
 describe('drawer current and original estimates', () => {
-  it('shows a captured zero original next to the separate current value, with only a read on open', async () => {
+  it('shows a captured zero original beside the current estimate field, with only a read on open', async () => {
     const { calls } = installFakeApi(routes({ [PACKAGE_ID]: () => ok(capturedZero) }));
     renderApp(`${tablePath}?task=${task.id}`);
     const { current, original } = await drawer(task.title);
-    expect(within(current).getByText(formatEstimate(1200))).toBeInTheDocument();
+    expect(current).toHaveValue(formatEstimateInput(1200));
     expect(await within(original).findByText(formatEstimate(0))).toBeInTheDocument();
     expect(within(original).getByText('Locked at first freeze')).toBeInTheDocument();
     expect(within(original).queryByText(formatEstimate(1200))).not.toBeInTheDocument();
@@ -51,7 +51,7 @@ describe('drawer current and original estimates', () => {
     const { current, original } = await drawer(task.title);
     expect(await within(original).findByText('Unknown')).toBeInTheDocument();
     expect(within(original).queryByText(formatEstimate(1200))).not.toBeInTheDocument();
-    expect(within(current).getByText(formatEstimate(1200))).toBeInTheDocument();
+    expect(current).toHaveValue(formatEstimateInput(1200));
   });
 
   it('claims no lock while the original is not captured yet', async () => {
@@ -60,7 +60,8 @@ describe('drawer current and original estimates', () => {
     const { dialog, current } = await drawer(task.title);
     expect(await dialog.findByText('Not captured yet')).toBeInTheDocument();
     expect(dialog.queryByText(/Locked/)).not.toBeInTheDocument();
-    expect(within(current).getByText('The whole team’s current budget for this work; detail subtasks share it.')).toBeInTheDocument();
+    expect(current).toHaveValue(formatEstimateInput(1200));
+    expect(current).toHaveAccessibleDescription(/Shared budget for the whole team/);
   });
 
   it('reads the parent’s package for a detail child and the child’s own package for additional work', async () => {
@@ -70,12 +71,12 @@ describe('drawer current and original estimates', () => {
     await user.click(screen.getByRole('button', { name: /^Open subtask “Detail child”/ }));
     const detail = await drawer(detailChild.title);
     expect(await within(detail.original).findByText(formatEstimate(0))).toBeInTheDocument();
-    expect(within(detail.current).getByText(formatEstimate(1200))).toBeInTheDocument();
+    expect(detail.current).toHaveValue(formatEstimateInput(1200));
     await user.click(detail.dialog.getByRole('button', { name: 'Open parent' }));
     await user.click(await screen.findByRole('button', { name: /^Open subtask “Additional child”/ }));
     const additional = await drawer(additionalChild.title);
     expect(await within(additional.original).findByText('Not captured yet')).toBeInTheDocument();
-    expect(within(additional.current).getByText(formatEstimate(90))).toBeInTheDocument();
+    expect(additional.current).toHaveValue(formatEstimateInput(90));
     const paths = new Set(originalReads(calls).map(call => call.path));
     expect(paths).toEqual(new Set([originalPath(PACKAGE_ID), originalPath(OWN_PACKAGE)]));
     expect(writes(calls)).toHaveLength(0);
@@ -86,20 +87,22 @@ describe('drawer current and original estimates', () => {
     renderApp(`${tablePath}?task=${task.id}`);
     const { current, original } = await drawer(task.title);
     expect(await within(original).findByText('The original estimate is not available.')).toBeInTheDocument();
-    expect(within(current).getByText(formatEstimate(1200))).toBeInTheDocument();
+    expect(current).toHaveValue(formatEstimateInput(1200));
     expect(screen.queryByText('private original detail')).not.toBeInTheDocument();
   });
 
   it('marks the current value as saved while an unsaved estimate is in the form', async () => {
     installFakeApi(routes({ [PACKAGE_ID]: () => ok(capturedZero) }));
     const { user } = renderApp(`${tablePath}?task=${task.id}`);
-    const { dialog, current } = await drawer(task.title);
+    const { dialog } = await drawer(task.title);
     const more = dialog.queryByText('More details', { selector: 'summary' });
     if (more && !more.parentElement?.hasAttribute('open')) await user.click(more);
     const input = dialog.getByLabelText('Team estimate, hours');
     await user.clear(input); await user.type(input, '3');
-    expect(within(current).getByText('Saved value. Your unsaved estimate is in the form above.')).toBeInTheDocument();
-    expect(within(current).getByText(formatEstimate(1200))).toBeInTheDocument();
+    const saved = dialog.getByRole('region', { name: 'Current shared estimate' });
+    expect(within(saved).getByText('Saved value. Your unsaved estimate is in the form above.')).toBeInTheDocument();
+    expect(within(saved).getByText(formatEstimate(1200))).toBeInTheDocument();
+    expect(input).toHaveValue('3');
     expect(dialog.getByRole('button', { name: 'Save' })).toBeInTheDocument();
   });
 

@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { createCommentRequest } from './api';
-import { discussionKeys } from './queries';
+import { discussionKeys, invalidateTaskTimelines } from './queries';
 
 export interface CommentDraft { readonly body: string }
 interface CommentVariables extends IdempotentVariables { taskId: string; input: CreateTaskCommentInput; session: CommentDraft }
@@ -35,6 +35,7 @@ export function useTaskCommentsWorkspace(actorId: string, workspaceId: string) {
       }
       setPostedTaskId(variables.taskId);
       void client.invalidateQueries({ queryKey: discussionKeys.comments(actorId, workspaceId, variables.taskId), exact: true });
+      void invalidateTaskTimelines(client, actorId, workspaceId, [variables.taskId]);
     },
   });
   const held = command.pendingCommand ?? command.uncertain;

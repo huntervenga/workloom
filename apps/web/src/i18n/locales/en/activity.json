@@ -1,0 +1,111 @@
+{
+  "heading": "Activity",
+  "loading": "Loading activity…",
+  "empty": "No comments or changes yet.",
+  "window": "Showing the latest {{count}} entries. Older history loads {{size}} at a time.",
+  "older": "Load {{size}} older",
+  "loadingOlder": "Loading older…",
+  "beginning": "Start of this task’s history.",
+  "olderFailed": "Older history couldn’t be loaded. The entries already shown are kept.",
+  "olderRetry": "Try again",
+  "restart": "Reload from latest",
+  "actorUnknown": "Someone",
+  "to": "to",
+  "added": "Added",
+  "removed": "Removed",
+  "omitted": "{{count}} more not listed",
+  "openTask": "Open task",
+  "kind": {
+    "created": "{{name}} created this task",
+    "updated": "{{name}} changed this task",
+    "archived": "{{name}} archived this task",
+    "restored": "{{name}} restored this task",
+    "schedule_updated": "{{name}} changed the schedule",
+    "field_value": "{{name}} changed a custom field",
+    "dependency": "{{name}} changed a dependency",
+    "work": "{{name}} changed recorded time",
+    "completed": "{{name}} completed this task",
+    "reopened": "{{name}} reopened this task"
+  },
+  "milestone": {
+    "completed": "Completed",
+    "reopened": "Reopened"
+  },
+  "detail": {
+    "partial": "Some details of this change weren’t recorded.",
+    "uncaptured": "Details of this change weren’t recorded."
+  },
+  "field": {
+    "title": "Title",
+    "description": "Description",
+    "position": "Position",
+    "status": "Status",
+    "section": "Section",
+    "responsible": "Assignee",
+    "parent": "Parent task",
+    "startDate": "Start date",
+    "dueDate": "Due date",
+    "priority": "Priority",
+    "estimate": "Shared estimate",
+    "tags": "Tags",
+    "participants": "Participants",
+    "custom": "{{name}}",
+    "customUnknown": "Custom field (name not recorded)",
+    "other": "Other field"
+  },
+  "change": {
+    "descriptionChanged": "Description changed",
+    "positionChanged": "Moved",
+    "datesUncaptured": "Earlier and new dates weren’t recorded",
+    "otherChanged": "Changed (details not shown)"
+  },
+  "custom": {
+    "opted_out": "History is turned off for this field; values aren’t shown",
+    "uncaptured": "Values weren’t recorded",
+    "redacted": "Values are hidden"
+  },
+  "dependency": {
+    "addedBlocks": "Now blocks",
+    "addedBlockedBy": "Now blocked by",
+    "removedBlocks": "No longer blocks",
+    "removedBlockedBy": "No longer blocked by"
+  },
+  "work": {
+    "logged": "Time logged for",
+    "edited": "Time edited for",
+    "removed": "Time removed for",
+    "period": "Period",
+    "precision": "Recorded per period ({{timezone}})",
+    "amount": "Time",
+    "stateLabel": "Entry",
+    "state": {
+      "active": "Active",
+      "void": "Voided"
+    }
+  },
+  "priority": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "urgent": "Urgent"
+  },
+  "value": {
+    "none": "None",
+    "empty": "Empty",
+    "redacted": "Hidden",
+    "uncaptured": "Not recorded",
+    "unnamed": "Unnamed",
+    "untitled": "Untitled task",
+    "currentName": "current name",
+    "minutes": "{{minutes}} min",
+    "hours": "{{hours}} h",
+    "hoursMinutes": "{{hours}} h {{minutes}} min",
+    "noEstimate": "No estimate",
+    "noEntry": "No entry",
+    "noPrevious": "No earlier value",
+    "cleared": "Cleared",
+    "yes": "Yes",
+    "no": "No",
+    "unrecognized": "Value not shown"
+  }
+}

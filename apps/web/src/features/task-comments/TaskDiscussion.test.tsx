@@ -2,7 +2,7 @@ import type { TaskCommentDto, TaskActivityDto } from '@workloom/contracts';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { alpha, alphaMembers, anna, created, deferred, failure, installFakeApi, json, ok, project, type RouteTable } from '../../test/fakeApi';
+import { alpha, alphaMembers, anna, created, deferred, failure, installFakeApi, json, ok, project, type FakeRequest, type RouteTable } from '../../test/fakeApi';
 import { renderFieldUi } from '../fields/test/fixtures';
 import { PROJECT_ID, MEMBER_ID, rootPath, task } from '../planning/test/fixtures';
 import { TaskDiscussion } from './TaskDiscussion';
@@ -19,7 +19,21 @@ const comment: TaskCommentDto = { id: 'f9000000-0000-4000-8000-000000000001', wo
 const event: TaskActivityDto = { id: 'f9000000-0000-4000-8000-000000000002', workspaceId: alpha.id, taskId: task.id, actorUserId: anna.id, actorMembershipId: MEMBER_ID, actorDisplayName: 'Current member name', occurredAt: '2026-10-19T09:00:00.000Z', kind: 'created', changeSeq: '9007199254740993', eventOrdinal: 1 };
 const page = (rows: unknown[], nextCursor: string | null = null) => json(200, { data: rows, meta: { requestId: 'comments-qa', nextCursor } });
 function routes(extra: RouteTable = {}): RouteTable {
-  return { [`GET ${path}`]: () => ok(task), [`GET ${path}/comments`]: () => page([]), [`GET ${path}/activity`]: () => page([]), ...extra };
+  const table: RouteTable = { [`GET ${path}`]: () => ok(task), [`GET ${path}/comments`]: () => page([]), [`GET ${path}/activity`]: () => page([]), ...extra };
+  // Adapt this controlled legacy fixture to the single unified endpoint; the new stream suite
+  // independently verifies real global sequence ordering and the strict transport contract.
+  table[`GET ${path}/timeline`] = async (request: FakeRequest) => {
+    const commentResponse = await table[`GET ${path}/comments`]?.(request);
+    if (!commentResponse || !commentResponse.ok) return commentResponse ?? failure(500, 'FIXTURE_ERROR', 'Missing fixture');
+    const activityResponse = await table[`GET ${path}/activity`]?.(request);
+    if (!activityResponse || !activityResponse.ok) return activityResponse ?? failure(500, 'FIXTURE_ERROR', 'Missing fixture');
+    const comments = await commentResponse.json() as { data: TaskCommentDto[]; meta: { nextCursor: string | null } };
+    const activities = await activityResponse.json() as { data: TaskActivityDto[] };
+    const rows = [...comments.data.map(row => ({ type: 'comment', id: row.id, workspaceId: row.workspaceId, taskId: row.taskId, changeSeq: '9007199254740994', eventOrdinal: 1, occurredAt: row.createdAt, comment: row })),
+      ...activities.data.map(row => ({ ...row, type: 'activity', actorAvatarUrl: null, detail: 'uncaptured', changes: [] }))];
+    return page(rows, comments.meta.nextCursor);
+  };
+  return table;
 }
 function example({ viewer = false }: { viewer?: boolean } = {}) {
   let current: TaskCommentsWorkspace | null = null;
@@ -31,9 +45,9 @@ function example({ viewer = false }: { viewer?: boolean } = {}) {
   }
   return { ...renderFieldUi(<Example />), controller: () => { if (!current) throw new Error('Missing controller'); return current; } };
 }
-async function discussion(ui: ReturnType<typeof example>) {
-  await ui.user.click(await screen.findByRole('tab', { name: /^Discussion/ }));
-  await screen.findByText('No comments yet.');
+async function discussion() {
+  await screen.findByRole('region', { name: 'Activity' });
+  await screen.findByText('No comments or changes yet.');
 }
 
 describe('saved task discussion', () => {
@@ -43,11 +57,10 @@ describe('saved task discussion', () => {
     const ui = example();
     const title = await screen.findByLabelText('Task name');
     await ui.user.clear(title); await ui.user.type(title, 'Unsaved field title');
-    await ui.user.click(screen.getByText('More details', { selector: 'summary' }));
     await ui.user.clear(screen.getByLabelText('Team estimate, hours')); await ui.user.type(screen.getByLabelText('Team estimate, hours'), 'invalid');
     await ui.user.click(screen.getByRole('button', { name: 'Save' }));
     expect(screen.getByLabelText('Team estimate, hours')).toHaveAttribute('aria-invalid', 'true');
-    await discussion(ui);
+    await discussion();
     expect(document.querySelector('form form')).toBeNull();
     const body = '  <img src=x onerror=alert(1)>\n[link](https://example.test)  ';
     fireEvent.change(screen.getByLabelText('Comment'), { target: { value: body } });
@@ -58,7 +71,7 @@ describe('saved task discussion', () => {
     expect(document.querySelector('img')).toBeNull(); expect(document.querySelector('a[href="https://example.test"]')).toBeNull();
     const writes = calls.filter(call => call.method !== 'GET');
     expect(writes).toHaveLength(1); expect(writes[0]?.path).toBe(`${path}/comments`); expect(writes[0]?.body).toEqual({ body });
-    await ui.user.click(screen.getByRole('tab', { name: 'Details' }));
+    expect(screen.getByRole('region', { name: 'Activity' })).toBeVisible();
     expect(screen.getByLabelText('Task name')).toHaveValue('Unsaved field title');
     expect(screen.getByLabelText('Team estimate, hours')).toHaveValue('invalid');
     expect(screen.getByLabelText('Team estimate, hours')).toHaveAttribute('aria-invalid', 'true');
@@ -68,7 +81,7 @@ describe('saved task discussion', () => {
   it('reconciles the exact pending composer after close/reopen without duplicates or clearing another task draft', async () => {
     const response = deferred<Response>();
     const { calls } = installFakeApi(routes({ [`POST ${path}/comments`]: () => response.promise }));
-    const ui = example(); await discussion(ui);
+    const ui = example(); await discussion();
     await ui.user.type(screen.getByLabelText('Comment'), 'Sent original');
     await ui.user.click(screen.getByRole('button', { name: 'Add comment' }));
     await waitFor(() => expect(ui.controller().command.pendingCommand).not.toBeNull());
@@ -77,7 +90,7 @@ describe('saved task discussion', () => {
     expect(screen.getByRole('status')).toHaveTextContent('still being posted');
     await ui.user.click(screen.getByRole('button', { name: 'Open discussion' }));
     expect(await screen.findByLabelText('Comment')).toHaveValue('Sent original'); expect(screen.getByLabelText('Comment')).toBeDisabled();
-    await ui.user.click(screen.getByRole('tab', { name: /^Discussion/ }));
+    await screen.findByRole('region', { name: 'Activity' });
     const focused = document.activeElement;
     await act(async () => response.resolve(created({ ...comment, body: 'Sent original' })));
     await screen.findByText('Comment posted.');
@@ -91,7 +104,7 @@ describe('saved task discussion', () => {
     let lose: () => void = () => undefined; let attempt = 0;
     const lost = new Promise<Response>((_resolve, reject) => { lose = () => reject(new TypeError('Failed to fetch')); });
     const { calls } = installFakeApi(routes({ [`POST ${path}/comments`]: request => ++attempt === 1 ? lost : created({ ...comment, body: (request.body as { body: string }).body }) }));
-    const ui = example(); await discussion(ui);
+    const ui = example(); await discussion();
     fireEvent.change(screen.getByLabelText('Comment'), { target: { value: '  Exact\r\ntext  ' } });
     const original = (screen.getByLabelText('Comment') as HTMLTextAreaElement).value;
     await ui.user.click(screen.getByRole('button', { name: 'Add comment' }));
@@ -111,11 +124,11 @@ describe('saved task discussion', () => {
     let denied = false;
     installFakeApi(routes({ [`GET ${path}/comments`]: request => request.searchParams.has('cursor') ? denied ? failure(403, 'FORBIDDEN', 'sensitive denied body') : page([comment, { ...comment, id: 'f9000000-0000-4000-8000-000000000003', body: 'Older body' }]) : page([comment], 'opaque-next') }));
     const ui = example();
-    await ui.user.click(await screen.findByRole('tab', { name: 'Discussion' }));
-    await screen.findByText('Saved body'); await ui.user.click(screen.getByRole('button', { name: 'Load older comments' }));
+    await screen.findByRole('region', { name: 'Activity' });
+    await screen.findByText('Saved body'); await ui.user.click(screen.getByRole('button', { name: 'Load 50 older' }));
     await screen.findByText('Older body'); expect(screen.getAllByText('Saved body')).toHaveLength(1);
     denied = true;
-    await act(async () => { await ui.client.invalidateQueries({ queryKey: discussionKeys.comments(anna.id, alpha.id, task.id), exact: true }); });
+    await act(async () => { await ui.client.invalidateQueries({ queryKey: discussionKeys.timeline(anna.id, alpha.id, task.id), exact: true }); });
     await waitFor(() => expect(screen.queryByText('Saved body')).not.toBeInTheDocument());
     expect(screen.queryByText('Older body')).not.toBeInTheDocument(); expect(screen.queryByLabelText('Comment')).not.toBeInTheDocument();
     expect(screen.queryByText('sensitive denied body')).not.toBeInTheDocument();
@@ -123,17 +136,16 @@ describe('saved task discussion', () => {
 
   it('lets viewers read distinct comment snapshot and current activity author labels without a composer', async () => {
     const { calls } = installFakeApi(routes({ [`GET ${path}/comments`]: () => page([comment]), [`GET ${path}/activity`]: () => page([event]) }));
-    const ui = example({ viewer: true }); await ui.user.click(await screen.findByRole('tab', { name: 'Discussion' }));
+    example({ viewer: true }); await screen.findByRole('region', { name: 'Activity' });
     await screen.findByText('Name when posted'); expect(screen.queryByLabelText('Comment')).not.toBeInTheDocument();
-    await ui.user.click(screen.getByText('Activity', { selector: 'summary' }));
-    await screen.findByText('Current member name created this task.');
+    await screen.findByText('Current member name created this task');
     expect(screen.getByText('Name when posted')).toBeVisible();
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 
   it('keeps Enter as a newline and uses explicit Ctrl+Enter to post', async () => {
     const { calls } = installFakeApi(routes({ [`POST ${path}/comments`]: request => created({ ...comment, body: (request.body as { body: string }).body }) }));
-    const ui = example(); await discussion(ui);
+    const ui = example(); await discussion();
     await ui.user.type(screen.getByLabelText('Comment'), 'Line one{Enter}Line two');
     expect(calls.filter(call => call.method === 'POST')).toHaveLength(0);
     await ui.user.keyboard('{Control>}{Enter}{/Control}'); await screen.findByText('Comment posted.');
@@ -148,7 +160,7 @@ it('validates the bounded exact plaintext without normalizing valid input', () =
 
 it.each([401, 403, 404])('hides cached discussion after a current comment-post denial (%s) while retaining the unsent session', async status => {
   const { calls } = installFakeApi(routes({ [`GET ${path}/comments`]: () => page([comment]), [`POST ${path}/comments`]: () => failure(status, status === 401 ? 'UNAUTHENTICATED' : status === 403 ? 'FORBIDDEN' : 'NOT_FOUND', 'private server details') }));
-  const ui = example(); await ui.user.click(await screen.findByRole('tab', { name: 'Discussion' }));
+  const ui = example(); await screen.findByRole('region', { name: 'Activity' });
   await screen.findByText('Saved body');
   await ui.user.type(screen.getByLabelText('Comment'), 'Retained denied draft');
   await ui.user.click(screen.getByRole('button', { name: 'Add comment' }));
@@ -196,7 +208,7 @@ it.each(['wrong-task', 'missing-cursor'])('rejects an unsafe timeline response (
 it('confirms a closed composer without reopening a drawer, changing its selected pane or taking focus', async () => {
   const response = deferred<Response>();
   installFakeApi(routes({ [`POST ${path}/comments`]: () => response.promise }));
-  const ui = example(); await discussion(ui);
+  const ui = example(); await discussion();
   await ui.user.type(screen.getByLabelText('Comment'), 'Late closed post');
   await ui.user.click(screen.getByRole('button', { name: 'Add comment' }));
   await waitFor(() => expect(ui.controller().command.pendingCommand).not.toBeNull());

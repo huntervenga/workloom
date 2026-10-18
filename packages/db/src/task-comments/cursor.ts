@@ -7,7 +7,7 @@ const integerText = (value: unknown, positive = false) => typeof value === 'stri
 const canonicalId = (value: unknown) => { const result = idSchema.safeParse(value); return result.success && result.data === value; };
 const invalid = () => new DomainError('VALIDATION_FAILED', 'Reload the task discussion.', { details: { fields: ['cursor'] } });
 function valid(value: Record<string, unknown>, expires: boolean): boolean {
-  const anchor = value.kind === 'task-comments' ? ['createdAt', 'id'] : value.kind === 'task-activity' ? ['changeSeq', 'eventOrdinal'] : [];
+  const anchor = value.kind === 'task-comments' ? ['createdAt', 'id'] : value.kind === 'task-activity' || value.kind === 'task-timeline' ? ['changeSeq', 'eventOrdinal'] : [];
   const keys = [...common, ...anchor, ...(expires ? ['expiresAt'] : [])];
   if (!anchor.length || Object.keys(value).length !== keys.length || !keys.every(key => Object.hasOwn(value, key))) return false;
   if (value.version !== 1 || !['workspaceId', 'taskId', 'actorUserId', 'membershipId'].every(key => canonicalId(value[key])) || !integerText(value.permissionEpoch) || !Number.isSafeInteger(value.limit) || (value.limit as number) < 1 || (value.limit as number) > 100) return false;

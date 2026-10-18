@@ -12,6 +12,7 @@ import { useWorkspaceLiveRefresh } from '../../features/workspace/useWorkspaceLi
 import { WorkspaceCreationProvider } from '../../features/workspace/WorkspaceCreation';
 import { discardWorkspaceData } from '../../lib/cacheScope';
 import { QueryErrorState } from '../../shared/QueryErrorState';
+import { UserAvatar } from '../../shared/UserAvatar';
 import { useSession } from '../session';
 import { MobileNav } from './MobileNav';
 import { SidebarContent } from './Sidebar';
@@ -116,12 +117,13 @@ function IdentityError({ error, retrying, onRetry }: { error: unknown; retrying:
 }
 
 /** The real actor's name and sign-out, at every width; only for a shared session. */
-function AccountControls({ name }: { name: string }) {
+function AccountControls({ name, avatarUrl }: { name: string; avatarUrl?: string | null | undefined }) {
   useTranslation();
   const session = useSession();
   const label = t('auth.signedInAs', { name });
   return (
     <div className="flex min-w-0 shrink items-center gap-2">
+      <UserAvatar name={name} avatarUrl={avatarUrl} size="sm" />
       <p className="min-w-0">
         <span className="sr-only">{label}</span>
         <span aria-hidden="true" title={label} className="hidden max-w-48 truncate text-sm text-ink-soft md:block">
@@ -227,19 +229,20 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
       >
         {sidebar()}
       </aside>
-      <div className="flex min-h-dvh min-w-0 flex-col lg:pl-60">
+      {/* Topbar and page together, so an open task pane (styles.css) narrows both and leaves the account controls visible. */}
+      <div className="app-shell-workspace flex min-h-dvh min-w-0 flex-col lg:pl-60">
         <Topbar
           actorId={actorId}
           workspaceId={workspaceId}
           workspaceName={currentWorkspace?.name ?? null}
           menu={<MobileNav>{(close) => sidebar(close)}</MobileNav>}
           localMode={!shared}
-          account={shared ? <AccountControls name={me.actor.displayName} /> : undefined}
+          account={shared ? <AccountControls name={me.actor.displayName} avatarUrl={me.actor.avatarUrl} /> : undefined}
         />
         <main
           id="main"
           tabIndex={-1}
-          className="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-4 outline-none sm:px-6 sm:py-5 lg:px-8 lg:py-6"
+          className="w-full min-w-0 flex-1 px-3 py-4 outline-none sm:px-4 sm:py-5 lg:py-6"
         >
           <SwitchErrorNotice />
           {shared ? <SignOutNotice /> : null}
@@ -264,7 +267,7 @@ function ShellLoading() {
         </div>
       </div>
       <div className="h-14 border-b border-line" />
-      <div className="mx-auto max-w-6xl space-y-4 px-4 py-8 sm:px-6 lg:px-10">
+      <div className="min-w-0 space-y-4 px-3 py-8 sm:px-4">
         <Skeleton className="h-8 w-64 max-w-full" />
         <Skeleton className="h-4 w-full max-w-xl" />
         <Skeleton className="h-48 rounded-2xl" />

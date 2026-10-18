@@ -63,13 +63,12 @@ describe('actual project inline Priority', () => {
   it('keeps a drawer Priority draft Resume-only and does not submit it through a cell', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Open task “${base.title}”` }));
-    const drawer = within(await screen.findByRole('dialog')); await user.click(drawer.getByText('More details', { selector: 'summary' }));
+    const drawer = within(await screen.findByRole('dialog'));
     await user.click(drawer.getByRole('combobox', { name: 'Priority' }));
     await user.click(within(screen.getByRole('listbox', { name: 'Priority' })).getByRole('option', { name: 'High' }));
     await user.click(drawer.getByLabelText('Close', { selector: 'button' })); await user.click(await edit());
     expect(screen.queryByRole('combobox', { name: 'Priority' })).not.toBeInTheDocument(); await user.click(screen.getByRole('button', { name: 'Resume draft' }));
     const resumed = within(await screen.findByRole('dialog'));
-    const resumedDetails = resumed.getByText('More details', { selector: 'summary' }); if (!resumedDetails.closest('details')?.open) await user.click(resumedDetails);
     expect(resumed.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('High'); expect(writes(calls)).toHaveLength(0);
   });
 
@@ -83,7 +82,6 @@ describe('actual project inline Priority', () => {
     else { visible = false; await act(async () => { await queryClient.invalidateQueries({ queryKey: preferenceKey(anna.id, alpha.id, PROJECT_ID), exact: true }); }); }
     await user.click(await screen.findByRole('button', { name: 'Resume original editor' }));
     const drawer = within(await screen.findByRole('dialog'));
-    const details = drawer.getByText('More details', { selector: 'summary' }); if (!details.closest('details')?.open) await user.click(details);
     expect(drawer.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('Urgent'); expect(drawer.getByRole('combobox', { name: 'Priority' })).toBeDisabled();
     await user.click(drawer.getByRole('button', { name: 'Retry submission' })); await waitFor(() => expect(attempts).toBe(2));
     const sent = writes(calls); expect(sent).toHaveLength(2); expect(sent[0]?.body).toEqual({ expectedRevision: 7, priority: 'urgent' }); expect(sent[1]?.body).toEqual(sent[0]?.body);

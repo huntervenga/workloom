@@ -86,7 +86,7 @@ function choiceOptions(kind: ChoiceKind, field: TaskFieldDefinitionDto, current:
     { value: '', label: NOT_SET() },
     ...(current === EMPTY ? [{ value: EMPTY, label: NOTHING_SELECTED(), disabled: true }] : []),
     ...(stored !== null && !members.some((member) => sameId(member.id, stored)) ? [{ value: stored, label: UNAVAILABLE_MEMBER(), disabled: true }] : []),
-    ...members.map((member) => ({ value: member.id.toLowerCase(), label: member.displayName, avatarName: member.displayName })),
+    ...members.map((member) => ({ value: member.id.toLowerCase(), label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
   ];
 }
 

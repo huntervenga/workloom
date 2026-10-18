@@ -2,6 +2,7 @@ import { t, useTranslation } from '../i18n';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import { createContext, useContext, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactElement, type ReactNode, type RefObject } from 'react';
+import { TaskPanelFrame, useDesktopTaskPane } from './TaskPanelFrame';
 
 interface DialogLayer {
   parent: DialogLayer | null;
@@ -49,8 +50,11 @@ export interface DialogShellProps {
   trigger?: ReactElement | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** `drawer` slides in from the right and takes the full width on small screens. */
-  variant?: 'center' | 'drawer' | undefined;
+  /**
+   * `drawer` slides in from the right and takes the full width on small screens. `task-drawer` is
+   * that drawer below desktop widths and a non-modal pane beside the page from 1280px.
+   */
+  variant?: 'center' | 'drawer' | 'task-drawer' | undefined;
   children: ReactNode;
 }
 
@@ -75,6 +79,27 @@ export function DialogShell({ title, description, trigger, open, onOpenChange, v
     return undefined;
   }, [open, layer]);
   const overlayZ = 40 + Math.max(0, layers.indexOf(layer)) * 20;
+  const besidePage = useDesktopTaskPane(variant === 'task-drawer');
+
+  if (besidePage) {
+    return (
+      <DialogReturnFocusContext.Provider value={null}>
+      <DialogLayerContext.Provider value={layer}>
+        <TaskPanelFrame
+          title={title}
+          description={description}
+          trigger={trigger}
+          open={open}
+          onOpenChange={onOpenChange}
+          zIndex={overlayZ + 10}
+          returnTarget={() => returnFocus?.current}
+        >
+          {children}
+        </TaskPanelFrame>
+      </DialogLayerContext.Provider>
+      </DialogReturnFocusContext.Provider>
+    );
+  }
 
   return (
     <DialogReturnFocusContext.Provider value={null}>
@@ -84,7 +109,8 @@ export function DialogShell({ title, description, trigger, open, onOpenChange, v
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-slate-900/30" style={{ zIndex: overlayZ }} />
           <Dialog.Content
-            className={contentClasses[variant]}
+            data-task-panel={variant === 'task-drawer' ? '' : undefined}
+            className={`${contentClasses[variant === 'task-drawer' ? 'drawer' : variant]}${variant === 'task-drawer' ? ' task-panel-modal' : ''}`}
             style={{ zIndex: overlayZ + 10 }}
             onOpenAutoFocus={() => {
               // Focus has not moved yet, so this is the control that opened the dialog.
@@ -101,8 +127,8 @@ export function DialogShell({ title, description, trigger, open, onOpenChange, v
               if (openerRef.current?.isConnected) openerRef.current.focus();
             }}
           >
-            <div className="flex shrink-0 items-start gap-3">
-              <div className="min-w-0 flex-1">
+            <div className={variant === 'task-drawer' ? 'flex min-h-8 shrink-0 items-start justify-end' : 'flex shrink-0 items-start gap-3'}>
+              <div className={variant === 'task-drawer' ? 'sr-only' : 'min-w-0 flex-1'}>
                 <Dialog.Title className="text-base font-semibold [overflow-wrap:anywhere] text-ink">{title}</Dialog.Title>
                 <Dialog.Description className="mt-1 text-sm leading-relaxed text-muted">{description}</Dialog.Description>
               </div>

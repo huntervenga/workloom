@@ -87,7 +87,7 @@ function TaskDraftCell({ cell, context }: { cell: TaskDraftCellId; context: Task
       const options: ChoiceOption[] = [
         { value: '', label: t('tasks.taskFields.unassigned') },
         ...(held && !members.some(member => member.id === held) ? [{ value: held, label: t('tasks.taskFields.memberUnavailable'), disabled: true }] : []),
-        ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName })),
+        ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
       ];
       return <ChoicePicker compact searchable className={cellPickerClassName} label={fieldLabels.responsibleMembershipId} value={held ?? ''} options={options} disabled={disabled} onValueChange={value => onChange({ responsibleMembershipId: value || null })} />;
     }

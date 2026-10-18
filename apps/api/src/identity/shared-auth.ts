@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
+import { safeProfilePhotoUrl } from '@workloom/contracts';
 import type { AccessRepository, Actor, SharedAuthSessionRecord, SharedAuthSessionUpdate, SharedAuthStore } from '@workloom/domain';
 import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTVerifyGetKey } from 'jose';
 
@@ -72,8 +73,11 @@ interface StoredTokens {
   readonly refreshToken: string;
 }
 
+/** undefined = absent or unusable (preserve), null = explicitly cleared, string = safe normalized URL. */
+type PictureClaim = string | null | undefined;
+
 type VerifiedAccess =
-  | { readonly ok: true; readonly subject: string; readonly name: unknown; readonly expiresAt: string }
+  | { readonly ok: true; readonly subject: string; readonly name: unknown; readonly picture: PictureClaim; readonly expiresAt: string }
   | { readonly ok: false; readonly reason: 'invalid' | 'unavailable' };
 
 type RefreshOutcome =
@@ -121,6 +125,13 @@ function displayNameFrom(...claims: readonly unknown[]): string {
     if (cleaned !== '') return cleaned;
   }
   return DEFAULT_DISPLAY_NAME;
+}
+
+/** Reads the signed `picture` claim; invalid values are ignored rather than clearing the stored photo. */
+function pictureFrom(payload: Readonly<Record<string, unknown>>): PictureClaim {
+  if (!('picture' in payload)) return undefined;
+  if (payload.picture === null) return null;
+  return safeProfilePhotoUrl(payload.picture) ?? undefined;
 }
 
 function workspaceNameFor(displayName: string): string {
@@ -264,7 +275,13 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
       }
       const expiresAt = new Date(payload.exp * 1000);
       if (Number.isNaN(expiresAt.getTime())) return { ok: false, reason: 'invalid' };
-      return { ok: true, subject: payload.sub.toLowerCase(), name: payload.name, expiresAt: expiresAt.toISOString() };
+      return {
+        ok: true,
+        subject: payload.sub.toLowerCase(),
+        name: payload.name,
+        picture: pictureFrom(payload),
+        expiresAt: expiresAt.toISOString(),
+      };
     } catch (error) {
       return { ok: false, reason: isVerificationUnavailable(error) ? 'unavailable' : 'invalid' };
     }
@@ -360,6 +377,8 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
           refreshToken: rotation.refreshToken,
         }),
         accessExpiresAt: fresh.expiresAt,
+        // Same locked transaction as the rotated tokens; scoped to record.userId by the store.
+        ...(fresh.picture === undefined ? {} : { profileAvatarUrl: fresh.picture }),
       },
     };
   }
@@ -467,7 +486,7 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
 
       const user = await repository.findUser(outcome.userId);
       if (user === null || user.kind !== 'real') throw unauthenticated([clearSession]);
-      return { userId: user.id, displayName: user.displayName, kind: user.kind };
+      return { userId: user.id, displayName: user.displayName, kind: user.kind, avatarUrl: user.avatarUrl ?? null };
     },
   };
 
@@ -523,6 +542,8 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
         displayName,
         workspaceName: workspaceNameFor(displayName),
         timezone: 'UTC',
+        // Only the rotated (fresh) token's verified picture; the callback token may be stale.
+        ...(fresh.picture === undefined ? {} : { avatarUrl: fresh.picture }),
       });
       const returnTo = await authorizedReturnTo(attempt.returnTo, provisioned.user.id);
 

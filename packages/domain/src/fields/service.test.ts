@@ -511,7 +511,9 @@ describe('field values', () => {
 
     const valueEvent = h.events.at(-1)?.event;
     expect(valueEvent?.entityType).toBe('task_field_value');
-    expect(Object.keys(valueEvent?.diff ?? {}).sort()).toEqual(['definitionRevision', 'fieldId', 'taskId', 'type', 'valueRevision']);
+    expect(Object.keys(valueEvent?.diff ?? {}).sort()).toEqual(['definitionRevision', 'fieldId', 'historyCaptured', 'taskId', 'type', 'valueRevision']);
+    expect(valueEvent?.diff).toMatchObject({ historyCaptured: true });
+    expect(valueEvent?.outbox).not.toHaveProperty('payload.historyCaptured');
     const [first] = h.db.state.history;
     expect(first).toMatchObject({
       before: null,
@@ -526,10 +528,14 @@ describe('field values', () => {
     await h.setValue(tasks.a, notes.id, { type: 'text', value: 'second secret' }, 1, off.revision);
     expect(h.db.state.history).toHaveLength(1);
     expect(h.events.at(-1)?.event.entityType).toBe('task_field_value');
+    expect(h.events.at(-1)?.event.diff).toMatchObject({ historyCaptured: false });
+    expect(Object.keys(h.events.at(-1)?.event.diff ?? {}).sort()).toEqual(['definitionRevision', 'fieldId', 'historyCaptured', 'taskId', 'type', 'valueRevision']);
+    expect(h.events.at(-1)?.event.outbox).not.toHaveProperty('payload.historyCaptured');
 
     const on = await h.app.updateField(h.owner(), notes.id, { expectedRevision: off.revision, historyEnabled: true });
     expect(h.db.state.history).toHaveLength(1);
     await h.setValue(tasks.a, notes.id, { type: 'text', value: null }, 2, on.revision);
+    expect(h.events.at(-1)?.event.diff).toMatchObject({ historyCaptured: true });
     expect(h.db.state.history.at(-1)).toMatchObject({
       before: { type: 'text', value: 'second secret' },
       after: { type: 'text', value: null },

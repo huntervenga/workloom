@@ -111,6 +111,17 @@ export interface TaskFieldsProps {
   /** Slot for creating a tag without leaving the form. */
   tagAction?: ReactNode;
   autoFocusTitle?: boolean | undefined;
+  /**
+   * `all` keeps the rest behind More details. The other parts show every field of their group
+   * openly, for a form that places them apart: `primary` (name, project, section, status,
+   * assignee, dates), `details` (priority, estimate, participants, tags) and `description`.
+   */
+  part?: 'all' | 'primary' | 'details' | 'description' | undefined;
+  /** Shown read only in the `primary` part; a task cannot move to another project. */
+  projectName?: string | undefined;
+  /** Read-only history beneath the estimate, outside the disabled editable controls. */
+  estimateSupplement?: ReactNode;
+  disabled?: boolean | undefined;
 }
 
 const labelClassName = 'text-sm font-medium text-ink';
@@ -142,6 +153,10 @@ export function TaskFields({
   estimateMode,
   tagAction,
   autoFocusTitle = false,
+  part = 'all',
+  projectName,
+  estimateSupplement,
+  disabled = false,
 }: TaskFieldsProps) {
   const { t, locale } = useTranslation();
   const id = useId();
@@ -187,7 +202,7 @@ export function TaskFields({
   const responsibleChoices: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFields.unassigned') },
     ...(responsibleKnown ? [] : [{ value: draft.responsibleMembershipId ?? '', label: UNAVAILABLE_MEMBER() }]),
-    ...members.map((member) => ({ value: member.id, label: member.displayName, avatarName: member.displayName })),
+    ...members.map((member) => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
   ];
   const sectionChoices: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFields.noSection') },
@@ -223,14 +238,13 @@ export function TaskFields({
   const toggle = (list: readonly string[], value: string, on: boolean) =>
     on ? [...list.filter((item) => item !== value), value] : list.filter((item) => item !== value);
 
-  return (
-    <div className="space-y-4">
+  const titleField = (
 <div>
-        <label htmlFor={ids.title} className={labelClassName}>
+        <label htmlFor={ids.title} className={part === 'primary' ? 'sr-only' : labelClassName}>
           {t('tasks.taskFields.taskName')}</label>
         <TextInput
           id={ids.title}
-          className="mt-1.5"
+          className={part === 'primary' ? 'task-title-input' : 'mt-1.5'}
           value={draft.title}
           maxLength={TASK_TITLE_MAX}
           autoComplete="off"
@@ -241,7 +255,8 @@ export function TaskFields({
         />
         <FieldError id={ids.titleError} message={errors.title} />
       </div>
-<div className="grid gap-3 sm:grid-cols-2"><div>
+  );
+  const statusField = (<div>
           <label htmlFor={ids.status} className={labelClassName}>
             {t('tasks.taskFields.status')}</label>
           <ChoicePicker
@@ -252,7 +267,8 @@ export function TaskFields({
             options={statusChoices}
             onValueChange={(statusId) => onChange({ statusId })}
           />
-        </div><div>
+        </div>);
+  const assigneeField = (<div>
           <label htmlFor={ids.responsible} className={labelClassName}>
             {t('tasks.taskFields.assignee')}</label>
           <ChoicePicker
@@ -264,10 +280,12 @@ export function TaskFields({
             options={responsibleChoices}
             onValueChange={(value) => onChange({ responsibleMembershipId: value === '' ? null : value })}
           />
-        </div><div>
+        </div>);
+  const datesField = (<div>
           <TaskDateInput startDate={draft.startDate ?? ''} dueDate={draft.dueDate} onChange={onChange} calendarPopover
             errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} />
-        </div></div>
+        </div>);
+  const descriptionField = (
 <div>
         <label htmlFor={ids.description} className={labelClassName}>
           {t('tasks.taskFields.description')}</label>
@@ -283,9 +301,8 @@ export function TaskFields({
         />
         <FieldError id={ids.descriptionError} message={errors.description} />
       </div>
-<details ref={detailsRef} className="rounded-lg border border-line p-3">
-<summary className="cursor-pointer text-sm font-medium text-ink">{t('tasks.taskFields.moreDetails')}<span className="ml-2 text-xs font-normal text-muted">{t('tasks.taskFields.moreDetailsHint')}</span></summary>
-<div className="mt-4 space-y-4"><div className="grid gap-4 sm:grid-cols-2"><div>
+  );
+  const sectionField = (<div>
           <label htmlFor={ids.section} className={labelClassName}>
             {t('tasks.taskFields.section')}</label>
           <ChoicePicker
@@ -296,7 +313,8 @@ export function TaskFields({
             options={sectionChoices}
             onValueChange={(value) => onChange({ sectionId: value === '' ? null : value })}
           />
-        </div><div>
+        </div>);
+  const priorityField = (<div>
           <label htmlFor={ids.priority} className={labelClassName}>
             {t('tasks.taskFields.priority')}</label>
           <ChoicePicker
@@ -310,7 +328,8 @@ export function TaskFields({
               if (next) onChange({ priority: next });
             }}
           />
-        </div><div>
+        </div>);
+  const estimateField = (<div>
           <label htmlFor={ids.estimate} className={labelClassName}>
             {t('tasks.taskFields.teamEstimateHours')}</label>
           <TextInput
@@ -328,13 +347,15 @@ export function TaskFields({
             }}
           />
           <FieldError id={ids.estimateError} message={errors.estimate} />
-        </div></div><p id={ids.estimateHint} className="rounded-lg bg-canvas px-3 py-2 text-xs leading-relaxed text-muted">
+        </div>);
+  const estimateHint = (<p id={ids.estimateHint} className="rounded-lg bg-canvas px-3 py-2 text-xs leading-relaxed text-muted">
         {estimateMode.kind === 'inherited'
           ? t('tasks.taskFields.includedInValueThisSubtaskSharesItsParent', { p0: estimateMode.parentTitle })
           : estimateMode.kind === 'shared'
             ? t('tasks.taskFields.sharedBudgetForTheWholeTeamAndLinked')
             : t('tasks.taskFields.sharedBudgetForTheWholeTeamEnter1')}
-      </p><fieldset>
+      </p>);
+  const participantsField = (<fieldset>
         <legend className={labelClassName}>{t('tasks.taskFields.participants')}</legend>
         {members.length === 0 && retainedParticipantIds.length === 0 ? (
           <p className="mt-1.5 text-sm text-muted">{t('tasks.taskFields.noWorkspaceMembers')}</p>
@@ -388,7 +409,8 @@ export function TaskFields({
           <p className="mt-1 text-xs text-muted">
             {t('tasks.taskFields.thisMemberHasLeftTheWorkspaceButRemains')}</p>
         ) : null}
-      </fieldset><fieldset>
+      </fieldset>);
+  const tagsField = (<fieldset>
         <legend className={labelClassName}>{t('tasks.taskFields.tags')}</legend>
         {tagAction ? <div className="mt-1">{tagAction}</div> : null}
         {tagOptions.length === 0 && missingTagIds.length === 0 ? (
@@ -426,8 +448,46 @@ export function TaskFields({
             ))}
           </ul>
         )}
-      </fieldset></div>
+      </fieldset>);
+
+  if (part === 'primary') {
+    return (
+      <div className="space-y-4">
+        {titleField}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <dl>
+            <dt className={labelClassName}>{t('tasks.taskFields.project')}</dt>
+            <dd className="mt-1.5 flex min-h-9 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{projectName}</dd>
+          </dl>
+          {sectionField}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">{statusField}{assigneeField}{datesField}</div>
+      </div>
+    );
+  }
+  if (part === 'details') {
+    return (
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="min-w-0 space-y-2"><fieldset disabled={disabled}>{estimateField}</fieldset>{estimateSupplement}</div>
+          <fieldset disabled={disabled}>{priorityField}</fieldset>
+        </div>
+        {estimateHint}
+        <fieldset disabled={disabled} className="min-w-0 space-y-4">{participantsField}{tagsField}</fieldset>
+      </div>
+    );
+  }
+  if (part === 'description') return descriptionField;
+
+  return (
+    <div className="space-y-4">
+      {titleField}
+      <div className="grid gap-3 sm:grid-cols-2">{statusField}{assigneeField}{datesField}</div>
+      {descriptionField}
+<details ref={detailsRef} className="rounded-lg border border-line p-3">
+<summary className="cursor-pointer text-sm font-medium text-ink">{t('tasks.taskFields.moreDetails')}<span className="ml-2 text-xs font-normal text-muted">{t('tasks.taskFields.moreDetailsHint')}</span></summary>
+<div className="mt-4 space-y-4"><div className="grid gap-4 sm:grid-cols-2">{sectionField}{priorityField}{estimateField}</div>{estimateHint}{participantsField}{tagsField}</div>
 </details>
-</div>
+    </div>
   );
 }

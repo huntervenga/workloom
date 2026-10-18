@@ -1,5 +1,5 @@
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto, TaskFieldOptionDto, TaskFieldType } from '@workloom/contracts';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi, type Mock } from 'vitest';
@@ -122,6 +122,27 @@ describe('FieldInput', () => {
     expect(gone).toBeChecked();
     await user.click(gone);
     expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'person', value: [ANNA] } });
+  });
+
+  it('shows the active person photo and falls back without changing the selected stable membership', async () => {
+    const user = userEvent.setup();
+    const onDraft = vi.fn<(draft: FieldDraft) => void>();
+    const field = makeField('person', 'Reviewers');
+    const { container } = render(<FieldInput field={field} draft={{ type: 'person', value: [ANNA.toUpperCase()] }} members={[{ ...anna, avatarUrl: 'https://images.example.com/person.jpg' }]} onChange={onDraft} />);
+    const person = screen.getByRole('checkbox', { name: anna.displayName });
+    expect(person).toBeChecked();
+    const image = container.querySelector('img');
+    if (!image) throw new Error('Active person photo is missing.');
+    expect(image).toHaveAttribute('src', 'https://images.example.com/person.jpg');
+    expect(image).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(image).toHaveAttribute('aria-hidden', 'true');
+    fireEvent.error(image);
+    expect(container.querySelector('img')).toBeNull();
+    expect(person).toBeChecked();
+    expect(person).toHaveAccessibleName(anna.displayName);
+    expect(onDraft).not.toHaveBeenCalled();
+    await user.click(person);
+    expect(onDraft).toHaveBeenCalledExactlyOnceWith({ type: 'person', value: [] });
   });
 
   it('picks a single option by stable ID, offers Not set as a choice and keeps archived options unassignable', async () => {

@@ -70,6 +70,8 @@ export interface DrawerSubtasksProps {
   initialTimeCurrent?: boolean | undefined;
   /** Each new value opens the inline subtask row, e.g. from the drawer's Add subtask. */
   addRequest?: number | undefined;
+  /** The parent’s existing guarded Add/Resume action, placed with the subtask heading. */
+  headerAction?: ReactNode;
 }
 
 function calendarText(value: string | null | undefined): string | null {
@@ -85,7 +87,7 @@ function calendarText(value: string | null | undefined): string | null {
  */
 export function DrawerSubtasks({
   parent, scope, projectId, statuses, members, sections, tags, commands, writable, onOpen, onMoreDetails, onCreated, onAnnounce,
-  extraColumns = noColumns, initialFields, initialTimeContext, initialTimeWritable, initialTimeCurrent, addRequest,
+  extraColumns = noColumns, initialFields, initialTimeContext, initialTimeWritable, initialTimeCurrent, addRequest, headerAction,
 }: DrawerSubtasksProps) {
   const acquireDragProtection = usePointerRowDragProtection();
   const { t } = useTranslation();
@@ -296,7 +298,7 @@ export function DrawerSubtasks({
   return (
     <section aria-labelledby={headingId} className="space-y-2">
       {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} /> : null}
-      <h3 id={headingId} className="text-sm font-medium text-ink">{t('tasks.subtasks.heading')}</h3>
+      <div className="flex flex-wrap items-start justify-between gap-2"><h3 id={headingId} className="text-sm font-medium text-ink">{t('tasks.subtasks.heading')}</h3>{headerAction}</div>
       {scope.partial ? <p className="text-xs text-muted">{t('tasks.subtasks.loadedOnly')}</p> : null}
       <TaskCompletionFeedback controller={completion} onReview={onOpen} />
       {moveFeedback ? <>

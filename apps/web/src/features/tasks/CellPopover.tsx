@@ -21,7 +21,11 @@ function supportsTopLayer(node: HTMLElement): boolean {
 function coveredByDialog(anchor: HTMLElement, self: HTMLElement | null): boolean {
   if (anchor.closest(HIDDEN) !== null) return true;
   const open = [...anchor.ownerDocument.querySelectorAll<HTMLElement>(MODAL)].filter(
-    dialog => !dialog.hidden && dialog.dataset.state !== 'closed' && !(self?.contains(dialog) ?? false),
+    dialog => !dialog.hidden && dialog.dataset.state !== 'closed'
+      // The desktop task pane deliberately leaves the table interactive. Actual modal dialogs,
+      // including a later dialog inside that pane, still cover outside editors.
+      && !(dialog.hasAttribute('data-task-panel') && dialog.getAttribute('aria-modal') !== 'true')
+      && !(self?.contains(dialog) ?? false),
   );
   const top = open.at(-1);
   return top !== undefined && !top.contains(anchor);

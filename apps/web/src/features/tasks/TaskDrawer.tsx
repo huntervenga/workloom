@@ -1,4 +1,4 @@
-import { TaskDiscussionPanels, type TaskCommentsWorkspace } from '../task-comments';
+import { TaskActivityStream, type TaskCommentsWorkspace } from '../task-comments';
 import { message, type TranslationMessage } from '../../i18n';
 import { useTranslation } from '../../i18n';
 import { DependencyPanel } from '../dependencies/DependencyPanel';
@@ -18,7 +18,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
 import { Archive, ArchiveRestore, Lock, RefreshCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
 import { describeError } from '../../lib/errors';
 import { isUuid } from '../../lib/format';
@@ -209,10 +209,10 @@ export function TaskDrawer(props: TaskDrawerProps) {
       : t('tasks.taskDrawer.projectValueTheNewTaskWillBeVisible', { p0: project.name });
 
   if(shown?.meetingId && props.meetingController) return <MeetingDrawer initialIntent={props.meetingOpenIntent} commentsController={props.commentsController} dependencyController={props.dependencyController} controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
-  if(shown && shown.meetingId===undefined) return <DialogShell variant="drawer" title={t('tasks.taskDrawer.refreshTaskType')} description={t('tasks.taskDrawer.currentServerInformationIsRequiredToEditSafely')} open={open} onOpenChange={next=>{if(!next)onClose();}}><div className="mt-4 space-y-3"><p className="text-sm text-muted">{t('tasks.taskDrawer.theSavedResponseHasNoTaskTypeRefresh')}</p><Button onClick={()=>void detail.refetch()}>{t('tasks.taskDrawer.refreshTaskType')}</Button></div></DialogShell>;
+  if(shown && shown.meetingId===undefined) return <DialogShell variant="task-drawer" title={t('tasks.taskDrawer.refreshTaskType')} description={t('tasks.taskDrawer.currentServerInformationIsRequiredToEditSafely')} open={open} onOpenChange={next=>{if(!next)onClose();}}><div className="mt-4 space-y-3"><p className="text-sm text-muted">{t('tasks.taskDrawer.theSavedResponseHasNoTaskTypeRefresh')}</p><Button onClick={()=>void detail.refetch()}>{t('tasks.taskDrawer.refreshTaskType')}</Button></div></DialogShell>;
   return (
     <DialogShell
-      variant="drawer"
+      variant="task-drawer"
       title={title}
       description={description}
       open={open}
@@ -310,7 +310,13 @@ function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnTyp
         </div>
       ) : null}
       {/* Keyed by ID only: a refetch never remounts the inputs. */}
-      {props.commentsController && task.meetingId === null ? <TaskDiscussionPanels key={taskId} task={task} controller={props.commentsController} writable={props.writable} canRetry={workspace.role !== 'viewer'} timezone={workspace.timezone} onOpenTask={props.onOpenTask}><TaskEditForm key={taskId} {...props} hierarchyCurrent={!detail.isFetching&&!detail.isError} latest={task} /></TaskDiscussionPanels> : <TaskEditForm key={taskId} {...props} hierarchyCurrent={!detail.isFetching&&!detail.isError} latest={task} />}
+      <TaskEditForm
+        key={taskId}
+        {...props}
+        hierarchyCurrent={!detail.isFetching&&!detail.isError}
+        latest={task}
+        activity={props.commentsController && task.meetingId === null ? <TaskActivityStream key={taskId} task={task} controller={props.commentsController} writable={props.writable} canRetry={workspace.role !== 'viewer'} timezone={workspace.timezone} onOpenTask={props.onOpenTask} /> : null}
+      />
     </>
   );
 }
@@ -359,7 +365,8 @@ function useLookups(props: TaskDrawerProps, extra: readonly TagDto[]) {
 
 type TaskCommandName = 'update' | 'archive' | 'restore';
 
-function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurrent:boolean }) {
+/** `activity` comes last in the same scroller, after the task form and the subtasks. */
+function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurrent:boolean; activity?: ReactNode }) {
   const { t } = useTranslation();
   const {
     actorId,
@@ -512,7 +519,6 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
     setErrors({});
   };
 
-  const estimateId = useId();
   const retainForNavigation=()=>{if(dirty||locked||pending)editSessions.current.set(taskId,session);};
   const canCreateChild=writable&&workspace.role!=='viewer'&&props.project.archivedAt===null&&latest.archivedAt===null&&latest.meetingId===null&&props.onCreateChild!==undefined;
   const keptCreate=commands.createSession.current!==null||commands.create.pendingCommand!==null||commands.create.uncertain!==null;
@@ -521,35 +527,60 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
   // Add subtask opens the inline row below; the full create form stays its More details.
   const [subtaskAddRequest, setSubtaskAddRequest] = useState(0);
 
-  return (<>
-    {/* Subtask rows carry their own forms, so they sit beside this form rather than inside it. */}
-    {props.loadedSubtasks && subtasksShown ? (
-      <div className="mt-3 max-h-[45%] min-h-0 shrink-0 overflow-y-auto px-1 pb-1">
+  const formId = useId();
+  const fieldsDisabled = !canEdit || locked || busy;
+  const sharedEstimate: EstimateMode = { kind: 'shared' };
+  const fieldProps = {
+    draft,
+    onChange: setDraft,
+    errors,
+    statuses,
+    sections,
+    members,
+    tags: tagsById,
+    savedTagIds: base.tags.map((tag) => tag.id),
+    unavailableParticipantIds,
+    estimateMode: sharedEstimate,
+  };
+
+  const subtaskActions = <div className="space-y-1.5 text-xs text-muted">
+    {canCreateChild?keptCreate?<Button size="sm" variant="ghost" onClick={()=>{retainForNavigation();onResumeCreate();}}>{t('hierarchy.resumeDraft')}</Button>:<Button size="sm" variant="ghost" disabled={!props.hierarchyCurrent||unresolved!==null} onClick={()=>{if(!props.hierarchyCurrent||unresolvedTaskCommand(commands)!==null)return;if(subtasksShown){setSubtaskAddRequest(count=>count+1);return;}retainForNavigation();props.onCreateChild?.(latest);}}>{t('hierarchy.addSubtask')}</Button>:null}
+        {canCreateChild&&!keptCreate&&unresolved!==null?<p className="text-xs text-muted">{t('hierarchy.resolveSave')}</p>:null}
+        {canCreateChild&&!keptCreate&&draft.estimate!==baseDraft.estimate?<p className="text-xs text-muted">{t('hierarchy.savedEstimateHint')}</p>:null}
+  </div>;
+
+  // Subtask rows carry their own forms, so they follow this form rather than sit inside it.
+  const subtasks = props.loadedSubtasks && subtasksShown ? (
+      <div className="min-w-0">
         <DrawerSubtasks parent={latest} scope={props.loadedSubtasks} projectId={props.project.id} statuses={statuses} members={props.members} sections={props.sections} tags={props.tags}
           commands={commands} writable={canCreateChild && props.hierarchyCurrent}
           extraColumns={props.subtaskColumns} initialFields={props.initialFields}
           initialTimeContext={props.initialTimeContextFor?.(latest, 'detail') ?? null} initialTimeWritable={props.initialTimeWritable} initialTimeCurrent={props.initialTimeCurrent}
           addRequest={subtaskAddRequest}
+          headerAction={canCreateChild ? subtaskActions : null}
           onOpen={id => { retainForNavigation(); onOpenTask(id); }}
           onMoreDetails={() => { retainForNavigation(); props.onCreateChild?.(latest); }}
           onAnnounce={onAnnounce}
           onCreated={task => onAnnounce(message('projects.projectPage.taskValueCreated', { p0: task.title }))} />
       </div>
-    ) : null}
-    <form noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, canEdit && !busy && !locked)} className="mt-3 flex min-h-0 flex-1 flex-col">
-      <div className={formBodyClassName}>
+    ) : canCreateChild ? <section className="space-y-2">
+      <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="text-sm font-medium text-ink">{t('tasks.subtasks.heading')}</h3>{subtaskActions}</div>
+    </section> : null;
+
+  return (<>
+    {/* One scroller for the whole task: its form, then subtasks and activity with their own forms.
+        The actions stay in the footer below and submit the form by ID. */}
+    <div className={`mt-3 ${formBodyClassName}`}>
+      <form id={formId} noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, canEdit && !busy && !locked)} className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {archived ? <Badge tone="muted">{t('tasks.taskDrawer.archived')}</Badge> : null}
           {base.parentTaskId !== null ? <Badge tone="muted">{t('tasks.taskDrawer.subtask')}</Badge> : null}
           {dirty && !locked ? <span className="font-medium text-ink-soft">{t('tasks.taskDrawer.unsavedChanges')}</span> : null}
         </div>
 
-        {latest.parentTaskId!==null||canCreateChild?<div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        {latest.parentTaskId!==null?<div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {latest.parentTaskId!==null?<ParentTaskAction actorId={actorId} workspaceId={workspace.id} projectId={props.project.id} sourceId={taskId} parentId={latest.parentTaskId} beforeOpen={retainForNavigation} intent={session} onOpenTask={onOpenTask} disabled={!props.hierarchyCurrent}/>:null}
-          {canCreateChild?keptCreate?<Button size="sm" variant="ghost" onClick={()=>{retainForNavigation();onResumeCreate();}}>{t('hierarchy.resumeDraft')}</Button>:<Button size="sm" variant="ghost" disabled={!props.hierarchyCurrent||unresolved!==null} onClick={()=>{if(!props.hierarchyCurrent||unresolvedTaskCommand(commands)!==null)return;if(subtasksShown){setSubtaskAddRequest(count=>count+1);return;}retainForNavigation();props.onCreateChild?.(latest);}}>{t('hierarchy.addSubtask')}</Button>:null}
         </div>:null}
-        {canCreateChild&&!keptCreate&&unresolved!==null?<p className="text-xs text-muted">{t('hierarchy.resolveSave')}</p>:null}
-        {canCreateChild&&!keptCreate&&draft.estimate!==baseDraft.estimate?<p className="text-xs text-muted">{t('hierarchy.savedEstimateHint')}</p>:null}
 
         {archived ? (
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
@@ -604,19 +635,25 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           />
         ) : null}
 
-        <fieldset disabled={!canEdit || locked || busy} className="min-w-0">
+        <fieldset disabled={fieldsDisabled} className="min-w-0">
           <legend className="sr-only">{t('tasks.taskDrawer.taskFields')}</legend>
+          <TaskFields {...fieldProps} part="primary" projectName={props.project.name} />
+        </fieldset>
+
+        {props.dependencyController ? <DependencyPanel compact actorId={actorId} workspaceId={workspace.id} project={props.project} task={latest} controller={props.dependencyController} writable={canEdit} onOpenTask={onOpenTask} /> : null}
+
+        <div className="min-w-0">
           <TaskFields
-            draft={draft}
-            onChange={setDraft}
-            errors={errors}
-            statuses={statuses}
-            sections={sections}
-            members={members}
-            tags={tagsById}
-            savedTagIds={base.tags.map((tag) => tag.id)}
-            unavailableParticipantIds={unavailableParticipantIds}
-            estimateMode={{ kind: 'shared' }}
+            {...fieldProps}
+            part="details"
+            disabled={fieldsDisabled}
+            estimateSupplement={latest.meetingId === null ? <div className="space-y-1.5 text-xs text-muted">
+              {draft.estimate !== baseDraft.estimate ? <section aria-label={t('tasks.estimates.current')} className="space-y-0.5">
+                <p><span className="font-medium">{t('tasks.estimates.current')}: </span>{latest.estimateMinutes === null ? t('tasks.estimates.notSet') : formatEstimate(latest.estimateMinutes)}</p>
+                <p>{t('tasks.estimates.unsavedHint')}</p>
+              </section> : null}
+              <OriginalEstimate compact actorId={actorId} workspaceId={workspace.id} packageId={latest.workPackageId} />
+            </div> : null}
             tagAction={
               canEdit && !locked ? (
                 <CreateTagDialog
@@ -629,22 +666,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
               ) : null
             }
           />
-        </fieldset>
-
-        {/* Saved ordinary tasks only, outside the fieldset so a locked form can still retry the read.
-            The original is read for the whole package and never derived from the current value. */}
-        {latest.meetingId === null ? (
-          <div className="space-y-3 rounded-lg border border-line px-3 py-2.5">
-            <section aria-labelledby={`${estimateId}-heading`} className="space-y-0.5 text-sm">
-              <h3 id={`${estimateId}-heading`} className="text-xs font-medium text-muted">{t('tasks.estimates.current')}</h3>
-              <p className="font-medium tabular-nums">{latest.estimateMinutes === null ? t('tasks.estimates.notSet') : formatEstimate(latest.estimateMinutes)}</p>
-              <p className="text-xs text-muted">{draft.estimate !== baseDraft.estimate ? t('tasks.estimates.unsavedHint') : t('tasks.estimates.currentHint')}</p>
-            </section>
-            <OriginalEstimate actorId={actorId} workspaceId={workspace.id} packageId={latest.workPackageId} />
-          </div>
-        ) : null}
-
-        {props.dependencyController ? <DependencyPanel actorId={actorId} workspaceId={workspace.id} project={props.project} task={latest} controller={props.dependencyController} writable={canEdit} onOpenTask={onOpenTask} /> : null}
+        </div>
 
         {/* Values have their own revisions and commands, independent of the task form above. */}
         {fieldValueMutation ? (
@@ -659,6 +681,10 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             onOpenTask={onOpenTask}
           />
         ) : null}
+
+        <fieldset disabled={fieldsDisabled} className="min-w-0">
+          <TaskFields {...fieldProps} part="description" />
+        </fieldset>
 
         {errors.form ? <p className="text-sm text-red-700">{t(errors.form.key, errors.form.params)}</p> : null}
         <SaveFeedback
@@ -681,16 +707,19 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             {t(notice)}
           </p>
         ) : null}
-      </div>
+      </form>
+      {subtasks}
+      {props.activity}
+    </div>
 
       <div className={formFooterClassName}>
         {canEdit && !locked ? <span className="order-last ml-auto text-xs text-muted">{t('tasks.taskDrawer.keyboardSave')}</span> : null}
         {locked ? (
-          <Button type="submit" variant="primary" aria-disabled={busy || undefined}>
+          <Button type="submit" form={formId} variant="primary" aria-disabled={busy || undefined}>
             {pending ? t('tasks.taskDrawer.submitting') : t('tasks.taskDrawer.retrySubmission')}
           </Button>
         ) : canEdit ? (
-          <Button type="submit" variant="primary" aria-disabled={busy || undefined}>
+          <Button type="submit" form={formId} variant="primary" aria-disabled={busy || undefined}>
             {update.pendingCommand?.variables.taskId === taskId ? t('tasks.taskDrawer.saving') : t('tasks.taskDrawer.save')}
           </Button>
         ) : null}
@@ -709,7 +738,6 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             {t('tasks.taskDrawer.restore')}</Button>
         ) : null}
       </div>
-    </form>
   </>);
 }
 

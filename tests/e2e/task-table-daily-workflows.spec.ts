@@ -236,9 +236,34 @@ test.describe('daily task table visual and bulk workflows', () => {
     expect(unchangedData(movedChild, true)).toEqual(unchangedData(child, true));
     expect(movedChild.parentTaskId).toBe(parent.id); expect(movedChild.workPackageId).toBe(parent.workPackageId); expect(movedChild.estimateMinutes).toBe(180);
     expect(JSON.parse(requireValue(writes.commands.at(-1)).body)).toMatchObject({ anchorTaskId: otherChild.id, placement: 'after', responsibleMembershipId: second.id });
-    const empty = page.locator('[data-task-group-drop=""]'); const destination = await center(empty); await beginDrag(page, a.id);
+    const empty = page.locator('[data-task-group-drop=""]');
+    const emptyMetric = async (phase: string, cursor: { x: number; y: number }) => {
+      const metric = await empty.evaluate((target, point) => {
+        const box = target.getBoundingClientRect();
+        const hit = target.ownerDocument.elementFromPoint(point.x, point.y);
+        const cell = target.querySelector(':scope > td');
+        return { cursor: point, target: { x: box.x, y: box.y, width: box.width, height: box.height },
+          windowY: window.scrollY, tableY: target.closest('[data-task-table-scroll]')?.scrollTop ?? null,
+          viewportHeight: window.innerHeight, pointHitsEmpty: hit === target || hit !== null && target.contains(hit),
+          drop: target.getAttribute('data-task-drop'), cellShadow: cell ? getComputedStyle(cell).boxShadow : null };
+      }, cursor);
+      console.log('EMPTY_ASSIGNEE_DROP_METRIC', JSON.stringify({ phase, ...metric }));
+      return metric;
+    };
+    const beforeWheel = await center(empty); await emptyMetric('before-wheel', beforeWheel);
+    // Expose the final row through actual wheel input before dragging. The 64px interior
+    // keeps this destination outside the 48px auto-scroll band, exercised separately above.
+    await page.mouse.move(beforeWheel.x, beforeWheel.y); await page.mouse.wheel(0, 220);
+    await expect.poll(async () => empty.evaluate(target => {
+      const box = target.getBoundingClientRect(), y = box.y + box.height / 2;
+      return y > 64 && y < window.innerHeight - 64;
+    })).toBe(true);
+    const destination = await center(empty); await emptyMetric('after-wheel', destination);
+    await beginDrag(page, a.id);
     try {
-      await page.mouse.move(destination.x, destination.y, { steps: 12 });
+      const currentBox = requireValue(await empty.boundingBox() ?? undefined);
+      let cursor = { x: currentBox.x + currentBox.width / 2, y: currentBox.y + currentBox.height / 2 };
+      await page.mouse.move(cursor.x, cursor.y, { steps: 12 });
       await expect(empty).toHaveAttribute('data-task-drop', 'after');
       expect(await empty.evaluate(row => getComputedStyle(row).boxShadow)).not.toBe('none');
       const emptyLine = await empty.locator(':scope > td').evaluate(cell => getComputedStyle(cell).boxShadow);
@@ -246,6 +271,17 @@ test.describe('daily task table visual and bulk workflows', () => {
       expect(writes.commands).toHaveLength(4);
       expect((await allTasks(f)).find(row => row.id === a.id)?.responsibleMembershipId).toBe(second.id);
       await picture(page, info, 'assignee-empty-group-drop');
+      await emptyMetric('after-held-screenshot', cursor);
+      // Reads and screenshots may outlast a scroll frame. Re-target the live row with a real
+      // pointer move, then assert the actual hit and full insertion line at release time.
+      const releaseBox = requireValue(await empty.boundingBox() ?? undefined);
+      cursor = { x: releaseBox.x + releaseBox.width / 2, y: releaseBox.y + releaseBox.height / 2 };
+      await page.mouse.move(cursor.x, cursor.y, { steps: 3 });
+      await expect(empty).toHaveAttribute('data-task-drop', 'after');
+      const atRelease = await emptyMetric('immediately-before-up', cursor);
+      expect(atRelease.pointHitsEmpty).toBe(true); expect(atRelease.drop).toBe('after');
+      expect(atRelease.cellShadow).toContain('inset'); expect(atRelease.cellShadow).toMatch(/(?:^|\s)-?2px(?:\s|$)/);
+      expect(writes.commands).toHaveLength(4);
     } finally { await page.mouse.up(); }
     await expect.poll(async () => (await allTasks(f)).find(row => row.id === a.id)?.responsibleMembershipId).toBeNull();
     const moved = requireValue((await allTasks(f)).find(row => row.id === a.id)); expect(unchangedData(moved, true)).toEqual(unchangedData(a, true));

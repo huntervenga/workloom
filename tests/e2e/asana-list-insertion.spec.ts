@@ -311,6 +311,10 @@ test.describe('Asana task list insertion on private shared Auth', () => {
     expect(final.every(value => value.workPackageId === parent.workPackageId && value.estimateMinutes === 180)).toBe(true);
     expect(writes.found.filter(value => value.path === `${f.prefix}/tasks` && value.method === 'POST')).toHaveLength(4);
     await drawer.screenshot({ path: testInfo.outputPath('drawer-subtasks.png') });
+    // Escape outside the desktop nonmodal pane belongs to the task table.
+    const parentName = drawer.getByRole('textbox', { name: 'Task name', exact: true });
+    await expect(parentName).toBeEnabled();
+    await parentName.click(); await expect(parentName).toBeFocused();
     await page.keyboard.press('Escape'); await expect(drawer).toHaveCount(0);
     await page.reload(); expect(names((await tasks(f)).filter(value => value.parentTaskId === parent.id))).toEqual(['a', 'b', 'x', 'y', 'c', 'e', 'd']); writes.close();
   });

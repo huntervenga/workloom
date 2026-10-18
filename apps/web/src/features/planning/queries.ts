@@ -5,6 +5,7 @@ import type {
   CreateWeeklyPlanFactReportInput,
 } from '@workloom/contracts';
 import { isUuid } from '../../lib/format';
+import { invalidateTaskTimelines } from '../task-comments/queries';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import {
@@ -154,7 +155,10 @@ export function usePlanningCommands(actorId: string, workspaceId: string, projec
   });
   const setFact = useIdempotentMutation({
     prepare: ({ taskId, periodId, membershipId, input }: SetFactVariables) => setManualPeriodWorkRequest(workspaceId, taskId, periodId, membershipId, input),
-    onSuccess: (_data, variables) => invalidatePeriod(variables.periodId),
+    onSuccess: (_data, variables) => {
+      invalidatePeriod(variables.periodId);
+      void invalidateTaskTimelines(client, actorId, workspaceId, [variables.taskId]);
+    },
   });
   const createReport = useIdempotentMutation({
     prepare: ({ input }: CreateReportVariables) => createWeeklyReportRequest(workspaceId, input),

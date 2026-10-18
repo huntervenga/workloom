@@ -1,8 +1,11 @@
+import { BulkCustomFieldCell } from '../features/task-table/BulkCustomFieldCell';
 import { usePointerRowDragProtection } from '../features/task-table/usePointerRowDrag';
 import { BulkTaskToolbar } from '../features/task-table/BulkTaskToolbar';
+import { useBulkInlineEdit } from '../features/task-table/useBulkInlineEdit';
 import { captureDraftPlacement, type DraftPlacementSnapshot } from '../features/task-table/draftPlacement';
 import { ChoicePicker } from '../shared/ChoicePicker';
 import { DialogReturnFocus } from '../shared/DialogShell';
+import { useDesktopTaskPane } from '../shared/TaskPanelFrame';
 import { compareTaskRows, orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
 import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
 import { TaskCompletionAction } from '../features/tasks/TaskCompletionAction';
@@ -329,6 +332,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   };
   const sortMode: TaskSortMode = searchParams.getAll('sort').length === 1 && searchParams.get('sort') === 'due_asc' ? 'due_asc' : 'manual';
   const taskId = searchParams.get('task');
+  const desktopTaskPane = useDesktopTaskPane(taskId !== null);
   const boardMode = searchParams.get('view') === 'board';
   const graphMode = searchParams.get('view') === 'graph';
   const ganttMode = searchParams.get('view') === 'gantt';
@@ -406,17 +410,21 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const valueByKey = new Map<string, TaskFieldValueDto>(
     fieldValues.data.map((value) => [fieldValueKey(value.taskId, value.fieldId), value]),
   );
+  // A selected row of a multi-selection never writes a team column alone; one already held keeps its recovery.
+  const customBlockedByBulk = (task: TaskDto) => bulkInline.selectsMany(task.id) && heldFieldTaskId?.toLowerCase() !== task.id.toLowerCase();
   const customColumns: TaskTableCustomColumn[] = fieldColumns.map(({ field, width }) => ({
     id: field.id,
     label: field.name,
     width,
     // An unloaded value is not an unset one: `null` is shown, and offered for a choice, only after a known read.
-    renderCell: (task) =>
-      fieldValues.isError ? (
-        <ValueUnavailableCell />
-      ) : fieldValues.isPending ? (
-        <ValueLoadingCell />
-      ) : (
+    renderCell: (task) => {
+      if (fieldValues.isError) return <ValueUnavailableCell />;
+      if (fieldValues.isPending) return <ValueLoadingCell />;
+      const blocked = customBlockedByBulk(task);
+      if (blocked) return <BulkCustomFieldCell task={task} field={field} value={valueByKey.get(fieldValueKey(task.id, field.id)) ?? null} members={members.data ?? []}
+        writable={writable && canEditTaskInline(task)} drafts={fieldValueDrafts.current}
+        capture={(claim, baseField, baseValue) => bulkInline.captureCustom(task, baseField, baseValue, claim)} port={claim => bulkInline.port(claim)} />;
+      const cell = (
         <InlineFieldValueCell
           actorId={actorId}
           workspaceId={workspace.id}
@@ -424,12 +432,14 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           field={field}
           value={valueByKey.get(fieldValueKey(task.id, field.id)) ?? null}
           members={members.data ?? []}
-          writable={writable && canEditTaskInline(task)}
+          writable={writable && canEditTaskInline(task) && !blocked}
           mutation={fieldValueMutation}
           drafts={fieldValueDrafts.current}
           onMoreDetails={() => openTask(task.id)}
         />
-      ),
+      );
+      return blocked ? <span title={t('bulkInline.customUnsupported')} className="flex h-10 min-w-0 flex-1 items-center">{cell}<span className="sr-only">{t('bulkInline.customUnsupported')}</span></span> : cell;
+    },
   }));
   const fieldsError = fieldDefinitions.isError
     ? { query: fieldDefinitions, subject: 'fields' as const }
@@ -468,6 +478,14 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     previousPresentation.current = taskPresentationKey;
   }, [taskPresentationKey, invalidateInlineSave]);
   const completion = useTaskCompletion(commands, { tasks: dedupeTasks(shownTasks), statuses: statuses.data ?? [], writable: completionWritable, editingTaskId: activeInline?.taskId ?? null, focusScope: taskPresentationKey }, () => setAnnouncement(message('tasks.completion.saved')));
+  // A selected row's cell or circle in a multi-selection: one atomic batch to the selection frozen when it opened.
+  const bulkInline = useBulkInlineEdit(commands, {
+    projectId: project.id, selectedTaskIds, shownTasks, ledger: selectionLedger.current, writable: completionWritable,
+    fieldValues: fieldValues.data, fields: fieldDefinitions.data, knownFieldTaskIds: !fieldValues.isPending && !fieldValues.isError ? shownTasks.map(task => task.id) : [],
+    busy: commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching,
+    onConfirmed: rows => { for (const row of rows) if (row.projectId === project.id) selectionLedger.current.set(row.id, row); },
+    onAnnounce: setAnnouncement,
+  });
 
   const inlineHead = useRef({ activeInline, loadedPackages, grouping, sortMode, shownTasks, presentationKey: taskPresentationKey, completionWritable });
   useLayoutEffect(() => { inlineHead.current = { activeInline, loadedPackages, grouping, sortMode, shownTasks, presentationKey: taskPresentationKey, completionWritable }; });
@@ -637,7 +655,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setCreating(null);
     setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);for(const key of ['meetingTab','meetingMember','meetingAttendance','meetingPeriod'])next.delete(key);return next;});
   };
-  const completionAction = (task: TaskDto) => <TaskCompletionAction task={task} statuses={statuses.data ?? []} writable={completionWritable} blocked={unresolvedTaskCommand(commands) !== null} pending={completion.pending && completion.attempt?.session.base.id === task.id} hasDraft={commands.editSessions.current.has(task.id)} editing={activeInline?.taskId === task.id} onChoose={completion.choose} onTargetReady={completion.targetReady} onReview={openTask} />;
+  const completionAction = (task: TaskDto) => <TaskCompletionAction task={task} statuses={statuses.data ?? []} writable={completionWritable} blocked={unresolvedTaskCommand(commands) !== null} pending={(completion.pending && completion.attempt?.session.base.id === task.id) || bulkInline.completionPending(task.id)} hasDraft={commands.editSessions.current.has(task.id)} editing={activeInline?.taskId === task.id}
+    // The circle's own choice for its row goes to the whole selection it belongs to.
+    onChoose={(chosen, statusId, source) => { if (!bulkInline.complete(chosen, statusId)) completion.choose(chosen, statusId, source); }} onTargetReady={completion.targetReady} onReview={openTask} />;
   const openGraphTask = useCallback((task: TaskDto) => {
     if (task.projectId !== project.id) { navigate(`/w/${workspace.id}/projects/${task.projectId}?task=${task.id}`); return; }
     setCreating(null);
@@ -740,25 +760,32 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const kept = commands.editSessions.current.get(task.id);
     // Only the held cell itself may reopen for recovery; another task's or field's command must resolve first.
     const reopensHeld = held !== null && held.taskId === task.id && (commands.update.pendingCommand !== null || commands.update.uncertain !== null) && (kept?.inlineField === undefined || kept.inlineField === field);
+    // A held batch reopens only in the selected cell that sent it, to show and retry exactly that batch.
+    const reopensBulk = held?.kind === 'bulk' && bulkInline.holds(task.id, field);
     // A list refetch, e.g. after a just-confirmed save, may still carry this row's older head.
-    if (writable && canEditTaskInline(task) && ((held && !held.uncertain && !reopensHeld) || (!held && tasks.isRefetching))) {
+    if (writable && canEditTaskInline(task) && ((held && !held.uncertain && !reopensHeld && !reopensBulk) || (!held && tasks.isRefetching))) {
       // The in-flight save keeps its editor, focus lease and confirmation; this cell opens after its
       // answer and the current list refetch, then from the row as reloaded.
       setQueuedInline({ taskId: task.id, field, focus: document.activeElement, listUpdatedAt: tasks.dataUpdatedAt, receipts: commandReceipts() });
       return;
     }
     invalidateInlineSave();
-    if (!writable || !canEditTaskInline(task) || (held && !reopensHeld)) return;
+    if (!writable || !canEditTaskInline(task) || (held && !reopensHeld && !reopensBulk)) return;
     const original = kept?.base ?? task;
     if (field === 'estimate' && !commands.update.pendingCommand && !commands.update.uncertain && !isCurrentEstimateProjection(original, inlineHead.current.loadedPackages.packages)) {
       setAnnouncement(message('tasks.inlineEstimate.refreshRequired'));
       return;
     }
-    setTaskParam(null);
+    // The desktop saved-task pane leaves neighboring cells interactive. Keep that exact pane
+    // while its neighbor edits; modal drawers retain the previous close-before-edit behavior.
+    if (!desktopTaskPane || document.querySelector('[data-task-panel][data-state="open"]') === null) setTaskParam(null);
     setCreating(null);
     setQuickAddSection(undefined);
     setContinuation(before => before?.taskId === task.id ? null : before);
-    setActiveInline({ taskId: task.id, field, focusClaim: { current: false }, titleCaret });
+    const focusClaim = { current: false };
+    // The selection is frozen for this explicit open; changing it later never retargets the cell.
+    bulkInline.capture(task, field, focusClaim);
+    setActiveInline({ taskId: task.id, field, focusClaim, titleCaret });
   };
   const closeInline = (task: TaskDto, field: TaskInlineField, reason: InlineCloseReason = 'cancel') => {
     invalidateInlineSave();
@@ -906,7 +933,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   };
   const initialFields = fieldDefinitions.isSuccess ? fieldDefinitions.data : undefined;
   // The page table's visible custom and weekly columns, in its order; drawer subtask rows show them too.
-  const visibleExtraColumns = [...taskTime.columns, ...customColumns].filter(column => visibleColumnIds.includes(column.id));
+  // Personal period entries retain their own person/week context; selection never mass-assigns hours.
+  const timeColumns = taskTime.columns.map(column => ({ ...column, renderCell: (task: TaskDto) => <div className="relative flex min-w-0 flex-1 items-center gap-1">
+    <div className="min-w-0 flex-1">{column.renderCell(task)}</div>
+    {bulkInline.selectsMany(task.id) ? <span className="max-w-20 truncate text-[10px] text-muted" title={t('bulkInline.singleOnly')}>{t('bulkInline.singleOnly')}</span> : null}
+  </div> }));
+  const visibleExtraColumns = [...timeColumns, ...customColumns].filter(column => visibleColumnIds.includes(column.id));
   // More details keeps the row's place: its whole request, not only its section and parent.
 
   const quickTaskAdd = (request: CreateRequest, key: string, renderRow: TaskTableDraftRow, anchored: boolean) => <QuickTaskAdd key={key} projectId={project.id} sectionId={request.sectionId}
@@ -968,6 +1000,17 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     for (const id of selectionLedger.current.keys()) if (!ids.includes(id)) selectionLedger.current.delete(id);
     setSelectedTaskIds(ids);
   };
+  // A neutral Escape the table left unhandled; an open editor, quick row, drawer or held batch keeps the selection.
+  const clearSelectionByEscape = () => {
+    if (selectedTaskIds.length === 0 || bulkHeld || activeInline !== null || quickAddSection !== undefined || creating !== null) return false;
+    // A desktop pane leaves the table interactive; a modal drawer still owns Escape.
+    if (taskId !== null) {
+      const pane = document.querySelector<HTMLElement>('[data-task-panel][data-state="open"]');
+      if (!pane || pane.contains(document.activeElement)) return false;
+    }
+    selectionLedger.current.clear(); setSelectedTaskIds([]);
+    return true;
+  };
   // Recovery describes the actual immutable command, even if a different view attempts to change the selection.
   const heldBulkInput = commands.bulk.pendingCommand?.variables.input ?? commands.bulk.uncertain?.variables.input;
   const toolbarIds = heldBulkInput?.tasks.map(row => row.taskId) ?? selectedTaskIds;
@@ -1000,6 +1043,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <TaskFeedbackLayer><div role="status" className="fixed right-3 top-20 z-[60] max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm shadow-lg">
         <span>{t('taskTable.grouping.moved', { name: savedAssignment.membershipId === null ? t('taskTable.taskTable.unassigned') : members.data?.find(member => member.id === savedAssignment.membershipId)?.displayName ?? t('taskTable.taskTable.memberUnavailable') })}</span>
         <Button size="sm" variant="ghost" onClick={() => openTask(savedAssignment.taskId)}>{t('taskTable.grouping.open')}</Button>
+      </div></TaskFeedbackLayer> : null}
+      {/* A circle's batch that was refused or not fully confirmed; the Toolbar keeps any held recovery. */}
+      {bulkInline.completionNotice ? <TaskFeedbackLayer><div role="alert" className="fixed right-3 top-20 z-[60] max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 shadow-lg">
+        <span className="min-w-0 flex-1">{t(bulkInline.completionNotice.key, bulkInline.completionNotice.params)}</span>
+        <Button size="sm" variant="ghost" onClick={bulkInline.dismissNotice}>{t('bulkInline.dismiss')}</Button>
       </div></TaskFeedbackLayer> : null}
       {(toolbarSelection.ids.length > 0 || bulkHeld) && writable ? <BulkTaskToolbar key={`${actorId}:${workspace.id}:${project.id}`} projectId={project.id}
         count={toolbarSelection.ids.length} hiddenCount={toolbarSelection.ids.filter(id => !shownTasks.some(task => task.id === id)).length}
@@ -1091,14 +1139,14 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           ) : null}
           {tableMode ? taskTime.controls : taskTime.notices}
           <div className="flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
-            {showTaskFilters ? <div className="min-w-0 max-w-full shrink grow basis-[36rem]"><TaskFilters value={filters} onChange={changeFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
-            {!boardMode && !graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
+            {showTaskFilters ? <div className="min-w-0 max-w-full shrink grow basis-full"><TaskFilters value={filters} onChange={changeFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
+            {!boardMode && !graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted">
               {t('taskTable.grouping.label')}
               <ChoicePicker compact label={t('taskTable.grouping.label')} value={grouping}
                 options={[{ value: 'section', label: t('taskTable.grouping.section') }, { value: 'assignee', label: t('taskTable.grouping.assignee') }]}
                 onValueChange={value => { invalidateInlineSave(); setGrouping(value === 'assignee' ? 'assignee' : 'section'); }} />
             </label> : null}
-            {!graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 text-xs text-muted">
+            {!graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted">
               {t('taskTable.sort.label')}
               <ChoicePicker compact label={t('taskTable.sort.label')} value={sortMode}
                 options={[{ value: 'manual', label: t('taskTable.sort.manual') }, { value: 'due_asc', label: t('taskTable.sort.dueDate') }]}
@@ -1145,13 +1193,14 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onEditTaskField={startInline}
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
-            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} titleCaret={activeInline.titleCaret} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} titleCaret={activeInline.titleCaret} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} bulkEdit={bulkInline.port(activeInline.focusClaim)} singleOnly={activeInline.field === 'title' && bulkInline.selectsMany(task.id)} /> : null}
             quickAdd={quickAdd}
             onMoveTask={moveTask}
             moveBlocked={moveBlocked}
             acquireDragProtection={acquireDragProtection}
             selectedTaskIds={selectedTaskIds}
             onSelectionChange={changeSelection}
+            onClearSelection={clearSelectionByEscape}
             selectionDisabled={bulkHeld}
             dragScope={taskPresentationKey}
             query={tasks}
@@ -1162,7 +1211,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             statuses={statuses.data}
             members={members.data}
             columnIds={visibleColumnIds}
-            customColumns={[...taskTime.columns, ...customColumns]}
+            customColumns={[...timeColumns, ...customColumns]}
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
@@ -1241,6 +1290,7 @@ interface TaskListProps {
   selectedTaskIds: readonly string[];
   onSelectTask?: ((id: string, selected: boolean) => void) | undefined;
   onSelectionChange?: ((ids: string[]) => void) | undefined;
+  onClearSelection?: (() => boolean) | undefined;
   selectionDisabled?: boolean | undefined;
   dragScope?: string | undefined;
   query: ReturnType<typeof useTaskListQuery>;

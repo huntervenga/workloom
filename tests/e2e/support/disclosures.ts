@@ -10,9 +10,17 @@ export async function openProjectActions(page: Page): Promise<void> {
 
 export async function revealTaskDetails(drawer: Locator): Promise<void> {
   const summary = drawer.locator('summary').filter({ hasText: /^More details/ });
-  await expect(summary).toBeVisible();
-  const opened = await summary.locator('..').evaluate(element => element.hasAttribute('open'));
-  if (!opened) await summary.click();
+  if (await summary.count()) {
+    // Creation forms retain their explicit progressive disclosure.
+    await expect(summary).toBeVisible();
+    const opened = await summary.locator('..').evaluate(element => element.hasAttribute('open'));
+    if (!opened) await summary.click();
+    return;
+  }
+  // Saved task drawers expose these fields directly. A missing or still-loading
+  // drawer must fail on its real controls rather than silently skipping setup.
+  await expect(drawer.getByLabel('Team estimate, hours', { exact: true })).toBeVisible();
+  await expect(drawer.getByRole('combobox', { name: 'Priority', exact: true })).toBeVisible();
 }
 
 export async function closeProjectActions(page: Page): Promise<void> {

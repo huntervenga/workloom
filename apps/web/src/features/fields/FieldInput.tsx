@@ -1,9 +1,10 @@
 import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
-import { Avatar, Button, TextInput, cn, inputClassName } from '@workloom/ui';
+import { Button, TextInput, cn, inputClassName } from '@workloom/ui';
 import { UserRound } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
+import { UserAvatar } from '../../shared/UserAvatar';
 import {
   NOT_SET,
   clearedFieldDraft,
@@ -214,7 +215,7 @@ export function FieldInput({
                     />
                     {kind === 'person' ? (
                       choice.state === 'active' ? (
-                        <Avatar name={choice.label} seed={choice.id} size="sm" />
+                        <UserAvatar name={choice.label} seed={choice.id} avatarUrl={members.find(member => sameId(member.id, choice.id))?.avatarUrl} size="sm" />
                       ) : (
                         <UserRound size={14} aria-hidden="true" className="shrink-0" />
                       )

@@ -1,4 +1,4 @@
-import { createTaskCommentInputSchema, idSchema, taskActivityQuerySchema, taskActivityResponseSchema, taskCommentResponseSchema, taskCommentsQuerySchema, taskCommentsResponseSchema } from '@workloom/contracts';
+import { createTaskCommentInputSchema, idSchema, taskActivityQuerySchema, taskActivityResponseSchema, taskCommentResponseSchema, taskCommentsQuerySchema, taskCommentsResponseSchema, taskTimelineQuerySchema, taskTimelineResponseSchema } from '@workloom/contracts';
 import { toCommandContext, type TaskCommentsApplication } from '@workloom/domain';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -19,6 +19,12 @@ export function registerTaskCommentsRoutes(app: FastifyInstance, deps: { identit
     const actor = await deps.identity.resolveActor(request), context = toCommandContext({ actor, source: 'web', requestId: request.id }, workspaceId);
     const page = await deps.comments.listActivity(context, taskId, query);
     return sendData(request, reply, taskActivityResponseSchema, page.items, { nextCursor: page.nextCursor });
+  });
+  app.get(`${base}/timeline`, async (request, reply) => {
+    const { workspaceId, taskId } = parseInput(paramsSchema, request.params), query = parseInput(taskTimelineQuerySchema, request.query);
+    const actor = await deps.identity.resolveActor(request), context = toCommandContext({ actor, source: 'web', requestId: request.id }, workspaceId);
+    const page = await deps.comments.listTimeline(context, taskId, query);
+    return sendData(request, reply, taskTimelineResponseSchema, page.items, { nextCursor: page.nextCursor });
   });
   app.post(`${base}/comments`, async (request, reply) => {
     const { workspaceId, taskId } = parseInput(paramsSchema, request.params), input = parseInput(createTaskCommentInputSchema, request.body), key = readIdempotencyKey(request);

@@ -161,3 +161,37 @@ describe('assignee move and atomic bulk meeting policy', () => {
     await expect(createPlanningMutationGuard(scope(false), tools).check({ family: 'task', command: 'task.move', target: taskId, input: { responsibleMembershipId: b } })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' });
   });
 });
+
+function bulkGuardFields(findField: PlanningRepository['fields']['findField']): PlanningRepository['fields'] {
+  const unused = async (): Promise<never> => { throw new Error('Unexpected field repository call in planning guard fixture.'); };
+  return { tasks: repository().tasks, findField, listFields: unused, insertField: unused, saveField: unused,
+    insertDefinitionVersion: unused, findOption: unused, insertOption: unused, saveOption: unused,
+    findProjectColumns: unused, saveProjectColumns: unused, findValue: unused, listTaskValues: unused,
+    listProjectValues: unused, saveValue: unused, insertValueHistory: unused, listValueHistory: unused };
+}
+
+describe('bulk selected-cell estimate and custom locks', () => {
+  const input = { projectId: project, tasks: [{ taskId, expectedRevision: 1, expectedWorkPackageRevision: 1 }], changes: { estimateMinutes: 30 } };
+  const scope = (repo: PlanningRepository) => ({ context: ctx, repository: repo, barrierAt: new Date(time), recurrenceCensus }) as PlanningWriteScope;
+  it('rejects a bulk shared estimate through the same package lock as an ordinary estimate', async () => {
+    const repo = repository({ listLocks: async () => [{ kind: 'estimate', workPackageId: pkg, baselineId: id(920) }] as Awaited<ReturnType<PlanningRepository['listLocks']>> });
+    const result = await createPlanningMutationGuard(scope(repo), tools).check({ family: 'task_bulk', command: 'task.bulk.update', target: { projectId: project }, input });
+    expect(result).toMatchObject({ code: 'FIELD_LOCKED', details: { committed: true, baselineIds: [id(920)] } });
+  });
+  it('rejects a selected custom value including a frozen absent value', async () => {
+    const repo = repository({ fields: bulkGuardFields(async () => field), listLocks: async () => [{ kind: 'custom_value', taskId, fieldId, baselineId: id(921) }] as Awaited<ReturnType<PlanningRepository['listLocks']>> });
+    const result = await createPlanningMutationGuard(scope(repo), tools).check({ family: 'task_bulk', command: 'task.bulk.update', target: { projectId: project }, input: {
+      projectId: project, tasks: [{ taskId, expectedRevision: 1, expectedFieldValueRevision: 0 }],
+      changes: { customField: { fieldId, expectedDefinitionRevision: 1, value: { type: 'text', value: null } } },
+    } });
+    expect(result).toMatchObject({ code: 'FIELD_LOCKED', details: { committed: true, baselineIds: [id(921)] } });
+  });
+  it('keeps a manual definition lock a committed controlled rejection', async () => {
+    const repo = repository({ fields: bulkGuardFields(async () => ({ ...field, locked: true })) });
+    const result = await createPlanningMutationGuard(scope(repo), tools).check({ family: 'task_bulk', command: 'task.bulk.update', target: { projectId: project }, input: {
+      projectId: project, tasks: [{ taskId, expectedRevision: 1, expectedFieldValueRevision: 0 }],
+      changes: { customField: { fieldId, expectedDefinitionRevision: 1, value: { type: 'text', value: '' } } },
+    } });
+    expect(result).toMatchObject({ code: 'FIELD_LOCKED', details: { committed: true, baselineIds: [] } });
+  });
+});

@@ -19,10 +19,10 @@ const pending: OriginalPackageEstimateDto = { state: 'not_captured_yet', ...targ
 const capturedZero: OriginalPackageEstimateDto = { state: 'captured', ...target, estimateMinutes: 0, packageBaselineId: 'f9000000-0000-4000-8000-000000000001', acceptedAt: STAMP, provenance: 'first_known_plan_freeze', origin };
 const unknown: OriginalPackageEstimateDto = { state: 'original_unknown', ...target, estimateMinutes: null, packageBaselineId: null, origin };
 
-function renderOriginal(table: RouteTable, client: QueryClient = createQueryClient({ retry: false })) {
+function renderOriginal(table: RouteTable, client: QueryClient = createQueryClient({ retry: false }), compact = false) {
   const api = installFakeApi(table);
   const user = userEvent.setup();
-  const view = render(<QueryClientProvider client={client}><OriginalEstimate actorId={anna.id} workspaceId={alpha.id} packageId={PACKAGE_ID} /></QueryClientProvider>);
+  const view = render(<QueryClientProvider client={client}><OriginalEstimate actorId={anna.id} workspaceId={alpha.id} packageId={PACKAGE_ID} compact={compact} /></QueryClientProvider>);
   return { ...api, ...view, client, user };
 }
 const originText = () => screen.getByText((text) => text.startsWith('First freeze:'));
@@ -171,5 +171,33 @@ describe('read-only original package estimate', () => {
     expect(await screen.findByText('Unknown')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(calls.map((call) => call.method)).toEqual(['GET', 'GET', 'GET']);
+  });
+});
+
+
+describe('compact original estimate in the task field', () => {
+  it('shows captured zero in one disclosure and keeps immutable provenance available on demand', async () => {
+    const { user, calls } = renderOriginal({ [url]: () => ok(capturedZero) }, undefined, true);
+    const value = await screen.findByText(formatEstimate(0));
+    const disclosure = value.closest('details');
+    expect(disclosure).not.toBeNull();
+    expect(disclosure).not.toHaveAttribute('open');
+    const summary = value.closest('summary');
+    if (!summary) throw new Error('Compact original estimate summary is missing.');
+    expect(summary).toHaveTextContent('Original estimate');
+    expect(summary).toHaveTextContent('Locked at first freeze');
+    expect(originText()).not.toBeVisible();
+    await user.click(summary);
+    expect(originText()).toBeVisible();
+    expect(originText()).toHaveTextContent('Personal plan freeze');
+    expect(calls.map(call => `${call.method} ${call.path}`)).toEqual([url]);
+  });
+  it('keeps an unknown original distinct from zero in its compact disclosure', async () => {
+    renderOriginal({ [url]: () => ok(unknown) }, undefined, true);
+    const value = await screen.findByText('Unknown');
+    expect(value.closest('summary')).toHaveTextContent('Not set at first freeze');
+    expect(value.closest('details')).not.toHaveAttribute('open');
+    expect(screen.queryByText(formatEstimate(0))).not.toBeInTheDocument();
+    expect(originText()).toBeInTheDocument();
   });
 });

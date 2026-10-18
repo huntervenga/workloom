@@ -47,7 +47,11 @@ describe('drawer loaded subtasks', () => {
     expect(list.queryByText(grandchild.title)).not.toBeInTheDocument(); expect(list.queryByText(unrelated.title)).not.toBeInTheDocument();
     expect(list.queryByText(/loaded in this view/)).not.toBeInTheDocument();
     // The explicit Detail / Additional work choice stays in the Add subtask flow (its inline row's More details).
-    expect(screen.getByRole('button', { name: 'Add subtask' })).toBeInTheDocument();
+    const add = list.getByRole('button', { name: 'Add subtask' });
+    expect(add).toBeInTheDocument();
+    const section = add.closest('section');
+    if (!section) throw new Error('Subtask header action has no section.');
+    expect(screen.getByLabelText('Description').compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(writes(calls)).toHaveLength(0);
   });
 

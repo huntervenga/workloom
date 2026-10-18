@@ -48,3 +48,31 @@ describe('CellPopover and dialogs', () => {
     expect(screen.getByRole('button', { name: 'Background feedback action' })).toBeInTheDocument();
   });
 });
+
+
+describe('CellPopover beside an explicit desktop nonmodal task pane', () => {
+  it('keeps outside cell editors visible beside the pane, but hides them under a nested modal dialog', async () => {
+    function BesidePane() {
+      const [modal, setModal] = useState(false);
+      return <>
+        <Anchored label="Outside date and tag feedback" />
+        <section role="dialog" aria-label="Task pane" data-task-panel="" data-state="open">
+          <button onClick={() => setModal(true)}>Open nested modal</button>
+          <DialogShell title="Nested modal" description="Modal above both pane and table" open={modal} onOpenChange={setModal}>
+            <Anchored label="Modal feedback" />
+          </DialogShell>
+        </section>
+      </>;
+    }
+    const ui = renderFieldUi(<BesidePane />);
+    const outside = popover('Outside date and tag feedback');
+    await waitFor(() => expect(outside).toBeVisible());
+    await ui.user.click(screen.getByRole('button', { name: 'Open nested modal' }));
+    await screen.findByRole('dialog', { name: 'Nested modal' });
+    await waitFor(() => expect(outside).not.toBeVisible());
+    expect(popover('Modal feedback')).toBeVisible();
+    await ui.user.keyboard('{Escape}');
+    await waitFor(() => expect(outside).toBeVisible());
+    expect(popover('Outside date and tag feedback')).toBe(outside);
+  });
+});

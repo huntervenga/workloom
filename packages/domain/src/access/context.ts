@@ -13,6 +13,8 @@ export interface Actor {
   readonly userId: string;
   readonly displayName: string;
   readonly kind: ActorKind;
+  /** Current stored profile photo URL; presentation only, never an authorization input. */
+  readonly avatarUrl?: string | null;
 }
 
 export interface ActorContext {

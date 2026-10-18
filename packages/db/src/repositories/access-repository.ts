@@ -19,10 +19,13 @@ const accessColumns = {
   membershipId: memberships.id,
   userId: memberships.userId,
   displayName: users.displayName,
+  avatarUrl: users.avatarUrl,
   role: memberships.role,
   state: memberships.state,
   revision: memberships.revision,
 };
+
+const userColumns = { id: users.id, displayName: users.displayName, kind: users.kind, avatarUrl: users.avatarUrl };
 
 type AccessRow = {
   workspaceId: string;
@@ -32,6 +35,7 @@ type AccessRow = {
   membershipId: string;
   userId: string;
   displayName: string;
+  avatarUrl: string | null;
   role: MembershipRecord['role'];
   state: MembershipRecord['state'];
   revision: number;
@@ -45,6 +49,7 @@ function toAccessRecord(row: AccessRow): WorkspaceAccessRecord {
       workspaceId: row.workspaceId,
       userId: row.userId,
       displayName: row.displayName,
+      avatarUrl: row.avatarUrl,
       role: row.role,
       state: row.state,
       revision: row.revision,
@@ -73,7 +78,7 @@ export function createAccessRepository(source: Database | WorkloomExecutor): Acc
         return null;
       }
       const [row] = await db
-        .select({ id: users.id, displayName: users.displayName, kind: users.kind })
+        .select(userColumns)
         .from(users)
         .where(eq(users.id, userId))
         .limit(1);
@@ -86,7 +91,7 @@ export function createAccessRepository(source: Database | WorkloomExecutor): Acc
         return [];
       }
       return db
-        .select({ id: users.id, displayName: users.displayName, kind: users.kind })
+        .select(userColumns)
         .from(users)
         .where(inArray(users.id, ids));
     },

@@ -46,6 +46,7 @@ export function createTaskApplication(
           barrierAt: scope.barrierAt,
           recordChange: scope.recordChange,
           repository: createTaskRepository(scope.tx),
+          fieldRepository: census.repository.fields,
           recurrenceCensus: census.recurrenceCensus,
           planningGuard: createPlanningMutationGuard(census, tools),
           statusTransitions:census.statusTransitions,

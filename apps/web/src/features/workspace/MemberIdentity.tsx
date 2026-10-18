@@ -1,12 +1,13 @@
 import { t, useTranslation } from '../../i18n';
 import type { MembershipDto } from '@workloom/contracts';
-import { Avatar, Badge } from '@workloom/ui';
+import { Badge } from '@workloom/ui';
+import { UserAvatar } from '../../shared/UserAvatar';
 
 export function MemberIdentity({ member, isCurrent }: { member: MembershipDto; isCurrent: boolean }) {
   useTranslation();
   return (
     <div className="flex min-w-0 items-center gap-3">
-      <Avatar name={member.displayName} seed={member.userId} />
+      <UserAvatar name={member.displayName} seed={member.userId} avatarUrl={member.avatarUrl} />
       <span className="min-w-0 font-medium [overflow-wrap:anywhere] text-ink">{member.displayName}</span>
       {isCurrent ? (
         <Badge tone="accent" title={t('workspace.currentUser')}>

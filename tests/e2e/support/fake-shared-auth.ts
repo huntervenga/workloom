@@ -8,6 +8,8 @@ export interface FakeSharedAuthIdentity {
   readonly id: string;
   readonly email: string;
   readonly name: string;
+  /** Omitted means no picture claim at all; null is sent as an explicit null claim. Never fetched here. */
+  readonly picture?: string | null;
 }
 
 export interface RegisteredFakeSharedAuthIdentity extends FakeSharedAuthIdentity {
@@ -28,7 +30,7 @@ export interface FakeSharedAuth {
   readonly origin: string;
   readonly identities: { readonly a: FakeSharedAuthIdentity; readonly b: FakeSharedAuthIdentity };
   /** Adds a fresh subject without replacing the provider key/JWKS used by the running API. */
-  registerIdentity(label: string): RegisteredFakeSharedAuthIdentity;
+  registerIdentity(label: string, options?: { readonly picture?: string | null }): RegisteredFakeSharedAuthIdentity;
   stats(): FakeSharedAuthStats;
   close(): Promise<void>;
 }
@@ -51,6 +53,8 @@ const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+const pictureClaim = (identity: FakeSharedAuthIdentity): { picture?: string | null } =>
+  identity.picture === undefined ? {} : { picture: identity.picture };
 
 function single(params: URLSearchParams, name: string): string | null {
   const values = params.getAll(name);
@@ -119,6 +123,7 @@ export async function startFakeSharedAuth(options: { port: number; appOrigin: st
       sub: identity.id,
       email: identity.email,
       name: identity.name,
+      ...pictureClaim(identity),
       iat,
       exp: iat + TOKEN_TTL_SECONDS,
       email_verified: true,
@@ -248,6 +253,7 @@ export async function startFakeSharedAuth(options: { port: number; appOrigin: st
           id: identity.id,
           email: identity.email,
           name: identity.name,
+          ...pictureClaim(identity),
           email_verified: true,
           email_verification_assertion: 'google_gmail',
           email_verification_observed_at: observedAt,
@@ -275,10 +281,11 @@ export async function startFakeSharedAuth(options: { port: number; appOrigin: st
   return {
     origin,
     identities,
-    registerIdentity: (label) => {
+    registerIdentity: (label, options) => {
       const clean = label.trim();
       if (!clean || clean.length > 80 || [...clean].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) throw new Error('Invalid private test identity label.');
-      const identity = { id: randomUUID(), email: QA_EMAIL, name: QA_NAME };
+      const picture = options?.picture;
+      const identity: FakeSharedAuthIdentity = { id: randomUUID(), email: QA_EMAIL, name: QA_NAME, ...(picture === undefined ? {} : { picture }) };
       const buttonName = `Continue as ${clean}`;
       if ([...accounts.values()].some(entry => entry.buttonName === buttonName)) throw new Error('Private test identity label is already registered.');
       identityById.set(identity.id, identity);

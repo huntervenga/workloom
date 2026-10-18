@@ -1,9 +1,9 @@
 import type { MeDto } from '@workloom/contracts';
-import { Avatar } from '@workloom/ui';
 import { FlaskConical } from 'lucide-react';
 import { lazy, Suspense, useId } from 'react';
 import { roleLabels, type WorkspaceRole } from '../../features/workspace/roles';
 import { useTranslation } from '../../i18n';
+import { UserAvatar } from '../../shared/UserAvatar';
 
 // Compiled out of production builds: import.meta.env.DEV is statically false there.
 const DevActorSwitcher = import.meta.env.DEV ? lazy(() => import('../../dev/DevActorSwitcher')) : null;
@@ -16,7 +16,7 @@ export function LocalModeCard({ me, role }: { me: MeDto; role: WorkspaceRole | n
   return (
     <section aria-labelledby={titleId} className="rounded-xl border border-line bg-canvas/70 p-2.5">
       <div className="flex items-center gap-2.5">
-        <Avatar name={me.actor.displayName} seed={me.actor.id} />
+        <UserAvatar name={me.actor.displayName} seed={me.actor.id} avatarUrl={me.actor.avatarUrl} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-ink" title={me.actor.displayName}>{me.actor.displayName}</p>
           <p className="truncate text-xs text-muted">{role ? roleLabels[role] : t('shell.testUser')}</p>

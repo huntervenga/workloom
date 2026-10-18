@@ -84,6 +84,10 @@ function harness() {
     listInputs: [] as TaskListQuery[],
     /** Test knob: arguments of every planning guard check, in call order. */
     planningChecks: [] as unknown[][],
+    /** Test knob: arguments of every status transition assertion, in call order. */
+    statusChecks: [] as { taskId: string; statusId: string }[],
+    /** Test knob: the transition policy rejects any status change of this task. */
+    blockedStatusTaskId: null as string | null,
     /** Test knob: task row writes made outside a unit-of-work run; must stay 0. */
     writesOutsideRun: 0,
     inRun: false,
@@ -223,7 +227,14 @@ function harness() {
               return null;
             },
           },
-          statusTransitions:{async assertTransition(){}},
+          statusTransitions: {
+            async assertTransition(task: TaskDto, nextStatusId: string) {
+              db.statusChecks.push({ taskId: task.id, statusId: nextStatusId });
+              if (task.id === db.blockedStatusTaskId) {
+                throw new DomainError('DOMAIN_VALIDATION_FAILED', 'Synthetic blocked status transition.');
+              }
+            },
+          },
           async recordChange(event) {
             events.push(event);
             return { changeSeq: BigInt(events.length), eventOrdinal: 1 };
@@ -1469,7 +1480,8 @@ async function expectSlotPreservingReassign(s: OrderFixture, taskId: string, res
   const diff = event.diff;
   if (diff === undefined) throw new Error(`expected task.updated event for ${taskId} to carry a diff`);
   // The anchor is command context, not a field write; no position or section change is recorded.
-  expect(Object.keys(diff).filter((key) => key !== 'anchor').sort()).toEqual(['responsibleMembershipId', 'revision']);
+  expect(Object.keys(diff).filter((key) => key !== 'anchor' && key !== 'activity').sort()).toEqual(['responsibleMembershipId', 'revision']);
+  expect(diff.activity).toMatchObject({ v: 1, responsible: { from: original.responsibleMembershipId === null ? null : expect.objectContaining({ id: original.responsibleMembershipId }), to: responsibleMembershipId === null ? null : expect.objectContaining({ id: responsibleMembershipId }) } });
   expect(s.db.state.idempotency.size).toBe(receipts + 1);
 
   const stored = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES);
@@ -1578,5 +1590,142 @@ describe('null-anchor assignee group end', () => {
       expect({ id, row }).toEqual({ id, row: { ...old, position: row.position, revision: old.revision + 1, updatedAt: cleared.updatedAt } });
     }
     expect(s.events.length - events).toBe(placed.size);
+  });
+});
+
+describe('bulk status, priority, tag and section patches', () => {
+  type BulkInput = Parameters<OrderFixture['app']['bulkUpdateTasks']>[1];
+  const selection = (s: OrderFixture, ...tasks: readonly TaskDto[]): BulkInput['tasks'] =>
+    tasks.map((task) => ({ taskId: task.id, expectedRevision: (s.db.state.tasks.get(task.id) as TaskDto).revision }));
+  const statusesOf = async (s: OrderFixture, projectId = s.project.id) => {
+    const [todo, doing, done] = await s.app.listStatuses(s.ctx(users.owner), projectId);
+    if (todo === undefined || doing === undefined || done === undefined) throw new Error('Default statuses missing.');
+    return { todo, doing, done };
+  };
+
+  it('applies one status, priority, tag set and root section to every selected row and leaves unselected rows untouched', async () => {
+    const s = await setup();
+    const { doing } = await statusesOf(s);
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Target section' });
+    const red = await s.app.createTag(s.owner(), { name: 'Red' }), blue = await s.app.createTag(s.owner(), { name: 'Blue' });
+    const old = await s.app.createTag(s.owner(), { name: 'Old' });
+    const a = await s.createTask({ title: 'A', tagIds: [old.id], responsibleMembershipId: members.owner, participantMembershipIds: [members.owner], estimateMinutes: 30, dueDate: '2026-10-30' });
+    const untouched = await s.createTask({ title: 'Unselected', tagIds: [old.id] });
+    const b = await s.createTask({ title: 'B', priority: 'low' });
+    const unselected = s.projected().get(untouched.id), side = dumpOf(s.db.state, 'packages', 'participants'), eventCount = s.events.length;
+
+    const result = await s.app.bulkUpdateTasks(s.owner(), { projectId: s.project.id, tasks: selection(s, a, b), changes: { statusId: doing.id, priority: 'high', tagIds: [red.id, blue.id], sectionId: section.id } });
+
+    expect(result.map((task) => task.id)).toEqual([a.id, b.id]);
+    for (const task of result) {
+      expect(task).toMatchObject({ statusId: doing.id, priority: 'high', sectionId: section.id, parentTaskId: null, revision: 2 });
+      expect(task.tags.map((tag) => tag.id)).toEqual([red.id, blue.id]);
+    }
+    expect(result[0]).toMatchObject({ responsibleMembershipId: members.owner, dueDate: '2026-10-30', workPackageId: a.workPackageId, workPackageRevision: a.workPackageRevision, estimateMinutes: 30, participants: a.participants, participantsRevision: a.participantsRevision });
+    expect(s.projected().get(untouched.id)).toEqual(unselected);
+    expect(dumpOf(s.db.state, 'packages', 'participants')).toBe(side);
+    const audit = s.events.slice(eventCount);
+    expect(audit.map((event) => [event.entityId, event.action, event.entityRevision])).toEqual([[a.id, 'updated', 2], [b.id, 'updated', 2]]);
+    expect(Object.fromEntries(Object.entries(audit[0]?.diff ?? {}).filter(([key]) => key !== 'activity'))).toEqual({ statusId: { from: s.statusId, to: doing.id }, priority: { from: 'none', to: 'high' }, sectionId: { from: null, to: section.id }, tagIds: { from: [old.id], to: [red.id, blue.id] }, revision: { from: 1, to: 2 } });
+    expect(Object.fromEntries(Object.entries(audit[1]?.diff ?? {}).filter(([key]) => key !== 'activity'))).toEqual({ statusId: { from: s.statusId, to: doing.id }, priority: { from: 'low', to: 'high' }, sectionId: { from: null, to: section.id }, tagIds: { from: [], to: [red.id, blue.id] }, revision: { from: 1, to: 2 } });
+    expect(audit[0]?.diff).toMatchObject({ activity: { v: 1, status: { to: { id: doing.id, name: doing.name, availability: 'snapshot' } }, section: { to: { id: section.id, name: section.name, availability: 'snapshot' } }, tags: { added: [{ id: red.id, name: red.name, availability: 'snapshot' }, { id: blue.id, name: blue.name, availability: 'snapshot' }], removed: [{ id: old.id, name: old.name, availability: 'snapshot' }], omitted: 0 } } });
+    expect(audit[1]?.diff).toMatchObject({ activity: { v: 1, tags: { removed: [], omitted: 0 } } });
+    expect(audit[0]?.outbox?.payload).toMatchObject({ taskId: a.id, revision: 2, projectId: s.project.id, workPackageId: a.workPackageId });
+    expect(s.db.writesOutsideRun).toBe(0);
+  });
+
+  it('keeps the legacy bulk payload hash byte-exact and replays a new-field body exactly under its key', async () => {
+    const s = await setup();
+    const a = await s.createTask(), b = await s.createTask();
+    const legacyKey = s.key();
+    await s.app.bulkUpdateTasks(s.ctx(users.owner, legacyKey), { projectId: s.project.id, tasks: [{ taskId: a.id, expectedRevision: 1 }], changes: { dueDate: '2026-11-01' } });
+    const legacy = [...s.db.state.idempotency.values()].find((receipt) => receipt.idempotencyKey === legacyKey);
+    expect(legacy?.payloadHash).toBe(`digest:{"command":"task.bulk.update","input":{"changes":{"dueDate":"2026-11-01"},"projectId":"${s.project.id}","tasks":[{"expectedRevision":1,"taskId":"${a.id}"}]},"target":"${s.project.id}"}`);
+
+    const tag = await s.app.createTag(s.owner(), { name: 'Replay' });
+    const key = s.key();
+    const body: BulkInput = { projectId: s.project.id, tasks: selection(s, a, b), changes: { priority: 'urgent', tagIds: [tag.id] } };
+    const first = await s.app.bulkUpdateTasks(s.ctx(users.owner, key), body);
+    expect(first.map((task) => [task.priority, task.revision, task.tags.map((row) => row.id)])).toEqual([['urgent', 3, [tag.id]], ['urgent', 2, [tag.id]]]);
+    const state = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES), eventCount = s.events.length;
+    expect(await s.app.bulkUpdateTasks(s.ctx(users.owner, key), body)).toEqual(first);
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(state);
+    expect(s.events).toHaveLength(eventCount);
+    // Absent and explicit new fields are different payloads; nothing is defaulted into the hash.
+    for (const changes of [{ priority: 'urgent' }, { ...body.changes, sectionId: null }] as const) {
+      await expect(s.app.bulkUpdateTasks(s.ctx(users.owner, key), { ...body, changes })).rejects.toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' });
+    }
+  });
+
+  it('rejects the whole command without writes, events, receipt or proposal when any later row fails preflight', async () => {
+    const s = await setup();
+    const { done } = await statusesOf(s);
+    const other = await s.app.createProject(s.owner(), { name: 'Other project' });
+    const foreignSection = await s.app.createSection(s.owner(), other.id, { name: 'Foreign' });
+    const foreignStatus = (await statusesOf(s, other.id)).doing;
+    const closed = await s.app.createSection(s.owner(), s.project.id, { name: 'Closed' });
+    await s.app.updateSection(s.owner(), closed.id, { expectedRevision: 1, archived: true });
+    const kept = await s.app.createTag(s.owner(), { name: 'Kept' });
+    const created = await s.createTask({ tagIds: [kept.id] }), b = await s.createTask();
+    // Row A already has the target status: its transition is still asserted, like an ordinary update.
+    const a = await s.app.updateTask(s.owner(), created.id, { expectedRevision: 1, statusId: done.id });
+    await s.app.updateTag(s.owner(), kept.id, { expectedRevision: 1, archived: true });
+    const base = { projectId: s.project.id, tasks: selection(s, a, b) };
+    const bulk = (changes: BulkInput['changes']) => () => s.app.bulkUpdateTasks(s.owner(), { ...base, changes });
+    const proposals = s.db.planningChecks.length;
+
+    await expectRejectedWithoutWrites(s, 'later stale revision', () => s.app.bulkUpdateTasks(s.owner(), { ...base, tasks: [base.tasks[0] as BulkInput['tasks'][number], { taskId: b.id, expectedRevision: 2 }], changes: { statusId: done.id, priority: 'high' } }), 'REVISION_CONFLICT');
+    await expectRejectedWithoutWrites(s, 'archived tag kept on A but new on later B', bulk({ tagIds: [kept.id], priority: 'high' }), 'DOMAIN_VALIDATION_FAILED');
+    await expectRejectedWithoutWrites(s, 'unknown tag', bulk({ tagIds: [uuid(9999)] }), 'NOT_FOUND');
+    await expectRejectedWithoutWrites(s, 'cross-project section', bulk({ sectionId: foreignSection.id, priority: 'high' }), 'DOMAIN_VALIDATION_FAILED');
+    await expectRejectedWithoutWrites(s, 'archived section', bulk({ sectionId: closed.id }), 'DOMAIN_VALIDATION_FAILED');
+    await expectRejectedWithoutWrites(s, 'cross-project status', bulk({ statusId: foreignStatus.id }), 'DOMAIN_VALIDATION_FAILED');
+
+    s.db.blockedStatusTaskId = b.id;
+    const checks = s.db.statusChecks.length;
+    try {
+      await expectRejectedWithoutWrites(s, 'later blocked status', bulk({ statusId: done.id, priority: 'urgent', tagIds: [] }), 'DOMAIN_VALIDATION_FAILED');
+    } finally {
+      s.db.blockedStatusTaskId = null;
+    }
+    expect(s.db.statusChecks.slice(checks)).toEqual([{ taskId: a.id, statusId: done.id }, { taskId: b.id, statusId: done.id }]);
+    expect(s.db.planningChecks).toHaveLength(proposals);
+  });
+
+  it('stores only a receipt for a true no-op, comparing tag IDs as a set and ignoring tag metadata', async () => {
+    const s = await setup();
+    const red = await s.app.createTag(s.owner(), { name: 'Red' }), blue = await s.app.createTag(s.owner(), { name: 'Blue' });
+    const a = await s.createTask({ priority: 'high', tagIds: [red.id, blue.id] });
+    const b = await s.createTask({ priority: 'high', tagIds: [blue.id, red.id] });
+    await s.app.updateTag(s.owner(), red.id, { expectedRevision: 1, name: 'Crimson', color: '#aa0000' });
+    await s.app.updateTag(s.owner(), blue.id, { expectedRevision: 1, archived: true });
+    const rows = dumpOf(s.db.state, 'tasks', ...SIDE_TABLES), eventCount = s.events.length, receipts = s.db.state.idempotency.size;
+    const before = [a, b].map((task) => s.projected().get(task.id));
+
+    const result = await s.app.bulkUpdateTasks(s.owner(), { projectId: s.project.id, tasks: selection(s, a, b), changes: { statusId: s.statusId, priority: 'high', tagIds: [blue.id, red.id], sectionId: null } });
+
+    expect(result).toEqual(before);
+    expect(result.map((task) => task.revision)).toEqual([1, 1]);
+    expect(dumpOf(s.db.state, 'tasks', ...SIDE_TABLES)).toBe(rows);
+    expect(s.events).toHaveLength(eventCount);
+    expect(s.db.state.idempotency.size).toBe(receipts + 1);
+  });
+
+  it('moves root sections only and rejects the whole command when a selected subtask would change section', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Roots' });
+    const root = await s.createTask({ title: 'Root' }), other = await s.createTask({ title: 'Other root' });
+    const child = await s.createTask({ title: 'Child', parentTaskId: root.id });
+
+    await expectRejectedWithoutWrites(s, 'selected subtask section move', () => s.app.bulkUpdateTasks(s.owner(), { projectId: s.project.id, tasks: selection(s, other, child), changes: { sectionId: section.id } }), 'DOMAIN_VALIDATION_FAILED');
+
+    const unselected = s.projected().get(child.id);
+    const roots = await s.app.bulkUpdateTasks(s.owner(), { projectId: s.project.id, tasks: selection(s, root, other), changes: { sectionId: section.id } });
+    expect(roots.map((task) => [task.sectionId, task.parentTaskId, task.revision])).toEqual([[section.id, null, 2], [section.id, null, 2]]);
+    expect(s.projected().get(child.id)).toEqual(unselected);
+
+    // A subtask may be selected when its section does not actually change; its lineage stays.
+    const [kept] = await s.app.bulkUpdateTasks(s.owner(), { projectId: s.project.id, tasks: selection(s, child), changes: { sectionId: null, priority: 'low' } });
+    expect(kept).toMatchObject({ parentTaskId: root.id, sectionId: null, workPackageId: child.workPackageId, priority: 'low', revision: 2 });
   });
 });

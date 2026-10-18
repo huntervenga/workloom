@@ -118,7 +118,7 @@ describe('API app', () => {
     });
     expect(response.statusCode).toBe(200);
     const body = meResponseSchema.parse(response.json());
-    expect(body.data).toEqual({ actor: { id: FIXTURE_USER_IDS.owner, displayName: 'Synthetic Owner', kind: 'fixture' }, authMode: 'dev' });
+    expect(body.data).toEqual({ actor: { id: FIXTURE_USER_IDS.owner, displayName: 'Synthetic Owner', kind: 'fixture', avatarUrl: null }, authMode: 'dev' });
     expect(response.headers['x-request-id']).toBe(body.meta.requestId);
     expect(body.meta.requestId).toMatch(/^[0-9a-f-]{36}$/);
   });

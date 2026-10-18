@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
+import { profilePhotoUrlSchema } from './profile-photo.js';
 
 export const workspaceRoleSchema = z.enum(['owner', 'admin', 'member', 'viewer']);
 
@@ -19,6 +20,8 @@ export const membershipSchema = z.object({
   workspaceId: idSchema,
   userId: idSchema,
   displayName: z.string(),
+  /** The member user's verified profile photo; absent or null renders initials. */
+  avatarUrl: profilePhotoUrlSchema.nullable().optional(),
   role: workspaceRoleSchema,
 });
 

@@ -6,6 +6,7 @@ import { useTranslation, type TranslationKey } from '../../i18n';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
+import { UserAvatar } from '../../shared/UserAvatar';
 import { discussionKeys, uniqueRows, useActivityQuery, useCommentsQuery } from './queries';
 import type { TaskCommentsWorkspace, CommentProblem } from './useTaskCommentsWorkspace';
 
@@ -92,7 +93,7 @@ export function TaskDiscussion({ task, controller, writable, canRetry, timezone,
     <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-semibold">{t('comments.heading')}</h3><Button size="sm" variant="ghost" onClick={restart} aria-disabled={comments.isFetching || undefined}>{t('comments.refresh')}</Button></div>
     {comments.isError ? <QueryErrorState error={comments.error} subject="comments" headingLevel={3} onRetry={restart} retrying={comments.isFetching} /> : null}
     {comments.isPending ? <p role="status" className="text-sm text-muted">{t('comments.loading')}</p> : rows.length === 0 && !comments.isError ? <p className="text-sm text-muted">{t('comments.empty')}</p> : null}
-    <ol className="space-y-3">{rows.map(comment => <li key={comment.id} className="rounded-lg border border-line p-3"><div className="flex flex-wrap items-baseline justify-between gap-2 text-xs"><span className="font-medium">{comment.authorDisplayNameSnapshot}</span><time dateTime={comment.createdAt} className="text-muted">{time(comment.createdAt)}</time></div><p className="mt-2 whitespace-pre-wrap break-words text-sm">{comment.body}</p></li>)}</ol>
+    <ol className="space-y-3">{rows.map(comment => <li key={comment.id} data-task-comment-id={comment.id} className="rounded-lg border border-line p-3"><div className="flex flex-wrap items-center gap-2 text-xs"><UserAvatar name={comment.authorDisplayNameSnapshot} seed={comment.authorUserId} avatarUrl={comment.authorAvatarUrl ?? null} size="sm" /><span className="font-medium">{comment.authorDisplayNameSnapshot}</span><time dateTime={comment.createdAt} className="text-muted">{time(comment.createdAt)}</time></div><p className="mt-2 whitespace-pre-wrap break-words text-sm">{comment.body}</p></li>)}</ol>
     {comments.hasNextPage ? <Button size="sm" onClick={() => { if (!comments.isFetchingNextPage) void comments.fetchNextPage(); }} aria-disabled={comments.isFetchingNextPage || undefined}>{comments.isFetchingNextPage ? t('comments.loadingMore') : t('comments.more')}</Button> : null}
     <details className="border-t border-line pt-3" onToggle={event => setActivityOpen(event.currentTarget.open)}>
       <summary className="cursor-pointer text-sm font-semibold">{t('comments.activity.heading')}</summary>

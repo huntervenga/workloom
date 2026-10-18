@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
+import { profilePhotoUrlSchema } from './profile-photo.js';
 
 /** The synthetic actor list must never admit real shared-Auth principals. */
 export const fixtureActorSchema = z.object({
@@ -11,7 +12,11 @@ export const fixtureActorSchema = z.object({
 });
 
 /** Server-resolved internal actor; real identities never merge into fixtures. */
-export const actorSchema = fixtureActorSchema.extend({ kind: z.enum(['fixture', 'real']) });
+export const actorSchema = fixtureActorSchema.extend({
+  kind: z.enum(['fixture', 'real']),
+  /** Verified profile photo; absent or null renders initials. */
+  avatarUrl: profilePhotoUrlSchema.nullable().optional(),
+});
 
 /** `GET /api/v1/me`: the UI shows the local-mode indicator from `authMode`. */
 export const meSchema = z.object({

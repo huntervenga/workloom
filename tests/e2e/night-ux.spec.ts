@@ -823,17 +823,21 @@ for (const [name, size] of viewports) test.describe(`Night UX ${name}`, () => {
     await page.goto(`${f.path}?task=${zero.id}`);
     const show = async (task: TaskDto, current: string, captured: boolean) => {
       const drawer = page.getByRole('dialog', { name: task.title, exact: true }); await expect(drawer).toBeVisible();
-      await expect(drawer.getByRole('region', { name: 'Current shared estimate', exact: true })).toContainText(current);
+      await expect(drawer.getByLabel('Team estimate, hours', { exact: true })).toHaveValue(current);
       const originalRegion = drawer.getByRole('region', { name: 'Original estimate', exact: true });
       if (captured) { await expect(originalRegion.getByText('0m', { exact: true })).toBeVisible(); await expect(originalRegion).toContainText('Locked at first freeze'); }
       else { await expect(originalRegion).toContainText('Unknown'); await expect(originalRegion).toContainText('Not set at first freeze'); await expect(originalRegion).toContainText('A later estimate is not treated as the original.'); }
+      const disclosure = originalRegion.locator('details');
+      await expect(disclosure).toHaveCount(1);
+      if (!await disclosure.evaluate(node => node.hasAttribute('open'))) await disclosure.locator('summary').click();
+      await expect(originalRegion.getByText(/First freeze:/)).toBeVisible();
       await expect(originalRegion).toContainText('Personal plan freeze'); await expect(originalRegion).toContainText('Saved manually');
       return drawer;
     };
-    let drawer = await show(zero, '3h', true); await drawer.locator('button[aria-label="Close"]').click();
-    await openTaskDrawer(page, unknown); drawer = await show(unknown, '2h', false);
+    let drawer = await show(zero, '3:00', true); await drawer.locator('button[aria-label="Close"]').click();
+    await openTaskDrawer(page, unknown); drawer = await show(unknown, '2:00', false);
     await drawer.getByRole('region', { name: 'Subtasks', exact: true }).getByRole('button', { name: `Open subtask “${child.title}” · ${f.progress.name} · Detail`, exact: true }).click();
-    await show(child, '2h', false);
+    await show(child, '2:00', false);
     expect(reads).toContain(`${f.prefix}/planning-packages/${zero.workPackageId}/original-estimate`);
     expect(reads).toContain(`${f.prefix}/planning-packages/${unknown.workPackageId}/original-estimate`);
     expect(await original(zero)).toEqual(firstZero); expect(await original(child)).toEqual(firstUnknown);
