@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { alpha, alphaMembers, installFakeApi, json, ok, renderApp, type FakeRequest, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { field as fieldFixture } from '../features/fields/test/fixtures';
-import { PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 
 beforeAll(async () => { await import('./ProjectPage'); });
 
@@ -161,7 +161,7 @@ describe('selected-cell bulk inline editing', () => {
 
   it('applies a shared estimate with every selected package revision in one command', async () => {
     const { calls } = installFakeApi(routes(rows => ({ [`POST ${bulkPath}`]: request => applied(rows, request) })));
-    const { user } = renderApp(tablePath); await selectBoth(user);
+    const { user } = renderApp(legacyTablePath(tablePath)); await selectBoth(user);
     await user.click(cell(/.*estimate/, first));
     const input = screen.getByRole('textbox', { name: 'Team estimate (hours)' });
     await user.clear(input); await user.type(input, '2'); await user.keyboard('{Enter}');

@@ -12,7 +12,7 @@ import { alpha, anna, created, deferred, failure, installFakeApi, json, ok, proj
 import { queryKeys } from '../lib/queryKeys';
 import { commitment, lostResponse } from '../features/planning/test/fixtures';
 import { field } from '../features/fields/test/fixtures';
-import { MEMBER_ID, PERIOD_A, PROJECT_ID, categorized, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { MEMBER_ID, PERIOD_A, PROJECT_ID, categorized, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 
 beforeAll(async () => { await import('./ProjectPage'); });
 const SECTION_A = 'e1000000-0000-4000-8000-000000000001';
@@ -53,7 +53,7 @@ describe('page-owned section collapse', () => {
   it('retains Graph selection, loaded counts and totals across Board, filters and additional pages', async () => {
     const extra = { ...other, id: 'f2000000-0000-4000-8000-000000000005', title: 'Later first-section task', sectionId: SECTION_A, workPackageId: 'f1000000-0000-4000-8000-000000000005', estimateMinutes: 45 };
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.has('search') ? page([other]) : request.searchParams.has('cursor') ? page([extra]) : page([parent, child, other, loose], 'next-section-page') }));
-    const { user } = renderApp(tablePath);
+    const { user } = renderApp(legacyTablePath(tablePath));
     await user.click(await screen.findByRole('button', { name: `Select task: ${parent.title}` }));
     await user.click(collapse());
     expect(screen.queryByRole('button', { name: parent.title })).not.toBeInTheDocument();
@@ -274,7 +274,7 @@ it.each(['plan', 'fact'] as const)('preserves an ordinary %s hours draft and its
   const first = lostResponse(); let attempts = 0;
   const savePath = kind === 'plan' ? `POST ${rootPath}/periods/${PERIOD_A}/commitments` : `PUT ${rootPath}/tasks/${parent.id}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`;
   const { calls } = installFakeApi(routes({ [savePath]: () => ++attempts === 1 ? first.promise : kind === 'plan' ? created(commitment(150)) : ok(categorized(150)) }));
-  const { user } = renderApp(tablePath);
+  const { user } = renderApp(legacyTablePath(tablePath));
   await chooseTimeContext(user, 'Week for hours', PERIOD_A);
   const action = kind === 'plan' ? `Weekly plan: ${parent.title}` : `Weekly actual hours: ${parent.title}`;
   const title = kind === 'plan' ? 'Add to weekly plan' : 'Record weekly actual hours';

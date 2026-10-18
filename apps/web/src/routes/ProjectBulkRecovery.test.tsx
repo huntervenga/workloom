@@ -2,7 +2,7 @@ import type { TaskDto } from '@workloom/contracts';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { installFakeApi, ok, renderApp } from '../test/fakeApi';
-import { rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { legacyTablePath, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 import { lostResponse } from '../features/planning/test/fixtures';
 
 // Isolate the Page-owned selection port; actual Gantt checkbox/browser coverage remains separate.
@@ -12,7 +12,7 @@ beforeAll(async () => { await import('./ProjectPage'); });
 
 describe('Page-owned bulk recovery across views', () => {
   it('shows the explicit week guidance once in the actual page controls', async () => {
-    installFakeApi(tableRoutes()); renderApp(tablePath);
+    installFakeApi(tableRoutes()); renderApp(legacyTablePath());
     await screen.findByRole('button', { name: `Select task: ${task.title}` });
     expect(screen.getAllByText('Choose a week to enter planned or actual hours. The selected person is shown above; estimates stay separate.')).toHaveLength(1);
   });

@@ -9,7 +9,7 @@ import { SessionProvider } from '../app/session';
 import { createQueryClient } from '../lib/queryClient';
 import { alphaMembers, failure, installFakeApi, ok } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
-import { MEMBER_ID, PERIOD_A, PROJECT_ID, TASK_ID, categorized, rootPath, tablePath, tableRoutes, task } from '../features/work-categories/test/fixtures';
+import { MEMBER_ID, PERIOD_A, PROJECT_ID, TASK_ID, categorized, rootPath, legacyTablePath, tablePath, tableRoutes, task } from '../features/work-categories/test/fixtures';
 
 beforeAll(async () => { await import('./ProjectPage'); });
 function LocationProbe() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}{location.hash}</output>; }
@@ -35,17 +35,17 @@ describe('Board density with retained time context', () => {
   it('hides hours pickers on Board and restores them unchanged in Tasks while retaining meeting selection and Week navigation', async () => {
     const person = alphaMembers[1]?.id; if (!person) throw new Error('Missing colleague');
     const { calls } = installFakeApi(tableRoutes());
-    const { user } = renderProject(`${tablePath}?week=${PERIOD_A}&worker=${person}&meetingPeriod=${PERIOD_A}&meetingMember=${MEMBER_ID}&meetingAttendance=saved-attendance&other=kept#anchor`);
+    const { user } = renderProject(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${person}&meetingPeriod=${PERIOD_A}&meetingMember=${MEMBER_ID}&meetingAttendance=saved-attendance&other=kept#anchor`));
     await screen.findByRole('table');
     await waitFor(() => expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)));
     expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', person));
-    const weekHref = views().getByRole('link', { name: 'Week' }).getAttribute('href');
+    const weekHref = views().getByRole('link', { name: 'Legacy weekly planning' }).getAttribute('href');
     await showBoard(user);
     expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Whose hours to show')).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Weekly hours in table' })).not.toBeInTheDocument();
     expect(screen.getByText('1 loaded task in this view.')).toBeInTheDocument();
-    expect(views().getByRole('link', { name: 'Week' })).toHaveAttribute('href', weekHref);
+    expect(views().getByRole('link', { name: 'Legacy weekly planning' })).toHaveAttribute('href', weekHref);
     const location = screen.getByTestId('location');
     for (const part of [`week=${PERIOD_A}`, `worker=${person}`, `meetingPeriod=${PERIOD_A}`, `meetingMember=${MEMBER_ID}`, 'meetingAttendance=saved-attendance', 'other=kept', '#anchor', 'view=board']) expect(location).toHaveTextContent(part);
     await user.click(views().getByRole('button', { name: 'Tasks' }));
@@ -59,7 +59,7 @@ describe('Board density with retained time context', () => {
     const gate = lostResponse(); let attempt = 0;
     const path = `${rootPath}/tasks/${TASK_ID}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`;
     const { calls } = installFakeApi({ ...tableRoutes(), [`PUT ${path}`]: () => ++attempt === 1 ? gate.promise : ok(categorized(300)) });
-    const { user } = renderProject(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}`);
+    const { user } = renderProject(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}`));
     await user.click(await screen.findByRole('button', { name: `Weekly actual hours: ${task.title}` }));
     let dialog = await screen.findByRole('dialog', { name: 'Record weekly actual hours' });
     await user.type(within(dialog).getByLabelText('Actual hours this week'), '5');
@@ -97,7 +97,7 @@ describe('Board density with retained time context', () => {
     const base = tableRoutes();
     const successfulSummary = base[route]; if (!successfulSummary) throw new Error('Missing summary fixture');
     const { calls } = installFakeApi({ ...base, [route]: request => unavailable ? failure(503, 'TEMPORARILY_UNAVAILABLE', 'private time error') : successfulSummary(request) });
-    const { user } = renderProject(`${tablePath}?view=board&week=${PERIOD_A}&worker=${MEMBER_ID}`);
+    const { user } = renderProject(legacyTablePath(`${tablePath}?view=board&week=${PERIOD_A}&worker=${MEMBER_ID}`));
     const heading = await screen.findByRole('heading', { name: 'Unable to load weekly time' });
     expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Task status lanes' })).toBeInTheDocument();

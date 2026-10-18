@@ -12,7 +12,7 @@ import { SessionProvider } from '../app/session';
 import { createQueryClient } from '../lib/queryClient';
 import { alpha, alphaMembers, installFakeApi, ok, type RouteTable } from '../test/fakeApi';
 import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
-import { MEMBER_ID, PERIOD_A, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { MEMBER_ID, PERIOD_A, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 
 const pickerCallbacks = vi.hoisted(() => new Map<string, (value: string) => void>());
 vi.mock('../shared/ChoicePicker', async importOriginal => {
@@ -78,7 +78,7 @@ describe('project filter URL state', () => {
   });
 
   it('keeps filters and search through the task drawer, sort, view and week changes, and restores URL filters with Back and a fresh mount', async () => {
-    const ui = app(`${tablePath}?status=${task.statusId}&tag=${tag.id}&other=kept#anchor`);
+    const ui = app(legacyTablePath(`${tablePath}?status=${task.statusId}&tag=${tag.id}&other=kept#anchor`));
     await screen.findByRole('button', { name: task.title });
     await ui.user.type(screen.getByRole('searchbox', { name: 'Search tasks' }), 'kept text');
     await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
@@ -92,7 +92,7 @@ describe('project filter URL state', () => {
     await waitFor(() => expect(params(ui).get('week')).toBe(PERIOD_A));
     await ui.user.click(views().getByRole('button', { name: 'Board' }));
     await screen.findByRole('region', { name: 'Task status lanes' });
-    expect(Object.fromEntries(params(ui))).toEqual({ status: task.statusId, tag: tag.id, other: 'kept', sort: 'due_asc', week: PERIOD_A, view: 'board' });
+    expect(Object.fromEntries(params(ui))).toEqual({ status: task.statusId, tag: tag.id, other: 'kept', sort: 'due_asc', week: PERIOD_A, view: 'board', legacyTime: '1' });
     expect(screen.getByRole('searchbox', { name: 'Search tasks' })).toHaveValue('kept text');
     expect(filterPicker('Task status')).toHaveTextContent(STATUS_NAME); expect(filterPicker('Task tag')).toHaveTextContent(tag.name);
     // The table query carries every kept filter together (other reads, such as the drawer's, are separate).

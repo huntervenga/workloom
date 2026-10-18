@@ -14,7 +14,7 @@ import { createQueryClient } from '../lib/queryClient';
 import { alpha, alphaMembers, created, deferred, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { chooseFilter } from '../features/tasks/test/filterPickers';
-import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 
 const pickerCallbacks = vi.hoisted(() => new Map<string, (value: string) => void>());
 vi.mock('../shared/ChoicePicker', async importOriginal => {
@@ -64,7 +64,7 @@ const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filt
 function rowOrder() { return within(screen.getByRole('table')).getAllByRole('row').flatMap(row => { const selected = within(row).queryByRole('button', { name: /^Select task: / }); return selected ? [selected.getAttribute('aria-label')] : []; }); }
 
 it('applies server due paging, preserves grouped hierarchy and Manual positions, and keeps sort outside filter clearing', async () => {
-  const { calls } = installFakeApi(routes()); const ui = app(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}&other=kept#anchor`);
+  const { calls } = installFakeApi(routes()); const ui = app(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}&other=kept#anchor`));
   try {
     await screen.findByRole('button', { name: parent.title }); expect(sort()).toHaveTextContent('Manual');
     expect(rowOrder()).toEqual([`Select task: ${parent.title}`, `Select task: ${child.title}`, `Select task: ${peer.title}`]);
@@ -113,7 +113,7 @@ it.each(['sort=unknown', 'sort=manual', 'sort=due_asc&sort=due_asc', 'sort='])('
 
 it('keeps a child draft exactly once when a due first page precedes its parent and the next page rejoins the canonical tree', async () => {
   const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.get('sort') !== 'due_asc' ? page([parent]) : request.searchParams.has('cursor') ? page([parent], 'another-due-page') : page([child], 'due-parent-page') }));
-  const { user } = renderApp(tablePath); await screen.findByRole('button', { name: parent.title }); await tableChoice(user, sort(), 'due_asc');
+  const { user } = renderApp(legacyTablePath(tablePath)); await screen.findByRole('button', { name: parent.title }); await tableChoice(user, sort(), 'due_asc');
   await user.click(await screen.findByRole('button', { name: child.title }));
   fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Raw child draft retained' } });
   expect(screen.getByTitle('Parent task is outside the loaded set')).toBeInTheDocument();
@@ -167,7 +167,7 @@ it('does not let a pre-sort inline acknowledgement close a remounted editor or s
 });
 
 it.each([false, true])('preserves same-turn retained Sort and Week partial intents in either order (week first: %s)', async weekFirst => {
-  const { calls } = installFakeApi(routes()); const ui = app(`${tablePath}?worker=${MEMBER_ID}&other=kept#anchor`);
+  const { calls } = installFakeApi(routes()); const ui = app(legacyTablePath(`${tablePath}?worker=${MEMBER_ID}&other=kept#anchor`));
   try {
     await screen.findByRole('table'); const retainedSort = retainedPicker('Sort'); const retainedWeek = retainedPicker('Week for hours');
     await act(async () => {

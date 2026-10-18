@@ -3,7 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, deferred, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
-import { PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
 import { formatDate } from '../i18n';
 
@@ -82,7 +82,7 @@ describe('project Board integration', () => {
     const old = { ...task, title: 'Old row title', workPackageRevision: 7, estimateMinutes: 600 };
     let newest: TaskDto = { ...task, title: 'Newest row title', statusId: NEXT, revision: 3, workPackageRevision: 2, estimateMinutes: 60, participantsRevision: 5, participants: [{ membershipId: alphaMembers[1]?.id ?? '', active: true, role: 'assignee', revision: 1 }] };
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.has('cursor') ? page([newest, other]) : page([old], 'board-next'), [`PATCH ${rootPath}/tasks/${task.id}`]: request => ok(newest = { ...newest, statusId: (request.body as { statusId: string }).statusId, revision: 4 }) }));
-    const { user } = renderApp(`${tablePath}?view=board`);
+    const { user } = renderApp(legacyTablePath(`${tablePath}?view=board`));
     await screen.findByText('1 loaded task in this view.'); await user.click(screen.getByRole('button', { name: 'Load more tasks' }));
     await screen.findByText('2 loaded tasks in this view.'); expect(screen.queryByRole('button', { name: 'Old row title' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Newest row title' })).toHaveLength(1);

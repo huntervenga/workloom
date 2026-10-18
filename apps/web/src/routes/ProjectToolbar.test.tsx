@@ -8,7 +8,7 @@ import { graph, layout } from '../features/dependencies/test/fixtures';
 import { scheduleContext } from '../features/schedule/test/fixtures';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { columns, field } from '../features/fields/test/fixtures';
-import { MEMBER_ID, PERIOD_A, PROJECT_ID, categorized, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { MEMBER_ID, PERIOD_A, PROJECT_ID, categorized, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 import { queryKeys } from '../lib/queryKeys';
 import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
 
@@ -39,7 +39,7 @@ function columnHead(revision = 0, columns: ColumnChoice[] | null = null): Person
 const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filter(call => call.method !== 'GET');
 
 it.each(['table', 'board', 'gantt', 'graph', 'import'] as const)('shows only controls that act on the %s presentation', async view => {
-  const { calls } = installFakeApi(routes()); renderApp(`${tablePath}?${view === 'table' ? '' : `view=${view}&`}week=${PERIOD_A}&worker=${MEMBER_ID}`);
+  const { calls } = installFakeApi(routes()); renderApp(legacyTablePath(`${tablePath}?${view === 'table' ? '' : `view=${view}&`}week=${PERIOD_A}&worker=${MEMBER_ID}`));
   await screen.findByRole('button', { name: 'Add task' });
   await waitFor(() => expect(views().getByRole('button', { name: names[view] })).toHaveAttribute('aria-current', 'page'));
   await waitFor(() => expect(screen.queryByLabelText('Week for hours') !== null).toBe(view === 'table'));
@@ -53,17 +53,17 @@ it.each(['table', 'board', 'gantt', 'graph', 'import'] as const)('shows only con
 
 it('restores retained week/person, search/filter/group/sort and unsaved personal columns after hidden controls return', async () => {
   const person = alphaMembers[1]?.id; if (!person) throw new Error('Missing colleague');
-  const { calls } = installFakeApi(routes()); const { user } = renderApp(`${tablePath}?week=${PERIOD_A}&worker=${person}&other=kept#anchor`);
+  const { calls } = installFakeApi(routes()); const { user } = renderApp(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${person}&other=kept#anchor`));
   await screen.findByRole('button', { name: 'Columns' }); await user.type(screen.getByLabelText('Search tasks'), 'retained search');
   await user.click(screen.getByText('Filters', { selector: 'summary' })); await chooseFilter(user, 'Task participant', member.displayName);
   await user.click(screen.getByText('Filters (1)', { selector: 'summary' }));
   await tableChoice(user, screen.getByLabelText('Group by'), 'assignee'); await tableChoice(user, screen.getByLabelText('Sort'), 'due_asc');
   await user.click(screen.getByRole('button', { name: 'Columns' })); await user.click(screen.getByLabelText('Tags')); await user.keyboard('{Escape}');
-  const weekHref = views().getByRole('link', { name: 'Week' }).getAttribute('href');
+  const weekHref = views().getByRole('link', { name: 'Legacy weekly planning' }).getAttribute('href');
   for (const view of ['graph', 'import', 'gantt', 'board'] as const) {
     await show(user, view); expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Columns · unsaved' })).not.toBeInTheDocument();
-    expect(views().getByRole('link', { name: 'Week' })).toHaveAttribute('href', weekHref);
+    expect(views().getByRole('link', { name: 'Legacy weekly planning' })).toHaveAttribute('href', weekHref);
   }
   await show(user, 'table');
   expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)); expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', person));
@@ -99,7 +99,7 @@ it.each(['board', 'gantt', 'graph', 'import'] as const)('keeps pending/unknown o
   const first = lostResponse(); let attempts = 0;
   const savePath = `${rootPath}/tasks/${task.id}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`;
   const { calls } = installFakeApi(routes({ [`PUT ${savePath}`]: () => ++attempts === 1 ? first.promise : ok(categorized(150)) }));
-  const { user } = renderApp(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}`);
+  const { user } = renderApp(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}`));
   await user.click(await screen.findByRole('button', { name: `Weekly actual hours: ${task.title}` }));
   let dialog = within(await screen.findByRole('dialog', { name: 'Record weekly actual hours' }));
   await user.type(dialog.getByLabelText('Actual hours this week'), '2.5'); await user.click(dialog.getByRole('button', { name: 'Save actual hours' }));
@@ -110,7 +110,7 @@ it.each(['board', 'gantt', 'graph', 'import'] as const)('keeps pending/unknown o
   expect(dialog.getByLabelText('Actual hours this week')).toHaveValue('2:30'); expect(dialog.getByRole('region', { name: 'Time entry context' })).toHaveTextContent(task.title);
   await user.click(dialog.getByRole('button', { name: 'Retry original save' })); await waitFor(() => expect(attempts).toBe(2));
   const sent = writes(calls); expect(sent).toHaveLength(2); expect(sent[1]?.path).toBe(sent[0]?.path); expect(sent[1]?.body).toEqual(sent[0]?.body); expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));
-  expect(views().getByRole('link', { name: 'Week' }).getAttribute('href')).toContain(`period=${PERIOD_A}`);
+  expect(views().getByRole('link', { name: 'Legacy weekly planning' }).getAttribute('href')).toContain(`period=${PERIOD_A}`);
 });
 
 it.each(['catalog', 'columns', 'values'] as const)('keeps the existing %s error boundary visible on Graph instead of hiding it with table controls', async source => {
@@ -142,7 +142,7 @@ it('hides cached column choices on a current denial when the command is resumed 
 
 it.each(['gantt', 'graph', 'import'] as const)('keeps weekly read errors visible in %s without restoring unrelated pickers', async view => {
   const { calls } = installFakeApi(routes({ [`GET ${path}/periods/${PERIOD_A}/task-time-summary`]: () => failure(503, 'SERVICE_UNAVAILABLE', 'hidden weekly diagnostic') }));
-  renderApp(`${tablePath}?view=${view}&week=${PERIOD_A}&worker=${MEMBER_ID}`);
+  renderApp(legacyTablePath(`${tablePath}?view=${view}&week=${PERIOD_A}&worker=${MEMBER_ID}`));
   expect(await screen.findByRole('heading', { name: 'Unable to load weekly time' })).toBeVisible();
   expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument(); expect(screen.queryByText('hidden weekly diagnostic')).not.toBeInTheDocument(); expect(writes(calls)).toHaveLength(0);
 });

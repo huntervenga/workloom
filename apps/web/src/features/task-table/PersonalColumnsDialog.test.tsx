@@ -67,7 +67,8 @@ describe('personal column chooser and page-owned commands', () => {
     await act(async () => response.resolve(ok(head(2, [title]))));
     await waitFor(() => expect(ui.controller().query.data?.revision).toBe(3));
     expect(ui.controller().query.data?.columns).toEqual(newer); expect(ui.controller().draft).toBeNull();
-    expect(screen.getByLabelText('Team estimate')).not.toBeChecked();
+    const estimate = screen.getByLabelText('Team estimateAvailable in Legacy time columns; your saved visibility is preserved.');
+    expect(estimate).toBeDisabled(); expect(estimate).not.toBeChecked();
     expect(ui.calls.filter(call => call.method === 'PUT')).toHaveLength(1);
   });
 

@@ -10,7 +10,7 @@ import { SessionProvider } from '../app/session';
 import { createQueryClient } from '../lib/queryClient';
 import { alphaMembers, failure, installFakeApi, ok, type RouteTable } from '../test/fakeApi';
 import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
-import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 
 const member = alphaMembers.find(item => item.id === MEMBER_ID); if (!member) throw new Error('Missing member fixture');
 
@@ -70,7 +70,7 @@ it('puts only the applicable Table guidance in one initially closed native discl
 });
 
 it('keeps keyboard navigation and current URL, filters, selected task and week/person unchanged when guidance toggles', async () => {
-  const ui = app(`${tablePath}?sort=due_asc&week=${PERIOD_A}&worker=${MEMBER_ID}&other=kept#anchor`);
+  const ui = app(legacyTablePath(`${tablePath}?sort=due_asc&week=${PERIOD_A}&worker=${MEMBER_ID}&other=kept#anchor`));
   try {
     await screen.findByRole('table');
     await tableChoice(ui.user, screen.getByRole('combobox', { name: 'Group by' }), 'assignee');
@@ -88,6 +88,8 @@ it('keeps keyboard navigation and current URL, filters, selected task and week/p
     const callsBefore = ui.calls.length;
     const { summary, details } = disclosure();
     screen.getByRole('button', { name: 'Columns' }).focus();
+    await ui.user.tab();
+    expect(screen.getByRole('button', { name: 'Show sections' })).toHaveFocus();
     await ui.user.tab();
     expect(summary).toHaveFocus();
     // jsdom does not implement native summary keyboard activation; actual Enter/Space

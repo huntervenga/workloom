@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, anna, created, deferred, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { queryKeys } from '../lib/queryKeys';
 import { lostResponse } from '../features/planning/test/fixtures';
-import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
+import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 
 async function tableChoice(user: UserEvent, control: HTMLElement, value: 'section' | 'assignee' | 'manual' | 'due_asc') {
   await user.click(control);
@@ -52,7 +52,7 @@ describe('page-owned task grouping', () => {
   it('retains independent Section/Assignee collapse, selection and hour lens through Board and loaded pages', async () => {
     const later = { ...parent, id: 'f2000000-0000-4000-8000-000000000003', title: 'Later row', workPackageId: 'f1000000-0000-4000-8000-000000000003', estimateMinutes: 60 };
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.has('cursor') ? page([later]) : page([parent, child], 'next-page') }));
-    const { user } = renderApp(tablePath);
+    const { user } = renderApp(legacyTablePath(tablePath));
     await user.click(await screen.findByRole('button', { name: `Select task: ${parent.title}` }));
     expect(groupControl()).toHaveTextContent('Section');
     await chooseTimeContext(user, 'Week for hours', PERIOD_A);
