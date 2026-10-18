@@ -26,7 +26,7 @@ export const dayWidth = (days: number) => days <= 28 ? 36 : days <= 84 ? 20 : 12
 const LABEL_COLUMN = 'w-44 sm:w-72';
 const noConnectors: ConnectorPlan = { drawn: [], skipped: [] };
 /** Day separators plus Saturday/Sunday shading as two repeating backgrounds, aligned to the window's first weekday. */
-const TRACK_BACKGROUND = '[background-image:linear-gradient(90deg,#e2e8f0_1px,transparent_1px),linear-gradient(90deg,transparent_calc(var(--gantt-day)*5px),#f1f5f9_calc(var(--gantt-day)*5px),#f1f5f9_calc(var(--gantt-day)*7px))] [background-size:calc(var(--gantt-day)*1px)_100%,calc(var(--gantt-day)*7px)_100%] [background-position:0_0,calc(var(--gantt-shift)*1px)_0]';
+const TRACK_BACKGROUND = '[background-image:linear-gradient(90deg,var(--color-line)_1px,transparent_1px),linear-gradient(90deg,transparent_calc(var(--gantt-day)*5px),var(--color-gantt-weekend)_calc(var(--gantt-day)*5px),var(--color-gantt-weekend)_calc(var(--gantt-day)*7px))] [background-size:calc(var(--gantt-day)*1px)_100%,calc(var(--gantt-day)*7px)_100%] [background-position:0_0,calc(var(--gantt-shift)*1px)_0]';
 const trackBackground = (width: number, firstWeekday: number) => ({ '--gantt-day': width, '--gantt-shift': -(firstWeekday - 1) * width }) as CSSProperties;
 export function ScheduleBar({ start, due, window, baseline = false, onFocus, startLabel, dueLabel, incomplete = false, title, anchor, handle = null }: { start: string | null; due: string | null; window: CalendarWindow; baseline?: boolean; startLabel?: string; dueLabel?: string; incomplete?: boolean; title?: string; anchor?: string; onFocus: (date: string) => void; handle?: MoveHandle | null }) {
   const { t } = useTranslation();

@@ -11,6 +11,7 @@ import { CellPopover } from './CellPopover';
 import { priorityLabels } from './TaskFields';
 import { keepFocusOnPopoverPress, TaskDateInput } from './TaskDateInput';
 import { TaskTagPicker } from './TaskTagPicker';
+import { useInlineTagCreateBinding } from './inlineTagCreate';
 import { buildUpdateInput, changedKeys, draftFromTask, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors } from './taskDraft';
 import { revealInlineEditor } from '../task-table/TaskTable';
 import type { WorkPackageEntry } from '../task-table/workPackages';
@@ -33,6 +34,8 @@ export interface InlineSaveIntent {
 export interface InlineTaskEditProps {
   /** One claim per explicit open; card/view remounts must not steal focus. */
   focusClaim?: RefObject<boolean>;
+  /** Title only: the clicked character's offset, applied once by the open that consumes `focusClaim`. */
+  titleCaret?: number | undefined;
   task: TaskDto;
   field: TaskInlineField;
   statuses: readonly TaskStatusDto[];
@@ -62,10 +65,23 @@ const iconActionClassName = cn('inline-flex size-7 shrink-0 items-center justify
  * Uses the exact seen task revision; only this cell's field can enter the update. Choices save
  * at once through the same command; text saves on Enter or when focus leaves the editor.
  */
-export function InlineTaskEdit({ task, field, statuses, members, sections = [], tags = [], commands, writable, onClose, onMoreDetails, onSaved, focusClaim, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
+export function InlineTaskEdit({ task, field, statuses, members, sections = [], tags = [], commands, writable, onClose, onMoreDetails, onSaved, focusClaim, titleCaret, onSaveStarted, estimatePackages }: InlineTaskEditProps) {
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
+  // Latched at mount with the claim: refreshes, ACKs and remounts with a consumed claim never move the caret.
+  const [mountCaret] = useState(() => shouldFocus && field === 'title' && titleCaret !== undefined && Number.isFinite(titleCaret) ? titleCaret : undefined);
+  const titleInput = useRef<HTMLInputElement | null>(null);
+  const caretPending = useRef(mountCaret !== undefined);
+  useLayoutEffect(() => {
+    if (!caretPending.current || mountCaret === undefined) return;
+    caretPending.current = false;
+    const input = titleInput.current;
+    if (!input) return;
+    const at = Math.min(Math.max(Math.trunc(mountCaret), 0), input.value.length);
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(at, at);
+  }, [mountCaret]);
   // The same one-shot claim reveals the explicitly opened editor once; late ACKs, refreshes and remounts never pan.
   const revealOnMount = useRef(shouldFocus);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -84,7 +100,10 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   });
   const [session, setSession] = useState<EditSession>(() => {
     const kept = commands.editSessions.current.get(task.id);
-    return kept && changedKeys(draftFromTask(kept.base), kept.draft).length > 0 ? kept : { base: task, draft: draftFromTask(task), inlineField: field };
+    if (!kept || changedKeys(draftFromTask(kept.base), kept.draft).length === 0) return { base: task, draft: draftFromTask(task), inlineField: field, draftId: crypto.randomUUID() };
+    // Stamped in place: the kept object's identity is its confirmation key across remounts.
+    kept.draftId ??= crypto.randomUUID();
+    return kept;
   });
   const [errors, setErrors] = useState<TaskDraftErrors>({});
   const id = useId();
@@ -94,7 +113,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   const confirmed = commands.confirmedSessions.current.get(session);
   useEffect(() => {
     if (!confirmed) return;
-    setSession({ base: confirmed, draft: draftFromTask(confirmed), inlineField: field });
+    setSession({ base: confirmed, draft: draftFromTask(confirmed), inlineField: field, draftId: crypto.randomUUID() });
     setErrors({});
   }, [confirmed, field]);
   const choice = choiceFields.has(field);
@@ -115,6 +134,21 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     if (dirty || pending || uncertain) editSessions.current.set(task.id, session);
     else editSessions.current.delete(task.id);
   }, [confirmed, dirty, editSessions, foreignDraft, pending, session, task.id, uncertain]);
+  // A created tag is only added to the very draft and base it was created from, never saved by it.
+  const tagDraftId = session.draftId;
+  const tagBaseRevision = session.base.revision;
+  const tagOriginId = `edit:${task.id}:${tagDraftId}:${tagBaseRevision}`;
+  const creation = useInlineTagCreateBinding(commands.inlineTags, {
+    origin: { id: tagOriginId, taskId: task.id, label: task.title },
+    canAttach: field === 'tagIds' && !foreignDraft && editable && !frozen && !needsReview && !pending && !uncertain,
+    onSelect: tag => setSession(before => before.draftId !== tagDraftId || before.base.revision !== tagBaseRevision ? before
+      : before.draft.tagIds.some(kept => kept.toLowerCase() === tag.id.toLowerCase()) ? before
+      : { ...before, draft: { ...before.draft, tagIds: [...before.draft.tagIds, tag.id] } }),
+  });
+  // This cell's own unanswered create holds its submit; other cells and recovery are unaffected.
+  const tagHeld = field === 'tagIds' && creation.held;
+  // Read live at event time: a create started this turn holds before React re-renders.
+  const isTagHeld = () => field === 'tagIds' && commands.inlineTags.isHeld(tagOriginId);
 
   const currentError = errors.dueDate ?? errors.form ?? errors.title ?? errors.description ?? errors.startDate ?? errors.estimate;
   const hasFeedback = staleEstimate || Boolean(currentError) || blocked || ownError !== null || uncertain;
@@ -124,14 +158,14 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     if (bridge) { bridge.onSuccess(result); return; }
     onSaved(result);
     if (!mounted.current) return;
-    setSession({ base: result, draft: draftFromTask(result), inlineField: field });
+    setSession({ base: result, draft: draftFromTask(result), inlineField: field, draftId: crypto.randomUUID() });
     setErrors({});
     onClose();
   };
   /** One explicit submission of exactly this session object; its identity is the confirmation key. */
   const submitSession = (current: EditSession, intent: InlineSaveIntent) => {
     const form = formRef.current;
-    if (!form || confirmed || pending || blocked || !editable || needsReview || staleEstimate) return;
+    if (!form || confirmed || pending || blocked || !editable || needsReview || staleEstimate || isTagHeld()) return;
     // A drawer or another cell's draft must never be submitted through this control.
     if (!canResumeInlineSession(current, field)) return;
     const result = buildUpdateInput(current.base, draftFromTask(current.base), current.draft);
@@ -153,7 +187,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   // Leaving the editor commits text (with validation) or closes an unchanged one. Read at event time.
   const leave = useRef<() => void>(() => undefined);
   leave.current = () => {
-    if (choice || confirmed || pending || uncertain || blocked) return;
+    if (choice || confirmed || pending || uncertain || blocked || isTagHeld()) return;
     if (!dirty) { if (!hasFeedback) onClose('blur'); return; }
     submitSession(session, { continueWithNext: false });
   };
@@ -271,6 +305,10 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     ...(heldUnavailable ? [{ value: draftSection ?? '', label: heldSection ? t('tasks.taskFields.valueArchived', { p0: heldSection.name }) : t('tasks.taskFields.sectionUnavailable'), disabled: true }] : []),
     ...sections.filter(section => section.archivedAt === null).sort((a, b) => a.position - b.position || a.id.localeCompare(b.id)).map(section => ({ value: section.id, label: section.name })),
   ];
+  // Tags created inline fill the catalog until the tag list refetches; fetched tags win.
+  const knownTags = [...task.tags, ...tags];
+  const tagCatalog = [...new Map([...knownTags, ...commands.createdTags.filter(created => !knownTags.some(tag => tag.id.toLowerCase() === created.id.toLowerCase()))]
+    .map(tag => [tag.id.toLowerCase(), tag])).values()];
   const picker = (label: string, value: string, options: readonly ChoiceOption[], searchable?: boolean) => <ChoicePicker compact autoFocus={shouldFocus} label={label} value={value} options={options} searchable={searchable}
     disabled={frozen || needsReview} aria-describedby={describedBy} aria-invalid={Boolean(currentError) || undefined} onValueChange={choose} />;
   const control = field === 'statusId' ? picker(t('tasks.taskFields.status'), session.draft.statusId, statusOptions)
@@ -278,13 +316,13 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     : field === 'responsibleMembershipId' ? picker(t('tasks.taskFields.assignee'), session.draft.responsibleMembershipId ?? '', assigneeOptions, true)
     : field === 'sectionId' ? picker(t('tasks.taskFields.section'), draftSection ?? '', sectionOptions)
     : field === 'estimate' ? <input {...textProps} type="text" aria-label={t('tasks.inlineEstimate.label')} value={session.draft.estimate} onChange={event => change({ estimate: event.target.value })} />
-    : field === 'title' ? <input {...textProps} type="text" aria-label={t('tasks.taskFields.taskName')} maxLength={TASK_TITLE_MAX} value={session.draft.title} onChange={event => change({ title: event.target.value })} />
+    : field === 'title' ? <input {...textProps} ref={titleInput} autoFocus={shouldFocus && mountCaret === undefined} type="text" aria-label={t('tasks.taskFields.taskName')} maxLength={TASK_TITLE_MAX} value={session.draft.title} onChange={event => change({ title: event.target.value })} />
     : <span className="min-w-0 truncate px-1 text-sm">{field === 'tagIds'
-      ? [...new Map([...task.tags, ...tags].map(tag => [tag.id.toLowerCase(), tag])).values()].filter(tag => session.draft.tagIds.some(id => id.toLowerCase() === tag.id.toLowerCase())).map(tag => tag.name).join(', ') || t('tasks.taskFields.noTags')
+      ? tagCatalog.filter(tag => session.draft.tagIds.some(id => id.toLowerCase() === tag.id.toLowerCase())).map(tag => tag.name).join(', ') || t('tasks.taskFields.noTags')
       : session.draft.dueDate || t('tasks.taskFields.noDueDate')}</span>;
   const primary = uncertain ? <Button size="sm" className="h-7 px-2" variant="primary" type="submit">{t('tasks.inlineEdit.retry')}</Button>
     : choice ? null
-    : <Button size="sm" className="h-7 px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || staleEstimate || undefined}>{pending ? t('tasks.inlineEdit.saving') : t('tasks.inlineEdit.save')}</Button>;
+    : <Button size="sm" className="h-7 px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || staleEstimate || tagHeld || undefined}>{pending ? t('tasks.inlineEdit.saving') : t('tasks.inlineEdit.save')}</Button>;
   return <form ref={attach} noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} aria-busy={pending || undefined} onSubmit={submit}
     // A held press on a date/tag panel's static content must not blur into the deferred autosave below.
     onMouseDown={field === 'dueDate' || field === 'tagIds' ? keepFocusOnPopoverPress : undefined}
@@ -322,8 +360,10 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
       ariaLabel={field === 'dueDate' ? t('tasks.dates.edit') : field === 'tagIds' ? t('tasks.tags.edit') : undefined}>
       {field === 'dueDate' ? <TaskDateInput startDate={session.draft.startDate ?? ''} dueDate={session.draft.dueDate} onChange={change} disabled={frozen || needsReview}
         autoFocus={shouldFocus} errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} /> : null}
-      {field === 'tagIds' ? <TaskTagPicker tags={[...new Map([...task.tags, ...tags].map(tag => [tag.id.toLowerCase(), tag])).values()]} values={session.draft.tagIds} onChange={tagIds => change({ tagIds })} disabled={frozen || needsReview} autoFocus={shouldFocus} /> : null}
-      {field === 'tagIds' && ![...task.tags, ...tags].some(tag => tag.archivedAt === null) ? <Button size="sm" variant="ghost" onClick={() => { editSessions.current.set(task.id, session); onMoreDetails(); }}>{t('tasks.tags.createInDetails')}</Button> : null}
+      {field === 'tagIds' ? <TaskTagPicker tags={tagCatalog} values={session.draft.tagIds} onChange={tagIds => change({ tagIds })} disabled={frozen || needsReview} autoFocus={shouldFocus}
+        creation={creation} onRequestClose={() => onClose('cancel')}
+        // Always offered; an unanswered save or create keeps this mount, so its answer is not lost.
+        manageAction={<Button size="sm" variant="ghost" disabled={pending || uncertain || blocked || tagHeld} onClick={() => { if (isTagHeld()) return; editSessions.current.set(task.id, session); onMoreDetails(); }}>{t('tasks.tags.createInDetails')}</Button>} /> : null}
       {field === 'estimate' ? <p id={`${id}-estimate-help`} className="text-muted">{t('tasks.inlineEstimate.sharedHelp')} {t('tasks.inlineEstimate.formatHelp')}</p> : null}
       {staleEstimate ? <p id={`${id}-estimate-source`} role="status" className="text-amber-800">{t('tasks.inlineEstimate.refreshRequired')}</p> : null}
       {currentError && !(field === 'dueDate' && (errors.startDate || errors.dueDate)) ? <p role="alert" id={`${id}-error`} className="text-red-700">{t(currentError.key, currentError.params)}</p> : null}

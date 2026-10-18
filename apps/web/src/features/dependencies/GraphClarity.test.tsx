@@ -61,7 +61,7 @@ describe('dependency diagram semantics', () => {
     const violating = screen.getByTestId('node-c');
     expect(violating).toHaveAttribute('aria-label', 'Task-c, Pilot, in_progress, has unfinished predecessors, status conflicts with the blocking rule');
     expect(within(violating).getByText('Status conflicts with the blocking rule')).toBeInTheDocument();
-    expect(violating).toHaveStyle({ borderColor: '#dc2626', borderWidth: '1px' });
+    expect(violating).toHaveStyle({ borderColor: 'var(--color-danger-line)', borderWidth: '1px' });
     expect(within(screen.getByTestId('node-b')).queryByText(/Done:|Status conflicts/)).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Selected task dependencies' })).toHaveTextContent('Select a task to highlight its direct predecessors and successors in this diagram.');
     expect(Object.values(handlers).every(handler => handler.mock.calls.length === 0)).toBe(true);

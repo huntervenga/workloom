@@ -2,8 +2,12 @@ import template from '../landing.html?raw';
 import spa from '../index.html?raw';
 import robots from '../public/robots.txt?raw';
 import sitemapText from '../public/sitemap.xml?raw';
+import landingThemeSource from '../src/landing/theme.ts?raw';
 import { describe, expect, it } from 'vitest';
+import { createThemeManager, THEME_STORAGE_KEY } from '../src/features/theme/ThemeManager';
 import english from '../src/i18n/locales/en/landing.json';
+import englishTheme from '../src/i18n/locales/en/theme.json';
+import { wireThemeToggle } from '../src/landing/theme';
 import { landingPlugin, landingRequestUrl, PUBLIC_ORIGIN, renderLanding, transformLandingHtml } from './landing';
 
 function page(copy = english) {
@@ -51,12 +55,79 @@ describe('public landing prerender', () => {
     expect(document.querySelectorAll('script,[onerror],[onload],iframe')).toHaveLength(0);
   });
 
-  it('fills the actual HTML template without app scripts and leaves the noindex SPA untouched', () => {
+  it('prerenders one accessible theme button beside the header CTA with escaped theme copy', () => {
+    const header = page().querySelector('header.site-header');
+    const buttons = header?.querySelectorAll('button[data-theme-toggle]');
+    expect(buttons).toHaveLength(1);
+    const button = buttons?.[0];
+    expect(button?.getAttribute('type')).toBe('button');
+    expect(button?.getAttribute('aria-label')).toBe(englishTheme.label);
+    expect(button?.getAttribute('title')).toBe(englishTheme.toDark);
+    expect(button?.getAttribute('aria-pressed')).toBe('false');
+    expect(button?.textContent).toBe('');
+    expect([...(button?.querySelectorAll('svg') ?? [])].every(icon => icon.getAttribute('aria-hidden') === 'true')).toBe(true);
+    expect(button?.parentElement?.querySelector('a[href="/app"]')).not.toBeNull();
+    expect(header?.querySelector('nav')).not.toBeNull();
+
+    const hostile = `A & B <script>alert("x")</script> "quoted" 'single'`;
+    const rendered = renderLanding(english, { label: hostile, toDark: hostile, toLight: hostile });
+    const document = new DOMParser().parseFromString(`<!doctype html><html><body>${rendered.body}</body></html>`, 'text/html');
+    const hostileButton = document.querySelector('button[data-theme-toggle]');
+    expect(hostileButton?.getAttribute('aria-label')).toBe(hostile);
+    expect(hostileButton?.getAttribute('title')).toBe(hostile);
+    expect(document.querySelectorAll('script,[onerror],[onload],iframe')).toHaveLength(0);
+  });
+
+  it('wires the prerendered button to the shared theme store without any other script', () => {
+    const store = new Map<string, string>();
+    const host = window.document.createElement('div');
+    host.innerHTML = renderLanding().body;
+    window.document.body.append(host);
+    const manager = createThemeManager({
+      document: window.document,
+      localStorage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => { store.set(key, value); } },
+    });
+    const unwire = wireThemeToggle(host, manager);
+    try {
+      const button = host.querySelector<HTMLButtonElement>('button[data-theme-toggle]');
+      expect(button?.getAttribute('aria-pressed')).toBe('false');
+      button?.click();
+      expect(window.document.documentElement.getAttribute('data-theme')).toBe('dark');
+      expect(store.get(THEME_STORAGE_KEY)).toBe('dark');
+      expect([...store.keys()]).toEqual([THEME_STORAGE_KEY]);
+      expect(button?.getAttribute('aria-pressed')).toBe('true');
+      expect(button?.title).toBe(englishTheme.toLight);
+      expect(button?.getAttribute('aria-label')).toBe(englishTheme.label);
+      button?.click();
+      expect(window.document.documentElement.getAttribute('data-theme')).toBe('light');
+      expect(button?.title).toBe(englishTheme.toDark);
+    } finally {
+      unwire();
+      host.remove();
+      window.document.documentElement.removeAttribute('data-theme');
+      window.document.documentElement.style.colorScheme = '';
+    }
+    // The landing module pulls in only the theme store and its English copy: no app, session or API.
+    const imports = [...landingThemeSource.matchAll(/^import .* from '([^']+)';$/gm)].map(match => match[1]);
+    expect(imports.sort()).toEqual(['../features/theme/ThemeManager', '../i18n/locales/en/theme.json']);
+    expect(landingThemeSource).not.toMatch(/fetch|XMLHttpRequest|\/api|SessionProvider|dev\/session|mountApp/);
+  });
+
+  it('fills the actual HTML template with only the theme scripts and leaves the noindex SPA untouched', () => {
     const html = transformLandingHtml(template);
     expect(html).toContain(`<h1 id="hero-title">${english.hero.title}</h1>`);
     expect(html).not.toContain('<!--landing:');
     expect(html).not.toContain('/src/main.tsx');
-    expect(html).not.toMatch(/<script|SessionProvider|dev\/session/);
+    expect(html).not.toMatch(/SessionProvider|dev\/session/);
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    const scripts = [...parsed.querySelectorAll('script')];
+    expect(scripts.map(script => [script.getAttribute('src'), script.getAttribute('type')])).toEqual([['/theme-init.js', null], ['/src/landing/theme.ts', 'module']]);
+    expect(scripts.every(script => script.textContent === '' && script.parentElement === parsed.head)).toBe(true);
+    expect(html.match(/<script/g)).toHaveLength(2);
+    // The classic theme script blocks parsing before the stylesheet and after the theme-color it updates.
+    expect(html.indexOf('name="theme-color"')).toBeLessThan(html.indexOf('/theme-init.js'));
+    expect(html.indexOf('/theme-init.js')).toBeLessThan(html.indexOf('/src/landing/landing.css'));
+    expect(parsed.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#f7f5fc');
     expect(html).toContain('/src/landing/landing.css');
     expect(transformLandingHtml(spa)).toBe(spa);
     expect(spa).toContain('<meta name="robots" content="noindex"');

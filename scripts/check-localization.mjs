@@ -58,6 +58,11 @@ literalExemptions.set("apps/web/src/features/workspace/workspaceCreationApi.ts:A
 literalExemptions.set("apps/web/src/features/workspace/workspaceCreationController.ts:The workspace answer arrived after the session changed.", "Internal CreationIdentityChangedError diagnostic; UI maps its class to workspace.create.signedOut without displaying this message.");
 literalExemptions.set("apps/web/src/features/tasks/TaskDateInput.tsx:mt-1 block h-9 w-full min-w-0 rounded border border-line bg-surface px-2 text-sm text-ink outline-none focus:border-accent-line focus:ring-2 focus:ring-accent-soft disabled:bg-canvas disabled:text-muted aria-[invalid=true]:border-red-300", "Date-input CSS tokens assigned to className; this exact literal is never rendered as user copy.");
 literalExemptions.set("apps/web/src/features/tasks/api.ts:BULK_RESPONSE_INCOMPLETE", "Internal response-schema refinement code only; parseResponse discards Zod issues and throws ApiError invalid_response, which describeError maps to fixed catalog copy without rendering this diagnostic.");
+// Exact CSS/media-query machine strings; none is ever rendered as user copy.
+literalExemptions.set("apps/web/src/features/dependencies/graphPresentation.ts:0 0 0 2px var(--color-danger-soft)", "CSS boxShadow ring for status-violation nodes in graphNodeTone; joined into node style only, never rendered as user copy.");
+literalExemptions.set("apps/web/src/features/dependencies/graphPresentation.ts:0 0 0 4px var(--color-focus)", "CSS boxShadow focus ring in graphNodeTone; joined into node style only, never rendered as user copy.");
+literalExemptions.set("apps/web/src/features/tasks/TaskTagPicker.tsx:rounded px-1 py-1 text-xs font-medium text-accent-ink hover:bg-canvas aria-disabled:text-muted", "Shared actionClassName CSS tokens assigned only to button className; never user-visible copy.");
+literalExemptions.set("apps/web/src/features/theme/ThemeManager.ts:(prefers-color-scheme: dark)", "DARK_QUERY media query passed only to matchMedia; never rendered as user copy.");
 const readSource = path => readFileSync(join(root, path), 'utf8');
 const dynamicKeys = new Map([
   ['apps/web/src/features/cutoff/CutoffPanel.tsx', new Map([
@@ -113,6 +118,7 @@ dynamicKeys.set('apps/web/src/features/tasks/TaskFields.tsx', new Map([['message
 dynamicKeys.set('apps/web/src/features/tasks/InlineTaskEdit.tsx', new Map([['currentError.key', { keys: taskIssueKeys, reason: 'Inline editing renders the same checked TaskDraftIssue descriptors as the task drawer.' }]]));
 dynamicKeys.set('apps/web/src/features/workspace/WorkspaceCreation.tsx', new Map([['rejectionKey(error)', { keys: ['workspace.create.signedOut', 'workspace.create.failed', 'workspace.create.rejectedInput', 'workspace.create.notAllowed', 'workspace.create.rateLimited'], reason: 'Finite rejectionKey maps identity changes, local failures and API error kinds to fixed catalog copy; server error text is never displayed.' }]]));
 dynamicKeys.set('apps/web/src/features/tasks/QuickTaskAdd.tsx', new Map([['issue.key', { keys: taskIssueKeys, reason: 'Quick add renders the same checked TaskDraftIssue descriptors as the task drawer.' }]]));
+dynamicKeys.set('apps/web/src/features/tasks/TaskTagPicker.tsx', new Map([['problemKey', { keys: tableTranslationKeys(readSource('apps/web/src/features/tasks/TaskTagPicker.tsx'), 'problemKeys'), reason: 'problemKey is problemKeys[shownProblem] or undefined; the finite local tag-create problem map holds only literal catalog keys, never server text.' }]]));
 
 // Paired-date renderers receive the same finite factory descriptors, not server error text.
 for (const file of [

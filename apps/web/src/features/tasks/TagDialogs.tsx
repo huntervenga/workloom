@@ -8,6 +8,7 @@ import { ApiError } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
+import { isInlineTagCreateCommand } from './inlineTagCreate';
 import {
   useCreateTagMutation,
   useReloadTags,
@@ -221,6 +222,9 @@ export function CreateTagDialog({ mutation, onCreated }: CreateTagDialogProps) {
     onCreated(tag);
   };
   const { uncertain } = mutation;
+  // A create started inline belongs to its own draft and page notice; this dialog neither
+  // retries it nor adds its tag to the details draft.
+  const inlineCommand = isInlineTagCreateCommand(mutation.pendingCommand?.variables ?? uncertain?.variables);
 
   return (
     <DialogShell
@@ -235,17 +239,28 @@ export function CreateTagDialog({ mutation, onCreated }: CreateTagDialogProps) {
       onOpenChange={changeOpen}
     >
       <div className="mt-5">
-        <TagForm
-          initial={{ name: '', color: null }}
-          submitLabel={t('tasks.tagDialogs.createTag')}
-          pending={mutation.isPending}
-          locked={uncertain !== null}
-          sent={sentCreateValue(mutation)}
-          onRetry={() => mutation.retryUncertain({ onSuccess })}
-          feedback={<SaveFeedback error={mutation.error} uncertainError={uncertain?.error ?? null} subject="tagSave" />}
-          onSubmit={(value) => mutation.mutate({ input: value }, { onSuccess })}
-          onCancel={() => changeOpen(false)}
-        />
+        {inlineCommand ? (
+          <div className="space-y-3">
+            <p role="status" className="rounded-lg bg-canvas px-3 py-2.5 text-sm leading-relaxed text-ink">
+              {t('tasks.tags.inlineCreateElsewhere')}
+            </p>
+            <div className="flex justify-end">
+              <Button onClick={() => changeOpen(false)}>{t('tasks.tagDialogs.hide')}</Button>
+            </div>
+          </div>
+        ) : (
+          <TagForm
+            initial={{ name: '', color: null }}
+            submitLabel={t('tasks.tagDialogs.createTag')}
+            pending={mutation.isPending}
+            locked={uncertain !== null}
+            sent={sentCreateValue(mutation)}
+            onRetry={() => mutation.retryUncertain({ onSuccess })}
+            feedback={<SaveFeedback error={mutation.error} uncertainError={uncertain?.error ?? null} subject="tagSave" />}
+            onSubmit={(value) => mutation.mutate({ input: value }, { onSuccess })}
+            onCancel={() => changeOpen(false)}
+          />
+        )}
       </div>
     </DialogShell>
   );

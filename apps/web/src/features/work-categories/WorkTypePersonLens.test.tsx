@@ -151,8 +151,8 @@ describe('saved work-type team/person distribution lens', () => {
     await ui.user.keyboard('{Escape}');
     const first = lens().getByRole('img', { name: 'Same saved label: 2h, 50%' });
     const second = lens().getByRole('img', { name: 'Same saved label: 1h, 25%' });
-    expect(first.querySelector('rect:last-of-type')).toHaveAttribute('fill', '#3399aa');
-    expect(second.querySelector('rect:last-of-type')).toHaveAttribute('fill', '#cc1100');
+    expect(first.querySelector('rect:last-of-type')).toHaveStyle({ fill: '#3399aa' });
+    expect(second.querySelector('rect:last-of-type')).toHaveStyle({ fill: '#cc1100' });
     expect(lens().getAllByRole('row', { name: /Same saved label/ })).toHaveLength(2);
     expect(document.body.textContent).not.toContain(report.byCategory[0]?.key);
   });

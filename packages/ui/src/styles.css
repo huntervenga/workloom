@@ -2,6 +2,9 @@
  * Workloom design tokens and base styles.
  * Import after `@import "tailwindcss";` in the app stylesheet so the theme
  * variables become utilities (bg-canvas, text-ink, border-line, bg-accent, ...).
+ *
+ * The values below are the light theme. `data-theme="dark"` on <html> (set before first paint by
+ * /theme-init.js, then kept by the theme manager) swaps them for the dark palette further down.
  */
 
 @theme {
@@ -11,19 +14,151 @@
   --color-surface: #ffffff;
   --color-ink: #0f172a;
   --color-ink-soft: #334155;
-  --color-muted: #64748b;
+  --color-muted: #566477;
   --color-subtle: #94a3b8;
   --color-line: #e2e8f0;
   --color-line-strong: #cbd5e1;
 
-  --color-accent: #6366f1;
+  --color-accent: #5b5ee0;
   --color-accent-strong: #4f46e5;
   --color-accent-ink: #4338ca;
   --color-accent-soft: #eef2ff;
   --color-accent-line: #c7d2fe;
 }
 
+/* Always emitted: these are also read through var() from inline styles and SVG attributes. */
+@theme static {
+  --color-focus: #6366f1;
+  --color-selection: #e0e7ff;
+  --color-surface-hover: #f1f5f9;
+  --color-tag-surface: #f1f5f9;
+  --color-tag-ink: #334155;
+
+  --color-success-soft: #f0fdf4;
+  --color-success-line: #16a34a;
+  --color-danger-soft: #fecaca;
+  --color-danger-line: #dc2626;
+  --color-warning-line: #f59e0b;
+
+  --color-graph-edge-unresolved: #b45309;
+  --color-graph-edge-resolved: #64748b;
+  --color-gantt-compatible: #475569;
+  --color-gantt-conflict: #c2410c;
+  --color-gantt-weekend: #f1f5f9;
+
+  --color-chart-plan: #6366f1;
+  --color-chart-fact: #0d9488;
+  --color-chart-track: #f1f5f9;
+  --color-chart-missing: #94a3b8;
+}
+
 @layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  /* Opaque surfaces, not an inversion: primary buttons keep their accent fill and white text. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --color-canvas: #0b1120;
+    --color-surface: #131c2e;
+    --color-ink: #e2e8f0;
+    --color-ink-soft: #cbd5e1;
+    --color-muted: #9eacc0;
+    --color-subtle: #7b8aa3;
+    --color-line: #26324a;
+    --color-line-strong: #3a4a66;
+
+    --color-accent: #5b5ee0;
+    --color-accent-strong: #4f46e5;
+    --color-accent-ink: #a5b4fc;
+    --color-accent-soft: #1e2547;
+    --color-accent-line: #3b4680;
+
+    --color-focus: #818cf8;
+    --color-selection: #303a66;
+    --color-surface-hover: #1b2539;
+    --color-tag-surface: #1f2a40;
+    --color-tag-ink: #cbd5e1;
+
+    --color-success-soft: #0f2a1d;
+    --color-success-line: #22c55e;
+    --color-danger-soft: #7f1d1d;
+    --color-danger-line: #f87171;
+    --color-warning-line: #f59e0b;
+
+    --color-graph-edge-unresolved: #f59e0b;
+    --color-graph-edge-resolved: #8a9ab3;
+    --color-gantt-compatible: #94a3b8;
+    --color-gantt-conflict: #fb923c;
+    --color-gantt-weekend: #172033;
+
+    --color-chart-plan: #a5b4fc;
+    --color-chart-fact: #5eead4;
+    --color-chart-track: #263247;
+    --color-chart-missing: #94a3b8;
+
+    /*
+     * Bounded role map for the Tailwind palette steps the app uses: soft steps become dark tinted
+     * surfaces and borders, deep steps become light text. Fill steps used under white text
+     * (emerald 500/600, indigo 500, rose 500, slate 900) keep their light values.
+     */
+    --color-amber-50: #2a1f0b;
+    --color-amber-100: #3a2a0e;
+    --color-amber-200: #5f4512;
+    --color-amber-300: #7c5a17;
+    --color-amber-700: #fbbf24;
+    --color-amber-800: #fcd34d;
+    --color-amber-900: #fde68a;
+    --color-amber-950: #fef3c7;
+
+    --color-emerald-50: #0b2a20;
+    --color-emerald-100: #0f3a2b;
+    --color-emerald-200: #17543f;
+    --color-emerald-700: #6ee7b7;
+    --color-emerald-800: #a7f3d0;
+
+    --color-indigo-50: #1c2347;
+    --color-indigo-100: #252e5c;
+    --color-indigo-700: #a5b4fc;
+    --color-indigo-900: #c7d2fe;
+    --color-indigo-950: #e0e7ff;
+
+    --color-orange-800: #fdba74;
+
+    --color-red-50: #2c1215;
+    --color-red-100: #431a1e;
+    --color-red-200: #6b2228;
+    --color-red-300: #8b2e35;
+    --color-red-600: #f87171;
+    --color-red-700: #fca5a5;
+    --color-red-800: #fecaca;
+    --color-red-900: #fee2e2;
+
+    --color-rose-100: #3f1724;
+    --color-rose-700: #fda4af;
+    --color-rose-900: #ffe4e6;
+
+    --color-sky-100: #0c2d44;
+    --color-sky-700: #7dd3fc;
+
+    --color-slate-50: #141d30;
+    --color-slate-100: #1b2539;
+    --color-slate-200: #26324a;
+    --color-slate-300: #3a4a66;
+    --color-slate-400: #55657f;
+    --color-slate-500: #7c8ba3;
+    --color-slate-600: #aab6c8;
+    --color-slate-700: #cbd5e1;
+
+    --color-teal-100: #0d3532;
+    --color-teal-700: #5eead4;
+
+    --color-violet-100: #2a1f4f;
+    --color-violet-700: #c4b5fd;
+  }
+
   html {
     font-family: var(--font-sans);
     background-color: var(--color-canvas);
@@ -38,7 +173,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-focus);
     outline-offset: 2px;
   }
 
@@ -56,5 +191,19 @@
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
     }
+  }
+}
+
+/*
+ * Narrow dark exceptions where one palette value serves two roles. `:where` keeps the light
+ * utility's specificity, so hover and state variants still win.
+ */
+@layer utilities {
+  :where(:root[data-theme="dark"]) .bg-white {
+    background-color: var(--color-surface);
+  }
+
+  :where(:root[data-theme="dark"]) .text-emerald-600 {
+    color: #34d399;
   }
 }

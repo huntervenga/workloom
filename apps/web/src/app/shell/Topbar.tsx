@@ -5,6 +5,7 @@ import { FlaskConical, RefreshCw } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link, useMatch } from 'react-router';
 import { LanguageSelector } from './LanguageSelector';
+import { ThemeToggle } from '../../features/theme/ThemeToggle';
 import { isActorKey, queryKeys } from '../../lib/queryKeys';
 
 export interface TopbarProps {
@@ -68,6 +69,7 @@ export function Topbar({ actorId, workspaceId, workspaceName, menu, localMode = 
         </ol>
       </nav>
       <LanguageSelector />
+      <ThemeToggle />
       {localMode ? (
         <Badge tone="warning" title={t('shell.localModeTitle')}>
           <FlaskConical size={14} aria-hidden="true" />

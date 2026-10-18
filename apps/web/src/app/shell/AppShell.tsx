@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react';
 import { Outlet, useMatch, useNavigate } from 'react-router';
 import { LoginScreen } from '../../features/auth/LoginScreen';
 import { MeProvider, useMe, useMeQuery } from '../../features/identity/identity';
+import { ThemeToggle } from '../../features/theme/ThemeToggle';
 import { useWorkspaceQuery } from '../../features/workspace/queries';
 import { useWorkspaceLiveRefresh } from '../../features/workspace/useWorkspaceLiveRefresh';
 import { WorkspaceCreationProvider } from '../../features/workspace/WorkspaceCreation';
@@ -27,7 +28,14 @@ export function AppShell() {
   const me = useMeQuery();
   useResetOnActorChange(me.isSuccess ? me.data.actor.id : null);
 
-  if (me.isPending) return <ShellLoading />;
+  if (me.isPending) {
+    return (
+      <>
+        <ShellLoading />
+        <PublicThemeControl />
+      </>
+    );
+  }
 
   const previous = me.data;
   if (previous !== undefined && previous.authMode === 'shared') {
@@ -50,15 +58,29 @@ export function AppShell() {
         ) : covered ? (
           <IdentityError error={me.error} retrying={me.isFetching} onRetry={() => void me.refetch()} />
         ) : null}
+        {/* Last, so the kept frame never shifts position; the hidden frame's Topbar toggle is not reachable. */}
+        {covered ? <PublicThemeControl /> : null}
       </>
     );
   }
 
   if (me.isError && isUnauthorized(me.error)) {
-    return <LoginScreen identityError={me.error} retryingIdentity={me.isFetching} onRetryIdentity={() => void me.refetch()} />;
+    return (
+      <>
+        <LoginScreen identityError={me.error} retryingIdentity={me.isFetching} onRetryIdentity={() => void me.refetch()} />
+        <PublicThemeControl />
+      </>
+    );
   }
 
-  if (me.isError) return <IdentityError error={me.error} retrying={me.isFetching} onRetry={() => void me.refetch()} />;
+  if (me.isError) {
+    return (
+      <>
+        <IdentityError error={me.error} retrying={me.isFetching} onRetry={() => void me.refetch()} />
+        <PublicThemeControl />
+      </>
+    );
+  }
 
   return (
     <MeProvider me={me.data}>
@@ -66,6 +88,15 @@ export function AppShell() {
         <ShellFrame />
       </WorkspaceCreationProvider>
     </MeProvider>
+  );
+}
+
+/** The theme switch for screens without a Topbar: loading, sign-in and identity errors. */
+function PublicThemeControl() {
+  return (
+    <div className="fixed top-3 right-3 z-40">
+      <ThemeToggle />
+    </div>
   );
 }
 

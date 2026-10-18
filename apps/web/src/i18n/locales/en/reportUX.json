@@ -1,0 +1,116 @@
+{
+  "runOption": "{{time}} {{timezone}} · {{people}} · {{scope}} · {{knownOnly}}",
+  "workTypeRunOption": "{{time}} {{timezone}} · {{people}} · {{total}}",
+  "chartCaption": "Bars compare known planned hours with recorded actual hours for original baseline work only. Where data is incomplete, a bar shows only the known or recorded part; the coverage in the table below shows what is missing.",
+  "coverage": "Plans known {{known}} of {{plans}} · actuals recorded {{recorded}} of {{facts}}",
+  "header": {
+    "label": "Saved report identity",
+    "project": "Project",
+    "week": "Week",
+    "weekRange": "{{start}} – {{end}}",
+    "weekValue": "{{period}} · {{range}}",
+    "timezone": "Time zone",
+    "timezoneValue": "{{timezone}} · every saved time here uses this zone",
+    "createdAt": "Calculated",
+    "asOf": "Actual hours included through",
+    "baselineFrozen": "Baseline saved",
+    "people": "People",
+    "showNames": "Show saved names",
+    "knownOnly": "Comparison"
+  },
+  "people": {
+    "saved": {
+      "one": "{{count}} person in saved report",
+      "other": "{{count}} people in saved report"
+    },
+    "notInResults": "Saved person without results",
+    "none": "No people in the saved results"
+  },
+  "knownOnly": {
+    "on": "Known plans only: on",
+    "off": "Known plans only: off"
+  },
+  "value": {
+    "noBaselineWork": "No baseline work",
+    "notKnown": "Not known",
+    "notRecorded": "Not recorded",
+    "varianceUnavailable": "Difference unavailable",
+    "insufficientData": "Insufficient data",
+    "percentZeroPlan": "Percentage unavailable: the known plan is 0m",
+    "percentUnavailable": "Percentage unavailable"
+  },
+  "summary": {
+    "added": "Added work",
+    "addedHint": "Recorded hours on work added after the baseline was saved.",
+    "unplanned": "Unplanned work",
+    "unplannedHint": "Recorded hours without a personal plan in this baseline.",
+    "total": "All recorded hours",
+    "totalHint": "Every recorded hour in this saved report.",
+    "disjoint": "Baseline, added and unplanned work are separate parts of all recorded hours; no hour is counted in two of them. A missing entry is not a confirmed zero.",
+    "planNotKnown": "No plan is known yet, so this is not a confirmed zero.",
+    "actualNotRecorded": "No actual hours are recorded yet, so this is not a confirmed zero.",
+    "planPartial": "Includes known plans only; the plans not known yet are not counted as zero.",
+    "actualPartial": "Includes recorded actual hours only; missing entries are not counted as zero.",
+    "noBaselineWork": "This report has no original baseline work to compare. Added and unplanned hours are shown below."
+  },
+  "row": {
+    "varianceNotBaseline": "Difference unavailable: not baseline work",
+    "varianceMissingPlan": "Difference unavailable: plan not set",
+    "varianceMissingActual": "Difference unavailable: actual hours not recorded",
+    "varianceInsufficient": "Difference unavailable: insufficient data"
+  },
+  "comparison": {
+    "title": "Saved results by person",
+    "caption": "Saved baseline, added and unplanned hours for every person in this report, sorted by name",
+    "hint": "Sorted by saved name. Coverage counts original baseline rows only; added and unplanned work are shown separately. A missing value is not a confirmed zero.",
+    "person": "Person",
+    "plan": "Known baseline plan",
+    "actual": "Baseline actual",
+    "variance": "Baseline difference",
+    "coverage": "Baseline coverage",
+    "added": "Added",
+    "unplanned": "Unplanned",
+    "total": "All recorded",
+    "empty": "No people in the saved results."
+  },
+  "copy": {
+    "button": "Copy summary",
+    "copied": "Summary copied to the clipboard.",
+    "failed": "Couldn't copy automatically. Select the text below and copy it manually.",
+    "manualLabel": "Report summary for manual copy"
+  },
+  "brief": {
+    "weeklyTitle": "Saved weekly plan vs actual report",
+    "workTypeTitle": "Saved hours by work type breakdown",
+    "project": "Project: {{project}}",
+    "week": "Week: {{period}}, {{range}} ({{timezone}})",
+    "times": "Calculated: {{createdAt}} · Actual hours included through: {{asOf}} ({{timezone}})",
+    "people": "People: {{people}} — {{names}}",
+    "baseline": "Baseline: {{scope}}",
+    "baselineFrozen": "Baseline: {{scope}}, saved {{time}}",
+    "knownOnly": "Comparison: {{knownOnly}}",
+    "plan": "Known baseline plan: {{value}}",
+    "actual": "Actual hours for baseline work: {{value}}",
+    "variance": "Baseline difference: {{value}} ({{percent}})",
+    "coverage": "Baseline coverage: {{value}} (original baseline rows only)",
+    "added": "Added work: {{value}}",
+    "unplanned": "Unplanned work: {{value}}",
+    "total": "All recorded hours: {{value}}",
+    "disjoint": "Baseline, added and unplanned work are separate parts of all recorded hours.",
+    "byPerson": "By person (saved names):",
+    "personLine": "- {{person}}: plan {{plan}}; actual {{actual}}; difference {{variance}}; added {{added}}; unplanned {{unplanned}}; all recorded {{total}}",
+    "missingIsNotZero": "A missing plan or missing actual hours is not a confirmed zero. Totals come from the saved server calculation.",
+    "workTypeTotals": {
+      "one": "Recorded: {{total}} from {{count}} active entry · categorized {{categorized}} · uncategorized {{uncategorized}}",
+      "other": "Recorded: {{total}} from {{count}} active entries · categorized {{categorized}} · uncategorized {{uncategorized}}"
+    },
+    "byWorkType": "Shares of all recorded hours, including uncategorized:",
+    "bucketLine": "- {{category}}: {{hours}} · {{share}}",
+    "noBuckets": "No recorded hours in this breakdown",
+    "workTypePersonLine": {
+      "one": "- {{person}}: {{hours}} from {{count}} active entry",
+      "other": "- {{person}}: {{hours}} from {{count}} active entries"
+    },
+    "workTypeDisclaimer": "Shares describe recorded hours only; they do not measure productivity or completeness. A missing entry is not a confirmed zero."
+  }
+}

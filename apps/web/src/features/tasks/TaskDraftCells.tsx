@@ -1,4 +1,4 @@
-import { taskPrioritySchema, type TaskPriority, type TaskStatusGroup } from '@workloom/contracts';
+import { taskPrioritySchema, type TagDto, type TaskPriority, type TaskStatusGroup } from '@workloom/contracts';
 import { cn } from '@workloom/ui';
 import { ChevronDown } from 'lucide-react';
 import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
@@ -7,6 +7,8 @@ import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { CellPopover } from './CellPopover';
 import { keepFocusOnPopoverPress, TaskDateInput } from './TaskDateInput';
 import { fieldLabels, formatDraftValue, priorityLabels, type TaskLookups } from './TaskFields';
+import type { InlineTagCreateBinding } from './inlineTagCreate';
+import { TaskTagPicker } from './TaskTagPicker';
 import { changedKeys, emptyDraft, type TaskDraft, type TaskDraftErrors, type TaskDraftKey } from './taskDraft';
 
 /** Built-in table columns an unsaved task row edits locally; nothing is written until its title is submitted. */
@@ -36,6 +38,8 @@ export interface TaskDraftCellContext {
   rowKey: string;
   /** The row owner's guarded handoff, unavailable while extras or unresolved commands prevent it. */
   onMoreDetails?: (() => void) | undefined;
+  /** Inline workspace tag creation for this row's draft; a confirmed tag is only selected locally. */
+  tagCreate?: InlineTagCreateBinding | undefined;
 }
 
 /**
@@ -101,20 +105,11 @@ function TaskDraftCell({ cell, context }: { cell: TaskDraftCellId; context: Task
       return <DraftMultiPicker label={fieldLabels.participantMembershipIds} summary={formatDraftValue('participantMembershipIds', draft, lookups)} empty={t('tasks.taskFields.noWorkspaceMembers')}
         options={options} values={draft.participantMembershipIds} disabled={disabled} rowKey={rowKey} onChange={participantMembershipIds => onChange({ participantMembershipIds })} />;
     }
-    case 'tags': {
-      // Archived tags are never newly assigned; a held one stays visible and may only be removed.
-      const all = [...lookups.tags.values()];
-      const options: ChoiceOption[] = [
-        ...all.filter(tag => tag.archivedAt === null).sort((a, b) => a.name.localeCompare(b.name)).map(tag => ({ value: tag.id, label: tag.name })),
-        ...draft.tagIds.filter(held => lookups.tags.get(held)?.archivedAt !== null).map(held => {
-          const tag = lookups.tags.get(held);
-          return { value: held, label: tag ? t('tasks.taskFields.valueArchived', { p0: tag.name }) : t('tasks.taskFields.tagUnavailable'), disabled: true };
-        }),
-      ];
-      return <DraftMultiPicker label={fieldLabels.tagIds} summary={formatDraftValue('tagIds', draft, lookups)} empty={t('tasks.taskFields.noTagsYet')}
-        options={options} values={draft.tagIds} disabled={disabled} rowKey={rowKey} onChange={tagIds => onChange({ tagIds })}
-        emptyAction={context.onMoreDetails ? <button type="button" className="rounded px-1 py-1 text-xs font-medium text-accent-ink hover:bg-canvas" onClick={context.onMoreDetails}>{t('tasks.tags.createInDetails')}</button> : undefined} />;
-    }
+    case 'tags':
+      // The shared picker keeps archived and missing held tags removable and never offers them anew.
+      return <DraftTagPicker summary={formatDraftValue('tagIds', draft, lookups)} tags={[...lookups.tags.values()]} values={draft.tagIds} disabled={disabled} rowKey={rowKey}
+        onChange={tagIds => onChange({ tagIds })} creation={context.tagCreate}
+        manageAction={context.onMoreDetails ? <button type="button" className="rounded px-1 py-1 text-xs font-medium text-accent-ink hover:bg-canvas" onClick={context.onMoreDetails}>{t('tasks.tags.createInDetails')}</button> : undefined} />;
     case 'startDate':
       // Canonical YYYY-MM-DD text, like TaskDateInput: a partly typed date stays as typed for validation to reject.
       return <input type="text" aria-label={fieldLabels.startDate} min="0001-01-01" max="9999-12-31" placeholder={t('tasks.dates.format')} autoComplete="off" spellCheck={false} readOnly={disabled} aria-disabled={disabled || undefined} {...invalid('startDate')}
@@ -178,6 +173,54 @@ function DraftMultiPicker({ label, summary, empty, options, values, disabled, ro
           </label>;
         })}
       </fieldset>
+    </CellPopover> : null}
+  </div>;
+}
+
+interface DraftTagPickerProps {
+  summary: string;
+  tags: readonly TagDto[];
+  values: readonly string[];
+  disabled: boolean;
+  rowKey: string;
+  onChange: (values: string[]) => void;
+  creation?: InlineTagCreateBinding | undefined;
+  manageAction?: ReactNode | undefined;
+}
+
+/**
+ * The tag cell's popover around the shared picker. Toggling and a confirmed inline tag change only
+ * the local draft; the first Escape closes this list and leaves the row's draft alone.
+ */
+function DraftTagPicker({ summary, tags, values, disabled, rowKey, onChange, creation, manageAction }: DraftTagPickerProps) {
+  const [open, setOpen] = useState(false);
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const inside = (node: unknown) => node instanceof Node && (anchor?.contains(node) === true || panelRef.current?.contains(node) === true);
+  const close = (restoreFocus: boolean) => { setOpen(false); if (restoreFocus) triggerRef.current?.focus({ preventScroll: true }); };
+  const blur = (event: FocusEvent) => {
+    if (inside(event.relatedTarget)) return;
+    window.setTimeout(() => { if (!inside(document.activeElement)) setOpen(false); }, 0);
+  };
+  const escape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault(); event.stopPropagation();
+    close(true);
+  };
+  return <div ref={setAnchor} className="flex h-8 min-w-0 items-center" onMouseDown={keepFocusOnPopoverPress} onBlur={blur}>
+    <button ref={triggerRef} type="button" aria-label={fieldLabels.tagIds} aria-describedby={`${id}-value`} aria-expanded={open} aria-controls={open ? `${id}-list` : undefined} disabled={disabled}
+      onClick={() => setOpen(value => !value)} onKeyDown={open ? escape : undefined}
+      className={cn('flex h-8 w-full min-w-0 items-center gap-1 rounded px-2 text-left text-sm text-ink hover:bg-canvas disabled:text-muted', values.length === 0 && 'text-subtle')}>
+      <span id={`${id}-value`} className="min-w-0 flex-1 truncate">{summary}</span>
+      <ChevronDown size={14} aria-hidden="true" className="shrink-0 text-muted" />
+    </button>
+    {open ? <CellPopover anchor={anchor}>
+      <div ref={panelRef} id={`${id}-list`} data-quick-draft={rowKey} data-task-draft-popup="" onKeyDown={escape} className="flex max-h-80 min-w-56 max-w-72 flex-col gap-1 overflow-y-auto">
+        <TaskTagPicker tags={tags} values={values} onChange={onChange} disabled={disabled} autoFocus creation={creation}
+          onRequestClose={() => close(true)} manageAction={manageAction} />
+      </div>
     </CellPopover> : null}
   </div>;
 }

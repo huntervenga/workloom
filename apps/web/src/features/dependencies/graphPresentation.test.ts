@@ -51,14 +51,17 @@ describe('non-color cues and measurement parity', () => {
     expect(graphEdgeStyle('unresolved', 'normal')).not.toHaveProperty('strokeDasharray');
     expect(graphEdgeStyle('unresolved', 'focused').strokeWidth).toBe(3.5);
     expect(graphEdgeStyle('unresolved', 'dimmed').opacity).toBe(0.2);
+    expect(graphEdgeStyle('unresolved', 'normal').stroke).toBe('var(--color-graph-edge-unresolved)');
+    expect(graphEdgeStyle('resolved', 'normal').stroke).toBe('var(--color-graph-edge-resolved)');
   });
   it('gives a violation priority over blocking and done, and never changes the measured border width', () => {
     const violation = graphNodeTone({ id: 'c', statusGroup: 'done', blocked: true, violatesCurrentStatus: true }, 'normal');
-    expect(violation).toMatchObject({ borderColor: '#dc2626', background: '#f0fdf4' });
-    expect(graphNodeTone({ id: 'b', statusGroup: 'done', blocked: true }, 'normal').borderColor).toBe('#f59e0b');
-    expect(graphNodeTone({ id: 'a', statusGroup: 'done', blocked: false }, 'normal').borderColor).toBe('#16a34a');
-    expect(graphNodeTone({ id: 'x', blocked: false }, 'normal')).toMatchObject({ borderColor: '#e2e8f0', background: '#fff', boxShadow: 'none' });
-    expect(graphNodeTone({ id: 'x', blocked: false }, 'focused').boxShadow).toContain('#6366f1');
+    expect(violation).toMatchObject({ borderColor: 'var(--color-danger-line)', background: 'var(--color-success-soft)' });
+    expect(violation.boxShadow).toBe('0 0 0 2px var(--color-danger-soft)');
+    expect(graphNodeTone({ id: 'b', statusGroup: 'done', blocked: true }, 'normal').borderColor).toBe('var(--color-warning-line)');
+    expect(graphNodeTone({ id: 'a', statusGroup: 'done', blocked: false }, 'normal').borderColor).toBe('var(--color-success-line)');
+    expect(graphNodeTone({ id: 'x', blocked: false }, 'normal')).toMatchObject({ borderColor: 'var(--color-line)', background: 'var(--color-surface)', boxShadow: 'none' });
+    expect(graphNodeTone({ id: 'x', blocked: false }, 'focused').boxShadow).toBe('0 0 0 4px var(--color-focus)');
     expect(graphNodeTone({ id: 'x', blocked: false }, 'dimmed').opacity).toBe(0.35);
     for (const tone of [violation, graphNodeTone({ id: 'x', blocked: false }, 'focused')]) {
       expect(tone).not.toHaveProperty('borderWidth');

@@ -233,7 +233,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const tags = useTagsQuery(actorId, workspace.id);
   const personalColumns = usePersonalTablePreference(actorId, workspace.id, project.id, members.data?.find(member => member.userId === actorId)?.id ?? '');
   // Owned here so that closing the drawer keeps uncertain commands and drafts.
-  const commands = useTaskCommands(actorId, workspace.id);
+  const commands = useTaskCommands(actorId, workspace.id, workspace.role === 'owner' || workspace.role === 'admin');
   const commentsController = useTaskCommentsWorkspace(actorId, workspace.id);
   const dependencies = useDependencyWorkspace(actorId, workspace.id, project.id);
   const schedule = useScheduleWorkspace(actorId, workspace.id, project.id, workspace.timezone);
@@ -313,7 +313,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       return next;
     });
   }, [invalidateInlineSave]);
-  const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean } } | null>(null);
+  const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean }; titleCaret?: number | undefined } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   // Completion, status, participant, tag and archived are validated URL state; search text stays in memory.
   const [searchText, setSearchText] = useState(emptyTaskFilters.search);
@@ -733,7 +733,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setInsertion({ anchorTaskId: (last ?? parent).id, request, open: true, confirmed: [] });
     setQuickAddSection(sectionId);
   };
-  const startInline = (task: TaskDto, field: TaskInlineField) => {
+  const startInline = (task: TaskDto, field: TaskInlineField, titleCaret?: number) => {
     // Only an ordinary root task moves between sections.
     if (field === 'sectionId' && !canMoveTaskSection(task)) return;
     const held = unresolvedTaskCommand(commands);
@@ -758,7 +758,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setCreating(null);
     setQuickAddSection(undefined);
     setContinuation(before => before?.taskId === task.id ? null : before);
-    setActiveInline({ taskId: task.id, field, focusClaim: { current: false } });
+    setActiveInline({ taskId: task.id, field, focusClaim: { current: false }, titleCaret });
   };
   const closeInline = (task: TaskDto, field: TaskInlineField, reason: InlineCloseReason = 'cancel') => {
     invalidateInlineSave();
@@ -1025,7 +1025,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           action={<Button size="sm" variant="ghost" onClick={() => commands.move.reset()}>{t('taskTable.move.dismiss')}</Button>} />
         {commands.move.uncertain !== null ? <Button size="sm" aria-disabled={commands.move.pendingCommand !== null || undefined} onClick={() => { if (commands.move.pendingCommand === null) commands.move.retryUncertain(); }}>{t('tasks.quickAdd.retry')}</Button> : null}
       </> : null}
-      {showTaskRecovery ? <TaskCommandRecovery commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} /> : null}
+      <TaskCommandRecovery showTaskRecovery={showTaskRecovery} commands={commands} onResumeCreate={() => startCreate({ sectionId: null, parent: null })} onOpenTask={openTask} />
       <ImportNotices controller={imports} onSelect={selectImport} selectedId={importId} canManage={canManageImports} />
       <ScheduleNotices controller={schedule} />
       <ScheduleDialog controller={schedule} workspaceId={workspace.id} projectId={project.id} periods={meetingPeriods.data ?? []} writable={writable && !bulkHeld} />
@@ -1145,7 +1145,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onEditTaskField={startInline}
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
-            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
+            renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} titleCaret={activeInline.titleCaret} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} /> : null}
             quickAdd={quickAdd}
             onMoveTask={moveTask}
             moveBlocked={moveBlocked}

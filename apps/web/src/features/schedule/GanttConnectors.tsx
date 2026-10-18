@@ -2,8 +2,8 @@ import { arrowHead, connectorPath, type ConnectorPlan } from './connectors';
 import type { ConnectorAnchors } from './useConnectorAnchors';
 
 export const connectorStyles = {
-  compatible: { stroke: '#475569', strokeWidth: 1.5, strokeDasharray: undefined },
-  conflict: { stroke: '#c2410c', strokeWidth: 2, strokeDasharray: '5,3' },
+  compatible: { stroke: 'var(--color-gantt-compatible)', strokeWidth: 1.5, strokeDasharray: undefined },
+  conflict: { stroke: 'var(--color-gantt-conflict)', strokeWidth: 2, strokeDasharray: '5,3' },
 } as const;
 /**
  * Non-interactive finish-to-start arrows drawn from current measurements only. It sits above the

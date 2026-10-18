@@ -10,6 +10,7 @@ import { SaveFeedback } from '../../shared/SaveFeedback';
 import { FieldValueDisplay } from '../fields/FieldValueDisplay';
 import { parseFieldDraft } from '../fields/valueDraft';
 import { CellPopover } from './CellPopover';
+import { useInlineTagCreateBinding } from './inlineTagCreate';
 import {
   emptyInitialTaskCellsDraft, hasInitialTaskCells, InitialCustomFieldCell, InitialTaskTimeCell, validateInitialTaskCells,
   type InitialHoursKind, type InitialTaskCellsDraft, type InitialTaskCellsIssue, type InitialTimeContext,
@@ -75,6 +76,17 @@ function useTaskLookups(statuses: readonly TaskStatusDto[], members = noMembers,
   return useMemo(() => ({ statuses, members, sections, tags: new Map(tags.map(tag => [tag.id, tag])) }), [statuses, members, tags, sections]);
 }
 
+/** Workspace tags plus the ones this page just created, before the tag list refetches. */
+function useWithCreatedTags(tags: readonly TagDto[] | undefined, created: readonly TagDto[]): readonly TagDto[] {
+  return useMemo(() => {
+    const listed = tags ?? noTags;
+    if (created.length === 0) return listed;
+    const known = new Set(listed.map(tag => tag.id.toLowerCase()));
+    const extra = created.filter(tag => !known.has(tag.id.toLowerCase()));
+    return extra.length === 0 ? listed : [...listed, ...extra];
+  }, [tags, created]);
+}
+
 /**
  * One title-first table row. Enter creates through the existing command and keeps the same
  * focused row for the next task; no row is added until the command confirms it; Escape discards
@@ -86,7 +98,8 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   const { t } = useTranslation();
   const { projectId, sectionId, sectionName, statuses, commands, writable, onClose, onMoreDetails, onCreated, request, renderRow } = props;
   const fullRow = renderRow !== undefined;
-  const lookups = useTaskLookups(statuses, props.members, props.tags, props.sections);
+  const tags = useWithCreatedTags(props.tags, commands.createdTags);
+  const lookups = useTaskLookups(statuses, props.members, tags, props.sections);
   const statusId = defaultTaskStatusId(statuses);
   const [foreignDraft] = useState(() => commands.createSession.current !== null && !canResumeQuickSession(commands.createSession.current, sectionId, request, fullRow));
   const [session, setSession] = useState<CreateSession | null>(() => {
@@ -120,16 +133,36 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   const frozen = !writable;
   const dirty = session !== null && quickSessionHasValues(session);
   useUnsavedChangesWarning(dirty || uncertain);
+  // A resumed legacy buffer without a client ID gets a per-mount one here; the session is not rewritten.
+  const [mountClientId] = useState(() => crypto.randomUUID());
+  const originClientId = session?.clientId ?? mountClientId;
+  const tagOrigin = `create:${originClientId}`;
+  // Read from the controller at the moment of use, so a create started in this same tick already holds.
+  const ownTagHeld = () => commands.inlineTags.isHeld(tagOrigin);
+  const queued = session !== null && commands.quick.queue.some(entry => entry.session === session);
+  const tagCreate = useInlineTagCreateBinding(commands.inlineTags, {
+    origin: { id: tagOrigin, taskId: null, label: session?.draft.title.trim() || t('tasks.tags.newTaskRow') },
+    canAttach: writable && !foreignDraft && session !== null && !queued,
+    // Only the same unsent buffer takes the tag, merged into its latest values; nothing is sent.
+    onSelect: tag => setSession(current => {
+      if (current === null || (current.clientId ?? mountClientId) !== originClientId || commands.quick.queue.some(entry => entry.session === current)) return current;
+      if (current.draft.tagIds.some(held => held.toLowerCase() === tag.id.toLowerCase())) return current;
+      return { ...current, draft: { ...current.draft, tagIds: [...current.draft.tagIds, tag.id] } };
+    }),
+  });
+  // Set when Enter met this row's own unresolved tag create; cleared by the next edit.
+  const [waitsForTag, setWaitsForTag] = useState(false);
   useEffect(() => {
     // A session handed to details belongs to them; this row does not take it back.
     if (!foreignDraft && session && handedOff.current !== session && commands.quick.draft !== session) commands.setQuickDraft(session);
   }, [commands, foreignDraft, session]);
   const issues = Object.entries(errors);
-  const hasFeedback = issues.length > 0 || initialIssues.length > 0 || blockedUnknown || commands.create.error !== null || uncertain;
+  const tagWait = waitsForTag && tagCreate.held;
+  const hasFeedback = issues.length > 0 || initialIssues.length > 0 || blockedUnknown || commands.create.error !== null || uncertain || tagWait;
   // Leaving an untouched row closes it, like an unused Asana add row; typed drafts and titles
-  // still waiting to be sent stay put.
+  // still waiting to be sent stay put, and so does a row whose own tag create is unresolved.
   const leave = useRef<() => void>(() => undefined);
-  leave.current = () => { if (!dirty && !pending && !uncertain && !hasFeedback && commands.quick.queue.length === 0) onClose('blur'); };
+  leave.current = () => { if (!dirty && !pending && !uncertain && !hasFeedback && commands.quick.queue.length === 0 && !ownTagHeld()) onClose('blur'); };
   // A staged field editor opens in a portalled panel that its trigger in this row controls.
   const controlledByRow = (node: Element) => [...document.querySelectorAll('[aria-controls]')].some(trigger =>
     trigger.closest('[data-quick-draft]')?.getAttribute('data-quick-draft') === id && document.getElementById(trigger.getAttribute('aria-controls') ?? '')?.contains(node) === true);
@@ -176,14 +209,21 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   const keepsInitialCells = props.detailsKeepInitialCells === true;
   // Details continue the foreign draft itself, or this row's live session.
   const detailsTarget = foreignDraft ? commands.createSession.current : session;
-  const canOpenDetails = detailsTarget !== null && handedOff.current !== detailsTarget && canTransferQuickSession(commands, detailsTarget, keepsInitialCells);
+  // Details cannot inherit an inline tag create lease, so a session whose own create is held stays
+  // here until it settles; only that session's origin counts. Collapse stays open, recovery page-owned.
+  const detailsTagHeld = (target: NonNullable<typeof detailsTarget>) => foreignDraft
+    ? target.clientId ? commands.inlineTags.isHeld(`create:${target.clientId}`) : false
+    : ownTagHeld();
+  const detailsHeld = detailsTarget !== null && detailsTagHeld(detailsTarget);
+  const canOpenDetails = detailsTarget !== null && handedOff.current !== detailsTarget && !detailsHeld && canTransferQuickSession(commands, detailsTarget, keepsInitialCells);
   const detailsBlocked = detailsTarget === null || canOpenDetails || handedOff.current === detailsTarget ? null
+    : detailsHeld ? t('taskRows.quickRow.detailsBlocked')
     : canTransferQuickSession(commands, detailsTarget, true) ? t('taskRows.quickRow.detailsKeepExtras') : t('taskRows.quickRow.detailsBlocked');
   // The one way into details, for the foreign draft's Resume, the title-only button and the row menu.
   // Checked again at the moment of use; a refusal changes and clears nothing.
   const openDetails = () => {
     const target = foreignDraft ? commands.createSession.current : session;
-    if (target === null || handedOff.current === target || !canTransferQuickSession(commands, target, keepsInitialCells)) return;
+    if (target === null || handedOff.current === target || detailsTagHeld(target) || !canTransferQuickSession(commands, target, keepsInitialCells)) return;
     handedOff.current = target;
     menuReturnsFocus.current = false;
     // The live session is captured before the row lets it go; an untouched row opens empty
@@ -212,6 +252,7 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
     setSession(next);
     setErrors({});
     setInitialIssues([]);
+    setWaitsForTag(false);
   };
   // Extras replace only this unsent session's staged cells; built-in values stay as they are.
   const changeInitial = (initialCells: InitialTaskCellsDraft) => {
@@ -224,6 +265,8 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (event.target !== event.currentTarget || !writable) return;
+    // Only this row waits for its own tag create; other rows and tasks continue.
+    if (ownTagHeld()) { setWaitsForTag(true); return; }
     // Every built-in and staged value is checked first; any issue keeps the whole row and sends nothing.
     const result = buildCreateInput(projectId, draft, quickCreateOptions(session));
     const cells = session.initialCells;
@@ -324,13 +367,14 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
         </p>;
       })}
       {blockedUnknown ? <p role="status" className="text-amber-800">{t('tasks.quickAdd.otherCommand')}</p> : null}
+      {tagWait ? <p role="status" className="text-ink">{t('tasks.tags.taskWaitsForTag')}</p> : null}
       <SaveFeedback subject="taskSave" error={commands.create.error} uncertainError={commands.create.uncertain?.error ?? null} />
     </CellPopover> : null}
   </form>;
   if (!renderRow) return titleCell;
   const context: TaskDraftCellContext = {
     draft, onChange: change, lookups, disabled: frozen, errors, errorId: field => `${id}-${field}`,
-    inheritsEstimate: sharesParentPackage, rowKey: id, onMoreDetails: canOpenDetails ? openDetails : undefined,
+    inheritsEstimate: sharesParentPackage, rowKey: id, onMoreDetails: canOpenDetails ? openDetails : undefined, tagCreate,
   };
   const staged = session.initialCells ?? emptyInitialTaskCellsDraft();
   // Columns without a built-in draft value: a staged custom field or weekly hours, else nothing.

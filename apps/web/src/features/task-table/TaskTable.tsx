@@ -23,6 +23,7 @@ import { dedupeTasks } from './workPackages';
 import type { TaskSortMode } from './taskOrdering';
 import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
 import { usePointerRowDrag, type DropTarget } from './usePointerRowDrag';
+import { titleCaretFromPoint } from './titleCaret';
 
 /** A column supplied by the parent, shown after «Приоритет» and before the estimate. */
 export interface TaskTableCustomColumn {
@@ -98,7 +99,8 @@ export interface TaskTableProps {
   /** Exact visible built-in/custom IDs; title remains pinned first. */
   columnIds?: readonly string[] | undefined;
   renderCompletionAction?: ((task: TaskDto) => ReactNode) | undefined;
-  onEditTaskField?: ((task: TaskDto, field: TaskInlineField) => void) | undefined;
+  /** `titleCaret` is passed only by a pointer click on the title text: the clicked character's offset. */
+  onEditTaskField?: ((task: TaskDto, field: TaskInlineField, titleCaret?: number) => void) | undefined;
   renderTaskFieldEditor?: ((task: TaskDto, field: TaskInlineField) => ReactNode) | undefined;
   /**
    * Presentation only: the cell whose editor `renderTaskFieldEditor` returns. It is marked, never
@@ -179,6 +181,10 @@ const gridLineClassName = 'shadow-[inset_-1px_0_0_var(--color-line)]';
 const dropCellStyle = (drop: TaskDropPlacement | undefined) => drop === undefined ? undefined : {
   boxShadow: `inset 0 ${drop === 'before' ? 2 : -2}px 0 var(--color-accent), var(--tw-shadow, 0 0 #0000)`,
 };
+
+/** A selected row paints every cell, sticky ones included, with the one opaque selection token. */
+const rowCellStyle = (drop: TaskDropPlacement | undefined, selected: boolean) =>
+  selected ? { ...dropCellStyle(drop), backgroundColor: 'var(--color-selection)' } : dropCellStyle(drop);
 
 /** Read-mode cell control: the whole cell is the click target, with one consistent hover/focus. */
 const cellButtonClassName = cn(
@@ -513,7 +519,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     return <button type="button" data-task-cell={`${task.id}:${field}`} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className={cn(cellButtonClassName, align)}>{content}</button>;
   };
   const td = (id: string, field: TaskInlineField | null, content: ReactNode, className?: string) =>
-    <td data-editing={field !== null && isEditing(field) ? '' : undefined} className={cn(cellClassName, ctx.columnLine(id), className)} style={dropCellStyle(drop)}>{content}</td>;
+    <td data-editing={field !== null && isEditing(field) ? '' : undefined} className={cn(cellClassName, ctx.columnLine(id), className)} style={rowCellStyle(drop, selected)}>{content}</td>;
   // Secondary title information stays on the same single line and truncates before the title does.
   const chip = (tone: 'muted' | 'warning', label: ReactNode, title?: string) => <span title={title} className={cn('inline-flex min-w-0 max-w-40 shrink-0 items-center rounded-full px-1.5 py-px text-[11px] font-medium ring-1 ring-inset', tone === 'warning' ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-canvas text-muted ring-line')}><span className="truncate">{label}</span></span>;
   const meta = <>
@@ -546,11 +552,18 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     setMenuOpen(true);
   };
   const drop = ctx.dropTarget?.taskId === task.id ? ctx.dropTarget.placement : undefined;
+  const selected = ctx.selectedTaskIds.includes(task.id);
+  // A pointer click on the name opens at the clicked character; keyboard activation keeps the default.
+  const editTitle = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    const caret = event.detail > 0 ? titleCaretFromPoint(event.currentTarget, event.clientX, event.clientY) : undefined;
+    if (caret === undefined) ctx.onEditTaskField?.(task, 'title');
+    else ctx.onEditTaskField?.(task, 'title', caret);
+  };
   const builtinCells: Record<string, ReactNode> = {
     title: (      <td
         data-editing={isEditing('title') ? '' : undefined}
         className={titleCellClassName}
-        style={{ paddingLeft: 12, ...dropCellStyle(drop) }}>
+        style={{ paddingLeft: 12, ...rowCellStyle(drop, selected) }}>
         <div className="relative flex h-10 min-w-0 items-center gap-1">
           {/* Boundaries of this row for a pointer drop; hit-testing reads the whole row. */}
           <span aria-hidden="true" data-task-drop-before={task.id} className="pointer-events-none absolute inset-x-0 top-0 h-1/2" />
@@ -569,8 +582,8 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
               <span id={`${hierarchyDescriptionId}-move`} className="sr-only">{t('taskTable.move.handleHint')}</span>
             </button>
           ) : null}
-          {ctx.selectRow ? <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={ctx.selectedTaskIds.includes(task.id)} aria-disabled={ctx.selectionDisabled || undefined}
-            onClick={event => ctx.selectRow?.(task.id, event)} className={cn('mr-1 h-8 w-8 shrink-0 rounded-l border-r border-line outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', ctx.selectedTaskIds.includes(task.id) ? 'bg-accent-soft' : 'hover:bg-slate-100')} /> : null}
+          {ctx.selectRow ? <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={selected} aria-disabled={ctx.selectionDisabled || undefined}
+            onClick={event => ctx.selectRow?.(task.id, event)} className={cn('mr-1 h-8 w-8 shrink-0 rounded-l outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', !selected && 'hover:bg-canvas')} /> : null}
           <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
             {childCount > 0 ? (
               <button
@@ -588,7 +601,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
             {editingTitle ? <><div className="min-w-0 flex-1">{titleEditor}</div><span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span></> : <>
               {/* Clicking the visible name renames in place (Asana-style); read-only rows open details. */}
               {editable ? <button type="button" data-task-cell={`${task.id}:title`} title={task.title} aria-describedby={describedBy}
-                onClick={() => ctx.onEditTaskField?.(task, 'title')} className={cn(titleClassName, 'cursor-text hover:bg-slate-100')}>{task.title}</button>
+                onClick={editTitle} className={cn(titleClassName, 'cursor-text hover:bg-canvas')}>{task.title}</button>
                 : <button type="button" onClick={() => ctx.onOpenTask(task.id)} title={task.title} aria-describedby={describedBy}
                   className={cn(titleClassName, 'hover:text-accent-ink hover:underline')}>{task.title}</button>}
               <span className="flex max-w-[35%] min-w-0 shrink-0 items-center gap-1 overflow-hidden">{meta}</span>
@@ -652,8 +665,8 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   return <tr data-task-row={task.id} data-task-drop={drop} data-task-dragging={ctx.draggingTaskId === task.id ? '' : undefined}
     onContextMenu={openMenuFromRow}
     onKeyDown={event => { if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') openMenuFromRow(event); }}
-    aria-selected={ctx.selectRow ? ctx.selectedTaskIds.includes(task.id) : undefined}
-    className={cn('group h-10 border-t border-line hover:bg-canvas/70', ctx.selectedTaskIds.includes(task.id) && 'bg-accent-soft/40', drop === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]', drop === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]', ctx.draggingTaskId === task.id && 'opacity-60')}>{ctx.columnIds.map(id => {
+    aria-selected={ctx.selectRow ? selected : undefined}
+    className={cn('group h-10 border-t border-line hover:bg-canvas/70', selected && 'bg-selection', drop === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]', drop === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]', ctx.draggingTaskId === task.id && 'opacity-60')}>{ctx.columnIds.map(id => {
     const custom = ctx.customColumns.find(column => column.id === id);
     // Supplied cells bring their own control padding; the row height still bounds them.
     return <Fragment key={id}>{builtinCells[id] ?? (custom ? td(id, null, <div className="flex h-10 min-w-0 items-center overflow-hidden">{custom.renderCell(task)}</div>, 'min-w-0') : null)}</Fragment>;
@@ -1011,7 +1024,7 @@ export function TaskTable({
       {visibleIds.map(id => id === 'title' ? (
         <td key={id} className={titleCellClassName} style={{ paddingLeft: 12 }}>
           <div className="flex h-10 min-w-0 items-center gap-1">
-            {selectRow ? <span aria-hidden="true" className="mr-1 h-8 w-8 shrink-0 border-r border-line" /> : null}
+            {selectRow ? <span aria-hidden="true" className="mr-1 h-8 w-8 shrink-0" /> : null}
             <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(depth, 2) * 20 }}>
               <span aria-hidden="true" className="size-6 shrink-0" />
               {renderCell(id)}
@@ -1064,7 +1077,7 @@ export function TaskTable({
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? titleWidth : column.width }} />)}</colgroup>
-        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 border-r border-line pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
+        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
           const collapsed = collapsedGroups.has(group.key);

@@ -1,5 +1,8 @@
 import { t, useTranslation, formatNumber } from '../../i18n';
 import { RecordedWorkLabel } from '../../shared/RecordedWorkLabel';
+import { CopyReportSummary } from '../planning/CopyReportSummary';
+import { ReportSnapshotHeader } from '../planning/ReportSnapshotHeader';
+import { savedPeopleScope, workTypeReportBrief, workTypeRunOptionLabel } from '../planning/reportSummary';
 import { ReportTaskLinks } from '../planning/ReportTaskLinks';
 import { ReportSetupDisclosure } from '../planning/ReportSetupDisclosure';
 import { workTypeReportConfigurationKey, type ReportDraft, type ReportDraftAction } from '../planning/reportSetupState';
@@ -20,6 +23,8 @@ interface Props {
   actorId: string;
   workspaceId: string;
   period: PlanningPeriodDto;
+  /** Presentation context for the saved breakdown identity and copied summary. */
+  projectName?: string;
   members: readonly MembershipDto[];
   runId: string;
   draft: ReportDraft<WorkTypeReportSelection> | undefined;
@@ -61,7 +66,7 @@ export function WorkTypeReport(props: Props) {
   };
   const calculateCurrent = () => { if (held === null) send({ periodId: props.period.id, membershipIds: [] }); };
   if (isAccessDenied(runs.error)) return <QueryErrorState error={runs.error} subject="workTypeReport" headingLevel={2} retrying={runs.isFetching} onRetry={() => void runs.refetch()} />;
-  const runOptions = runs.isSuccess ? [{ value: '', label: latestRun ? t('work-categories.latestBreakdown') : t('work-categories.chooseAReport') }, ...runs.data.map(run => ({ value: run.id, label: `${formatPeriodCutoff(run.createdAt, props.period.timezone)} · ${formatEstimate(run.totalActualMinutes)}` })), ...(props.runId && !runs.data.some(run => run.id === props.runId) ? [{ value: props.runId, label: t('work-categories.savedBreakdown') }] : [])] : [];
+  const runOptions = runs.isSuccess ? [{ value: '', label: latestRun ? t('work-categories.latestBreakdown') : t('work-categories.chooseAReport') }, ...runs.data.map(run => ({ value: run.id, label: workTypeRunOptionLabel(run, props.period) })), ...(props.runId && !runs.data.some(run => run.id === props.runId) ? [{ value: props.runId, label: t('work-categories.savedBreakdown') }] : [])] : [];
   const runSelector = runs.isError ? <QueryErrorState error={runs.error} subject="workTypeReport" headingLevel={3} retrying={runs.isFetching} onRetry={() => void runs.refetch()} /> : runs.isPending ? <p role="status" className="text-xs text-muted">{t('work-categories.loadingSavedBreakdowns')}</p> : runs.data.length > 0 ? <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto"><label htmlFor={`${id}-run`} className="shrink-0 text-xs font-medium">{t('work-categories.savedBreakdown')}</label><ChoicePicker compact id={`${id}-run`} label={t('work-categories.savedBreakdown')} className="w-full text-xs sm:w-72" value={props.runId} options={runOptions} onValueChange={value => props.onSelectRun(value, props.period.id)} /></div> : null;
   const currentAction = <><Button variant="primary" size="sm" aria-describedby={`${id}-current`} title={t('work-categories.calculateCurrentBreakdownHint')} disabled={held !== null} onClick={calculateCurrent}>{t('work-categories.calculateCurrentBreakdown')}</Button><span id={`${id}-current`} className="sr-only">{t('work-categories.calculateCurrentBreakdownHint')}</span></>;
   return <section aria-label={t('work-categories.recordedHoursBreakdown')} className="space-y-5">
@@ -74,7 +79,7 @@ export function WorkTypeReport(props: Props) {
         <Button type="submit" variant="primary" disabled={mutation.pendingCommand !== null}>{mutation.pendingCommand ? t('work-categories.calculating') : mutation.uncertain ? t('work-categories.retryOriginalSave') : t('work-categories.calculateHoursBreakdown')}</Button>
       </form>
     </ReportSetupDisclosure>
-    {shownRunId ? <PinnedWorkTypeReport key={shownRunId} actorId={props.actorId} workspaceId={props.workspaceId} period={props.period} runId={shownRunId} latest={!props.runId} /> : null}
+    {shownRunId ? <PinnedWorkTypeReport key={shownRunId} actorId={props.actorId} workspaceId={props.workspaceId} period={props.period} projectName={props.projectName} runId={shownRunId} latest={!props.runId} /> : null}
   </section>;
 }
 
@@ -82,7 +87,7 @@ function newestRun(runs: readonly WorkTypeReportRunDto[]): WorkTypeReportRunDto 
   return [...runs].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))[0] ?? null;
 }
 
-function PinnedWorkTypeReport({ actorId, workspaceId, period, runId, latest }: { actorId: string; workspaceId: string; period: PlanningPeriodDto; runId: string; latest: boolean }) {
+function PinnedWorkTypeReport({ actorId, workspaceId, period, projectName, runId, latest }: { actorId: string; workspaceId: string; period: PlanningPeriodDto; projectName: string | undefined; runId: string; latest: boolean }) {
   const { t } = useTranslation();
   const run = useWorkTypeReportQuery(actorId, workspaceId, runId);
   const rows = useWorkTypeReportRowsQuery(actorId, workspaceId, runId);
@@ -94,6 +99,8 @@ function PinnedWorkTypeReport({ actorId, workspaceId, period, runId, latest }: {
   return <div className="space-y-5">
     <section aria-label={t('work-categories.savedBreakdown')} className="space-y-3 rounded-xl border border-line bg-canvas p-3 sm:p-4">
       <div className="flex flex-wrap items-center gap-2"><h3 className="font-semibold">{t('work-categories.savedBreakdown')}</h3><Badge tone="muted">{t('planning.reportAsOf', { time: formatPeriodCutoff(report.factCutoffAt, period.timezone) })}</Badge><Badge tone="muted">{t('work-categories.peopleInBreakdown', { count: report.membershipIds.length })}</Badge>{latest ? <Badge tone="muted">{t('work-categories.latestBreakdown')}</Badge> : null}</div>
+      <ReportSnapshotHeader projectName={projectName} period={period} createdAt={report.createdAt} factCutoffAt={report.factCutoffAt} people={savedPeopleScope(report)} />
+      <CopyReportSummary key={report.id} brief={() => workTypeReportBrief({ projectName, period, report })} />
       <p className="text-xs font-medium text-ink-soft">{t('work-categories.savedReportTotals')}</p>
       <dl className="grid gap-3 sm:grid-cols-3"><SummaryMetric label={t('work-categories.totalRecorded')} value={formatEstimate(report.totalActualMinutes)} /><SummaryMetric label={t('work-categories.categorized')} value={formatEstimate(report.categorizedMinutes)} /><SummaryMetric label={t('work-categories.uncategorized')} value={formatEstimate(report.uncategorizedMinutes)} /></dl>
       <p className="text-xs leading-relaxed text-muted">{t('work-categories.activeEntriesTheseAreRecordedHoursTheyDoNot', { activeSourceCount: report.activeSourceCount })}</p>
@@ -168,8 +175,8 @@ function CategoryDistribution({ buckets }: { buckets: readonly WorkTypeBucketDto
         <div key={bucket.key} className="space-y-1.5">
           <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm"><span className="min-w-0 font-medium [overflow-wrap:anywhere]">{bucketLabel(bucket)}</span><span className="shrink-0 tabular-nums text-muted">{formatEstimate(bucket.minutes)} · {percentage(bucket.sharePercent)}</span></div>
           <svg viewBox="0 0 100 12" preserveAspectRatio="none" role="img" aria-label={t('work-categories.distributionBarLabel', { category: bucketLabel(bucket), hours: formatEstimate(bucket.minutes), share: percentage(bucket.sharePercent) })} className="h-3 w-full">
-            <rect width={100} height={12} rx={2} fill="#f1f5f9" />
-            {bucket.sharePercent !== null ? <rect width={bucket.sharePercent} height={12} rx={2} fill={bucket.color && /^#[0-9a-f]{6}$/i.test(bucket.color) ? bucket.color : '#94a3b8'} /> : null}
+            <rect width={100} height={12} rx={2} style={{ fill: 'var(--color-chart-track, #f1f5f9)' }} />
+            {bucket.sharePercent !== null ? <rect width={bucket.sharePercent} height={12} rx={2} style={{ fill: bucket.color && /^#[0-9a-f]{6}$/i.test(bucket.color) ? bucket.color : 'var(--color-chart-missing, #94a3b8)' }} /> : null}
           </svg>
         </div>
       ))}

@@ -7,7 +7,6 @@ import { BASELINE_ID, MEMBER_ID, PACKAGE_ID, PERIOD_A, PERIOD_B, PERSONAL_BASELI
 import { choosePeriod, choosePicker, periodPicker, periodLabel } from './test/pickers';
 import type { UserEvent } from '@testing-library/user-event';
 import { formatPeriodCutoff } from './dates';
-import { dateTime } from './WeeklyReport';
 
 beforeAll(async () => { await import('../../routes/WeeklyPage'); });
 
@@ -29,8 +28,9 @@ function reportRoutes(runs: WeeklyPlanFactReportRunDto[] = [older, newest, perso
 }
 const runReads = (calls: { method: string; path: string }[], id: string) => calls.filter(call => call.method === 'GET' && call.path === `${rootPath}/report-runs/${id}`).length;
 const writes = <T extends { method: string }>(calls: T[]) => calls.filter(call => call.method !== 'GET');
-const runText = (run: WeeklyPlanFactReportRunDto) => `${dateTime(run.createdAt)} · Project plan · all selected people`;
-const typeText = (run: WorkTypeReportRunDto) => `${formatPeriodCutoff(run.createdAt, period().timezone)} · 2h`;
+// Picker labels name the period zone and the saved people count (both fixtures save one person); the scope, known-only and total segments are unchanged.
+const runText = (run: WeeklyPlanFactReportRunDto) => `${formatPeriodCutoff(run.createdAt, period().timezone)} ${period().timezone} · 1 person in saved report · Project plan · all selected people`;
+const typeText = (run: WorkTypeReportRunDto) => `${formatPeriodCutoff(run.createdAt, period().timezone)} ${period().timezone} · 1 person in saved report · 2h`;
 const reportPicker = () => screen.getByRole('combobox', { name: /^Saved report$/ });
 /** The latest/selected explanation lives in the saved result's About disclosure; open it and require it visible. */
 async function expectAbout(user: UserEvent, region: string, text: string) {
@@ -221,8 +221,8 @@ describe('missing actual hours lens', () => {
     expect(within(table).queryByText('Строка 1')).not.toBeInTheDocument();
     const cells = (name: string) => [...(within(table).getByText(name).closest('tr')?.querySelectorAll('td') ?? [])].map(cell => cell.textContent);
     // Planned zero and unknown stay distinct; the missing actual is never displayed as 0m.
-    expect(cells('Строка 2').slice(1, 4)).toEqual(['0m', 'Not recorded', '—']);
-    expect(cells('Строка 3').slice(1, 4)).toEqual(['Not set', 'Not recorded', '—']);
+    expect(cells('Строка 2').slice(1, 4)).toEqual(['0m', 'Not recorded', 'Difference unavailable: actual hours not recorded']);
+    expect(cells('Строка 3').slice(1, 4)).toEqual(['Not set', 'Not recorded', 'Difference unavailable: plan not set']);
     expect(within(lens).getByText(morePages ? 'Filters the loaded rows of this saved report. Load more rows to check the rest. Totals above are unchanged.' : 'Filters the rows of this saved report. Totals above are unchanged.')).toBeVisible();
     expect(screen.getByRole('region', { name: 'Saved report' }).textContent).toBe(metrics);
     expect(screen.queryByRole('button', { name: 'Load more report rows' }) !== null).toBe(morePages);

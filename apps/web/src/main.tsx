@@ -6,6 +6,10 @@ import './styles.css';
 
 import { runBootstrap } from './app/bootstrap';
 import { takeAuthCallback } from './features/auth/callbackHandoff';
+import { themeManager } from './features/theme/ThemeManager';
+
+// Once per page, outside React: /theme-init.js already painted this theme, the manager keeps it.
+themeManager.start();
 
 void runBootstrap(
   window.location,

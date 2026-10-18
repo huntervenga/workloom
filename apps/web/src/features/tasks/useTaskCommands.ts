@@ -12,6 +12,7 @@ import {
   useRestoreTaskMutation,
   useUpdateTaskMutation,
 } from './queries';
+import { useInlineTagCreation } from './inlineTagCreate';
 import type { InitialTaskCellsDraft } from './InitialTaskCells';
 import type { InitialCreateExtras, TaskDraft } from './taskDraft';
 import { hasQuickInitialCells, quickSessionHasValues, type TaskInlineField } from './tableEditing';
@@ -101,13 +102,18 @@ export interface EditSession {
   draft: TaskDraft;
   /** Limits an inline save to the single field whose draft the user opened. */
   inlineField?: TaskInlineField;
+  /** Local identity of this draft for inline tag creation; never sent. A reset mints a new one. */
+  draftId?: string;
 }
+
+const noCreatedTags: TagDto[] = [];
 
 /**
  * Task writes of one project page, owned by the page so that closing the drawer forgets
  * neither an uncertain command nor an unsaved draft. Drafts live in memory only.
+ * `canCreateTags` is the current role's right to create workspace tags inline; denied by default.
  */
-export function useTaskCommands(actorId: string, workspaceId: string) {
+export function useTaskCommands(actorId: string, workspaceId: string, canCreateTags = false) {
   const create = useCreateTaskMutation(actorId, workspaceId);
   const update = useUpdateTaskMutation(actorId, workspaceId);
   const archive = useArchiveTaskMutation(actorId, workspaceId);
@@ -115,8 +121,12 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
   const move = useMoveTaskMutation(actorId, workspaceId);
   const bulk = useBulkUpdateTasksMutation(actorId, workspaceId);
   const createTag = useCreateTagMutation(actorId, workspaceId);
-  /** Tags created from the task form, shown before the tag list refetches. */
-  const [createdTags, setCreatedTags] = useState<TagDto[]>([]);
+  /** Tags created from the task form, shown before the tag list refetches; kept per actor and workspace. */
+  const scopeKey = `${actorId}\u0000${workspaceId}`;
+  const currentScope = useRef(scopeKey);
+  currentScope.current = scopeKey;
+  const [created, setCreated] = useState<{ scopeKey: string; tags: TagDto[] }>(() => ({ scopeKey, tags: [] }));
+  const createdTags = created.scopeKey === scopeKey ? created.tags : noCreatedTags;
   const sessions = useMemo(() => ({ actorId, workspaceId, ...createRetainedTaskSessions() }), [actorId, workspaceId]);
   const { createSession, editSessions } = sessions;
   const drafts = protectedDraftsFor(useQueryClient());
@@ -243,9 +253,15 @@ export function useTaskCommands(actorId: string, workspaceId: string) {
   }, [quick, quickVersion, create, update.pendingCommand, update.uncertain, archive.pendingCommand, archive.uncertain, restore.pendingCommand, restore.uncertain, move.pendingCommand, move.uncertain, bulk.pendingCommand, bulk.uncertain, confirmSession, createSession]);
 
 
-  const addCreatedTag = useCallback((tag: TagDto) => setCreatedTags((previous) => [...previous, tag]), []);
+  // An answer that arrives after the actor or workspace changed never enters the current catalog.
+  const addCreatedTag = useCallback((tag: TagDto) => {
+    if (currentScope.current !== scopeKey || tag.workspaceId !== workspaceId) return;
+    setCreated(previous => previous.scopeKey !== scopeKey ? { scopeKey, tags: [tag] }
+      : previous.tags.some(kept => kept.id === tag.id) ? previous : { scopeKey, tags: [...previous.tags, tag] });
+  }, [scopeKey, workspaceId]);
+  const inlineTags = useInlineTagCreation(createTag, addCreatedTag, canCreateTags, scopeKey);
 
-  return { create, update, archive, restore, move, bulk, createTag, createdTags, addCreatedTag, createSession, editSessions, confirmedSessions, confirmSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, cancelQuickDraft, discardRejectedQuickCreate };
+  return { create, update, archive, restore, move, bulk, createTag, createdTags, addCreatedTag, inlineTags, createSession, editSessions, confirmedSessions, confirmSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, cancelQuickDraft, discardRejectedQuickCreate };
 }
 
 export type TaskCommands = ReturnType<typeof useTaskCommands>;

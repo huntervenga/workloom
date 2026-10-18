@@ -44,7 +44,8 @@ export function edgeEmphasis(id: string, focus: GraphNeighborhood | null): Graph
   return focus === null ? 'normal' : focus.edgeIds.has(id) ? 'focused' : 'dimmed';
 }
 
-const edgeColors: Record<GraphEdgeState, string> = { unresolved: '#b45309', resolved: '#64748b' };
+// Theme tokens from @workloom/ui/styles.css, so light and dark each get a readable stroke.
+const edgeColors: Record<GraphEdgeState, string> = { unresolved: 'var(--color-graph-edge-unresolved)', resolved: 'var(--color-graph-edge-resolved)' };
 export function graphEdgeColor(state: GraphEdgeState): string { return edgeColors[state]; }
 
 /** Dash pattern and width carry the state too, so it never depends on color alone. */
@@ -62,10 +63,10 @@ export function graphEdgeStyle(state: GraphEdgeState, emphasis: GraphEmphasis): 
 export function graphNodeTone(task: GraphPresentationTask, emphasis: GraphEmphasis): CSSProperties {
   const violation = task.violatesCurrentStatus === true;
   const done = task.statusGroup === 'done';
-  const rings = [violation ? '0 0 0 2px #fecaca' : null, emphasis === 'focused' ? '0 0 0 4px #6366f1' : null].filter(ring => ring !== null);
+  const rings = [violation ? '0 0 0 2px var(--color-danger-soft)' : null, emphasis === 'focused' ? '0 0 0 4px var(--color-focus)' : null].filter(ring => ring !== null);
   return {
-    borderColor: violation ? '#dc2626' : task.blocked ? '#f59e0b' : done ? '#16a34a' : '#e2e8f0',
-    background: done ? '#f0fdf4' : '#fff',
+    borderColor: violation ? 'var(--color-danger-line)' : task.blocked ? 'var(--color-warning-line)' : done ? 'var(--color-success-line)' : 'var(--color-line)',
+    background: done ? 'var(--color-success-soft)' : 'var(--color-surface)',
     boxShadow: rings.length ? rings.join(', ') : 'none',
     opacity: emphasis === 'dimmed' ? 0.35 : 1,
   };

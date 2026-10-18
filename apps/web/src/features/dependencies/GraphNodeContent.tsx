@@ -7,7 +7,7 @@ export interface GraphCanvasTask { id: string; title: string; projectName: strin
 export class GraphLayoutBoundsError extends Error {}
 export interface GraphNodeSize { width: number; height: number }
 /** Shared with the unscaled measurement host; no content-dependent clipping or fixed height. */
-export const graphNodeBoxStyle: CSSProperties = { width: 240, minHeight: 128, padding: 10, boxSizing: 'border-box', borderWidth: 1, borderStyle: 'solid', borderColor: '#e2e8f0', borderRadius: 12, background: '#fff', fontSize: 12, lineHeight: 1.5 };
+export const graphNodeBoxStyle: CSSProperties = { width: 240, minHeight: 128, padding: 10, boxSizing: 'border-box', borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--color-line)', borderRadius: 12, background: 'var(--color-surface)', fontSize: 12, lineHeight: 1.5 };
 
 export function GraphNodeContent({ task, onOpen, onViewBlockers, measuring = false }: {
   task: GraphCanvasTask;

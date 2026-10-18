@@ -4,13 +4,15 @@ import userEvent from '@testing-library/user-event';
 import type { TaskDto, WeeklyPlanFactRowDto } from '@workloom/contracts';
 import { MemoryRouter, useLocation } from 'react-router';
 import { describe, expect, it } from 'vitest';
+import { AppRoutes } from '../../app/AppRoutes';
+import { SessionProvider } from '../../app/session';
 import { createQueryClient } from '../../lib/queryClient';
 import { queryKeys } from '../../lib/queryKeys';
 import { alpha, alphaMembers, anna, beta, deferred, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../../test/fakeApi';
 import { categorized, categoryReport, TYPE_RUN } from '../work-categories/test/fixtures';
 import { ReportTaskLinks } from './ReportTaskLinks';
 import { MEMBER_ID, PACKAGE_ID, PERIOD_A, PROJECT_ID, RUN_ID, TASK_ID, log, report, rootPath, routes, task, weekPath } from './test/fixtures';
-import { periodPicker, personPicker, periodLabel, personLabel } from './test/pickers';
+import { periodPicker, periodLabel } from './test/pickers';
 
 function taskAt(index: number): TaskDto {
   return { ...task, id: `f2000000-0000-4000-8000-${String(index).padStart(12, '0')}`, title: `Current task ${index}` };
@@ -21,6 +23,13 @@ function renderLinks(ids: string[], cached: TaskDto[] = []) {
   for (const item of cached) queryClient.setQueryData(queryKeys.task(anna.id, alpha.id, item.id), item);
   const user = userEvent.setup();
   const view = render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[`${weekPath}?period=${PERIOD_A}&worker=${MEMBER_ID}&view=report&run=${RUN_ID}`]}><Location /><ReportTaskLinks actorId={anna.id} workspaceId={alpha.id} projectId={PROJECT_ID} periodId={PERIOD_A} membershipId={MEMBER_ID} taskIds={ids} /></MemoryRouter></QueryClientProvider>);
+  return { ...view, queryClient, user };
+}
+/** renderApp with the source location probe inside the same router. */
+function renderAppWithLocation(path: string) {
+  const queryClient = createQueryClient({ retry: false });
+  const user = userEvent.setup({ pointerEventsCheck: 0 });
+  const view = render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[path]}><Location /><SessionProvider><AppRoutes /></SessionProvider></MemoryRouter></QueryClientProvider>);
   return { ...view, queryClient, user };
 }
 function reportRow(overrides: Partial<WeeklyPlanFactRowDto> = {}): WeeklyPlanFactRowDto {
@@ -140,7 +149,8 @@ describe('saved report current-task destinations', () => {
       [`GET ${rootPath}/tasks/${second.id}`]: () => ok(second),
       [`GET ${rootPath}/tasks/${third.id}`]: () => ok(third),
     });
-    const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&worker=${colleague.id}&view=report&run=${RUN_ID}`);
+    const sourcePath = `${weekPath}?period=${PERIOD_A}&worker=${colleague.id}&view=report&run=${RUN_ID}`;
+    const { user } = renderAppWithLocation(sourcePath);
     await screen.findByText('Название в сохранённом отчёте');
     const summary = screen.getByRole('region', { name: 'Saved report' });
     const pinnedText = summary.textContent;
@@ -148,6 +158,7 @@ describe('saved report current-task destinations', () => {
     await user.click(screen.getByRole('button', { name: 'View linked tasks (2)' }));
     const link = await screen.findByRole('link', { name: 'Changed current title Open current task in a new tab' });
     expect(link).toHaveAttribute('href', `/w/${alpha.id}/projects/${PROJECT_ID}?week=${PERIOD_A}&worker=${MEMBER_ID}&task=${TASK_ID}`);
+    expect(await screen.findByRole('link', { name: `${second.title} Open current task in a new tab` })).toHaveAttribute('href', `/w/${alpha.id}/projects/${PROJECT_ID}?week=${PERIOD_A}&worker=${MEMBER_ID}&task=${second.id}`);
     expect(screen.getByText('Title in saved report')).toBeInTheDocument();
     expect(screen.getAllByText('Current task title')).toHaveLength(2);
     expect(screen.getByText('Название в сохранённом отчёте')).toBeInTheDocument();
@@ -159,8 +170,9 @@ describe('saved report current-task destinations', () => {
     expect(summary.textContent).toBe(pinnedText);
     expect(screen.getByText('Not recorded')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'View linked task (1)' }));
-    expect(await screen.findByRole('link', { name: `${third.title} Open current task in a new tab` })).toBeInTheDocument();
-    expect(personPicker()).toHaveTextContent(personLabel(colleague.id));
+    expect(await screen.findByRole('link', { name: `${third.title} Open current task in a new tab` })).toHaveAttribute('href', `/w/${alpha.id}/projects/${PROJECT_ID}?week=${PERIOD_A}&worker=${MEMBER_ID}&task=${third.id}`);
+    expect(screen.queryByRole('combobox', { name: 'Time entry for' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Source location').textContent).toBe(sourcePath);
     expect(periodPicker()).toHaveTextContent(periodLabel(PERIOD_A));
     expect(screen.getByRole('button', { name: /^Report$/ })).toHaveAttribute('aria-current', 'page');
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);

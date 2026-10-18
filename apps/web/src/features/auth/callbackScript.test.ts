@@ -60,15 +60,35 @@ describe('index.html', () => {
     const headChildren = Array.from(page.head.children);
     const scripts = Array.from(page.head.querySelectorAll('script'));
     const inline = scripts[0];
+    const theme = scripts[1];
     const icon = page.head.querySelector('link[rel="icon"]');
 
-    expect(scripts).toHaveLength(1);
+    expect(scripts).toHaveLength(2);
     expect(inline?.hasAttribute('src')).toBe(false);
     expect(inline?.hasAttribute('type')).toBe(false);
+    expect(theme?.getAttribute('src')).toBe('/theme-init.js');
+    expect(theme?.hasAttribute('type')).toBe(false);
+    expect(theme?.hasAttribute('async')).toBe(false);
+    expect(theme?.hasAttribute('defer')).toBe(false);
     expect(page.head.querySelector('link[rel="stylesheet"], script[type="module"]')).toBeNull();
+    expect(inline).not.toBeUndefined();
+    expect(theme).not.toBeUndefined();
     expect(icon).not.toBeNull();
-    if (!inline || !icon) return;
-    expect(headChildren.indexOf(inline)).toBeLessThan(headChildren.indexOf(icon));
+    if (!inline || !theme || !icon) throw new Error('index.html head is missing the inline script, theme script or icon');
+
+    const inlineAt = headChildren.indexOf(inline);
+    expect(inlineAt).toBeGreaterThanOrEqual(0);
+    expect(inlineAt).toBeLessThan(headChildren.indexOf(theme));
+    expect(headChildren.indexOf(theme)).toBeLessThan(headChildren.indexOf(icon));
+
+    const resources = Array.from(page.head.querySelectorAll('[src], [href], link, script, style')).filter(
+      (element) => element !== inline,
+    );
+    expect(resources).toContain(theme);
+    expect(resources).toContain(icon);
+    for (const resource of resources) {
+      expect(inline.compareDocumentPosition(resource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
     expect(page.body.querySelector('script[type="module"]')?.getAttribute('src')).toBe('/src/main.tsx');
   });
 
