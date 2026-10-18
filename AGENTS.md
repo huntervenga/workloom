@@ -34,6 +34,8 @@ Runtime preservation, old-tab recovery and product browser acceptance are indepe
 
 ## Start here
 
+Newest user product direction: read [docs86](docs/86-generic-fields-and-reports.md) before implementation. Ordinary user duration columns + configurable server-authoritative reports are the primary path; a weekly preset is optional and no native period is required for a project or task duration. This overrides legacy mandatory-period assumptions in older specs, not preservation/security rules. The generic builder is NOT implemented; keep old logs/baselines/reports and meeting semantics until an explicit owner-reviewed migration.
+
 Read `README.md`, `docs/README.md`, and the documents relevant to the assigned milestone. Preserve requirements from `docs/01-product-spec.md`; the newer implementation decisions in `docs/02-architecture.md` govern staging and technical choices.
 
 ## Working boundaries

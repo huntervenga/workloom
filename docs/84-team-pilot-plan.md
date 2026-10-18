@@ -1,5 +1,7 @@
 # Командный пилот: текущий кандидат и допуск
 
+**Новый продуктовый P0: [контракт86](86-generic-fields-and-reports.md) должен быть реализован до пилота по запрошенной модели.** Нужны обычные custom duration-поля и generic report configuration/editor/server query; неделя — optional template. Сейчас builder **не реализован**. Принятый ниже weekly engine — технически проверенный отдельный сценарий, а не выполнение уточнённого пользовательского запроса. Поэтому успешные Docker/real Auth проверки сами по себе не открывают такой пилот; прежние runtime proofs не меняются.
+
 **Текущий принятый локальный срез — `306ed35`, активен на `http://127.0.0.1:4310/app`;18 октября2026.** TEAM invitations/roles/revoke, custom Field rules, keyboard gutter и hosted preparation приняты в ограниченном локальном scope. Этот документ заменяет устаревшие шаги исторического [74](74-next-team-pilot.md); прежний checkpoint87fba71 сохранён в [82](82-reports-and-five-person-demo.md)/[83](83-task-project-placements.md). Certificate `4153241365719f2b90c4d75a77b880ca8c358eb1433910f9114d1e2534ec569c` связывает2053 source/compiled files +82 stage artifacts с22 zero-exit gates. Предыдущий Docker retry завершился oxide web-build RED; второй lockfile fix проверен, исправленный Docker build достиг20мин timeout на npm prune после успешных сборок. Размещённый пилот не принят.
 
 Цель —5–7 реальных участников, один общий workspace, небольшой вручную перенесённый проект и один недельный цикл. Сначала подтвердить выбранную вертикаль и безопасность; полная parity с Asana/enterprise permission builder/импорт всего backlog не входят в допуск.
@@ -26,6 +28,7 @@ Worker остаётся **OFF**. В первом цикле используют
 
 | Область | Что ещё нужно доказать | Go/no-go |
 | --- | --- | --- |
+| Продуктовый P0 | Ordinary duration fields + generic report builder/editor/server query и optional weekly template по86 пока не реализованы | Блокирует пилот по запрошенной модели; текущая weekly technical acceptance не заменяет этот результат. |
 | Интегрированный local candidate | Final root global check, backend2003/115, web2127/261, API/web builds PASS; full integration369/42 без skips; compiled Chrome69/14. TEAM7+FIELD4 PG11/11; demo+placements PG PASS | Локальные проверки и main activation PASS; размещённый пилот отдельно pending. |
 | Team access | Owner/Admin grant restrictions, Member/Viewer denial, self/current actor binding, revoke и exact retry; join sign-in→reopen на1440/390 | Нет несанкционированного доступа или восстановления membership старым receipt. |
 | Field rules + keyboard | До/на/после deadline, последний concurrent quota slot, null/clear/no-op/replay/history-off, bulk/create/import, owner exception/manual+freeze; gutter keys/light/dark | Не потерян draft, одна команда/usage, нет partial batch или baseline rewrite. |
