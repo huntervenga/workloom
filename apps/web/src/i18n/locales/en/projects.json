@@ -78,5 +78,14 @@
     "viewSummary": "View: {{view}}",
     "teamColumns": "Team columns",
     "board": "Board"
+  },
+  "sectionCreate": {
+    "form": "Add section",
+    "addSection": "Add section",
+    "moreOptions": "More add options",
+    "menu": "Add to project",
+    "retrySubmission": "Retry submission",
+    "retained": "Your section draft is kept here.",
+    "resume": "Resume section"
   }
 }

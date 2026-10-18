@@ -189,7 +189,9 @@
     "moved": "Assignee saved: {{name}}.",
     "open": "Open task",
     "expandNumbered": "Expand assignee group {{position}} “{{name}}”",
-    "collapseNumbered": "Collapse assignee group {{position}} “{{name}}”"
+    "collapseNumbered": "Collapse assignee group {{position}} “{{name}}”",
+    "sectionsAvailable": "Grouped by assignee. Your sections are still available.",
+    "showSections": "Show sections"
   },
   "guidance": {
     "aboutTable": "About this table"

@@ -114,6 +114,8 @@ export interface TaskTableProps {
   activeFieldEditor?: { taskId: string; field: TaskInlineField } | undefined;
   draftTaskIds?: ReadonlySet<string> | undefined;
   quickAdd?: TaskTableQuickAdd | undefined;
+  /** Page-owned inline section title; independent from task creation. */
+  sectionComposer?: ReactNode;
   /**
    * Persists a manual reorder: `task` goes right before/after `anchor` (same parent; a subtask also
    * stays in its section). Offered only in manual order grouped by section. The rows never move
@@ -730,7 +732,7 @@ function GroupHeader({
     <tr data-task-group-header={dropMembershipId} data-task-drop={dropLine ? 'after' : undefined}
       className={cn('h-10 border-t border-line bg-canvas', dropLine && 'shadow-[inset_0_-2px_0_var(--color-accent)]')}>
       <th scope="rowgroup" colSpan={columnCount} className="h-10 px-3 py-0 text-left font-normal" style={dropCellStyle(dropLine ? 'after' : undefined)}>
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="sticky left-0 flex w-[calc(100cqw-1.5rem)] min-w-0 items-center gap-2">
           <button
             type="button"
             data-task-group={group.key}
@@ -838,7 +840,7 @@ export function TaskTable({
   customColumns = noCustomColumns,
   columnPreset = 'expanded',
   columnIds,
-  onEditTaskField, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd,
+  onEditTaskField, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
   onMoveTask, moveBlocked = false, acquireDragProtection,
   grouping = 'section',
   sortMode = 'manual',
@@ -1145,6 +1147,7 @@ export function TaskTable({
           );
         })}
         {grouping === 'section' && quickAdd && anchored === null && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody>{quickRows(null, 0)}</tbody> : null}
+        {sectionComposer ? <tbody><tr className="border-t border-line bg-canvas"><td colSpan={columnCount} className="px-3"><div className="sticky left-0 w-[calc(100cqw-1.5rem)] min-w-0">{sectionComposer}</div></td></tr></tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
           <SummaryRow summary={summary} partial={partial} columnCount={columnCount} />
         </tfoot>

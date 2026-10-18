@@ -55,7 +55,7 @@ import type {
 } from '@workloom/contracts';
 import { explicitTimeContext, type InitialTimeContext } from '../features/tasks/InitialTaskCells';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
-import { ArrowLeft, CalendarDays, FolderPlus, Lock, Pencil, Plus, RefreshCw } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Lock, Pencil, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
@@ -69,7 +69,9 @@ import {
 } from '../features/fields';
 import { RenameProjectDialog } from '../features/projects/ProjectDialogs';
 import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMutation } from '../features/projects/queries';
-import { CreateSectionDialog, RenameSectionDialog } from '../features/projects/SectionDialogs';
+import { RenameSectionDialog } from '../features/projects/SectionDialogs';
+import { ProjectCreateMenu } from '../features/projects/ProjectCreateMenu';
+import { SectionCreateForm, useSectionCreate } from '../features/projects/SectionCreateForm';
 import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, type TaskDropPlacement, type TaskTableCustomColumn, type TaskTableDraftRow, type TaskTableQuickAdd } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
 import { TaskDrawer, type LoadedSubtasks } from '../features/tasks/TaskDrawer';
@@ -477,6 +479,23 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const completionWritable = writable && metadataReady && !personalColumns.denied && !isAccessDenied(tasks.error);
   useEffect(() => { commands.autosave.setWritable(completionWritable); }, [commands.autosave, completionWritable]);
   const taskPresentationKey = JSON.stringify([actorId, workspace.id, project.id, location.key, grouping, filters.search, filters.completion, filters.statusId, filters.participantMembershipId, filters.tagId, filters.includeArchived, sortMode]);
+  const sectionCreate = useSectionCreate(actorId, workspace.id, project.id, completionWritable, taskPresentationKey, section => setAnnouncement(message('projects.projectPage.sectionValueCreated', { p0: section.name })));
+  const showSections = () => {
+    invalidateInlineSave(); setGrouping('section');
+    if (!tableMode) setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; });
+  };
+  const startSection = () => { showSections(); sectionCreate.start(); };
+  const sectionComposerVisible = tableMode && grouping === 'section' && !personalColumns.denied && !tasks.isPending && (!tasks.isError || tasks.isFetchNextPageError);
+  useLayoutEffect(() => {
+    const id = sectionCreate.revealSectionId;
+    if (!id || !completionWritable || !sectionComposerVisible || !sections.isSuccess || sections.isFetching) return;
+    const header = document.querySelector<HTMLButtonElement>(`button[data-task-group="section:${id}"]`);
+    if (!header || !sectionCreate.claimSectionReveal()) return;
+    // Claim only after the fresh authorized section has rendered; keep the person's horizontal context.
+    const scroller = header.closest<HTMLElement>('[data-task-table-scroll]'), left = scroller?.scrollLeft;
+    header.focus({ preventScroll: true }); header.scrollIntoView({ block: 'center', inline: 'nearest' });
+    if (scroller && left !== undefined) scroller.scrollLeft = left;
+  }, [sectionCreate, completionWritable, sectionComposerVisible, sections.isSuccess, sections.isFetching]);
   const previousPresentation = useRef(taskPresentationKey);
   useLayoutEffect(() => {
     if (previousPresentation.current !== taskPresentationKey) invalidateInlineSave();
@@ -1045,8 +1064,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
           </div>
         </div>
-        {writable && metadataReady ? <Button size="sm" variant="primary" onClick={() => { if (grouping === 'section' && !boardMode && !graphMode && !ganttMode && !importMode) startQuickAdd(null); else startCreate({ sectionId: null, parent: null }); }}><Plus size={16} aria-hidden="true" />{t('projects.projectPage.newTask')}</Button> : null}
-        {writable ? <CreateSectionDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} trigger={<Button size="sm" variant="ghost"><FolderPlus size={16} aria-hidden="true" />{t('projects.projectPage.newSection')}</Button>} onCreated={section => setAnnouncement(message('projects.projectPage.sectionValueCreated', { p0: section.name }))} /> : null}
+        {writable && metadataReady ? <ProjectCreateMenu returnFocus={sectionCreate.returnFocus} onAddTask={() => { if (grouping === 'section' && tableMode) startQuickAdd(null); else startCreate({ sectionId: null, parent: null }); }} onAddSection={startSection} /> : null}
         <ProjectActions>
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
@@ -1178,6 +1196,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               <PersonalColumnsDialog showTrigger={tableMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
             </DialogReturnFocus>
           </div>
+          {tableMode && grouping === 'assignee' ? <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+            <span>{t('taskTable.grouping.sectionsAvailable')}</span><Button size="sm" variant="ghost" onClick={showSections}>{t('taskTable.grouping.showSections')}</Button>
+          </div> : null}
+          {sectionCreate.open && !sectionComposerVisible || !sectionCreate.open && sectionCreate.held ? <div role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted"><span>{t('projects.sectionCreate.retained')}</span><Button size="sm" variant="ghost" onClick={startSection}>{t('projects.sectionCreate.resume')}</Button></div> : null}
           {tableMode && (grouping === 'assignee' || sortMode === 'due_asc') ? (
             <details className="text-xs text-muted">
               <summary className="w-fit cursor-pointer rounded py-1">{t('taskTable.guidance.aboutTable')}</summary>
@@ -1213,6 +1235,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} titleCaret={activeInline.titleCaret} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} bulkEdit={bulkInline.port(activeInline.focusClaim)} singleOnly={activeInline.field === 'title' && bulkInline.selectsMany(task.id)} /> : null}
             quickAdd={quickAdd}
+            sectionComposer={sectionCreate.open && grouping === 'section' ? <SectionCreateForm controller={sectionCreate} writable={completionWritable} /> : undefined}
             onMoveTask={moveTask}
             onMoveBoardStatus={moveBoardStatus}
             moveBlocked={moveBlocked}
@@ -1328,6 +1351,7 @@ interface TaskListProps {
   activeFieldEditor: ComponentProps<typeof TaskTable>['activeFieldEditor'];
   draftTaskIds: ReadonlySet<string>;
   quickAdd: ComponentProps<typeof TaskTable>['quickAdd'];
+  sectionComposer?: ComponentProps<typeof TaskTable>['sectionComposer'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
   onMoveBoardStatus: (task: TaskDto, statusId: string) => void;
   moveBlocked: boolean;
