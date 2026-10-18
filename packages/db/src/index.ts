@@ -135,3 +135,5 @@ export { createWorkspaceCreateApplication } from './workspaces/create.js';
 export { createTaskRowApplication } from './task-rows/task-row-application.js';
 
 export {createTeamApplication,proveTeamInvitation} from './team/application.js';
+
+export { createGenericReportApplication } from './generic-reports/application.js';

@@ -184,3 +184,8 @@ export * from './team/policy.js';
 export * from './team/service.js';
 
 export type {TaskFieldPolicyRepository,TaskFieldPolicyUsage} from './fields/ports.js';
+
+export * from './generic-reports/ports.js';
+export * from './generic-reports/service.js';
+export * from './generic-reports/engine.js';
+export { createTaskFieldInScope } from './fields/service.js';

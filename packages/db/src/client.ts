@@ -4,6 +4,7 @@ import postgres from 'postgres';
 
 import { parseDatabaseUrl, type DatabaseUrlInfo } from './database-url.js';
 import {
+  genericReportDefinitions,genericReportDefinitionVersions,genericReportInitialSnapshots,genericReportColumnSettings,
   taskDependencies,projectDependencyPolicies,graphLayouts,graphLayoutPositions,
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
   recurrenceSeries,recurrenceSeriesVersions,recurrencePeriodBindings,recurrenceInstances,recurrenceExceptionVersions,recurrenceGenerationAuthorizations,recurrenceCalendarLocks,
@@ -51,6 +52,7 @@ import {
 } from './schema.js';
 
 export const tables = {
+  genericReportDefinitions,genericReportDefinitionVersions,genericReportInitialSnapshots,genericReportColumnSettings,
   taskDependencies,projectDependencyPolicies,graphLayouts,graphLayoutPositions,
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
   recurrenceSeries,recurrenceSeriesVersions,recurrencePeriodBindings,recurrenceInstances,recurrenceExceptionVersions,recurrenceGenerationAuthorizations,recurrenceCalendarLocks,

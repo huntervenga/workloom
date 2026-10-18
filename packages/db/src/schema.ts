@@ -1,3 +1,4 @@
+import type { GenericReportConfig, GenericReportDefinitionDto, GenericInitialSnapshotDto, GenericReportRowDto, GenericReportMeasure, TaskFieldValueDto } from '@workloom/contracts';
 import type { ColumnChoice, CutoffWorkerOutcome } from '@workloom/contracts';
 /**
  * Drizzle description of the P0, P1a and P1b schema. The executable source of truth is the
@@ -818,6 +819,7 @@ export const taskFieldValueHistory = pgTable(
 
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'generic_report_definitions', 'generic_report_definition_versions', 'generic_report_initial_snapshots', 'generic_report_column_settings',
   'task_field_policies', 'task_field_policy_usage',
   'team_invitations',
   'shared_auth_identities', 'shared_auth_sessions', 'shared_auth_login_attempts',
@@ -1547,4 +1549,45 @@ export const taskFieldPolicyUsage = pgTable('task_field_policy_usage', {
   foreignKey({name:'task_field_policy_usage_field_fk',columns:[t.workspaceId,t.projectId,t.fieldId],foreignColumns:[taskFieldDefinitions.workspaceId,taskFieldDefinitions.projectId,taskFieldDefinitions.id]}),
   index('task_field_policy_usage_actor_idx').on(t.workspaceId,t.taskId,t.fieldId,t.actorUserId),
   check('task_field_policy_usage_revisions_positive',sql`value_revision >= 1 and policy_revision >= 1`),
+]);
+
+/** Saved generic reports and immutable observations; independent of native planning periods. */
+export const genericReportDefinitions = pgTable('generic_report_definitions', {
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),
+ name:text('name').notNull(),revision:integer('revision').notNull(),config:jsonb('config').$type<GenericReportConfig>().notNull(),
+ archivedAt:timestamp('archived_at',{withTimezone:true}),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[
+ foreignKey({name:'generic_reports_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
+ unique('generic_reports_scope_unique').on(t.workspaceId,t.projectId,t.id),
+ check('generic_reports_revision_positive',sql`${t.revision}>0`),check('generic_reports_name_length',sql`char_length(btrim(${t.name})) between 1 and 160`),
+ check('generic_reports_config_scope',sql`(jsonb_typeof(${t.config})='object' and ${t.config}->>'projectId'=${t.projectId}::text) is true`),
+]);
+export const genericReportDefinitionVersions = pgTable('generic_report_definition_versions', {
+ workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),reportId:uuid('report_id').notNull(),revision:integer('revision').notNull(),
+ snapshot:jsonb('snapshot').$type<GenericReportDefinitionDto>().notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
+},t=>[
+ primaryKey({columns:[t.workspaceId,t.projectId,t.reportId,t.revision]}),
+ foreignKey({name:'generic_report_versions_definition_fk',columns:[t.workspaceId,t.projectId,t.reportId],foreignColumns:[genericReportDefinitions.workspaceId,genericReportDefinitions.projectId,genericReportDefinitions.id]}),
+ check('generic_report_versions_revision_positive',sql`${t.revision}>0`),
+ check('generic_report_versions_snapshot_scope',sql`(jsonb_typeof(${t.snapshot})='object' and ${t.snapshot}->>'id'=${t.reportId}::text and ${t.snapshot}->>'workspaceId'=${t.workspaceId}::text and ${t.snapshot}->>'projectId'=${t.projectId}::text and (${t.snapshot}->>'revision')::integer=${t.revision}) is true`),
+]);
+export const genericReportInitialSnapshots = pgTable('generic_report_initial_snapshots', {
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),reportId:uuid('report_id').notNull(),definitionRevision:integer('definition_revision').notNull(),
+ header:jsonb('header').$type<GenericInitialSnapshotDto>().notNull(),
+ rows:jsonb('rows').$type<GenericReportRowDto[]>().notNull(),
+ values:jsonb('values').$type<TaskFieldValueDto[]>().notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
+},t=>[
+ foreignKey({name:'generic_initial_version_fk',columns:[t.workspaceId,t.projectId,t.reportId,t.definitionRevision],foreignColumns:[genericReportDefinitionVersions.workspaceId,genericReportDefinitionVersions.projectId,genericReportDefinitionVersions.reportId,genericReportDefinitionVersions.revision]}),
+ index('generic_initial_report_idx').on(t.workspaceId,t.reportId,t.createdAt),
+ check('generic_initial_header_scope',sql`(jsonb_typeof(${t.header})='object' and ${t.header}->>'id'=${t.id}::text and ${t.header}->>'workspaceId'=${t.workspaceId}::text and ${t.header}->>'projectId'=${t.projectId}::text and ${t.header}->>'reportId'=${t.reportId}::text and (${t.header}->>'definitionRevision')::integer=${t.definitionRevision}) is true`),
+ check('generic_initial_rows_shape',sql`(jsonb_typeof(${t.rows})='array' and jsonb_array_length(${t.rows})<=5000 and jsonb_array_length(${t.rows})=(${t.header}->>'taskCount')::integer and jsonb_typeof(${t.values})='array') is true`),
+]);
+export const genericReportColumnSettings = pgTable('generic_report_column_settings', {
+ workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),revision:integer('revision').notNull(),
+ measures:jsonb('measures').$type<GenericReportMeasure[]>().notNull(),
+},t=>[
+ primaryKey({columns:[t.workspaceId,t.projectId]}),
+ foreignKey({name:'generic_report_columns_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
+ check('generic_report_columns_revision_positive',sql`${t.revision}>0`),check('generic_report_columns_measures',sql`jsonb_typeof(${t.measures})='array' and jsonb_array_length(${t.measures})<=12`),
 ]);

@@ -16,6 +16,7 @@ import { createAsyncRoute } from './AsyncRoute';
 
 const MyTasksPage = createAsyncRoute(() => import('../routes/MyTasksPage').then(module => ({ default: module.MyTasksPage })), 'myTasks.loading');
 const ProjectPage = createAsyncRoute(() => import('../routes/ProjectPage').then(module => ({ default: module.ProjectPage })), 'shell.loadingProject');
+const ReportsPage = createAsyncRoute(() => import('../routes/ReportsPage').then(module => ({ default: module.ReportsPage })), 'genericReports.loading');
 const WeeklyPage = createAsyncRoute(() => import('../routes/WeeklyPage').then(module => ({ default: module.WeeklyPage })), 'shell.loadingWeek');
 const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPage').then(module => ({ default: module.IntegrationsPage })), 'shell.loadingIntegrations');
 
@@ -41,6 +42,7 @@ export function AppRoutes() {
           <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
+          <Route path="projects/:projectId/reports" element={<ReportsPage />} />
           <Route path="projects/:projectId/week" element={<WeeklyPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />

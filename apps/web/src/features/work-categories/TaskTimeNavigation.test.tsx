@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { createQueryClient } from '../../lib/queryClient';
 import { alpha, alphaMembers, anna, installFakeApi, project } from '../../test/fakeApi';
 import { PERIOD_A, PERIOD_B, PROJECT_ID } from '../planning/test/fixtures';
-import { tablePath, tableRoutes, task } from './test/fixtures';
+import { legacyTablePath, tablePath, tableRoutes, task } from './test/fixtures';
 import { ChoicePicker } from '../../shared/ChoicePicker';
 import { timeContextLabel } from './test/timeContext';
 import { useTaskTimeTable } from './useTaskTimeTable';
@@ -38,7 +38,7 @@ describe('real table time picker partial intents', () => {
       return <><output data-testid="current-query">{location.search}{location.hash}</output>{time.controls}</>;
     }
     const client = createQueryClient({ retry: false });
-    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[`${tablePath}?week=${PERIOD_A}&worker=${alphaMembers[0]?.id}&view=board&other=kept#anchor`]}><Page /></MemoryRouter></QueryClientProvider>);
+    render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${alphaMembers[0]?.id}&view=board&other=kept#anchor`)]}><Page /></MemoryRouter></QueryClientProvider>);
     if (!original) throw new Error('Missing original callbacks');
     const retained = original;
     await act(async () => { if (order === 'week-person') { retained.week(PERIOD_B); retained.person(nextPerson); } else { retained.person(nextPerson); retained.week(PERIOD_B); } });

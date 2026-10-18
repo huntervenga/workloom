@@ -9,6 +9,7 @@ export const OPTION_B = '91000000-0000-4000-8000-000000000002';
 export const BINDING_VERSION = 'fa000000-0000-4000-8000-000000000001';
 export const TYPE_RUN = 'fb000000-0000-4000-8000-000000000001';
 export const tablePath = `/w/${alpha.id}/projects/${PROJECT_ID}`;
+export function legacyTablePath(path = tablePath): string { const url = new URL(path, 'http://workloom.test'); url.searchParams.set('legacyTime', '1'); return `${url.pathname}${url.search}${url.hash}`; }
 export function definition(): TaskFieldDefinitionDto { return { ...field('Направление работы', 'single_select'), options: [{ id: OPTION_A, name: 'Исследование', color: '#6366f1', position: 0, revision: 1, archivedAt: null }, { id: OPTION_B, name: 'Поддержка команды', color: '#0d9488', position: 1, revision: 1, archivedAt: null }] }; }
 export function binding(active = true): ProjectWorkCategoryBindingDto { return { workspaceId: alpha.id, projectId: PROJECT_ID, revision: active ? 2 : 1, versionId: active ? BINDING_VERSION : null, fieldId: active ? FIELD_ID : null, availability: active ? 'active' : 'unbound' }; }
 export function category(option = OPTION_A, label = 'Исследование'): WorkCategorySnapshot { return { kind: 'categorized', bindingVersionId: BINDING_VERSION, bindingRevision: 2, fieldId: FIELD_ID, fieldDefinitionVersionId: definition().definitionVersionId, fieldLabel: 'Направление работы', optionId: option, optionRevision: 1, optionLabel: label, color: '#6366f1', optionArchivedAt: null }; }

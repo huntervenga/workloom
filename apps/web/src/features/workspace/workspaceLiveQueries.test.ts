@@ -25,10 +25,11 @@ afterEach(() => { disposers.splice(0).forEach(dispose => dispose()); clients.spl
 describe('workspace live query classification', () => {
   it('includes every audited mutable branch, run lists, import reconciliation and MCP metadata', () => {
     for (const branch of ['memberships', 'projects', 'project', 'tags', 'tasks', 'fields', 'workCategoryBinding',
-      'timeSummaries', 'planning', 'workCategories', 'meetings', 'recurrence', 'dependencies', 'schedule', 'cutoff', 'imports', 'local-mcp-credentials']) {
+      'timeSummaries', 'planning', 'workCategories', 'meetings', 'recurrence', 'dependencies', 'schedule', 'cutoff', 'imports', 'local-mcp-credentials', 'generic-reports']) {
       expect(isWorkspaceLiveKey([...scope, branch], ACTOR, WORKSPACE)).toBe(true);
     }
     for (const suffix of [[], ['planning', 'period', 'period-a', 'runs'], ['workCategories', 'runs', 'period-a'],
+      ['generic-reports', 'definition', 'report-a', 'result', { snapshotId: 'initial-a' }], ['generic-reports', 'aggregate-settings', 'project-a'],
       ['imports', 'project-a', 'import-a', 'reconciliation'], ['planning', 'original-estimate', 'package-a']]) {
       expect(isWorkspaceLiveKey([...scope, ...suffix], ACTOR, WORKSPACE)).toBe(true);
     }

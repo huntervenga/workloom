@@ -3,7 +3,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { alphaMembers, created, installFakeApi, ok, renderApp } from '../../test/fakeApi';
 import { PERIOD_B, lostResponse, weekPath } from '../planning/test/fixtures';
-import { FIELD, MEMBER_ID, OPTION_B, PERIOD_A, PROJECT_ID, TASK_ID, TYPE_RUN, binding, categorized, category, categoryReport, projection, rootPath, tablePath, tableRoutes, task } from './test/fixtures';
+import { FIELD, MEMBER_ID, OPTION_B, PERIOD_A, PROJECT_ID, TASK_ID, TYPE_RUN, binding, categorized, category, categoryReport, projection, rootPath, legacyTablePath, tableRoutes, task } from './test/fixtures';
 
 // Load the lazy route outside the first interaction's DOM wait, as the other project integration suites do.
 beforeAll(async () => { await import('../../routes/ProjectPage'); });
@@ -26,7 +26,7 @@ describe('quick fact and category report boundaries', () => {
     const otherMember = alphaMembers[1]?.id;
     if (!otherMember) throw new Error('Missing colleague fixture');
     const { calls } = installFakeApi({ ...tableRoutes(), [`GET ${rootPath}/projects/${PROJECT_ID}/periods/${PERIOD_B}/task-time-summary`]: (request) => ok({ ...projection(request.searchParams.get('membershipId') ?? MEMBER_ID), periodId: PERIOD_B }), [`PUT ${rootPath}/tasks/${TASK_ID}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`]: () => ++attempts === 1 ? gate.promise : ok(categorized(300)) });
-    const { user } = renderApp(tablePath);
+    const { user } = renderApp(legacyTablePath());
     await selectWeek(user);
     await user.click(screen.getByRole('button', { name: `Weekly actual hours: ${task.title}` }));
     let dialog = await screen.findByRole('dialog', { name: "Record weekly actual hours" });
@@ -76,7 +76,7 @@ describe('quick fact and category report boundaries', () => {
   it('requires an explicit reason for recategorization and sends only immutable source/revision/category inputs', async () => {
     let current = categorized();
     const { calls } = installFakeApi({ ...tableRoutes(), [`GET ${rootPath}/projects/${PROJECT_ID}/periods/${PERIOD_A}/task-time-summary`]: () => ok(projection(MEMBER_ID, current)), [`POST ${rootPath}/worklogs/${current.id}/recategorize`]: () => { current = { ...categorized(60, 2), category: category(OPTION_B, 'Поддержка команды') }; return ok(current); } });
-    const { user } = renderApp(tablePath);
+    const { user } = renderApp(legacyTablePath());
     await selectWeek(user);
     await user.click(screen.getByRole('button', { name: `Weekly actual hours: ${task.title}` }));
     const fact = await screen.findByRole('dialog', { name: "Edit weekly actual hours" });

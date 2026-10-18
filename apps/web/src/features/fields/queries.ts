@@ -119,6 +119,7 @@ export function useTaskFieldHistoryQuery(actorId: string, workspaceId: string, t
  */
 
 export function invalidateFieldDefinitions(queryClient: QueryClient, actorId: string, workspaceId: string, projectId: string) {
+  void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'generic-reports'] });
   return queryClient.invalidateQueries({ queryKey: queryKeys.fieldDefinitions(actorId, workspaceId, projectId), exact: true });
 }
 
@@ -129,6 +130,7 @@ export function invalidateProjectColumns(queryClient: QueryClient, actorId: stri
 /** A changed value: the task's values, the project's batches and that field's history. */
 export function invalidateFieldValue(queryClient: QueryClient, actorId: string, workspaceId: string, value: TaskFieldValueDto) {
   return Promise.all([
+    queryClient.invalidateQueries({queryKey:[...queryKeys.workspace(actorId,workspaceId),'generic-reports']}),
     queryClient.invalidateQueries({queryKey:fieldPolicyKeys.policy(actorId,workspaceId,value.fieldId)}),
     invalidateTaskTimelines(queryClient, actorId, workspaceId, [value.taskId]),
     queryClient.invalidateQueries({ queryKey: queryKeys.taskFieldValues(actorId, workspaceId, value.taskId), exact: true }),

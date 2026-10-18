@@ -12,7 +12,7 @@ import { protectedDraftsFor } from '../../lib/protectedDrafts';
 import { createQueryClient } from '../../lib/queryClient';
 import { alphaMembers, created, deferred, installFakeApi, ok, type RouteTable } from '../../test/fakeApi';
 import { PERIOD_B, commitment, lostResponse } from '../planning/test/fixtures';
-import { MEMBER_ID, PERIOD_A, PROJECT_ID, TASK_ID, OPTION_B, categorized, category, projection, rootPath, tablePath, tableRoutes, task } from './test/fixtures';
+import { MEMBER_ID, PERIOD_A, PROJECT_ID, TASK_ID, OPTION_B, categorized, category, projection, rootPath, legacyTablePath, tablePath, tableRoutes, task } from './test/fixtures';
 
 beforeAll(async () => { await import('../../routes/ProjectPage'); });
 const cleanups: (() => void)[] = [];
@@ -22,7 +22,7 @@ function unload() { const event = new Event('beforeunload', { cancelable: true }
 function setup(kind: Kind, extra: RouteTable = {}) {
   const api = installFakeApi({ ...tableRoutes(), [`GET ${rootPath}/projects/${PROJECT_ID}/periods/${PERIOD_A}/task-time-summary`]: () => ok(projection(MEMBER_ID, kind === 'category' ? categorized() : null)), ...extra });
   const client = createQueryClient({ retry: false });
-  const router = createMemoryRouter([{ path: '*', element: <SessionProvider><ProtectedNavigationGuard /><AppRoutes /></SessionProvider> }], { initialEntries: [`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}`] });
+  const router = createMemoryRouter([{ path: '*', element: <SessionProvider><ProtectedNavigationGuard /><AppRoutes /></SessionProvider> }], { initialEntries: [legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}`)] });
   const view = render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
   cleanups.push(() => { view.unmount(); router.dispose(); client.clear(); });
   return { ...api, client, router, user: userEvent.setup({ pointerEventsCheck: 0 }) };

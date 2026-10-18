@@ -1,3 +1,4 @@
+import { useColumnAggregates } from '../features/generic-reports/ColumnAggregates';
 import { LinkedProjectTasks } from '../features/project-placements/LinkedProjectTasks';
 import { PlacementCommandFeedback } from '../features/project-placements/PlacementCommandFeedback';
 import { usePlacementCommands } from '../features/project-placements/queries';
@@ -392,11 +393,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     onOpenMeeting:(id,tab,selection)=>{setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;});},
     onLoadTasks: () => void tasks.fetchNextPage(), accessDenied: isAccessDenied(members.error) || isAccessDenied(tasks.error),
   });
-  const timeAvailable = true; // Weekly columns are available before a week is explicitly chosen; saved visibility still wins.
+  const timeAvailable = searchParams.get('legacyTime') === '1';
   const reconciledColumns = useMemo(() => reconcilePersonalColumns(personalColumns.query.data?.columns ?? null,
     fieldDefinitions.isSuccess ? fieldDefinitions.data : [], projectColumns.isSuccess ? projectColumns.data : { workspaceId: workspace.id, projectId: project.id, revision: 1, columns: [] }, timeAvailable),
     [personalColumns.query.data?.columns, fieldDefinitions.data, fieldDefinitions.isSuccess, projectColumns.data, projectColumns.isSuccess, workspace.id, project.id, timeAvailable]);
-  const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.map(tableColumnId), [reconciledColumns]);
+  const ordinaryAggregates = useColumnAggregates({ actorId, workspaceId: workspace.id, projectId: project.id, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], grouping, filters: { ...filters, search }, writable, enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && projectColumns.isSuccess && members.isSuccess && !personalColumns.denied });
+  const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.filter(ref => timeAvailable || ref.kind !== 'builtin' || ref.key !== 'estimate').map(tableColumnId), [reconciledColumns, timeAvailable]);
   const fieldColumns: FieldColumn[] = reconciledColumns.effectiveVisibleRefs.flatMap(ref => {
     if (ref.kind !== 'field' || !fieldDefinitions.isSuccess || !projectColumns.isSuccess) return [];
     const field = fieldDefinitions.data.find(item => item.id === ref.fieldId && item.projectId === project.id && item.workspaceId === workspace.id && item.archivedAt === null);
@@ -944,7 +946,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const initialTimeCurrent = rowContext.current || (currentRowContext.current === rowContextKey && rowContext.period !== null);
   const initialTimeContextFor = (parent: TaskDto | null, workScope: TaskWorkScope): InitialTimeContext | null => {
     const { periodId, membershipId, period } = rowContext;
-    if (periodId === null || membershipId === null || period === null || period.id.toLowerCase() !== periodId.toLowerCase()) return null;
+    if (!timeAvailable || periodId === null || membershipId === null || period === null || period.id.toLowerCase() !== periodId.toLowerCase()) return null;
     const member = members.data?.find(item => item.id === membershipId);
     if (member === undefined) return null;
     // A detail subtask plans its parent's whole package: only a current projection row of exactly
@@ -959,7 +961,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const initialFields = fieldDefinitions.isSuccess ? fieldDefinitions.data : undefined;
   // The page table's visible custom and weekly columns, in its order; drawer subtask rows show them too.
   // Personal period entries retain their own person/week context; selection never mass-assigns hours.
-  const timeColumns = taskTime.columns.map(column => ({ ...column, renderCell: (task: TaskDto) => <div className="relative flex min-w-0 flex-1 items-center gap-1">
+  const timeColumns = (timeAvailable ? taskTime.columns : []).map(column => ({ ...column, renderCell: (task: TaskDto) => <div className="relative flex min-w-0 flex-1 items-center gap-1">
     <div className="min-w-0 flex-1">{column.renderCell(task)}</div>
     {bulkInline.selectsMany(task.id) ? <span className="max-w-20 truncate text-[10px] text-muted" title={t('bulkInline.singleOnly')}>{t('bulkInline.singleOnly')}</span> : null}
   </div> }));
@@ -1122,10 +1124,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         <Button ref={boardMode ? activeViewControl : undefined} size="sm" variant={boardMode ? 'primary' : 'ghost'} aria-current={boardMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'board'); return next; })}>{t('projects.projectPage.board')}</Button>
         <Button ref={graphMode ? activeViewControl : undefined} size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
         <Button ref={ganttMode ? activeViewControl : undefined} size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
-        {/* The daily Week route comes before the occasional import, so narrow screens show it first. */}
+        <Link to={`/w/${workspace.id}/projects/${project.id}/reports`} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>{t('genericReports.reports')}</Link>
+        <Button size="sm" variant="ghost" onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('legacyTime', '1'); return next; })}>{t('genericReports.legacyColumns')}</Button>
         <Link to={weeklyPlanningHref(workspace.id, project.id, { periodId: taskTime.context.periodId, workerId: taskTime.context.workerId, explicitEmptyPeriod: true })} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>
-          <CalendarDays size={16} aria-hidden="true" />{t('projects.projectPage.week')}</Link>
-        <Link to={`${weeklyPlanningHref(workspace.id, project.id, { periodId: taskTime.context.periodId, workerId: taskTime.context.workerId, explicitEmptyPeriod: true })}&view=report`} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>{t('weeklyReports.reports')}</Link>
+          <CalendarDays size={16} aria-hidden="true" />{t('genericReports.legacy')}</Link>
         {canManageImports ? <Button ref={importMode ? activeViewControl : undefined} size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
       </nav>
 
@@ -1173,7 +1175,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                 {t('projects.projectPage.openSubmission')}</Button>
             </div>
           ) : null}
-          {tableMode ? taskTime.controls : taskTime.notices}
+          {!timeAvailable && tableMode ? ordinaryAggregates.panel : null}
+          {timeAvailable ? <><p className="text-xs text-muted">{t('genericReports.legacyColumns')} <Button size="sm" variant="ghost" onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('legacyTime'); next.delete('week'); next.delete('worker'); return next; })}>{t('genericReports.ordinaryMode')}</Button></p>{tableMode ? taskTime.controls : taskTime.notices}</> : null}
           <div className="flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
             {showTaskFilters ? <div className="min-w-0 max-w-full shrink grow basis-full"><TaskFilters value={filters} onChange={changeFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
             {!boardMode && !graphMode && !ganttMode && !importMode ? <label className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs text-muted">
@@ -1254,6 +1257,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             members={members.data}
             columnIds={visibleColumnIds}
             customColumns={[...timeColumns, ...customColumns]}
+            showLegacySummary={timeAvailable}
+            aggregateFooter={ordinaryAggregates.footer}
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
@@ -1352,6 +1357,8 @@ interface TaskListProps {
   draftTaskIds: ReadonlySet<string>;
   quickAdd: ComponentProps<typeof TaskTable>['quickAdd'];
   sectionComposer?: ComponentProps<typeof TaskTable>['sectionComposer'];
+  showLegacySummary?: boolean;
+  aggregateFooter?: ComponentProps<typeof TaskTable>['aggregateFooter'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
   onMoveBoardStatus: (task: TaskDto, statusId: string) => void;
   moveBlocked: boolean;

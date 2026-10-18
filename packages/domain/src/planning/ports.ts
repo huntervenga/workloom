@@ -114,6 +114,7 @@ export type TaskMutationCommand = 'project.create'|'project.update'|'section.cre
 export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set'|'field.policy.set'|'field.value.exception';
 export type PlanningMutationCommand = 'period.create'|'period.update'|'commitment.create'|'commitment.update'|'plan.freeze'|'work.set'|'report.create';
 export type PlanningMutationIntent =
+ | {readonly family:'generic_report';readonly command:'generic_report.create'|'generic_report.update'|'generic_report.capture'|'generic_report.settings'|'generic_report.template';readonly target:{readonly kind:'project'|'report';readonly id:string};readonly input:unknown}
  | {readonly family:'task_placement';readonly command:TaskProjectPlacementCommand;readonly target:{readonly taskId:string;readonly projectId:string};readonly input:unknown}
  | {readonly family:'cutoff';readonly command:'cutoff.configure'|'cutoff.retry';readonly target:{readonly periodId:string};readonly input:unknown}
  | {readonly family:'table_preference';readonly command:'table.preference.set';readonly target:{readonly projectId:string};readonly input:unknown}

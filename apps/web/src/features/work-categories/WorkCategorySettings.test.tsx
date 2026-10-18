@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { queryKeys } from '../../lib/queryKeys';
 import { alpha, anna, installFakeApi, ok, renderApp } from '../../test/fakeApi';
 import { lostResponse } from '../planning/test/fixtures';
-import { FIELD, PROJECT_ID, binding, definition, rootPath, tablePath, tableRoutes } from './test/fixtures';
+import { FIELD, PROJECT_ID, binding, definition, rootPath, legacyTablePath, tableRoutes } from './test/fixtures';
 
 describe('project work category binding lifecycle', () => {
   it('keeps the original binding choice/key after closing and loss even when that field is archived meanwhile', async () => {
@@ -11,7 +11,7 @@ describe('project work category binding lifecycle', () => {
     let attempts = 0;
     let archived = false;
     const { calls } = installFakeApi({ ...tableRoutes(), [`GET ${rootPath}/fields`]: () => ok([{ ...definition(), archivedAt: archived ? '2026-10-20T10:00:00Z' : null }]), [`GET ${rootPath}/projects/${PROJECT_ID}/work-category-binding`]: () => ok(archived ? { ...binding(), availability: 'field_archived' } : binding(false)), [`PATCH ${rootPath}/projects/${PROJECT_ID}/work-category-binding`]: () => ++attempts === 1 ? gate.promise : ok(binding()) });
-    const { user, queryClient } = renderApp(tablePath);
+    const { user, queryClient } = renderApp(legacyTablePath());
     await user.click(await screen.findByRole('button', { name: "Work types" }));
     let dialog = await screen.findByRole('dialog', { name: "Project work type" });
     await user.selectOptions(within(dialog).getByLabelText("Work-type field"), FIELD);

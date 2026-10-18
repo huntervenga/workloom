@@ -141,6 +141,13 @@
       "when": 1792302979168,
       "tag": "0019_field_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792302979169,
+      "tag": "0020_generic_reports",
+      "breakpoints": true
     }
   ]
 }

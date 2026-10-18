@@ -3,7 +3,7 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { created, installFakeApi, ok, renderApp } from '../../test/fakeApi';
 import { commitment, lostResponse, work } from '../planning/test/fixtures';
-import { MEMBER_ID, PACKAGE_ID, PERIOD_A, PROJECT_ID, TASK_ID, projection, rootPath, tablePath, tableRoutes, task } from './test/fixtures';
+import { MEMBER_ID, PACKAGE_ID, PERIOD_A, PROJECT_ID, TASK_ID, projection, rootPath, legacyTablePath, tableRoutes, task } from './test/fixtures';
 
 async function close(user: ReturnType<typeof renderApp>['user'], name: string) {
   const dialog = screen.getByRole('dialog', { name });
@@ -24,7 +24,7 @@ describe('quick weekly table entry', () => {
       result.packages = result.tasks.map((item) => ({ workPackageId: item.workPackageId, commitment: null, subjectActualMinutes: 0, totalActualMinutes: 0, subjectActiveSourceCount: 0, totalActiveSourceCount: 0 }));
       return ok(result);
     }, [`POST ${rootPath}/periods/${PERIOD_A}/commitments`]: () => ++attempts === 1 ? gate.promise : created(commitment(180)) });
-    const { user } = renderApp(tablePath);
+    const { user } = renderApp(legacyTablePath());
     await screen.findByRole('button', { name: task.title });
     expect(screen.getByLabelText("Week for hours")).toHaveTextContent(timeContextLabel('Week for hours', ''));
     expect(calls.some((call) => call.path.endsWith('task-time-summary'))).toBe(false);
@@ -68,7 +68,7 @@ describe('quick weekly table entry', () => {
 
 it('keeps week choice explicit through opening, choosing and clearing while the person picker remains searchable without writes', async () => {
   const { calls } = installFakeApi(tableRoutes());
-  const { user } = renderApp(tablePath);
+  const { user } = renderApp(legacyTablePath());
   const week = await screen.findByRole('combobox', { name: 'Week for hours' });
   expect(week).toHaveTextContent(timeContextLabel('Week for hours', ''));
   await user.click(week);

@@ -8,7 +8,7 @@ import { protectedDraftsFor } from '../../lib/protectedDrafts';
 import { alpha, anna, boris, installFakeApi, project } from '../../test/fakeApi';
 import { FactDialog, factSession, type FactSession } from '../planning/FactDialog';
 import { period } from '../planning/test/fixtures';
-import { MEMBER_ID, PERIOD_A, PROJECT_ID, tablePath, tableRoutes, task } from './test/fixtures';
+import { MEMBER_ID, PERIOD_A, PROJECT_ID, legacyTablePath, tablePath, tableRoutes, task } from './test/fixtures';
 import { useTaskTimeTable } from './useTaskTimeTable';
 
 function unload() { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }
@@ -24,7 +24,7 @@ describe('retained hours owner lifetime', () => {
       change = child.props.onChange;
       return null;
     }
-    const wrapper = (owner: ReactNode) => <QueryClientProvider client={client}><MemoryRouter initialEntries={[`${tablePath}?week=${PERIOD_A}`]}>{owner}</MemoryRouter></QueryClientProvider>;
+    const wrapper = (owner: ReactNode) => <QueryClientProvider client={client}><MemoryRouter initialEntries={[legacyTablePath(`${tablePath}?week=${PERIOD_A}`)]}>{owner}</MemoryRouter></QueryClientProvider>;
     const view = render(wrapper(<Owner />));
     const oldChange = change; if (!oldChange) throw new Error('Missing first owner');
     const dirty = { ...factSession(period(), null, MEMBER_ID, task.id), hours: 'invalid' };

@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, anna, created, installFakeApi, ok, project, renderApp, singleActorRoutes } from '../../test/fakeApi';
 import { commitment, work } from '../planning/test/fixtures';
 import { chooseTimeContext } from './test/timeContext';
-import { MEMBER_ID, PACKAGE_ID, PERIOD_A, PROJECT_ID, TASK_ID, projection, rootPath, tablePath, tableRoutes, task } from './test/fixtures';
+import { MEMBER_ID, PACKAGE_ID, PERIOD_A, PROJECT_ID, TASK_ID, projection, rootPath, legacyTablePath, tableRoutes, task } from './test/fixtures';
 
 // Load the lazy route outside the first interaction's DOM wait, as the other project integration suites do.
 beforeAll(async () => { await import('../../routes/ProjectPage'); });
@@ -32,7 +32,7 @@ function planCell(title: string) {
 
 async function openTable(plan: PeriodCommitmentDto | null, allocations: Record<string, number> = {}, extra = {}) {
   const api = installFakeApi({ ...tableRoutes(), [`GET ${rootPath}/tasks`]: () => ok([task, sibling]), [`GET ${rootPath}/projects/${PROJECT_ID}/periods/${PERIOD_A}/task-time-summary`]: () => ok(summary(plan, allocations)), ...extra });
-  const ui = renderApp(tablePath);
+  const ui = renderApp(legacyTablePath());
   await chooseTimeContext(ui.user, 'Week for hours', PERIOD_A);
   await screen.findByRole('button', { name: `Weekly plan: ${task.title}` });
   return { ...api, ...ui };

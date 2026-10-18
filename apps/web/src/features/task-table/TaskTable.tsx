@@ -63,6 +63,8 @@ export interface TaskTableQuickAdd {
 }
 
 export interface TaskTableProps {
+  showLegacySummary?: boolean;
+  aggregateFooter?: ReactNode;
   selectedTaskIds?: readonly string[] | undefined;
   selectionDisabled?: boolean | undefined;
   dragScope?: string | undefined;
@@ -841,6 +843,7 @@ export function TaskTable({
   columnPreset = 'expanded',
   columnIds,
   onEditTaskField, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
+  showLegacySummary = true, aggregateFooter,
   onMoveTask, moveBlocked = false, acquireDragProtection,
   grouping = 'section',
   sortMode = 'manual',
@@ -1149,7 +1152,8 @@ export function TaskTable({
         {grouping === 'section' && quickAdd && anchored === null && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody>{quickRows(null, 0)}</tbody> : null}
         {sectionComposer ? <tbody><tr className="border-t border-line bg-canvas"><td colSpan={columnCount} className="px-3"><div className="sticky left-0 w-[calc(100cqw-1.5rem)] min-w-0">{sectionComposer}</div></td></tr></tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
-          <SummaryRow summary={summary} partial={partial} columnCount={columnCount} />
+          {showLegacySummary ? <SummaryRow summary={summary} partial={partial} columnCount={columnCount} /> : null}
+          {aggregateFooter ? <tr className="border-t border-line-strong bg-surface"><td colSpan={columnCount} className="px-3"><div className="sticky left-0 w-[calc(100cqw-1.5rem)]">{aggregateFooter}</div></td></tr> : null}
         </tfoot>
       </table>
     </div>

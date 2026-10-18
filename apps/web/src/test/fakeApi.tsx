@@ -108,6 +108,7 @@ export function installFakeApi(table: RouteTable): { calls: FakeRequest[]; backg
   const backgroundCalls: FakeRequest[] = [];
   let currentActorId: string | null = null;
   const currentMemberships = new Map<string, MembershipDto[]>();
+  const knownProjects = new Set<string>();
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const href = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const request: FakeRequest = {
@@ -141,7 +142,22 @@ export function installFakeApi(table: RouteTable): { calls: FakeRequest[]; backg
           if (match?.[1] && Array.isArray(payload.data)) currentMemberships.set(decodeURIComponent(match[1]).toLowerCase(), payload.data);
         }
       }
+      if (request.method === 'GET' && response.ok && currentActorId) {
+        const match = /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)$/.exec(request.path);
+        if (match?.[1] && match[2]) {
+          const payload = await response.clone().json().catch(() => null) as { data?: { id?: string; workspaceId?: string } } | null;
+          const workspaceId = decodeURIComponent(match[1]).toLowerCase(), projectId = decodeURIComponent(match[2]).toLowerCase();
+          if (typeof payload?.data?.id === 'string' && typeof payload.data.workspaceId === 'string' && payload.data.id.toLowerCase() === projectId && payload.data.workspaceId.toLowerCase() === workspaceId) knownProjects.add(`${currentActorId}:${workspaceId}:${projectId}`);
+        }
+      }
       return response;
+    }
+    // Unconfigured aggregate settings exist only for a project this actor actually read and a
+    // modeled current membership. Explicit handlers above always win, including every denial.
+    const aggregateSettings = request.method === 'GET' ? /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/field-aggregate-settings$/.exec(request.path) : null;
+    if (aggregateSettings?.[1] && aggregateSettings[2] && currentActorId) {
+      const workspaceId = decodeURIComponent(aggregateSettings[1]).toLowerCase(), projectId = decodeURIComponent(aggregateSettings[2]).toLowerCase();
+      if (knownProjects.has(`${currentActorId}:${workspaceId}:${projectId}`) && currentMemberships.get(workspaceId)?.some(member => member.userId.toLowerCase() === currentActorId)) return ok({ workspaceId, projectId, revision: 0, measures: [] });
     }
     const ownPreference = request.method === 'GET' ? /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/table-preferences\/me$/.exec(request.path) : null;
     if (ownPreference?.[1] && ownPreference[2]) {

@@ -1,0 +1,10 @@
+import {describe,expect,it} from 'vitest';
+import {genericReportConfigSchema,queryGenericReportInputSchema,planFactTemplateInputSchema} from './generic-reports.js';
+const p='30000000-0000-4000-8000-000000000001',f='30000000-0000-4000-8000-000000000002';
+const config={projectId:p,hierarchy:'all_tasks',measures:[{key:'tasks',operation:'count_tasks'}],comparison:null,groupBy:{kind:'none'},filters:{statusGroups:[],tagIds:[],assignee:{kind:'all'},dateRange:null}};
+describe('finite generic report catalog',()=>{
+ it('works without a period and rejects arbitrary expressions or implicit recurring weeks',()=>{expect(genericReportConfigSchema.parse(config)).toEqual(config);for(const extra of [{periodId:p},{expression:'sum(plan)'},{groupBy:{kind:'tag'}}])expect(genericReportConfigSchema.safeParse({...config,...extra}).success).toBe(false);});
+ it('rejects duplicate measures, reversed dates and self-comparison',()=>{for(const next of [{...config,measures:[...config.measures,...config.measures]},{...config,comparison:{planFieldId:f,factFieldId:f,completion:'done_only'}},{...config,filters:{...config.filters,dateRange:{source:{kind:'due_date'},from:'2026-10-20',to:'2026-10-01'}}}])expect(genericReportConfigSchema.safeParse(next).success).toBe(false);});
+ it('bounds pages and requires immutable definition revision',()=>{expect(queryGenericReportInputSchema.parse({expectedRevision:1})).toEqual({expectedRevision:1,offset:0,limit:100,snapshotId:null});for(const next of [{},{expectedRevision:0},{expectedRevision:1,limit:201},{expectedRevision:1,offset:5001}])expect(queryGenericReportInputSchema.safeParse(next).success).toBe(false);});
+ it('uses arbitrary ordinary field names but rejects a duplicate pair',()=>{expect(planFactTemplateInputSchema.safeParse({planName:'Effort budget',factName:'Time spent',reportName:'Review',expectedColumnsRevision:1}).success).toBe(true);expect(planFactTemplateInputSchema.safeParse({planName:'Budget',factName:'budget',reportName:'Review',expectedColumnsRevision:1}).success).toBe(false);});
+});

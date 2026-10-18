@@ -135,6 +135,7 @@ export function invalidateTags(queryClient: QueryClient, actorId: string, worksp
  * a task write may change other tasks too (a shared work package estimate).
  */
 export function invalidateTasks(queryClient: QueryClient, actorId: string, workspaceId: string, projectId?: string) {
+  void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'generic-reports'] });
   if (projectId === undefined) void invalidateTaskTimelines(queryClient, actorId, workspaceId);
   return queryClient.invalidateQueries({
     queryKey: projectId

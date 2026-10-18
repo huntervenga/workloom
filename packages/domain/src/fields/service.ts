@@ -229,52 +229,8 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
 
     async createField(context: CommandContext, input: CreateTaskFieldInput): Promise<TaskFieldDefinitionDto> {
       const parsed = parseInput<CreateTaskFieldInput>(createTaskFieldInputSchema, input);
-      return mutate(context, 'fields.manage', 'field.create', null, parsed, taskFieldDefinitionSchema, async (scope, ws, now) => {
-        const repo = scope.repository;
-        const projectId = parsed.projectId;
-        await requireOpenProject(repo.tasks, ws, projectId);
-        if (!SELECT_TYPES.includes(parsed.type) && parsed.options.length > 0) {
-          throw ruleError('Only select fields have options.', 'options');
-        }
-        const siblings = await repo.listFields(ws, projectId);
-        assertFieldNameFree(siblings, parsed.name, null);
-        assertActiveFieldCapacity(siblings, null);
-        const options: TaskFieldOptionDto[] = [];
-        for (const [position, option] of parsed.options.entries()) {
-          assertOptionNameFree(options, option.name, null);
-          options.push({ id: newId(), name: option.name, color: option.color, position, revision: 1, archivedAt: null });
-        }
-
-        const field: TaskFieldDefinitionDto = {
-          id: newId(),
-          workspaceId: ws,
-          projectId,
-          name: parsed.name,
-          type: parsed.type,
-          revision: 1,
-          definitionVersionId: newId(),
-          historyEnabled: parsed.historyEnabled,
-          locked: parsed.locked,
-          archivedAt: null,
-          options,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await repo.insertField(field);
-        for (const option of options) await repo.insertOption(toOptionRecord(field, option));
-        await repo.insertDefinitionVersion(field);
-        await recordField(scope, field, 'created', {
-          name: field.name,
-          type: field.type,
-          historyEnabled: field.historyEnabled,
-          locked: field.locked,
-          options: options.map(optionMetadata),
-        });
-
-        const columns = await loadColumns(repo, ws, projectId);
-        await writeColumns(scope, columns, appendColumn(columns.columns, field.id), 'field_created');
-        return field;
-      });
+      return mutate(context, 'fields.manage', 'field.create', null, parsed, taskFieldDefinitionSchema,
+        scope => createTaskFieldInScope(scope, parsed, tools));
     },
 
     async updateField(context: CommandContext, fieldId: string, input: UpdateTaskFieldInput): Promise<TaskFieldDefinitionDto> {
@@ -875,4 +831,33 @@ export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:
           });
         }
         return next;
+}
+
+/** Ordinary definition creation reused by the atomic opt-in template. Caller must run field.create planning guard. */
+export async function createTaskFieldInScope(scope: TaskFieldWriteScope, input: CreateTaskFieldInput, tools: Pick<TaskFieldApplicationDependencies['tools'], 'newId'>): Promise<TaskFieldDefinitionDto> {
+  const parsed = parseInput<CreateTaskFieldInput>(createTaskFieldInputSchema, input);
+  const repo = scope.repository, ws = scope.context.workspaceId, now = scope.barrierAt.toISOString(), projectId = parsed.projectId;
+  const newId = () => idSchema.parse(tools.newId());
+  await requireOpenProject(repo.tasks, ws, projectId);
+  if (!SELECT_TYPES.includes(parsed.type) && parsed.options.length > 0) throw ruleError('Only select fields have options.', 'options');
+  const siblings = await repo.listFields(ws, projectId);
+  assertFieldNameFree(siblings, parsed.name, null); assertActiveFieldCapacity(siblings, null);
+  const options: TaskFieldOptionDto[] = [];
+  for (const [position, option] of parsed.options.entries()) {
+    assertOptionNameFree(options, option.name, null);
+    options.push({ id: newId(), name: option.name, color: option.color, position, revision: 1, archivedAt: null });
+  }
+  const field: TaskFieldDefinitionDto = { id: newId(), workspaceId: ws, projectId, name: parsed.name, type: parsed.type, revision: 1,
+    definitionVersionId: newId(), historyEnabled: parsed.historyEnabled, locked: parsed.locked, archivedAt: null, options, createdAt: now, updatedAt: now };
+  await repo.insertField(field);
+  for (const option of options) await repo.insertOption(toOptionRecord(field, option));
+  await repo.insertDefinitionVersion(field);
+  await recordField(scope, field, 'created', { name: field.name, type: field.type, historyEnabled: field.historyEnabled, locked: field.locked, options: options.map(optionMetadata) });
+  const current = await loadColumns(repo, ws, projectId);
+  const next = { ...current, revision: current.revision + 1, columns: appendColumn(current.columns, field.id) };
+  await repo.saveProjectColumns(next);
+  await record(scope, 'project_columns', projectId, 'updated', next.revision,
+    { reason: 'field_created', revision: { from: current.revision, to: next.revision }, fieldIds: next.columns.map(c => c.fieldId) },
+    { projectId, revision: next.revision });
+  return field;
 }
