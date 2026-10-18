@@ -1,4 +1,5 @@
 import type { OriginalPackageEstimateDto, TaskDto } from '@workloom/contracts';
+import userEvent from '@testing-library/user-event';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, deferred, failure, installFakeApi, ok, renderApp, type RouteTable } from '../../test/fakeApi';
@@ -29,6 +30,8 @@ const originalReads = (calls: Calls) => calls.filter(call => call.path.endsWith(
 const writes = (calls: Calls) => calls.filter(call => call.method !== 'GET');
 async function drawer(title: string) {
   const dialog = within(await screen.findByRole('dialog', { name: title }));
+  const more = dialog.getByText(/^More fields/, { selector: 'summary' });
+  if (!more.parentElement?.hasAttribute('open')) await userEvent.setup().click(more);
   return { dialog, current: dialog.getByLabelText('Team estimate, hours'), original: dialog.getByRole('region', { name: 'Original estimate' }) };
 }
 
@@ -92,7 +95,7 @@ describe('drawer current and original estimates', () => {
   });
 
   it('marks the current value as saved while an unsaved estimate is in the form', async () => {
-    installFakeApi(routes({ [PACKAGE_ID]: () => ok(capturedZero) }));
+    const { calls } = installFakeApi(routes({ [PACKAGE_ID]: () => ok(capturedZero) }));
     const { user } = renderApp(`${tablePath}?task=${task.id}`);
     const { dialog } = await drawer(task.title);
     const more = dialog.queryByText('More details', { selector: 'summary' });
@@ -103,7 +106,9 @@ describe('drawer current and original estimates', () => {
     expect(within(saved).getByText('Saved value. Your unsaved estimate is in the form above.')).toBeInTheDocument();
     expect(within(saved).getByText(formatEstimate(1200))).toBeInTheDocument();
     expect(input).toHaveValue('3');
-    expect(dialog.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(dialog.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    expect(dialog.getByText('Not saved yet')).toBeInTheDocument();
+    expect(writes(calls)).toHaveLength(0);
   });
 
   it('reads no package estimate until the saved task detail has loaded', async () => {

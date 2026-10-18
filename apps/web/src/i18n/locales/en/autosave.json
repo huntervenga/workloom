@@ -1,0 +1,29 @@
+{
+  "status": {
+    "saving": "Saving…",
+    "saved": "Saved",
+    "unsent": "Not saved yet",
+    "invalid": "Fix the highlighted field to save it.",
+    "unknown": "We could not confirm this save. The server may already have it.",
+    "conflict": "This task changed on the server. Review the latest version to keep saving.",
+    "rejected": "This change was not saved.",
+    "pausedByOther": "Saving is paused until another task's save is resolved."
+  },
+  "actions": {
+    "retry": "Retry",
+    "review": "Review",
+    "openThatTask": "Open that task"
+  },
+  "fields": {
+    "label": "Task details",
+    "dates": "Dates",
+    "moreFields": "More fields",
+    "moreFieldsHint": "Participants, custom fields and estimate history",
+    "addTag": "Add tag",
+    "removeTag": "Remove tag {{name}}",
+    "hint": "Changes are saved when you leave a field. In the description, press Ctrl+Enter to save."
+  },
+  "archive": {
+    "waitForSave": "Archiving is available once your changes are saved."
+  }
+}

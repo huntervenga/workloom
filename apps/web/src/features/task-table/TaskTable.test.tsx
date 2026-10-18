@@ -187,7 +187,8 @@ describe('TaskTable people, tags and budget', () => {
 
     const row = rowOf('Обновить прайс');
     expect(within(row).getByText('Акция-2025')).toBeInTheDocument();
-    expect(within(row).getByText("· archived")).toBeInTheDocument();
+    expect(within(row).getByText("(archived)")).toBeInTheDocument();
+    expect(within(row).getByText("Акция-2025").closest("[data-tag-badge]")).toHaveAttribute("data-tag-badge", "tag-old");
   });
 
   it('withholds the total when loaded copies of one package disagree', () => {

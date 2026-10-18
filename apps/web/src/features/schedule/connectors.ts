@@ -7,7 +7,8 @@ export { POINT_RADIUS } from './barGeometry';
 export interface ConnectorRow { start: string | null; due: string | null; meeting: boolean }
 export type ConnectorSkipReason = 'meeting' | 'missing_date' | 'not_loaded' | 'outside_window' | 'not_current';
 export interface ConnectorEnd { taskId: string; x: number; kind: 'edge' | 'point' }
-export interface PlannedConnector { dependencyId: string; state: 'compatible' | 'conflict'; from: ConnectorEnd; to: ConnectorEnd }
+/** `neutral`: the server could not decide finish-to-start (a date is missing); the arrow only links the visible points. */
+export interface PlannedConnector { dependencyId: string; state: 'compatible' | 'conflict' | 'neutral'; from: ConnectorEnd; to: ConnectorEnd }
 export interface ConnectorPlan { drawn: PlannedConnector[]; skipped: { dependencyId: string; reason: ConnectorSkipReason }[] }
 const STUB = 6;
 
@@ -28,7 +29,12 @@ export function planConnectors(comparisons: readonly ScheduleDependencyCompariso
   const plan: ConnectorPlan = { drawn: [], skipped: [] };
   for (const item of comparisons) {
     const skip = (reason: ConnectorSkipReason) => { plan.skipped.push({ dependencyId: item.dependencyId, reason }); };
-    if (item.state === 'unknown') { skip(item.reason === 'meeting_calendar' ? 'meeting' : 'missing_date'); continue; }
+    if (item.state === 'unknown') {
+      if (item.reason === 'meeting_calendar') { skip('meeting'); continue; }
+      const neutral = planNeutral(item, rows, window, dayWidth);
+      if ('reason' in neutral) skip(neutral.reason); else plan.drawn.push(neutral);
+      continue;
+    }
     const predecessor = rows.get(item.predecessorTaskId), successor = rows.get(item.successorTaskId);
     const reason = endpointReason(predecessor, predecessor?.due ?? null, item.predecessorDueDate) ?? endpointReason(successor, successor?.start ?? null, item.successorStartDate);
     if (reason || !predecessor || !successor) { skip(reason ?? 'not_loaded'); continue; }
@@ -42,6 +48,26 @@ export function planConnectors(comparisons: readonly ScheduleDependencyCompariso
     plan.drawn.push({ dependencyId: item.dependencyId, state: item.state, from, to });
   }
   return plan;
+}
+/**
+ * An undecided (missing-date) comparison still links what is actually drawn: the predecessor's due date, or its
+ * start when it has no due date, to the successor's start date, or its due when it has no start. The compared
+ * dates must equal the bar's own (both null included), so a stale read never attaches to another date; no date
+ * is invented and the comparison itself stays unknown.
+ */
+function planNeutral(item: ScheduleDependencyComparisonDto, rows: ReadonlyMap<string, ConnectorRow>, window: CalendarWindow, dayWidth: number): PlannedConnector | { reason: ConnectorSkipReason } {
+  const predecessor = rows.get(item.predecessorTaskId), successor = rows.get(item.successorTaskId);
+  if (!predecessor || !successor) return { reason: 'not_loaded' };
+  if (predecessor.meeting || successor.meeting) return { reason: 'meeting' };
+  if (predecessor.due !== item.predecessorDueDate || successor.start !== item.successorStartDate) return { reason: 'not_current' };
+  const fromDate = predecessor.due ?? predecessor.start, toDate = successor.start ?? successor.due;
+  const fromDay = fromDate === null ? null : dayIndex(fromDate), toDay = toDate === null ? null : dayIndex(toDate);
+  if (fromDay === null || toDay === null) return { reason: 'missing_date' };
+  if (fromDay < window.startIndex || fromDay > window.endIndex || toDay < window.startIndex || toDay > window.endIndex) return { reason: 'outside_window' };
+  const fromOffset = fromDay - window.startIndex, toOffset = toDay - window.startIndex;
+  const from: ConnectorEnd = predecessor.start !== null && predecessor.due !== null ? { taskId: item.predecessorTaskId, x: (fromOffset + 1) * dayWidth, kind: 'edge' } : { taskId: item.predecessorTaskId, x: (fromOffset + 0.5) * dayWidth + POINT_RADIUS, kind: 'point' };
+  const to: ConnectorEnd = successor.start !== null && successor.due !== null ? { taskId: item.successorTaskId, x: toOffset * dayWidth, kind: 'edge' } : { taskId: item.successorTaskId, x: (toOffset + 0.5) * dayWidth - POINT_RADIUS, kind: 'point' };
+  return { dependencyId: item.dependencyId, state: 'neutral', from, to };
 }
 export function skippedCounts(plan: ConnectorPlan): Record<ConnectorSkipReason, number> {
   const counts: Record<ConnectorSkipReason, number> = { meeting: 0, missing_date: 0, not_loaded: 0, outside_window: 0, not_current: 0 };

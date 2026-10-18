@@ -177,8 +177,33 @@ describe('root task section move', () => {
     await user.click(screen.getByRole('button', { name: 'More details' }));
     const drawer = within(await screen.findByRole('dialog', { name: root.title }));
     expect(drawer.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Second section');
-    expect(drawer.getByText('Unsaved changes')).toBeInTheDocument();
+    expect(drawer.getByText('This task changed on the server. Review the latest version to keep saving.')).toBeInTheDocument();
+    expect(drawer.getByRole('button', { name: 'Review' })).toBeVisible();
     expect(patches(calls)).toHaveLength(1);
+  });
+
+  it('keeps a conflicted inline command in Review through More details, Close and reopening without another PATCH', async () => {
+    const { calls } = installFakeApi(server(() => failure(409, 'REVISION_CONFLICT', 'internal conflict detail')).routes);
+    const { user } = renderApp(tablePath);
+    const menu = await openMove(user);
+    await user.click(menu.getByRole('option', { name: 'Second section' }));
+    await screen.findByText('This data changed elsewhere', { exact: false });
+    const original = patches(calls)[0];
+    if (!original) throw new Error('The rejected original move is required.');
+    expect(original.body).toEqual({ expectedRevision: root.revision, sectionId: B });
+    await user.click(screen.getByRole('button', { name: 'More details' }));
+    let drawer = within(await screen.findByRole('dialog', { name: root.title }));
+    expect(drawer.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Second section');
+    await user.click(drawer.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
+    drawer = within(await screen.findByRole('dialog', { name: root.title }));
+    expect(drawer.getByRole('button', { name: 'Review' })).toBeVisible();
+    expect(drawer.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Second section');
+    expect(screen.queryByText('internal conflict detail')).not.toBeInTheDocument();
+    expect(patches(calls)).toHaveLength(1);
+    expect(patches(calls)[0]?.body).toEqual(original.body);
+    expect(patches(calls)[0]?.headers.get('Idempotency-Key')).toBe(original.headers.get('Idempotency-Key'));
   });
 
   it('waits for a pending move before another row opens, then opens it from the reloaded rows', async () => {

@@ -60,16 +60,25 @@ describe('actual project inline Priority', () => {
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it('keeps a drawer Priority draft Resume-only and does not submit it through a cell', async () => {
-    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
+  it('autosaves a drawer Priority choice before its cell opens the confirmed value without another write', async () => {
+    let current = base;
+    const { calls } = installFakeApi(routes({
+      [`GET ${rootPath}/tasks`]: () => page([current]),
+      [`GET ${rootPath}/tasks/${base.id}`]: () => ok(current),
+      [`PATCH ${rootPath}/tasks/${base.id}`]: () => ok(current = { ...base, priority: 'high', revision: base.revision + 1 }),
+    }));
+    const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Open task “${base.title}”` }));
     const drawer = within(await screen.findByRole('dialog'));
     await user.click(drawer.getByRole('combobox', { name: 'Priority' }));
     await user.click(within(screen.getByRole('listbox', { name: 'Priority' })).getByRole('option', { name: 'High' }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]?.body).toEqual({ expectedRevision: base.revision, priority: 'high' });
+    await screen.findByText('Saved');
     await user.click(drawer.getByLabelText('Close', { selector: 'button' })); await user.click(await edit());
-    expect(screen.queryByRole('combobox', { name: 'Priority' })).not.toBeInTheDocument(); await user.click(screen.getByRole('button', { name: 'Resume draft' }));
-    const resumed = within(await screen.findByRole('dialog'));
-    expect(resumed.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('High'); expect(writes(calls)).toHaveLength(0);
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('High');
+    expect(screen.queryByRole('button', { name: 'Resume draft' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}'); expect(writes(calls)).toHaveLength(1);
   });
 
   it.each(['Board', 'hidden-column'] as const)('retries a lost Priority response through %s recovery with the original payload and key', async mode => {

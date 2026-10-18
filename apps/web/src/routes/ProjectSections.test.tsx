@@ -299,8 +299,9 @@ it.each(['plan', 'fact'] as const)('preserves an ordinary %s hours draft and its
   expect(expand()).toHaveAttribute('aria-expanded', 'false');
 });
 
-it.each([false, true])('keeps the drawer-owned custom value draft outside section row lifetime (submitted: %s)', async submitted => {
+it.each([false, true])('keeps an invalid unsent or exact submitted custom value outside section row lifetime (submitted: %s)', async submitted => {
   const note = field('Section note'); const first = lostResponse(); let attempts = 0;
+  const retainedText = submitted ? 'Retained custom value' : 'Retained custom value'.repeat(500);
   let values: TaskFieldValueDto[] = [];
   const { calls } = installFakeApi(routes({
     [`GET ${rootPath}/fields`]: () => ok([note]),
@@ -313,25 +314,38 @@ it.each([false, true])('keeps the drawer-owned custom value draft outside sectio
   }));
   const { user } = renderApp(tablePath);
   await user.click(await screen.findByRole('button', { name: `Open task “${parent.title}”` }));
+  const customHeading = await screen.findByText('Custom fields', { selector: 'h3' });
+  const advanced = customHeading.closest('details');
+  if (advanced && !advanced.open) await user.click(within(advanced).getByText(/^More fields/, { selector: 'summary' }));
   await user.click(await screen.findByRole('button', { name: 'Edit “Section note”' }));
   let valueDialog = await screen.findByRole('dialog', { name: 'Value of “Section note”' });
-  await user.type(within(valueDialog).getByRole('textbox', { name: 'Section note' }), 'Retained custom value');
+  fireEvent.change(within(valueDialog).getByRole('textbox', { name: 'Section note' }), { target: { value: retainedText } });
   if (submitted) {
-    await user.click(within(valueDialog).getByRole('button', { name: 'Save value' }));
+    await user.click(within(valueDialog).getByRole('textbox', { name: 'Section note' }));
+    await user.tab();
     await waitFor(() => expect(attempts).toBe(1));
   }
-  await closeDialog(user, 'Value of “Section note”'); await closeDialog(user, parent.title); await user.click(collapse());
+  await closeDialog(user, 'Value of “Section note”');
+  if (!submitted) {
+    expect(within(valueDialog).getByText('Text must be 10,000 characters or fewer.')).toBeInTheDocument();
+    expect(writes(calls)).toHaveLength(0);
+    await closeDialog(user, 'Value of “Section note”');
+  }
+  await closeDialog(user, parent.title); await user.click(collapse());
   if (submitted) {
     await act(async () => first.lose()); await user.click(await screen.findByRole('button', { name: 'Open submission' }));
   } else {
     await user.click(expand()); await user.click(screen.getByRole('button', { name: `Open task “${parent.title}”` }));
   }
+  const reopenedHeading = await screen.findByText('Custom fields', { selector: 'h3' });
+  const reopenedAdvanced = reopenedHeading.closest('details');
+  if (reopenedAdvanced && !reopenedAdvanced.open) await user.click(within(reopenedAdvanced).getByText(/^More fields/, { selector: 'summary' }));
   await user.click(await screen.findByRole('button', { name: 'Edit “Section note”' }));
   valueDialog = await screen.findByRole('dialog', { name: 'Value of “Section note”' });
-  expect(within(valueDialog).getByRole('textbox', { name: 'Section note' })).toHaveValue('Retained custom value');
+  expect(within(valueDialog).getByRole('textbox', { name: 'Section note' })).toHaveValue(retainedText);
   if (submitted) {
     expect(within(valueDialog).getByRole('textbox', { name: 'Section note' })).toBeDisabled();
-    await user.click(within(valueDialog).getByRole('button', { name: 'Retry submission' }));
+    await user.click(within(valueDialog).getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(attempts).toBe(2));
     const sent = writes(calls); expect(sent).toHaveLength(2); expect(sent[1]?.body).toEqual(sent[0]?.body);
     expect(sent[0]?.headers.get('Idempotency-Key')).toBeTruthy(); expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));

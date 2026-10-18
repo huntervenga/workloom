@@ -174,3 +174,6 @@ export type {
 
 export type { TaskRowApplication, TaskRowUnitOfWork, TaskRowApplicationDependencies } from './task-rows/ports.js';
 export { createTaskRowApplication } from './task-rows/service.js';
+
+export * from './tasks/project-placement-ports.js';
+export {createTaskProjectPlacementApplication} from './tasks/project-placements.js';

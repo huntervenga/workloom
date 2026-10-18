@@ -63,6 +63,12 @@ export type IdempotentMutation<TData, TVariables> = DistributiveOmit<
    * state from here rather than from `variables`, which `reset()` clears.
    */
   pendingCommand: PendingCommand<TVariables> | null;
+  /**
+   * Synchronous and stable: true while any other hook of this QueryClient holds a pending or uncertain
+   * command. This hook's own command never counts; without a live registry slot (before mount, after
+   * unmount) every protected command counts, including a possible own one.
+   */
+  hasOtherProtectedCommands: () => boolean;
 };
 
 const noop = () => undefined;
@@ -175,5 +181,10 @@ export function useIdempotentMutation<TVariables extends IdempotentVariables, TD
     [mutate],
   );
 
-  return { ...mutation, mutate, mutateAsync, uncertain, retryUncertain, pendingCommand };
+  const hasOtherProtectedCommands = useCallback(
+    () => (entry.current ? entry.current.hasOthers() : registry.protecting),
+    [registry],
+  );
+
+  return { ...mutation, mutate, mutateAsync, uncertain, retryUncertain, pendingCommand, hasOtherProtectedCommands };
 }

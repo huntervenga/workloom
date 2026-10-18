@@ -37,7 +37,7 @@ describe('actual project date view and date editor', () => {
     fireEvent.change(within(gantt).getByLabelText("Window start"), { target: { value: '2026-03-28' } });
     const axis = within(gantt).getByRole('list', { name: "Calendar window days" });
     expect(within(axis).getAllByRole('listitem')).toHaveLength(28);
-    const full = within(gantt).getByRole('img', { name: "Current: start 0001-01-01, due 9999-12-31" });
+    const full = within(gantt).getByRole('button', { name: name => name.endsWith("Current: start 0001-01-01, due 9999-12-31") });
     expect(full).toHaveStyle({ left: '0%', width: '100%' });
     expect(full.textContent?.startsWith('‹')).toBe(true);
     expect(full.textContent?.endsWith('›')).toBe(true);
@@ -49,7 +49,7 @@ describe('actual project date view and date editor', () => {
     expect(within(meetRow).getByRole('button', { name: "Meeting — open calendar" })).toBeInTheDocument();
     expect(within(meetRow).queryByRole('img')).not.toBeInTheDocument();
     expect(within(meetRow).queryByRole('button', { name: "Edit dates" })).not.toBeInTheDocument();
-    await user.click(within(gantt).getByRole('button', { name: "Compare with frozen plan" }));
+    await user.click(within(gantt).getByRole('button', { name: "Details" }));
     await user.selectOptions(within(gantt).getByLabelText("Plan period"), PERIOD_A);
     await waitFor(() => expect(within(gantt).getByRole('combobox', { name: "Frozen plan to compare" })).toBeEnabled());
     await user.selectOptions(within(gantt).getByLabelText("Frozen plan to compare"), BASELINE_ID);

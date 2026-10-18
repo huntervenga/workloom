@@ -82,7 +82,7 @@ describe('results-first saved reports', () => {
     expect(await screen.findByText('Loading selected week…')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Recorded hours breakdown' })).not.toBeInTheDocument();
     await act(async () => gate.resolve(ok(period(PERIOD_B))));
-    await screen.findByRole('button', { name: 'Calculate hours breakdown' });
+    await screen.findByRole('button', { name: 'Calculate current breakdown' });
     await choosePeriod(user, PERIOD_A);
     await screen.findByRole('combobox', { name: /^Saved breakdown$/ });
     await choosePicker(user, /^Saved breakdown$/, /· 2h$/);

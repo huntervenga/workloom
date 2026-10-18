@@ -8,6 +8,7 @@ import {
 } from '@workloom/contracts';
 import { addPrivateSyntheticMembers } from './private-membership-fixture.js';
 import type { FakeSharedAuth } from './fake-shared-auth.js';
+import { attachPrivateBrowserDiagnostics, privateBrowserPhase } from './private-browser-diagnostics.js';
 
 export const PRIVATE_APP = 'http://127.0.0.1:49318';
 export type Parser<T> = { parse(value: unknown): T };
@@ -26,13 +27,26 @@ export async function apiWrite<T>(page: Page, path: string, data: object, parser
   expect([200, 201].includes(response.status())).toBe(true); return parser.parse(await response.json());
 }
 export async function freshProject(page: Page, provider: FakeSharedAuth, label: string, withTeammates = false): Promise<DailyProject> {
+  await attachPrivateBrowserDiagnostics(page, () => provider.stats());
   const identity = provider.registerIdentity(`${label} ${randomUUID()}`);
-  await page.goto(`${PRIVATE_APP}/app`);
-  await page.getByRole('link', { name: 'Sign in', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Private test identity', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: identity.buttonName, exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeAttached();
-  const meResponse = await page.request.get(`${PRIVATE_APP}/api/v1/me`); expect(meResponse.status()).toBe(200);
+  await privateBrowserPhase(page, 'auth.goto', () => page.goto(`${PRIVATE_APP}/app`));
+  await privateBrowserPhase(page, 'auth.sign-in', () => page.getByRole('link', { name: 'Sign in', exact: true }).click());
+  await privateBrowserPhase(page, 'auth.chooser-visible', () => expect(page.getByRole('heading', { name: 'Private test identity', exact: true })).toBeVisible());
+  // The provider click arrives at the standalone callback; the app document is a later navigation.
+  // Arm its lifecycle boundary before clicking, using the existing navigation/test deadlines.
+  // Observe rejection immediately and report only a fixed error, never navigation URLs/fragments.
+  const finalAppDocument = page.waitForURL(
+    url => url.origin === PRIVATE_APP && url.pathname === '/app',
+    { waitUntil: 'domcontentloaded' },
+  ).then(() => true, () => false);
+  await privateBrowserPhase(page, 'auth.identity-click', () => page.getByRole('button', { name: identity.buttonName, exact: true }).click());
+  await privateBrowserPhase(page, 'auth.final-document', async () => {
+    if (!await finalAppDocument) throw new Error('Final private app document did not reach DOMContentLoaded.');
+  });
+  await privateBrowserPhase(page, 'auth.sign-out', () => expect(page.getByRole('button', { name: 'Sign out', exact: true })).toBeAttached());
+  const meResponse = await privateBrowserPhase(page, 'auth.me-read', async () => {
+    const response = await page.request.get(`${PRIVATE_APP}/api/v1/me`); expect(response.status()).toBe(200); return response;
+  });
   const me = await meResponse.json() as { data: { actor: { id: string; kind: string }; authMode: string } };
   expect(me.data.actor.kind).toBe('real'); expect(me.data.authMode).toBe('shared');
   const workspaces = (await apiRead(page, '/api/v1/workspaces', workspaceListResponseSchema)).data;

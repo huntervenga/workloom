@@ -1,3 +1,6 @@
+import { LinkedProjectTasks } from '../features/project-placements/LinkedProjectTasks';
+import { PlacementCommandFeedback } from '../features/project-placements/PlacementCommandFeedback';
+import { usePlacementCommands } from '../features/project-placements/queries';
 import { BulkCustomFieldCell } from '../features/task-table/BulkCustomFieldCell';
 import { usePointerRowDragProtection } from '../features/task-table/usePointerRowDrag';
 import { BulkTaskToolbar } from '../features/task-table/BulkTaskToolbar';
@@ -238,6 +241,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // Owned here so that closing the drawer keeps uncertain commands and drafts.
   const commands = useTaskCommands(actorId, workspace.id, workspace.role === 'owner' || workspace.role === 'admin');
   const commentsController = useTaskCommentsWorkspace(actorId, workspace.id);
+  const placementCommands = usePlacementCommands(actorId, workspace.id);
   const dependencies = useDependencyWorkspace(actorId, workspace.id, project.id);
   const schedule = useScheduleWorkspace(actorId, workspace.id, project.id, workspace.timezone);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
@@ -471,6 +475,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // The editor waits for real sections, statuses, members and tags.
   const metadataReady = metadataError === undefined && metadata.every((item) => item.query.isSuccess);
   const completionWritable = writable && metadataReady && !personalColumns.denied && !isAccessDenied(tasks.error);
+  useEffect(() => { commands.autosave.setWritable(completionWritable); }, [commands.autosave, completionWritable]);
   const taskPresentationKey = JSON.stringify([actorId, workspace.id, project.id, location.key, grouping, filters.search, filters.completion, filters.statusId, filters.participantMembershipId, filters.tagId, filters.includeArchived, sortMode]);
   const previousPresentation = useRef(taskPresentationKey);
   useLayoutEffect(() => {
@@ -647,6 +652,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     });
 
   const openTask = (id: string) => {
+    if (taskId !== null) commands.autosave.flush(taskId);
     invalidateInlineSave();
     // Its own editor now shows the continued save's state and feedback.
     setContinuation(before => before?.taskId === id ? null : before);
@@ -969,6 +975,16 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // Manual reorder: one guarded move at a time, after every other task command has resolved.
   const moveBlocked = !completionWritable || unresolvedTaskCommand(commands) !== null || commands.move.pendingCommand !== null || commands.move.uncertain !== null
     || commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching;
+  // Board drag is one explicit status intent, using the same page-owned serialized field writer.
+  const moveBoardStatus = (seen: TaskDto, statusId: string) => {
+    if (moveBlocked || activeInline !== null || !completionWritable || commands.editSessions.current.has(seen.id)) return;
+    const current = dedupeTasks(shownTasks).find(task => task.id === seen.id);
+    const target = statuses.data?.find(status => status.id === statusId && status.projectId === project.id && status.workspaceId === workspace.id);
+    if (!current || !target || !canEditTaskInline(current) || current.statusId === statusId || current.revision !== seen.revision
+      || current.statusId !== seen.statusId || current.workPackageRevision !== seen.workPackageRevision || current.participantsRevision !== seen.participantsRevision) return;
+    commands.autosave.authorize(current.id, completionWritable);
+    commands.autosave.choose(current, { statusId });
+  };
   const moveTask = (task: TaskDto, anchor: TaskDto | null, placement: TaskDropPlacement, target?: { responsibleMembershipId: string | null }) => {
     if (!completionWritable || sortMode !== 'manual' || (!anchor && target === undefined)) return;
     if (commands.editSessions.current.has(task.id)) { setAnnouncement(message('taskTable.move.draft', { title: task.title })); return; }
@@ -1030,15 +1046,16 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           </div>
         </div>
         {writable && metadataReady ? <Button size="sm" variant="primary" onClick={() => { if (grouping === 'section' && !boardMode && !graphMode && !ganttMode && !importMode) startQuickAdd(null); else startCreate({ sectionId: null, parent: null }); }}><Plus size={16} aria-hidden="true" />{t('projects.projectPage.newTask')}</Button> : null}
+        {writable ? <CreateSectionDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} trigger={<Button size="sm" variant="ghost"><FolderPlus size={16} aria-hidden="true" />{t('projects.projectPage.newSection')}</Button>} onCreated={section => setAnnouncement(message('projects.projectPage.sectionValueCreated', { p0: section.name }))} /> : null}
         <ProjectActions>
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
             <FieldManagerDialog triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
-            {writable ? <CreateSectionDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} trigger={<Button size="sm" variant="ghost"><FolderPlus size={16} aria-hidden="true" />{t('projects.projectPage.newSection')}</Button>} onCreated={section => setAnnouncement(message('projects.projectPage.sectionValueCreated', { p0: section.name }))} /> : null}
         </ProjectActions>
       </header>
+      <PlacementCommandFeedback commands={placementCommands} actorId={actorId} workspaceId={workspace.id} />
 
       {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <TaskFeedbackLayer><div role="status" className="fixed right-3 top-20 z-[60] max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm shadow-lg">
         <span>{t('taskTable.grouping.moved', { name: savedAssignment.membershipId === null ? t('taskTable.taskTable.unassigned') : members.data?.find(member => member.id === savedAssignment.membershipId)?.displayName ?? t('taskTable.taskTable.memberUnavailable') })}</span>
@@ -1090,6 +1107,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         {/* The daily Week route comes before the occasional import, so narrow screens show it first. */}
         <Link to={weeklyPlanningHref(workspace.id, project.id, { periodId: taskTime.context.periodId, workerId: taskTime.context.workerId, explicitEmptyPeriod: true })} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>
           <CalendarDays size={16} aria-hidden="true" />{t('projects.projectPage.week')}</Link>
+        <Link to={`${weeklyPlanningHref(workspace.id, project.id, { periodId: taskTime.context.periodId, workerId: taskTime.context.workerId, explicitEmptyPeriod: true })}&view=report`} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>{t('weeklyReports.reports')}</Link>
         {canManageImports ? <Button ref={importMode ? activeViewControl : undefined} size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
       </nav>
 
@@ -1196,6 +1214,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} titleCaret={activeInline.titleCaret} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} bulkEdit={bulkInline.port(activeInline.focusClaim)} singleOnly={activeInline.field === 'title' && bulkInline.selectsMany(task.id)} /> : null}
             quickAdd={quickAdd}
             onMoveTask={moveTask}
+            onMoveBoardStatus={moveBoardStatus}
             moveBlocked={moveBlocked}
             acquireDragProtection={acquireDragProtection}
             selectedTaskIds={selectedTaskIds}
@@ -1218,7 +1237,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onCreateChild={startChildInline}
             onRenameSection={writable ? renameSection : undefined}
           />}
+          {!importMode && !graphMode ? <LinkedProjectTasks actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
           <TaskDrawer
+            placementCommands={placementCommands}
             commentsController={commentsController}
             dependencyController={dependencies}
             meetingRequestedPeriodId={searchParams.get('meetingPeriod')??undefined}
@@ -1308,6 +1329,7 @@ interface TaskListProps {
   draftTaskIds: ReadonlySet<string>;
   quickAdd: ComponentProps<typeof TaskTable>['quickAdd'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
+  onMoveBoardStatus: (task: TaskDto, statusId: string) => void;
   moveBlocked: boolean;
   acquireDragProtection: () => () => void;
   writable: boolean;
@@ -1344,7 +1366,7 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
   const scope = loadedTaskScope(query.data);
   return (
     <div className="space-y-3">
-      {boardMode ? <TaskBoard renderCompletionAction={table.renderCompletionAction} tasks={orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
+      {boardMode ? <TaskBoard onMoveStatus={table.onMoveBoardStatus} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={scope.tasks}
         partial={filtered || !scope.complete}

@@ -176,13 +176,15 @@ describe('project Board integration', () => {
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
   });
 
-  it('keeps an Escape-collapsed unsent due date recoverable across Board without writing', async () => {
+  it('cancels an unsent due date on Escape and carries no draft or write across Board', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` })); fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
     await user.keyboard('{Escape}'); expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
-    await board(user); await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
+    await board(user);
+    expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: task.title }));
     const dialog = await screen.findByRole('dialog', { name: task.title });
-    expect(within(dialog).getByLabelText('Due date')).toHaveValue('2026-10-20');
+    expect(within(dialog).getByLabelText('Due date')).toHaveValue(task.dueDate ?? '');
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 

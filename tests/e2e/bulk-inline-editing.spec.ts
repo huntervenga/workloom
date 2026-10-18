@@ -106,7 +106,7 @@ test.describe('editing through a selected task cell', () => {
     await openTable(f); await showColumns(page, ['Team score']); await select(f, selected); const writes = observeCommands(page, f.prefix);
     await row(f, requireValue(selected[0])).getByRole('button', { name: `Edit Team score for ${requireValue(selected[0]).title}`, exact: true }).click();
     const dialog = page.getByRole('dialog', { name: `Edit Team score for ${requireValue(selected[0]).title}`, exact: true });
-    await dialog.getByLabel('Team score', { exact: true }).fill('0'); await dialog.getByRole('button', { name: 'Save for selected tasks', exact: true }).click(); await saved(page);
+    await dialog.getByLabel('Team score', { exact: true }).fill('0'); await dialog.getByLabel('Team score', { exact: true }).press('Tab'); await saved(page);
     expect(writes.commands).toHaveLength(1); assertBulk(requireValue(writes.commands[0]), f, selected, { customField: { fieldId: definition.id, expectedDefinitionRevision: definition.revision, value: { type: 'number', value: 0 } } }, () => ({ expectedFieldValueRevision: 0 }));
     for (const task of selected) expect((await apiRead(page, `${f.prefix}/tasks/${task.id}/field-values`, taskFieldValueListResponseSchema)).data.find(value => value.fieldId === definition.id)?.value).toEqual({ type: 'number', value: 0 });
     await cell(f, requireValue(selected[0]), 'estimate').click(); const estimate = row(f, requireValue(selected[0])).getByRole('textbox', { name: 'Team estimate (hours)', exact: true });

@@ -1,11 +1,12 @@
 import { t, useTranslation } from '../../i18n';
 import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto, TaskStatusGroup } from '@workloom/contracts';
 import { TextInput, cn, inputClassName } from '@workloom/ui';
-import { UserRound } from 'lucide-react';
-import { useId, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { UserRound, X } from 'lucide-react';
+import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { formatEstimate, parseEstimateInput } from '../task-table';
-import { TagSwatch } from './TagDialogs';
+import { TagBadge } from './TagBadge';
+import { tagColor } from './tagColors';
 import { TaskDateInput } from './TaskDateInput';
 import { TASK_DESCRIPTION_MAX, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors, type TaskDraftIssue, type TaskDraftKey } from './taskDraft';
 
@@ -116,12 +117,21 @@ export interface TaskFieldsProps {
    * openly, for a form that places them apart: `primary` (name, project, section, status,
    * assignee, dates), `details` (priority, estimate, participants, tags) and `description`.
    */
-  part?: 'all' | 'primary' | 'details' | 'description' | undefined;
-  /** Shown read only in the `primary` part; a task cannot move to another project. */
+  part?: 'all' | 'primary' | 'details' | 'description' | 'saved' | undefined;
+  /** Shown read only in the `primary` and `saved` parts; a task cannot move to another project. */
   projectName?: string | undefined;
+  /** Independently saved project placements of an existing canonical task. */
+  projectsField?: ReactNode;
   /** Read-only history beneath the estimate, outside the disabled editable controls. */
   estimateSupplement?: ReactNode;
   disabled?: boolean | undefined;
+  /**
+   * Saved tasks only: a field's value is final (text blur or Enter, description Ctrl+Enter, any
+   * choice). Typing alone only calls `onChange`. Absent, nothing commits and forms behave as before.
+   */
+  onCommit?: ((keys: readonly TaskDraftKey[]) => void) | undefined;
+  /** `saved` part: extra read-only or independently saved content under More fields. */
+  moreFields?: ReactNode;
 }
 
 const labelClassName = 'text-sm font-medium text-ink';
@@ -155,8 +165,11 @@ export function TaskFields({
   autoFocusTitle = false,
   part = 'all',
   projectName,
+  projectsField,
   estimateSupplement,
   disabled = false,
+  onCommit,
+  moreFields,
 }: TaskFieldsProps) {
   const { t, locale } = useTranslation();
   const id = useId();
@@ -237,14 +250,27 @@ export function TaskFields({
 
   const toggle = (list: readonly string[], value: string, on: boolean) =>
     on ? [...list.filter((item) => item !== value), value] : list.filter((item) => item !== value);
+  const saved = part === 'saved';
+  const commit = (...keys: TaskDraftKey[]) => onCommit?.(keys);
+  /** A choice is final at once; without `onCommit` this is the plain change. */
+  const choose = (patch: Partial<TaskDraft>) => {
+    onChange(patch);
+    commit(...(Object.keys(patch) as TaskDraftKey[]));
+  };
+  /** Enter ends a single-line text field of a saved task; other forms keep implicit submission. */
+  const commitOnEnter = (key: TaskDraftKey) => (event: KeyboardEvent<HTMLInputElement>) => {
+    if (!onCommit || event.key !== 'Enter' || event.nativeEvent.isComposing || event.metaKey || event.ctrlKey) return;
+    event.preventDefault();
+    commit(key);
+  };
 
   const titleField = (
 <div>
-        <label htmlFor={ids.title} className={part === 'primary' ? 'sr-only' : labelClassName}>
+        <label htmlFor={ids.title} className={part === 'primary' || saved ? 'sr-only' : labelClassName}>
           {t('tasks.taskFields.taskName')}</label>
         <TextInput
           id={ids.title}
-          className={part === 'primary' ? 'task-title-input' : 'mt-1.5'}
+          className={part === 'primary' || saved ? 'task-title-input' : 'mt-1.5'}
           value={draft.title}
           maxLength={TASK_TITLE_MAX}
           autoComplete="off"
@@ -252,6 +278,8 @@ export function TaskFields({
           aria-invalid={errors.title ? true : undefined}
           aria-describedby={errors.title ? ids.titleError : undefined}
           onChange={(event) => onChange({ title: event.target.value })}
+          onBlur={() => commit('title')}
+          onKeyDown={commitOnEnter('title')}
         />
         <FieldError id={ids.titleError} message={errors.title} />
       </div>
@@ -265,7 +293,7 @@ export function TaskFields({
             label={t('tasks.taskFields.status')}
             value={draft.statusId}
             options={statusChoices}
-            onValueChange={(statusId) => onChange({ statusId })}
+            onValueChange={(statusId) => choose({ statusId })}
           />
         </div>);
   const assigneeField = (<div>
@@ -278,11 +306,13 @@ export function TaskFields({
             searchable
             value={draft.responsibleMembershipId ?? ''}
             options={responsibleChoices}
-            onValueChange={(value) => onChange({ responsibleMembershipId: value === '' ? null : value })}
+            onValueChange={(value) => choose({ responsibleMembershipId: value === '' ? null : value })}
           />
         </div>);
-  const datesField = (<div>
-          <TaskDateInput startDate={draft.startDate ?? ''} dueDate={draft.dueDate} onChange={onChange} calendarPopover
+  const datesField = (<div onBlur={(event) => {
+            if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) commit('startDate', 'dueDate');
+          }}>
+          <TaskDateInput startDate={draft.startDate ?? ''} dueDate={draft.dueDate} onChange={onChange} onCommit={onCommit ? patch => commit(...Object.keys(patch) as TaskDraftKey[]) : undefined} calendarPopover
             errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} />
         </div>);
   const descriptionField = (
@@ -298,6 +328,13 @@ export function TaskFields({
           aria-invalid={errors.description ? true : undefined}
           aria-describedby={errors.description ? ids.descriptionError : undefined}
           onChange={(event) => onChange({ description: event.target.value })}
+          onBlur={() => commit('description')}
+          onKeyDown={(event) => {
+            // Enter stays a newline; Ctrl/Cmd+Enter makes the description final.
+            if (!onCommit || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            commit('description');
+          }}
         />
         <FieldError id={ids.descriptionError} message={errors.description} />
       </div>
@@ -311,7 +348,7 @@ export function TaskFields({
             label={t('tasks.taskFields.section')}
             value={draft.sectionId ?? ''}
             options={sectionChoices}
-            onValueChange={(value) => onChange({ sectionId: value === '' ? null : value })}
+            onValueChange={(value) => choose({ sectionId: value === '' ? null : value })}
           />
         </div>);
   const priorityField = (<div>
@@ -325,7 +362,7 @@ export function TaskFields({
             options={priorityChoices}
             onValueChange={(value) => {
               const next = priorities.find((priority) => priority === value);
-              if (next) onChange({ priority: next });
+              if (next) choose({ priority: next });
             }}
           />
         </div>);
@@ -345,6 +382,8 @@ export function TaskFields({
             onChange={(event) => {
               if (estimateMode.kind !== 'inherited') onChange({ estimate: event.target.value });
             }}
+            onBlur={() => { if (estimateMode.kind !== 'inherited') commit('estimate'); }}
+            onKeyDown={commitOnEnter('estimate')}
           />
           <FieldError id={ids.estimateError} message={errors.estimate} />
         </div>);
@@ -369,7 +408,7 @@ export function TaskFields({
                     className="size-4 shrink-0 accent-accent"
                     checked={draft.participantMembershipIds.includes(member.id)}
                     onChange={(event) =>
-                      onChange({
+                      choose({
                         participantMembershipIds: toggle(draft.participantMembershipIds, member.id, event.target.checked),
                       })
                     }
@@ -390,7 +429,7 @@ export function TaskFields({
                       // Only removal, or putting back a saved reference; never a new assignment.
                       disabled={!checked && !savedRetained.has(membershipId)}
                       onChange={(event) =>
-                        onChange({
+                        choose({
                           participantMembershipIds: toggle(draft.participantMembershipIds, membershipId, event.target.checked),
                         })
                       }
@@ -433,11 +472,11 @@ export function TaskFields({
                       type="checkbox"
                       className="size-3.5 shrink-0 accent-accent"
                       checked={selectedTags.has(tag.id)}
+                      aria-label={archived ? t('tasks.taskFields.valueArchived', { p0: tag.name }) : tag.name}
                       disabled={!assignable}
-                      onChange={(event) => onChange({ tagIds: toggle(draft.tagIds, tag.id, event.target.checked) })}
+                      onChange={(event) => choose({ tagIds: toggle(draft.tagIds, tag.id, event.target.checked) })}
                     />
-                    <TagSwatch color={tag.color} className={archived ? 'opacity-50' : undefined} />
-                    <span className="truncate">{archived ? t('tasks.taskFields.valueArchived', { p0: tag.name }) : tag.name}</span>
+                    <TagBadge tag={tag} />
                   </label>
                 </li>
               );
@@ -450,6 +489,90 @@ export function TaskFields({
         )}
       </fieldset>);
 
+  if (saved) {
+    const rowLabel = 'min-h-9 py-2 text-sm text-ink-soft';
+    const addableTags = tagOptions.filter((tag) => !selectedTags.has(tag.id) && (tag.archivedAt === null || savedTags.has(tag.id)));
+    // Common fields as compact label/value rows; the description follows them directly and
+    // everything advanced stays under More fields, so it never pushes the description down.
+    return (
+      <div className="space-y-3">
+        <fieldset disabled={disabled} className="min-w-0 space-y-3">
+          <legend className="sr-only">{t('autosave.fields.label')}</legend>
+          {titleField}
+          <dl className="grid grid-cols-[minmax(6rem,9rem)_minmax(0,1fr)] items-start gap-x-3 gap-y-0.5">
+            <dt className={rowLabel}><label htmlFor={ids.responsible}>{t('tasks.taskFields.assignee')}</label></dt>
+            <dd className="min-w-0">
+              <ChoicePicker id={ids.responsible} label={t('tasks.taskFields.assignee')} searchable value={draft.responsibleMembershipId ?? ''} options={responsibleChoices}
+                onValueChange={(value) => choose({ responsibleMembershipId: value === '' ? null : value })} />
+            </dd>
+            <dt className={rowLabel}><label htmlFor={ids.status}>{t('tasks.taskFields.status')}</label></dt>
+            <dd className="min-w-0">
+              <ChoicePicker id={ids.status} label={t('tasks.taskFields.status')} value={draft.statusId} options={statusChoices} onValueChange={(statusId) => choose({ statusId })} />
+            </dd>
+            <dt className={rowLabel}>{t('autosave.fields.dates')}</dt>
+            <dd className="min-w-0">{datesField}</dd>
+            <dt className={rowLabel}>{t(projectsField ? 'placements.projects' : 'tasks.taskFields.project')}</dt>
+            <dd className="flex min-h-9 min-w-0 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{projectsField ?? projectName}</dd>
+            <dt className={rowLabel}><label htmlFor={ids.section}>{t('tasks.taskFields.section')}</label></dt>
+            <dd className="min-w-0">
+              <ChoicePicker id={ids.section} label={t('tasks.taskFields.section')} value={draft.sectionId ?? ''} options={sectionChoices}
+                onValueChange={(value) => choose({ sectionId: value === '' ? null : value })} />
+            </dd>
+            <dt className={rowLabel}><label htmlFor={ids.estimate}>{t('tasks.taskFields.teamEstimateHours')}</label></dt>
+            <dd className="min-w-0">
+              <TextInput
+                id={ids.estimate}
+                inputMode="decimal"
+                autoComplete="off"
+                placeholder={t('tasks.taskFields.notEstimated')}
+                value={draft.estimate}
+                aria-invalid={errors.estimate ? true : undefined}
+                aria-describedby={errors.estimate ? `${ids.estimateError} ${ids.estimateHint}` : ids.estimateHint}
+                onChange={(event) => onChange({ estimate: event.target.value })}
+                onBlur={() => commit('estimate')}
+                onKeyDown={commitOnEnter('estimate')}
+              />
+              <FieldError id={ids.estimateError} message={errors.estimate} />
+            </dd>
+            <dt className={rowLabel}><label htmlFor={ids.priority}>{t('tasks.taskFields.priority')}</label></dt>
+            <dd className="min-w-0">
+              <ChoicePicker id={ids.priority} label={t('tasks.taskFields.priority')} value={draft.priority} options={priorityChoices}
+                onValueChange={(value) => { const next = priorities.find((priority) => priority === value); if (next) choose({ priority: next }); }} />
+            </dd>
+            <dt className={rowLabel}>{t('tasks.taskFields.tags')}</dt>
+            <dd className="flex min-w-0 flex-wrap items-center gap-1.5 py-1">
+              {draft.tagIds.map((tagId) => {
+                const tag = tags.get(tagId);
+                const name = tag ? (tag.archivedAt === null ? tag.name : t('tasks.taskFields.valueArchived', { p0: tag.name })) : t('tasks.taskFields.tagUnavailable');
+                const remove = <button type="button" aria-label={t('autosave.fields.removeTag', { name })} className="inline-flex size-5 items-center justify-center rounded-full text-muted hover:bg-slate-100 hover:text-ink"
+                  onClick={() => choose({ tagIds: draft.tagIds.filter((id) => id !== tagId) })}>
+                  <X size={12} aria-hidden="true" />
+                </button>;
+                return tag ? <TagBadge key={tagId} tag={tag}>{remove}</TagBadge>
+                  : <span key={tagId} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-line py-0.5 pr-1 pl-2.5 text-xs text-ink-soft"><span className="truncate">{name}</span>{remove}</span>;
+              })}
+              {addableTags.length > 0 ? (
+                <ChoicePicker label={t('autosave.fields.addTag')} value="" searchable
+                  options={[{ value: '', label: t('autosave.fields.addTag') }, ...addableTags.map((tag) => ({ value: tag.id, label: tag.archivedAt === null ? tag.name : t('tasks.taskFields.valueArchived', { p0: tag.name }), color: tagColor(tag) }))]}
+                  onValueChange={(value) => { if (value !== '' && !selectedTags.has(value)) choose({ tagIds: [...draft.tagIds, value] }); }} />
+              ) : draft.tagIds.length === 0 ? <span className="text-sm text-muted">{t('tasks.taskFields.noTagsYet')}</span> : null}
+              {tagAction}
+            </dd>
+          </dl>
+          {descriptionField}
+        </fieldset>
+        <details className="rounded-lg border border-line px-3 py-2">
+          <summary className="cursor-pointer text-sm font-medium text-ink">{t('autosave.fields.moreFields')}<span className="ml-2 text-xs font-normal text-muted">{t('autosave.fields.moreFieldsHint')}</span></summary>
+          <div className="mt-3 space-y-4">
+            <fieldset disabled={disabled} className="min-w-0">{participantsField}</fieldset>
+            {estimateHint}
+            {estimateSupplement}
+            {moreFields}
+          </div>
+        </details>
+      </div>
+    );
+  }
   if (part === 'primary') {
     return (
       <div className="space-y-4">
@@ -457,7 +580,7 @@ export function TaskFields({
         <div className="grid gap-3 sm:grid-cols-2">
           <dl>
             <dt className={labelClassName}>{t('tasks.taskFields.project')}</dt>
-            <dd className="mt-1.5 flex min-h-9 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{projectName}</dd>
+            <dd className="mt-1.5 flex min-h-9 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{projectsField ?? projectName}</dd>
           </dl>
           {sectionField}
         </div>

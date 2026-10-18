@@ -7,6 +7,11 @@ export interface ProtectedCommandEntry {
   set: (active: boolean) => void;
   /** The hook unmounted; later updates are ignored. */
   dispose: () => void;
+  /**
+   * True while any slot other than this one holds a pending or uncertain command. After dispose
+   * this slot is no longer active, so every remaining active slot counts as another.
+   */
+  hasOthers: () => boolean;
 }
 
 /** Asks the user whether to leave anyway; resolves true to leave. */
@@ -45,6 +50,7 @@ export class ProtectedCommandRegistry {
         this.slots.delete(slot);
         this.update(slot, false);
       },
+      hasOthers: () => this.active.size > (this.active.has(slot) ? 1 : 0),
     };
   }
 

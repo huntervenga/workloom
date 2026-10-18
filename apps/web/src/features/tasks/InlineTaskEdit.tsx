@@ -311,7 +311,16 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     };
   }, [anchor, choice]);
 
-  const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose('cancel'); } };
+  // Escape cancels only this field's never-submitted buffer. Sent/unknown commands and a
+  // foreign full-form draft keep their owner and exact recovery payload after the view closes.
+  const cancelInline = () => {
+    if (!foreignDraft && !confirmed && !pending && !uncertain && ownError === null && !isTagHeld()) {
+      const retained = editSessions.current.get(task.id);
+      if (retained === session) editSessions.current.delete(task.id);
+    }
+    onClose('cancel');
+  };
+  const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelInline(); } };
   const actions = (primary: ReactNode) => <div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1">
     {primary}
     <button type="button" className={iconActionClassName} title={t('tasks.quickAdd.moreDetails')} aria-label={t('tasks.quickAdd.moreDetails')} disabled={pending || uncertain || blocked} onClick={() => { editSessions.current.set(task.id, session); onMoreDetails(); }}><Expand size={14} aria-hidden="true" /></button>
@@ -404,7 +413,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     // A held press on a date/tag panel's static content must not blur into the deferred autosave below.
     onMouseDown={field === 'dueDate' || field === 'tagIds' ? keepFocusOnPopoverPress : undefined}
     onKeyDown={event => {
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose('cancel'); return; }
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelInline(); return; }
       if (choice || event.key !== 'Enter' || !(event.target instanceof HTMLInputElement) || event.target.closest('form') !== event.currentTarget) return;
       if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
       event.preventDefault();
@@ -443,7 +452,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
       {field === 'dueDate' ? <TaskDateInput startDate={session.draft.startDate ?? ''} dueDate={session.draft.dueDate} onChange={change} disabled={frozen || needsReview}
         autoFocus={shouldFocus} errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} /> : null}
       {field === 'tagIds' ? <TaskTagPicker tags={tagCatalog} values={session.draft.tagIds} onChange={tagIds => change({ tagIds })} disabled={frozen || needsReview} autoFocus={shouldFocus}
-        creation={creation} onRequestClose={() => onClose('cancel')}
+        creation={creation} onRequestClose={cancelInline}
         // Always offered; an unanswered save or create keeps this mount, so its answer is not lost.
         manageAction={<Button size="sm" variant="ghost" disabled={pending || uncertain || blocked || tagHeld} onClick={() => { if (isTagHeld()) return; editSessions.current.set(task.id, session); onMoreDetails(); }}>{t('tasks.tags.createInDetails')}</Button>} /> : null}
       {field === 'estimate' ? <p id={`${id}-estimate-help`} className="text-muted">{t('tasks.inlineEstimate.sharedHelp')} {t('tasks.inlineEstimate.formatHelp')}</p> : null}

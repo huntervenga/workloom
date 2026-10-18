@@ -1,17 +1,42 @@
+import { projectRowSchema, type TaskDto } from '@workloom/contracts';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { AppRoutes } from '../../app/AppRoutes';
 import { SessionProvider } from '../../app/session';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { alpha, alphaMembers, anna, boris, deferred, failure, installFakeApi, ok, renderApp } from '../../test/fakeApi';
+import { alpha, alphaMembers, anna, boris, deferred, failure, installFakeApi, ok, project, renderApp, type RouteTable } from '../../test/fakeApi';
 import { lostResponse } from '../planning/test/fixtures';
-import { rootPath, task, tablePath, tableRoutes } from '../work-categories/test/fixtures';
+import { rootPath, task, tablePath, tableRoutes as legacyTableRoutes } from '../work-categories/test/fixtures';
 import { queryKeys } from '../../lib/queryKeys';
 import { protectedCommandsFor } from '../../lib/protectedCommands';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';
 
 beforeAll(async () => { await import('../../routes/ProjectPage'); });
+// These owner races use a real existing home task, with no additional project memberships.
+// Supply its actual home-row projection so an unrelated missing-route 404 cannot start a
+// workspace authorization recheck and consume the race's deliberately numbered root read.
+function tableRoutes(currentTask: () => TaskDto = () => task): RouteTable {
+  return {
+    ...legacyTableRoutes(),
+    [`GET ${rootPath}/projects/${task.projectId}/rows`]: () => {
+      const canonicalTask = currentTask();
+      return ok([projectRowSchema.parse({
+        placement: {
+          id: canonicalTask.id, workspaceId: canonicalTask.workspaceId, taskId: canonicalTask.id,
+          projectId: canonicalTask.projectId, homeProjectId: canonicalTask.projectId,
+          sectionId: canonicalTask.sectionId, position: canonicalTask.position, revision: canonicalTask.revision,
+          archivedAt: canonicalTask.archivedAt, createdAt: canonicalTask.createdAt, updatedAt: canonicalTask.updatedAt,
+        },
+        canonicalTask,
+        canonicalStatus: { id: canonicalTask.statusId, workspaceId: canonicalTask.workspaceId,
+          projectId: canonicalTask.projectId, name: 'Запланировано', group: 'todo', position: 0, revision: 1 },
+        homeProject: project(canonicalTask.workspaceId, canonicalTask.projectId, 'Недельный пилот'),
+      })]);
+    },
+  };
+}
+
 const headPath = `${rootPath}/change-head`;
 function head(sequence = '0') {
   return { workspaceId: alpha.id, actorUserId: anna.id, membershipId: alphaMembers[0]?.id,
@@ -47,7 +72,7 @@ describe('real shell/project owner protection against an obsolete head denial', 
 
   it('keeps the actual uncertain command owner and exact retry body/key after a pre-command head returns 403', async () => {
     const delayed = deferred<Response>(); const lost = lostResponse(); let reads = 0; let writes = 0; let current = task;
-    const api = installFakeApi({ ...tableRoutes(), [`GET ${headPath}`]: () => ++reads === 1 ? delayed.promise : ok(head('7')),
+    const api = installFakeApi({ ...tableRoutes(() => current), [`GET ${headPath}`]: () => ++reads === 1 ? delayed.promise : ok(head('7')),
       [`GET ${rootPath}/tasks`]: () => ok([current]),
       [`PATCH ${rootPath}/tasks/${task.id}`]: request => ++writes === 1 ? lost.promise : ok(current = { ...task, title: (request.body as { title: string }).title, revision: 2 }) });
     const ui = renderApp(tablePath);
@@ -100,7 +125,7 @@ describe('real shell/project owner protection against an obsolete head denial', 
     const initialHead = deferred<Response>(); const rootRead = deferred<Response>(); const lost = lostResponse();
     let headReads = 0; let rootReads = 0; let writes = 0; let current = task;
     const replacementMember = 'c0000000-0000-4000-8000-000000000099';
-    const api = installFakeApi({ ...tableRoutes(),
+    const api = installFakeApi({ ...tableRoutes(() => current),
       [`GET ${headPath}`]: () => ++headReads === 1 ? initialHead.promise : ok(head('5')),
       [`GET ${rootPath}`]: () => ++rootReads === 1 ? ok(alpha) : rootReads === 2 ? rootRead.promise : ok(alpha),
       [`GET ${rootPath}/tasks`]: () => ok([current]),
@@ -144,7 +169,7 @@ describe('real shell/project owner protection against an obsolete head denial', 
   it('cancels a head-triggered me recheck so its late actor change cannot clear an actual unknown command', async () => {
     const initialHead = deferred<Response>(); const identity = deferred<Response>(); const lost = lostResponse();
     let headReads = 0; let meReads = 0; let writes = 0; let current = task;
-    const api = installFakeApi({ ...tableRoutes(),
+    const api = installFakeApi({ ...tableRoutes(() => current),
       'GET /api/v1/me': () => ++meReads === 1 ? ok({ actor: anna, authMode: 'dev' }) : identity.promise,
       [`GET ${headPath}`]: () => ++headReads === 1 ? initialHead.promise : ok(head('8')),
       [`GET ${rootPath}/tasks`]: () => ok([current]),

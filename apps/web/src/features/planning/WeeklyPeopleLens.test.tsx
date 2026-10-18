@@ -31,6 +31,7 @@ describe('weekly plans and hours display lens', () => {
     expect(personPicker()).toHaveTextContent(personLabel(colleague.id));
     await user.click(screen.getByRole('button', { name: 'Report' }));
     await user.click(screen.getByRole('button', { name: 'Work types' }));
+    await user.click(screen.getByRole('button', { name: 'Set up new report' }));
     expect(screen.getByRole('checkbox', { name: anna.displayName })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: colleague.displayName })).not.toBeChecked();
     await user.click(screen.getByRole('button', { name: 'Plan and hours' }));

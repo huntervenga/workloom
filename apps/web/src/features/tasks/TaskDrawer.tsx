@@ -1,3 +1,8 @@
+import { Link } from 'react-router';
+import { PlacementCommandFeedback } from '../project-placements/PlacementCommandFeedback';
+import { useProjectQuery, useSectionsQuery, useStatusesQuery } from '../projects/queries';
+import { TaskProjectsField } from '../project-placements/TaskProjectsField';
+import { usePlacementCommands, type PlacementCommands } from '../project-placements/queries';
 import { TaskActivityStream, type TaskCommentsWorkspace } from '../task-comments';
 import { message, type TranslationMessage } from '../../i18n';
 import { useTranslation } from '../../i18n';
@@ -18,7 +23,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
 import { Archive, ArchiveRestore, Lock, RefreshCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
 import { describeError } from '../../lib/errors';
 import { isUuid } from '../../lib/format';
@@ -47,27 +52,29 @@ import { TaskFields, fieldLabels, formatDraftValue, type EstimateMode, type Task
 import {
   activeParticipantIds,
   buildCreateInput,
-  buildUpdateInput,
   changedKeys,
   draftFromTask,
   emptyDraft,
   inheritsEstimate,
-  rebaseDraft,
   taskDraftKeys,
   type TaskDraft,
   type TaskDraftErrors,
+  type TaskDraftKey,
 } from './taskDraft';
+import { autosaveRetains, type AutosavePhase } from './taskAutosave';
 import {
   resolveQuickCreateInput,
   unresolvedTaskCommand,
   type CreateRequest,
   type CreateSession,
-  type EditSession,
   type TaskCommands,
   type UnresolvedTaskCommand,
 } from './useTaskCommands';
 
 export interface TaskDrawerProps {
+  placementCommands?: PlacementCommands | undefined;
+  /** The page context remains visible while editing a linked canonical task. */
+  viewedProjectName?: string | undefined;
   commentsController?: TaskCommentsWorkspace;
   dependencyController?: DependencyWorkspace;
   meetingController?: MeetingWorkspace;
@@ -189,14 +196,46 @@ function defaultStatusId(statuses: readonly TaskStatusDto[]): string | null {
 
 /**
  * Task detail and creation in a right-hand drawer (full width on small screens). Details are
- * fetched by ID and shown only when the task belongs to this project.
+ * fetched by ID. Linked tasks resolve authorized canonical home metadata before editing.
  */
 export function TaskDrawer(props: TaskDrawerProps) {
   const { t } = useTranslation();
-  const { actorId, workspace, project, taskId, creating, onClose } = props;
+  const { actorId, workspace, project, taskId, creating } = props;
+  const onClose = () => {
+    // Explicit close runs before the pane's focus/animation lifecycle can remove its inputs.
+    if (taskId !== null && (!foreign || homeReady) && resolvedProps.writable) props.commands.autosave.flush(taskId);
+    props.onClose();
+  };
+  const localPlacementCommands = usePlacementCommands(actorId, workspace.id);
   const detail = useTaskQuery(actorId, workspace.id, taskId ?? '');
+  const foreign = detail.data !== undefined && detail.data.workspaceId === workspace.id && detail.data.projectId !== project.id;
+  const homeId = foreign && !detail.isError ? detail.data?.projectId ?? '' : '';
+  const home = useProjectQuery(actorId, workspace.id, homeId);
+  const homeSections = useSectionsQuery(actorId, workspace.id, homeId);
+  const homeStatuses = useStatusesQuery(actorId, workspace.id, homeId);
+  const homeReady = foreign && !detail.isError && home.isSuccess && homeSections.isSuccess && homeStatuses.isSuccess
+    && home.data.id === homeId && home.data.workspaceId === workspace.id
+    && homeSections.data.every(section => section.projectId === homeId && section.workspaceId === workspace.id)
+    && homeStatuses.data.every(status => status.projectId === homeId && status.workspaceId === workspace.id);
+  // Revoke before the departing form's passive cleanup can flush a retained draft.
+  useLayoutEffect(() => {
+    if (foreign && taskId !== null && (!homeReady || home.data?.archivedAt !== null || workspace.role === 'viewer')) props.commands.autosave.authorize(taskId, false);
+  }, [foreign, taskId, homeReady, home.data?.archivedAt, workspace.role, props.commands.autosave]);
+  const resolvedProps: TaskDrawerProps = {
+    ...props,
+    placementCommands: props.placementCommands ?? localPlacementCommands,
+    ...(homeReady ? {
+      project: home.data, sections: homeSections.data, statuses: homeStatuses.data,
+      writable: props.writable && home.data.archivedAt === null && workspace.role !== 'viewer' && !home.isFetching && !homeSections.isFetching && !homeStatuses.isFetching,
+      viewedProjectName: project.name,
+      // These page-owned projections belong to the viewed project. Never retarget their writers.
+      dependencyController: undefined, meetingController: undefined, loadedSubtasks: undefined,
+      subtaskColumns: undefined, onCreateChild: undefined, initialFields: undefined,
+      initialTimeContextFor: undefined, initialTimeWritable: false, initialTimeCurrent: false,
+    } : {}),
+  };
   const shown =
-    taskId !== null && detail.data !== undefined && !detail.isError && detail.data.projectId === project.id
+    taskId !== null && detail.data !== undefined && !detail.isError && (detail.data.projectId === project.id || homeReady)
       ? detail.data
       : null;
   const open = taskId !== null || creating !== null;
@@ -208,9 +247,10 @@ export function TaskDrawer(props: TaskDrawerProps) {
       ? t('tasks.taskDrawer.projectValueVisibleToAllWorkspaceMembers', { p0: project.name })
       : t('tasks.taskDrawer.projectValueTheNewTaskWillBeVisible', { p0: project.name });
 
-  if(shown?.meetingId && props.meetingController) return <MeetingDrawer initialIntent={props.meetingOpenIntent} commentsController={props.commentsController} dependencyController={props.dependencyController} controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
+  if(shown?.meetingId && !foreign && props.meetingController) return <MeetingDrawer initialIntent={props.meetingOpenIntent} commentsController={props.commentsController} dependencyController={props.dependencyController} controller={props.meetingController} actorId={actorId} workspace={workspace} project={project} members={props.members} taskId={shown.id} task={shown} fieldValueMutation={props.fieldValueMutation} fieldValueDrafts={props.fieldValueDrafts} onOpenTask={props.onOpenTask} requestedPeriodId={props.meetingRequestedPeriodId} onAcceptOriginalPeriod={props.onAcceptMeetingPeriod} initialMembershipId={props.meetingMembershipId} initialAttendanceId={props.meetingAttendanceId} initialTab={props.meetingTab} open={open} onClose={onClose} onPrepare={()=>{props.onClose();props.onResumeCreate();}}/>;
   if(shown && shown.meetingId===undefined) return <DialogShell variant="task-drawer" title={t('tasks.taskDrawer.refreshTaskType')} description={t('tasks.taskDrawer.currentServerInformationIsRequiredToEditSafely')} open={open} onOpenChange={next=>{if(!next)onClose();}}><div className="mt-4 space-y-3"><p className="text-sm text-muted">{t('tasks.taskDrawer.theSavedResponseHasNoTaskTypeRefresh')}</p><Button onClick={()=>void detail.refetch()}>{t('tasks.taskDrawer.refreshTaskType')}</Button></div></DialogShell>;
-  return (
+  return (<>
+    {!props.placementCommands ? <PlacementCommandFeedback commands={localPlacementCommands} actorId={actorId} workspaceId={workspace.id} /> : null}
     <DialogShell
       variant="task-drawer"
       title={title}
@@ -221,12 +261,12 @@ export function TaskDrawer(props: TaskDrawerProps) {
       }}
     >
       {taskId !== null ? (
-        <TaskDetail {...props} taskId={taskId} detail={detail} />
+        foreign && !homeReady ? <div className="mt-4 space-y-2" role="status"><p>{t('placements.loadingHome')}</p>{home.isError || homeSections.isError || homeStatuses.isError ? <><p>{t('placements.homeUnavailable')}</p><Button size="sm" onClick={() => { void home.refetch(); void homeSections.refetch(); void homeStatuses.refetch(); }}>{t('placements.reload')}</Button></> : <Skeleton className="h-24" />}</div> : foreign && (detail.data?.meetingId !== null || detail.data?.visibility !== 'workspace') ? <TaskUnavailable /> : <TaskDetail {...resolvedProps} onClose={onClose} taskId={taskId} detail={detail} />
       ) : creating ? (
         <CreateTaskForm {...props} request={creating} />
       ) : null}
     </DialogShell>
-  );
+  </>);
 }
 
 interface OtherTaskCommandNoticeProps {
@@ -301,6 +341,7 @@ function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnTyp
 
   return (
     <>
+      {props.viewedProjectName ? <p className="mt-3 rounded-lg bg-canvas px-3 py-2 text-xs text-muted">{t('placements.homeContext', { p0: project.name, p1: props.viewedProjectName })} <Link className="underline" to={`/w/${workspace.id}/projects/${project.id}?task=${task.id}`}>{t('placements.openHome')}</Link></p> : null}
       {detail.isError ? (
         <div role="alert" className="mt-4 flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
           <TriangleAlert size={16} aria-hidden="true" className="shrink-0" />
@@ -383,36 +424,39 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
     onResumeCreate,
     onAnnounce,
   } = props;
-  const { update, archive, restore, editSessions } = commands;
+  const { update, archive, restore, autosave, adoptAutosaveSession } = commands;
   const taskId = latest.id;
   const reloadTask = useReloadTask(actorId, workspace.id);
 
-  const [session, setSession] = useState<EditSession>(
-    () => editSessions.current.get(taskId) ?? { base: latest, draft: draftFromTask(latest, new Set(members.map((m) => m.id))) },
-  );
-  const [restored, setRestored] = useState(() => editSessions.current.has(taskId));
-  const confirmed = commands.confirmedSessions.current.get(session);
-  useEffect(() => {
-    if (!confirmed) return;
-    setSession({ base: confirmed, draft: draftFromTask(confirmed) });
-    setRestored(false);
-    setErrors({});
-    setReview(null);
-    setNotice(null);
-  }, [confirmed]);
-  const [errors, setErrors] = useState<TaskDraftErrors>({});
-  const [notice, setNotice] = useState<'tasks.taskDrawer.noChangesToSave' | 'tasks.taskDrawer.theFormNowShowsTheLatestTaskVersion' | 'tasks.taskDrawer.yourChangesHaveBeenAppliedToTheLatest' | null>(null);
+  // Saved tasks autosave field by field through the page-owned controller, so closing,
+  // switching or remounting the pane keeps typed, queued, sending and unknown saves.
+  const entry = useSyncExternalStore(autosave.subscribe, () => autosave.get(taskId), () => autosave.get(taskId));
+  const pausedBy = useSyncExternalStore(autosave.subscribe, autosave.getPaused, autosave.getPaused);
+  const kept = autosaveRetains(entry) ? entry : undefined;
+  const retained = kept !== undefined;
+  // Show an existing field/full-form handoff exactly while its original command is held.
+  const legacy = !retained ? commands.editSessions.current.get(taskId) : undefined;
+  useLayoutEffect(() => { if (legacy) adoptAutosaveSession(legacy); }, [adoptAutosaveSession, legacy]);
+  // Back/navigation is a fallback; explicit Close and pane-owned navigation flush before leaving.
+  useEffect(() => () => autosave.flush(taskId), [autosave, taskId]);
+  const [notice, setNotice] = useState<'tasks.taskDrawer.theFormNowShowsTheLatestTaskVersion' | 'tasks.taskDrawer.yourChangesHaveBeenAppliedToTheLatest' | null>(null);
   const [lastCommand, setLastCommand] = useState<TaskCommandName | null>(null);
   const [review, setReview] = useState<TaskDto | null>(null);
   const [reloading, setReloading] = useState<'idle' | 'loading' | 'failed'>('idle');
 
-  const { base, draft } = session;
+  // A clean entry stands in only while the cached task has not caught up with its answer.
+  const base = kept ? kept.base : legacy?.base ?? (entry && taskWouldRegress(entry.base, latest) ? entry.base : latest);
   const { tagsById, memberIds, lookups } = useLookups(props, base.tags);
   const baseDraft = useMemo(() => draftFromTask(base, memberIds), [base, memberIds]);
-  const dirty = changedKeys(baseDraft, draft).length > 0;
+  const draft = kept ? kept.draft : legacy?.draft ?? baseDraft;
+  const errors: TaskDraftErrors = entry?.errors ?? {};
+  const phase = entry?.phase ?? 'idle';
+  const unsent = changedKeys(baseDraft, draft).length > 0;
 
+  // The autosave's own unknown update is recovered by its Retry; any other held command locks.
+  const ownUpdate = (variables: { input: unknown } | undefined) => variables !== undefined && autosave.owns(variables.input);
   const lockedCommand: TaskCommandName | null =
-    update.uncertain?.variables.taskId === taskId
+    update.uncertain?.variables.taskId === taskId && !ownUpdate(update.uncertain.variables)
       ? 'update'
       : archive.uncertain?.variables.taskId === taskId
         ? 'archive'
@@ -423,9 +467,12 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
   const shownCommand = lockedCommand ?? lastCommand;
   const shownMutation = shownCommand ? mutations[shownCommand] : null;
   // From the commands the hooks hold: a refused call never stands in for the one in flight.
-  const pending = [update, archive, restore].some((mutation) => mutation.pendingCommand?.variables.taskId === taskId);
+  const pending = [archive, restore].some((mutation) => mutation.pendingCommand?.variables.taskId === taskId)
+    || (update.pendingCommand?.variables.taskId === taskId && !ownUpdate(update.pendingCommand.variables));
   const unresolved = unresolvedTaskCommand(commands);
-  const blockedByOther = unresolved !== null && unresolved.taskId !== taskId ? unresolved : null;
+  // A field save of another task in flight only delays this queue; it is not shown as a block.
+  const ownPendingElsewhere = unresolved !== null && !unresolved.uncertain && ownUpdate(update.pendingCommand?.variables);
+  const blockedByOther = unresolved !== null && unresolved.taskId !== taskId && !ownPendingElsewhere ? unresolved : null;
   const busy = pending || blockedByOther !== null;
 
   const archived = base.archivedAt !== null;
@@ -433,71 +480,58 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
   const locked = lockedCommand !== null;
   const shownError = shownMutation?.error ?? null;
   const conflict = shownError instanceof ApiError && shownError.kind === 'conflict';
-  const newerOnServer = taskWouldRegress(latest, base) && review === null;
+  const newerOnServer = kept !== undefined && kept.sending === null && taskWouldRegress(latest, base) && review === null;
 
-  // Keep the draft in memory while it is unsaved or unconfirmed, so closing the drawer loses nothing.
+  // The current right to change this task gates every queued send, including after Close.
   useEffect(() => {
-    if (confirmed) return;
-    if (dirty || locked) editSessions.current.set(taskId, session);
-    else editSessions.current.delete(taskId);
-  }, [confirmed, dirty, locked, session, taskId, editSessions]);
-  useUnsavedChangesWarning(dirty || locked);
+    autosave.authorize(taskId, canEdit);
+  }, [autosave, taskId, canEdit]);
+  useUnsavedChangesWarning(retained || locked);
 
-  const adopt = (task: TaskDto, message: TranslationMessage) => {
-    // Runs even if the drawer closed meanwhile: the confirmed task replaces the kept draft.
-    if (!commands.confirmSession(session, task)) return;
-    setSession({ base: task, draft: draftFromTask(task, memberIds) });
-    setRestored(false);
+  // Archive and restore are confirmed by the cache refresh of their own mutation.
+  const announceDone = (announcement: TranslationMessage) => () => {
     setReview(null);
-    setErrors({});
     setNotice(null);
-    onAnnounce(message);
+    onAnnounce(announcement);
   };
-  const saved = (task: TaskDto) => adopt(task, message('tasks.taskDrawer.taskSaved'));
-  const archivedDone = (task: TaskDto) => adopt(task, message('tasks.taskDrawer.taskArchived'));
-  const restoredDone = (task: TaskDto) => adopt(task, message('tasks.taskDrawer.taskRestoredFromArchive'));
+  const archivedDone = announceDone(message('tasks.taskDrawer.taskArchived'));
+  const restoredDone = announceDone(message('tasks.taskDrawer.taskRestoredFromArchive'));
 
+  // Typing only stages; a field is sent once it is committed.
   const setDraft = (patch: Partial<TaskDraft>) => {
-    setSession((current) => ({ ...current, draft: { ...current.draft, ...patch } }));
+    autosave.stage(base, patch);
     setNotice(null);
+  };
+  const commitFields = (keys: readonly TaskDraftKey[]) => {
+    if (canEdit) autosave.commit(taskId, keys);
   };
 
   const retryLocked = () => {
-    if (lockedCommand === 'update') update.retryUncertain({ onSuccess: saved });
+    if (lockedCommand === 'update') update.retryUncertain({ onSuccess: task => {
+      if (legacy && commands.editSessions.current.get(taskId) === legacy) commands.confirmSession(legacy, task);
+    } });
     else if (lockedCommand === 'archive') archive.retryUncertain({ onSuccess: archivedDone });
     else if (lockedCommand === 'restore') restore.retryUncertain({ onSuccess: restoredDone });
   };
 
+  // Ctrl/Cmd+Enter (or a held lock's Retry) commits every changed field; nothing else submits.
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (event.target !== event.currentTarget || confirmed || busy) return;
+    if (event.target !== event.currentTarget) return;
     if (locked) {
-      retryLocked();
+      if (!busy) retryLocked();
       return;
     }
-    if (!canEdit) return;
-    const result = buildUpdateInput(base, baseDraft, draft);
-    if (!result.ok) {
-      setErrors(result.errors);
-      return;
-    }
-    setErrors({});
-    if (result.input === null) {
-      setNotice('tasks.taskDrawer.noChangesToSave');
-      return;
-    }
-    setNotice(null);
-    setLastCommand('update');
-    update.mutate({ taskId, input: result.input }, { onSuccess: saved });
+    if (canEdit) commitFields(changedKeys(baseDraft, draft));
   };
 
   const runArchive = () => {
-    if (busy || locked) return;
+    if (busy || locked || retained) return;
     setLastCommand('archive');
     archive.mutate({ taskId, input: { expectedRevision: base.revision } }, { onSuccess: archivedDone });
   };
   const runRestore = () => {
-    if (busy || locked) return;
+    if (busy || locked || retained) return;
     setLastCommand('restore');
     restore.mutate({ taskId, input: { expectedRevision: base.revision } }, { onSuccess: restoredDone });
   };
@@ -513,13 +547,8 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
     }
   };
 
-  const discardRestored = () => {
-    setSession({ base: latest, draft: draftFromTask(latest, memberIds) });
-    setRestored(false);
-    setErrors({});
-  };
-
-  const retainForNavigation=()=>{if(dirty||locked||pending)editSessions.current.set(taskId,session);};
+  // The page's autosave controller already retains this task's input across navigation.
+  const retainForNavigation=()=>{ if (canEdit) autosave.flush(taskId); };
   const canCreateChild=writable&&workspace.role!=='viewer'&&props.project.archivedAt===null&&latest.archivedAt===null&&latest.meetingId===null&&props.onCreateChild!==undefined;
   const keptCreate=commands.createSession.current!==null||commands.create.pendingCommand!==null||commands.create.uncertain!==null;
   const unavailableParticipantIds = activeParticipantIds(base).filter((id) => !memberIds.has(id));
@@ -528,20 +557,10 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
   const [subtaskAddRequest, setSubtaskAddRequest] = useState(0);
 
   const formId = useId();
-  const fieldsDisabled = !canEdit || locked || busy;
+  // Inputs stay editable while a field save is pending; only this task's held archive, restore
+  // or foreign update freezes them. Sending still waits for every page guard.
+  const fieldsDisabled = !canEdit || locked || pending;
   const sharedEstimate: EstimateMode = { kind: 'shared' };
-  const fieldProps = {
-    draft,
-    onChange: setDraft,
-    errors,
-    statuses,
-    sections,
-    members,
-    tags: tagsById,
-    savedTagIds: base.tags.map((tag) => tag.id),
-    unavailableParticipantIds,
-    estimateMode: sharedEstimate,
-  };
 
   const subtaskActions = <div className="space-y-1.5 text-xs text-muted">
     {canCreateChild?keptCreate?<Button size="sm" variant="ghost" onClick={()=>{retainForNavigation();onResumeCreate();}}>{t('hierarchy.resumeDraft')}</Button>:<Button size="sm" variant="ghost" disabled={!props.hierarchyCurrent||unresolved!==null} onClick={()=>{if(!props.hierarchyCurrent||unresolvedTaskCommand(commands)!==null)return;if(subtasksShown){setSubtaskAddRequest(count=>count+1);return;}retainForNavigation();props.onCreateChild?.(latest);}}>{t('hierarchy.addSubtask')}</Button>:null}
@@ -553,7 +572,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
   const subtasks = props.loadedSubtasks && subtasksShown ? (
       <div className="min-w-0">
         <DrawerSubtasks parent={latest} scope={props.loadedSubtasks} projectId={props.project.id} statuses={statuses} members={props.members} sections={props.sections} tags={props.tags}
-          commands={commands} writable={canCreateChild && props.hierarchyCurrent}
+          commands={commands} writable={canCreateChild && props.hierarchyCurrent} draftWritable={canCreateChild}
           extraColumns={props.subtaskColumns} initialFields={props.initialFields}
           initialTimeContext={props.initialTimeContextFor?.(latest, 'detail') ?? null} initialTimeWritable={props.initialTimeWritable} initialTimeCurrent={props.initialTimeCurrent}
           addRequest={subtaskAddRequest}
@@ -571,15 +590,14 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
     {/* One scroller for the whole task: its form, then subtasks and activity with their own forms.
         The actions stay in the footer below and submit the form by ID. */}
     <div className={`mt-3 ${formBodyClassName}`}>
-      <form id={formId} noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, canEdit && !busy && !locked)} className="space-y-4">
+      <form id={formId} noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, canEdit || (locked && !busy))} className="space-y-4">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {archived ? <Badge tone="muted">{t('tasks.taskDrawer.archived')}</Badge> : null}
           {base.parentTaskId !== null ? <Badge tone="muted">{t('tasks.taskDrawer.subtask')}</Badge> : null}
-          {dirty && !locked ? <span className="font-medium text-ink-soft">{t('tasks.taskDrawer.unsavedChanges')}</span> : null}
         </div>
 
         {latest.parentTaskId!==null?<div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-          {latest.parentTaskId!==null?<ParentTaskAction actorId={actorId} workspaceId={workspace.id} projectId={props.project.id} sourceId={taskId} parentId={latest.parentTaskId} beforeOpen={retainForNavigation} intent={session} onOpenTask={onOpenTask} disabled={!props.hierarchyCurrent}/>:null}
+          {latest.parentTaskId!==null?<ParentTaskAction actorId={actorId} workspaceId={workspace.id} projectId={props.project.id} sourceId={taskId} parentId={latest.parentTaskId} beforeOpen={retainForNavigation} intent={autosave.editIntent(taskId)} onOpenTask={onOpenTask} disabled={!props.hierarchyCurrent}/>:null}
         </div>:null}
 
         {archived ? (
@@ -590,16 +608,13 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">{t('tasks.taskDrawer.thisTaskIsReadOnly')}</p>
         ) : null}
 
-        {restored && !locked ? (
-          <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
-            <span className="min-w-0 flex-1">{t('tasks.taskDrawer.yourUnsavedDraftHasBeenRestored')}</span>
-            <Button size="sm" variant="ghost" onClick={discardRestored}>
-              {t('tasks.taskDrawer.discardDraft')}</Button>
-          </div>
-        ) : null}
-
         {blockedByOther ? (
           <OtherTaskCommandNotice command={blockedByOther} onOpenTask={onOpenTask} onResumeCreate={onResumeCreate} onReviewBulk={props.onClose} />
+        ) : pausedBy !== null && pausedBy !== taskId ? (
+          <div role="status" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-sm text-amber-900">
+            <span className="min-w-0 flex-1">{t('autosave.status.pausedByOther')}</span>
+            <Button size="sm" onClick={() => onOpenTask(pausedBy)}>{t('autosave.actions.openThatTask')}</Button>
+          </div>
         ) : null}
 
         {newerOnServer && !locked ? (
@@ -619,14 +634,14 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             latestDraft={draftFromTask(review, memberIds)}
             lookups={lookups}
             onTakeLatest={() => {
-              setSession({ base: review, draft: draftFromTask(review, memberIds) });
+              autosave.resolveReview(taskId, review, false);
               setReview(null);
               setLastCommand(null);
-              setRestored(false);
               setNotice('tasks.taskDrawer.theFormNowShowsTheLatestTaskVersion');
             }}
             onKeepMine={() => {
-              setSession({ base: review, draft: rebaseDraft(baseDraft, draft, draftFromTask(review, memberIds)) });
+              // Explicit: the user's fields are queued again against the reviewed version.
+              autosave.resolveReview(taskId, review, true);
               setReview(null);
               setLastCommand(null);
               setNotice('tasks.taskDrawer.yourChangesHaveBeenAppliedToTheLatest');
@@ -635,17 +650,22 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           />
         ) : null}
 
-        <fieldset disabled={fieldsDisabled} className="min-w-0">
-          <legend className="sr-only">{t('tasks.taskDrawer.taskFields')}</legend>
-          <TaskFields {...fieldProps} part="primary" projectName={props.project.name} />
-        </fieldset>
-
-        {props.dependencyController ? <DependencyPanel compact actorId={actorId} workspaceId={workspace.id} project={props.project} task={latest} controller={props.dependencyController} writable={canEdit} onOpenTask={onOpenTask} /> : null}
-
-        <div className="min-w-0">
+        <div className="min-w-0" aria-label={t('tasks.taskDrawer.taskFields')} role="group">
           <TaskFields
-            {...fieldProps}
-            part="details"
+            draft={draft}
+            onChange={setDraft}
+            onCommit={commitFields}
+            errors={errors}
+            statuses={statuses}
+            sections={sections}
+            members={members}
+            tags={tagsById}
+            savedTagIds={base.tags.map((tag) => tag.id)}
+            unavailableParticipantIds={unavailableParticipantIds}
+            estimateMode={sharedEstimate}
+            part="saved"
+            projectName={props.project.name}
+            projectsField={props.placementCommands && latest.meetingId === null ? <TaskProjectsField actorId={actorId} task={latest} homeProject={props.project} writable={canEdit} commands={props.placementCommands} /> : undefined}
             disabled={fieldsDisabled}
             estimateSupplement={latest.meetingId === null ? <div className="space-y-1.5 text-xs text-muted">
               {draft.estimate !== baseDraft.estimate ? <section aria-label={t('tasks.estimates.current')} className="space-y-0.5">
@@ -660,33 +680,59 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
                   mutation={commands.createTag}
                   onCreated={(tag) => {
                     commands.addCreatedTag(tag);
-                    setDraft({ tagIds: [...draft.tagIds, tag.id] });
+                    autosave.choose(base, { tagIds: [...draft.tagIds, tag.id] });
                   }}
                 />
               ) : null
             }
+            moreFields={<>
+              {/* Values have their own revisions and commands, independent of the task fields. */}
+              {fieldValueMutation ? (
+                <TaskCustomFields
+                  actorId={actorId}
+                  workspaceId={workspace.id}
+                  task={latest}
+                  members={members}
+                  writable={canEdit && latest.archivedAt === null}
+                  mutation={fieldValueMutation}
+                  draftStore={fieldValueDrafts}
+                  onOpenTask={onOpenTask}
+                />
+              ) : null}
+              {writable && !archived && !locked ? (
+                retained ? <p className="text-xs text-muted">{t('autosave.archive.waitForSave')}</p> : (
+                  <Button size="sm" aria-disabled={busy || undefined} onClick={runArchive}>
+                    <Archive size={16} aria-hidden="true" />
+                    {t('tasks.taskDrawer.archive')}</Button>
+                )
+              ) : null}
+            </>}
           />
         </div>
 
-        {/* Values have their own revisions and commands, independent of the task form above. */}
-        {fieldValueMutation ? (
-          <TaskCustomFields
-            actorId={actorId}
-            workspaceId={workspace.id}
-            task={latest}
-            members={members}
-            writable={canEdit && latest.archivedAt === null}
-            mutation={fieldValueMutation}
-            draftStore={fieldValueDrafts}
-            onOpenTask={onOpenTask}
-          />
-        ) : null}
-
-        <fieldset disabled={fieldsDisabled} className="min-w-0">
-          <TaskFields {...fieldProps} part="description" />
-        </fieldset>
+        {props.dependencyController ? <DependencyPanel compact actorId={actorId} workspaceId={workspace.id} project={props.project} task={latest} controller={props.dependencyController} writable={canEdit} onOpenTask={onOpenTask} /> : null}
 
         {errors.form ? <p className="text-sm text-red-700">{t(errors.form.key, errors.form.params)}</p> : null}
+        <SaveFeedback
+          error={phase === 'conflict' || phase === 'rejected' ? (entry?.error instanceof Error ? entry.error : null) : null}
+          uncertainError={phase === 'unknown' && entry?.error instanceof Error ? entry.error : null}
+          subject="taskSave"
+          action={
+            phase === 'rejected' || phase === 'conflict' ? (
+              <span className="flex flex-wrap gap-2">
+                {phase !== 'conflict' ? <Button size="sm" variant="primary" aria-disabled={entry?.sending || !canEdit ? true : undefined} onClick={() => { if (canEdit) autosave.retry(taskId); }}>{t('autosave.actions.retry')}</Button> : null}
+                {review === null ? (
+                  <Button size="sm" aria-disabled={reloading === 'loading' || undefined} onClick={() => void loadLatest()}>
+                    <RefreshCw size={16} aria-hidden="true" className={reloading === 'loading' ? 'motion-safe:animate-spin' : undefined} />
+                    {t('autosave.actions.review')}</Button>
+                ) : null}
+              </span>
+            ) : null
+          }
+        />
+        {phase === 'unknown' ? <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="primary" aria-disabled={entry?.sending || !canEdit ? true : undefined} onClick={() => { if (canEdit) autosave.retry(taskId); }}>{t('autosave.actions.retry')}</Button>
+        </div> : null}
         <SaveFeedback
           error={shownError}
           uncertainError={lockedCommand ? (mutations[lockedCommand].uncertain?.error ?? null) : null}
@@ -712,25 +758,14 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
       {props.activity}
     </div>
 
+      {/* No Save, Draft or Discard for ordinary edits: only the save state, and a Retry for a held lock. */}
       <div className={formFooterClassName}>
-        {canEdit && !locked ? <span className="order-last ml-auto text-xs text-muted">{t('tasks.taskDrawer.keyboardSave')}</span> : null}
+        <AutosaveStatus phase={phase} unsent={unsent} committed={(entry?.committed.length ?? 0) > 0} />
+        {canEdit && !locked ? <span className="order-last ml-auto text-xs text-muted">{t('autosave.fields.hint')}</span> : null}
         {locked ? (
           <Button type="submit" form={formId} variant="primary" aria-disabled={busy || undefined}>
             {pending ? t('tasks.taskDrawer.submitting') : t('tasks.taskDrawer.retrySubmission')}
           </Button>
-        ) : canEdit ? (
-          <Button type="submit" form={formId} variant="primary" aria-disabled={busy || undefined}>
-            {update.pendingCommand?.variables.taskId === taskId ? t('tasks.taskDrawer.saving') : t('tasks.taskDrawer.save')}
-          </Button>
-        ) : null}
-        {writable && !archived && !locked ? (
-          dirty ? (
-            <span className="text-xs text-muted">{t('tasks.taskDrawer.saveOrDiscardYourChangesBeforeArchivingThis')}</span>
-          ) : (
-            <Button aria-disabled={busy || undefined} onClick={runArchive}>
-              <Archive size={16} aria-hidden="true" />
-              {t('tasks.taskDrawer.archive')}</Button>
-          )
         ) : null}
         {writable && archived && !locked ? (
           <Button aria-disabled={busy || undefined} onClick={runRestore}>
@@ -739,6 +774,23 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
         ) : null}
       </div>
   </>);
+}
+
+/**
+ * The saved task's autosave state. "Saved" only for a confirmed answer with nothing typed since;
+ * failures are explained, with their recovery, by the feedback inside the form.
+ */
+function AutosaveStatus({ phase, unsent, committed }: { phase: AutosavePhase; unsent: boolean; committed: boolean }) {
+  const { t } = useTranslation();
+  const text = phase === 'saving' || (committed && phase === 'idle') ? t('autosave.status.saving')
+    : phase === 'invalid' ? t('autosave.status.invalid')
+      : phase === 'unknown' ? t('autosave.status.unknown')
+        : phase === 'conflict' ? t('autosave.status.conflict')
+        : phase === 'rejected' ? t('autosave.status.rejected')
+        : unsent ? t('autosave.status.unsent')
+          : phase === 'saved' ? t('autosave.status.saved')
+            : '';
+  return <span role="status" aria-live="polite" className="min-w-0 text-xs text-muted">{text}</span>;
 }
 
 interface ReviewPanelProps {

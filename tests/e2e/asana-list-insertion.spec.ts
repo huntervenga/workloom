@@ -293,8 +293,50 @@ test.describe('Asana task list insertion on private shared Auth', () => {
     const childInput = childDraft.getByRole('textbox', { name: 'Task name', exact: true });
     await expect(childInput).toBeFocused();
     await geometry(subtasks.locator(`tr[data-task-row="${b.id}"]`), childDraft);
-    await childInput.fill('d'); await childInput.press('Enter');
-    await expect(childInput).toBeFocused(); await childInput.fill('e'); await childInput.press('Enter');
+    // Passive fixture-only diagnostics: no actionability waits, product state or command changes.
+    const childStarted = performance.now(); let childSequence = 0;
+    const childDiagnostic = (kind: string, data: Record<string, unknown> = {}) => console.log(`INSERTION_CHILD ${JSON.stringify({ sequence: ++childSequence, elapsedMs: Math.round(performance.now() - childStarted), kind, ...data })}`);
+    const browserPrefix = 'INSERTION_CHILD_BROWSER ';
+    page.on('console', message => { if (message.text().startsWith(browserPrefix)) childDiagnostic('browser', { event: JSON.parse(message.text().slice(browserPrefix.length)) as unknown }); });
+    const childRequest = (request: Request): Record<string, unknown> | null => {
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'GET' && path === `${f.prefix}/tasks/${parent.id}`) return { operation: 'parent-read' };
+      if (request.method() !== 'POST' || path !== `${f.prefix}/tasks`) return null;
+      const body = request.postDataJSON() as Record<string, unknown>;
+      if (body.title !== 'd' && body.title !== 'e') return null;
+      const insertion = body.insertion as { anchorTaskId?: unknown; placement?: unknown } | undefined;
+      return { operation: 'child-create', title: body.title, expectedParent: body.parentTaskId === parent.id,
+        expectedParentRevision: typeof body.expectedParentRevision === 'number' ? body.expectedParentRevision : null,
+        anchorTaskId: typeof insertion?.anchorTaskId === 'string' ? insertion.anchorTaskId : null,
+        placement: insertion?.placement === 'before' || insertion?.placement === 'after' ? insertion.placement : null };
+    };
+    page.on('request', request => { const data = childRequest(request); if (data) childDiagnostic('request', data); });
+    page.on('response', response => { const data = childRequest(response.request()); if (data) childDiagnostic('response', { ...data, status: response.status() }); });
+    await subtasks.evaluate(section => {
+      const identities = new WeakMap<HTMLInputElement, number>(); let nextIdentity = 0;
+      const snapshot = (input: HTMLInputElement | null) => {
+        if (!input) return null;
+        let identity = identities.get(input); if (identity === undefined) { identity = ++nextIdentity; identities.set(input, identity); }
+        return { identity, value: input.value === '' || input.value === 'd' || input.value === 'e' ? input.value : { length: input.value.length },
+          connected: input.isConnected, enabled: !input.disabled && !input.readOnly, focused: document.activeElement === input };
+      };
+      const current = () => section.querySelector<HTMLInputElement>('tr[data-task-draft-state="draft"] input[aria-label="Task name"]');
+      const capture = (event: Event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement) || (!identities.has(target) && target !== current())) return;
+        const key = event instanceof KeyboardEvent ? event.key === 'Enter' || event.key === 'Escape' ? event.key : 'other' : null;
+        const record = (phase: string) => console.log(`INSERTION_CHILD_BROWSER ${JSON.stringify({ phase, event: event.type, key, target: snapshot(target), current: snapshot(current()) })}`);
+        record('capture'); queueMicrotask(() => record('after-event'));
+      };
+      snapshot(current());
+      for (const type of ['input', 'change', 'keydown', 'focusin', 'focusout']) document.addEventListener(type, capture, true);
+    });
+    childDiagnostic('baseline', { parentRevision: parent.revision, parentWorkPackageRevision: parent.workPackageRevision });
+    childDiagnostic('before-d-fill'); await childInput.fill('d'); childDiagnostic('after-d-fill');
+    childDiagnostic('before-d-enter'); await childInput.press('Enter'); childDiagnostic('after-d-enter');
+    await expect(childInput).toBeFocused();
+    childDiagnostic('before-e-fill'); await childInput.fill('e'); childDiagnostic('after-e-fill');
+    childDiagnostic('before-e-enter'); await childInput.press('Enter'); childDiagnostic('after-e-enter');
     await expect.poll(async () => names((await tasks(f)).filter(value => value.parentTaskId === parent.id))).toEqual(['a', 'b', 'x', 'y', 'c', 'd', 'e']);
     await childInput.press('Escape'); await expect(childDraft).toHaveCount(0);
     const createdChildren = (await tasks(f)).filter(value => value.parentTaskId === parent.id);
@@ -317,6 +359,93 @@ test.describe('Asana task list insertion on private shared Auth', () => {
     await parentName.click(); await expect(parentName).toBeFocused();
     await page.keyboard.press('Escape'); await expect(drawer).toHaveCount(0);
     await page.reload(); expect(names((await tasks(f)).filter(value => value.parentTaskId === parent.id))).toEqual(['a', 'b', 'x', 'y', 'c', 'e', 'd']); writes.close();
+  });
+
+  test('continued child rows preserve queued and unsubmitted titles across both real held create acknowledgements', async ({ page }) => {
+    const f = await fixture(page, 'Held child continuation');
+    const parent = await create(f, 'Parent', { estimateMinutes: 180 });
+    const seed = await create(f, 'a', { parentTaskId: parent.id, workScope: 'detail' });
+    const other = await create(f, 'Other root'); await openProject(f);
+    await realRow(page, parent.id).locator(`[data-task-open-area="${parent.id}"]`).click();
+    const drawer = page.getByRole('dialog', { name: 'Parent', exact: true });
+    const subtasks = drawer.getByRole('region', { name: 'Subtasks', exact: true });
+    await expect(subtasks.getByRole('table', { name: 'Subtasks', exact: true })).toBeVisible();
+    await subtasks.locator('[data-subtask-add]').click();
+    const childDraft = subtasks.locator('tr[data-task-draft-state="draft"]');
+    const input = childDraft.getByRole('textbox', { name: 'Task name', exact: true });
+    await expect(input).toBeFocused(); const original = required(await input.elementHandle() ?? undefined);
+    let releaseD!: () => void, releaseF!: () => void;
+    const dGate = new Promise<void>(resolve => { releaseD = resolve; });
+    const fGate = new Promise<void>(resolve => { releaseF = resolve; });
+    let committedD: TaskDto | undefined, committedF: TaskDto | undefined;
+    let parentReads = 0, siblingReads = 0;
+    page.on('response', response => {
+      if (response.request().method() !== 'GET' || response.status() !== 200) return;
+      const path = new URL(response.url()).pathname;
+      if (path === `${f.prefix}/tasks/${parent.id}`) parentReads++;
+      if (path === `${f.prefix}/tasks`) siblingReads++;
+    });
+    await page.route(`**${f.prefix}/tasks`, async route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      const body = route.request().postDataJSON() as { title?: string };
+      if (body.title !== 'd' && body.title !== 'f') return route.continue();
+      const response = await route.fetch(); expect(response.status()).toBe(201);
+      const committed = taskResponseSchema.parse(await response.json()).data;
+      if (body.title === 'd') { committedD = committed; await dGate; }
+      else { committedF = committed; await fGate; }
+      await route.fulfill({ response });
+    });
+    const writes = commands(page, f.prefix);
+    try {
+      // D exists on the real server, but its browser ACK remains held while E is submitted.
+      await input.fill('d'); await input.press('Enter');
+      await expect.poll(() => committedD?.id).not.toBeUndefined();
+      await expect(subtasks.locator('tr[data-task-draft-state="pending"]')).toContainText('d');
+      await expect(input).toBeFocused(); await expect(input).toHaveValue('');
+      await input.fill('e'); await input.press('Enter');
+      await expect(input).toBeFocused(); await expect(input).toHaveValue('');
+      expect(await input.evaluate((node, first) => node === first, original)).toBe(true);
+      expect(writes.found).toHaveLength(1);
+      expect(names((await tasks(f)).filter(row => row.parentTaskId === parent.id))).toEqual(['a', 'd']);
+      releaseD();
+      await expect.poll(async () => names((await tasks(f)).filter(row => row.parentTaskId === parent.id))).toEqual(['a', 'd', 'e']);
+      await expect(subtasks.getByRole('button', { name: 'e', exact: true })).toBeVisible();
+      const afterE = await tasks(f), e = required(afterE.find(row => row.title === 'e'));
+      expect(writes.found).toHaveLength(2);
+
+      // F ACK arrives between typing G and Enter: the same live input must retain G.
+      await input.fill('f'); await input.press('Enter');
+      await expect.poll(() => committedF?.id).not.toBeUndefined();
+      await expect(input).toBeFocused(); await input.fill('g'); await expect(input).toHaveValue('g');
+      const beforeAck = { parentReads, siblingReads };
+      expect(writes.found).toHaveLength(3); releaseF();
+      await expect.poll(() => parentReads).toBeGreaterThan(beforeAck.parentReads);
+      await expect.poll(() => siblingReads).toBeGreaterThan(beforeAck.siblingReads);
+      await expect(subtasks.getByRole('button', { name: 'f', exact: true })).toBeVisible();
+      expect(await input.evaluate((node, first) => node === first, original)).toBe(true);
+      await expect(input).toHaveValue('g'); await expect(input).toBeFocused();
+      expect(writes.found).toHaveLength(3);
+      await input.press('Enter');
+      await expect.poll(async () => names((await tasks(f)).filter(row => row.parentTaskId === parent.id))).toEqual(['a', 'd', 'e', 'f', 'g']);
+      await expect(subtasks.getByRole('button', { name: 'g', exact: true })).toBeVisible();
+      const d = required(committedD), fTask = required(committedF);
+      const bodies = ['d', 'e', 'f', 'g'].map((title, index) => ({ projectId: f.projectId, parentTaskId: parent.id, workScope: 'detail', title, statusId: f.statusId,
+        ...(index === 0 ? {} : { insertion: { anchorTaskId: required([d.id, e.id, fTask.id][index - 1]), placement: 'after' } }) }));
+      expect(writes.found).toHaveLength(4);
+      expect(writes.found.map(command => ({ method: command.method, path: command.path, body: JSON.parse(command.body) as unknown })))
+        .toEqual(bodies.map(body => ({ method: 'POST', path: `${f.prefix}/tasks`, body })));
+      const keys = writes.found.map(command => command.key); expect(keys.every(key => typeof key === 'string' && key.length > 0)).toBe(true);
+      expect(new Set(keys).size).toBe(4);
+      const confirmed = await tasks(f); expect(confirmed).toHaveLength(7);
+      expect(confirmed.find(row => row.id === parent.id)).toEqual(parent);
+      expect(confirmed.find(row => row.id === seed.id)).toEqual(seed); expect(confirmed.find(row => row.id === other.id)).toEqual(other);
+      const children = confirmed.filter(row => row.parentTaskId === parent.id);
+      expect(new Set(children.map(row => row.id)).size).toBe(5);
+      expect(children.every(row => row.workPackageId === parent.workPackageId && row.estimateMinutes === 180)).toBe(true);
+      await expect(input).toBeFocused(); await input.fill('Discard next child'); await input.press('Escape');
+      await expect(childDraft).toHaveCount(0); await expect(drawer).toBeVisible();
+      expect(writes.found).toHaveLength(4); expect(await tasks(f)).toEqual(confirmed);
+    } finally { releaseD(); releaseF(); writes.close(); }
   });
 
   test('real mouse root cross-section and child moves persist; cancelled and adjacent moves conserve sources', async ({ page }) => {

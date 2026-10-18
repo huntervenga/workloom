@@ -1,0 +1,9 @@
+import {describe,expect,it} from 'vitest';
+import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,projectRowsQuerySchema,updateTaskProjectPlacementInputSchema} from './task-project-placements.js';
+const projectId='00000000-0000-4000-8000-00000000000a';
+describe('task project placement contracts',()=>{
+ it('requires optimistic revisions and normalizes IDs',()=>{expect(attachTaskProjectInputSchema.parse({projectId:projectId.toUpperCase(),expectedTaskRevision:1})).toEqual({projectId,expectedTaskRevision:1});expect(attachTaskProjectInputSchema.safeParse({projectId}).success).toBe(false);});
+ it('rejects status/task/project retargeting and canonical writes in placement inputs',()=>{for(const forbidden of ['statusId','title','taskId','homeProjectId','actualMinutes'])expect(attachTaskProjectInputSchema.safeParse({projectId,expectedTaskRevision:1,[forbidden]:projectId}).success).toBe(false);expect(updateTaskProjectPlacementInputSchema.safeParse({expectedRevision:1,projectId}).success).toBe(false);expect(changeTaskProjectPlacementStateInputSchema.safeParse({expectedRevision:1,archived:false}).success).toBe(false);});
+ it('rejects empty patch and invalid ordering/revision values',()=>{expect(updateTaskProjectPlacementInputSchema.safeParse({expectedRevision:1}).success).toBe(false);expect(updateTaskProjectPlacementInputSchema.safeParse({expectedRevision:0,position:2}).success).toBe(false);expect(updateTaskProjectPlacementInputSchema.safeParse({expectedRevision:1,position:-1}).success).toBe(false);});
+ it('normalizes both raw HTTP and parsed query forms without changing archived=true',()=>{const raw=projectRowsQuerySchema.parse({includeArchived:'true',limit:'10'});expect(raw).toEqual({includeArchived:true,limit:10});expect(projectRowsQuerySchema.parse(raw)).toEqual(raw);expect(projectRowsQuerySchema.parse({})).toEqual({includeArchived:false,limit:100});});
+});

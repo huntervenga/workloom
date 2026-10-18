@@ -2,9 +2,11 @@ import { message, type TranslationMessage } from '../../i18n';
 import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
+import { useQueryClient } from '@tanstack/react-query';
 import { Archive, Lock, RefreshCw } from 'lucide-react';
-import { useId, useState, type FormEvent, type ReactNode } from 'react';
+import { useId, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
+import { protectedCommandsFor } from '../../lib/protectedCommands';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { FieldHistoryDialog } from './FieldHistoryDialog';
@@ -102,23 +104,36 @@ export interface FieldValueFormProps {
   onReload: () => Promise<FreshFieldData>;
   onFieldLocked: () => void;
   onClose: () => void;
+  /**
+   * Saves each committed value through the same guarded submit instead of a Save value step:
+   * see `FieldInput.onCommit`. Closing flushes a valid unsent draft first. Off by default.
+   */
+  autosave?: boolean | undefined;
 }
+
+/** Why a commit was not sent; 'sent' when the page's writer accepted it. */
+type CommitOutcome = 'sent' | 'held' | 'blocked' | 'unsendable' | 'invalid' | 'unchanged';
 
 /** One field's value editor in a centered dialog over the task drawer. */
 export function FieldValueForm(props: FieldValueFormProps) {
   const { t } = useTranslation();
+  const commandRegistry = protectedCommandsFor(useQueryClient());
+  // A foreign writer can settle without changing this editor or its cached value.
+  useSyncExternalStore(commandRegistry.subscribe, commandRegistry.getSnapshot, commandRegistry.getSnapshot);
   const { actorId, workspaceId, taskId, taskTitle, session, currentField, currentValue, members, writable, mutation } = props;
-  const { blockedNotice, onSessionChange, onDiscard, onReload, onFieldLocked, onClose } = props;
+  const { blockedNotice, onSessionChange, onDiscard, onReload, onFieldLocked, onClose, autosave = false } = props;
   const field = session.field;
   const latestField = currentField ?? field;
 
   const [hasParseError, setParseError] = useState(false);
+  // The draft a close was refused for; closing again keeps it as an unsent draft.
+  const closeRefusedFor = useRef<FieldDraft | null>(null);
   const [notice, setNotice] = useState<TranslationMessage | null>(null);
   const [reloading, setReloading] = useState<'idle' | 'loading' | 'failed'>('idle');
 
   const held = heldFieldCommand(mutation);
   const heldHere = isCommandFor(held, taskId, field.id) ? held : null;
-  const blocked = held !== null && heldHere === null;
+  const blocked = (held !== null && heldHere === null) || (autosave && mutation.hasOtherProtectedCommands());
   const pending = heldHere !== null && mutation.pendingCommand !== null;
   const uncertainHere = isCommandFor(mutation.uncertain?.variables, taskId, field.id) ? mutation.uncertain : null;
 
@@ -153,29 +168,34 @@ export function FieldValueForm(props: FieldValueFormProps) {
     }
   };
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    // The dialog is portaled, but React still bubbles the submit to the task form around it.
-    event.stopPropagation();
-    if (heldHere) {
-      if (!pending && uncertainHere) mutation.retryUncertain({ onError: handleError });
-      return;
+  /**
+   * The one guarded send. `draft` is passed explicitly by autosave commits, whose change may not
+   * have re-rendered `session` yet; held, blocked, stale and invalid drafts are never sent.
+   */
+  const commit = (draft: FieldDraft, quiet: boolean): CommitOutcome => {
+    // Never resends a held command by itself; only the explicit Retry does.
+    if (heldHere) return 'held';
+    if (blocked) {
+      if (quiet) setNotice(message('customAutosave.blockedByOtherSave'));
+      return 'blocked';
     }
-    if (!canSend) return;
-    const parsed = parseFieldDraft(field, session.draft);
+    if (!canSend) return 'unsendable';
+    const parsed = parseFieldDraft(field, draft);
     if (!parsed.ok) {
       setParseError(true);
-      return;
+      return 'invalid';
     }
     setParseError(false);
     const original = session.value?.value ?? null;
     if (original === null ? parsed.value.value === null : sameJson(original, parsed.value)) {
-      setNotice(original === null ? message('fields.fieldValueForm.theFieldIsAlreadyEmptyNothingToSave') : message('fields.fieldValueForm.theValueHasNotChangedNothingToSave'));
-      return;
+      setNotice(quiet ? null : original === null ? message('fields.fieldValueForm.theFieldIsAlreadyEmptyNothingToSave') : message('fields.fieldValueForm.theValueHasNotChangedNothingToSave'));
+      return 'unchanged';
     }
     setNotice(null);
-    props.onSubmitSession?.(session);
-    onSessionChange((current) => ({ ...current, submitted: true, previous: null }));
+    // Keeps the kept draft's reference when equal, so the store can match the receipt to it.
+    const sent = sameJson(draft, session.draft) ? session.draft : draft;
+    props.onSubmitSession?.(sent === session.draft ? session : { ...session, draft: sent });
+    onSessionChange((current) => ({ ...current, draft: sent, submitted: true, previous: null }));
     mutation.mutate(
       {
         taskId,
@@ -188,6 +208,31 @@ export function FieldValueForm(props: FieldValueFormProps) {
       },
       { onError: handleError },
     );
+    return 'sent';
+  };
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    // The dialog is portaled, but React still bubbles the submit to the task form around it.
+    event.stopPropagation();
+    if (heldHere) {
+      if (!pending && uncertainHere) mutation.retryUncertain({ onError: handleError });
+      return;
+    }
+    commit(session.draft, false);
+  };
+
+  /** With autosave, a valid unsent draft is sent before closing; an invalid one is shown first. */
+  const close = () => {
+    if (autosave && heldHere === null && isSessionDirty(session)) {
+      const outcome = commit(session.draft, true);
+      if ((outcome === 'invalid' || outcome === 'blocked') && closeRefusedFor.current !== session.draft) {
+        closeRefusedFor.current = session.draft;
+        setNotice(message(outcome === 'invalid' ? 'customAutosave.invalidNotSaved' : 'customAutosave.blockedByOtherSave'));
+        return;
+      }
+    }
+    onClose();
   };
 
   const reload = async () => {
@@ -224,7 +269,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
       description={t('fields.fieldValueForm.taskValue', { p0: taskTitle })}
       open
       onOpenChange={(next) => {
-        if (!next) onClose();
+        if (!next) close();
       }}
     >
       <form noValidate onSubmit={submit} className="mt-5 space-y-4">
@@ -287,10 +332,13 @@ export function FieldValueForm(props: FieldValueFormProps) {
             disabled={heldHere !== null || blocked || !editable}
             error={parseError}
             originalValue={originalValue}
+            onCommit={autosave ? (draft) => void commit(draft, true) : undefined}
           />
         </fieldset>
         {heldHere ? (
           <p className="text-xs text-muted">{t('fields.fieldValueForm.showingTheSubmittedValueItStaysFixedUntil')}</p>
+        ) : autosave && canSend ? (
+          <p className="text-xs text-muted">{t('customAutosave.saveHint')}</p>
         ) : null}
 
         <SaveFeedback
@@ -313,13 +361,19 @@ export function FieldValueForm(props: FieldValueFormProps) {
           <div className="flex flex-wrap items-center gap-2">
             {heldHere ? (
               <Button type="submit" variant="primary" aria-disabled={pending || undefined}>
-                {pending ? t('fields.fieldValueForm.submitting') : t('fields.fieldValueForm.retrySubmission')}
+                {pending ? t('fields.fieldValueForm.submitting') : autosave ? t('customAutosave.retry') : t('fields.fieldValueForm.retrySubmission')}
               </Button>
+            ) : autosave ? (
+              // A definite failure is resent only on request; a conflict waits for Load latest data.
+              ownError !== null && canSend && !(ownError instanceof ApiError && ownError.kind === 'conflict') ? (
+                <Button type="submit" variant="primary">
+                  {t('customAutosave.retrySave')}</Button>
+              ) : null
             ) : editable ? (
               <Button type="submit" variant="primary" aria-disabled={!canSend || undefined}>
                 {t('fields.fieldValueForm.saveValue')}</Button>
             ) : null}
-            {dirty ? (
+            {dirty && (!autosave || hasParseError || session.stale || session.serverLocked || ownError !== null || blocked) ? (
               <Button
                 variant="ghost"
                 onClick={() => {
@@ -333,7 +387,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <FieldHistoryDialog actorId={actorId} workspaceId={workspaceId} taskId={taskId} field={latestField} members={members} />
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="ghost" onClick={close}>
               {t('fields.fieldValueForm.close')}</Button>
           </div>
         </div>

@@ -240,7 +240,8 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
   return (
     <div className="space-y-4">
       <Link to={projectTimeHref(workspace.id, project.id, { periodId, workerId: params.has('worker') ? entryMembershipId : undefined })} className="inline-flex items-center gap-1.5 rounded-md text-sm font-medium text-accent-ink"><ArrowLeft size={16} aria-hidden="true" />{t('planning.backToTaskTable')}</Link>
-      <header className="flex items-center justify-between gap-3"><div className="min-w-0"><h1 className="text-xl font-semibold tracking-tight">{t('planning.weeklyPlan')}</h1><p className="mt-0.5 truncate text-xs text-muted">{project.name}</p></div>{canManage && !project.archivedAt ? <Button size="sm" onClick={() => setPeriodOpen(true)}><CalendarDays size={14} aria-hidden="true" />{t('planning.newPeriod')}</Button> : null}</header>
+      <header className="flex items-center justify-between gap-3"><div className="min-w-0"><h1 className="text-xl font-semibold tracking-tight">{view === 'plan' ? t('planning.weeklyPlan') : t('weeklyReports.reports')}</h1><p className="mt-0.5 truncate text-xs text-muted">{project.name}</p></div>{canManage && !project.archivedAt ? <Button size="sm" onClick={() => setPeriodOpen(true)}><CalendarDays size={14} aria-hidden="true" />{t('planning.newPeriod')}</Button> : null}</header>
+      {view !== 'plan' ? <p className="max-w-3xl text-sm leading-relaxed text-muted">{t('weeklyReports.overview')}</p> : null}
       <div role="status" aria-live="polite" className="sr-only">{announcement ? t(announcement.key, announcement.params) : null}</div>
       <CutoffRecovery controller={cutoffController} canManage={canManage&&canWrite} onOpen={id=>selectPeriod(id)}/>
       <DependencyNotices controller={dependencies} />
@@ -262,6 +263,10 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
           </> : null}
         </div>
         {!periodId ? <StateCard headingLevel={2} title={t('planning.chooseWeek')} description={t('planning.chooseWeekBeforeHours')} /> : detailError ? <QueryErrorState error={detailError.error} subject="planning" headingLevel={2} retrying={detailError.isFetching} onRetry={() => void detailError.refetch()} /> : !validProject ? <StateCard headingLevel={2} title={t('planning.thisPeriodBelongsToAnotherProject')} description={t('planning.chooseAPeriodFromThisProjectsList')} /> : !loaded ? <p role="status" className="text-sm text-muted">{t('planning.loadingSelectedWeek')}</p> : <>
+          <nav aria-label={t('planning.weeklyView')} className="flex gap-1 border-b border-line pb-2">{(['plan', 'report', 'work-types'] as const).map((item) => <Button key={item} variant={view === item ? 'primary' : 'ghost'} aria-current={view === item ? 'page' : undefined} onClick={() => setParams((before) => { const next = new URLSearchParams(before); next.set('view', item); return next; })}>{item === 'plan' ? t('planning.planAndHours') : item === 'report' ? t('planning.report') : t('planning.workTypes')}</Button>)}</nav>
+          <details open={view === 'plan'} className="rounded-xl border border-line bg-surface p-3">
+            <summary className="cursor-pointer text-sm font-medium text-accent-ink">{t('weeklyReports.settings')}</summary>
+            <div className="pt-3">
           <section aria-label={t('planning.periodContext')} className="grid items-start gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             <CutoffPanel actorId={actorId} workspaceId={workspace.id} periodId={periodId} timezone={period.data.timezone} canManage={canManage&&canWrite} controller={cutoffController} onFreeze={()=>startFreeze('project')} onManageCalendar={seriesId=>{if(seriesId)selectSeries(seriesId);recurrenceRef.current?.scrollIntoView({block:'start'});recurrenceRef.current?.focus({preventScroll:true});}}/>
             <div className="space-y-1.5 rounded-lg border border-line bg-surface px-3 py-2 text-xs">
@@ -279,7 +284,8 @@ function WeeklyContent({ actorId, workspace, project }: { actorId: string; works
               </details>
             </div>
           </section>
-          <nav aria-label={t('planning.weeklyView')} className="flex gap-1 border-b border-line pb-2">{(['plan', 'report', 'work-types'] as const).map((item) => <Button key={item} variant={view === item ? 'primary' : 'ghost'} aria-current={view === item ? 'page' : undefined} onClick={() => setParams((before) => { const next = new URLSearchParams(before); next.set('view', item); return next; })}>{item === 'plan' ? t('planning.planAndHours') : item === 'report' ? t('planning.report') : t('planning.workTypes')}</Button>)}</nav>
+            </div>
+          </details>
           <div hidden={view !== 'plan'} className="space-y-6">
             {/* Display only: never the time-entry person, report people, a URL value or a total. */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><label htmlFor="weekly-people-lens" className="shrink-0 text-xs font-medium">{t('planning.peopleLens.label')}</label><ChoicePicker compact searchable id="weekly-people-lens" label={t('planning.peopleLens.accessibleLabel')} aria-describedby="weekly-people-lens-scope" className="w-56 text-xs" value={lensId} options={lensOptions} onValueChange={setPeopleLens} /><p id="weekly-people-lens-scope" className="min-w-0 flex-1 text-xs text-muted">{t('planning.peopleLens.scope')}</p></div>

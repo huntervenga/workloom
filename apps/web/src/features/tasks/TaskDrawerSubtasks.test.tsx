@@ -55,8 +55,8 @@ describe('drawer loaded subtasks', () => {
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it('opens a child while keeping the parent’s unsaved draft for Back to parent', async () => {
-    const { calls } = installFakeApi(routes([parent, detail, additional]));
+  it('opens a child while retaining a rejected parent title for Back to parent without retrying it', async () => {
+    const { calls } = installFakeApi(routes([parent, detail, additional], { [`PATCH ${rootPath}/tasks/${PARENT}`]: () => failure(409, 'FIELD_LOCKED', 'Field is locked') }));
     const { user } = renderApp(`${tablePath}?task=${PARENT}`);
     const name = await screen.findByLabelText('Task name');
     await user.clear(name); await user.type(name, 'Unsaved parent title');
@@ -65,8 +65,11 @@ describe('drawer loaded subtasks', () => {
     expect(screen.getByLabelText('Task name')).toHaveValue(additional.title);
     await user.click(screen.getByRole('button', { name: 'Open parent' }));
     await waitFor(() => expect(screen.getByLabelText('Task name')).toHaveValue('Unsaved parent title'));
-    expect(screen.getByText('Your unsaved draft has been restored.')).toBeInTheDocument();
-    expect(writes(calls)).toHaveLength(0);
+    expect(screen.getByText('This task changed on the server. Review the latest version to keep saving.')).toBeInTheDocument();
+    expect(writes(calls)).toHaveLength(1);
+    expect(writes(calls)[0]).toMatchObject({ method: 'PATCH', path: `${rootPath}/tasks/${PARENT}` });
+    expect(writes(calls)[0]?.body).toEqual({ expectedRevision: parent.revision, title: 'Unsaved parent title' });
+    expect(writes(calls)[0]?.headers.get('Idempotency-Key')).toBeTruthy();
   });
 
   it('labels a subset when more pages exist and never says there are no subtasks', async () => {

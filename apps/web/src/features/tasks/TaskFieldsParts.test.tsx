@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -68,4 +69,23 @@ it('keeps the estimate supplement readable and retryable while editable detail f
   expect(screen.getByRole('combobox', { name: 'Priority' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Retry original read' })).toBeEnabled();
   expect(screen.getByLabelText('Team estimate, hours').closest('fieldset')?.parentElement).toContainElement(screen.getByRole('button', { name: 'Retry original read' }));
+});
+
+
+it('keeps saved common fields and description visible while advanced participants and estimate history stay under More fields', async () => {
+  show({ part: 'saved', projectName: 'Launch plan', estimateSupplement: <button type="button">Retry original read</button> });
+  expect(screen.getByLabelText('Task name')).toHaveValue('Stored task');
+  expect(screen.getByText('Launch plan')).toBeVisible();
+  expect(screen.queryByRole('combobox', { name: 'Project' })).not.toBeInTheDocument();
+  for (const name of ['Assignee', 'Status', 'Section', 'Priority']) expect(screen.getByRole('combobox', { name })).toBeVisible();
+  expect(screen.getByLabelText('Due date')).toBeVisible();
+  expect(screen.getByLabelText('Team estimate, hours')).toBeVisible();
+  expect(screen.getByLabelText('Description')).toHaveValue('Stored notes');
+  const more = screen.getByText('More fields', { selector: 'summary' });
+  expect(more.closest('details')).not.toHaveAttribute('open');
+  expect(screen.getByText('Participants')).not.toBeVisible();
+  expect(screen.getByText('Retry original read')).not.toBeVisible();
+  await userEvent.setup().click(more);
+  expect(screen.getByRole('group', { name: 'Participants' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Retry original read' })).toBeEnabled();
 });

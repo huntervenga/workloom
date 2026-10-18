@@ -102,7 +102,7 @@ describe('quick fact and category report boundaries', () => {
     let rowReads = 0;
     const { calls } = installFakeApi({ ...tableRoutes(), [`POST ${rootPath}/work-type-report-runs`]: () => created(categoryReport()), [`GET ${rootPath}/work-type-report-runs/${TYPE_RUN}`]: () => ok(categoryReport()), [`GET ${rootPath}/work-type-report-runs/${TYPE_RUN}/rows`]: () => { rowReads += 1; return new Response(JSON.stringify({ data: [], meta: { requestId: 'req_types', nextCursor: rowReads === 1 ? 'next-sources' : null } }), { status: 200, headers: { 'content-type': 'application/json' } }); } });
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&view=work-types`);
-    await user.click(await screen.findByRole('button', { name: "Calculate hours breakdown" }));
+    await user.click(await screen.findByRole('button', { name: "Calculate current breakdown" }));
     expect(await screen.findByRole('img', { name: 'Исследование: 1h, 50%' })).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Uncategorized: 30m, 25%' })).toBeInTheDocument();
     expect(screen.getByText('Active entries: 3. These are recorded hours; they do not prove that all work for the week has been logged. Unrecorded work remains unknown.')).toBeInTheDocument();

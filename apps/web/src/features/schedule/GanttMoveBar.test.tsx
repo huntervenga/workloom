@@ -90,175 +90,88 @@ const down = (body: HTMLElement, x = 100) => fireEvent.pointerDown(body, { point
 const move = (x: number) => fireEvent.pointerMove(document, { pointerId: 1, clientX: x, cancelable: true });
 const up = (x: number) => fireEvent.pointerUp(document, { pointerId: 1, clientX: x });
 
-describe('Gantt bar move stages a reviewed draft', () => {
-  it('drags the saved body, keeps saved bar/anchor fixed, previews the exact draft and writes only on explicit Apply', async () => {
+describe('Gantt bar direct saves and retained recovery', () => {
+  it('keeps saved bars/anchors fixed through a held preview and view switch, then saves directly with one release', async () => {
     const task = scheduledTask(1, '2026-10-24', '2026-10-26');
-    const h = mount([task]);
-    const row = await rowOf(task);
-    const body = within(row).getByRole('img', { name: 'Current: start 2026-10-24, due 2026-10-26' });
-    expect(body).toHaveAttribute('data-gantt-move-handle');
-    expect(body).toHaveAttribute('data-gantt-movable', task.id);
-    expect(row.querySelectorAll('[data-gantt-movable]')).toHaveLength(1);
-    arm(body);
+    const answer = deferred<Response>(); let input: TaskScheduleBatchInput | undefined;
+    const h = mount([task], { routes: { [`POST ${previewPath}`]: request => { input = request.body as TaskScheduleBatchInput; return answer.promise; } } });
+    const row = await rowOf(task), body = within(row).getByRole('button', { name: /Current: start 2026-10-24, due 2026-10-26/ });
+    expect(body).toHaveAttribute('data-gantt-move-handle'); expect(body).toHaveAttribute('data-gantt-movable', task.id);
+    expect(row.querySelectorAll('[data-gantt-movable]')).toHaveLength(1); arm(body);
     const saved = { left: body.style.left, width: body.style.width };
     const anchors = () => [...row.querySelectorAll('[data-gantt-anchor]')];
-    expect(anchors()).toHaveLength(1);
-    expect(anchors()[0]).toHaveAttribute('data-gantt-anchor', task.id);
-    // Subscribed before pointerdown: every protection transition is recorded, not sampled.
+    expect(anchors()).toHaveLength(1); expect(anchors()[0]).toHaveAttribute('data-gantt-anchor', task.id);
     const protection = watchProtection(h.client);
-
-    down(body);
-    expect(h.drafts()).toBe(true);
-    expect(protection.log).toEqual([true]);
-    move(172);
-    const ghost = within(row).getByText('Proposed, not applied: 2026-10-26 — 2026-10-28').closest('[data-gantt-proposal]');
-    expect(ghostOf(row)).toBe(ghost);
+    down(body); expect(h.drafts()).toBe(true); expect(protection.log).toEqual([true]); move(172);
+    const ghost = ghostOf(row);
+    expect(ghost).toHaveTextContent('Proposed, not applied: 2026-10-26 — 2026-10-28');
     expect(within(row).getAllByTestId('gantt-date-move-ghost')).toHaveLength(1);
-    expect(ghost).not.toHaveAttribute('data-gantt-movable');
-    expect(ghost).not.toHaveAttribute('data-gantt-anchor');
-    expect(ghost).toHaveClass('pointer-events-none');
-    expect(ghost?.closest('[data-gantt-anchor]')).toBeNull();
-    expect(ghost?.querySelector('[data-gantt-anchor]')).toBeNull();
-    expect(anchors()).toHaveLength(1);
-    expect(anchors()[0]).toContainElement(body);
-    expect(body).toHaveAccessibleName('Current: start 2026-10-24, due 2026-10-26');
-    expect(body.style.left).toBe(saved.left);
-    expect(writes(h.calls)).toHaveLength(0);
-
-    up(172);
-    // The drop hands the lease to the page while the preview is still pending: no release in between.
-    expect(protection.log).toEqual([true]);
-    const dialog = await screen.findByRole('dialog', { name: 'Edit task dates' });
-    await within(dialog).findByRole('region', { name: 'Task date change preview' });
-    // Exactly one preview of the exact staged input, from the authorized context revision; no write at drop.
-    expect(writes(h.calls)).toEqual([expect.objectContaining({ method: 'POST', path: previewPath, body: { rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: '2026-10-26', dueDate: '2026-10-28' }] } })]);
+    expect(ghost).not.toHaveAttribute('data-gantt-movable'); expect(ghost).not.toHaveAttribute('data-gantt-anchor');
+    expect(ghost).toHaveClass('pointer-events-none'); expect(ghost?.closest('[data-gantt-anchor]')).toBeNull();
+    expect(ghost?.querySelector('[data-gantt-anchor]')).toBeNull(); expect(anchors()).toHaveLength(1); expect(anchors()[0]).toContainElement(body);
+    expect(body).toHaveAccessibleName(/Current: start 2026-10-24, due 2026-10-26/); expect(body.style.left).toBe(saved.left);
+    expect(writes(h.calls)).toHaveLength(0); up(172);
+    await waitFor(() => expect(input).toEqual({ rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: '2026-10-26', dueDate: '2026-10-28' }] }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(h.controller().activeId).toBeNull();
+    expect(writes(h.calls)).toEqual([expect.objectContaining({ method: 'POST', path: previewPath, body: input })]);
     expect(Object.values(h.controller().drafts)).toHaveLength(1);
-    expect(h.controller().active?.origin).toBe('move');
-    // The modal hides the background from assistive technology, so check the saved label attribute directly.
-    expect(body).toHaveAttribute('aria-label', 'Current: start 2026-10-24, due 2026-10-26');
-    expect({ left: body.style.left, width: body.style.width }).toEqual(saved);
-    expect(within(row).getByText('Proposed, not applied: 2026-10-26 — 2026-10-28')).toBeInTheDocument();
-    expect(ghostOf(row)).toHaveTextContent('Proposed, not applied: 2026-10-26 — 2026-10-28');
-    // The retained draft closes the gate: the handle stays for guidance, the movable marker goes.
-    expect(body).toHaveAttribute('data-gantt-move-handle');
-    expect(body).not.toHaveAttribute('data-gantt-movable');
+    expect(body).toHaveAttribute('aria-label', `Open ${task.title} · Current: start 2026-10-24, due 2026-10-26`);
+    expect({ left: body.style.left, width: body.style.width }).toEqual(saved); expect(ghostOf(row)).toHaveTextContent('Proposed, not applied: 2026-10-26 — 2026-10-28');
     expect(protection.log).toEqual([true]);
-
-    // Dialog close and a view switch keep the transferred lease; nothing is sent.
-    fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' })[0] as HTMLElement);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(h.drafts()).toBe(true);
-    expect(protection.log).toEqual([true]);
-    h.update({ shown: false });
-    expect(screen.queryByRole('region', { name: 'Project timeline' })).not.toBeInTheDocument();
-    expect(h.drafts()).toBe(true);
-    expect(protection.log).toEqual([true]);
-    h.update({ shown: true });
-    const again = await rowOf(task);
-    const againBody = within(again).getByRole('img', { name: 'Current: start 2026-10-24, due 2026-10-26' });
-    expect(againBody).not.toHaveAttribute('data-gantt-movable');
-    expect(within(again).getByText('Proposed, not applied: 2026-10-26 — 2026-10-28')).toBeInTheDocument();
-    expect(ghostOf(again)).toHaveTextContent('Proposed, not applied: 2026-10-26 — 2026-10-28');
-    expect(writes(h.calls)).toHaveLength(1);
-    expect(protection.log).toEqual([true]);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue date draft' }));
-    const reopened = await screen.findByRole('dialog', { name: 'Edit task dates' });
-    expect(protection.log).toEqual([true]);
-    fireEvent.click(within(reopened).getByRole('button', { name: 'Apply dates' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(writes(h.calls).filter(call => call.path === applyPath).map(call => call.body)).toEqual([{ rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: '2026-10-26', dueDate: '2026-10-28' }], previewHash: 'a'.repeat(64) }]);
-    await waitFor(() => expect(h.drafts()).toBe(false));
-    // Confirmed success is the single release.
-    expect(protection.log).toEqual([true, false]);
-    protection.stop();
-    // The saved bar changes only from the refetched authorized context after success.
-    const applied = await within(await rowOf(task)).findByRole('img', { name: 'Current: start 2026-10-26, due 2026-10-28' });
+    h.update({ shown: false }); expect(screen.queryByRole('region', { name: 'Project timeline' })).not.toBeInTheDocument();
+    expect(h.drafts()).toBe(true); expect(protection.log).toEqual([true]); h.update({ shown: true });
+    const again = await rowOf(task); expect(ghostOf(again)).toHaveTextContent('Proposed, not applied: 2026-10-26 — 2026-10-28');
+    expect(writes(h.calls)).toHaveLength(1); expect(protection.log).toEqual([true]);
+    await act(async () => { if (!input) throw new Error('Expected preview input'); answer.resolve(ok(schedulePreview(input, [task]))); });
+    await waitFor(() => expect(writes(h.calls).filter(call => call.path === applyPath).map(call => call.body)).toEqual([{ rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: '2026-10-26', dueDate: '2026-10-28' }], previewHash: 'a'.repeat(64) }]));
+    await waitFor(() => expect(h.drafts()).toBe(false)); expect(protection.log).toEqual([true, false]); protection.stop();
+    const applied = await within(await rowOf(task)).findByRole('button', { name: /Current: start 2026-10-26, due 2026-10-28/ });
     await waitFor(() => expect(applied).toHaveAttribute('data-gantt-movable', task.id));
-    expect(screen.queryByText(/^Proposed, not applied/)).not.toBeInTheDocument();
-    expect(screen.queryByTestId('gantt-date-move-ghost')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(screen.queryByTestId('gantt-date-move-ghost')).not.toBeInTheDocument();
   });
 
-  it('keeps a missing start null for a due-only point and releases the lease on explicit discard', async () => {
-    const task = scheduledTask(1, null, '2026-10-24');
-    const h = mount([task]);
-    const row = await rowOf(task);
-    const body = within(row).getByRole('img', { name: 'Current: start Not set, due 2026-10-24; only due date' });
-    expect(body).toHaveAttribute('data-gantt-movable', task.id);
-    arm(body);
-    const protection = watchProtection(h.client);
+  it('directly saves a due-only point with start still null and one continuous lease', async () => {
+    const task = scheduledTask(1, null, '2026-10-24'), h = mount([task]);
+    const row = await rowOf(task), body = within(row).getByRole('button', { name: /Current: start Not set, due 2026-10-24; only due date/ });
+    expect(body).toHaveAttribute('data-gantt-movable', task.id); arm(body); const protection = watchProtection(h.client);
     down(body); move(64);
-    // The point ghost uses the same selector; its marker is decorative and nothing inside is an anchor or a handle.
-    const ghost = ghostOf(row);
-    expect(ghost).toHaveAttribute('title', 'Proposed, not applied: Not set — 2026-10-23');
-    expect(ghost).toHaveClass('pointer-events-none');
-    expect(ghost?.querySelector('span[aria-hidden="true"]')).not.toBeNull();
+    const ghost = ghostOf(row); expect(ghost).toHaveAttribute('title', 'Proposed, not applied: Not set — 2026-10-23');
+    expect(ghost).toHaveClass('pointer-events-none'); expect(ghost?.querySelector('span[aria-hidden="true"]')).not.toBeNull();
     expect(ghost?.querySelector('[data-gantt-anchor], [data-gantt-movable], [data-gantt-move-handle]')).toBeNull();
-    expect(ghost?.closest('[data-gantt-anchor]')).toBeNull();
-    up(64);
-    const dialog = await screen.findByRole('dialog', { name: 'Edit task dates' });
-    await within(dialog).findByRole('region', { name: 'Task date change preview' });
-    expect(writes(h.calls).map(call => call.body)).toEqual([{ rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: null, dueDate: '2026-10-23' }] }]);
-    expect(h.drafts()).toBe(true);
-    expect(ghostOf(row)).toHaveAttribute('title', 'Proposed, not applied: Not set — 2026-10-23');
-    expect(body).not.toHaveAttribute('data-gantt-movable');
-    expect(protection.log).toEqual([true]);
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard date draft' }));
-    await waitFor(() => expect(h.drafts()).toBe(false));
-    // Explicit discard is the single release.
-    expect(protection.log).toEqual([true, false]);
-    protection.stop();
-    expect(h.controller().drafts).toEqual({});
-    expect(writes(h.calls)).toHaveLength(1);
-    expect(body).toHaveAttribute('aria-label', 'Current: start Not set, due 2026-10-24; only due date');
-    expect(body).toHaveAttribute('data-gantt-movable', task.id);
-    expect(screen.queryByText(/^Proposed, not applied/)).not.toBeInTheDocument();
-    expect(ghostOf(row)).toBeNull();
+    expect(ghost?.closest('[data-gantt-anchor]')).toBeNull(); expect(writes(h.calls)).toHaveLength(0); up(64);
+    await waitFor(() => expect(h.controller().drafts).toEqual({}));
+    expect(writes(h.calls).map(call => call.body)).toEqual([{ rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: null, dueDate: '2026-10-23' }] }, { rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: null, dueDate: '2026-10-23' }], previewHash: 'a'.repeat(64) }]);
+    await waitFor(() => expect(h.drafts()).toBe(false)); expect(protection.log).toEqual([true, false]); protection.stop();
+    await within(row).findByRole('button', { name: /Current: start Not set, due 2026-10-23; only due date/ });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(ghostOf(row)).toBeNull();
   });
 
-  it('draws an outside-window proposal with the same unanchored ghost selector, during the drag and while retained', async () => {
+  it('keeps an outside-window proposal unanchored while blocked, opens explicit recovery, and discards without any apply', async () => {
     const task = scheduledTask(1, '2026-10-24', '2026-10-26');
-    const h = mount([task]);
-    const row = await rowOf(task);
-    const body = within(row).getByRole('img', { name: 'Current: start 2026-10-24, due 2026-10-26' });
-    arm(body);
-    // The initial fit shows 2026-10-23 … 2026-11-19 at 36px per day; +30 days lands entirely after the window.
+    const h = mount([task], { routes: { [`POST ${previewPath}`]: request => ok({ ...schedulePreview(request.body as TaskScheduleBatchInput, [task]), protectedTargets: [{ taskId: task.id, reason: 'archived_task' }] }) } });
+    const row = await rowOf(task), body = within(row).getByRole('button', { name: /Current: start 2026-10-24, due 2026-10-26/ }); arm(body);
     down(body); move(1180);
-    const outside = 'Proposed, not applied: 2026-11-23 — 2026-11-25 (outside this window)';
-    const ghost = ghostOf(row);
-    expect(ghost).toHaveTextContent(outside);
-    expect(ghost).toHaveAttribute('data-gantt-proposal');
-    expect(ghost).toHaveClass('pointer-events-none');
-    expect(ghost?.closest('[data-gantt-anchor]')).toBeNull();
-    expect(ghost?.querySelector('[data-gantt-anchor], [data-gantt-movable], button')).toBeNull();
-    expect(within(row).getAllByTestId('gantt-date-move-ghost')).toHaveLength(1);
-    up(1180);
-    const dialog = await screen.findByRole('dialog', { name: 'Edit task dates' });
-    await within(dialog).findByRole('region', { name: 'Task date change preview' });
+    const outside = 'Proposed, not applied: 2026-11-23 — 2026-11-25 (outside this window)', ghost = ghostOf(row);
+    expect(ghost).toHaveTextContent(outside); expect(ghost).toHaveAttribute('data-gantt-proposal'); expect(ghost).toHaveClass('pointer-events-none');
+    expect(ghost?.closest('[data-gantt-anchor]')).toBeNull(); expect(ghost?.querySelector('[data-gantt-anchor], [data-gantt-movable], button')).toBeNull();
+    expect(within(row).getAllByTestId('gantt-date-move-ghost')).toHaveLength(1); up(1180);
+    await screen.findByRole('button', { name: 'Review' }); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(writes(h.calls).map(call => call.body)).toEqual([{ rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: '2026-11-23', dueDate: '2026-11-25' }] }]);
-    expect(ghostOf(row)).toHaveTextContent(outside);
-    expect(body).toHaveAttribute('aria-label', 'Current: start 2026-10-24, due 2026-10-26');
+    expect(ghostOf(row)).toHaveTextContent(outside); expect(body).toHaveAttribute('aria-label', `Open ${task.title} · Current: start 2026-10-24, due 2026-10-26`);
+    fireEvent.click(screen.getByRole('button', { name: 'Review' })); const dialog = await screen.findByRole('dialog', { name: 'Edit task dates' });
+    expect(within(dialog).getByRole('button', { name: 'Apply dates' })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Discard date draft' }));
-    await waitFor(() => expect(ghostOf(row)).toBeNull());
-    expect(writes(h.calls).filter(call => call.path === applyPath)).toHaveLength(0);
+    await waitFor(() => expect(ghostOf(row)).toBeNull()); expect(writes(h.calls).filter(call => call.path === applyPath)).toHaveLength(0);
   });
 
-  it('releases a retained move lease on controller cleanup, not before', async () => {
-    const task = scheduledTask(1, '2026-10-24', '2026-10-26');
-    const h = mount([task]);
-    const body = within(await rowOf(task)).getByRole('img', { name: /^Current:/ });
-    arm(body);
-    const protection = watchProtection(h.client);
-    down(body); move(172); up(172);
-    const dialog = await screen.findByRole('dialog', { name: 'Edit task dates' });
-    await within(dialog).findByRole('region', { name: 'Task date change preview' });
-    fireEvent.click(within(dialog).getAllByRole('button', { name: 'Close' })[0] as HTMLElement);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(protection.log).toEqual([true]);
-    h.unmount();
-    expect(protection.log).toEqual([true, false]);
-    expect(h.drafts()).toBe(false);
-    protection.stop();
+  it('releases the direct preview lease on controller cleanup and never applies its late answer', async () => {
+    const task = scheduledTask(1, '2026-10-24', '2026-10-26'), answer = deferred<Response>(); let input: TaskScheduleBatchInput | undefined;
+    const h = mount([task], { routes: { [`POST ${previewPath}`]: request => { input = request.body as TaskScheduleBatchInput; return answer.promise; } } });
+    const body = within(await rowOf(task)).getByRole('button', { name: /Current:/ }); arm(body); const protection = watchProtection(h.client);
+    down(body); move(172); up(172); await waitFor(() => expect(input).toBeDefined());
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument(); expect(protection.log).toEqual([true]); h.unmount();
+    expect(protection.log).toEqual([true, false]); expect(h.drafts()).toBe(false); protection.stop();
+    await act(async () => { if (!input) throw new Error('Expected preview input'); answer.resolve(ok(schedulePreview(input, [task]))); });
     expect(writes(h.calls).filter(call => call.path === applyPath)).toHaveLength(0);
   });
 });
@@ -268,7 +181,7 @@ describe('move gates', () => {
     const task = scheduledTask(1, '2026-10-24', '2026-10-26');
     const h = mount([task]);
     const row = await rowOf(task);
-    const body = within(row).getByRole('img', { name: 'Current: start 2026-10-24, due 2026-10-26' });
+    const body = within(row).getByRole('button', { name: name => name.endsWith('Current: start 2026-10-24, due 2026-10-26') });
     expect(body).toHaveAttribute('data-gantt-movable', task.id);
     fireEvent.click(within(row).getByRole('button', { name: 'Edit dates' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit task dates' });
@@ -283,32 +196,33 @@ describe('move gates', () => {
     down(body); move(172); up(172);
     expect(capture).not.toHaveBeenCalled();
     expect(h.drafts()).toBe(false);
-    expect(screen.getByText('Continue or discard the retained date draft before moving another bar. Edit dates is still available.')).toBeInTheDocument();
+    expect(screen.getByText('This task has a date draft or a move being saved. Finish or discard it first; other bars can still move. Edit dates is still available.')).toBeInTheDocument();
     expect(h.controller().drafts).toBe(retained);
     expect(screen.queryByText(/^Proposed, not applied/)).not.toBeInTheDocument();
     expect(ghostOf(row)).toBeNull();
     expect(within(row).getByRole('button', { name: 'Edit dates' })).toBeEnabled();
     // Discarding the retained draft reopens the gate and the guidance disappears.
     fireEvent.click(screen.getByRole('button', { name: 'Discard draft' }));
-    await waitFor(() => expect(screen.queryByText(/Continue or discard the retained date draft/)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/This task has a date draft/)).not.toBeInTheDocument());
     expect(body).toHaveAttribute('data-gantt-movable', task.id);
     down(body); move(172); up(172);
-    await screen.findByRole('dialog', { name: 'Edit task dates' });
-    expect(writes(h.calls)).toHaveLength(1);
+    await waitFor(() => expect(writes(h.calls).filter(call => call.path === applyPath)).toHaveLength(1));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(writes(h.calls)).toHaveLength(2);
   });
 
   it('refuses a pending/unknown command at start and at drop, but not an unrelated hidden task draft', async () => {
     const task = scheduledTask(1, '2026-10-24', '2026-10-26');
     const h = mount([task]);
     const row = await rowOf(task);
-    const body = within(row).getByRole('img', { name: 'Current: start 2026-10-24, due 2026-10-26' });
+    const body = within(row).getByRole('button', { name: name => name.endsWith('Current: start 2026-10-24, due 2026-10-26') });
     arm(body);
     expect(body).toHaveAttribute('data-gantt-movable', task.id);
     const command = protectedCommandsFor(h.client).register();
     act(() => command.set(true));
     expect(body).toHaveAttribute('data-gantt-move-handle');
     expect(body).not.toHaveAttribute('data-gantt-movable');
-    down(body);
+    down(body); move(172); up(172);
     expect(h.drafts()).toBe(false);
     expect(screen.getByText('A change is still being submitted or is unconfirmed. Resolve it before moving a bar. Edit dates is still available.')).toBeInTheDocument();
     act(() => command.set(false));
@@ -333,14 +247,13 @@ describe('move gates', () => {
     act(() => unrelated.set(true));
     expect(body).toHaveAttribute('data-gantt-movable', task.id);
     down(body); move(172); up(172);
-    const dialog = await screen.findByRole('dialog', { name: 'Edit task dates' });
-    await within(dialog).findByRole('region', { name: 'Task date change preview' });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Discard date draft' }));
+    await waitFor(() => expect(writes(h.calls).filter(call => call.path === applyPath)).toHaveLength(1));
     await waitFor(() => expect(h.controller().drafts).toEqual({}));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(h.drafts()).toBe(true);
     unrelated.dispose();
     expect(h.drafts()).toBe(false);
-    expect(writes(h.calls).filter(call => call.path === applyPath)).toHaveLength(0);
+    expect(writes(h.calls).filter(call => call.path === applyPath)).toHaveLength(1);
   });
 
   it('offers a handle only for loaded current, nonmeeting, writable, editable task dates', async () => {
@@ -350,13 +263,13 @@ describe('move gates', () => {
     const undated = scheduledTask(4);
     const archived = { ...scheduledTask(5, '2026-10-25', '2026-10-27'), archivedAt: STAMP };
     const h = mount([movable, locked, meeting, undated, archived], { context: dto => ({ ...dto, rows: dto.rows.map(row => row.taskId === locked.id ? { ...row, editableDates: false } : row) }) });
-    const movableBody = within(await rowOf(movable)).getByRole('img', { name: /^Current:/ });
+    const movableBody = within(await rowOf(movable)).getByRole('button', { name: /Current:/ });
     expect(movableBody).toHaveAttribute('data-gantt-move-handle');
     expect(movableBody).toHaveAttribute('data-gantt-movable', movable.id);
-    const lockedBody = within(await rowOf(locked)).getByRole('img', { name: /^Current:/ });
+    const lockedBody = within(await rowOf(locked)).getByRole('button', { name: /Current:/ });
     expect(lockedBody).not.toHaveAttribute('data-gantt-move-handle');
     expect(lockedBody).not.toHaveAttribute('data-gantt-movable');
-    const archivedBody = within(await rowOf(archived)).getByRole('img', { name: /^Current:/ });
+    const archivedBody = within(await rowOf(archived)).getByRole('button', { name: /Current:/ });
     expect(archivedBody).not.toHaveAttribute('data-gantt-move-handle');
     expect(archivedBody).not.toHaveAttribute('data-gantt-movable');
     expect(within(await rowOf(meeting)).queryByRole('img')).not.toBeInTheDocument();
@@ -364,11 +277,11 @@ describe('move gates', () => {
     expect((await rowOf(undated)).querySelector('[data-gantt-movable], [data-gantt-move-handle]')).toBeNull();
     // Exactly one enabled body, on the saved bar itself (never its row, track or anchor wrapper).
     expect([...document.querySelectorAll('[data-gantt-movable]')]).toEqual([movableBody]);
-    expect(movableBody).toHaveAttribute('role', 'img');
+    expect(movableBody).toHaveAttribute('role', 'button');
     arm(lockedBody); down(lockedBody); move(172); up(172);
     expect(h.drafts()).toBe(false);
     h.update({ writable: false });
-    expect(within(await rowOf(movable)).getByRole('img', { name: /^Current:/ })).not.toHaveAttribute('data-gantt-move-handle');
+    expect(within(await rowOf(movable)).getByRole('button', { name: /Current:/ })).not.toHaveAttribute('data-gantt-move-handle');
     expect(document.querySelectorAll('[data-gantt-move-handle]')).toHaveLength(0);
     expect(document.querySelectorAll('[data-gantt-movable]')).toHaveLength(0);
     expect(writes(h.calls)).toHaveLength(0);
@@ -382,13 +295,14 @@ describe('move gates', () => {
     act(() => { h.controller().setBaselinePeriodId(PERIOD_A); h.controller().setBaselineId(BASELINE_ID); });
     const row = await waitFor(() => {
       const found = screen.getByRole('group', { name: `Calendar dates: ${task.title}` });
-      expect(within(found).getAllByRole('img')).toHaveLength(2);
+      expect(within(found).getAllByRole('img')).toHaveLength(1);
+      expect(within(found).getByRole('button', { name: /Current:/ })).toBeInTheDocument();
       return found;
     });
     expect(h.calls.some(call => call.method === 'GET' && call.path === `${schedulePath}/schedule-context` && call.searchParams.get('baselineId') === BASELINE_ID)).toBe(true);
-    const current = within(row).getByRole('img', { name: 'Current: start 2026-10-24, due 2026-10-26' });
+    const current = within(row).getByRole('button', { name: name => name.endsWith('Current: start 2026-10-24, due 2026-10-26') });
     await waitFor(() => expect(current).toHaveAttribute('data-gantt-movable', task.id));
-    const bodies = within(row).getAllByRole('img');
+    const bodies = [current, ...within(row).getAllByRole('img')];
     expect(bodies).toHaveLength(2);
     const frozen = bodies.find(item => item !== current);
     expect(frozen).toHaveAccessibleName(/^Frozen: /);
@@ -406,7 +320,7 @@ describe('move gates', () => {
     if (!alert) throw new Error('Expected the context error alert');
     expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: `Calendar dates: ${loaded.title}` })).not.toBeInTheDocument();
-    expect(screen.queryByRole('img', { name: /^Current:/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Current:/ })).not.toBeInTheDocument();
     expect(document.querySelectorAll('[data-gantt-movable], [data-gantt-move-handle]')).toHaveLength(0);
     expect(h.drafts()).toBe(false);
     expect(ghostOf(document.body)).toBeNull();
@@ -417,7 +331,7 @@ describe('move gates', () => {
     const task = scheduledTask(1, '2026-10-24', '2026-10-26');
     const h = mount([task]);
     const row = await rowOf(task);
-    const body = within(row).getByRole('img', { name: 'Current: start 2026-10-24, due 2026-10-26' });
+    const body = within(row).getByRole('button', { name: name => name.endsWith('Current: start 2026-10-24, due 2026-10-26') });
     expect(body).toHaveAttribute('data-gantt-movable', task.id);
     const capture = vi.fn(); arm(body); body.setPointerCapture = capture;
     const protection = watchProtection(h.client);
@@ -444,7 +358,7 @@ describe('move gates', () => {
     expect(drafts[0]?.rows[0]).toMatchObject({ taskId: task.id, startDate: '2026-10-24', dueDate: '2026-10-26', expectedRevision: CONTEXT_REVISION });
     expect(writes(h.calls)).toHaveLength(0);
     expect(await screen.findByRole('dialog', { name: 'Edit task dates' })).toBeInTheDocument();
-    expect(screen.getByText('Continue or discard the retained date draft before moving another bar. Edit dates is still available.')).toBeInTheDocument();
+    expect(screen.getByText('This task has a date draft or a move being saved. Finish or discard it first; other bars can still move. Edit dates is still available.')).toBeInTheDocument();
     expect(body).toHaveAttribute('data-gantt-move-handle');
     expect(body).not.toHaveAttribute('data-gantt-movable');
   });
@@ -453,7 +367,7 @@ describe('move gates', () => {
     const task = scheduledTask(1, '2026-10-24', '2026-10-26');
     const h = mount([task]);
     const row = await rowOf(task);
-    const body = within(row).getByRole('img', { name: /^Current:/ });
+    const body = within(row).getByRole('button', { name: /Current:/ });
     arm(body);
     down(body); move(172);
     expect(screen.getByText(/^Proposed, not applied/)).toBeInTheDocument();
@@ -471,16 +385,19 @@ describe('move gates', () => {
     expect(writes(h.calls)).toHaveLength(0);
   });
 
-  it('ignores a late preview after the staged draft changed and never applies it', async () => {
+  it('ignores a late manual preview after its explicit draft changed and never applies it', async () => {
     const task = scheduledTask(1, '2026-10-24', '2026-10-26');
     const answer = deferred<Response>();
     let first: TaskScheduleBatchInput | undefined;
     const h = mount([task], { routes: { [`POST ${previewPath}`]: request => { first ??= request.body as TaskScheduleBatchInput; return answer.promise; } } });
     const row = await rowOf(task);
-    const body = within(row).getByRole('img', { name: /^Current:/ });
-    arm(body);
-    down(body); move(172); up(172);
+    const body = within(row).getByRole('button', { name: /Current:/ });
+    expect(body).toHaveAttribute('data-gantt-movable', task.id);
+    fireEvent.click(within(row).getByRole('button', { name: 'Edit dates' }));
     const dialog = await screen.findByRole('dialog', { name: 'Edit task dates' });
+    fireEvent.change(within(dialog).getByLabelText('Start date'), { target: { value: '2026-10-26' } });
+    fireEvent.change(within(dialog).getByLabelText('Due date'), { target: { value: '2026-10-28' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview changes' }));
     await waitFor(() => expect(first).toEqual({ rows: [{ taskId: task.id, expectedRevision: CONTEXT_REVISION, startDate: '2026-10-26', dueDate: '2026-10-28' }] }));
     fireEvent.change(within(dialog).getByLabelText('Due date'), { target: { value: '2026-10-30' } });
     expect(h.controller().previewing).not.toBeNull();

@@ -70,8 +70,8 @@ describe('first-open window', () => {
     expect(within(gantt()).getByLabelText('Days in window')).toHaveValue('28');
     expect(within(gantt()).getByRole('status')).toHaveTextContent(`Opened at 2 dated tasks: ${range(day(-40), day(-20))}. Loaded, filtered tasks only; more pages not loaded.`);
     expect(within(gantt()).getByText(`${range(day(-41), day(-14))} · 3 loaded tasks · more not loaded`, { exact: false })).toBeInTheDocument();
-    expect(within(gantt()).getByRole('img', { name: `Current: start ${day(-40)}, due ${day(-35)}` })).toBeInTheDocument();
-    expect(within(gantt()).getByRole('img', { name: `Current: start Not set, due ${day(-20)}; only due date` })).toBeInTheDocument();
+    expect(within(gantt()).getByRole('button', { name: name => name.endsWith(`Current: start ${day(-40)}, due ${day(-35)}`) })).toBeInTheDocument();
+    expect(within(gantt()).getByRole('button', { name: name => name.endsWith(`Current: start Not set, due ${day(-20)}; only due date`) })).toBeInTheDocument();
 
     fireEvent.click(within(gantt()).getByRole('button', { name: 'Today' }));
     expect(windowStart()).toHaveValue(today);
@@ -201,12 +201,12 @@ describe('compact readable Gantt', () => {
     expect(axis.style.width).toBe(`${28 * 36}px`);
   });
 
-  it('opens About and comparison by keyboard, labels the active plan outside the disclosure and clears it without writes', async () => {
+  it('opens timeline details and comparison by keyboard, labels the active plan outside the disclosure and clears it without writes', async () => {
     const user = userEvent.setup();
     const task = scheduledTask(1, day(1), day(2));
     const { calls, gantt } = mount({ tasks: [task] });
     await within(gantt()).findByRole('group', { name: `Calendar dates: ${task.title}` });
-    const about = within(gantt()).getByRole('button', { name: 'About timeline' });
+    const about = within(gantt()).getByRole('button', { name: 'Details' });
     expect(about).toHaveAttribute('aria-expanded', 'false');
     expect(within(gantt()).queryByText(/workspace calendar \(/)).not.toBeVisible();
     about.focus(); await user.keyboard('{Enter}');
@@ -215,17 +215,13 @@ describe('compact readable Gantt', () => {
     expect(within(gantt()).getByText('Dates do not change the team estimate, personal plan, or actual hours.')).toBeVisible();
 
     const compare = within(gantt()).getByRole('region', { name: 'Compare with a frozen plan' });
-    const toggle = within(compare).getByRole('button', { name: 'Compare with frozen plan' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(within(compare).queryByRole('combobox', { name: 'Plan period' })).not.toBeInTheDocument();
-    toggle.focus(); await user.keyboard('{Enter}');
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(within(compare).getByRole('combobox', { name: 'Plan period' })).toBeVisible();
     await user.selectOptions(within(compare).getByRole('combobox', { name: 'Plan period' }), PERIOD_A);
     await waitFor(() => expect(within(compare).getByRole('combobox', { name: 'Frozen plan to compare' })).toBeEnabled());
     await user.selectOptions(within(compare).getByRole('combobox', { name: 'Frozen plan to compare' }), BASELINE_ID);
-    const edit = await within(compare).findByRole('button', { name: 'Edit comparison' });
-    await user.click(edit);
-    expect(edit).toHaveAttribute('aria-expanded', 'false');
+    expect(within(compare).getByRole('heading', { name: 'Edit comparison' })).toBeVisible();
+    await user.click(about);
+    expect(about).toHaveAttribute('aria-expanded', 'false');
     expect(within(compare).queryByRole('combobox', { name: 'Plan period' })).not.toBeInTheDocument();
     expect(within(compare).getByText(/^Comparing with Project · /)).toBeVisible();
     const row = within(gantt()).getByRole('group', { name: `Calendar dates: ${task.title}` });
@@ -234,7 +230,8 @@ describe('compact readable Gantt', () => {
     expect(within(row).getByRole('img', { name: `Frozen: start Start date was not captured in this plan, due ${day(2)}; only due date` })).toBeInTheDocument();
     await user.click(within(compare).getByRole('button', { name: 'Clear comparison' }));
     expect(within(compare).queryByText(/^Comparing with/)).not.toBeInTheDocument();
-    expect(within(compare).getByRole('button', { name: 'Compare with frozen plan' })).toBeInTheDocument();
+    expect(about).toBeVisible();
+    expect(about).toHaveAttribute('aria-expanded', 'false');
     await waitFor(() => expect(within(row).queryByText(/Start date was not captured in this plan/)).not.toBeInTheDocument());
     expect(writes(calls)).toHaveLength(0);
   });

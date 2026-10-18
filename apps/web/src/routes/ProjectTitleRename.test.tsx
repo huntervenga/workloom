@@ -91,7 +91,7 @@ describe('project inline task title rename', () => {
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 
-  it('retains an escaped title, then safely autosaves it when the reopened editor leaves for Board', async () => {
+  it('cancels an escaped title, then autosaves only the newly edited title when leaving for Board', async () => {
     const gate = deferred<Response>(); let current = task;
     const { calls } = installFakeApi(routes({
       [`GET ${rootPath}/tasks`]: () => page([current]),
@@ -99,10 +99,11 @@ describe('project inline task title rename', () => {
       [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise,
     }));
     const { user } = renderApp(tablePath);
-    await user.click(await rename()); fireEvent.change(titleBox(), { target: { value: 'Kept inline title' } });
+    await user.click(await rename()); fireEvent.change(titleBox(), { target: { value: 'Canceled inline title' } });
     await user.keyboard('{Escape}'); expect(await rename()).toHaveFocus();
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
-    await user.keyboard('{Enter}'); expect(titleBox()).toHaveValue('Kept inline title');
+    await user.keyboard('{Enter}'); expect(titleBox()).toHaveValue(task.title);
+    fireEvent.change(titleBox(), { target: { value: 'Kept inline title' } });
     await user.click(views().getByRole('button', { name: 'Board' })); await screen.findByRole('region', { name: 'Task status lanes' });
     expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
     await waitFor(() => expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1));
@@ -114,14 +115,23 @@ describe('project inline task title rename', () => {
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
   });
 
-  it('never saves a preexisting drawer title-only draft through rename', async () => {
-    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
+  it('autosaves a drawer title before rename opens its confirmed value without a second write', async () => {
+    let current = task;
+    const { calls } = installFakeApi(routes({
+      [`GET ${rootPath}/tasks`]: () => page([current]),
+      [`GET ${rootPath}/tasks/${task.id}`]: () => ok(current),
+      [`PATCH ${rootPath}/tasks/${task.id}`]: () => ok(current = { ...task, title: 'Rich origin title', revision: task.revision + 1 }),
+    }));
+    const { user } = renderApp(tablePath);
     await user.click(await details());
     fireEvent.change(within(await screen.findByRole('dialog')).getByLabelText('Task name'), { target: { value: 'Rich origin title' } });
     await user.keyboard('{Escape}'); await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    await user.click(await rename()); expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Resume draft' }));
-    expect(within(await screen.findByRole('dialog')).getByLabelText('Task name')).toHaveValue('Rich origin title'); expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+    await waitFor(() => expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1));
+    expect(calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: task.revision, title: 'Rich origin title' });
+    await user.click(await rename('Rich origin title')); expect(titleBox()).toHaveValue('Rich origin title');
+    expect(screen.queryByRole('button', { name: 'Resume draft' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
   });
 
   it('retries the original lost title acknowledgement after collapsing and reopening with exact bytes and key', async () => {

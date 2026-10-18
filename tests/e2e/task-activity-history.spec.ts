@@ -1,6 +1,6 @@
 // Private compiled BFF only. The root owns API/PG lifecycle; this starts only the in-memory Auth fixture.
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Route } from '@playwright/test';
 import {
   taskCommentResponseSchema, taskCommentsResponseSchema, taskFieldDefinitionResponseSchema, taskFieldValueHistoryListResponseSchema,
   taskFieldValueListResponseSchema, taskFieldValueResponseSchema, taskResponseSchema, taskTimelineResponseSchema,
@@ -70,6 +70,26 @@ async function putValue(page: Page, path: string, data: object) {
 }
 const isPost = (path: string) => (response: { request(): { method(): string }; url(): string }) =>
   response.request().method() === 'POST' && new URL(response.url()).pathname === path;
+/** Forward this UI request unchanged, owning its server body before Chromium can discard it. */
+async function readThroughTimeline(route: Route): Promise<Item[]> {
+  const [fetched] = await Promise.allSettled([route.fetch({ maxRedirects: 0 })]);
+  if (fetched.status === 'rejected') {
+    const [aborted] = await Promise.allSettled([route.abort()]);
+    throw new AggregateError([fetched.reason, ...(aborted.status === 'rejected' ? [aborted.reason] : [])], 'The intercepted timeline fetch failed.');
+  }
+  const response = fetched.value;
+  const [read] = await Promise.allSettled([Promise.resolve().then(async () => {
+    expect(response.status()).toBe(200);
+    return taskTimelineResponseSchema.parse(await response.json()).data;
+  })]);
+  // Release the route with the real response even when its status or schema failed.
+  const [forwarded] = await Promise.allSettled([route.fulfill({ response })]);
+  const [disposed] = await Promise.allSettled([response.dispose()]);
+  const errors = [read, forwarded, disposed].flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+  if (read.status === 'rejected' || errors.length > 0) throw new AggregateError(errors, 'The intercepted timeline read or forwarding failed.');
+  return read.value;
+}
+
 function observe(page: Page) {
   const errors: string[] = [], badApi: number[] = [];
   page.on('pageerror', error => errors.push(error.name));
@@ -157,27 +177,41 @@ test.describe('Task activity history on the private compiled app', () => {
       expect(only(changesAfter(oracle, completionItem), 'status')).toMatchObject({ from: { id: done.id, name: done.name, group: 'done' }, to: { id: todo.id, name: todo.name, group: 'todo' } });
       const reopenItem = requireValue(activityItems(oracle).find(item => compare(item, completionItem) > 0 && item.changes.some(change => change.field === 'status')));
       const documentOrigin = await page.evaluate(() => performance.timeOrigin);
-      // Own a NEW request and consume its body as soon as headers arrive. A response
-      // waiter alone can select an older read and lose its CDP body during the click.
-      const refreshed = page.waitForRequest(request => request.method() === 'GET'
-        && new URL(request.url()).pathname === `${f.prefix}/tasks/${task.id}/timeline`).then(async request => {
-        const response = await request.response();
-        if (!response) throw new Error('The new timeline request produced no response.');
-        expect(response.status()).toBe(200);
-        return taskTimelineResponseSchema.parse(await response.json()).data;
-      });
-      await savedRow(page, task.id).getByRole('button', { name: `Open task “${title}”`, exact: true }).click();
-      const live = await refreshed;
-      expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentOrigin);
-      expect(new URL(page.url()).searchParams.get('task')).toBe(task.id);
-      expect(live.map(item => item.id)).toContain(reopenItem.id);
-      const stream = page.getByRole('region', { name: 'Activity', exact: true });
-      const reopenRow = stream.locator(`li[data-task-activity-id="${reopenItem.id}"]`);
-      await expect(reopenRow).toContainText(done.name);
-      await expect(reopenRow).toContainText(todo.name);
-      await expect.poll(() => renderedOrder(stream)).toEqual(oracle.map(rowKey));
-      expect((await apiRead(page, `${f.prefix}/tasks/${task.id}`, taskResponseSchema)).data.statusId).toBe(f.todoId);
-      clean();
+      // Capture only server reads caused by this reopen; do not read a browser Response
+      // whose body can disappear when the query supersedes its first request.
+      const matchesTimeline = (url: URL) => url.origin === APP && url.pathname === `${f.prefix}/tasks/${task.id}/timeline`;
+      const reads: Promise<PromiseSettledResult<Item[]>>[] = [];
+      let settleFirst!: (result: PromiseSettledResult<Item[]>) => void;
+      const firstRead = new Promise<PromiseSettledResult<Item[]>>(resolve => { settleFirst = resolve; });
+      const captureTimeline = (route: Route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        const read = Promise.allSettled([readThroughTimeline(route)]).then(([result]) => result);
+        reads.push(read);
+        return read.then(result => { settleFirst(result); });
+      };
+      await page.route(matchesTimeline, captureTimeline);
+      const [checked] = await Promise.allSettled([(async () => {
+        const [first] = await Promise.all([
+          firstRead,
+          savedRow(page, task.id).getByRole('button', { name: `Open task “${title}”`, exact: true }).click(),
+        ]);
+        if (first.status === 'rejected') throw first.reason;
+        const live = first.value;
+        expect(await page.evaluate(() => performance.timeOrigin)).toBe(documentOrigin);
+        expect(new URL(page.url()).searchParams.get('task')).toBe(task.id);
+        expect(live.map(item => item.id)).toContain(reopenItem.id);
+        const stream = page.getByRole('region', { name: 'Activity', exact: true });
+        const reopenRow = stream.locator(`li[data-task-activity-id="${reopenItem.id}"]`);
+        await expect(reopenRow).toContainText(done.name);
+        await expect(reopenRow).toContainText(todo.name);
+        await expect.poll(() => renderedOrder(stream)).toEqual(oracle.map(rowKey));
+        expect((await apiRead(page, `${f.prefix}/tasks/${task.id}`, taskResponseSchema)).data.statusId).toBe(f.todoId);
+        clean();
+      })()]);
+      const [unrouted] = await Promise.allSettled([page.unroute(matchesTimeline, captureTimeline)]);
+      const outcomes = await Promise.all(reads);
+      const errors = [checked, unrouted, ...outcomes].flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+      if (errors.length > 0) throw new AggregateError(errors, 'The timeline reopen or owned route failed.');
     });
   }
 

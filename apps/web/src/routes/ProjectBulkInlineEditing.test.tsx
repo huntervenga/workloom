@@ -151,7 +151,7 @@ describe('selected-cell bulk inline editing', () => {
     const { calls } = installFakeApi(routes());
     const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Open task “${second.title}”` }));
-    await user.type(within(await screen.findByRole('dialog')).getByLabelText('Task name'), ' unsaved'); await user.keyboard('{Escape}');
+    await user.clear(within(await screen.findByRole('dialog')).getByLabelText('Task name')); await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await selectBoth(user);
     await user.click(cell(/status/, first)); await choose(user, 'Status', 'Stored progress');
@@ -182,7 +182,7 @@ describe('selected-cell bulk inline editing', () => {
     expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, tasks: both, changes: { dueDate: '2027-03-20' } });
   });
 
-  it('uses the existing typed field input and one guarded custom-value batch without any per-task value writes', async () => {
+  it('autosaves the typed selected custom field on blur through one guarded batch without per-task writes', async () => {
     const definition = { ...fieldFixture('Score', 'number'), projectId: PROJECT_ID, revision: 4 };
     const { calls } = installFakeApi(routes(rows => ({
       [`GET ${rootPath}/fields`]: () => ok([definition]),
@@ -193,8 +193,9 @@ describe('selected-cell bulk inline editing', () => {
     const { user } = renderApp(tablePath); await selectBoth(user);
     await user.click(screen.getByRole('button', { name: `Edit Score for ${first.title}` }));
     const dialog = screen.getByRole('dialog', { name: `Edit Score for ${first.title}` });
+    await user.click(within(dialog).getByLabelText('Score'));
     fireEvent.change(within(dialog).getByLabelText('Score'), { target: { value: '0' } });
-    await user.click(within(dialog).getByRole('button', { name: 'Save for selected tasks' }));
+    await user.tab();
     await screen.findByText('Saved 2 selected tasks.');
     expect(writes(calls)).toHaveLength(1);
     expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, tasks: both.map(row => ({ ...row, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 4, value: { type: 'number', value: 0 } } } });
@@ -293,8 +294,9 @@ describe('neighboring table edits beside an existing desktop task pane', () => {
     await user.click(screen.getByRole('button', { name: `Edit Score for ${first.title}` }));
     const editor = screen.getByRole('dialog', { name: `Edit Score for ${first.title}` });
     expect(pane).toBeInTheDocument();
+    await user.click(within(editor).getByLabelText('Score'));
     fireEvent.change(within(editor).getByLabelText('Score'), { target: { value: '0' } });
-    await user.click(within(editor).getByRole('button', { name: 'Save for selected tasks' }));
+    await user.tab();
     await screen.findByText('Saved 2 selected tasks.');
     await waitFor(() => expect(screen.queryByRole('dialog', { name: `Edit Score for ${first.title}` })).not.toBeInTheDocument());
     expect(screen.getByRole('dialog', { name: third.title })).toBe(pane);

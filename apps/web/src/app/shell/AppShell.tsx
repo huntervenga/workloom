@@ -229,7 +229,7 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
       >
         {sidebar()}
       </aside>
-      {/* Topbar and page together, so an open task pane (styles.css) narrows both and leaves the account controls visible. */}
+      {/* Topbar and page together; an open task pane (styles.css) sits below the full-width Topbar and narrows only the main page. */}
       <div className="app-shell-workspace flex min-h-dvh min-w-0 flex-col lg:pl-60">
         <Topbar
           actorId={actorId}
@@ -242,7 +242,8 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
         <main
           id="main"
           tabIndex={-1}
-          className="w-full min-w-0 flex-1 px-3 py-4 outline-none sm:px-4 sm:py-5 lg:py-6"
+          data-app-shell-main=""
+          className="app-shell-main w-full min-w-0 flex-1 px-3 py-4 outline-none sm:px-4 sm:py-5 lg:py-6"
         >
           <SwitchErrorNotice />
           {shared ? <SignOutNotice /> : null}

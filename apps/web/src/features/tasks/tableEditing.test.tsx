@@ -516,15 +516,17 @@ describe('inline text commits', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('keeps a single-field text draft across Escape and resumes it without losing its original base revision', async () => {
+  it('discards an unsent single-field text buffer on Escape and reopens the unchanged original revision', async () => {
     const { calls } = installFakeApi({});
     const ui = inline('title');
     fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Kept title draft' } });
     await ui.user.keyboard('{Escape}');
     expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('cancel');
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
-    expect(screen.getByLabelText('Task name')).toHaveValue('Kept title draft');
-    expect(ui.commands().editSessions.current.get(task.id)?.base.revision).toBe(task.revision);
+    expect(screen.getByLabelText('Task name')).toHaveValue(task.title);
+    expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
+    expect(ui.commands().update.pendingCommand).toBeNull();
+    expect(ui.commands().update.uncertain).toBeNull();
     expect(calls).toHaveLength(0);
   });
 
@@ -574,22 +576,34 @@ describe('full drawer confirmation identity', () => {
     });
     const ui = drawer(mode);
     const name = await screen.findByLabelText('Task name');
-    await ui.user.clear(name);
-    await ui.user.type(name, 'Rich pending title');
-    await ui.user.type(screen.getByLabelText('Description'), 'Kept rich description');
-    await ui.user.click(screen.getByRole('button', { name: mode === 'create' ? 'Create task' : 'Save' }));
+    if (mode === 'create') {
+      await ui.user.clear(name);
+      await ui.user.type(name, 'Rich pending title');
+      await ui.user.type(screen.getByLabelText('Description'), 'Kept rich description');
+      await ui.user.click(screen.getByRole('button', { name: 'Create task' }));
+    } else {
+      // Stage both fields without a blur; the saved pane's explicit shortcut flushes one rich body.
+      fireEvent.change(name, { target: { value: 'Rich pending title' } });
+      fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Kept rich description' } });
+      fireEvent.keyDown(screen.getByLabelText('Task name'), { key: 'Enter', ctrlKey: true });
+    }
     await waitFor(() => expect(mode === 'create' ? ui.commands().create.pendingCommand : ui.commands().update.pendingCommand).not.toBeNull());
     await ui.user.keyboard('{Escape}');
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA drawer' }));
     expect(await screen.findByLabelText('Task name')).toHaveValue('Rich pending title');
-    expect(screen.getByLabelText('Task name')).toBeDisabled();
+    if (mode === 'create') expect(screen.getByLabelText('Task name')).toBeDisabled();
+    else {
+      expect(screen.getByLabelText('Task name')).toBeEnabled();
+      expect(calls.filter(call => call.method === 'PATCH')[0]?.body).toEqual({ expectedRevision: task.revision, title: 'Rich pending title', description: 'Kept rich description' });
+    }
     await act(async () => response.resolve(mode === 'create' ? created({ ...task, title: 'Rich pending title', description: 'Kept rich description' }) : ok({ ...task, title: 'Rich pending title', description: 'Kept rich description', revision: task.revision + 1 })));
     await waitFor(() => expect(mode === 'create' ? ui.commands().create.pendingCommand : ui.commands().update.pendingCommand).toBeNull());
     expect(screen.getByLabelText('Task name')).toHaveValue(mode === 'create' ? '' : 'Rich pending title');
     expect(ui.onCreated).not.toHaveBeenCalled();
     expect(ui.commands().createSession.current).toBeNull();
     expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
-    await ui.user.click(screen.getByRole('button', { name: mode === 'create' ? 'Create task' : 'Save' }));
+    if (mode === 'create') await ui.user.click(screen.getByRole('button', { name: 'Create task' }));
+    else fireEvent.keyDown(screen.getByLabelText('Task name'), { key: 'Enter', ctrlKey: true });
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
   });
 
@@ -666,15 +680,18 @@ describe('inline title keyboard and retained sessions', () => {
     await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
   });
 
-  it.each(['', 'x'.repeat(501)])('announces an invalid title without submitting or discarding it', async title => {
+  it.each(['', 'x'.repeat(501)])('retains an invalid title without submitting until explicit Escape discards only its unsent buffer', async title => {
     const { calls } = installFakeApi({}); const ui = inline('title'); const input = screen.getByLabelText('Task name');
     fireEvent.change(input, { target: { value: title } });
     await ui.user.keyboard('{Enter}');
     expect(input).toHaveAttribute('aria-invalid', 'true'); expect(input).toHaveAccessibleDescription(screen.getByRole('alert').textContent ?? '');
     expect(input).toHaveValue(title); expect(calls).toHaveLength(0);
     expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
-    await ui.user.keyboard('{Escape}'); await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
-    expect(screen.getByLabelText('Task name')).toHaveValue(title);
+    await ui.user.keyboard('{Escape}');
+    expect(ui.commands().editSessions.current.has(task.id)).toBe(false);
+    await ui.user.click(screen.getByRole('button', { name: 'Resume QA cell' }));
+    expect(screen.getByLabelText('Task name')).toHaveValue(task.title);
+    expect(calls).toHaveLength(0);
   });
 
   it('closes an unchanged trimmed title on Enter without an update, offering the next quick task', async () => {

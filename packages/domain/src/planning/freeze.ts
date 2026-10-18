@@ -160,6 +160,16 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
     const input=record(intent.input),target=record(intent.target);
     let blocked:string[]=[];
     switch(intent.family) {
+      case 'task_placement': {
+        // Metadata-only: due freezes/census still cover canonical home and target project.
+        switch(intent.command){
+          case 'task.project.attach':case 'task.project.update':case 'task.project.detach':case 'task.project.restore':break;
+          default:never(intent);
+        }
+        const task=await repo.tasks.findTask(ws,intent.target.taskId);
+        if(task?.meetingId)throw rule('Meeting and recurrence placements are outside this slice.');
+        break;
+      }
       case 'import':
         if(intent.command==='import.project.apply'&&!await intent.previewMatches())return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
         break;

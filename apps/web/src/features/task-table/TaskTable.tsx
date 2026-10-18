@@ -1,3 +1,4 @@
+import { TagBadge } from '../tasks/TagBadge';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { TaskDragPreview } from './TaskDragPreview';
 import { selectTaskRows, type SelectionModifiers } from './taskSelection';
@@ -333,24 +334,7 @@ function ParticipantsCell({
 }
 
 function TagChip({ tag }: { tag: TagDto }) {
-  const { t } = useTranslation();
-  const archived = tag.archivedAt !== null;
-  return (
-    <span
-      className={cn(
-        'inline-flex min-w-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset',
-        archived ? 'bg-canvas text-muted ring-line' : 'bg-slate-50 text-ink-soft ring-line',
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className={cn('size-2 shrink-0 rounded-full', tag.color === null && 'bg-subtle', archived && 'opacity-50')}
-        style={tag.color === null ? undefined : { backgroundColor: tag.color }}
-      />
-      <span className="truncate">{tag.name}</span>
-      {archived ? <span className="shrink-0 text-subtle">{t('taskTable.taskTable.archived')}</span> : null}
-    </span>
-  );
+  return <TagBadge tag={tag} />;
 }
 
 function TagsCell({ tags }: { tags: readonly TagDto[] }) {

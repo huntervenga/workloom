@@ -1,3 +1,4 @@
+import type {TaskProjectPlacementCommand} from '../tasks/project-placement-ports.js';
 import type { CutoffRequestSink } from '../cutoff/ports.js';
 import type {DependencyMutationCommand,TaskStatusTransitionPolicy} from '../dependencies/ports.js';
 import type {MeetingMutationCommand} from '../meetings/ports.js';
@@ -113,6 +114,7 @@ export type TaskMutationCommand = 'project.create'|'project.update'|'section.cre
 export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set';
 export type PlanningMutationCommand = 'period.create'|'period.update'|'commitment.create'|'commitment.update'|'plan.freeze'|'work.set'|'report.create';
 export type PlanningMutationIntent =
+ | {readonly family:'task_placement';readonly command:TaskProjectPlacementCommand;readonly target:{readonly taskId:string;readonly projectId:string};readonly input:unknown}
  | {readonly family:'cutoff';readonly command:'cutoff.configure'|'cutoff.retry';readonly target:{readonly periodId:string};readonly input:unknown}
  | {readonly family:'table_preference';readonly command:'table.preference.set';readonly target:{readonly projectId:string};readonly input:unknown}
  | {readonly family:'comment';readonly command:'task.comment.create';readonly target:{readonly taskId:string};readonly input:unknown}

@@ -1,8 +1,14 @@
-import type { CreateTaskInput, TagDto, TaskDto, TaskWorkScope } from '@workloom/contracts';
-import { useQueryClient } from '@tanstack/react-query';
+import type { CreateTaskInput, ProjectDto, TagDto, TaskDto, TaskWorkScope, WorkspaceDto } from '@workloom/contracts';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../lib/queryKeys';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ApiError, isUncertainOutcome } from '../../lib/api';
+import { PendingCommandError } from '../../lib/idempotency';
+import { protectedCommandsFor } from '../../lib/protectedCommands';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';
+import { fetchTask } from './api';
 import { createRetainedTaskSessions } from './retainedTaskSessions';
+import { createTaskAutosave } from './taskAutosave';
 import {
   useBulkUpdateTasksMutation,
   useArchiveTaskMutation,
@@ -78,6 +84,10 @@ interface QuickCreateEntry {
   resultAnchor: CreateResultAnchor;
   /** The exact first body; every retry sends it again under the same key. */
   sent?: QuickCreateInput;
+  /** A pane-owned child stays held if its authoritative parent detail is later removed. */
+  requiresParentRead?: boolean;
+  /** At most one queue-owned read after a pane cancels its invalidated parent renewal. */
+  parentReadAttempted?: boolean;
 }
 
 /**
@@ -92,6 +102,45 @@ export function resolveQuickCreateInput(entry: Pick<QuickCreateEntry, 'session' 
     return { ...entry.input, insertion: { anchorTaskId: insertionAnchor.taskId, placement: insertionAnchor.placement ?? 'after' } };
   }
   return insertion ? { ...entry.input, insertion: { anchorTaskId: insertion.anchorTaskId, placement: insertion.placement } } : entry.input;
+}
+
+/** A loaded parent must finish its authoritative renewal before a child intent may be sent. */
+function quickParentCurrent(client: QueryClient, actorId: string, workspaceId: string, entry: QuickCreateEntry): boolean {
+  const parent = entry.session.request.parent;
+  if (parent === null) return true;
+  const workspace = client.getQueryState<WorkspaceDto>(queryKeys.workspace(actorId, workspaceId));
+  const project = client.getQueryState<ProjectDto>(queryKeys.project(actorId, workspaceId, parent.projectId));
+  if (workspace && (workspace.status !== 'success' || workspace.isInvalidated || workspace.fetchStatus !== 'idle' || workspace.data === undefined || workspace.data.role === 'viewer')) return false;
+  if (project && (project.status !== 'success' || project.isInvalidated || project.fetchStatus !== 'idle' || project.data === undefined || project.data.archivedAt !== null)) return false;
+  const current = client.getQueryState<TaskDto>(queryKeys.task(actorId, workspaceId, parent.id));
+  // A table-only child composer may have no detail observer; its existing command/server guards still apply.
+  if (current === undefined) return entry.requiresParentRead !== true;
+  const task = current.data;
+  return task !== undefined && current.status === 'success' && !current.isInvalidated && current.fetchStatus === 'idle'
+    && task.id === parent.id && task.workspaceId === workspaceId && task.projectId === parent.projectId
+    && task.archivedAt === null && task.meetingId === null;
+}
+
+/** Complete a canceled pane renewal once; its result only wakes the usual guarded queue. */
+function renewInactiveQuickParent(client: QueryClient, actorId: string, workspaceId: string, entry: QuickCreateEntry): void {
+  const parent = entry.session.request.parent;
+  if (!parent || !entry.requiresParentRead || entry.sent !== undefined || entry.parentReadAttempted) return;
+  const workspace = client.getQueryState<WorkspaceDto>(queryKeys.workspace(actorId, workspaceId));
+  const project = client.getQueryState<ProjectDto>(queryKeys.project(actorId, workspaceId, parent.projectId));
+  if (!workspace || workspace.status !== 'success' || workspace.isInvalidated || workspace.fetchStatus !== 'idle'
+    || workspace.data?.id !== workspaceId || workspace.data.role === 'viewer') return;
+  if (!project || project.status !== 'success' || project.isInvalidated || project.fetchStatus !== 'idle'
+    || project.data?.id !== parent.projectId || project.data.workspaceId !== workspaceId || project.data.archivedAt !== null) return;
+  const queryKey = queryKeys.task(actorId, workspaceId, parent.id);
+  const query = client.getQueryCache().find<TaskDto>({ queryKey, exact: true });
+  const current = query?.state;
+  if (!query || query.getObserversCount() !== 0 || !current || current.status !== 'success' || !current.isInvalidated || current.fetchStatus !== 'idle') return;
+  const task = current.data;
+  if (!task || task.id !== parent.id || task.workspaceId !== workspaceId || task.projectId !== parent.projectId
+    || task.archivedAt !== null || task.meetingId !== null) return;
+  entry.parentReadAttempted = true;
+  // No direct dispatch, retry or body rewrite here. Error/denial stays in the query for explicit recovery.
+  void client.fetchQuery({ queryKey, queryFn: ({ signal }) => fetchTask(workspaceId, parent.id, signal), retry: false, staleTime: 0 }).catch(() => undefined);
 }
 
 const hasQuickValues = (session: CreateSession | null) => session !== null && quickSessionHasValues(session);
@@ -129,7 +178,9 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
   const createdTags = created.scopeKey === scopeKey ? created.tags : noCreatedTags;
   const sessions = useMemo(() => ({ actorId, workspaceId, ...createRetainedTaskSessions() }), [actorId, workspaceId]);
   const { createSession, editSessions } = sessions;
-  const drafts = protectedDraftsFor(useQueryClient());
+  const queryClient = useQueryClient();
+  const drafts = protectedDraftsFor(queryClient);
+  const commandRegistry = protectedCommandsFor(queryClient);
   // Unsent text and explicit submissions outlive a collapsed/remounted add row. Each queued
   // session/input is immutable; only the front entry may reach the existing command writer.
   const quick = useMemo(() => ({
@@ -155,7 +206,9 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
    */
   const enqueueQuickCreate = (session: CreateSession, input: CreateTaskInput, next: CreateSession | ((resultAnchor: CreateResultAnchor) => CreateSession), onCreated: (task: TaskDto) => void, initial?: InitialCreateExtras): CreateSession => {
     const resultAnchor: CreateResultAnchor = { taskId: null };
-    quick.queue.push({ session, input, onCreated, resultAnchor, ...(initial ? { initial: structuredClone(initial) } : {}) });
+    const parent = session.request.parent;
+    const requiresParentRead = parent !== null && queryClient.getQueryState(queryKeys.task(actorId, workspaceId, parent.id)) !== undefined;
+    quick.queue.push({ session, input, onCreated, resultAnchor, requiresParentRead, ...(initial ? { initial: structuredClone(initial) } : {}) });
     const following = typeof next === 'function' ? next(resultAnchor) : next;
     quick.draft = following;
     createSession.current = quick.queue[0]?.session ?? null;
@@ -229,8 +282,13 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
 
 
   useEffect(() => {
+    if (currentScope.current !== scopeKey) return;
     const front = quick.queue[0];
     if (!front || quick.sending || quick.paused || bulk.pendingCommand || bulk.uncertain || create.pendingCommand || update.pendingCommand || update.uncertain || archive.pendingCommand || archive.uncertain || restore.pendingCommand || restore.uncertain || move.pendingCommand || move.uncertain) return;
+    if (!quickParentCurrent(queryClient, actorId, workspaceId, front)) {
+      renewInactiveQuickParent(queryClient, actorId, workspaceId, front);
+      return;
+    }
     // The place is resolved once, before the first send; a create following an unknown task waits.
     const input = front.sent ?? resolveQuickCreateInput(front);
     if (!input) return;
@@ -250,8 +308,93 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
       quick.publish();
       updateQuick(value => value + 1);
     });
-  }, [quick, quickVersion, create, update.pendingCommand, update.uncertain, archive.pendingCommand, archive.uncertain, restore.pendingCommand, restore.uncertain, move.pendingCommand, move.uncertain, bulk.pendingCommand, bulk.uncertain, confirmSession, createSession]);
+  }, [quick, quickVersion, create, update.pendingCommand, update.uncertain, archive.pendingCommand, archive.uncertain, restore.pendingCommand, restore.uncertain, move.pendingCommand, move.uncertain, bulk.pendingCommand, bulk.uncertain, confirmSession, createSession, queryClient, actorId, workspaceId, scopeKey]);
+  // Parent detail observers live in the pane, so their settled reads must also wake the page-owned queue.
+  useEffect(() => queryClient.getQueryCache().subscribe(event => {
+    const parent = quick.queue[0]?.session.request.parent;
+    if (event.type !== 'updated' || !parent) return;
+    const keys = [queryKeys.task(actorId, workspaceId, parent.id), queryKeys.project(actorId, workspaceId, parent.projectId), queryKeys.workspace(actorId, workspaceId)];
+    if (keys.some(queryKey => queryClient.getQueryCache().find({ queryKey, exact: true }) === event.query)) updateQuick(version => version + 1);
+  }), [queryClient, quick, actorId, workspaceId]);
 
+
+  // Saved-task autosave: one controller per actor and workspace, owned here so a closed or
+  // switched pane keeps queued, sending and unknown saves. It writes only through `update`,
+  // and only while no other task command of the page is unresolved.
+  const blocked = Boolean(bulk.pendingCommand || bulk.uncertain || create.pendingCommand || create.uncertain || update.pendingCommand || update.uncertain
+    || archive.pendingCommand || archive.uncertain || restore.pendingCommand || restore.uncertain || move.pendingCommand || move.uncertain);
+  const live = useRef({ update, blocked, mounted: false });
+  live.current = { update, blocked, mounted: live.current.mounted };
+  const autosave = useMemo(() => {
+    const scope = scopeKey;
+    // Only sessions this controller mirrored may be replaced or removed by it.
+    const mirrored = new WeakSet<EditSession>();
+    return createTaskAutosave({
+      send: (taskId, input) => live.current.update.mutateAsync({ taskId, input }),
+      resend: (taskId, input) => {
+        const { update: current } = live.current;
+        const held = current.uncertain?.variables;
+        if (!live.current.mounted || currentScope.current !== scope || current.hasOtherProtectedCommands() || !held || held.taskId !== taskId || held.input !== input) return null;
+        return new Promise<TaskDto>((resolve, reject) => current.retryUncertain({ onSuccess: resolve, onError: reject }));
+      },
+      canSend: () => live.current.mounted && currentScope.current === scope && !live.current.blocked && !live.current.update.hasOtherProtectedCommands() && !quick.sending,
+      classify: error => error instanceof PendingCommandError ? 'notSent'
+        : isUncertainOutcome(error) ? 'unknown'
+        : error instanceof ApiError && error.kind === 'conflict' ? 'conflict' : 'rejected',
+      retain: (taskId, session) => {
+        const kept = editSessions.current.get(taskId);
+        if (session) {
+          if (kept && !mirrored.has(kept)) return;
+          mirrored.add(session);
+          editSessions.current.set(taskId, session);
+        } else if (kept && mirrored.has(kept)) editSessions.current.delete(taskId);
+      },
+    });
+  }, [scopeKey, editSessions, quick]);
+  useEffect(() => {
+    live.current.mounted = true;
+    const entry = drafts.register();
+    const sync = () => entry.set(autosave.hasRetained());
+    const unsubscribe = autosave.subscribe(sync);
+    sync();
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!autosave.hasRetained()) return;
+      event.preventDefault(); event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => { live.current.mounted = false; unsubscribe(); entry.dispose(); window.removeEventListener('beforeunload', warn); };
+  }, [drafts, autosave]);
+  // A replaced scope never sends what its actor queued.
+  useEffect(() => {
+    const scope = scopeKey;
+    return () => { if (currentScope.current !== scope) autosave.dispose(); };
+  }, [autosave, scopeKey]);
+  // The queue continues once the previous answer has rendered and no other command is unresolved.
+  useEffect(() => { if (!blocked) autosave.pump(); }, [autosave, blocked, quickVersion]);
+  // A different protected writer can finish without changing any task mutation state.
+  useEffect(() => {
+    let active = true;
+    const unsubscribe = commandRegistry.subscribe(() => {
+      queueMicrotask(() => { if (active) autosave.pump(); });
+    });
+    return () => { active = false; unsubscribe(); };
+  }, [autosave, commandRegistry]);
+
+  /** Explicit handoff from an unsent inline/rich draft; a held foreign command keeps its owner. */
+  const adoptAutosaveSession = (session: EditSession): boolean => {
+    const taskId = session.base.id;
+    if (editSessions.current.get(taskId) !== session || update.pendingCommand?.variables.taskId === taskId || update.uncertain?.variables.taskId === taskId) return false;
+    const failed = update.variables?.taskId === taskId && update.variables.input.expectedRevision === session.base.revision && update.error !== null
+      ? { input: update.variables.input, error: update.error } : null;
+    editSessions.current.delete(taskId);
+    if (failed) {
+      const transferred = autosave.adoptFailure(session, failed.input, failed.error, failed.error instanceof ApiError && failed.error.kind === 'conflict' ? 'conflict' : 'rejected');
+      if (!transferred) editSessions.current.set(taskId, session);
+      return transferred;
+    }
+    autosave.stage(session.base, session.draft);
+    return true;
+  };
 
   // An answer that arrives after the actor or workspace changed never enters the current catalog.
   const addCreatedTag = useCallback((tag: TagDto) => {
@@ -261,7 +404,7 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
   }, [scopeKey, workspaceId]);
   const inlineTags = useInlineTagCreation(createTag, addCreatedTag, canCreateTags, scopeKey);
 
-  return { create, update, archive, restore, move, bulk, createTag, createdTags, addCreatedTag, inlineTags, createSession, editSessions, confirmedSessions, confirmSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, cancelQuickDraft, discardRejectedQuickCreate };
+  return { create, update, archive, restore, move, bulk, createTag, createdTags, addCreatedTag, inlineTags, createSession, editSessions, confirmedSessions, confirmSession, autosave, adoptAutosaveSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, cancelQuickDraft, discardRejectedQuickCreate };
 }
 
 export type TaskCommands = ReturnType<typeof useTaskCommands>;

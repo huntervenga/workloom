@@ -120,6 +120,13 @@
       "when": 1792302979165,
       "tag": "0016_user_profile_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792302979166,
+      "tag": "0017_task_project_placements",
+      "breakpoints": true
     }
   ]
 }

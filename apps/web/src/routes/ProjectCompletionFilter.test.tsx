@@ -164,9 +164,8 @@ describe('project task completion filter', () => {
     await act(async () => ui.router.navigate(`${tablePath}?completion=open&other=kept&task=${task.id}#anchor`));
     const drawer = await screen.findByRole('dialog', { name: task.title });
     await chooseDrawerStatus(ui.user, drawer, base.name);
-    await ui.user.click(within(drawer).getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(writes(ui.calls)).toHaveLength(2));
-    expect(writes(ui.calls)[1]?.body).toMatchObject({ statusId: base.id });
+    expect(writes(ui.calls)[1]?.body).toEqual({ expectedRevision: task.revision + 1, statusId: base.id });
     // Saving keeps the drawer open; it is never closed because the row left the list.
     expect(screen.getByRole('dialog', { name: task.title })).toBeInTheDocument();
     await waitFor(() => expect(listCalls(ui.calls).at(-1)?.searchParams.get('completion')).toBe('open'));

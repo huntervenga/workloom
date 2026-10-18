@@ -124,6 +124,7 @@ describe('weekly planning lifecycle', () => {
     let rowReads = 0;
     const { calls } = installFakeApi({ ...routes(), [`GET ${rootPath}/periods/${PERIOD_A}/baselines`]: () => ok([baseline(), baseline(true)]), [`POST ${rootPath}/report-runs`]: () => created(report()), [`GET ${rootPath}/report-runs/${RUN_ID}`]: () => ok(report()), [`GET ${rootPath}/report-runs/${RUN_ID}/rows`]: () => json(200, { data: [], meta: { requestId: 'req_rows', nextCursor: ++rowReads === 1 ? 'second-page' : null } }) });
     const { user } = renderApp(`${weekPath}?period=${PERIOD_A}&view=report`);
+    await user.click(await screen.findByRole('button', { name: 'Set up new report' }));
     await screen.findByLabelText('Saved baseline');
     await choosePicker(user, 'Saved baseline', /^Project plan/);
     await user.click(screen.getByRole('checkbox', { name: 'Вера Образцова' }));
@@ -234,6 +235,7 @@ describe('explicit weekly person and period context', () => {
     expect(personPicker()).toHaveTextContent(personLabel(missing));
     expect(screen.getByRole('button', { name: 'Record actual hours' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Report' }));
+    await user.click(screen.getByRole('button', { name: 'Set up new report' }));
     expect(screen.getByRole('checkbox', { name: anna.displayName })).not.toBeChecked();
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });

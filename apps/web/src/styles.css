@@ -30,10 +30,14 @@
 
 /* The task pane beside the page from 1280px (TASK_PANE_DESKTOP_QUERY); below it the drawer is modal. */
 :root {
-  --task-pane-width: clamp(24rem, 34vw, 34rem);
+  --task-pane-width: min(clamp(34rem, 46vw, 54rem), 100vw);
+  /* The global header (Topbar, h-14) stays full width above the pane. */
+  --task-pane-top: 56px;
 }
 
 .task-panel {
+  top: var(--task-pane-top);
+  height: calc(100dvh - var(--task-pane-top));
   width: var(--task-pane-width);
   max-width: 100vw;
 }
@@ -69,11 +73,16 @@
   }
 }
 
-/* Only an open task pane reserves its width, so the page and Topbar end at its left edge. */
+/*
+ * Only an open task pane reserves its width, and only on the main page: the Topbar keeps its
+ * full width and height, so nothing above the page shifts when the pane opens or closes.
+ */
 @media (min-width: 1280px) {
   body:has(.task-panel[data-task-panel][data-state="open"]) .app-shell-workspace {
-    padding-right: var(--task-pane-width);
     --task-title-width: 300px;
+  }
+  body:has(.task-panel[data-task-panel][data-state="open"]) .app-shell-workspace > .app-shell-main {
+    padding-right: calc(var(--task-pane-width) + 1rem);
   }
 }
 

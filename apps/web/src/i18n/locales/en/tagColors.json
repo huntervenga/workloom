@@ -1,0 +1,21 @@
+{
+  "archived": "(archived)",
+  "palette": "Tag color",
+  "paletteNames": {
+    "blue": "Blue",
+    "purple": "Purple",
+    "pink": "Pink",
+    "red": "Red",
+    "orange": "Orange",
+    "yellow": "Yellow",
+    "green": "Green",
+    "teal": "Teal"
+  },
+  "change": "Color for {{name}}",
+  "saved": "Color saved for {{name}}.",
+  "saving": "Saving tag color\u2026",
+  "retry": "Retry original color change",
+  "reload": "Reload tags",
+  "automatic": "Automatic color",
+  "help": "Choose a color to save it immediately. Tag membership is unchanged."
+}

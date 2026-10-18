@@ -1,3 +1,4 @@
+import { completionAtCalculation } from './report-completion.js';
 import { canonicalWorkCategory } from '../categories/resolver.js';
 import {
   createPlanningPeriodInputSchema,createPeriodCommitmentInputSchema,createWeeklyPlanFactReportInputSchema,
@@ -254,6 +255,8 @@ export function createPlanningApplication(deps:PlanningApplicationDependencies):
           const work=logs.filter(w=>w.workPackageId===packageId&&w.membershipId===mid),active=work.filter(w=>w.state==='active'),commitment=current.find(c=>c.workPackageId===packageId&&c.membershipId===mid&&c.state==='active'),pkg=sources.packages.find(v=>v.id===packageId);
           rows.push({id:`extra:${key}`,scope:snapshot.projectPackageIds.includes(packageId)?'unplanned':'added_scope',commitmentId:commitment?.id??null,workPackageId:packageId,membershipId:mid,title:pkg?.title??'Пакет задач',memberName:name(mid),plannedMinutes:commitment?.plannedMinutes??null,actualMinutes:active.reduce((a,w)=>a+w.minutes,0),factRecorded:active.length>0,varianceMinutes:null,packageEstimateMinutes:null,packageBaselineId:null,taskIds:[...new Set([...sources.tasks.filter(t=>t.workPackageId===packageId).map(t=>t.id),...work.map(w=>w.taskId)])].sort(),workLogs:work});
         }
+        const statuses=await repo.tasks.listStatuses(ws,baseline.projectId);
+        for(const row of rows)row.completionAtCalculation=completionAtCalculation(row.workPackageId,sources.tasks,statuses);
         const run={id:newId(),workspaceId:ws,projectId:baseline.projectId,periodId:baseline.periodId,baselineId:baseline.id,metricVersion:'weekly_plan_fact_v1' as const,createdAt:now,actorUserId:scope.context.actor.userId,factCutoffAt:now,factChangeSeq:await repo.currentChangeSeq(ws),membershipIds:memberIds,knownEstimatesOnly:p.knownEstimatesOnly,cohort:{selectedItemCount:selected.length,originalItemCount:original.length},summary:summary(rows),byPerson:memberIds.map(membershipId=>({membershipId,memberName:name(membershipId),summary:summary(rows.filter(r=>r.membershipId===membershipId))})),rowCount:rows.length,workLogRevisionIds:logs.map(w=>w.revisionId).sort()};
         await repo.insertReportRun(run,rows);await scope.recordChange({entityType:'report_run',entityId:run.id,action:'created',entityRevision:1,diff:{baselineId:baseline.id,metricVersion:run.metricVersion,factCutoffAt:now,rowCount:rows.length},outbox:{type:'report_run.created',payload:{runId:run.id,periodId:run.periodId}}});return run;
       });

@@ -4,6 +4,8 @@ import type { ConnectorAnchors } from './useConnectorAnchors';
 export const connectorStyles = {
   compatible: { stroke: 'var(--color-gantt-compatible)', strokeWidth: 1.5, strokeDasharray: undefined },
   conflict: { stroke: 'var(--color-gantt-conflict)', strokeWidth: 2, strokeDasharray: '5,3' },
+  /** Undecided link between visible points: thin, dotted and uncoloured, never read as aligned or conflicting. */
+  neutral: { stroke: 'var(--color-muted)', strokeWidth: 1.25, strokeDasharray: '2,3' },
 } as const;
 /**
  * Non-interactive finish-to-start arrows drawn from current measurements only. It sits above the

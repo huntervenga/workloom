@@ -215,18 +215,29 @@ describe('page-owned task grouping', () => {
   });
 
 
-  it('keeps a rich draft Resume-only when its assignee cell is opened in another grouping', async () => {
-    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
+  it('autosaves a rich description before another grouping opens its independent assignee cell', async () => {
+    let current = parent;
+    const { calls } = installFakeApi(routes({
+      [`GET ${rootPath}/tasks`]: () => page([current, child]),
+      [`GET ${rootPath}/tasks/${parent.id}`]: () => ok(current),
+      [`PATCH ${rootPath}/tasks/${parent.id}`]: () => ok(current = { ...parent, description: 'Retained rich description', revision: parent.revision + 1 }),
+    }));
+    const { user, queryClient } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Open task “${parent.title}”` }));
     const drawer = within(await screen.findByRole('dialog'));
     await user.type(drawer.getByLabelText('Description'), 'Retained rich description');
     await user.click(drawer.getByLabelText('Close', { selector: 'button' }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]?.body).toEqual({ expectedRevision: parent.revision, description: 'Retained rich description' });
+    await waitFor(() => expect(queryClient.getQueryData(queryKeys.task(anna.id, alpha.id, parent.id))).toMatchObject({ revision: parent.revision + 1, description: 'Retained rich description' }));
     await tableChoice(user, groupControl(), 'assignee');
     await user.click(screen.getByRole('button', { name: `Edit assignee for ${parent.title}` }));
-    expect(screen.queryByLabelText('Assignee')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Resume draft' }));
+    expect(assigneePicker()).toHaveTextContent(OWNER.displayName);
+    expect(screen.queryByRole('button', { name: 'Resume draft' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: `Open task “${parent.title}”` }));
     expect(within(await screen.findByRole('dialog')).getByLabelText('Description')).toHaveValue('Retained rich description');
-    expect(writes(calls)).toHaveLength(0);
+    expect(writes(calls)).toHaveLength(1);
   });
 
   it.each(['same-editor', 'view-hop'] as const)('reconciles the original session without stale notice/focus after pending %s replacement', async replacement => {

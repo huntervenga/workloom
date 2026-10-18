@@ -233,6 +233,7 @@ export function TaskCustomFields({
           members={members}
           writable={writable}
           mutation={mutation}
+          autosave
           blockedNotice={heldNotice}
           onSubmitSession={session => store.capture(taskKey, session)}
           onSessionChange={(update) => {

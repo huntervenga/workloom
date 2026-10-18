@@ -50,13 +50,13 @@ describe('explicit task completion', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Reopen as Stored active' }));
     if (group === 'cancelled') await screen.findByRole('button', { name: 'No completion status is configured.' }); else await complete(); expect(calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: 1, statusId: task.statusId });
   });
-  it('never submits an existing rich draft through the circle', async () => {
+  it('never submits an invalid retained rich draft through the circle', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Open task “${task.title}”` })); const drawer = await screen.findByRole('dialog');
-    await user.type(within(drawer).getByLabelText('Task name'), ' unsaved'); await user.keyboard('{Escape}');
+    await user.clear(within(drawer).getByLabelText('Task name')); await user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: `Resume draft for ${task.title}` }));
-    expect(within(await screen.findByRole('dialog')).getByLabelText('Task name')).toHaveValue(`${task.title} unsaved`);
+    expect(within(await screen.findByRole('dialog')).getByLabelText('Task name')).toHaveValue('');
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
   it('keeps an active inline edit intact and does not auto-save it through the circle', async () => {

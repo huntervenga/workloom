@@ -110,7 +110,8 @@ export function TaskPanelFrame({ title, description, trigger, open, onOpenChange
     const active = document.activeElement;
     if (!pane.contains(active) && !(owned && (active === null || active === document.body))) return;
     const target = [returnTargetRef.current?.(), openerRef.current].find((element) => element?.isConnected && element !== document.body);
-    target?.focus();
+    // Returning focus never scrolls the page the user is working in.
+    target?.focus({ preventScroll: true });
   }, [open]);
 
   useLayoutEffect(() => {
@@ -135,6 +136,8 @@ export function TaskPanelFrame({ title, description, trigger, open, onOpenChange
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !open) return;
+    // Scoped to the pane's own DOM: Escape in a portalled picker or dialog belongs to that layer.
+    if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) return;
     event.preventDefault();
     event.stopPropagation();
     onOpenChange(false);
@@ -169,7 +172,8 @@ export function TaskPanelFrame({ title, description, trigger, open, onOpenChange
               data-state={open ? 'open' : 'closed'}
               inert={!open || undefined}
               aria-hidden={!open || undefined}
-              className="task-panel fixed inset-y-0 right-0 flex h-dvh flex-col overflow-hidden border-l border-line bg-surface p-5 outline-none sm:p-6"
+              // Below the global header (styles.css sets its top and height).
+              className="task-panel fixed right-0 flex flex-col overflow-hidden border-l border-line bg-surface p-5 outline-none sm:p-6"
               style={{ zIndex }}
               onKeyDown={onKeyDown}
               onFocus={() => {

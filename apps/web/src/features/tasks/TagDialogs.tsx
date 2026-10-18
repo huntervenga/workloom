@@ -1,13 +1,16 @@
 import { message, type TranslationMessage } from '../../i18n';
 import { useTranslation } from '../../i18n';
 import { createTagInputSchema, type TagDto, type UpdateTagInput } from '@workloom/contracts';
-import { Badge, Button, Skeleton, TextInput, cn } from '@workloom/ui';
+import { Button, Skeleton, TextInput, cn } from '@workloom/ui';
 import { Pencil, Plus, RefreshCw, Tags } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
+import { TagBadge } from './TagBadge';
+import { TagColorPalette } from './TagColorPalette';
+import { TagColorEditor, useTagColorCommand } from './TagColorEditor';
 import { isInlineTagCreateCommand } from './inlineTagCreate';
 import {
   useCreateTagMutation,
@@ -135,6 +138,7 @@ function TagForm({
           </p>
         ) : null}
       </div>
+      <TagColorPalette value={shown.color} disabled={frozen} onChange={setColor} />
       <div className="flex flex-wrap items-center gap-3">
         <label className="inline-flex items-center gap-2 text-sm text-ink-soft">
           <input
@@ -285,6 +289,9 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
   const tags = useTagsQuery(actorId, workspaceId);
   const create = useCreateTagMutation(actorId, workspaceId);
   const update = useUpdateTagMutation(actorId, workspaceId);
+  // A separate page-lifetime owner preserves a color command when the dialog closes.
+  const colors = useTagColorCommand(actorId, workspaceId);
+  const colorHeld = colors.pendingCommand !== null || colors.uncertain !== null;
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   // Outlives the edit form, so reopening it while the command is unresolved shows what was submitted.
@@ -336,6 +343,7 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
             <TagForm
               initial={{ name: '', color: null }}
               submitLabel={t('tasks.tagDialogs.createTag')}
+              blocked={colorHeld}
               pending={create.isPending}
               locked={create.uncertain !== null}
               sent={sentCreateValue(create)}
@@ -348,7 +356,7 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
             />
           </section>
         ) : canEdit ? (
-          <Button variant="primary" onClick={() => setCreating(true)}>
+          <Button variant="primary" aria-disabled={colorHeld || undefined} onClick={() => { if (!colorHeld) setCreating(true); }}>
             <Plus size={16} aria-hidden="true" />
             {t('tasks.tagDialogs.newTag')}</Button>
         ) : (
@@ -382,6 +390,7 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
                     tag={tag}
                     mutation={update}
                     sentEdit={sentEdit}
+                    blocked={colorHeld}
                     onSend={setSentEdit}
                     onDone={(renamed) => {
                       closeEdit();
@@ -390,25 +399,25 @@ export function TagManagerDialog({ actorId, workspaceId, canEdit }: TagManagerDi
                   />
                 </li>
               ) : (
-                <li key={tag.id} className="flex min-w-0 items-center gap-2 px-3 py-2">
-                  <TagSwatch color={tag.color} />
-                  <span className="min-w-0 flex-1 truncate text-sm text-ink" title={tag.name}>
-                    {tag.name}
-                  </span>
-                  {tag.archivedAt !== null ? <Badge tone="muted">{t('tasks.tagDialogs.archived')}</Badge> : null}
+                <li key={tag.id} className="min-w-0 space-y-2 px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-2"><TagBadge tag={tag} className="max-w-full" />
+                  <span className="flex-1" />
                   {canEdit ? (
                     <Button
                       size="sm"
                       variant="ghost"
                       className="px-2"
+                      aria-disabled={colorHeld || undefined}
                       aria-label={t('tasks.tagDialogs.editTagValue', { p0: tag.name })}
                       onClick={() => {
-                        if (update.uncertain === null) setEditingId(tag.id);
+                        if (!colorHeld && update.uncertain === null) setEditingId(tag.id);
                       }}
                     >
                       <Pencil size={14} aria-hidden="true" />
                     </Button>
-                  ) : null}
+                  ) : null}</div>
+                  <TagColorEditor tag={tag} command={colors} canEdit={canEdit}
+                    blocked={showCreate || editingId !== null || create.pendingCommand !== null || create.uncertain !== null || update.pendingCommand !== null || update.uncertain !== null} />
                 </li>
               ),
             )}
@@ -425,6 +434,7 @@ interface EditTagFormProps {
   tag: TagDto;
   mutation: ReturnType<typeof useUpdateTagMutation>;
   sentEdit: SentTagEdit | null;
+  blocked?: boolean | undefined;
   onSend: (sent: SentTagEdit) => void;
   onDone: (saved: TagDto | null) => void;
 }
@@ -433,7 +443,7 @@ interface EditTagFormProps {
  * Sends only changed fields against the revision captured when editing started. The mutation is
  * shared by all tags, so while it carries another tag's command this form is blocked.
  */
-function EditTagForm({ actorId, workspaceId, tag, mutation, sentEdit, onSend, onDone }: EditTagFormProps) {
+function EditTagForm({ actorId, workspaceId, tag, mutation, sentEdit, blocked = false, onSend, onDone }: EditTagFormProps) {
   const { t } = useTranslation();
   const reloadTags = useReloadTags(actorId, workspaceId);
   const [base, setBase] = useState({ revision: tag.revision, name: tag.name, color: tag.color });
@@ -484,7 +494,7 @@ function EditTagForm({ actorId, workspaceId, tag, mutation, sentEdit, onSend, on
       pending={mutation.isPending && own}
       locked={uncertain !== null}
       sent={sent}
-      blocked={otherTarget}
+      blocked={otherTarget || blocked}
       onRetry={() => mutation.retryUncertain({ onSuccess: (saved) => onDone(saved) })}
       feedback={
         <SaveFeedback

@@ -47,12 +47,13 @@ describe('inline team package estimate', () => {
     expect(writes(calls)[0]?.body).toEqual({ expectedRevision: base.revision, estimateMinutes: minutes, expectedWorkPackageRevision: 7 });
   });
 
-  it.each(['1:75', '-1', '0.001'])('retains invalid raw text %s across Escape/reopen and exposes its error without a write', async raw => {
+  it.each(['1:75', '-1', '0.001'])('shows invalid raw text %s without writing, then Escape cancels it before reopening', async raw => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath); await user.click(await edit());
     fireEvent.change(screen.getByLabelText('Team estimate (hours)'), { target: { value: raw } }); await user.keyboard('{Enter}');
     expect(screen.getByLabelText('Team estimate (hours)')).toHaveAttribute('aria-invalid', 'true'); expect(screen.getByRole('alert')).toBeVisible();
     expect(screen.getByLabelText('Team estimate (hours)')).toHaveValue(raw); await user.keyboard('{Escape}');
-    await user.click(await edit()); expect(screen.getByLabelText('Team estimate (hours)')).toHaveValue(raw);
+    await user.click(await edit()); expect(screen.getByLabelText('Team estimate (hours)')).toHaveValue('2:00');
+    expect(screen.getByLabelText('Team estimate (hours)')).not.toHaveAttribute('aria-invalid', 'true');
     expect(writes(calls)).toHaveLength(0);
   });
 
@@ -67,14 +68,26 @@ describe('inline team package estimate', () => {
     await edit(); expect(screen.queryByLabelText('Team estimate (hours)')).not.toBeInTheDocument(); expect(writes(calls)).toHaveLength(0);
   });
 
-  it('keeps rich drawer edits Resume-only even when only the estimate changed', async () => {
-    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
+  it('autosaves a drawer estimate on Close and opens its confirmed shared budget in the cell without another write', async () => {
+    let current = base;
+    const { calls } = installFakeApi(routes({
+      [`GET ${rootPath}/tasks`]: () => page([current, { ...detail, estimateMinutes: current.estimateMinutes, workPackageRevision: current.workPackageRevision }]),
+      [`GET ${rootPath}/tasks/${base.id}`]: () => ok(current),
+      [`PATCH ${rootPath}/tasks/${base.id}`]: () => ok(current = { ...base, estimateMinutes: 210, workPackageRevision: 8 }),
+    }));
+    const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: `Open task “${base.title}”` }));
     const drawer = within(await screen.findByRole('dialog'));
     fireEvent.change(drawer.getByLabelText('Team estimate, hours'), { target: { value: '3,5' } });
-    await user.click(drawer.getByLabelText('Close', { selector: 'button' })); await user.click(await edit());
-    expect(screen.queryByLabelText('Team estimate (hours)')).not.toBeInTheDocument(); await user.click(screen.getByRole('button', { name: 'Resume draft' }));
-    expect(within(await screen.findByRole('dialog')).getByLabelText('Team estimate, hours')).toHaveValue('3,5'); expect(writes(calls)).toHaveLength(0);
+    await user.click(drawer.getByLabelText('Close', { selector: 'button' }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]?.body).toEqual({ expectedRevision: base.revision, expectedWorkPackageRevision: 7, estimateMinutes: 210 });
+    await waitFor(() => expect(screen.getByText('Loaded team budget').closest('tr')).toHaveTextContent('3h 30m'));
+    await user.click(await edit());
+    expect(screen.getByLabelText('Team estimate (hours)')).toHaveValue('3:30');
+    expect(screen.queryByRole('button', { name: 'Resume draft' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(writes(calls)).toHaveLength(1);
   });
 
   it.each(['newer', 'conflicting', 'duplicate-conflict'] as const)('refuses fresh editing from a %s loaded package projection without duplicating task rows/counts/selection', async kind => {

@@ -56,9 +56,9 @@ describe('saved task discussion', () => {
     const { calls } = installFakeApi(routes({ [`GET ${path}/comments`]: () => page(stored), [`POST ${path}/comments`]: request => { stored = [{ ...comment, body: (request.body as { body: string }).body }]; return created(stored[0]); } }));
     const ui = example();
     const title = await screen.findByLabelText('Task name');
-    await ui.user.clear(title); await ui.user.type(title, 'Unsaved field title');
+    await ui.user.clear(title); await ui.user.type(title, '  ');
     await ui.user.clear(screen.getByLabelText('Team estimate, hours')); await ui.user.type(screen.getByLabelText('Team estimate, hours'), 'invalid');
-    await ui.user.click(screen.getByRole('button', { name: 'Save' }));
+    await ui.user.tab();
     expect(screen.getByLabelText('Team estimate, hours')).toHaveAttribute('aria-invalid', 'true');
     await discussion();
     expect(document.querySelector('form form')).toBeNull();
@@ -72,7 +72,7 @@ describe('saved task discussion', () => {
     const writes = calls.filter(call => call.method !== 'GET');
     expect(writes).toHaveLength(1); expect(writes[0]?.path).toBe(`${path}/comments`); expect(writes[0]?.body).toEqual({ body });
     expect(screen.getByRole('region', { name: 'Activity' })).toBeVisible();
-    expect(screen.getByLabelText('Task name')).toHaveValue('Unsaved field title');
+    expect(screen.getByLabelText('Task name')).toHaveValue('  ');
     expect(screen.getByLabelText('Team estimate, hours')).toHaveValue('invalid');
     expect(screen.getByLabelText('Team estimate, hours')).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Enter hours, such as 1.5 or 1:30.')).toBeVisible();

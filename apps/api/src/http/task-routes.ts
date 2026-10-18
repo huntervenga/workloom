@@ -1,5 +1,6 @@
 import {
   archiveTaskInputSchema,
+  attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,updateTaskProjectPlacementInputSchema,projectRowsQuerySchema,projectRowsResponseSchema,taskProjectPlacementResponseSchema,taskProjectPlacementsResponseSchema,
   bulkUpdateTasksInputSchema,
   bulkTaskUpdateResponseSchema,
   createProjectInputSchema,
@@ -149,6 +150,37 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskRouteDependen
     const { params, input, ctx } = await write(request, tagParamsSchema, updateTagInputSchema);
     return sendData(request, reply, tagResponseSchema, await deps.tasks.updateTag(ctx, params.tagId, input));
   });
+
+  // Additive placement API: legacy /tasks retains canonical home-project semantics.
+  const placements=deps.tasks.placements;
+  if(placements){
+    const placementParams=z.object({workspaceId:idSchema,placementId:idSchema});
+    app.get(`${BASE}/projects/:projectId/rows`,async(request,reply)=>{
+      const {params,ctx}=await read(request,projectParamsSchema);
+      const page=await placements.listProjectRows(ctx,params.projectId,parseInput(projectRowsQuerySchema,request.query));
+      return sendData(request,reply,projectRowsResponseSchema,page.items,{nextCursor:page.nextCursor});
+    });
+    app.get(`${BASE}/tasks/:taskId/placements`,async(request,reply)=>{
+      const {params,ctx}=await read(request,taskParamsSchema);
+      return sendData(request,reply,taskProjectPlacementsResponseSchema,await placements.listTaskPlacements(ctx,params.taskId),{list:true});
+    });
+    app.post(`${BASE}/tasks/:taskId/placements`,async(request,reply)=>{
+      const {params,input,ctx}=await write(request,taskParamsSchema,attachTaskProjectInputSchema);
+      return sendData(request,reply,taskProjectPlacementResponseSchema,await placements.attachTaskProject(ctx,params.taskId,input),{statusCode:201});
+    });
+    app.patch(`${BASE}/task-project-placements/:placementId`,async(request,reply)=>{
+      const {params,input,ctx}=await write(request,placementParams,updateTaskProjectPlacementInputSchema);
+      return sendData(request,reply,taskProjectPlacementResponseSchema,await placements.updateTaskProjectPlacement(ctx,params.placementId,input));
+    });
+    app.post(`${BASE}/task-project-placements/:placementId/detach`,async(request,reply)=>{
+      const {params,input,ctx}=await write(request,placementParams,changeTaskProjectPlacementStateInputSchema);
+      return sendData(request,reply,taskProjectPlacementResponseSchema,await placements.detachTaskProjectPlacement(ctx,params.placementId,input));
+    });
+    app.post(`${BASE}/task-project-placements/:placementId/restore`,async(request,reply)=>{
+      const {params,input,ctx}=await write(request,placementParams,changeTaskProjectPlacementStateInputSchema);
+      return sendData(request,reply,taskProjectPlacementResponseSchema,await placements.restoreTaskProjectPlacement(ctx,params.placementId,input));
+    });
+  }
 
   // Tasks
   app.get(`${BASE}/tasks`, async (request, reply) => {

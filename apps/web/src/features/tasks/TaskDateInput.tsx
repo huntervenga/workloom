@@ -10,6 +10,8 @@ export interface TaskDateInputProps {
   startDate: string;
   dueDate: string;
   onChange: (patch: { startDate?: string; dueDate?: string }) => void;
+  /** A calendar/Today/Clear choice is explicit; raw typing remains a draft until blur/Enter. */
+  onCommit?: ((patch: { startDate?: string; dueDate?: string }) => void) | undefined;
   disabled?: boolean | undefined;
   errors?: { startDate?: string | undefined; dueDate?: string | undefined } | undefined;
   initialShowStart?: boolean | undefined;
@@ -56,7 +58,7 @@ function carrier(value: string) {
  * Inputs are canonical YYYY-MM-DD text: a partly typed date stays in the draft as typed (and is
  * rejected by validation), unlike a native date input, which reports it as an empty clear.
  */
-export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, errors, initialShowStart = false, autoFocus = false, calendarPopover = false, allowEmptyClear = false }: TaskDateInputProps) {
+export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, errors, initialShowStart = false, autoFocus = false, calendarPopover = false, allowEmptyClear = false, onCommit }: TaskDateInputProps) {
   const { t, locale } = useTranslation();
   const id = useId();
   const startRef = useRef<HTMLInputElement>(null);
@@ -95,6 +97,12 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
   const inputClass = 'mt-1 block h-9 w-full min-w-0 rounded border border-line bg-surface px-2 text-sm text-ink outline-none focus:border-accent-line focus:ring-2 focus:ring-accent-soft disabled:bg-canvas disabled:text-muted aria-[invalid=true]:border-red-300';
   const navigateTo = (value: string) => { if (valid(value)) { setViewMonth(monthOf(value)); setCursor(value); } };
   const edit = (field: 'startDate' | 'dueDate', value: string) => { onChange({ [field]: value }); navigateTo(value); };
+  const choose = (field: 'startDate' | 'dueDate', value: string) => {
+    const patch = { [field]: value };
+    onChange(patch);
+    onCommit?.(patch);
+    navigateTo(value);
+  };
   /**
    * Clearing disables its own button, and a browser then blurs that focused button to the body,
    * which an owner reads as leaving the editor. Focus first moves to the active endpoint's input,
@@ -103,7 +111,7 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
   const clear = () => {
     if (active === 'startDate') setExpanded(true);
     (active === 'startDate' ? startRef : dueRef).current?.focus({ preventScroll: true });
-    onChange({ [active]: '' });
+    choose(active, '');
   };
   const focusField = (field: 'startDate' | 'dueDate') => { if (calendarPopover) setCalendarOpen(true); setActive(field); navigateTo(field === 'startDate' ? startDate : dueDate); };
   const shiftMonth = (delta: -1 | 1) => {
@@ -134,14 +142,14 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
         {Array.from({ length: month.dayOfWeek - 1 }, (_, index) => <span key={`empty-${index}`} aria-hidden="true" />)}
         {days.map(value => <button key={value} ref={node => { if (node) buttons.current.set(value, node); else buttons.current.delete(value); }} type="button"
           disabled={disabled} aria-label={format.day.format(carrier(value))} aria-pressed={selected === value} tabIndex={value === cursor ? 0 : -1}
-          onKeyDown={event => moveDay(event, value)} onClick={() => { setCursor(value); onChange({ [active]: value }); }}
+          onKeyDown={event => moveDay(event, value)} onClick={() => { setCursor(value); choose(active, value); }}
           className={cn('h-7 min-w-0 rounded text-center text-xs outline-none hover:bg-accent-soft focus-visible:ring-2 focus-visible:ring-accent disabled:text-subtle',
             startDate && dueDate && startDate <= value && value <= dueDate && 'bg-accent-soft', selected === value && 'bg-accent text-white hover:bg-accent', value === today && selected !== value && 'font-bold underline underline-offset-2')}>
           {format.number.format(Temporal.PlainDate.from(value).day)}
         </button>)}
       </div>
       <div className="mt-2 flex justify-between gap-2 border-t border-line pt-2 text-xs">
-        <button type="button" disabled={disabled} className="rounded px-1 py-1 font-medium text-accent-ink hover:bg-canvas disabled:text-muted" onClick={() => edit(active, today)}>{t('tasks.dates.today')}</button>
+        <button type="button" disabled={disabled} className="rounded px-1 py-1 font-medium text-accent-ink hover:bg-canvas disabled:text-muted" onClick={() => choose(active, today)}>{t('tasks.dates.today')}</button>
         <button type="button" disabled={disabled || selected === '' && !allowEmptyClear} className="rounded px-1 py-1 text-muted hover:bg-canvas disabled:text-subtle" onClick={clear}>{t(active === 'startDate' ? 'tasks.dates.clearStart' : 'tasks.dates.clearDue')}</button>
       </div>
     </section>

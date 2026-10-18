@@ -54,6 +54,8 @@ export interface DrawerSubtasksProps {
   commands: TaskCommands;
   /** The actor may create and edit subtasks of `parent` now. */
   writable: boolean;
+  /** Actual permission lets an existing row keep local intent while hierarchy reads renew. Sends stay guarded by the queue. */
+  draftWritable?: boolean | undefined;
   /** Keeps the drawer's own draft before navigating. */
   onOpen: (taskId: string) => void;
   /** Continues the unsent row in the full create form. */
@@ -86,7 +88,7 @@ function calendarText(value: string | null | undefined): string | null {
  * and same-parent reorder use the page's commands; the refetched list stays the order.
  */
 export function DrawerSubtasks({
-  parent, scope, projectId, statuses, members, sections, tags, commands, writable, onOpen, onMoreDetails, onCreated, onAnnounce,
+  parent, scope, projectId, statuses, members, sections, tags, commands, writable, draftWritable, onOpen, onMoreDetails, onCreated, onAnnounce,
   extraColumns = noColumns, initialFields, initialTimeContext, initialTimeWritable, initialTimeCurrent, addRequest, headerAction,
 }: DrawerSubtasksProps) {
   const acquireDragProtection = usePointerRowDragProtection();
@@ -277,7 +279,7 @@ export function DrawerSubtasks({
     })}
     {chain.open ? <QuickTaskAdd key={`subtask:${chain.anchorTaskId ?? 'end'}`} projectId={projectId} sectionId={chain.request.sectionId}
       sectionName={sections.find(section => section.id === chain.request.sectionId)?.name ?? t('tasks.taskFields.noSection')}
-      statuses={statuses} members={members} tags={tags} sections={sections} commands={commands} writable={canCreate} request={chain.request} renderRow={draftRow('draft')} detailsKeepInitialCells
+      statuses={statuses} members={members} tags={tags} sections={sections} commands={commands} writable={(draftWritable ?? writable) && parent.archivedAt === null && parent.meetingId === null} request={chain.request} renderRow={draftRow('draft')} detailsKeepInitialCells
       initialFields={initialFields} initialTimeContext={initialTimeContext} initialTimeWritable={initialTimeWritable} initialTimeCurrent={initialTimeCurrent}
       onClose={(reason: QuickAddCloseReason = 'cancel') => {
         setChain(before => before && { ...before, open: false });

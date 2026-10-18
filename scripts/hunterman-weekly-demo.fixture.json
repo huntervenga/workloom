@@ -1,0 +1,683 @@
+{
+  "version": 1,
+  "projectName": "Team delivery \u00b7 five-person demo",
+  "periodName": "Demo week \u00b7 12\u201318 Oct (captured now)",
+  "week": "2026-10-12",
+  "timezone": "Asia/Nicosia",
+  "cutoffAt": "2026-10-25T21:59:00.000Z",
+  "people": [
+    {
+      "key": "owner",
+      "label": "Existing workspace owner"
+    },
+    {
+      "key": "maya",
+      "label": "Maya Chen"
+    },
+    {
+      "key": "leo",
+      "label": "Leo Bennett"
+    },
+    {
+      "key": "sofia",
+      "label": "Sofia Rivera"
+    },
+    {
+      "key": "noah",
+      "label": "Noah Patel"
+    }
+  ],
+  "capacityMinutesPerPerson": 2400,
+  "categories": [
+    {
+      "name": "Bugfix",
+      "color": "#DC2626"
+    },
+    {
+      "name": "Development",
+      "color": "#4F46E5"
+    },
+    {
+      "name": "Business",
+      "color": "#0D9488"
+    },
+    {
+      "name": "Sales",
+      "color": "#D97706"
+    },
+    {
+      "name": "Management",
+      "color": "#7C3AED"
+    }
+  ],
+  "tasks": [
+    {
+      "key": "owner-1",
+      "person": "owner",
+      "title": "Define the release success criteria",
+      "description": "Agree the three measurable outcomes for the release and the owner of each metric. Publish the decision with an explicit launch/no-launch threshold.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 540,
+      "category": "Business",
+      "statusGroup": "done",
+      "startOffset": 0,
+      "dueOffset": 1,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "owner-2",
+      "person": "owner",
+      "title": "Fix the trial conversion dashboard",
+      "description": "Reconcile trial conversion counts with the signup source and remove duplicate events. Date filters must use the same account timezone and match the exported totals.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 450,
+      "category": "Bugfix",
+      "statusGroup": "done",
+      "startOffset": 1,
+      "dueOffset": 2,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "owner-3",
+      "person": "owner",
+      "title": "Review onboarding support themes",
+      "description": "Group recent onboarding questions by the step where customers got stuck. Summarize the top three patterns and propose one small improvement for each.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 450,
+      "category": "Business",
+      "statusGroup": "done",
+      "startOffset": 2,
+      "dueOffset": 3,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "owner-4",
+      "person": "owner",
+      "title": "Prepare the partner demo",
+      "description": "Build a short demo around a realistic partner workflow. Confirm that the sample account is clean and the walkthrough fits into twenty minutes.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 480,
+      "category": "Sales",
+      "statusGroup": "done",
+      "startOffset": 3,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "owner-5",
+      "person": "owner",
+      "title": "Coordinate the release readiness review",
+      "description": "Check release blockers with engineering, product and support. Record a named owner and a next decision time for every unresolved item.",
+      "plannedMinutes": 360,
+      "estimateMinutes": 360,
+      "actualMinutes": 360,
+      "category": "Management",
+      "statusGroup": "in_progress",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "owner-6",
+      "person": "owner",
+      "title": "Document next week priorities",
+      "description": "Collect the carry-over decisions and prepare a focused list for the next planning session. Keep committed work separate from ideas that still need research.",
+      "plannedMinutes": 240,
+      "estimateMinutes": 240,
+      "actualMinutes": 120,
+      "category": null,
+      "statusGroup": "todo",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "maya-1",
+      "person": "maya",
+      "title": "Build the account settings screen",
+      "description": "Implement account name, timezone and notification settings. Invalid values must show field-level feedback and successful changes must survive reload.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 600,
+      "category": "Development",
+      "statusGroup": "done",
+      "startOffset": 0,
+      "dueOffset": 1,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "maya-2",
+      "person": "maya",
+      "title": "Fix duplicate notification delivery",
+      "description": "Find why one notification is delivered twice after a reconnect. Add a regression that proves one user action produces only one message.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 420,
+      "category": "Bugfix",
+      "statusGroup": "done",
+      "startOffset": 1,
+      "dueOffset": 2,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "maya-3",
+      "person": "maya",
+      "title": "Add project search shortcuts",
+      "description": "Add keyboard shortcuts for opening project search and moving through results. Search must return focus to the original control when it closes.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 480,
+      "category": "Development",
+      "statusGroup": "done",
+      "startOffset": 2,
+      "dueOffset": 3,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "maya-4",
+      "person": "maya",
+      "title": "Review the dashboard API contract",
+      "description": "Align the dashboard response with the agreed filter and pagination contract. Document empty, loading and partial-data states for the UI.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 450,
+      "category": "Business",
+      "statusGroup": "done",
+      "startOffset": 3,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "maya-5",
+      "person": "maya",
+      "title": "Pair on the accessibility audit",
+      "description": "Check focus order, readable labels and contrast in the new task controls. Turn each confirmed problem into a small reproducible issue.",
+      "plannedMinutes": 360,
+      "estimateMinutes": 360,
+      "actualMinutes": 420,
+      "category": "Management",
+      "statusGroup": "in_progress",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "maya-6",
+      "person": "maya",
+      "title": "Write the component migration guide",
+      "description": "Write the migration steps for the shared form components. Include before/after examples and a rollback checklist for the remaining screens.",
+      "plannedMinutes": 240,
+      "estimateMinutes": 240,
+      "actualMinutes": 0,
+      "category": null,
+      "statusGroup": "done",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "leo-1",
+      "person": "leo",
+      "title": "Improve the task filtering API",
+      "description": "Reduce repeated queries in the task-filtering endpoint without changing result order. Verify combinations of assignee, status and archived filters.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 420,
+      "category": "Development",
+      "statusGroup": "done",
+      "startOffset": 0,
+      "dueOffset": 1,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "leo-2",
+      "person": "leo",
+      "title": "Fix a daylight saving date regression",
+      "description": "Reproduce the date regression around the daylight-saving transition. Preserve date-only values and test both sides of the affected boundary.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 510,
+      "category": "Bugfix",
+      "statusGroup": "done",
+      "startOffset": 1,
+      "dueOffset": 2,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "leo-3",
+      "person": "leo",
+      "title": "Add timeline dependency validation",
+      "description": "Reject invalid dependency changes before updating any timeline row. Cover a cyclic edge and a missing predecessor with clear validation messages.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 390,
+      "category": "Development",
+      "statusGroup": "done",
+      "startOffset": 2,
+      "dueOffset": 3,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "leo-4",
+      "person": "leo",
+      "title": "Review background job observability",
+      "description": "Confirm that delayed and failed jobs have actionable status and correlation IDs. Update the runbook with one safe investigation path.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 480,
+      "category": "Management",
+      "statusGroup": "done",
+      "startOffset": 3,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "leo-5",
+      "person": "leo",
+      "title": "Investigate slow report queries",
+      "description": "Measure the slowest saved-report query on a representative project. Propose an indexed plan and verify that pinned report totals stay identical.",
+      "plannedMinutes": 360,
+      "estimateMinutes": 360,
+      "actualMinutes": 330,
+      "category": "Development",
+      "statusGroup": "in_progress",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "leo-6",
+      "person": "leo",
+      "title": "Prepare the deployment checklist",
+      "description": "Prepare the release checks for migrations, health responses and served assets. Make the rollback boundary explicit before the deployment review.",
+      "plannedMinutes": 240,
+      "estimateMinutes": 240,
+      "actualMinutes": 180,
+      "category": null,
+      "statusGroup": "todo",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "sofia-1",
+      "person": "sofia",
+      "title": "Run five customer interviews",
+      "description": "Interview five participants about the first week of adoption. Capture concrete examples of missing context rather than general feature requests.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 480,
+      "category": "Business",
+      "statusGroup": "done",
+      "startOffset": 0,
+      "dueOffset": 1,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "sofia-2",
+      "person": "sofia",
+      "title": "Refine the pricing experiment brief",
+      "description": "Define the pricing hypothesis, target segment and expected outcome. Specify a stop rule before drafting any experiment communication.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 480,
+      "category": "Business",
+      "statusGroup": "done",
+      "startOffset": 1,
+      "dueOffset": 2,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "sofia-3",
+      "person": "sofia",
+      "title": "Analyze the first-run drop-off",
+      "description": "Compare the first-run funnel by entry source and device class. Identify the earliest meaningful drop-off and list the instrumentation gaps.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 510,
+      "category": "Business",
+      "statusGroup": "done",
+      "startOffset": 2,
+      "dueOffset": 3,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "sofia-4",
+      "person": "sofia",
+      "title": "Review the product story with design",
+      "description": "Review the feature narrative with design using three end-to-end scenarios. Resolve terminology mismatches before updating the prototype.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 390,
+      "category": "Development",
+      "statusGroup": "done",
+      "startOffset": 3,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "sofia-5",
+      "person": "sofia",
+      "title": "Plan the team discovery workshop",
+      "description": "Prepare a short discovery workshop with clear questions and time boxes. Send the team a one-page brief and collect decisions afterwards.",
+      "plannedMinutes": 360,
+      "estimateMinutes": 360,
+      "actualMinutes": 300,
+      "category": "Management",
+      "statusGroup": "in_progress",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "sofia-6",
+      "person": "sofia",
+      "title": "Summarize the usability findings",
+      "description": "Summarize the usability sessions as observable problems with evidence. Separate fixes needed for the current workflow from future opportunities.",
+      "plannedMinutes": 240,
+      "estimateMinutes": 240,
+      "actualMinutes": null,
+      "category": null,
+      "statusGroup": "todo",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "noah-1",
+      "person": "noah",
+      "title": "Prepare the enterprise discovery calls",
+      "description": "Prepare tailored discovery questions for the enterprise prospects. Focus on the current process, decision owners and buying constraints.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 540,
+      "category": "Sales",
+      "statusGroup": "done",
+      "startOffset": 0,
+      "dueOffset": 1,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "noah-2",
+      "person": "noah",
+      "title": "Follow up on two pilot proposals",
+      "description": "Follow up on two pilot proposals with a concrete next step. Record unanswered questions and avoid promising features outside the agreed scope.",
+      "plannedMinutes": 480,
+      "estimateMinutes": 480,
+      "actualMinutes": 540,
+      "category": "Sales",
+      "statusGroup": "done",
+      "startOffset": 1,
+      "dueOffset": 2,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "noah-3",
+      "person": "noah",
+      "title": "Review the sales qualification rubric",
+      "description": "Review the qualification rubric against recent opportunities. Clarify ambiguous criteria and show one example for each decision.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 360,
+      "category": "Business",
+      "statusGroup": "done",
+      "startOffset": 2,
+      "dueOffset": 3,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "noah-4",
+      "person": "noah",
+      "title": "Update the customer rollout plan",
+      "description": "Update the rollout plan with training, ownership and a clear success measure. Identify the dependencies that could prevent the first team from starting.",
+      "plannedMinutes": 420,
+      "estimateMinutes": 420,
+      "actualMinutes": 480,
+      "category": "Sales",
+      "statusGroup": "done",
+      "startOffset": 3,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    },
+    {
+      "key": "noah-5",
+      "person": "noah",
+      "title": "Coordinate the weekly account review",
+      "description": "Review account risks and open commitments with the team. Confirm the next action and owner for each active conversation.",
+      "plannedMinutes": 360,
+      "estimateMinutes": 360,
+      "actualMinutes": 420,
+      "category": "Management",
+      "statusGroup": "in_progress",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ]
+    },
+    {
+      "key": "noah-6",
+      "person": "noah",
+      "title": "Clean up the prospect handoff notes",
+      "description": "Remove duplicate handoff notes and link the final brief to the right opportunity. Preserve factual context while making the next action easy to find.",
+      "plannedMinutes": 240,
+      "estimateMinutes": 240,
+      "actualMinutes": 240,
+      "category": null,
+      "statusGroup": "todo",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Internal"
+      ]
+    }
+  ],
+  "lateTasks": [
+    {
+      "key": "owner-added",
+      "person": "owner",
+      "title": "Handle the unexpected security questionnaire",
+      "description": "Answer the new security questionnaire using the approved product documentation. Escalate unsupported answers and keep this added request outside the original weekly plan.",
+      "plannedMinutes": 120,
+      "estimateMinutes": 120,
+      "actualMinutes": 90,
+      "category": "Development",
+      "statusGroup": "done",
+      "startOffset": 3,
+      "dueOffset": 4,
+      "tags": [
+        "Customer-facing"
+      ]
+    },
+    {
+      "key": "noah-unplanned",
+      "person": "noah",
+      "title": "Resolve an urgent partner escalation",
+      "description": "Triage the urgent partner issue and agree a safe workaround. Record the actual time separately because this interruption was not part of the original plan.",
+      "plannedMinutes": null,
+      "estimateMinutes": null,
+      "actualMinutes": 75,
+      "category": "Management",
+      "statusGroup": "done",
+      "startOffset": 4,
+      "dueOffset": 4,
+      "tags": [
+        "Customer-facing",
+        "Review"
+      ],
+      "beforeFreeze": true
+    }
+  ],
+  "dependencies": [
+    [
+      "owner-1",
+      "owner-2"
+    ],
+    [
+      "owner-2",
+      "owner-3"
+    ],
+    [
+      "maya-1",
+      "maya-2"
+    ],
+    [
+      "leo-1",
+      "leo-2"
+    ],
+    [
+      "sofia-1",
+      "sofia-2"
+    ],
+    [
+      "noah-1",
+      "noah-2"
+    ],
+    [
+      "owner-3",
+      "maya-3"
+    ],
+    [
+      "leo-2",
+      "sofia-3"
+    ]
+  ],
+  "lateSharedEstimateChange": {
+    "taskKey": "owner-1",
+    "beforeMinutes": 480,
+    "afterMinutes": 600
+  },
+  "oracle": {
+    "personalOriginalPlannedMinutes": 12000,
+    "originalActualMinutes": 11820,
+    "addedActualMinutes": 90,
+    "unplannedActualMinutes": 75,
+    "totalActualMinutes": 11985,
+    "originalItems": 30,
+    "recordedOriginalItems": 29,
+    "totalTasks": 32,
+    "activeFactSources": 31,
+    "byPerson": {
+      "owner": {
+        "originalPlanMinutes": 2400,
+        "originalActualMinutes": 2400,
+        "originalItems": 6,
+        "recordedOriginalItems": 6,
+        "totalActualMinutes": 2490
+      },
+      "maya": {
+        "originalPlanMinutes": 2400,
+        "originalActualMinutes": 2370,
+        "originalItems": 6,
+        "recordedOriginalItems": 6,
+        "totalActualMinutes": 2370
+      },
+      "leo": {
+        "originalPlanMinutes": 2400,
+        "originalActualMinutes": 2310,
+        "originalItems": 6,
+        "recordedOriginalItems": 6,
+        "totalActualMinutes": 2310
+      },
+      "sofia": {
+        "originalPlanMinutes": 2400,
+        "originalActualMinutes": 2160,
+        "originalItems": 6,
+        "recordedOriginalItems": 5,
+        "totalActualMinutes": 2160
+      },
+      "noah": {
+        "originalPlanMinutes": 2400,
+        "originalActualMinutes": 2580,
+        "originalItems": 6,
+        "recordedOriginalItems": 6,
+        "totalActualMinutes": 2655
+      }
+    },
+    "categoryMinutes": {
+      "Bugfix": 1380,
+      "Development": 2700,
+      "Business": 3270,
+      "Sales": 2040,
+      "Management": 2055,
+      "Uncategorized": 540
+    },
+    "categoryDenominatorMinutes": 11985,
+    "uncategorizedIncluded": true
+  }
+}

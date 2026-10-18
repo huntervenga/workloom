@@ -1,3 +1,4 @@
+import type {TaskProjectPlacementApplication} from './project-placement-ports.js';
 import type {
   ArchiveTaskInput,
   BulkUpdateTasksInput,
@@ -42,6 +43,7 @@ export interface TaskPage {
  *   optimistic-concurrency guards; see `updateTaskInputSchema`.
  */
 export interface TaskApplication {
+ readonly placements?:TaskProjectPlacementApplication;
   listProjects(context: CommandContext): Promise<ProjectDto[]>;
   getProject(context: CommandContext, projectId: string): Promise<ProjectDto>;
   createProject(context: CommandContext, input: CreateProjectInput): Promise<ProjectDto>;

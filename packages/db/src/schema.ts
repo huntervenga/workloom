@@ -864,6 +864,7 @@ export const REQUIRED_TABLES = [
   'task_dependencies','project_dependency_policies','graph_layouts','graph_layout_positions',
   'project_imports','external_import_references',
   'workspace_creation_receipts',
+  'task_project_placements',
 ] as const;
 
 
@@ -1487,4 +1488,20 @@ export const workspaceCreationReceipts = pgTable('workspace_creation_receipts', 
   foreignKey({ name: 'workspace_creation_receipts_workspace_fk', columns: [t.workspaceId], foreignColumns: [workspaces.id] }),
   unique('workspace_creation_receipts_workspace_unique').on(t.workspaceId),
   check('workspace_creation_receipts_values', sql`${t.idempotencyKey} ~ '^[!-~]{1,128}$' and ${t.payloadHash} ~ '^[0-9a-f]{64}$' and isfinite(${t.createdAt})`),
+]);
+
+/** Additional project presence never replaces task.projectId (the accounting home). */
+export const taskProjectPlacements=pgTable('task_project_placements',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),taskId:uuid('task_id').notNull(),
+ homeProjectId:uuid('home_project_id').notNull(),projectId:uuid('project_id').notNull(),sectionId:uuid('section_id'),
+ position:integer('position').notNull(),revision:integer('revision').notNull().default(1),
+ archivedAt:timestamp('archived_at',{withTimezone:true}),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull().defaultNow(),
+},table=>[
+ foreignKey({name:'task_placements_task_home_fk',columns:[table.workspaceId,table.homeProjectId,table.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+ foreignKey({name:'task_placements_project_fk',columns:[table.workspaceId,table.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
+ foreignKey({name:'task_placements_section_fk',columns:[table.workspaceId,table.projectId,table.sectionId],foreignColumns:[sections.workspaceId,sections.projectId,sections.id]}),
+ unique('task_placements_workspace_task_project_unique').on(table.workspaceId,table.taskId,table.projectId),
+ index('task_placements_project_order_idx').on(table.workspaceId,table.projectId,table.position,table.id),
+ check('task_placements_revision_positive',sql`${table.revision} >= 1`),check('task_placements_position_nonnegative',sql`${table.position} >= 0`),
+ check('task_placements_home_identity',sql`${table.projectId} <> ${table.homeProjectId} OR (${table.id} = ${table.taskId} AND ${table.archivedAt} IS NULL)`),
 ]);

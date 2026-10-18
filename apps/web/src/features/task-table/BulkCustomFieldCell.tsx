@@ -9,7 +9,7 @@ import { FieldInput } from '../fields/FieldInput';
 import { FieldValueDisplay } from '../fields/FieldValueDisplay';
 import { newFieldSession, type FieldEditSession } from '../fields/FieldValueForm';
 import type { ObservableFieldValueDraftStore } from '../fields/fieldValueDraftStore';
-import { parseFieldDraft } from '../fields/valueDraft';
+import { parseFieldDraft, type FieldDraft } from '../fields/valueDraft';
 import type { InlineBulkEditPort } from '../tasks/InlineTaskEdit';
 
 /** The same typed field input as details; its one value is atomically applied to a captured selection. */
@@ -24,6 +24,8 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
   const [open, setOpen] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const sending = useRef(false);
+  const sentSession = useRef<FieldEditSession | null>(null);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const bulk = session ? port(session.identity) : undefined;
   const held = bulk?.pending === true || bulk?.uncertain === true;
@@ -39,15 +41,28 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
     const next = session ?? newFieldSession(field, value);
     capture(next.identity, next.field, next.value); setSession(next); setOpen(true);
   };
-  const submit = () => {
-    if (!session || !bulk || !writable || field.locked || field.archivedAt !== null || bulk.pending) return;
-    const callbacks = { onConfirmed: () => discard(session), onSuccess: () => { if (mounted.current) setOpen(false); }, onSettled: () => undefined };
-    if (bulk.uncertain) { bulk.retry(callbacks); return; }
-    const parsed = parseFieldDraft(session.field, session.draft);
+  const submit = (draft?: FieldDraft) => {
+    // Read the retained store at commit time; a discrete picker change may precede React render.
+    const current = drafts.getTask(task.id)[field.id.toLowerCase()];
+    const currentBulk = current ? port(current.identity) : undefined;
+    if (!current || !currentBulk || !writable || field.locked || field.archivedAt !== null || currentBulk.pending || sending.current) return;
+    const submitted = draft === undefined || draft === current.draft ? current : { ...current, draft };
+    const callbacks = { onConfirmed: () => discard(submitted), onSuccess: () => { if (mounted.current) setOpen(false); }, onSettled: () => { sending.current = false; } };
+    if (currentBulk.uncertain) { sending.current = true; currentBulk.retry(callbacks); return; }
+    const parsed = parseFieldDraft(submitted.field, submitted.draft);
     if (!parsed.ok) { setParseError(parsed.message); return; }
     setParseError(null);
-    const result = bulk.submit({ customField: { fieldId: session.field.id, expectedDefinitionRevision: session.field.revision, value: parsed.value } }, callbacks);
-    if (result === 'unchanged') { discard(session); setOpen(false); }
+    setSession(submitted);
+    sending.current = true;
+    sentSession.current = submitted;
+    const result = currentBulk.submit({ customField: { fieldId: submitted.field.id, expectedDefinitionRevision: submitted.field.revision, value: parsed.value } }, callbacks);
+    if (result !== 'sent') { sending.current = false; sentSession.current = null; }
+    if (result === 'unchanged') { discard(submitted); setOpen(false); }
+  };
+  const close = () => {
+    // Escape cancels only an unsent buffer. An original sent/unknown batch retains its payload.
+    if (session && !held && !sending.current && sentSession.current?.identity !== session.identity) discard(session);
+    setOpen(false);
   };
   return <>
     <button type="button" disabled={!writable || field.locked || field.archivedAt !== null} aria-label={t('bulkInline.editField', { field: field.name, title: task.title })}
@@ -57,16 +72,16 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
         : <FieldValueDisplay compact field={field} value={value?.value ?? null} members={members} />}
       {session ? <span className="sr-only">{t('bulkInline.retained')}</span> : null}
     </button>
-    <DialogShell open={open && session !== undefined} onOpenChange={setOpen} title={t('bulkInline.editField', { field: field.name, title: task.title })} description={t('bulkInline.customDescription')}>
+    <DialogShell open={open && session !== undefined} onOpenChange={next => { if (!next) close(); else setOpen(true); }} title={t('bulkInline.editField', { field: field.name, title: task.title })} description={t('bulkInline.customDescription')}>
       {session ? <form onSubmit={event => { event.preventDefault(); event.stopPropagation(); submit(); }}>
         <p role="status" className="mb-3 text-sm font-medium text-accent-ink">{t('bulkInline.appliesTo', { count: bulk?.count ?? 0 })}</p>
         <FieldInput field={session.field} draft={session.draft} originalValue={session.value?.value ?? null} members={members} disabled={held || !writable}
-          error={parseError} onChange={draft => { setSession({ ...session, draft }); setParseError(null); }} />
+          error={parseError} onChange={draft => { setSession({ ...session, draft }); setParseError(null); }} onCommit={draft => submit(draft)} />
         {bulk?.notice ? <p role="alert" className="mt-2 text-sm text-red-700">{t(bulk.notice.key, bulk.notice.params)}</p> : null}
         <SaveFeedback subject="taskSave" error={bulk?.uncertain ? null : bulk?.error ?? null} uncertainError={bulk?.uncertain ? bulk.error : null} />
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={() => { if (!held) discard(session); setOpen(false); }}>{t('tasks.quickAdd.collapse')}</Button>
-          <Button type="submit" variant="primary" aria-disabled={bulk?.pending || !writable || undefined}>{bulk?.uncertain ? t('tasks.inlineEdit.retry') : t('bulkInline.customSave')}</Button>
+          <Button type="button" variant="ghost" onClick={close}>{t('tasks.quickAdd.collapse')}</Button>
+          {bulk?.uncertain || bulk?.error ? <Button type="submit" variant="primary" aria-disabled={bulk?.pending || !writable || undefined}>{t('tasks.inlineEdit.retry')}</Button> : null}
         </div>
       </form> : null}
     </DialogShell>

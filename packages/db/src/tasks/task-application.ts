@@ -1,14 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
   createPlanningMutationGuard,
+  createTaskProjectPlacementApplication,
+  type TaskProjectPlacementUnitOfWork,
   createTaskApplication as createDomainTaskApplication,
   type TaskApplication,
   type TaskTools,
-  type TaskUnitOfWork,
 } from '@workloom/domain';
 
 import type { Database, WorkloomExecutor } from '../client.js';
 import { composeRecurrenceCensusScope, createRecurrenceRuntime } from '../recurrence/census-scope.js';
+import {createTaskProjectPlacementRepository} from '../repositories/task-project-placement-repository.js';
 import { createTaskRepository } from '../repositories/task-repository.js';
 import { createWorkspaceWriteRunner, type WorkspaceWriteOptions } from '../transactions/workspace-write.js';
 import { createTaskCursorCodec } from './cursor.js';
@@ -35,7 +37,7 @@ export function createTaskApplication(
   const codec = createTaskCursorCodec(cursorSecret === undefined ? {} : { secret: cursorSecret });
   const recurrence = createRecurrenceRuntime(cursorSecret === undefined ? {} : { cursorSecret });
 
-  const writer: TaskUnitOfWork = {
+  const writer: TaskProjectPlacementUnitOfWork = {
     run(context, capability, work) {
       return runner.run(context, capability, (scope) => {
         // The planning guard gets the mandatory same-TX recurrence census; no bypass composition exists.
@@ -46,6 +48,7 @@ export function createTaskApplication(
           barrierAt: scope.barrierAt,
           recordChange: scope.recordChange,
           repository: createTaskRepository(scope.tx),
+          placements:createTaskProjectPlacementRepository(scope.tx),
           fieldRepository: census.repository.fields,
           recurrenceCensus: census.recurrenceCensus,
           planningGuard: createPlanningMutationGuard(census, tools),
@@ -63,5 +66,5 @@ export function createTaskApplication(
     decodeCursor: (token) => codec.decode(token),
   };
 
-  return createDomainTaskApplication({ reader: createTaskRepository(source), writer, tools });
+  return {...createDomainTaskApplication({reader:createTaskRepository(source),writer,tools}),placements:createTaskProjectPlacementApplication({reader:createTaskProjectPlacementRepository(source),tasks:createTaskRepository(source),writer,tools})};
 }

@@ -1,0 +1,9 @@
+{
+  "saveHint": "Changes save when you leave the field or press Enter (Ctrl+Enter in multi-line text).",
+  "dateHint": "Type the date as YYYY-MM-DD.",
+  "datePlaceholder": "YYYY-MM-DD",
+  "retry": "Retry",
+  "retrySave": "Retry save",
+  "blockedByOtherSave": "Another field value is still being saved, so this change was not sent. Your draft is kept; send it once that save is resolved.",
+  "invalidNotSaved": "This value is not valid and was not saved. Fix it, or close again to keep it as an unsent draft."
+}

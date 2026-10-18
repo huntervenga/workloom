@@ -38,3 +38,5 @@ export type { ProfilePhotoUrl } from './profile-photo.js';
 // One bounded comments-and-actions feed; legacy comments/activity exports remain unchanged.
 export { taskTimelineQuerySchema, taskTimelineItemSchema, taskTimelineResponseSchema, taskTimelineActivityKindSchema, taskActivityChangeSchema, taskActivityLabelRefSchema, taskActivityTaskRefSchema } from './task-comments.js';
 export type { TaskTimelineQueryInput, TaskTimelineItemDto, TaskTimelineResponse, TaskActivityChangeDto, TaskActivityLabelRef, TaskActivityTaskRef } from './task-comments.js';
+
+export * from './task-project-placements.js';

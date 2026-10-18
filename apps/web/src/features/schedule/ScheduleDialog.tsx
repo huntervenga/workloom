@@ -6,7 +6,7 @@ import { isAccessDenied } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { ComparisonList } from './ComparisonList';
-import { scheduleDraftInput, scheduleConflict, type ScheduleWorkspace } from './useScheduleWorkspace';
+import { scheduleDraftInput, scheduleConflict, type ScheduleDraft, type ScheduleWorkspace } from './useScheduleWorkspace';
 
 export function ScheduleDialog({ controller: c, workspaceId, periods, writable }: { controller: ScheduleWorkspace; workspaceId: string; projectId: string; periods: readonly PlanningPeriodDto[]; writable: boolean }) {
   const { t } = useTranslation();
@@ -45,7 +45,13 @@ export function ScheduleDialog({ controller: c, workspaceId, periods, writable }
   </DialogShell>;
 }
 
+const laneOwned = (draft: ScheduleDraft) => draft.origin === 'move' && (draft.moveState === 'queued' || draft.moveState === 'sending');
 export function ScheduleNotices({ controller: c }: { controller: ScheduleWorkspace }) {
   const { t } = useTranslation();
-  return <>{c.held ? <div role="status" className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p>{t(c.mutation.pendingCommand ? 'schedule.scheduleDialog.datesPending' : 'schedule.scheduleDialog.datesUnconfirmed')}</p><div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => { if (c.held) c.setActiveId(c.held.draftId); }}>{t('schedule.scheduleDialog.openOriginalDates')}</Button>{c.mutation.uncertain ? <Button size="sm" onClick={() => c.mutation.retryUncertain()}>{t('schedule.scheduleDialog.retryOriginalDateSubmission')}</Button> : null}</div></div> : null}{Object.values(c.drafts).filter(draft => draft.id !== c.activeId && draft.id !== c.held?.draftId).map(draft => <div key={draft.id} className="flex flex-wrap items-center gap-2 text-xs text-muted"><span>{t('schedule.scheduleDialog.dateDraftCount', { count: draft.rows.length })}</span><Button size="sm" onClick={() => c.setActiveId(draft.id)}>{t('schedule.scheduleDialog.continueDateDraft')}</Button><Button size="sm" onClick={() => c.discard(draft.id)}>{t('schedule.scheduleDialog.discardDraft')}</Button></div>)}</>;
+  const heldDraft = c.held ? c.drafts[c.held.draftId] : undefined;
+  // A direct move being sent is compact progress, not a mandatory banner. An unknown outcome (or its retry) always shows Retry original.
+  const showHeld = !!c.held && !(heldDraft?.origin === 'move' && c.mutation.pendingCommand && !c.mutation.uncertain);
+  const saving = Object.values(c.drafts).filter(laneOwned).length;
+  const retained = Object.values(c.drafts).filter(draft => draft.id !== c.activeId && draft.id !== c.held?.draftId && !laneOwned(draft));
+  return <>{saving ? <p role="status" className="sr-only">{t('timelineUX.move.saving', { count: saving })}</p> : null}{retained.filter(draft => draft.origin === 'move').map(draft => <div key={draft.id} role="status" className="flex flex-wrap items-center gap-2 text-xs text-amber-900"><span className="[overflow-wrap:anywhere]">{draft.error ? t('timelineUX.move.failed', { title: draft.rows[0]?.title ?? '' }) : t('timelineUX.move.needsReview', { title: draft.rows[0]?.title ?? '' })}</span><Button size="sm" onClick={() => c.setActiveId(draft.id)}>{t('timelineUX.move.review')}</Button><Button size="sm" onClick={() => c.discard(draft.id)}>{t('schedule.scheduleDialog.discardDraft')}</Button></div>)}{showHeld ? <div role="status" className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p>{t(c.mutation.pendingCommand ? 'schedule.scheduleDialog.datesPending' : 'schedule.scheduleDialog.datesUnconfirmed')}</p><div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => { if (c.held) c.setActiveId(c.held.draftId); }}>{t('schedule.scheduleDialog.openOriginalDates')}</Button>{c.mutation.uncertain ? <Button size="sm" onClick={() => c.mutation.retryUncertain()}>{t('schedule.scheduleDialog.retryOriginalDateSubmission')}</Button> : null}</div></div> : null}{retained.filter(draft => draft.origin !== 'move').map(draft => <div key={draft.id} className="flex flex-wrap items-center gap-2 text-xs text-muted"><span>{t('schedule.scheduleDialog.dateDraftCount', { count: draft.rows.length })}</span><Button size="sm" onClick={() => c.setActiveId(draft.id)}>{t('schedule.scheduleDialog.continueDateDraft')}</Button><Button size="sm" onClick={() => c.discard(draft.id)}>{t('schedule.scheduleDialog.discardDraft')}</Button></div>)}</>;
 }

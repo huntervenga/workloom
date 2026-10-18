@@ -149,6 +149,11 @@ export const weeklyPlanFactRowSchema = z.object({
   /** Immutable original package-baseline estimate, never the current mutable estimate. */
   packageEstimateMinutes: minutesSchema.nullable(), packageBaselineId: idSchema.nullable(),
   taskIds: z.array(idSchema), workLogs: z.array(recordedWorkLogSchema),
+  /** Optional without default: old pinned rows are unknown, never backfilled from today's task state. */
+  completionAtCalculation: z.object({
+    rule: z.literal('all_nonarchived_package_tasks_v1'),
+    state: z.enum(['done', 'not_done', 'unknown']), taskCount: z.number().int().nonnegative(),
+  }).optional(),
 });
 export const weeklyPlanFactReportRunSchema = z.object({
   id: idSchema, workspaceId: idSchema, projectId: idSchema, periodId: idSchema,

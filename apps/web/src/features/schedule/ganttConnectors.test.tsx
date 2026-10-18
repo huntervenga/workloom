@@ -42,10 +42,11 @@ function link(from: TaskDto, to: TaskDto, state: 'compatible' | 'conflict' = 'co
 const A = scheduledTask(1, day(1), day(3)), B = scheduledTask(2, day(5), day(8)), C = scheduledTask(3, day(2), null);
 const M = { ...scheduledTask(4, day(4), day(4)), meetingId: 'af000000-0000-4000-8000-000000000001' };
 const F = scheduledTask(5, day(200), day(210)), external = taskAt(40);
-const loaded = [A, B, C, M, F];
+const U = scheduledTask(6);
+const loaded = [A, B, C, M, F, U];
 function comparisons(): ScheduleDependencyComparisonDto[] {
   sequence = 0;
-  return [link(A, B), link(A, C, 'conflict'), link(A, M), { ...link(B, F), state: 'unknown', reason: 'missing_date' }, link(B, external), link(B, F)];
+  return [link(A, B), link(A, C, 'conflict'), link(A, M), { ...link(B, U), state: 'unknown', reason: 'missing_date' }, link(B, external), link(B, F)];
 }
 function mount() {
   const state = { deny: false };
@@ -77,7 +78,7 @@ describe('Gantt dependency arrows', () => {
   it('draws measured finish-to-start arrows only between visible loaded endpoints and explains every other link', async () => {
     const { calls } = mount();
     await showFourWeeksFromToday();
-    const svg = within(gantt()).getByRole('img', { name: 'Dependency arrows — aligned: 1, date conflicts: 1' });
+    const svg = within(gantt()).getByRole('img', { name: 'Dependency arrows: 1 aligned, 1 in conflict, 0 undecided' });
     expect(svg).toHaveClass('pointer-events-none');
     expect(svg).toHaveClass('z-[1]');
     const aligned = svg.querySelector('[data-state="compatible"]'), conflict = svg.querySelector('[data-state="conflict"]');
@@ -88,6 +89,7 @@ describe('Gantt dependency arrows', () => {
     expect(conflict?.querySelector('path')).toHaveAttribute('stroke-dasharray', '5,3');
     expect(aligned?.querySelector('path')).not.toHaveAttribute('stroke-dasharray');
     expect(svg.querySelectorAll('g')).toHaveLength(2);
+    fireEvent.click(within(gantt()).getByRole('button', { name: 'Details' }));
     const legend = within(gantt()).getByRole('group', { name: 'Dependency arrows' });
     expect(legend).toHaveTextContent('1 aligned');
     expect(legend).toHaveTextContent('1 date conflict');
@@ -106,6 +108,7 @@ describe('Gantt dependency arrows', () => {
     expect(within(gantt()).getByRole('img', { name: /^Dependency arrows/ })).toBeInTheDocument();
     fireEvent.click(within(gantt()).getByRole('button', { name: 'Next window' }));
     expect(within(gantt()).queryByRole('img', { name: /^Dependency arrows/ })).not.toBeInTheDocument();
+    fireEvent.click(within(gantt()).getByRole('button', { name: 'Details' }));
     expect(within(gantt()).getByRole('group', { name: 'Dependency arrows' })).toHaveTextContent('Not drawn: 1 with a meeting (see calendar), 1 missing a date, 1 to a task not loaded here, 3 outside this window.');
     fireEvent.click(within(gantt()).getByRole('button', { name: 'Previous window' }));
     expect(within(gantt()).getByRole('img', { name: /^Dependency arrows/ }).querySelectorAll('g')).toHaveLength(2);
@@ -120,7 +123,7 @@ describe('Gantt dependency arrows', () => {
     expect(document.querySelector('[data-gantt-connectors]')).toBeNull();
     view.state.deny = false;
     fireEvent.click(screen.getByRole('button', { name: 'Check timeline access' }));
-    await within(await screen.findByRole('region', { name: 'Project timeline' })).findByRole('img', { name: 'Dependency arrows — aligned: 1, date conflicts: 1' });
+    await within(await screen.findByRole('region', { name: 'Project timeline' })).findByRole('img', { name: 'Dependency arrows: 1 aligned, 1 in conflict, 0 undecided' });
     expect(writes(view.calls)).toHaveLength(0);
   });
 
@@ -129,12 +132,12 @@ describe('Gantt dependency arrows', () => {
     const view = mount();
     await showFourWeeksFromToday();
     expect(within(gantt()).getByText('Task · current dates')).toBeInTheDocument();
-    await user.click(within(gantt()).getByRole('button', { name: 'Compare with frozen plan' }));
+    await user.click(within(gantt()).getByRole('button', { name: 'Details' }));
     await user.selectOptions(within(gantt()).getByRole('combobox', { name: 'Plan period' }), PERIOD_A);
     await waitFor(() => expect(within(gantt()).getByRole('combobox', { name: 'Frozen plan to compare' })).toBeEnabled());
     await user.selectOptions(within(gantt()).getByRole('combobox', { name: 'Frozen plan to compare' }), BASELINE_ID);
     await within(gantt()).findByText('Task · current and frozen dates');
-    await waitFor(() => expect(within(gantt()).getByRole('img', { name: 'Dependency arrows — aligned: 1, date conflicts: 1' })).toBeInTheDocument());
+    await waitFor(() => expect(within(gantt()).getByRole('img', { name: 'Dependency arrows: 1 aligned, 1 in conflict, 0 undecided' })).toBeInTheDocument());
     expect(view.controller().baselineId).toBe(BASELINE_ID);
     expect(writes(view.calls)).toHaveLength(0);
   });

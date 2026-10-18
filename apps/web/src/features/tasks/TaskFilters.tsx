@@ -1,3 +1,5 @@
+import { TagBadge } from './TagBadge';
+import { tagColor } from './tagColors';
 import { useTranslation } from '../../i18n';
 import { taskListQuerySchema, type MembershipDto, type TagDto, type TaskStatusDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
@@ -148,7 +150,7 @@ export function TaskFilters({ value, onChange, statuses, members, tags = [] }: T
   const tagOptions: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFilters.allTags') },
     ...(unavailableTag ? [{ value: value.tagId, label: selectedTag ? t('tasks.taskFields.valueArchived', { p0: selectedTag.name }) : t('tasks.taskFilters.tagUnavailable'), disabled: true }] : []),
-    ...orderedTags.map(tag => ({ value: tag.id, label: tag.name })),
+    ...orderedTags.map(tag => ({ value: tag.id, label: tag.name, color: tagColor(tag) })),
   ];
 
   const completionOptions: ChoiceOption[] = [
@@ -205,7 +207,7 @@ export function TaskFilters({ value, onChange, statuses, members, tags = [] }: T
       </div>
     </div>
     {summaries.length ? <div role="group" aria-label={t('filterSummary.group')} className="flex min-w-0 flex-wrap gap-2">
-      {summaries.map(summary => <button key={summary.key} type="button" aria-label={summary.clearLabel} onClick={() => { set(summary.patch); summaryRef.current?.focus(); }} className="inline-flex min-h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-left text-xs text-ink-soft hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink"><span className="min-w-0 [overflow-wrap:anywhere]">{summary.label}</span><X size={14} aria-hidden="true" className="shrink-0" /></button>)}
+      {summaries.map(summary => <button key={summary.key} type="button" aria-label={summary.clearLabel} onClick={() => { set(summary.patch); summaryRef.current?.focus(); }} className="inline-flex min-h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line bg-canvas px-2.5 py-1 text-left text-xs text-ink-soft hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">{summary.key === 'tag' && selectedTag ? <TagBadge tag={{ ...selectedTag, name: summary.label, archivedAt: null }} /> : <span className="min-w-0 [overflow-wrap:anywhere]">{summary.label}</span>}<X size={14} aria-hidden="true" className="shrink-0" /></button>)}
     </div> : null}
     </div>
   );

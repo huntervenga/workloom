@@ -1,0 +1,33 @@
+{
+  "bar": {
+    "openTask": "Open {{title}} · {{dates}}"
+  },
+  "about": {
+    "move": "Drag a current task bar to move its dates by whole days. The server checks the exact move and saves it only when nothing needs review; anything else stays for you to review. Click a bar or press Enter to open the task. Edit dates opens the full date editor.",
+    "neutral": "A dotted grey arrow links visible dates when the finish-to-start check is undecided because a date is missing."
+  },
+  "advanced": {
+    "toggle": "Details"
+  },
+  "connectors": {
+    "svgLabel": "Dependency arrows: {{aligned}} aligned, {{conflicts}} in conflict, {{neutral}} undecided",
+    "neutral": {
+      "one": "{{count}} undecided",
+      "other": "{{count}} undecided"
+    },
+    "notShown": {
+      "one": "{{count}} dependency not shown",
+      "other": "{{count}} dependencies not shown"
+    }
+  },
+  "move": {
+    "blockedByTaskDraft": "This task has a date draft or a move being saved. Finish or discard it first; other bars can still move. Edit dates is still available.",
+    "saving": {
+      "one": "Saving moved dates · {{count}} task",
+      "other": "Saving moved dates · {{count}} tasks"
+    },
+    "failed": "Moved dates for {{title}} were not saved.",
+    "needsReview": "Moved dates for {{title}} need review before they are saved.",
+    "review": "Review"
+  }
+}

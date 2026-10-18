@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import type { TaskDto } from '@workloom/contracts';
 import { useRef, useState } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -32,28 +32,34 @@ function DraftPage() {
 }
 
 describe('custom field draft ownership', () => {
-  it('keeps independent unsent drafts through A edit → close card → B edit → A', async () => {
+  it('keeps independent invalid unsent drafts through A edit → close card → B edit → A', async () => {
     const { calls } = installFakeApi({
-      ['GET ' + fieldsPath]: () => ok([field()]),
+      ['GET ' + fieldsPath]: () => ok([field('Заметка', 'number')]),
       ['GET /api/v1/workspaces/' + alpha.id + '/tasks/' + taskA.id + '/field-values']: () => ok([]),
       ['GET /api/v1/workspaces/' + alpha.id + '/tasks/' + taskB.id + '/field-values']: () => ok([]),
     });
     const { user } = renderFieldUi(<DraftPage />);
     await user.click(await screen.findByRole('button', { name: "Edit “Заметка”" }));
     let dialog = screen.getByRole('dialog', { name: "Value of “Заметка”" });
-    await user.type(within(dialog).getByRole('textbox', { name: 'Заметка' }), 'Черновик А');
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Заметка' }), { target: { value: 'Черновик А' } });
+    await user.click(within(dialog).getByLabelText("Close", { selector: 'button' }));
+    expect(within(dialog).getByText('Enter a number, such as 12 or 3.5.')).toBeInTheDocument();
     await user.click(within(dialog).getByLabelText("Close", { selector: 'button' }));
     await user.click(screen.getByRole('button', { name: 'Закрыть карточку' }));
     await user.click(screen.getByRole('button', { name: 'Открыть Б' }));
     await user.click(await screen.findByRole('button', { name: "Edit “Заметка”" }));
     dialog = screen.getByRole('dialog', { name: "Value of “Заметка”" });
     expect(within(dialog).getByRole('textbox', { name: 'Заметка' })).toHaveValue('');
-    await user.type(within(dialog).getByRole('textbox', { name: 'Заметка' }), 'Черновик Б');
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Заметка' }), { target: { value: 'Черновик Б' } });
+    await user.click(within(dialog).getByLabelText("Close", { selector: 'button' }));
+    expect(within(dialog).getByText('Enter a number, such as 12 or 3.5.')).toBeInTheDocument();
     await user.click(within(dialog).getByLabelText("Close", { selector: 'button' }));
     await user.click(screen.getByRole('button', { name: 'Открыть А' }));
     await user.click(await screen.findByRole('button', { name: "Edit “Заметка”" }));
     dialog = screen.getByRole('dialog', { name: "Value of “Заметка”" });
     expect(within(dialog).getByRole('textbox', { name: 'Заметка' })).toHaveValue('Черновик А');
+    await user.click(within(dialog).getByLabelText("Close", { selector: 'button' }));
+    expect(within(dialog).getByText('Enter a number, such as 12 or 3.5.')).toBeInTheDocument();
     await user.click(within(dialog).getByLabelText("Close", { selector: 'button' }));
     await user.click(screen.getByRole('button', { name: 'Открыть Б' }));
     await user.click(await screen.findByRole('button', { name: "Edit “Заметка”" }));

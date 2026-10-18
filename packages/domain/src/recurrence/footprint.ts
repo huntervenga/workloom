@@ -29,6 +29,11 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
  const allProjects=async()=>projects(...(await repo.tasks.listProjects(ws)).map(p=>p.id),...(await repo.listPeriods(ws)).map(p=>p.projectId));
  switch(i.family){
   case 'comment':case 'table_preference':case 'cutoff':return none;
+  case 'task_placement':
+   switch(i.command){
+    case 'task.project.attach':case 'task.project.update':case 'task.project.detach':case 'task.project.restore':return projects(await taskProject(i.target.taskId),(await repo.tasks.findProject(ws,i.target.projectId))?.id);
+    default:return never(i);
+   }
   case 'import':return i.command==='import.csv.stage'?none:projects(i.target.projectId);
   case 'schedule':return projects(i.target.projectId,...i.target.affectedProjectIds);
   case 'task':

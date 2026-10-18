@@ -1,0 +1,19 @@
+{
+  "reports": "Reports",
+  "overview": "Compare the original personal plan with recorded hours for the whole team, then explore work types. Saved reports keep their original week and people.",
+  "settings": "Week settings and original baseline",
+  "quickStart": "Calculate a team report with the saved project baseline. Advanced options let you choose a different saved scope.",
+  "workTypeHelp": "Use one Work type category per recorded entry. Other tags are labels; uncategorized time remains in the total.",
+  "reviewTitle": "Completed work review",
+  "reviewHint": "Each person\u2019s original weekly plan is reviewed only when all non-archived tasks in the work package were done at calculation. This is not a shared package-budget accuracy metric.",
+  "notOriginal": "Added or unplanned work",
+  "unknownCompletion": "Completion was not captured",
+  "inProgress": "Not complete \u00b7 weekly progress only",
+  "unreported": "Actual hours not recorded",
+  "unknownPlan": "Original personal plan unknown",
+  "completed": "Completed \u00b7 {{difference}} \u00b7 {{ratio}}",
+  "zeroPlanRatio": "Ratio unavailable for a zero plan",
+  "ratio": "{{percent}}% of original personal plan",
+  "noPackageBaseline": "Work type is a single category per recorded entry; other task tags may overlap.",
+  "weeklyDifference": "Weekly difference"
+}

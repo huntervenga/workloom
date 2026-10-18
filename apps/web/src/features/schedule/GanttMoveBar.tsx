@@ -1,8 +1,8 @@
-import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { useTranslation } from '../../i18n';
 import { pointStyle } from './barGeometry';
 import { clipDates, type CalendarWindow } from './dates';
-import type { DateMoveProposal, DateMoveSource } from './dateGesture';
+import { DATE_MOVE_THRESHOLD, type DateMoveProposal, type DateMoveSource } from './dateGesture';
 import { useGanttMove, type DateMoveProtection } from './useGanttMove';
 
 /** Spread only onto the saved bar body (range or point), never onto the row, track, outside-date button or baseline. */
@@ -20,7 +20,7 @@ const ghostTestId = 'gantt-date-move-ghost';
 /**
  * Move-only wrapper around one saved current bar. The saved bar, its anchor and connectors keep the saved
  * dates; the proposal is a separate, unanchored, pointer-transparent ghost. A drop only hands the proposal
- * and its refresh lease to the page-owned draft; it never writes.
+ * and its refresh lease to the page-owned direct save lane; the bar itself never writes.
  */
 export function GanttMoveBar({ actorId, workspaceId, source, viewportKey, pixelsPerDay, window, staged, canStart, onRefused, onDrop, children }: {
   actorId: string; workspaceId: string;
@@ -38,13 +38,36 @@ export function GanttMoveBar({ actorId, workspaceId, source, viewportKey, pixels
   const root = useRef<HTMLDivElement>(null);
   const move = useGanttMove({ actorId, workspaceId, source, viewportKey, pixelsPerDay,
     getTrack: () => root.current?.closest<HTMLElement>(trackSelector) ?? null, onDrop });
+  // A refused press stays an ordinary click; only a drag past the threshold explains the refusal and swallows that click.
+  const refusal = useRef<(() => void) | null>(null);
+  const refusedDrag = useRef(false);
+  const latestRefused = useRef(onRefused); latestRefused.current = onRefused;
+  useEffect(() => () => refusal.current?.(), []);
+  const watchRefusal = (pointerId: number, clientX: number) => {
+    refusal.current?.();
+    refusedDrag.current = false;
+    const stop = () => {
+      document.removeEventListener('pointermove', moveListener); document.removeEventListener('pointerup', stop); document.removeEventListener('pointercancel', stop);
+      if (refusal.current === stop) refusal.current = null;
+    };
+    const moveListener = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId || !Number.isFinite(e.clientX) || Math.abs(e.clientX - clientX) < DATE_MOVE_THRESHOLD) return;
+      refusedDrag.current = true; stop(); latestRefused.current();
+    };
+    document.addEventListener('pointermove', moveListener); document.addEventListener('pointerup', stop); document.addEventListener('pointercancel', stop);
+    refusal.current = stop;
+  };
   const handle: MoveHandle | null = source ? {
     onPointerDown: event => {
       if (!event.isPrimary || event.button !== 0) return;
-      if (!canStart()) { onRefused(); return; }
+      if (!canStart()) { watchRefusal(event.pointerId, event.clientX); return; }
+      refusedDrag.current = false;
       move.onPointerDown(event);
     },
-    onClickCapture: move.onClickCapture,
+    onClickCapture: event => {
+      if (refusedDrag.current) { refusedDrag.current = false; event.preventDefault(); event.stopPropagation(); return; }
+      move.onClickCapture(event);
+    },
     movable: canStart() ? source.taskId : null,
   } : null;
   const shown = move.proposal ?? staged;

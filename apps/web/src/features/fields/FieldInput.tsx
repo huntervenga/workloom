@@ -2,7 +2,7 @@ import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, TextInput, cn, inputClassName } from '@workloom/ui';
 import { UserRound } from 'lucide-react';
-import { useId, type ReactNode } from 'react';
+import { useId, type FocusEvent, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { UserAvatar } from '../../shared/UserAvatar';
 import {
@@ -30,6 +30,13 @@ export interface FieldInputProps {
    * removed, be put back; they are never offered as a new choice.
    */
   originalValue?: TaskFieldData | null | undefined;
+  /**
+   * Autosave: called with the explicit draft to commit — text-like values on a real blur or
+   * Enter (Ctrl/⌘+Enter in multi-line text), discrete choices right after their change. The
+   * draft is passed so the parent never commits from stale state. Dates are then typed as raw
+   * ISO text, so a partial date stays visible and invalid instead of reading as empty.
+   */
+  onCommit?: ((draft: FieldDraft) => void) | undefined;
 }
 
 interface Choice extends ReferenceLabel {
@@ -65,6 +72,11 @@ function toggleId(list: readonly string[], id: string, on: boolean): string[] {
   return on ? [...rest, id] : rest;
 }
 
+/** Focus actually left the control; a window or tab switch keeps it as the active element. */
+function isRealBlur(event: FocusEvent<HTMLElement>): boolean {
+  return event.currentTarget.ownerDocument.activeElement !== event.currentTarget;
+}
+
 /**
  * Editor for one custom field value. Controlled: the parent keeps the draft, validates it with
  * `parseFieldDraft` and saves. Clearing sets an explicit «не задано».
@@ -77,6 +89,7 @@ export function FieldInput({
   disabled = false,
   error = null,
   originalValue = null,
+  onCommit,
 }: FieldInputProps) {
   const { t } = useTranslation();
   const id = useId();
@@ -92,6 +105,11 @@ export function FieldInput({
   // Read after each case has set its hint.
   const describedBy = () => [error ? errorId : null, hint ? hintId : null].filter(Boolean).join(' ') || undefined;
   const linkage = () => ({ 'aria-invalid': error ? true : undefined, 'aria-describedby': describedBy() });
+  // A discrete choice is its own commit: no later blur sends it again.
+  const choose = (next: FieldDraft) => {
+    onChange(next);
+    onCommit?.(next);
+  };
 
   switch (draft.type) {
     case 'text':
@@ -105,6 +123,13 @@ export function FieldInput({
           disabled={disabled}
           {...linkage()}
           onChange={(event) => onChange({ type: 'text', value: event.target.value })}
+          onBlur={onCommit ? (event) => { if (isRealBlur(event)) onCommit({ type: 'text', value: event.currentTarget.value }); } : undefined}
+          onKeyDown={onCommit ? (event) => {
+            // Plain Enter stays a newline.
+            if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+            event.preventDefault();
+            onCommit({ type: 'text', value: event.currentTarget.value });
+          } : undefined}
         />
       );
       break;
@@ -113,18 +138,28 @@ export function FieldInput({
     case 'date':
     case 'url': {
       const kind = draft.type;
+      // Autosave never reads a native date picker: its partial input reports '' and would save «не задано».
+      const rawDate = kind === 'date' && onCommit !== undefined;
       if (kind === 'duration') hint = t('fields.fieldInput.enter15Or130BlankMeans');
+      if (rawDate) hint = t('customAutosave.dateHint');
       control = (
         <TextInput
           id={inputId}
-          type={kind === 'date' ? 'date' : kind === 'url' ? 'url' : 'text'}
-          inputMode={kind === 'number' || kind === 'duration' ? 'decimal' : kind === 'url' ? 'url' : undefined}
+          type={kind === 'date' && !rawDate ? 'date' : kind === 'url' ? 'url' : 'text'}
+          inputMode={kind === 'number' || kind === 'duration' ? 'decimal' : kind === 'url' ? 'url' : rawDate ? 'numeric' : undefined}
           autoComplete="off"
-          placeholder={kind === 'url' ? t('fields.fieldInput.urlPlaceholder') : NOT_SET()}
+          placeholder={kind === 'url' ? t('fields.fieldInput.urlPlaceholder') : rawDate ? t('customAutosave.datePlaceholder') : NOT_SET()}
           value={draft.text}
           disabled={disabled}
           {...linkage()}
           onChange={(event) => onChange({ type: kind, text: event.target.value })}
+          onBlur={onCommit ? (event) => { if (isRealBlur(event)) onCommit({ type: kind, text: event.currentTarget.value }); } : undefined}
+          onKeyDown={onCommit ? (event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+            // Committed here, so the surrounding form is not submitted a second way.
+            event.preventDefault();
+            onCommit({ type: kind, text: event.currentTarget.value });
+          } : undefined}
         />
       );
       break;
@@ -143,7 +178,7 @@ export function FieldInput({
           ]}
           disabled={disabled}
           {...linkage()}
-          onValueChange={(value) => onChange({ type: 'boolean', value: value === '' ? null : value === 'true' })}
+          onValueChange={(value) => choose({ type: 'boolean', value: value === '' ? null : value === 'true' })}
         />
       );
       break;
@@ -173,7 +208,7 @@ export function FieldInput({
           options={options}
           disabled={disabled}
           {...linkage()}
-          onValueChange={(value) => onChange({ type: 'single_select', value: value === '' ? null : value })}
+          onValueChange={(value) => choose({ type: 'single_select', value: value === '' ? null : value })}
         />
       );
       break;
@@ -211,7 +246,7 @@ export function FieldInput({
                       checked={checked}
                       // Retained references may only be removed or put back, never newly added.
                       disabled={disabled || (!checked && !choice.assignable)}
-                      onChange={(event) => onChange({ type: kind, value: toggleId(selected, choice.id, event.target.checked) })}
+                      onChange={(event) => choose({ type: kind, value: toggleId(selected, choice.id, event.target.checked) })}
                     />
                     {kind === 'person' ? (
                       choice.state === 'active' ? (
@@ -241,7 +276,9 @@ export function FieldInput({
       size="sm"
       aria-label={t('fields.fieldInput.clearValue', { p0: label })}
       disabled={disabled || isClearedDraft(draft)}
-      onClick={() => onChange(clearedFieldDraft(field))}
+      // Clear is the next explicit value, not a blur-commit of the text being replaced.
+      onMouseDown={onCommit ? event => { if (event.button === 0) event.preventDefault(); } : undefined}
+      onClick={() => choose(clearedFieldDraft(field))}
     >
       {t('fields.fieldInput.clear')}</Button>
   ) : null;

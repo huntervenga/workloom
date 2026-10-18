@@ -1,4 +1,4 @@
-// Private compiled Chrome gate: non-modal task drawer beside the table, CSS slide, Escape layering and unsaved title drafts.
+// Private compiled Chrome gate: non-modal task drawer beside the table, CSS slide, Escape layering and saved field commits.
 // Actual shared-Auth cookie/API on private QA 49318 with the fake provider on 49319; fixture writes use helpers, product flows use the UI.
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import type { TaskDto } from '@workloom/contracts';
@@ -11,7 +11,7 @@ let provider: Awaited<ReturnType<typeof startFakeSharedAuth>>;
 type Theme = 'light' | 'dark';
 interface Box { left: number; right: number; top: number; bottom: number; width: number; height: number }
 interface Layout {
-  vw: number; innerWidth: number; overflow: number; scrollY: number; tableTop: number; scroll: Box; main: Box | null; panel: Box | null;
+  vw: number; innerWidth: number; innerHeight: number; header: Box | null; overflow: number; scrollY: number; tableTop: number; scroll: Box; main: Box | null; panel: Box | null;
   rows: Record<string, Box>; titleWidths: number[]; excluded: boolean;
 }
 interface PanelAnimation { type: string; name: string; elapsed: number; state: string | null; css: string[] }
@@ -32,7 +32,38 @@ const near = (actual: number, expected: number, tolerance: number, label: string
   expect(Math.abs(actual - expected), `${label}: ${actual} vs ${expected}`).toBeLessThanOrEqual(tolerance);
 
 async function picture(page: Page, info: TestInfo, name: string) { await page.screenshot({ path: info.outputPath(`${name}.png`) }); }
-async function mouseClick(page: Page, target: Locator) { const at = await center(target); await page.mouse.click(at.x, at.y); }
+async function mouseClick(page: Page, target: Locator) {
+  await target.scrollIntoViewIfNeeded();
+  const at = await target.evaluate(node => {
+    const rect = node.getBoundingClientRect();
+    let left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right);
+    let top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom);
+    for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent), box = parent.getBoundingClientRect();
+      if (/^(auto|scroll|hidden|clip)$/.test(style.overflowX)) {
+        left = Math.max(left, box.left + parent.clientLeft); right = Math.min(right, box.left + parent.clientLeft + parent.clientWidth);
+      }
+      if (/^(auto|scroll|hidden|clip)$/.test(style.overflowY)) {
+        top = Math.max(top, box.top + parent.clientTop); bottom = Math.min(bottom, box.top + parent.clientTop + parent.clientHeight);
+      }
+    }
+    // A sticky column may cover the geometric center while another part remains exposed.
+    const xs = [(left + right) / 2];
+    for (let x = left + 2; x < right - 2; x += 4) xs.push(x);
+    for (const y of [(top + bottom) / 2, top + (bottom - top) / 4, bottom - (bottom - top) / 4]) {
+      for (const x of xs) {
+        if (x <= left || x >= right || y <= top || y >= bottom) continue;
+        const hit = document.elementFromPoint(x, y);
+        if (hit && node.contains(hit)) return { x, y, targetCell: node.getAttribute('data-task-cell'), hitTag: hit.tagName };
+      }
+    }
+    throw new Error(`No exposed mouse point inside target and scroll clips: ${JSON.stringify({ left, right, top, bottom, cell: node.getAttribute('data-task-cell') })}`);
+  });
+  await page.mouse.move(at.x, at.y);
+  expect(await target.evaluate((node, point) => { const hit = document.elementFromPoint(point.x, point.y); return hit !== null && node.contains(hit); }, at), 'mouse point hits the intended control').toBe(true);
+  console.log(`DRAWER_MOUSE_HIT ${JSON.stringify(at)}`);
+  await page.mouse.click(at.x, at.y);
+}
 async function typeDraft(page: Page, input: Locator, text: string) {
   await mouseClick(page, input); await page.keyboard.press('ControlOrMeta+A'); await page.keyboard.type(text); await expect(input).toHaveValue(text);
 }
@@ -47,14 +78,14 @@ async function layout(page: Page, ids: readonly string[]): Promise<Layout> {
     const box = (node: Element): Box => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
     const scroll = document.querySelector<HTMLElement>('[data-task-table-scroll]');
     if (!scroll) throw new Error('Table scrollport is missing.');
-    const root = document.documentElement, main = document.querySelector('main, [role="main"]'), pane = document.querySelector('[data-task-panel]');
+    const root = document.documentElement, main = document.querySelector('main, [role="main"]'), pane = document.querySelector('[data-task-panel]'), header = document.querySelector('.app-shell-workspace > header');
     const rows: Record<string, Box> = {}, titleWidths: number[] = [];
     for (const id of ids) {
       const row = scroll.querySelector(`tr[data-task-row="${CSS.escape(id)}"]`), title = row?.querySelector(`button[data-task-cell="${CSS.escape(id)}:title"]`)?.closest('td');
       if (!row || !title) throw new Error(`Saved row ${id} or its title cell is missing.`);
       rows[id] = box(row); titleWidths.push(title.getBoundingClientRect().width);
     }
-    return { vw: root.clientWidth, innerWidth: window.innerWidth, overflow: root.scrollWidth - root.clientWidth, scrollY: window.scrollY,
+    return { vw: root.clientWidth, innerWidth: window.innerWidth, innerHeight: window.innerHeight, header: header ? box(header) : null, overflow: root.scrollWidth - root.clientWidth, scrollY: window.scrollY,
       tableTop: scroll.scrollTop, scroll: box(scroll), main: main ? box(main) : null, panel: pane ? box(pane) : null, rows, titleWidths,
       excluded: scroll.closest('[inert], [aria-hidden="true"]') !== null };
   }, ids);
@@ -67,11 +98,15 @@ function expectFullTable(l: Layout) {
   expect(l.scroll.width, 'available width').toBeGreaterThanOrEqual(l.vw - SIDEBAR - 64);
   near(requireValue(l.main ?? undefined).right, l.vw, 1, 'main right edge'); expectRows(l);
 }
-function expectBeside(before: Layout, after: Layout, minWidth: number) {
-  const pane = requireValue(after.panel ?? undefined), clamp = Math.min(544, Math.max(384, after.innerWidth * 0.34));
-  near(pane.right, after.vw, 1, 'pane right edge'); near(pane.width, clamp, 2, 'pane clamp width'); expect(pane.top).toBeGreaterThanOrEqual(0);
+function expectBeside(before: Layout, after: Layout) {
+  const pane = requireValue(after.panel ?? undefined), clamp = Math.min(864, Math.max(544, after.innerWidth * 0.46));
+  near(pane.right, after.vw, 1, 'pane right edge'); near(pane.width, clamp, 2, 'pane clamp width'); near(pane.top, 56, 1, 'pane below global header'); near(pane.height, after.innerHeight - 56, 2, 'pane usable height');
+  const oldHeader = requireValue(before.header ?? undefined), newHeader = requireValue(after.header ?? undefined);
+  for (const key of ['left', 'right', 'top', 'bottom', 'width', 'height'] as const) near(newHeader[key], oldHeader[key], 1, `global header ${key}`);
+  expect(newHeader.bottom).toBeLessThanOrEqual(pane.top + 1);
   expect(after.scroll.right, 'table ends before pane').toBeLessThanOrEqual(pane.left + 1);
-  expect(after.scroll.width, 'table stays usable').toBeGreaterThanOrEqual(minWidth); near(after.scroll.left, before.scroll.left, 1, 'table left edge');
+  near(after.scroll.width, before.scroll.width - pane.width, 2, 'table retains exactly the space beside the wider pane');
+  expect(after.scroll.width, 'table stays usable').toBeGreaterThanOrEqual(500); near(after.scroll.left, before.scroll.left, 1, 'table left edge');
   expect(after.excluded).toBe(false); expect(after.overflow).toBeLessThanOrEqual(1); expectRows(after);
   for (const width of after.titleWidths) near(width, 300, 2, 'title column');
   near(after.scrollY, before.scrollY, 2, 'window Y'); near(after.tableTop, before.tableTop, 2, 'table scrollTop');
@@ -156,7 +191,7 @@ async function desktopDrawer(page: Page, info: TestInfo, width: 1440 | 1920, the
   await mouseClick(page, openArea(page, a.id));
   const pane = drawer(page, a.title); await expect(pane).toBeVisible(); await expect(pane).not.toHaveAttribute('aria-modal', 'true');
   await expect(panel(page)).toHaveAttribute('data-state', 'open'); await expectSlide(page, 'open');
-  expectBeside(before, await layout(page, ids), width === 1920 ? 900 : 500); await expectHitInsideRow(page, b.id);
+  expectBeside(before, await layout(page, ids)); await expectHitInsideRow(page, b.id);
   const dependencies = pane.getByRole('region', { name: 'Task dependencies', exact: true });
   await expect(dependencies.getByRole('button', { name: 'Add dependency', exact: true })).toBeVisible();
   await expect(dependencies.getByText('No unfinished predecessors', { exact: true })).toBeVisible();
@@ -164,7 +199,7 @@ async function desktopDrawer(page: Page, info: TestInfo, width: 1440 | 1920, the
   expect(await pane.evaluate(node => {
     const dependencies = node.querySelector('section[aria-label="Task dependencies"]');
     const estimate = Array.from(node.querySelectorAll('input')).find(input => Array.from(input.labels ?? []).some(label => label.textContent?.trim() === 'Team estimate, hours'));
-    return dependencies !== null && estimate !== undefined && Boolean(dependencies.compareDocumentPosition(estimate) & Node.DOCUMENT_POSITION_FOLLOWING);
+    return dependencies !== null && estimate !== undefined && Boolean(estimate.compareDocumentPosition(dependencies) & Node.DOCUMENT_POSITION_FOLLOWING);
   })).toBe(true);
   await picture(page, info, `drawer-${width}-${theme}-open`); expect(writes.commands).toEqual([]);
   await expectContinuousScroll(page, pane);
@@ -206,15 +241,20 @@ async function desktopDrawer(page: Page, info: TestInfo, width: 1440 | 1920, the
   await expect.poll(() => page.evaluate(() => window.drawerExit), { timeout: 5000 }).toEqual({ state: 'closed', hidden: 'true', inert: true, heading: a.title, draft: a.title });
   await expectSlide(page, 'closed'); await expect(panel(page)).toHaveCount(0);
 
-  // Dirty title draft survives switching to another task and back, with no command.
+  // Switching commits the latest title exactly once; reopening shows its confirmed value.
   await mouseClick(page, openArea(page, a.id)); await expect(drawer(page, a.title)).toBeVisible();
   const draft = `${a.title} unsaved draft`; await typeDraft(page, taskName(drawer(page, a.title)), draft);
   await mouseClick(page, openArea(page, c.id));
   const other = drawer(page, c.title); await expect(other).toBeVisible(); await expect(taskName(other)).toHaveValue(c.title); await expect(panel(page)).toHaveCount(1);
   await mouseClick(page, openArea(page, a.id));
-  const back = drawer(page, a.title); await expect(back).toBeVisible(); await expect(taskName(back)).toHaveValue(draft);
-  expect(writes.commands).toHaveLength(1);
-  const final = await allTasks(f); expect(byId(final, a.id)).toEqual(byId(baseline, a.id)); expect(byId(final, c.id)).toEqual(byId(baseline, c.id));
+  await expect.poll(async () => byId(await allTasks(f), a.id).title).toBe(draft);
+  const back = drawer(page, draft); await expect(back).toBeVisible(); await expect(taskName(back)).toHaveValue(draft);
+  expect(writes.commands).toHaveLength(2);
+  expect(requireValue(writes.commands[1]).path).toBe(`${f.prefix}/tasks/${a.id}`);
+  expect(JSON.parse(requireValue(writes.commands[1]).body)).toEqual({ expectedRevision: a.revision, title: draft });
+  const final = await allTasks(f), savedA = byId(final, a.id);
+  expect({ ...savedA, title: a.title, revision: a.revision, updatedAt: a.updatedAt }).toEqual(byId(baseline, a.id));
+  expect(savedA.revision).toBe(a.revision + 1); expect(byId(final, c.id)).toEqual(byId(baseline, c.id));
   writes.close();
 }
 
@@ -226,7 +266,7 @@ async function mobileDrawer(page: Page, info: TestInfo, theme: Theme) {
   await openTable(f); await setTheme(page, theme);
   const writes = observeCommands(page, f.prefix); await watchPanelAnimations(page);
   await mouseClick(page, openArea(page, a.id));
-  const pane = drawer(page, a.title); await expect(pane).toBeVisible(); await expect(panel(page)).toHaveAttribute('data-state', 'open');
+  const pane = panel(page); await expect(drawer(page, a.title)).toBeVisible(); await expect(pane).toHaveAttribute('data-state', 'open');
   await expectSlide(page, 'open');
   const opened = await layout(page, [a.id, b.id]), box = requireValue(opened.panel ?? undefined);
   near(box.left, 0, 1, 'pane left'); near(box.width, opened.vw, 1, 'pane full width'); expect(opened.overflow).toBeLessThanOrEqual(1);
@@ -241,9 +281,15 @@ async function mobileDrawer(page: Page, info: TestInfo, theme: Theme) {
   await page.keyboard.press('Escape'); await expect(panel(page)).toHaveCount(0);
 
   await mouseClick(page, openArea(page, a.id));
-  const again = drawer(page, a.title); await expect(again).toBeVisible(); await expect(taskName(again)).toHaveValue(draft);
+  await expect.poll(async () => byId(await allTasks(f), a.id).title).toBe(draft);
+  const again = drawer(page, draft); await expect(again).toBeVisible(); await expect(taskName(again)).toHaveValue(draft);
   await picture(page, info, `drawer-390-${theme}-reopened`);
-  expect(writes.commands).toEqual([]); expect(await allTasks(f)).toEqual(baseline); writes.close();
+  expect(writes.commands).toHaveLength(1);
+  expect(requireValue(writes.commands[0]).path).toBe(`${f.prefix}/tasks/${a.id}`);
+  expect(JSON.parse(requireValue(writes.commands[0]).body)).toEqual({ expectedRevision: a.revision, title: draft });
+  const final = await allTasks(f), savedA = byId(final, a.id);
+  expect({ ...savedA, title: a.title, revision: a.revision, updatedAt: a.updatedAt }).toEqual(byId(baseline, a.id));
+  expect(savedA.revision).toBe(a.revision + 1); expect(byId(final, b.id)).toEqual(byId(baseline, b.id)); writes.close();
 }
 
 test.describe('private task drawer layout', () => {
@@ -254,14 +300,14 @@ test.describe('private task drawer layout', () => {
   });
   test.afterAll(async () => { await provider?.close(); });
 
-  test('1440 light drawer sits beside the table, slides, keeps neighbor edits and restores a switched title draft', async ({ page }, info) => {
+  test('1440 light drawer sits beside the table, slides, keeps neighbor edits and confirms a switched title once', async ({ page }, info) => {
     await desktopDrawer(page, info, 1440, 'light');
   });
-  test('1920 dark drawer sits beside the table, slides, keeps neighbor edits and restores a switched title draft', async ({ page }, info) => {
+  test('1920 dark drawer sits beside the table, slides, keeps neighbor edits and confirms a switched title once', async ({ page }, info) => {
     await desktopDrawer(page, info, 1920, 'dark');
   });
   for (const theme of ['light', 'dark'] as const) {
-    test(`390 ${theme} drawer is full-width modal, Escape closes the calendar first and reopen keeps the unsaved title`, async ({ page }, info) => {
+    test(`390 ${theme} drawer is full-width modal, Escape closes the calendar first and reopen shows the confirmed title`, async ({ page }, info) => {
       await mobileDrawer(page, info, theme);
     });
   }
@@ -277,7 +323,7 @@ test.describe('private task drawer layout', () => {
     const pane = drawer(page, a.title); await expect(pane).toBeVisible(); await expect(pane).not.toHaveAttribute('aria-modal', 'true');
     const motion = await panel(page).evaluate(node => { const style = getComputedStyle(node); return { name: style.animationName, durations: style.animationDuration.split(',').map(value => parseFloat(value)) }; });
     expect(motion.name === 'none' || motion.durations.every(value => value === 0), JSON.stringify(motion)).toBe(true);
-    expectBeside(before, await layout(page, ids), 500);
+    expectBeside(before, await layout(page, ids));
 
     const select = gutter(page, b.title); await mouseClick(page, select);
     await expect(select).toHaveAttribute('aria-pressed', 'true'); await expect(select).toBeFocused();

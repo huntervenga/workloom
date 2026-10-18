@@ -426,7 +426,7 @@ test.describe('daily task table visual and bulk workflows', () => {
     expect(JSON.parse(requireValue(writes.commands[0]).body)).toEqual({ expectedRevision: task.revision, startDate: '2035-05-10', dueDate: '2035-05-13' });
     const saved = requireValue((await allTasks(f))[0]); expect(saved.workPackageId).toBe(task.workPackageId); expect(saved.estimateMinutes).toBe(120);
     await page.getByRole('button', { name: 'Timeline', exact: true }).click();
-    const current = page.getByRole('img', { name: 'Current: start 2035-05-10, due 2035-05-13', exact: true }); await expect(current).toBeVisible();
+    const current = page.getByRole('region', { name: 'Project timeline', exact: true }).locator(`[data-gantt-anchor="${task.id}"]`).getByRole('button', { name: `Open ${task.title} · Current: start 2035-05-10, due 2035-05-13`, exact: true }); await expect(current).toBeVisible();
     await picture(page, info, 'timeline-saved-range'); await page.reload(); await expect(current).toBeVisible();
     expect((await allTasks(f))[0]).toEqual(saved); expect(writes.commands).toHaveLength(1); writes.close();
   });

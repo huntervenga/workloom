@@ -1,4 +1,5 @@
 import type { TagDto } from '@workloom/contracts';
+import { TagBadge } from './TagBadge';
 import { cn } from '@workloom/ui';
 import { Check, Plus } from 'lucide-react';
 import { useId, useRef, useState, type ReactNode } from 'react';
@@ -93,10 +94,7 @@ export function TaskTagPicker({ tags, values, onChange, disabled = false, autoFo
         <span aria-hidden="true" className={cn('inline-flex size-4 shrink-0 items-center justify-center rounded border border-line-strong peer-focus-visible:ring-2 peer-focus-visible:ring-accent', selected.has(tag.id.toLowerCase()) && 'border-accent bg-accent text-white')}>
           {selected.has(tag.id.toLowerCase()) ? <Check size={12} /> : null}
         </span>
-        <span className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-line bg-canvas px-2 py-0.5 text-xs">
-          <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-subtle" style={tag.color ? { backgroundColor: tag.color } : undefined} />
-          <span className="min-w-0 break-words">{tag.archivedAt === null ? tag.name : t('tasks.taskFields.valueArchived', { p0: tag.name })}</span>
-        </span>
+        <TagBadge tag={tag} />
       </label>)}
       {missing.map(value => <label key={value} className="flex min-h-8 items-center gap-2 text-sm text-muted">
         <input type="checkbox" checked onChange={() => toggle(value, false)} /><span>{t('tasks.taskFields.tagUnavailable')}</span>
