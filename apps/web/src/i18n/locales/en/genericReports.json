@@ -172,5 +172,6 @@
   "completionScope": "Completion: {{statuses}}",
   "assigneeScope": "Primary assignee: {{name}}",
   "tagScope": "With all tags: {{tags}}",
-  "unavailableTag": "Unavailable tag"
+  "unavailableTag": "Unavailable tag",
+  "unavailableGroup": "Unavailable group"
 }

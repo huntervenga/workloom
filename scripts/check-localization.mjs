@@ -324,6 +324,19 @@ for (const [file, expressions, keys] of [
   for (const expression of expressions) rules.set(expression, { keys, reason: 'Bulk notices originate only in useBulkInlineEdit message(...) calls; the one key parameter is derived from every literal refuse(capture,key) caller, with dynamic callers rejected.' });
   dynamicKeys.set(file, rules);
 }
+// Generic report labels index exhaustive typed literal maps, never user-provided labels.
+// Extract every map value so a new/nonliteral key is checked rather than exempting a family.
+const genericReportLabels = readSource('apps/web/src/features/generic-reports/translationKeys.ts');
+for (const [file, expressions] of [
+  ['ColumnAggregates.tsx', [['operationLabels[measure.operation]', 'operationLabels']]],
+  ['ReportConfigEditor.tsx', [['groupLabels[kind]', 'groupLabels'], ['operationLabels[operation]', 'operationLabels'], ['boundaryLabels[boundary]', 'boundaryLabels']]],
+  ['ReportResults.tsx', [['operationLabels[measure.operation]', 'operationLabels'], ['comparisonLabels[key]', 'comparisonLabels'], ['reasonLabels[comparison.unavailableReason]', 'reasonLabels'], ["cellLabels[entry?.state ?? 'missing']", 'cellLabels'], ['groupLabels[grouping.kind]', 'groupLabels'], ['statusLabels[status]', 'statusLabels'], ['statusLabels[row.statusGroup]', 'statusLabels'], ['cohortLabels[row.cohort]', 'cohortLabels']]],
+]) {
+  dynamicKeys.set(`apps/web/src/features/generic-reports/${file}`, new Map(expressions.map(([expression, table]) => [expression, { keys: tableTranslationKeys(genericReportLabels, table), reason: 'Public contract union indexes an exhaustive typed literal map. Every value is extracted and checked against the catalog; arithmetic and source labels never form a translation key.' }])));
+}
+dynamicKeys.set('apps/web/src/features/generic-reports/groupLabel.ts', new Map([
+  ["Object.hasOwn(statusLabels, key) ? statusLabels[key as TaskStatusGroup] : 'genericReports.unavailableGroup'", { keys: [...tableTranslationKeys(genericReportLabels, 'statusLabels'), 'genericReports.unavailableGroup'], reason: 'Only own keys of the exhaustive status map can be indexed; an unknown server group key uses a fixed catalog fallback. Real member/section/option names remain user data.' }],
+]));
 literalExemptions.set('apps/web/src/features/task-table/TaskTable.tsx:var(--task-title-width, clamp(280px, 42cqw, 460px))', 'Exact CSS custom-property expression used only by the task title column width; never displayed as copy.');
 
 let checked = 0, calls = 0;
