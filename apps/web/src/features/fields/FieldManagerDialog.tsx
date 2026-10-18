@@ -1,3 +1,5 @@
+import {FieldPolicyPanel} from './FieldPolicyPanel';
+import {useSetFieldPolicyMutation} from './policy-queries';
 import { message, type TranslationMessage } from '../../i18n';
 import { useTranslation } from '../../i18n';
 import type { ProjectColumnsDto, TaskFieldDefinitionDto } from '@workloom/contracts';
@@ -71,6 +73,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
   const [open, setOpen] = useState(false);
   const fields = useTaskFieldsQuery(actorId, workspaceId, projectId);
   const columns = useProjectColumnsQuery(actorId, workspaceId, projectId);
+  const policyMutation=useSetFieldPolicyMutation(actorId,workspaceId);
   const createField = useCreateTaskFieldMutation(actorId, workspaceId);
   const updateField = useUpdateTaskFieldMutation(actorId, workspaceId);
   const createOption = useCreateTaskFieldOptionMutation(actorId, workspaceId);
@@ -93,7 +96,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
 
   // A sent write to one of this project's fields keeps that field open, as with the create form.
   const forcedId =
-    [sentCommand(updateField), sentCommand(createOption), sentCommand(updateOption)]
+    [sentCommand(updateField), sentCommand(createOption), sentCommand(updateOption), sentCommand(policyMutation)]
       .map((command) => command?.variables.fieldId)
       .find((fieldId) => fieldId !== undefined && isActiveField(fieldId)) ?? null;
   const activeEditId = canManage ? (forcedId ?? editingId) : null;
@@ -146,6 +149,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
     (fields.data ? null : fields.error) ??
     (columns.data ? null : columns.error);
   const retainedChanges = [
+    { key: 'policy', command: sentCommand(policyMutation), retry: () => policyMutation.retryUncertain() },
     { key: 'definition', command: sentCommand(updateField), retry: () => updateField.retryUncertain() },
     { key: 'option-create', command: sentCommand(createOption), retry: () => createOption.retryUncertain() },
     { key: 'option-update', command: sentCommand(updateOption), retry: () => updateOption.retryUncertain() },
@@ -234,6 +238,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
                     if (saved) setAnnouncement(message('fields.fieldManagerDialog.columnValueSaved', { p0: saved.name }));
                   }}
                 />
+                <FieldPolicyPanel actorId={actorId} workspaceId={workspaceId} field={editedField} mutation={policyMutation}/>
               </section>
             ) : null}
 

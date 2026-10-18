@@ -1,4 +1,5 @@
 import {
+  taskFieldPolicyResponseSchema, taskFieldPolicyStateResponseSchema,
   errorResponseSchema,
   projectColumnsResponseSchema,
   projectColumnsSchema,
@@ -130,7 +131,12 @@ function recorder<R>(method: Method, result: () => R) {
   };
 }
 
+const policy={workspaceId:W,projectId:IDS.project,fieldId:IDS.field,revision:0,lockAt:null,maxChangesPerActor:null,activatedAt:null,updatedAt:null,updatedByUserId:null};
 const fields: TaskFieldApplication = {
+  getPolicy:recorder('getPolicy',()=>policy),
+  setPolicy:recorder('setPolicy',()=>policy),
+  getPolicyState:recorder('getPolicyState',()=>({policy,currentActorChangesUsed:0})),
+  setTaskValueException:recorder('setTaskValueException',()=>value),
   listFields: recorder('listFields', () => [field]),
   createField: recorder('createField', () => field),
   updateField: recorder('updateField', () => field),
@@ -171,6 +177,10 @@ interface RouteCase {
 }
 
 const CATALOG: RouteCase[] = [
+  {method:'GET',path:'/fields/:fieldId/policy',call:'getPolicy',args:[IDS.field],status:200,schema:taskFieldPolicyResponseSchema},
+  {method:'PUT',path:'/fields/:fieldId/policy',body:{expectedRevision:0,lockAt:null,maxChangesPerActor:0},call:'setPolicy',args:[IDS.field,{expectedRevision:0,lockAt:null,maxChangesPerActor:0}],status:200,schema:taskFieldPolicyResponseSchema},
+  {method:'GET',path:'/tasks/:taskId/field-values/:fieldId/policy-state',call:'getPolicyState',args:[IDS.task,IDS.field],status:200,schema:taskFieldPolicyStateResponseSchema},
+  {method:'POST',path:'/tasks/:taskId/field-values/:fieldId/exception',body:{expectedRevision:0,expectedDefinitionRevision:1,expectedPolicyRevision:1,value:{type:'text',value:'correction'},reason:'  Correct accidental entry  '},call:'setTaskValueException',args:[IDS.task,IDS.field,{expectedRevision:0,expectedDefinitionRevision:1,expectedPolicyRevision:1,value:{type:'text',value:'correction'},reason:'Correct accidental entry'}],status:200,schema:taskFieldValueResponseSchema},
   {
     method: 'GET',
     path: '/fields',

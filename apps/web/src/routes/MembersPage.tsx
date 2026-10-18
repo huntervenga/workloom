@@ -7,11 +7,15 @@ import { RoleBadge } from '../features/workspace/roles';
 import { formatMemberCount } from '../lib/format';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { QueryErrorState } from '../shared/QueryErrorState';
+import { useMe } from '../features/identity/identity';
+import { TeamAccessPanel } from '../features/team/TeamAccessPanel';
 import { useWorkspaceContext } from './WorkspaceLayout';
 
 export function MembersPage() {
   useTranslation();
   const { actorId, workspace } = useWorkspaceContext();
+  const me = useMe();
+  const manageTeam = me.authMode === 'shared' && me.actor.kind === 'real' && (workspace.role === 'owner' || workspace.role === 'admin');
   const members = useMembershipsQuery(actorId, workspace.id);
   useDocumentTitle(t('routes.membersTitle', { workspace: workspace.name }));
 
@@ -24,11 +28,11 @@ export function MembersPage() {
             ? t('routes.membersSummary', { members: formatMemberCount(members.data.length), workspace: workspace.name })
             : t('routes.membersDescription')}{' '}
 
-          {t('routes.invitationsLater')}
+
         </p>
       </header>
 
-      {members.isPending ? (
+      {manageTeam ? <TeamAccessPanel key={`${actorId}:${workspace.id}`} actorId={actorId} workspace={workspace} /> : members.isPending ? (
         <div role="status" className="space-y-px overflow-hidden rounded-2xl border border-line bg-surface">
           <span className="sr-only">{t('routes.loadingMembers')}</span>
           {[0, 1, 2, 3].map((row) => (

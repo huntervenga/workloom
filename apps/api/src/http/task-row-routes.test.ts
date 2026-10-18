@@ -1,5 +1,6 @@
 import { request as httpRequest } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { Readable } from 'node:stream';
 
 import { taskRowResponseSchema, type CreateTaskRowInput, type TaskDto, type TaskRowCreatedDto } from '@workloom/contracts';
 import type { ReadinessProbe } from '@workloom/db';
@@ -12,7 +13,7 @@ import { loadConfig } from '../config.js';
 import type { IdentityAdapter } from '../identity/identity-adapter.js';
 import { TASK_ROW_BODY_LIMIT_BYTES } from './task-row-routes.js';
 
-// Real createApp over a real loopback TCP listener; a recording TaskRowApplication stands in for the
+// Real createApp over a real loopback TCP listener (plus one streamed-body injection); a recording TaskRowApplication stands in for the
 // domain service and no database is opened. Proves the transport (route cap, guards, strict input,
 // trusted context), not the domain's atomic claim.
 
@@ -111,8 +112,8 @@ interface RawResponse {
   readonly json: unknown;
 }
 
-/** Real TCP request with an explicit Content-Length; resolves once the full response is read. */
-function post(h: Harness, path: string, body: string, headers: Record<string, string> = {}): Promise<RawResponse> {
+/** Real TCP request with an explicit Content-Length; a declared-only body sends headers without uploading. */
+function post(h: Harness, path: string, body: string | { readonly declaredBytes: number }, headers: Record<string, string> = {}): Promise<RawResponse> {
   const url = new URL(path, h.origin);
   return new Promise((resolve, reject) => {
     const req = httpRequest(
@@ -121,7 +122,7 @@ function post(h: Harness, path: string, body: string, headers: Record<string, st
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'content-length': String(Buffer.byteLength(body)),
+          'content-length': String(typeof body === 'string' ? Buffer.byteLength(body) : body.declaredBytes),
           origin: h.origin,
           'idempotency-key': 'row-key-1',
           ...headers,
@@ -132,13 +133,15 @@ function post(h: Harness, path: string, body: string, headers: Record<string, st
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => {
           const text = Buffer.concat(chunks).toString('utf8');
+          if (typeof body !== 'string') req.destroy(); // The complete rejection was read; release the unsent request.
           resolve({ status: res.statusCode ?? 0, json: text === '' ? null : JSON.parse(text) });
         });
         res.on('error', reject);
       },
     );
     req.on('error', reject);
-    req.end(body);
+    if (typeof body === 'string') req.end(body);
+    else req.flushHeaders();
   });
 }
 
@@ -185,16 +188,46 @@ describe('POST /api/v1/workspaces/:workspaceId/tasks/rows', () => {
     expect(h.rowCalls.map((call) => call.input.fields?.length)).toEqual([2, 3]);
   });
 
-  it('rejects a body above 1 MiB with a structured 413 before identity or the domain is reached', async () => {
+  it('rejects a declared Content-Length above 1 MiB with a structured 413 before receiving the body', async () => {
     const h = await start();
     expect(TASK_ROW_BODY_LIMIT_BYTES).toBe(1024 * 1024);
     const payload = JSON.stringify({ task: baseTask, fields: textFields(200, 10_000) });
     expect(Buffer.byteLength(payload)).toBeGreaterThan(TASK_ROW_BODY_LIMIT_BYTES);
 
-    const response = await post(h, ROWS_PATH, payload);
+    // Fastify can reject Content-Length before reading a body. Do not race its early close with an upload.
+    const response = await post(h, ROWS_PATH, { declaredBytes: Buffer.byteLength(payload) });
     expect(response.status).toBe(413);
     expect(response.json).toMatchObject({ error: { code: 'PAYLOAD_TOO_LARGE', retryable: false }, meta: { requestId: expect.any(String) } });
     expect(response.json).not.toHaveProperty('data');
+    expect(h.identityCalls.count).toBe(0);
+    expect(h.rowCalls).toHaveLength(0);
+  });
+
+  it('rejects an actual streamed body above 1 MiB without Content-Length before identity or the domain is reached', async () => {
+    const h = await start();
+    const payload = JSON.stringify({ task: baseTask, fields: textFields(200, 10_000) });
+    expect(Buffer.byteLength(payload)).toBeGreaterThan(TASK_ROW_BODY_LIMIT_BYTES);
+
+    // A modern Readable stays a stream in injection: no synthesized Content-Length, so the parser
+    // must enforce its received-byte limit. Injection avoids a second early-close TCP write race.
+    const response = await h.app.inject({
+      method: 'POST',
+      url: ROWS_PATH,
+      headers: {
+        host: new URL(h.origin).host,
+        origin: h.origin,
+        'content-type': 'application/json',
+        'transfer-encoding': 'chunked',
+        'idempotency-key': 'row-key-1',
+      },
+      payload: Readable.from([Buffer.from(payload)], { objectMode: false }),
+    });
+    expect(response.raw.req.headers['content-length']).toBeUndefined();
+    expect(response.raw.req.headers['transfer-encoding']).toBe('chunked');
+    expect(response.statusCode).toBe(413);
+    const json: unknown = response.json();
+    expect(json).toMatchObject({ error: { code: 'PAYLOAD_TOO_LARGE', retryable: false }, meta: { requestId: expect.any(String) } });
+    expect(json).not.toHaveProperty('data');
     expect(h.identityCalls.count).toBe(0);
     expect(h.rowCalls).toHaveLength(0);
   });

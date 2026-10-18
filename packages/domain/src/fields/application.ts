@@ -1,4 +1,5 @@
 import type {
+  TaskFieldPolicyDto, TaskFieldPolicyStateDto, SetTaskFieldPolicyInput, SetTaskFieldValueExceptionInput,
   CreateTaskFieldInput,
   CreateTaskFieldOptionInput,
   ProjectColumnsDto,
@@ -39,6 +40,10 @@ export interface TaskFieldHistoryPage {
  *   with a process secret; a cursor that fails those checks is rejected.
  */
 export interface TaskFieldApplication {
+  getPolicy(context:CommandContext,fieldId:string):Promise<TaskFieldPolicyDto>;
+  setPolicy(context:CommandContext,fieldId:string,input:SetTaskFieldPolicyInput):Promise<TaskFieldPolicyDto>;
+  getPolicyState(context:CommandContext,taskId:string,fieldId:string):Promise<TaskFieldPolicyStateDto>;
+  setTaskValueException(context:CommandContext,taskId:string,fieldId:string,input:SetTaskFieldValueExceptionInput):Promise<TaskFieldValueDto>;
   listFields(context: CommandContext, projectId: string): Promise<TaskFieldDefinitionDto[]>;
   createField(context: CommandContext, input: CreateTaskFieldInput): Promise<TaskFieldDefinitionDto>;
   updateField(context: CommandContext, fieldId: string, input: UpdateTaskFieldInput): Promise<TaskFieldDefinitionDto>;

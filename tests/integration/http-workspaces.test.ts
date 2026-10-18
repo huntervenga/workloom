@@ -173,13 +173,15 @@ describe('workspace HTTP API with the server-configured owner actor', () => {
   });
 
   it('GET /api/v1/me returns exactly the server-configured fixture actor', async () => {
-    const [row] = await db.sql<{ display_name: string; kind: string }[]>`
-      select display_name, kind from users where id = ${DEFAULT_DEV_ACTOR_ID}`;
+    const [row] = await db.sql<{ display_name: string; kind: string; avatar_url: string | null }[]>`
+      select display_name, kind, avatar_url from users where id = ${DEFAULT_DEV_ACTOR_ID}`;
     expect(row).toBeDefined();
+    expect(row?.avatar_url).toBeNull();
+    expect(row?.kind).toBe('fixture');
 
     const me = expectOk(await get(owner(), '/api/v1/me'), meResponseSchema);
     expect(me.data).toEqual({
-      actor: { id: DEFAULT_DEV_ACTOR_ID, displayName: row?.display_name, kind: 'fixture' },
+      actor: { id: DEFAULT_DEV_ACTOR_ID, displayName: row?.display_name, kind: 'fixture', avatarUrl: row?.avatar_url },
       authMode: 'dev',
     });
     expect(me.data.actor.displayName).toBe(ownerUser.displayName);
@@ -198,11 +200,12 @@ describe('workspace HTTP API with the server-configured owner actor', () => {
     const detail = expectOk(await get(owner(), `/api/v1/workspaces/${TEAM_ID}`), workspaceResponseSchema);
     expect(detail.data).toMatchObject({ id: TEAM_ID, name: teamWorkspace.name, role: 'owner', timezone: teamWorkspace.timezone });
 
-    const rows = await db.sql<{ id: string; workspace_id: string; user_id: string; display_name: string; role: string }[]>`
-      select m.id::text as id, m.workspace_id::text as workspace_id, m.user_id::text as user_id, u.display_name, m.role::text as role
+    const rows = await db.sql<{ id: string; workspace_id: string; user_id: string; display_name: string; role: string; avatar_url: string | null }[]>`
+      select m.id::text as id, m.workspace_id::text as workspace_id, m.user_id::text as user_id, u.display_name, m.role::text as role, u.avatar_url
       from memberships m join users u on u.id = m.user_id
       where m.workspace_id = ${TEAM_ID} and m.state = 'active'`;
     expect(rows).toHaveLength(6);
+    for (const row of rows) expect(row.avatar_url).toBeNull();
     expect(rows.map((row) => row.id).sort()).toEqual(teamMemberships.map((membership) => membership.id).sort());
 
     const members = expectOk(
@@ -218,6 +221,7 @@ describe('workspace HTTP API with the server-configured owner actor', () => {
           workspaceId: row.workspace_id,
           userId: row.user_id,
           displayName: row.display_name,
+          avatarUrl: row.avatar_url,
           role: row.role,
         }))
         .sort(byId),

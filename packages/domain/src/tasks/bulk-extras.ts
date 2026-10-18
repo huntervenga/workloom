@@ -48,7 +48,7 @@ export async function prepareBulkExtras(scope: TaskWriteScope, input: BulkUpdate
       expectedRevision: input.tasks[index]?.expectedFieldValueRevision ?? -1,
       expectedDefinitionRevision: change.expectedDefinitionRevision,
       value: change.value,
-    });
+    }, {deferPolicy:true});
   }
   return { packages };
 }

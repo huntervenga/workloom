@@ -1,16 +1,39 @@
 // Root runs this source only against its explicitly named throwaway PostgreSQL child.
 // Never reads DATABASE_URL as a fallback, never uses the main runtime database.
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { BulkUpdateTasksInput, CreateTaskInput, TaskDto } from '@workloom/contracts';
-import type { CommandContext, TaskApplication } from '@workloom/domain';
-import { createDatabase, createPlanningApplication, createTaskApplication, runMigrations, seedDemoData, FIXTURE_USER_IDS as U, FIXTURE_WORKSPACE_IDS as W, FIXTURE_MEMBERSHIP_IDS as M, type Database } from '@workloom/db';
+import type { CommandContext, TaskApplication, TaskApplicationDependencies, TaskUnitOfWork } from '@workloom/domain';
+import type * as Domain from '@workloom/domain';
+import { createDatabase, createPlanningApplication, runMigrations, seedDemoData, FIXTURE_USER_IDS as U, FIXTURE_WORKSPACE_IDS as W, FIXTURE_MEMBERSHIP_IDS as M, type Database } from '@workloom/db';
 import type { FastifyInstance } from 'fastify';
+// Source composition keeps the narrowly mocked domain factory inside Vitest's module graph.
+import { createTaskApplication } from '../../packages/db/src/tasks/task-application.js';
 import { createApp } from '../../apps/api/src/app.js';
 import { loadConfig } from '../../apps/api/src/config.js';
 import { databaseSnapshot, changedTables, membershipRow, restoreMembership, revokeMembership } from './support/p1b.js';
 import { requireTestDatabaseUrl } from './support/test-database-url.js';
 import { createThrowawayDatabase, type ThrowawayDatabase } from './support/test-database.js';
+// Mandatory home placements intentionally prevent physical task deletion. Simulate only the
+// current target projection disappearing; authorization, barrier and all writes still use the real runner.
+const missingTarget = vi.hoisted(() => ({ id: null as string | null, reads: 0 }));
+vi.mock('@workloom/domain', async importOriginal => {
+  const actual = await importOriginal<typeof Domain>();
+  return { ...actual, createTaskApplication(dependencies: TaskApplicationDependencies) {
+    const writer: TaskUnitOfWork = {
+      run(context, capability, work) {
+        return dependencies.writer.run(context, capability, scope => work({ ...scope, repository: {
+          ...scope.repository,
+          async findTask(workspaceId, taskId) {
+            if (taskId === missingTarget.id) { missingTarget.reads += 1; return null; }
+            return scope.repository.findTask(workspaceId, taskId);
+          },
+        } }));
+      },
+    };
+    return actual.createTaskApplication({ ...dependencies, writer });
+  } };
+});
 requireTestDatabaseUrl();
 const host = '127.0.0.1:4310';
 const ctx = (key = randomUUID(), userId: string = U.owner): CommandContext => ({ workspaceId: W.team, actor: { userId, displayName: 'Synthetic assignment', kind: 'fixture' }, requestId: randomUUID(), source: 'web', idempotencyKey: key });
@@ -153,8 +176,12 @@ describe('atomic assignee ordering and bulk edits on isolated PostgreSQL', () =>
     const a = await f.create(), b = await f.create();
     const body: BulkUpdateTasksInput = { projectId: f.projectId, tasks: [ref(a), ref(b)], changes: { dueDate: null } }, key = randomUUID();
     await tasks.bulkUpdateTasks(ctx(key), body);
-    await db.sql`delete from tasks where id=${b.id}`;
-    await unchanged('NOT_FOUND', () => tasks.bulkUpdateTasks(ctx(key), body));
+    missingTarget.id = b.id; missingTarget.reads = 0;
+    try {
+      await unchanged('NOT_FOUND', () => tasks.bulkUpdateTasks(ctx(key), body));
+      expect(missingTarget.reads).toBe(1);
+    } finally { missingTarget.id = null; }
+    expect(await current(b)).toEqual(b);
   });
 
   it('rolls back earlier bulk writes and assignment/renumbering after a late PostgreSQL trigger error', async () => {

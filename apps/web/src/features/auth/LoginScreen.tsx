@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { useOptionalSession } from '../../app/session';
 import { QueryErrorState } from '../../shared/QueryErrorState';
+import { isJoinInvitationPath } from '../team/invitationHandoff';
 import { boundedReturnTo, fetchAuthMode, loginHref } from './authApi';
 
 export type AuthMode = 'dev' | 'shared';
@@ -30,6 +31,7 @@ function useCurrentReturnTo(): string {
   // The router strips the /app basename; a path that still carries it is not prefixed twice.
   const inApp = pathname === '/app' || pathname.startsWith('/app/');
   const path = inApp ? pathname : pathname === '/' ? '/app' : `/app${pathname}`;
+  if (isJoinInvitationPath(path)) return '/app/join';
   return boundedReturnTo(`${path}${search}${ordinaryHash.test(hash) ? hash : ''}`);
 }
 

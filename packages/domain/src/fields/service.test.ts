@@ -1,4 +1,5 @@
 import type {
+  TaskFieldPolicyDto,
   CreateTaskFieldInput,
   ProjectColumnsDto,
   ProjectDto,
@@ -18,6 +19,7 @@ import { DomainError } from '../errors.js';
 import type { IdempotencyRecord, TaskRepository } from '../tasks/ports.js';
 import type { ChangeEventInput } from '../transactions/ports.js';
 import type {
+  TaskFieldPolicyUsage,
   TaskFieldHistoryCursorPayload,
   TaskFieldOptionRecord,
   TaskFieldRepository,
@@ -41,6 +43,8 @@ const members = { owner: uuid(21), member: uuid(22), viewer: uuid(23), colleague
 const T0 = '2026-10-01T00:00:00.000Z';
 
 interface State {
+  policies:Map<string,TaskFieldPolicyDto>;
+  usage:TaskFieldPolicyUsage[];
   projects: Map<string, ProjectDto>;
   tasks: Map<string, TaskDto>;
   fields: Map<string, TaskFieldDefinitionDto>;
@@ -54,6 +58,7 @@ interface State {
 
 function cloneState(state: State): State {
   return {
+    policies:new Map(state.policies), usage:[...state.usage],
     projects: new Map(state.projects),
     tasks: new Map(state.tasks),
     fields: new Map(state.fields),
@@ -128,6 +133,7 @@ function harness() {
 
   const db = {
     state: cloneState({
+      policies:new Map(),usage:[],
       projects: new Map([P, Q].map((id) => [id, project(id)])).set(ARCHIVED_P, project(ARCHIVED_P, T0)),
       tasks: new Map([
         [tasks.a, task(tasks.a, P)],
@@ -217,6 +223,12 @@ function harness() {
   const valueKey = (taskId: string, fieldId: string) => `${taskId}|${fieldId}`;
 
   const repository: TaskFieldRepository = {
+    policies:{
+      find:async(ws,fid)=>{const p=db.state.policies.get(fid);return p?.workspaceId===ws?p:null;},
+      save:async p=>{db.state.policies.set(p.fieldId,p);},
+      count:async(ws,tid,fid,actor)=>db.state.usage.filter(u=>u.workspaceId===ws&&u.taskId===tid&&u.fieldId===fid&&u.actorUserId===actor).length,
+      insertUsage:async u=>{db.state.usage.push(u);},
+    },
     tasks: taskRepository,
     async findField(ws, id) {
       const row = scoped(db.state.fields.get(id), ws);
@@ -733,5 +745,94 @@ describe('batch reads', () => {
     expect((await errorOf(read([tasks.a, tasks.inQ]))).code).toBe('DOMAIN_VALIDATION_FAILED');
     expect((await errorOf(read([tasks.a, uuid(998)]))).code).toBe('NOT_FOUND');
     expect((await errorOf(read([]))).code).toBe('VALIDATION_FAILED');
+  });
+});
+
+
+describe('owner field deadline and lifetime actor budgets',()=>{
+  it('counts the first typed null once, keeps no-op and replay free with history disabled',async()=>{
+    const h=harness(),f=await h.createField({name:'Private notes',type:'text',historyEnabled:false});
+    const policy=await h.app.setPolicy(h.owner(),f.id,{expectedRevision:0,lockAt:null,maxChangesPerActor:1});
+    expect(policy.activatedAt).not.toBeNull();
+    const ctx=h.ctx(users.member,h.key());
+    const first=await h.setValue(tasks.a,f.id,{type:'text',value:null},0,1,ctx);
+    expect(await h.app.getPolicyState(h.ctx(users.member),tasks.a,f.id)).toMatchObject({currentActorChangesUsed:1});
+    expect(await h.setValue(tasks.a,f.id,{type:'text',value:null},0,1,ctx)).toEqual(first);
+    expect(await h.setValue(tasks.a,f.id,{type:'text',value:null},1,1,h.ctx(users.member,h.key()))).toEqual(first);
+    expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'changed'},1,1,h.ctx(users.member,h.key())))).details).toMatchObject({policyReason:'change_limit'});
+    expect(h.db.state.usage).toHaveLength(1);expect(h.db.state.history).toHaveLength(0);
+    // Another actor and another canonical task have independent budgets.
+    await h.setValue(tasks.a,f.id,{type:'text',value:'owner'},1,1);
+    await h.setValue(tasks.b,f.id,{type:'text',value:'other task'},0,1,h.ctx(users.member,h.key()));
+    expect(h.db.state.usage).toHaveLength(3);
+  });
+  it('checks the barrier deadline including equality but permits a legitimate unchanged value',async()=>{
+    const h=harness(),f=await h.createField({name:'Deadline',type:'text'});
+    await h.setValue(tasks.a,f.id,{type:'text',value:'before'},0);
+    await h.app.setPolicy(h.owner(),f.id,{expectedRevision:0,lockAt:'2026-10-16T09:00:04.000Z',maxChangesPerActor:null});
+    expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'too late'},1))).details).toMatchObject({policyReason:'deadline'});
+    expect((await h.setValue(tasks.a,f.id,{type:'text',value:'before'},1)).revision).toBe(1);
+    expect(h.db.state.usage).toHaveLength(0);
+  });
+  it('retains activation and every used change across disable/re-enable and field rename',async()=>{
+    const h=harness(),f=await h.createField({name:'Stable budget',type:'text'});
+    const a=await h.app.setPolicy(h.owner(),f.id,{expectedRevision:0,lockAt:null,maxChangesPerActor:1});
+    await h.setValue(tasks.a,f.id,{type:'text',value:'one'},0);
+    const off=await h.app.setPolicy(h.owner(),f.id,{expectedRevision:1,lockAt:null,maxChangesPerActor:null});
+    await h.setValue(tasks.a,f.id,{type:'text',value:'two'},1);
+    const on=await h.app.setPolicy(h.owner(),f.id,{expectedRevision:2,lockAt:null,maxChangesPerActor:2});
+    const renamed=await h.app.updateField(h.owner(),f.id,{expectedRevision:1,name:'Renamed budget'});
+    expect([off.activatedAt,on.activatedAt]).toEqual([a.activatedAt,a.activatedAt]);
+    expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'third'},2,renamed.revision))).details).toMatchObject({policyReason:'change_limit'});
+    expect(h.db.state.usage).toHaveLength(2);
+  });
+  it('requires the current exact owner before configuration and exception receipt replay',async()=>{
+    const h=harness(),f=await h.createField({name:'Owner rules',type:'text'});
+    h.setMembership(members.member,{role:'admin'});
+    expect((await errorOf(h.app.setPolicy(h.ctx(users.member,h.key()),f.id,{expectedRevision:0,lockAt:null,maxChangesPerActor:0}))).code).toBe('CAPABILITY_REQUIRED');
+    await h.app.setPolicy(h.owner(),f.id,{expectedRevision:0,lockAt:null,maxChangesPerActor:0});
+    const ctx=h.owner(),input={expectedRevision:0,expectedDefinitionRevision:1,expectedPolicyRevision:1,value:{type:'text' as const,value:'corrected'},reason:'Correct source entry'};
+    const result=await h.app.setTaskValueException(ctx,tasks.a,f.id,input);
+    expect(await h.app.setTaskValueException(ctx,tasks.a,f.id,input)).toEqual(result);
+    h.setMembership(members.owner,{role:'admin'});
+    expect((await errorOf(h.app.setTaskValueException(ctx,tasks.a,f.id,input))).code).toBe('CAPABILITY_REQUIRED');
+    expect(h.db.state.usage).toHaveLength(1);
+  });
+  it('requires policy revision and reason, audits exceptions without leaking values or outbox reasons',async()=>{
+    const h=harness(),f=await h.createField({name:'Exception',type:'text',historyEnabled:false});
+    await h.app.setPolicy(h.owner(),f.id,{expectedRevision:0,lockAt:null,maxChangesPerActor:0});
+    const input={expectedRevision:0,expectedDefinitionRevision:1,expectedPolicyRevision:0,value:{type:'text' as const,value:'private value'},reason:'Correct accidental entry'};
+    expect((await errorOf(h.app.setTaskValueException(h.owner(),tasks.a,f.id,input))).details).toMatchObject({fields:['expectedPolicyRevision']});
+    expect((await errorOf(h.app.setTaskValueException(h.owner(),tasks.a,f.id,{...input,expectedPolicyRevision:1,reason:'  '}))).code).toBe('VALIDATION_FAILED');
+    await h.app.setTaskValueException(h.owner(),tasks.a,f.id,{...input,expectedPolicyRevision:1});
+    const event=h.events.at(-1)?.event;
+    expect(event).toMatchObject({action:'owner_exception',diff:{historyCaptured:false,ownerException:{policyRevision:1,reason:input.reason}}});
+    expect(JSON.stringify(event)).not.toContain('private value');
+    expect(JSON.stringify(event?.outbox)).not.toContain(input.reason);
+    expect(h.db.state.history).toHaveLength(0);expect(h.db.state.usage[0]).toMatchObject({actorUserId:users.owner,exception:true});
+  });
+  it('never permits an owner exception through a manual lock, including an unchanged value',async()=>{
+    const h=harness(),f=await h.createField({name:'Manual absolute',type:'text',locked:true});
+    const input={expectedRevision:0,expectedDefinitionRevision:1,expectedPolicyRevision:0,value:{type:'text' as const,value:null},reason:'Owner request'};
+    expect((await errorOf(h.app.setTaskValueException(h.owner(),tasks.a,f.id,input))).code).toBe('FIELD_LOCKED');
+    expect(h.db.state.usage).toHaveLength(0);expect(h.db.state.values.size).toBe(0);
+  });
+  it('does not consume a change on failed revisions/references or stale policy updates',async()=>{
+    const h=harness(),f=await h.createField({name:'Guarded budget',type:'text'});
+    await h.app.setPolicy(h.owner(),f.id,{expectedRevision:0,lockAt:null,maxChangesPerActor:1});
+    expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'stale'},1))).code).toBe('REVISION_CONFLICT');
+    expect((await errorOf(h.app.setPolicy(h.owner(),f.id,{expectedRevision:0,lockAt:null,maxChangesPerActor:99}))).code).toBe('REVISION_CONFLICT');
+    expect(h.db.state.usage).toHaveLength(0);
+    await h.setValue(tasks.a,f.id,{type:'text',value:'first'},0);
+    expect(h.db.state.usage).toHaveLength(1);
+  });
+});
+
+
+describe('exception activation boundary',()=>{
+  it('rejects never-activated rule exceptions without creating policy or counting usage',async()=>{
+    const h=harness(),f=await h.createField({name:'No rules',type:'text'});
+    expect((await errorOf(h.app.setTaskValueException(h.owner(),tasks.a,f.id,{expectedRevision:0,expectedDefinitionRevision:1,expectedPolicyRevision:0,value:{type:'text',value:'not an exception'},reason:'Owner request'}))).code).toBe('DOMAIN_VALIDATION_FAILED');
+    expect(h.db.state.policies.size).toBe(0);expect(h.db.state.usage).toHaveLength(0);expect(h.db.state.values.size).toBe(0);
   });
 });

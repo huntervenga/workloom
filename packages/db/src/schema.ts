@@ -818,6 +818,8 @@ export const taskFieldValueHistory = pgTable(
 
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'task_field_policies', 'task_field_policy_usage',
+  'team_invitations',
   'shared_auth_identities', 'shared_auth_sessions', 'shared_auth_login_attempts',
   'local_mcp_credentials',
   'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
@@ -1504,4 +1506,45 @@ export const taskProjectPlacements=pgTable('task_project_placements',{
  index('task_placements_project_order_idx').on(table.workspaceId,table.projectId,table.position,table.id),
  check('task_placements_revision_positive',sql`${table.revision} >= 1`),check('task_placements_position_nonnegative',sql`${table.position} >= 0`),
  check('task_placements_home_identity',sql`${table.projectId} <> ${table.homeProjectId} OR (${table.id} = ${table.taskId} AND ${table.archivedAt} IS NULL)`),
+]);
+
+/** Hash-only single-use team capabilities; immutable issuer and grant survive revocation. */
+export const teamInvitations=pgTable('team_invitations',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),secretHash:text('secret_hash').notNull(),hashVersion:integer('hash_version').notNull(),role:workspaceRoleEnum('role').notNull(),
+ createdByUserId:uuid('created_by_user_id').notNull(),createdByMembershipId:uuid('created_by_membership_id').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),expiresAt:timestamp('expires_at',{withTimezone:true}).notNull(),revision:integer('revision').notNull().default(1),revokedAt:timestamp('revoked_at',{withTimezone:true}),
+ acceptedAt:timestamp('accepted_at',{withTimezone:true}),acceptedByUserId:uuid('accepted_by_user_id'),acceptedMembershipId:uuid('accepted_membership_id'),
+},t=>[
+ foreignKey({name:'team_invitations_workspace_fk',columns:[t.workspaceId],foreignColumns:[workspaces.id]}),
+ foreignKey({name:'team_invitations_issuer_fk',columns:[t.workspaceId,t.createdByMembershipId,t.createdByUserId],foreignColumns:[memberships.workspaceId,memberships.id,memberships.userId]}),
+ foreignKey({name:'team_invitations_acceptor_fk',columns:[t.workspaceId,t.acceptedMembershipId,t.acceptedByUserId],foreignColumns:[memberships.workspaceId,memberships.id,memberships.userId]}),
+ index('team_invitations_workspace_idx').on(t.workspaceId,t.createdAt,t.id),
+ check('team_invitations_grant',sql`role <> 'owner' and hash_version = 1 and secret_hash ~ '^[a-f0-9]{64}$' and revision >= 1`),
+ check('team_invitations_times',sql`isfinite(created_at) and isfinite(expires_at) and expires_at > created_at and expires_at <= created_at + interval '168 hours' and (revoked_at is null or (isfinite(revoked_at) and revoked_at >= created_at)) and (accepted_at is null or (isfinite(accepted_at) and accepted_at >= created_at))`),
+ check('team_invitations_acceptance',sql`(accepted_at is null and accepted_by_user_id is null and accepted_membership_id is null) or (accepted_at is not null and accepted_by_user_id is not null and accepted_membership_id is not null and revoked_at is null)`),
+]);
+
+/** Separate current policy; immutable activation prevents quota resets on disable/re-enable. */
+export const taskFieldPolicies = pgTable('task_field_policies', {
+  workspaceId:uuid('workspace_id').notNull(), projectId:uuid('project_id').notNull(), fieldId:uuid('field_id').notNull(),
+  revision:integer('revision').notNull(), lockAt:timestamp('lock_at',{withTimezone:true}),
+  maxChangesPerActor:integer('max_changes_per_actor'), activatedAt:timestamp('activated_at',{withTimezone:true}),
+  updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(), updatedByUserId:uuid('updated_by_user_id').notNull().references(()=>users.id),
+},t=>[
+  primaryKey({name:'task_field_policies_pk',columns:[t.workspaceId,t.fieldId]}),
+  foreignKey({name:'task_field_policies_field_fk',columns:[t.workspaceId,t.projectId,t.fieldId],foreignColumns:[taskFieldDefinitions.workspaceId,taskFieldDefinitions.projectId,taskFieldDefinitions.id]}),
+  check('task_field_policies_revision_positive',sql`revision >= 1`),
+  check('task_field_policies_limit_range',sql`max_changes_per_actor is null or max_changes_per_actor between 0 and 1000000`),
+  check('task_field_policies_activation_required',sql`(lock_at is null and max_changes_per_actor is null) or activated_at is not null`),
+]);
+/** Immutable metadata only; recording survives value-history opt-out. */
+export const taskFieldPolicyUsage = pgTable('task_field_policy_usage', {
+  workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),taskId:uuid('task_id').notNull(),fieldId:uuid('field_id').notNull(),
+  actorUserId:uuid('actor_user_id').notNull().references(()=>users.id),valueRevision:integer('value_revision').notNull(),policyRevision:integer('policy_revision').notNull(),
+  exception:boolean('exception').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
+},t=>[
+  primaryKey({name:'task_field_policy_usage_pk',columns:[t.workspaceId,t.taskId,t.fieldId,t.valueRevision]}),
+  foreignKey({name:'task_field_policy_usage_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+  foreignKey({name:'task_field_policy_usage_field_fk',columns:[t.workspaceId,t.projectId,t.fieldId],foreignColumns:[taskFieldDefinitions.workspaceId,taskFieldDefinitions.projectId,taskFieldDefinitions.id]}),
+  index('task_field_policy_usage_actor_idx').on(t.workspaceId,t.taskId,t.fieldId,t.actorUserId),
+  check('task_field_policy_usage_revisions_positive',sql`value_revision >= 1 and policy_revision >= 1`),
 ]);

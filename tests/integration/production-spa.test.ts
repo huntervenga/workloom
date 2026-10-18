@@ -120,9 +120,10 @@ describe('production build served by the dist API entrypoint', () => {
     return response;
   }
 
-  /** Every reference must be a same-origin, root /assets file with its real MIME type and immutable caching. */
+  /** Every reference is same-origin: hashed /assets files are immutable; the exact bootstrap revalidates. */
   async function expectAssetsServed(html: string): Promise<void> {
     const { scripts, stylesheets } = assetReferences(html);
+    expect(scripts.filter(ref => ref === '/theme-init.js')).toEqual(['/theme-init.js']);
     const origin = new URL(server().baseUrl).origin;
     const checks = [
       ...scripts.map((ref) => ({ ref, contentType: /^(text|application)\/javascript\b/i })),
@@ -131,14 +132,22 @@ describe('production build served by the dist API entrypoint', () => {
     for (const { ref, contentType } of checks) {
       const url = new URL(ref, `${server().baseUrl}/app/w/nested`);
       expect(url.origin, `${ref} must be served by the same origin`).toBe(origin);
-      expect(url.pathname, `${ref} must resolve under the root /assets/ path from any route`).toMatch(/^\/assets\//);
+      const themeBootstrap = url.pathname === '/theme-init.js';
+      if (themeBootstrap) expect(ref, 'only the exact root theme bootstrap is allowed outside assets').toBe('/theme-init.js');
+      else expect(url.pathname, `${ref} must resolve under the root /assets/ path from any route`).toMatch(/^\/assets\//);
 
       const asset = await rawRequest(server().baseUrl, `${url.pathname}${url.search}`);
       expect(asset.status, `${ref}: ${asset.text().slice(0, 200)}`).toBe(200);
       expect(asset.body.length, ref).toBeGreaterThan(0);
       expect(header(asset, 'content-type'), ref).toMatch(contentType);
-      expect(header(asset, 'cache-control'), ref).toMatch(/\bmax-age=31536000\b/);
-      expect(header(asset, 'cache-control'), ref).toMatch(/\bimmutable\b/);
+      if (themeBootstrap) {
+        expect(header(asset, 'cache-control'), ref).toMatch(/\bno-cache\b/);
+        expect(header(asset, 'cache-control'), ref).not.toMatch(/\bimmutable\b/);
+        expect(asset.body, 'theme bootstrap must be the exact built file').toEqual(readFileSync(join(repoRoot, 'apps/web/dist/theme-init.js')));
+      } else {
+        expect(header(asset, 'cache-control'), ref).toMatch(/\bmax-age=31536000\b/);
+        expect(header(asset, 'cache-control'), ref).toMatch(/\bimmutable\b/);
+      }
       expect(looksLikeHtml(asset), `${ref} must not fall back to an HTML document`).toBe(false);
     }
   }
@@ -242,16 +251,17 @@ describe('production build served by the dist API entrypoint', () => {
   });
 
   it('serves GET /api/v1/me from PostgreSQL for the configured actor', async () => {
-    const [row] = await db.sql<{ display_name: string }[]>`
-      select display_name from users where id = ${DEFAULT_DEV_ACTOR_ID}`;
+    const [row] = await db.sql<{ display_name: string; avatar_url: string | null }[]>`
+      select display_name, avatar_url from users where id = ${DEFAULT_DEV_ACTOR_ID}`;
     expect(row).toBeDefined();
+    expect(row?.avatar_url).toBeNull();
 
     const response = await rawRequest(server().baseUrl, '/api/v1/me');
     expect(response.status, response.text()).toBe(200);
     expect(header(response, 'content-type')).toMatch(/^application\/json\b/i);
     const me = meResponseSchema.parse(response.json());
     expect(me.data).toEqual({
-      actor: { id: DEFAULT_DEV_ACTOR_ID, displayName: row?.display_name, kind: 'fixture' },
+      actor: { id: DEFAULT_DEV_ACTOR_ID, displayName: row?.display_name, kind: 'fixture', avatarUrl: row?.avatar_url },
       authMode: 'dev',
     });
     expect(me.meta.requestId.trim()).not.toBe('');

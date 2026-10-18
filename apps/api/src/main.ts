@@ -14,7 +14,9 @@ import { ConfigError, loadConfig, type AppConfig } from './config.js';
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 async function main(): Promise<void> {
-  loadEnvFileIfPresent(fileURLToPath(new URL('../../../.env', import.meta.url)));
+  if (process.env.APP_ENV !== 'staging' && process.env.APP_ENV !== 'production') {
+    loadEnvFileIfPresent(fileURLToPath(new URL('../../../.env', import.meta.url)));
+  }
 
   let config: AppConfig;
   try {
@@ -58,7 +60,7 @@ async function main(): Promise<void> {
   await app.listen({ host: config.host, port: config.port });
   app.log.info(
     { appEnv: config.appEnv, authMode: config.authMode, nodeEnv: config.nodeEnv, database: config.database.description },
-    'Workloom API ready (local synthetic mode, development identity)',
+    'Workloom API ready',
   );
 }
 

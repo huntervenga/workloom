@@ -5,6 +5,7 @@ const LOOPBACK_NAMES = ['127.0.0.1', 'localhost', '[::1]'];
 
 export interface RequestGuardOptions {
   /** Port the API actually listens on (resolved after listen when configured as 0). */
+  readonly hosted?: boolean;
   readonly getPort: () => number;
   /** Extra trusted browser origins, e.g. the Vite dev server. */
   readonly appOrigins: readonly string[];
@@ -12,6 +13,7 @@ export interface RequestGuardOptions {
 
 export interface GuardedRequest {
   readonly method: string;
+  readonly url?: string;
   readonly headers: Readonly<Record<string, string | string[] | undefined>>;
 }
 
@@ -22,14 +24,14 @@ function single(value: string | string[] | undefined): string | undefined {
 /** Host names (with port) the API answers to: its own loopback names plus trusted app origins (proxied Host). */
 export function allowedHosts(options: RequestGuardOptions): Set<string> {
   const port = options.getPort();
-  const hosts = new Set(LOOPBACK_NAMES.map((name) => `${name}:${port}`));
+  const hosts = new Set(options.hosted === true ? [] : LOOPBACK_NAMES.map((name) => `${name}:${port}`));
   for (const origin of options.appOrigins) hosts.add(new URL(origin).host);
   return hosts;
 }
 
 export function trustedOrigins(options: RequestGuardOptions): Set<string> {
   const port = options.getPort();
-  return new Set([...LOOPBACK_NAMES.map((name) => `http://${name}:${port}`), ...options.appOrigins]);
+  return new Set([...(options.hosted === true ? [] : LOOPBACK_NAMES.map((name) => `http://${name}:${port}`)), ...options.appOrigins]);
 }
 
 /**
@@ -39,8 +41,10 @@ export function trustedOrigins(options: RequestGuardOptions): Set<string> {
  */
 export function assertAllowedHost(request: GuardedRequest, options: RequestGuardOptions): void {
   const host = single(request.headers.host)?.toLowerCase();
+  if (options.hosted === true && host === 'healthcheck.railway.app' &&
+    (request.method === 'GET' || request.method === 'HEAD') && request.url === '/healthz/ready') return;
   if (host === undefined || !allowedHosts(options).has(host)) {
-    throw new HttpError(421, 'HOST_NOT_ALLOWED', 'This server only answers requests addressed to its loopback origin.');
+    throw new HttpError(421, 'HOST_NOT_ALLOWED', 'This server only answers requests addressed to its configured origin.');
   }
 }
 

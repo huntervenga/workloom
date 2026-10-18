@@ -13,7 +13,7 @@ import type { WorkloomExecutor } from '../client.js';
  * sequence (unique per workspace), so comments, task, custom-field, dependency and manual-work events interleave in real
  * commit order and no branch is paged/merged independently. Every branch is scoped to the current workspace and target task.
  * The SQL extracts whitelisted diff keys only; `reason`, `source`, `request_id`, credentials, raw diffs and outbox payloads are
- * never selected. Mappers below are strict and fail closed: unknown or legacy shapes become partial/uncaptured, never guesses.
+ * never selected. Only owner_exception has a dedicated bounded reason whitelist. Mappers below are strict and fail closed: unknown or legacy shapes become partial/uncaptured, never guesses.
  */
 const MAX_ROWS = 101, MAX_CHANGES = 20, MAX_REFS = 100;
 const UUID = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
@@ -59,12 +59,13 @@ export function timelineStatement(workspaceId: string, taskId: string, after: Ta
       ${actor} ${order(take)})
     union all
     (select 'field', a.id, ${head}, jsonb_build_object(
+        'ownerException', case when a.action = 'owner_exception' then jsonb_build_object('policyRevision',a.diff->'ownerException'->'policyRevision','reason',a.diff->'ownerException'->'reason') end,
         'historyCaptured', case when jsonb_typeof(a.diff->'historyCaptured') = 'boolean' then a.diff->'historyCaptured' end,
         'fieldId', f.id, 'fieldName', f.name, 'fieldType', f.type, 'projectId', t.project_id,
         'history', h.id is not null, 'historyFieldId', h.field_id, 'historyProjectId', h.project_id,
         'before', h.before, 'after', h.after, 'definition', dv.snapshot)
       from t join audit_events a on a.workspace_id = ${workspaceId}::uuid and a.entity_type = 'task_field_value' and a.entity_id = t.id
-        and a.action in ('created', 'updated') ${keyset}
+        and a.action in ('created', 'updated', 'owner_exception') ${keyset}
       left join task_field_definitions f on f.workspace_id = a.workspace_id and f.project_id = t.project_id and f.id = ${uuidOf(sql`a.diff->>'fieldId'`)}
       left join task_field_value_history h on h.workspace_id = a.workspace_id and h.project_id = t.project_id and h.field_id = f.id and h.task_id = t.id and h.change_seq = a.change_seq and h.event_ordinal = a.event_ordinal
       left join task_field_definition_versions dv on dv.workspace_id = h.workspace_id and dv.project_id = h.project_id and dv.field_id = h.field_id and dv.id = h.definition_version_id
@@ -208,7 +209,11 @@ function estimate(payload: Json, out: Mapped) {
 }
 
 /** Values come only from the immutable history row + its definition version, never from the current value. */
-function fieldChange(payload: Json, out: Mapped) {
+function fieldChange(payload: Json, out: Mapped, action:string) {
+  // Only the explicit owner-exception action may publish its bounded, purpose-specific reason.
+  const exception=z.strictObject({policyRevision:z.number().int().min(0),reason:z.string().trim().min(1).max(500)}).safeParse(payload.ownerException);
+  const ownerException=action==='owner_exception'&&exception.success?{ownerException:exception.data}:{};
+  if(action==='owner_exception'&&!exception.success)out.partial=true;
   const fieldId = id(payload.fieldId), type = taskFieldTypeSchema.safeParse(payload.fieldType), name = labelName.safeParse(payload.fieldName);
   const redacted = { field: 'custom', fieldId: null, fieldName: null, fieldType: null, availability: 'redacted' } as TaskActivityChangeDto;
   if (!fieldId || !type.success) { out.partial = true; out.changes.push(redacted); return; }
@@ -221,13 +226,13 @@ function fieldChange(payload: Json, out: Mapped) {
       && definition.data.id === fieldId && definition.data.projectId === payload.projectId && definition.data.type === type.data
       && before.success && (before.data === null || before.data.type === type.data) && after.success && after.data.type === type.data;
     if (!matches) { out.partial = true; out.changes.push(redacted); return; }
-    out.changes.push({ field: 'custom', fieldId, fieldName: definition.data.name, fieldType: type.data, availability: 'history', before: before.data, after: after.data, definition: definition.data } as TaskActivityChangeDto);
+    out.changes.push({ ...ownerException, field: 'custom', fieldId, fieldName: definition.data.name, fieldType: type.data, availability: 'history', before: before.data, after: after.data, definition: definition.data } as TaskActivityChangeDto);
     return;
   }
   // No history row: only an explicit write-time flag proves an opt-out; legacy rows stay uncaptured.
   const availability = payload.historyCaptured === false ? 'opted_out' : 'uncaptured';
   if (availability === 'uncaptured') out.partial = true;
-  out.changes.push({ field: 'custom', fieldId, fieldName: name.success ? name.data : null, fieldType: type.data, availability } as TaskActivityChangeDto);
+  out.changes.push({ ...ownerException, field: 'custom', fieldId, fieldName: name.success ? name.data : null, fieldType: type.data, availability } as TaskActivityChangeDto);
 }
 
 function dependencyChange(action: string, payload: Json, out: Mapped) {
@@ -271,7 +276,7 @@ export function mapTimelineRow(row: TimelineRow, workspaceId: string, taskId: st
   let kind: string = row.action;
   if (row.src === 'task') { if (row.action === 'updated' || row.action === 'schedule_updated') taskChanges(payload, out); }
   else if (row.src === 'shared_estimate') { kind = 'updated'; estimate(payload, out); }
-  else if (row.src === 'field') { kind = 'field_value'; fieldChange(payload, out); }
+  else if (row.src === 'field') { kind = 'field_value'; fieldChange(payload, out, row.action); }
   else if (row.src === 'dependency') { kind = 'dependency'; dependencyChange(row.action, payload, out); }
   else if (row.src === 'work') { kind = 'work'; workChange(payload, out); }
   if (row.src === 'task' && !TASK_KINDS.has(kind)) kind = 'updated';

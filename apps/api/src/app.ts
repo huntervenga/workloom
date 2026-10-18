@@ -10,6 +10,7 @@ import {
   createMyTasksApplication,
   createWorkspaceChangeHeadApplication,
   createLocalCredentialApplication,
+  createTeamApplication,
   createLocalMcpApplication,
   createPlanningApplication,
   createProjectImportApplication,
@@ -29,7 +30,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
+import type { TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { JWTVerifyGetKey } from 'jose';
 
@@ -54,6 +55,7 @@ import { registerApiRoutes, registerDevRoutes, registerHealthRoutes } from './ht
 import { registerTaskRoutes } from './http/task-routes.js';
 import { registerTaskRowRoutes } from './http/task-row-routes.js';
 import { registerWorkspaceCreateRoutes } from './http/workspace-create-routes.js';
+import { registerTeamRoutes } from './http/team-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
 import { registerWorkspaceChangeHeadRoutes } from './http/workspace-change-head-routes.js';
 import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
@@ -61,6 +63,7 @@ import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, replyWebNavigation, resolveWebDist } from './http/static-web.js';
 
 export interface AppDependencies {
+  readonly teamApplication?: TeamApplication;
   /** Shared database. When given, the app does NOT close it. */
   readonly database?: Database;
   /** Overrides the repository built from the database (HTTP tests). */
@@ -129,6 +132,10 @@ const LOG_REDACT_PATHS = [
   'req.headers.cookie',
   'req.headers.authorization',
   'res.headers["set-cookie"]',
+  'req.body.secret',
+  'req.body.secretHash',
+  'body.secret',
+  'body.secretHash',
   'req.body.accessToken',
   'req.body.refreshToken',
   'req.body.state',
@@ -155,7 +162,7 @@ function serializeRequestForLog(request: { readonly method?: string | undefined;
 export async function createApp(config: AppConfig, dependencies: AppDependencies = {}): Promise<FastifyInstance> {
   const ownsDatabase =
     dependencies.database === undefined && (dependencies.accessRepository === undefined || dependencies.readiness === undefined);
-  const database = dependencies.database ?? (ownsDatabase ? createDatabase(config.database.url, { requireLoopback: true }) : undefined);
+  const database = dependencies.database ?? (ownsDatabase ? createDatabase(config.database.url, { requireLoopback: config.appEnv === 'local' }) : undefined);
 
   const repository = dependencies.accessRepository ?? (database === undefined ? undefined : createAccessRepository(database));
   const readiness = dependencies.readiness ?? (database === undefined ? undefined : createReadinessProbe(database));
@@ -188,6 +195,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.taskScheduleApplication ?? (database === undefined ? undefined : createTaskScheduleApplication(database));
   const projectImportApplication =
     dependencies.projectImportApplication ?? (database === undefined ? undefined : createProjectImportApplication(database));
+  const teamApplication=dependencies.teamApplication??(database===undefined?undefined:createTeamApplication(database));
   const localCredentialApplication=dependencies.localCredentialApplication??(database===undefined?undefined:createLocalCredentialApplication(database,{enableTaskWrites:true}));
   const localMcpApplication=dependencies.localMcpApplication??(database===undefined?undefined:createLocalMcpApplication(database,{enableTaskWrites:true}));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
@@ -242,6 +250,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
 
   const guardOptions: RequestGuardOptions = {
+    hosted: config.appEnv !== 'local',
     appOrigins: config.appOrigins,
     getPort: () => {
       if (config.port !== 0) return config.port;
@@ -302,6 +311,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   registerApiRoutes(app, routeDeps);
   if (identity.mode === 'shared' && workspaceCreateApplication !== undefined) {
     registerWorkspaceCreateRoutes(app, { identity, workspaces: workspaceCreateApplication });
+  }
+  if (identity.mode === 'shared' && teamApplication !== undefined) {
+    registerTeamRoutes(app, {identity,team:teamApplication});
   }
   if (taskApplication !== undefined) {
     registerTaskRoutes(app, { identity, tasks: taskApplication });

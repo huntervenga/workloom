@@ -64,6 +64,10 @@ literalExemptions.set("apps/web/src/features/dependencies/graphPresentation.ts:0
 literalExemptions.set("apps/web/src/features/dependencies/graphPresentation.ts:0 0 0 4px var(--color-focus)", "CSS boxShadow focus ring in graphNodeTone; joined into node style only, never rendered as user copy.");
 literalExemptions.set("apps/web/src/features/tasks/TaskTagPicker.tsx:rounded px-1 py-1 text-xs font-medium text-accent-ink hover:bg-canvas aria-disabled:text-muted", "Shared actionClassName CSS tokens assigned only to button className; never user-visible copy.");
 literalExemptions.set("apps/web/src/features/theme/ThemeManager.ts:(prefers-color-scheme: dark)", "DARK_QUERY media query passed only to matchMedia; never rendered as user copy.");
+literalExemptions.set("apps/web/src/features/team/teamApi.ts:TEAM_COMMAND_INVALID_UUID", "Developer UUID protocol invariant; Team UI renders the fixed team.command.failed catalog key and never error.message.");
+literalExemptions.set("apps/web/src/features/fields/FieldPolicyPanel.tsx:FIELD_POLICY_INVALID_LOCAL_DEADLINE", "Internal strict local-time parser invariant; the Rules form catches it and renders fieldRules.invalid, never error.message.");
+literalExemptions.set("apps/web/src/features/fields/FieldPolicyPanel.tsx:FIELD_POLICY_INVALID_LIMIT", "Internal raw numeric-draft validation invariant; the Rules form catches it and renders fieldRules.invalid, never error.message.");
+
 const readSource = path => readFileSync(join(root, path), 'utf8');
 // Finite descriptor sources below are inspected as syntax, never executed. New computed
 // producers must get an explicit domain instead of inheriting every English catalog key.

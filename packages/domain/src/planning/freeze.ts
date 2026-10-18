@@ -1,4 +1,6 @@
-import { RECURRENCE_LIMITS, idSchema, type FreezeScope, type PlanBaselineDto, type PlanningPeriodDto, type PlanningSnapshotDto } from '@workloom/contracts';
+import { fieldPolicyBlock, fieldPolicyError, type FieldPolicyBlock } from '../fields/policy.js';
+import { preflightTaskFieldValueInScope } from '../fields/service.js';
+import { RECURRENCE_LIMITS, idSchema, type TaskFieldData, type FreezeScope, type PlanBaselineDto, type PlanningPeriodDto, type PlanningSnapshotDto } from '@workloom/contracts';
 import type { CommandContext } from '../access/context.js';
 import { DomainError } from '../errors.js';
 import { RECURRENCE_PREREQUISITE_BY_COMMAND, type RecurrenceCensusAssessment } from '../recurrence/ports.js';
@@ -124,10 +126,10 @@ export async function performFreeze(scope:PlanningWriteScope,period:PlanningPeri
 
 export function isCommittedPlanningRejection(value:unknown):value is CommittedPlanningRejection {
   const v=record(value),details=record(v['details']);
-  return v['__workloomPlanningOutcome']==='rejected'&&(v['code']==='FIELD_LOCKED'||v['code']==='PREVIEW_STALE')&&details['committed']===true&&Array.isArray(details['baselineIds'])&&details['baselineIds'].every(id=>typeof id==='string'&&idSchema.safeParse(id).success);
+  return v['__workloomPlanningOutcome']==='rejected'&&(v['code']==='FIELD_LOCKED'||v['code']==='PREVIEW_STALE')&&details['committed']===true&&(details['policyReason']===undefined||details['policyReason']==='deadline'||details['policyReason']==='change_limit')&&Array.isArray(details['baselineIds'])&&details['baselineIds'].every(id=>typeof id==='string'&&idSchema.safeParse(id).success);
 }
 export function unwrapPlanningOutcome<T>(value:T|CommittedPlanningRejection):T {
-  if(isCommittedPlanningRejection(value))throw new DomainError(value.code,value.code==='FIELD_LOCKED'?'This value is protected by an immutable planning baseline.':'A cutoff freeze changed the preview. Review the saved baseline and preview again.',{details:value.details});
+  if(isCommittedPlanningRejection(value))throw new DomainError(value.code,value.code==='FIELD_LOCKED'?(value.details.policyReason?fieldPolicyError(value.details.policyReason).message:'This value is protected by an immutable planning baseline.'):'A cutoff freeze changed the preview. Review the saved baseline and preview again.',{details:value.details});
   return value;
 }
 function never(value:never):never {throw new Error(`Unhandled planning mutation intent: ${String(value)}`);}
@@ -159,6 +161,17 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
     const locks=await repo.listLocks(ws);
     const input=record(intent.input),target=record(intent.target);
     let blocked:string[]=[];
+    let policyReason:FieldPolicyBlock|null=null;
+    const policyCheck=async(fieldId:string,taskId:string|null,value:unknown,expectedDefinitionRevision?:number,expectedRevision?:number)=>{
+      const policy=await repo.fields.policies.find(ws,fieldId);
+      if(policy===null)return null;
+      if(taskId!==null) {
+        const prepared=await preflightTaskFieldValueInScope({...scope,repository:repo.fields},taskId,fieldId,
+          {expectedRevision:expectedRevision??-1,expectedDefinitionRevision:expectedDefinitionRevision??-1,value:value as TaskFieldData},{deferPolicy:true});
+        if(prepared.current!==null&&canonicalJson(prepared.current.value)===canonicalJson(prepared.parsed.value))return null;
+      }
+      return fieldPolicyBlock(repo.fields.policies,policy,taskId,scope.context.actor.userId,scope.barrierAt);
+    };
     switch(intent.family) {
       case 'task_placement': {
         // Metadata-only: due freezes/census still cover canonical home and target project.
@@ -171,7 +184,13 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
         break;
       }
       case 'import':
-        if(intent.command==='import.project.apply'&&!await intent.previewMatches())return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
+        if(intent.command==='import.project.apply') {
+          if(!await intent.previewMatches())return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
+          for(const candidate of intent.fieldPolicyCandidates) {
+            policyReason=await policyCheck(candidate.fieldId,null,candidate.value);
+            if(policyReason)break;
+          }
+        }
         break;
       case 'schedule':
         if(!await intent.previewMatches())return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
@@ -256,6 +275,10 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
             details: { committed: true, baselineIds: [...new Set(newlyFrozen)].sort() },
           };
         }
+        if(custom&&!blocked.length)for(const row of intent.input.tasks) {
+          policyReason=await policyCheck(custom.fieldId,row.taskId,custom.value,custom.expectedDefinitionRevision,row.expectedFieldValueRevision);
+          if(policyReason)break;
+        }
         break;
       }
       case 'task_row': {
@@ -272,12 +295,22 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
           const definition=await repo.fields.findField(ws,selected.fieldId);
           if(definition?.projectId===row.projectId&&definition.locked)return {__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
         }
+        for(const selected of intent.input.fields??[]) {
+          policyReason=await policyCheck(selected.fieldId,null,selected.value,selected.expectedDefinitionRevision,0);
+          if(policyReason)break;
+        }
         break;
       }
       case 'field':
         switch(intent.command) {
-          case 'field.value.set':blocked=locks.filter(l=>l.kind==='custom_value'&&l.taskId===target['taskId']&&l.fieldId===target['fieldId']).map(l=>l.baselineId);break;
-          case 'field.create':case 'field.update':case 'field.option.create':case 'field.option.update':case 'field.columns.update':break;
+          case 'field.value.set':case 'field.value.exception': {
+            blocked=locks.filter(l=>l.kind==='custom_value'&&l.taskId===target['taskId']&&l.fieldId===target['fieldId']).map(l=>l.baselineId);
+            if(!blocked.length&&intent.command==='field.value.set'&&typeof target['fieldId']==='string'&&typeof target['taskId']==='string') {
+              policyReason=await policyCheck(target['fieldId'],target['taskId'],input['value'],input['expectedDefinitionRevision'] as number,input['expectedRevision'] as number);
+            }
+            break;
+          }
+          case 'field.policy.set':case 'field.create':case 'field.update':case 'field.option.create':case 'field.option.update':case 'field.columns.update':break;
           default:never(intent);
         }
         break;
@@ -346,6 +379,7 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
       default:never(intent);
     }
     if(!blocked.length&&newlyFrozen.length&&intent.family==='meeting'&&intent.command==='meeting.plan.apply'&&typeof target['taskId']==='string'){const meeting=await repo.findMeetingByTask(ws,target['taskId']);if(meeting&&frozenDue.some(p=>p.id===meeting.plannedPeriodId))return {__workloomPlanningOutcome:'rejected',code:'PREVIEW_STALE',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};}
+    if(!blocked.length&&policyReason)return {__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort(),policyReason}};
     return blocked.length?{__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[...new Set([...blocked,...newlyFrozen])].sort()}}:null;
   }};
 }

@@ -114,3 +114,12 @@ describe('describeChange', () => {
     expect(describeChange({ field: 'future' } as unknown as TaskActivityChangeDto)).toEqual([{ label: { key: 'activity.field.other' }, note: { key: 'activity.change.otherChanged' } }]);
   });
 });
+
+
+it('renders an explicit owner exception reason as plain user text without opted-out values',()=>{
+  const reason='<b>Correct source entry</b>';
+  expect(describeChange({field:'custom',fieldId:FIELD,fieldName:'Notes',fieldType:'text',availability:'opted_out',ownerException:{policyRevision:2,reason}})).toEqual([
+    {label:{key:'fieldRules.ownerException'},value:[{text:reason}]},
+    {label:{key:'activity.field.custom',params:{name:'Notes'}},note:{key:'activity.custom.opted_out'}},
+  ]);
+});

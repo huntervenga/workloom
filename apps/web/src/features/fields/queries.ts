@@ -1,3 +1,5 @@
+import {setFieldValueExceptionRequest} from './policy-api';
+import {fieldPolicyKeys} from './policy-queries';
 import { useInfiniteQuery, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
 import type {
   CreateTaskFieldInput,
@@ -127,6 +129,7 @@ export function invalidateProjectColumns(queryClient: QueryClient, actorId: stri
 /** A changed value: the task's values, the project's batches and that field's history. */
 export function invalidateFieldValue(queryClient: QueryClient, actorId: string, workspaceId: string, value: TaskFieldValueDto) {
   return Promise.all([
+    queryClient.invalidateQueries({queryKey:fieldPolicyKeys.policy(actorId,workspaceId,value.fieldId)}),
     invalidateTaskTimelines(queryClient, actorId, workspaceId, [value.taskId]),
     queryClient.invalidateQueries({ queryKey: queryKeys.taskFieldValues(actorId, workspaceId, value.taskId), exact: true }),
     queryClient.invalidateQueries({ queryKey: queryKeys.projectFieldValues(actorId, workspaceId, value.projectId) }),
@@ -219,13 +222,14 @@ export interface SetTaskFieldValueVariables extends IdempotentVariables {
   taskId: string;
   fieldId: string;
   input: SetTaskFieldValueInput;
+  exception?:{expectedPolicyRevision:number;reason:string};
 }
 
 export function useSetTaskFieldValueMutation(actorId: string, workspaceId: string) {
   const queryClient = useQueryClient();
   return useIdempotentMutation({
-    prepare: ({ taskId, fieldId, input }: SetTaskFieldValueVariables) =>
-      setTaskFieldValueRequest(workspaceId, taskId, fieldId, input),
+    prepare: ({ taskId, fieldId, input, exception }: SetTaskFieldValueVariables) =>
+      exception ? setFieldValueExceptionRequest(workspaceId,taskId,fieldId,{...input,...exception}) : setTaskFieldValueRequest(workspaceId, taskId, fieldId, input),
     onSuccess: (value) => void invalidateFieldValue(queryClient, actorId, workspaceId, value),
   });
 }

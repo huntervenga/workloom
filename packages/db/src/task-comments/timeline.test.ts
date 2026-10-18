@@ -53,3 +53,20 @@ describe('timeline cursor kind', () => {
     expect(() => codec.encode({ ...binding, kind: 'task-timeline', createdAt: '2026-10-16T00:00:00.000Z', id: id(9) } as never)).toThrow(TypeError);
   });
 });
+
+
+describe('explicit owner-exception timeline whitelist',()=>{
+  const reason='Correct accidental entry';
+  it('shows the specific exception reason without opted-out values',()=>{
+    const payload={...fieldPayload,history:false,historyCaptured:false,ownerException:{policyRevision:3,reason}};
+    const mapped=change(mapTimelineRow(row('field','owner_exception',payload),ws,task));
+    expect(mapped).toMatchObject({availability:'opted_out',ownerException:{policyRevision:3,reason}});
+    expect(mapped).not.toHaveProperty('before');expect(mapped).not.toHaveProperty('after');expect(mapped).not.toHaveProperty('definition');
+  });
+  it('ignores reason-like data on ordinary changes and redacts foreign field identities',()=>{
+    const payload={...fieldPayload,history:false,historyCaptured:false,ownerException:{policyRevision:3,reason}};
+    expect(change(mapTimelineRow(row('field','updated',payload),ws,task))).not.toHaveProperty('ownerException');
+    const redacted=change(mapTimelineRow(row('field','owner_exception',{...payload,fieldId:null}),ws,task));
+    expect(redacted).toMatchObject({availability:'redacted',fieldId:null});expect(redacted).not.toHaveProperty('ownerException');
+  });
+});

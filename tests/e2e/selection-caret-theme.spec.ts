@@ -2,7 +2,7 @@
 // Actual shared-Auth cookie/API/JWKS and root-owned throwaway PG; no app server/DB lifecycle here.
 // Themes change only through the authenticated topbar control. Auth tokens are never captured; traces/video must remain off.
 import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
-import { tagResponseSchema, taskResponseSchema, type TaskDto } from '@workloom/contracts';
+import { sectionResponseSchema, tagResponseSchema, taskResponseSchema, type TaskDto } from '@workloom/contracts';
 import { startFakeSharedAuth } from './support/fake-shared-auth.js';
 import { requirePrivateMembershipDatabase } from './support/private-membership-fixture.js';
 import {
@@ -392,4 +392,85 @@ test.describe('title caret and opaque row selection in both themes', () => {
   test('dark desktop gutter, Shift and Meta/Ctrl selection paints every direct cell with the opaque token', async ({ page }, info) => { await selectionPaint(page, info, 1440, 'dark'); });
   test('light mobile gutter, Shift and Meta/Ctrl selection paints every direct cell inside390pixels', async ({ page }, info) => { await selectionPaint(page, info, 390, 'light'); });
   test('dark mobile gutter, Shift and Meta/Ctrl selection paints every direct cell inside390pixels', async ({ page }, info) => { await selectionPaint(page, info, 390, 'dark'); });
+
+
+  test('neutral row arrows and Shift ranges work in both themes, Enter opens once, and editors retain their keys without writes', async ({ page }, info) => {
+    const f = await freshProject(page, provider, 'Keyboard row selection');
+    const a = await createFixtureTask(f, 'Keyboard first'), b = await createFixtureTask(f, 'Keyboard second'), c = await createFixtureTask(f, 'Keyboard third');
+    await openTable(f); const before = manualOrder(await allTasks(f)); const writes = observeCommands(page, f.prefix);
+    for (const theme of ['light', 'dark'] as const) {
+      await forceTheme(page, theme);
+      await rawClick(page, gutter(page, a.title)); await expect(gutter(page, a.title)).toBeFocused();
+      expect(await selected(page)).toEqual([a.id]);
+      const stable = await viewportState(page, a.id), geometry = await inspect(page, [a.id, b.id, c.id]);
+      await page.keyboard.press('ArrowDown'); await expect(gutter(page, b.title)).toBeFocused(); expect(await selected(page)).toEqual([b.id]);
+      await page.keyboard.press('Shift+ArrowDown'); await expect(gutter(page, c.title)).toBeFocused(); expect(await selected(page)).toEqual([b.id, c.id]);
+      await page.keyboard.press('Shift+ArrowUp'); await expect(gutter(page, b.title)).toBeFocused(); expect(await selected(page)).toEqual([b.id]);
+      await page.keyboard.press('ArrowUp'); await expect(gutter(page, a.title)).toBeFocused(); expect(await selected(page)).toEqual([a.id]);
+      await page.keyboard.press('ArrowUp'); await expect(gutter(page, a.title)).toBeFocused(); expect(await selected(page)).toEqual([a.id]);
+      stableViewport(stable, await viewportState(page, a.id)); sameColumns(geometry, await inspect(page, [a.id, b.id, c.id]));
+      await page.keyboard.press('Enter'); const pane = page.locator('[data-task-panel][data-state="open"]');
+      await expect(pane).toHaveCount(1); await expect(pane.getByRole('textbox', { name: 'Task name', exact: true })).toHaveValue(a.title);
+      expect(await selected(page)).toEqual([a.id]);
+      await page.keyboard.press('Escape'); await expect(pane).toHaveCount(0); await expect(gutter(page, a.title)).toBeFocused();
+      await titleButton(page, a.id).click(); const input = taskName(page, a.id); await expect(input).toBeFocused();
+      await page.keyboard.press('ArrowDown'); await expect(input).toBeFocused(); expect(await selected(page)).toEqual([a.id]);
+      await expect(page.locator('[data-task-panel][data-state="open"]')).toHaveCount(0);
+      await page.keyboard.press('Escape'); await expect(input).toHaveCount(0);
+      await rawClick(page, gutter(page, a.title)); await page.keyboard.press('Escape'); expect(await selected(page)).toEqual([]);
+      await picture(page, info, `keyboard-selection-${theme}`);
+    }
+    await frames(page); expect(writes.commands).toEqual([]); expect(manualOrder(await allTasks(f))).toEqual(before); writes.close();
+  });
+
+  test('keyboard navigation crosses visible groups, skips collapsed rows, reveals the next offscreen row minimally and never hijacks a draft', async ({ page }, info) => {
+    const f = await freshProject(page, provider, 'Keyboard visible rows');
+    const section = (await apiWrite(page, `${f.prefix}/projects/${f.projectId}/sections`, { name: 'Keyboard grouped section' }, sectionResponseSchema)).data;
+    const groupedA = await createFixtureTask(f, 'Keyboard grouped first', { sectionId: section.id });
+    const groupedB = await createFixtureTask(f, 'Keyboard grouped last', { sectionId: section.id });
+    const parent = await createFixtureTask(f, 'Keyboard parent');
+    const child = await createFixtureTask(f, 'Keyboard concealed child', { parentTaskId: parent.id });
+    const tail: TaskDto[] = [];
+    for (let index = 0; index < 24; index += 1) tail.push(await createFixtureTask(f, `Keyboard long row ${String(index + 1).padStart(2, '0')}`));
+    await openTable(f); const before = manualOrder(await allTasks(f)); const writes = observeCommands(page, f.prefix);
+    await rawClick(page, gutter(page, groupedA.title)); await page.keyboard.press('ArrowDown');
+    await expect(gutter(page, groupedB.title)).toBeFocused(); expect(await selected(page)).toEqual([groupedB.id]);
+    await page.keyboard.press('ArrowDown'); await expect(gutter(page, parent.title)).toBeFocused(); expect(await selected(page)).toEqual([parent.id]);
+    await savedRow(page, parent.id).getByRole('button', { name: `Collapse subtasks of “${parent.title}”`, exact: true }).click();
+    await expect(savedRow(page, child.id)).toHaveCount(0);
+    await page.getByRole('button', { name: `Collapse section “${section.name}”`, exact: true }).click();
+    await expect(savedRow(page, groupedA.id)).toHaveCount(0); await expect(savedRow(page, groupedB.id)).toHaveCount(0);
+    await rawClick(page, gutter(page, parent.title));
+    let didScroll = false;
+    for (const task of tail) {
+      const prior = await savedRow(page, task.id).evaluate(row => {
+        const box = row.getBoundingClientRect(), table = row.closest('[data-task-table-scroll]');
+        const footer = document.querySelector<HTMLElement>('section.fixed.bottom-3'); const foot = footer?.getBoundingClientRect();
+        const overlap = foot && foot.right > box.left && foot.left < box.right;
+        return { y: window.scrollY, x: window.scrollX, tableLeft: table?.scrollLeft ?? 0, bottom: box.bottom, visibleBottom: overlap ? Math.min(innerHeight, foot.top) : innerHeight };
+      });
+      await page.keyboard.press('ArrowDown'); await expect(gutter(page, task.title)).toBeFocused(); expect(await selected(page)).toEqual([task.id]);
+      const after = await savedRow(page, task.id).evaluate(row => {
+        const box = row.getBoundingClientRect(), table = row.closest('[data-task-table-scroll]');
+        const header = row.closest('[data-app-shell-main]')?.parentElement?.querySelector(':scope > header')?.getBoundingClientRect();
+        const footer = document.querySelector<HTMLElement>('section.fixed.bottom-3'); const foot = footer?.getBoundingClientRect();
+        const overlap = foot && foot.right > box.left && foot.left < box.right;
+        return { y: window.scrollY, x: window.scrollX, tableLeft: table?.scrollLeft ?? 0, top: box.top, bottom: box.bottom, headerBottom: header?.bottom ?? 0, visibleBottom: overlap ? Math.min(innerHeight, foot.top) : innerHeight, height: box.height };
+      });
+      expect(Math.abs(after.x - prior.x)).toBeLessThanOrEqual(1); expect(Math.abs(after.tableLeft - prior.tableLeft)).toBeLessThanOrEqual(1);
+      expect(after.top).toBeGreaterThanOrEqual(after.headerBottom - 1); expect(after.bottom).toBeLessThanOrEqual(after.visibleBottom + 1);
+      expect(Math.abs(after.height - 41)).toBeLessThanOrEqual(1);
+      const movement = after.y - prior.y; expect(movement).toBeGreaterThanOrEqual(-1);
+      expect(movement).toBeLessThanOrEqual(Math.max(0, prior.bottom - prior.visibleBottom) + 2); didScroll ||= movement > 1;
+    }
+    expect(didScroll).toBe(true); const last = requireValue(tail.at(-1)); const end = await viewportState(page, last.id);
+    await page.keyboard.press('ArrowDown'); await expect(gutter(page, last.title)).toBeFocused(); stableViewport(end, await viewportState(page, last.id));
+    await page.keyboard.press('Escape'); expect(await selected(page)).toEqual([]); await expect(bulkRegion(page)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Add task without a section', exact: true }).click();
+    const draft = page.locator('[data-task-draft-row][data-task-draft-state="draft"]'); const draftName = draft.getByRole('textbox', { name: 'Task name', exact: true });
+    await expect(draftName).toBeFocused(); await page.keyboard.press('ArrowUp'); await expect(draftName).toBeFocused(); expect(await selected(page)).toEqual([]);
+    await page.keyboard.press('Escape'); await expect(draft).toHaveCount(0);
+    await picture(page, info, 'keyboard-nearest-visible'); await frames(page);
+    expect(writes.commands).toEqual([]); expect(manualOrder(await allTasks(f))).toEqual(before); writes.close();
+  });
 });

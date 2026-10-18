@@ -1,0 +1,43 @@
+{
+  "join": {
+    "title": "Join a workspace",
+    "loading": "Checking your account\u2026",
+    "description": "Join this workspace as {{name}}.",
+    "existingRole": "If you already belong to this workspace, your existing role stays the same.",
+    "invalid": "This invitation link is invalid. Ask the workspace owner for a new link.",
+    "reopen": "Open your invitation link again while signed in to accept it.",
+    "signInFirst": "Sign in first, then reopen the original invitation link. Invitation credentials are never forwarded to sign-in.",
+    "joining": "Joining\u2026",
+    "accept": "Accept invitation",
+    "back": "Back to workspaces"
+  },
+  "command": {
+    "uncertain": "The result has not been confirmed. Retry this same action to check its outcome.",
+    "failed": "The action could not be completed. Refresh this page to check current access and try again.",
+    "retry": "Retry same action"
+  },
+  "title": "Team access",
+  "description": "Invite teammates and manage their workspace access.",
+  "invite": "Create invitation",
+  "copy": "Copy invitation link",
+  "copied": "Link copied",
+  "linkReady": "Invitation ready. Copy the link now; it is kept only in this tab.",
+  "role": "Role",
+  "expires": "Expires in",
+  "sevenDays": "7 days",
+  "oneDay": "1 day",
+  "invitations": "Invitations",
+  "noInvitations": "No invitations yet.",
+  "revoke": "Revoke invitation",
+  "remove": "Remove access",
+  "active": "Active",
+  "revoked": "Revoked",
+  "accepted": "Accepted",
+  "expired": "Expired",
+  "refresh": "Refresh team",
+  "saveRole": "Change role",
+  "removedHelp": "To restore access, create a new invitation.",
+  "copyFailed": "Clipboard access was unavailable. Allow clipboard access and try again.",
+  "loading": "Loading team access\u2026",
+  "memberRole": "Role for {{name}}"
+}

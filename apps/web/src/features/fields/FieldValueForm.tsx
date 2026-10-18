@@ -1,3 +1,5 @@
+import {useCurrentFieldPolicyOwner,useFieldPolicyStateQuery} from './policy-queries';
+import {queryKeys} from '../../lib/queryKeys';
 import { message, type TranslationMessage } from '../../i18n';
 import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
@@ -41,6 +43,10 @@ export interface FieldEditSession {
   stale: boolean;
   /** The server refused the write because the field is locked. */
   serverLocked: boolean;
+  /** A known deadline/quota rejection; every other server lock remains absolute. */
+  serverPolicyLocked?:boolean;
+  /** Explicit owner exception intent; never used by autosave or close flush. */
+  exceptionReason?:string;
   /** The base before the last explicit reload, shown next to the fresh data. */
   previous: { field: TaskFieldDefinitionDto; value: TaskFieldValueDto | null } | null;
 }
@@ -117,13 +123,23 @@ type CommitOutcome = 'sent' | 'held' | 'blocked' | 'unsendable' | 'invalid' | 'u
 /** One field's value editor in a centered dialog over the task drawer. */
 export function FieldValueForm(props: FieldValueFormProps) {
   const { t } = useTranslation();
-  const commandRegistry = protectedCommandsFor(useQueryClient());
+  const queryClient=useQueryClient();
+  const commandRegistry = protectedCommandsFor(queryClient);
   // A foreign writer can settle without changing this editor or its cached value.
   useSyncExternalStore(commandRegistry.subscribe, commandRegistry.getSnapshot, commandRegistry.getSnapshot);
   const { actorId, workspaceId, taskId, taskTitle, session, currentField, currentValue, members, writable, mutation } = props;
   const { blockedNotice, onSessionChange, onDiscard, onReload, onFieldLocked, onClose, autosave = false } = props;
   const field = session.field;
   const latestField = currentField ?? field;
+  const policyState=useFieldPolicyStateQuery(actorId,workspaceId,taskId,field.id);
+  const owner=useCurrentFieldPolicyOwner(actorId,workspaceId);
+  const policy=policyState.isError?undefined:policyState.data?.policy;
+  const deadlinePassed=policy?.lockAt!==null&&policy?.lockAt!==undefined&&Date.now()>=Date.parse(policy.lockAt);
+  const budgetReached=policy?.maxChangesPerActor!==null&&policy?.maxChangesPerActor!==undefined&&(policyState.data?.currentActorChangesUsed??0)>=policy.maxChangesPerActor;
+  const policyBlocked=Boolean(deadlinePassed||budgetReached);
+  const exceptionIntent=session.exceptionReason!==undefined;
+  const exceptionMode=owner&&exceptionIntent&&(!session.serverLocked||session.serverPolicyLocked===true);
+  const exceptionAvailable=owner&&policyBlocked&&(!session.serverLocked||session.serverPolicyLocked===true)&&!latestField.locked&&latestField.archivedAt===null;
 
   const [hasParseError, setParseError] = useState(false);
   // The draft a close was refused for; closing again keeps it as an unsent draft.
@@ -137,9 +153,9 @@ export function FieldValueForm(props: FieldValueFormProps) {
   const pending = heldHere !== null && mutation.pendingCommand !== null;
   const uncertainHere = isCommandFor(mutation.uncertain?.variables, taskId, field.id) ? mutation.uncertain : null;
 
-  const locked = latestField.locked || session.serverLocked;
+  const locked = (exceptionIntent&&!owner) || latestField.locked || (session.serverLocked && !(session.serverPolicyLocked===true&&exceptionMode&&policyBlocked));
   const archived = latestField.archivedAt !== null;
-  const editable = writable && !locked && !archived;
+  const editable = writable && !locked && !archived && (!policyBlocked||exceptionMode);
   const canSend = editable && !session.stale && held === null;
   const dirty = heldHere === null && isSessionDirty(session);
 
@@ -161,8 +177,11 @@ export function FieldValueForm(props: FieldValueFormProps) {
   const handleError = (error: Error) => {
     if (!(error instanceof ApiError) || error.kind !== 'conflict') return;
     if (error.code === 'FIELD_LOCKED') {
-      onSessionChange((current) => ({ ...current, serverLocked: true }));
+      onSessionChange((current) => ({ ...current, serverLocked: true, serverPolicyLocked:error.fieldPolicyReason==='deadline'||error.fieldPolicyReason==='change_limit' }));
       onFieldLocked();
+      void policyState.refetch().then(result=>{
+        if(result.data?.policy.activatedAt)void queryClient.invalidateQueries({queryKey:queryKeys.workspace(actorId,workspaceId),exact:true});
+      });
     } else {
       onSessionChange((current) => ({ ...current, stale: true }));
     }
@@ -172,14 +191,15 @@ export function FieldValueForm(props: FieldValueFormProps) {
    * The one guarded send. `draft` is passed explicitly by autosave commits, whose change may not
    * have re-rendered `session` yet; held, blocked, stale and invalid drafts are never sent.
    */
-  const commit = (draft: FieldDraft, quiet: boolean): CommitOutcome => {
+  const commit = (draft: FieldDraft, quiet: boolean, explicitException=false): CommitOutcome => {
     // Never resends a held command by itself; only the explicit Retry does.
     if (heldHere) return 'held';
     if (blocked) {
       if (quiet) setNotice(message('customAutosave.blockedByOtherSave'));
       return 'blocked';
     }
-    if (!canSend) return 'unsendable';
+    if (!canSend || (exceptionIntent&&(!explicitException||!exceptionMode))) return 'unsendable';
+    if(exceptionMode&&(!policy||!session.exceptionReason?.trim()||session.exceptionReason.trim().length>500)){setNotice(message('fieldRules.reasonRequired'));return 'invalid';}
     const parsed = parseFieldDraft(field, draft);
     if (!parsed.ok) {
       setParseError(true);
@@ -200,6 +220,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
       {
         taskId,
         fieldId: field.id,
+        ...(exceptionMode&&policy?{exception:{expectedPolicyRevision:policy.revision,reason:(session.exceptionReason??'').trim()}}:{}),
         input: {
           expectedRevision: session.value?.revision ?? 0,
           expectedDefinitionRevision: field.revision,
@@ -216,15 +237,15 @@ export function FieldValueForm(props: FieldValueFormProps) {
     // The dialog is portaled, but React still bubbles the submit to the task form around it.
     event.stopPropagation();
     if (heldHere) {
-      if (!pending && uncertainHere) mutation.retryUncertain({ onError: handleError });
+      if (!pending && uncertainHere && (!heldHere.exception||owner)) mutation.retryUncertain({ onError: handleError });
       return;
     }
-    commit(session.draft, false);
+    commit(session.draft, false, exceptionMode);
   };
 
   /** With autosave, a valid unsent draft is sent before closing; an invalid one is shown first. */
   const close = () => {
-    if (autosave && heldHere === null && isSessionDirty(session)) {
+    if (autosave && !exceptionIntent && heldHere === null && isSessionDirty(session)) {
       const outcome = commit(session.draft, true);
       if ((outcome === 'invalid' || outcome === 'blocked') && closeRefusedFor.current !== session.draft) {
         closeRefusedFor.current = session.draft;
@@ -239,7 +260,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
     if (reloading === 'loading') return;
     setReloading('loading');
     try {
-      const fresh = await onReload();
+      const [fresh] = await Promise.all([onReload(),policyState.refetch()]);
       // The draft stays as typed; only the base it is sent against moves to the fresh data.
       onSessionChange((current) => ({
         ...current,
@@ -248,6 +269,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
         submitted: false,
         stale: false,
         serverLocked: false,
+        serverPolicyLocked:false,
         previous: { field: current.field, value: current.value },
       }));
       setNotice(null);
@@ -274,6 +296,10 @@ export function FieldValueForm(props: FieldValueFormProps) {
     >
       <form noValidate onSubmit={submit} className="mt-5 space-y-4">
         {blocked ? blockedNotice : null}
+        {policyBlocked?<p role="status" className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">{t(deadlinePassed?'fieldRules.deadlineBlocked':'fieldRules.quotaBlocked',{used:policyState.data?.currentActorChangesUsed??0,limit:policy?.maxChangesPerActor??0})}</p>:null}
+        {policyState.isError?<p role="status" className="text-xs text-muted">{t('fieldRules.unavailable')} <button type="button" className="underline" onClick={()=>void policyState.refetch()}>{t('fieldRules.reload')}</button></p>:null}
+        {exceptionAvailable&&heldHere===null&&!exceptionMode?<Button type="button" onClick={()=>onSessionChange(current=>({...current,exceptionReason:''}))}>{t('fieldRules.makeException')}</Button>:null}
+        {exceptionIntent&&heldHere===null?<div><label htmlFor={`${field.id}-exception-reason`} className="block text-sm">{t('fieldRules.reason')}</label><textarea id={`${field.id}-exception-reason`} maxLength={500} disabled={!owner||!exceptionMode} value={session.exceptionReason??''} onChange={e=>onSessionChange(current=>({...current,exceptionReason:e.target.value}))} className="mt-1 min-h-20 w-full rounded-lg border border-line bg-surface px-3 py-2 text-ink"/><p className="mt-1 text-xs text-muted">{t('fieldRules.exceptionHint')}</p></div>:null}
 
         {latestField.locked && !session.serverLocked ? (
           <p className="flex gap-2 rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
@@ -289,7 +315,7 @@ export function FieldValueForm(props: FieldValueFormProps) {
             <span>{t('fields.fieldValueForm.thisFieldIsArchivedNewValuesAreNot')}</span>
           </p>
         ) : null}
-        {!writable && heldHere === null ? (
+        {(!writable||(exceptionIntent&&!owner)) && heldHere === null ? (
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">{t('fields.fieldValueForm.thisValueIsReadOnly')}</p>
         ) : null}
 
@@ -332,12 +358,12 @@ export function FieldValueForm(props: FieldValueFormProps) {
             disabled={heldHere !== null || blocked || !editable}
             error={parseError}
             originalValue={originalValue}
-            onCommit={autosave ? (draft) => void commit(draft, true) : undefined}
+            onCommit={autosave && !exceptionIntent ? (draft) => void commit(draft, true) : undefined}
           />
         </fieldset>
         {heldHere ? (
           <p className="text-xs text-muted">{t('fields.fieldValueForm.showingTheSubmittedValueItStaysFixedUntil')}</p>
-        ) : autosave && canSend ? (
+        ) : autosave && canSend && !exceptionIntent ? (
           <p className="text-xs text-muted">{t('customAutosave.saveHint')}</p>
         ) : null}
 
@@ -360,10 +386,10 @@ export function FieldValueForm(props: FieldValueFormProps) {
         <div role="group" aria-label={t('fields.fieldValueForm.valueActions')} className="space-y-3 border-t border-line pt-4">
           <div className="flex flex-wrap items-center gap-2">
             {heldHere ? (
-              <Button type="submit" variant="primary" aria-disabled={pending || undefined}>
+              <Button type="submit" variant="primary" aria-disabled={pending || (heldHere.exception!==undefined&&!owner) || undefined}>
                 {pending ? t('fields.fieldValueForm.submitting') : autosave ? t('customAutosave.retry') : t('fields.fieldValueForm.retrySubmission')}
               </Button>
-            ) : autosave ? (
+            ) : exceptionMode ? (<Button type="submit" variant="primary" aria-disabled={!canSend||undefined}>{t('fieldRules.applyException')}</Button>) : autosave ? (
               // A definite failure is resent only on request; a conflict waits for Load latest data.
               ownError !== null && canSend && !(ownError instanceof ApiError && ownError.kind === 'conflict') ? (
                 <Button type="submit" variant="primary">

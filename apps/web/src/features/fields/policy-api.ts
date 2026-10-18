@@ -1,0 +1,8 @@
+import {setTaskFieldPolicyInputSchema,setTaskFieldValueExceptionInputSchema,taskFieldPolicyResponseSchema,taskFieldPolicyStateResponseSchema,taskFieldValueResponseSchema,type SetTaskFieldPolicyInput,type SetTaskFieldValueExceptionInput} from '@workloom/contracts';
+import {apiGet,prepareMutation} from '../../lib/api';
+import {workspacePath} from '../workspace/queries';
+const path=(workspaceId:string,fieldId:string)=>`${workspacePath(workspaceId)}/fields/${encodeURIComponent(fieldId)}/policy`;
+export const fetchFieldPolicy=async(workspaceId:string,fieldId:string,signal?:AbortSignal)=>(await apiGet(path(workspaceId,fieldId),taskFieldPolicyResponseSchema,signal)).data;
+export const fetchFieldPolicyState=async(workspaceId:string,taskId:string,fieldId:string,signal?:AbortSignal)=>(await apiGet(`${workspacePath(workspaceId)}/tasks/${encodeURIComponent(taskId)}/field-values/${encodeURIComponent(fieldId)}/policy-state`,taskFieldPolicyStateResponseSchema,signal)).data;
+export const setFieldPolicyRequest=(workspaceId:string,fieldId:string,input:SetTaskFieldPolicyInput)=>prepareMutation({method:'PUT',path:path(workspaceId,fieldId),input,inputSchema:setTaskFieldPolicyInputSchema,responseSchema:taskFieldPolicyResponseSchema});
+export const setFieldValueExceptionRequest=(workspaceId:string,taskId:string,fieldId:string,input:SetTaskFieldValueExceptionInput)=>prepareMutation({method:'POST',path:`${workspacePath(workspaceId)}/tasks/${encodeURIComponent(taskId)}/field-values/${encodeURIComponent(fieldId)}/exception`,input,inputSchema:setTaskFieldValueExceptionInputSchema,responseSchema:taskFieldValueResponseSchema});

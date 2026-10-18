@@ -1,6 +1,9 @@
+import { emptyFieldPolicy, fieldPolicyBlock, fieldPolicyError, sameFieldValue } from './policy.js';
 import type { FieldMutationCommand } from '../planning/ports.js';
 import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
 import {
+  setTaskFieldPolicyInputSchema, setTaskFieldValueExceptionInputSchema, taskFieldPolicySchema,
+  type SetTaskFieldPolicyInput, type SetTaskFieldValueExceptionInput,
   createTaskFieldInputSchema,
   createTaskFieldOptionInputSchema,
   idSchema,
@@ -114,6 +117,10 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
     const actorUserId = ctx.actor.userId;
 
     const outcome = await writer.run(ctx, capability, async (scope) => {
+      // Owner-only rules and one-shot exceptions re-authorize before receipt replay.
+      if ((command === 'field.policy.set' || command === 'field.value.exception') && scope.access.membership.role !== 'owner') {
+        throw new DomainError('CAPABILITY_REQUIRED', 'Only the workspace owner can change rules or make an exception.');
+      }
       const idempotency = scope.repository.tasks;
       const existing = await idempotency.findIdempotency(workspaceId, actorUserId, command, key);
       if (existing !== null) {
@@ -177,6 +184,42 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
   }
 
   return {
+    async getPolicy(context,fieldId) {
+      const fid=parsePathId(fieldId),ctx=await authorizeRead(context);
+      const field=requireFound(await reader.findField(ctx.workspaceId,fid));
+      return (await reader.policies.find(ctx.workspaceId,fid))??emptyFieldPolicy(field);
+    },
+    async getPolicyState(context,taskId,fieldId) {
+      const tid=parsePathId(taskId),fid=parsePathId(fieldId),ctx=await authorizeRead(context),ws=ctx.workspaceId;
+      const task=requireFound(await reader.tasks.findTask(ws,tid)),field=requireFound(await reader.findField(ws,fid));
+      if(!sameId(task.projectId,field.projectId))throw ruleError('The field belongs to another project.','fieldId');
+      const policy=(await reader.policies.find(ws,fid))??emptyFieldPolicy(field);
+      return {policy,currentActorChangesUsed:await reader.policies.count(ws,tid,fid,ctx.actor.userId)};
+    },
+    async setPolicy(context,fieldId,input:SetTaskFieldPolicyInput) {
+      const fid=parsePathId(fieldId),parsed=parseInput(setTaskFieldPolicyInputSchema,input);
+      return mutate(context,'fields.manage','field.policy.set',{fieldId:fid},parsed,taskFieldPolicySchema,async(scope,ws,now)=>{
+        const field=requireFound(await scope.repository.findField(ws,fid));
+        await requireOpenProject(scope.repository.tasks,ws,field.projectId);
+        if(field.archivedAt!==null)throw ruleError('The field is archived.','fieldId');
+        const current=(await scope.repository.policies.find(ws,fid))??emptyFieldPolicy(field);
+        expectRevision(current.revision,parsed.expectedRevision);
+        if(current.lockAt===parsed.lockAt&&current.maxChangesPerActor===parsed.maxChangesPerActor)return current;
+        const next={...current,lockAt:parsed.lockAt,maxChangesPerActor:parsed.maxChangesPerActor,revision:current.revision+1,
+          activatedAt:current.activatedAt??(parsed.lockAt!==null||parsed.maxChangesPerActor!==null?now:null),updatedAt:now,updatedByUserId:scope.context.actor.userId};
+        await scope.repository.policies.save(next);
+        await scope.recordChange({entityType:'task_field_policy',entityId:fid,action:'updated',entityRevision:next.revision,
+          diff:{fieldId:fid,projectId:field.projectId,lockAt:next.lockAt,maxChangesPerActor:next.maxChangesPerActor,policyRevision:next.revision},
+          outbox:{type:'task_field_policy.updated',payload:{fieldId:fid,projectId:field.projectId,policyRevision:next.revision}}});
+        return next;
+      });
+    },
+    async setTaskValueException(context,taskId,fieldId,input:SetTaskFieldValueExceptionInput) {
+      const tid=parsePathId(taskId),fid=parsePathId(fieldId),parsed=parseInput(setTaskFieldValueExceptionInputSchema,input);
+      return mutate(context,'task.edit','field.value.exception',{taskId:tid,fieldId:fid},parsed,taskFieldValueSchema,
+        scope=>setTaskFieldValueInScope(scope,tid,fid,{expectedRevision:parsed.expectedRevision,expectedDefinitionRevision:parsed.expectedDefinitionRevision,value:parsed.value},tools,
+          {expectedPolicyRevision:parsed.expectedPolicyRevision,reason:parsed.reason}));
+    },
     async listFields(context: CommandContext, projectId: string): Promise<TaskFieldDefinitionDto[]> {
       const id = parsePathId(projectId);
       const ctx = await authorizeRead(context);
@@ -725,6 +768,7 @@ function record(
   entityRevision: number,
   diff: Record<string, unknown>,
   payload: Record<string, unknown>,
+  reason?:string,
 ): Promise<RecordedChange> {
   return scope.recordChange({
     entityType,
@@ -732,13 +776,14 @@ function record(
     action,
     entityRevision,
     diff,
+    ...(reason?{reason}:{}),
     outbox: { type: `${entityType}.${action}`, payload: { workspaceId: scope.context.workspaceId, ...payload } },
   });
 }
 
 /** Shared validated value primitive, preserving current field policy/history in the caller's open transaction. */
 /** Read-only validation shared by an ordinary value write and the atomic selected-row composer. */
-export async function preflightTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:string,fieldId:string,input:SetTaskFieldValueInput) {
+export async function preflightTaskFieldValueInScope(scope:Pick<TaskFieldWriteScope,'context'|'access'|'barrierAt'|'repository'>,taskId:string,fieldId:string,input:SetTaskFieldValueInput, options: {deferPolicy?:boolean; exception?:{expectedPolicyRevision:number;reason:string}} = {}) {
  const tid=parsePathId(taskId),fid=parsePathId(fieldId),parsed=parseInput<SetTaskFieldValueInput>(setTaskFieldValueInputSchema,input),ws=scope.context.workspaceId,now=scope.barrierAt.toISOString();
         const repo = scope.repository;
         const task = requireFound(await repo.tasks.findTask(ws, tid));
@@ -760,11 +805,21 @@ export async function preflightTaskFieldValueInScope(scope:TaskFieldWriteScope,t
         if (parsed.value.type !== field.type) throw ruleError('The value type does not match the field type.', 'value.type');
         await requireAssignableReferences(repo, ws, field, parsed.value, current?.value ?? null);
 
- return { tid, fid, parsed, ws, now, repo, task, field, current };
+ const policy=(await repo.policies.find(ws,fid))??emptyFieldPolicy(field);
+ if(options.exception) {
+   if(scope.access.membership.role!=='owner')throw new DomainError('CAPABILITY_REQUIRED','Only the workspace owner can make an exception.');
+   expectRevision(policy.revision,options.exception.expectedPolicyRevision,'expectedPolicyRevision');
+   if(policy.activatedAt===null)throw ruleError('This field has no activated rules requiring an exception.','fieldId');
+ }
+ if(!options.deferPolicy&&!options.exception&&!sameFieldValue(current,parsed.value)) {
+   const blocked=await fieldPolicyBlock(repo.policies,policy,tid,scope.context.actor.userId,scope.barrierAt);
+   if(blocked)throw fieldPolicyError(blocked);
+ }
+ return { tid, fid, parsed, ws, now, repo, task, field, current, policy };
 }
 
-export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:string,fieldId:string,input:SetTaskFieldValueInput,tools:Pick<TaskFieldApplicationDependencies['tools'],'newId'>):Promise<TaskFieldValueDto> {
- const { tid, fid, parsed, ws, now, repo, task, field, current } = await preflightTaskFieldValueInScope(scope,taskId,fieldId,input);
+export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:string,fieldId:string,input:SetTaskFieldValueInput,tools:Pick<TaskFieldApplicationDependencies['tools'],'newId'>, exception?:{expectedPolicyRevision:number;reason:string}):Promise<TaskFieldValueDto> {
+ const { tid, fid, parsed, ws, now, repo, task, field, current, policy } = await preflightTaskFieldValueInScope(scope,taskId,fieldId,input,exception?{exception}:{});
  const newId=()=>idSchema.parse(tools.newId());
         if (current !== null && canonicalJson(current.value) === canonicalJson(parsed.value)) return current;
 
@@ -779,6 +834,8 @@ export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:
           updatedAt: now,
         };
         await repo.saveValue(next);
+        if(policy.activatedAt!==null)await repo.policies.insertUsage({workspaceId:ws,projectId:task.projectId,taskId:tid,fieldId:fid,
+          actorUserId:scope.context.actor.userId,valueRevision:next.revision,policyRevision:policy.revision,exception:exception!==undefined,recordedAt:now});
 
         // Audit and outbox carry metadata only; complete values live solely in value history.
         const metadata = {
@@ -792,11 +849,12 @@ export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:
           scope,
           'task_field_value',
           tid,
-          current === null ? 'created' : 'updated',
+          exception ? 'owner_exception' : current === null ? 'created' : 'updated',
           next.revision,
           // Audit-only flag: lets the timeline tell an opt-out from a legacy uncaptured row. Outbox stays unchanged.
-          { ...metadata, historyCaptured: field.historyEnabled },
+          { ...metadata, historyCaptured: field.historyEnabled, ...(exception?{ownerException:{policyRevision:policy.revision,reason:exception.reason}}:{}) },
           { projectId: task.projectId, ...metadata },
+          exception?.reason,
         );
         if (field.historyEnabled) {
           await repo.insertValueHistory({

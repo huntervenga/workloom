@@ -2,6 +2,7 @@ import { TagBadge } from '../tasks/TagBadge';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { TaskDragPreview } from './TaskDragPreview';
 import { selectTaskRows, type SelectionModifiers } from './taskSelection';
+import { revealTaskRow, selectionKeyIntent } from './taskSelectionNavigation';
 import { resolveDraftPlacement, type DraftPlacementSnapshot } from './draftPlacement';
 import { canEditTaskInline, canMoveTaskSection, isCurrentEstimateProjection, type TaskInlineField } from '../tasks/tableEditing';
 import { t, useTranslation, formatDate } from '../../i18n';
@@ -432,6 +433,8 @@ interface RowContext {
   selectionDisabled: boolean;
   onSelectTask: ((id: string, selected: boolean) => void) | undefined;
   selectRow: ((id: string, modifiers: SelectionModifiers) => void) | undefined;
+  /** Neutral gutter keys: arrows move or extend the selection, Enter opens details. */
+  selectionKey: ((id: string, event: ReactKeyboardEvent<HTMLButtonElement>) => void) | undefined;
   statusById: ReadonlyMap<string, TaskStatusDto>;
   memberById: ReadonlyMap<string, MembershipDto>;
   sectionById: ReadonlyMap<string, SectionDto>;
@@ -573,7 +576,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
             </button>
           ) : null}
           {ctx.selectRow ? <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={selected} aria-disabled={ctx.selectionDisabled || undefined}
-            onClick={event => ctx.selectRow?.(task.id, event)} className={cn('mr-1 h-8 w-8 shrink-0 rounded-l outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', !selected && 'hover:bg-canvas')} /> : null}
+            onClick={event => ctx.selectRow?.(task.id, event)} onKeyDown={event => ctx.selectionKey?.(task.id, event)} className={cn('mr-1 h-8 w-8 shrink-0 rounded-l outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', !selected && 'hover:bg-canvas')} /> : null}
           <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
             {childCount > 0 ? (
               <button
@@ -962,15 +965,40 @@ export function TaskTable({
   });
   const selectionAnchor = useRef<string | null>(null);
   const [selectionLimit, setSelectionLimit] = useState(false);
-  const selectRow = onSelectionChange || onSelectTask ? (id: string, modifiers: SelectionModifiers) => {
-    if (selectionDisabled) return;
-    const visible = groups.flatMap(group => collapsedGroups.has(group.key) ? [] : visibleTaskRows(group.roots, collapsedIds).map(node => node.task.id));
-    const next = selectTaskRows(selectedTaskIds, visible, selectionAnchor.current, id, modifiers);
+  const visibleRowIds = () => groups.flatMap(group => collapsedGroups.has(group.key) ? [] : visibleTaskRows(group.roots, collapsedIds).map(node => node.task.id));
+  /** Returns whether the selection was accepted: not disabled and within the cap. */
+  const selectRow = onSelectionChange || onSelectTask ? (id: string, modifiers: SelectionModifiers, anchor = selectionAnchor.current): boolean => {
+    if (selectionDisabled) return false;
+    const next = selectTaskRows(selectedTaskIds, visibleRowIds(), anchor, id, modifiers);
     setSelectionLimit(next.limitReached === true);
-    if (next.limitReached) return;
+    if (next.limitReached) return false;
     selectionAnchor.current = next.anchor;
     if (onSelectionChange) onSelectionChange(next.ids);
     else { for (const changed of new Set([...selectedTaskIds, ...next.ids])) if (selectedTaskIds.includes(changed) !== next.ids.includes(changed)) onSelectTask?.(changed, next.ids.includes(changed)); }
+    return true;
+  } : undefined;
+  // Asana-style neutral gutter keys over the same visible saved rows. Editors, cell buttons, pickers,
+  // menus and drag handles keep their own keys, and nothing is prevented unless it is handled here.
+  const selectionKey = selectRow ? (id: string, event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (selectionDisabled || drag !== null || event.target !== event.currentTarget) return;
+    const intent = selectionKeyIntent(event.nativeEvent);
+    const visible = visibleRowIds();
+    const index = visible.indexOf(id);
+    // A confirmed row the list has not loaded yet is no selection row and keeps its native keys.
+    if (intent === null || index < 0) return;
+    event.preventDefault();
+    // Opens instead of the synthesized click, so the selection is not toggled as well.
+    if (intent.kind === 'open') { if (!event.repeat) onOpenTask(id); return; }
+    const target = visible[index + intent.direction];
+    const anchor = selectionAnchor.current;
+    // No wrap. Shift without a visible anchor starts at the focused row; a capped range keeps focus.
+    if (target === undefined || !selectRow(target, { shiftKey: intent.extend }, intent.extend && (anchor === null || !visible.includes(anchor)) ? id : anchor)) return;
+    const scroller = event.currentTarget.closest<HTMLElement>('[data-task-table-scroll]');
+    const gutter = scroller ? [...scroller.querySelectorAll<HTMLButtonElement>('button[data-task-select]')].find(button => button.dataset.taskSelect === target) : undefined;
+    const row = gutter?.closest('tr');
+    if (!scroller || !gutter || !row) return;
+    gutter.focus({ preventScroll: true });
+    revealTaskRow(row, scroller);
   } : undefined;
   // Bubbles last: an editor, picker, menu, listbox, dialog or text field keeps its own Escape, and
   // only a neutral one that nothing handled (e.g. on a focused gutter) clears the selection.
@@ -996,7 +1024,7 @@ export function TaskTable({
     move, dropTarget: drag?.target ?? null, draggingTaskId: drag?.taskId ?? null,
     grouping, taskById,
     selectedTaskIds,
-    onSelectTask, selectRow, selectionDisabled,
+    onSelectTask, selectRow, selectionKey, selectionDisabled,
     statusById,
     memberById,
     sectionById,

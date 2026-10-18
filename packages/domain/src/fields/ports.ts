@@ -1,5 +1,6 @@
 import type { PlanningMutationGuard } from '../planning/ports.js';
 import type {
+  TaskFieldPolicyDto,
   ProjectColumnsDto,
   TaskFieldDefinitionDto,
   TaskFieldOptionDto,
@@ -49,7 +50,21 @@ export interface TaskFieldHistoryCursorPayload extends TaskFieldHistoryAnchor {
  * capabilities and all domain rules. Writes run inside the workspace barrier transaction.
  * Implementations must not add business rules, defaults or hidden limits.
  */
+export interface TaskFieldPolicyUsage {
+  readonly workspaceId:string; readonly projectId:string; readonly taskId:string; readonly fieldId:string;
+  readonly actorUserId:string; readonly valueRevision:number; readonly policyRevision:number;
+  readonly exception:boolean; readonly recordedAt:string;
+}
+/** Mandatory same-transaction storage; usage is independent of optional value history. */
+export interface TaskFieldPolicyRepository {
+  find(workspaceId:string,fieldId:string):Promise<TaskFieldPolicyDto|null>;
+  save(policy:TaskFieldPolicyDto):Promise<void>;
+  count(workspaceId:string,taskId:string,fieldId:string,actorUserId:string):Promise<number>;
+  insertUsage(usage:TaskFieldPolicyUsage):Promise<void>;
+}
+
 export interface TaskFieldRepository {
+  readonly policies: TaskFieldPolicyRepository;
   /** Access, project and task lookups, permission epoch and idempotency records. */
   readonly tasks: TaskRepository;
 

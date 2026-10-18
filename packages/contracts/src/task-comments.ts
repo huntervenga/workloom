@@ -105,6 +105,7 @@ const workStateSchema = z.enum(['active', 'void']);
  */
 const customChangeSchema = z.strictObject({
   field: z.literal('custom'),
+  ownerException: z.strictObject({policyRevision:z.number().int().min(0),reason:z.string().trim().min(1).max(500)}).optional(),
   fieldId: idSchema.nullable(),
   fieldName: displayNameSchema.nullable(),
   fieldType: taskFieldTypeSchema.nullable(),
@@ -117,6 +118,7 @@ const customChangeSchema = z.strictObject({
     for (const key of ['before', 'after', 'definition'] as const) {
       if (change[key] !== undefined) ctx.addIssue({ code: 'custom', path: [key], message: 'Values are exposed only with recorded history.' });
     }
+    if(change.availability==='redacted'&&change.ownerException!==undefined)ctx.addIssue({code:'custom',path:['ownerException'],message:'A redacted field has no exception metadata.'});
     if (change.availability === 'redacted' && (change.fieldId !== null || change.fieldName !== null || change.fieldType !== null)) {
       ctx.addIssue({ code: 'custom', path: ['fieldId'], message: 'A redacted field has no identity.' });
     }

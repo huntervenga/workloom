@@ -177,3 +177,10 @@ export { createTaskRowApplication } from './task-rows/service.js';
 
 export * from './tasks/project-placement-ports.js';
 export {createTaskProjectPlacementApplication} from './tasks/project-placements.js';
+
+export * from './team/application.js';
+export * from './team/ports.js';
+export * from './team/policy.js';
+export * from './team/service.js';
+
+export type {TaskFieldPolicyRepository,TaskFieldPolicyUsage} from './fields/ports.js';

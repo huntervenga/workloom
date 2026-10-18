@@ -171,3 +171,18 @@ describe('describeError', () => {
     expect(notFound).toMatchObject({ title: 'Workspace unavailable', unavailable: true, retryable: false });
   });
 });
+
+
+describe('bounded field-policy error classification',()=>{
+  it('retains only allowed rule reasons on FIELD_LOCKED and never generic audit reasons or details',async()=>{
+    for(const reason of ['deadline','change_limit']) {
+      stubFetch(json(409,{error:{code:'FIELD_LOCKED',message:leakyMessage,retryable:false,details:{policyReason:reason,reason:leakyMessage,rawValue:leakyMessage}},meta:{requestId:'rule-test'}}));
+      const error=await captureError(apiGet('/policy-test',workspaceResponseSchema));
+      expect(error.fieldPolicyReason).toBe(reason);expect(JSON.stringify(error)).not.toContain(leakyMessage);expect(error).not.toHaveProperty('details');
+    }
+    for(const [code,policyReason] of [['FIELD_LOCKED','arbitrary reason'],['REVISION_CONFLICT','deadline']]) {
+      stubFetch(json(409,{error:{code,message:leakyMessage,retryable:false,details:{policyReason}},meta:{requestId:'rule-test'}}));
+      expect((await captureError(apiGet('/policy-test',workspaceResponseSchema))).fieldPolicyReason).toBeNull();
+    }
+  });
+});

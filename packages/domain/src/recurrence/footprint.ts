@@ -75,10 +75,11 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
   case 'field':
    switch(i.command){
     case 'field.create':return projects((await repo.tasks.findProject(ws,text(record(i.input,'field input')['projectId'],'field project')))?.id);
+    case 'field.policy.set':{const t=record(i.target,'policy target');return projects(await fieldProject(text(t['fieldId'],'field')));}
     case 'field.update':case 'field.option.create':return projects(await fieldProject(text(i.target,'field')));
     case 'field.option.update':return projects(await fieldProject(text(record(i.target,'option target')['fieldId'],'field')));
     case 'field.columns.update':return projects((await repo.tasks.findProject(ws,text(i.target,'project')))?.id);
-    case 'field.value.set':{const t=record(i.target,'value target');return projects(await taskProject(text(t['taskId'],'task')),await fieldProject(text(t['fieldId'],'field')));}
+    case 'field.value.set':case 'field.value.exception':{const t=record(i.target,'value target');return projects(await taskProject(text(t['taskId'],'task')),await fieldProject(text(t['fieldId'],'field')));}
     default:return never(i);
    }
   case 'planning':

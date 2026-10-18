@@ -1,4 +1,4 @@
-import type { CreateTaskRowInput, PeriodCommitmentDto, PlanBaselineDto, PlanningPeriodDto, PlanningSnapshotDto, TaskDto, TaskFieldDefinitionDto } from '@workloom/contracts';
+import type { TaskFieldPolicyDto, TaskFieldValueDto, CreateTaskRowInput, PeriodCommitmentDto, PlanBaselineDto, PlanningPeriodDto, PlanningSnapshotDto, TaskDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { describe, expect, it } from 'vitest';
 import type { CommandContext } from '../access/context.js';
 import { captureFreezeSnapshot, createPlanningMutationGuard, freezePreviewHash, unwrapPlanningOutcome } from './freeze.js';
@@ -88,7 +88,7 @@ describe('atomic task row aggregate guard',()=>{
   const rowIntent=(input:CreateTaskRowInput):PlanningMutationIntent=>({family:'task_row',command:'task.row.create',target:{projectId:input.task.projectId},input});
   const selected=(fid:string)=>({fieldId:fid,expectedDefinitionRevision:1,value:{type:'text' as const,value:'Draft'}});
 
-  function rowGuard(periods:PlanningPeriodDto[],definitions:TaskFieldDefinitionDto[],parent?:TaskDto) {
+  function rowGuard(periods:PlanningPeriodDto[],definitions:TaskFieldDefinitionDto[],parent?:TaskDto,policy?:TaskFieldPolicyDto) {
     const writes:string[]=[],baselines:PlanBaselineDto[]=[];
     let stored=[...periods],next=200;
     const repo=repository({
@@ -101,7 +101,7 @@ describe('atomic task row aggregate guard',()=>{
       saveCommitment:async()=>{writes.push('commitment');},saveManualWork:async()=>{writes.push('work');},
       // Read-only doubles: any task core or field value write would fail as a missing method.
       tasks:{permissionEpoch:async()=>'0',findTask:async(_ws:string,tid:string)=>parent?.id===tid?parent:null} as unknown as PlanningRepository['tasks'],
-      fields:{findField:async(_ws:string,fid:string)=>definitions.find(f=>f.id===fid)??null} as unknown as PlanningRepository['fields'],
+      fields:{policies:{find:async()=>policy??null,count:async()=>0},findField:async(_ws:string,fid:string)=>definitions.find(f=>f.id===fid)??null} as unknown as PlanningRepository['fields'],
     });
     const recordChange=(async(change:{entityType:string;action:string})=>{writes.push(`${change.entityType}:${change.action}`);return {changeSeq:7n};}) as unknown as PlanningWriteScope['recordChange'];
     const scope={context:ctx,repository:repo,barrierAt:new Date(time),recurrenceCensus,recordChange} as PlanningWriteScope;
@@ -120,6 +120,17 @@ describe('atomic task row aggregate guard',()=>{
     expect(baselines[0]).toMatchObject({periodId:overdue.id,scope:'project',membershipId:null,mode:'cutoff'});
     expect(baselines[0]?.snapshot.fieldDefinitions.map(f=>f.id)).toEqual([lockedFieldId]);
     expect(periods()[0]).toMatchObject({id:overdue.id,state:'frozen',projectBaselineId:baselineId,revision:overdue.revision+1});
+  });
+
+  it('commits due freezes before rejecting a deadline or zero-budget initial value, with no proposal writes',async()=>{
+    for(const rule of [{lockAt:time,maxChangesPerActor:null},{lockAt:null,maxChangesPerActor:0}]) {
+      const policy:TaskFieldPolicyDto={workspaceId:ws,projectId:project,fieldId,revision:1,...rule,activatedAt:time,updatedAt:time,updatedByUserId:ctx.actor.userId};
+      const {guard,writes,baselines}=rowGuard([overdue],[field],undefined,policy);
+      const result=await guard.check(rowIntent(rowInput([selected(fieldId)])));
+      expect(result).toMatchObject({code:'FIELD_LOCKED',details:{committed:true,baselineIds:[baselines[0]?.id],policyReason:rule.lockAt?'deadline':'change_limit'}});
+      expect(writes).toEqual(['plan_baseline:frozen',`baseline:${baselines[0]?.id}`,'locks:0','period:frozen']);
+      expect(()=>unwrapPlanningOutcome(result)).toThrow(expect.objectContaining({code:'FIELD_LOCKED'}));
+    }
   });
 
   it('rejects a locked field as committed with empty baseline IDs when nothing is overdue',async()=>{
@@ -164,7 +175,7 @@ describe('assignee move and atomic bulk meeting policy', () => {
 
 function bulkGuardFields(findField: PlanningRepository['fields']['findField']): PlanningRepository['fields'] {
   const unused = async (): Promise<never> => { throw new Error('Unexpected field repository call in planning guard fixture.'); };
-  return { tasks: repository().tasks, findField, listFields: unused, insertField: unused, saveField: unused,
+  return { policies:{find:async()=>null,save:unused,count:async()=>0,insertUsage:unused}, tasks: repository().tasks, findField, listFields: unused, insertField: unused, saveField: unused,
     insertDefinitionVersion: unused, findOption: unused, insertOption: unused, saveOption: unused,
     findProjectColumns: unused, saveProjectColumns: unused, findValue: unused, listTaskValues: unused,
     listProjectValues: unused, saveValue: unused, insertValueHistory: unused, listValueHistory: unused };
@@ -193,5 +204,34 @@ describe('bulk selected-cell estimate and custom locks', () => {
       changes: { customField: { fieldId, expectedDefinitionRevision: 1, value: { type: 'text', value: '' } } },
     } });
     expect(result).toMatchObject({ code: 'FIELD_LOCKED', details: { committed: true, baselineIds: [] } });
+  });
+});
+
+
+describe('shared policy pre-handler classification',()=>{
+  const policy:TaskFieldPolicyDto={workspaceId:ws,projectId:project,fieldId,revision:1,lockAt:time,maxChangesPerActor:null,activatedAt:time,updatedAt:time,updatedByUserId:ctx.actor.userId};
+  const current:TaskFieldValueDto={workspaceId:ws,projectId:project,taskId,fieldId,revision:1,value:{type:'text',value:'same'},definitionVersionId:field.definitionVersionId,updatedAt:time};
+  function guarded() {
+    const fields={...bulkGuardFields(async()=>field),policies:{find:async()=>policy,count:async()=>0,save:async()=>{throw new Error('guard must not write policy');},insertUsage:async()=>{throw new Error('preflight must not consume');}},findValue:async()=>current};
+    fields.tasks={...fields.tasks,findTask:async()=>task,findProject:async()=>({id:project,workspaceId:ws,name:'Policy project',revision:1,archivedAt:null,createdAt:time,updatedAt:time})} as PlanningRepository['tasks'];
+    const repo=repository({fields,tasks:fields.tasks});
+    return createPlanningMutationGuard({context:ctx,repository:repo,barrierAt:new Date(time),recurrenceCensus} as PlanningWriteScope,tools);
+  }
+  it('classifies a changed ordinary value, leaves equality free, and retains stale-revision errors',async()=>{
+    const guard=guarded();
+    const intent={family:'field' as const,command:'field.value.set' as const,target:{taskId,fieldId},input:{expectedRevision:1,expectedDefinitionRevision:1,value:{type:'text',value:'changed'}}};
+    expect(await guard.check(intent)).toMatchObject({code:'FIELD_LOCKED',details:{committed:true,policyReason:'deadline'}});
+    expect(await guard.check({...intent,input:{...intent.input,value:{type:'text',value:'same'}}})).toBeNull();
+    await expect(guard.check({...intent,input:{...intent.input,expectedRevision:0}})).rejects.toMatchObject({code:'REVISION_CONFLICT'});
+  });
+  it('classifies all selected bulk values and import initial values before any handler',async()=>{
+    const guard=guarded();
+    expect(await guard.check({family:'task_bulk',command:'task.bulk.update',target:{projectId:project},input:{projectId:project,tasks:[{taskId,expectedRevision:1,expectedFieldValueRevision:1}],changes:{customField:{fieldId,expectedDefinitionRevision:1,value:{type:'text',value:'changed'}}}}})).toMatchObject({details:{policyReason:'deadline',committed:true}});
+    expect(await guard.check({family:'import',command:'import.project.apply',target:{projectId:project},input:{},previewMatches:async()=>true,fieldPolicyCandidates:[{fieldId,value:{type:'text',value:'new'}}]})).toMatchObject({details:{policyReason:'deadline',committed:true}});
+  });
+  it('never allows an owner-exception command to rewrite an immutable planning baseline',async()=>{
+    const repo=repository({listLocks:async()=>[{kind:'custom_value',taskId,fieldId,baselineId:id(950)}] as Awaited<ReturnType<PlanningRepository['listLocks']>>});
+    const guard=createPlanningMutationGuard({context:ctx,repository:repo,barrierAt:new Date(time),recurrenceCensus} as PlanningWriteScope,tools);
+    expect(await guard.check({family:'field',command:'field.value.exception',target:{taskId,fieldId},input:{reason:'Owner correction'}})).toMatchObject({code:'FIELD_LOCKED',details:{baselineIds:[id(950)]}});
   });
 });

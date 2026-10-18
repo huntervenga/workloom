@@ -1,4 +1,5 @@
 import {
+  setTaskFieldPolicyInputSchema, setTaskFieldValueExceptionInputSchema, taskFieldPolicyResponseSchema, taskFieldPolicyStateResponseSchema,
   createTaskFieldInputSchema,
   createTaskFieldOptionInputSchema,
   idSchema,
@@ -73,6 +74,23 @@ export function registerFieldRoutes(app: FastifyInstance, deps: FieldRouteDepend
     const input = parseInput(bodySchema, request.body);
     return { params, input, ctx: await context(request, params.workspaceId, idempotencyKey) };
   }
+
+  app.get(`${BASE}/fields/:fieldId/policy`,async(request,reply)=>{
+    const {params,ctx}=await read(request,fieldParamsSchema,noQuerySchema);
+    return sendData(request,reply,taskFieldPolicyResponseSchema,await deps.fields.getPolicy(ctx,params.fieldId));
+  });
+  app.put(`${BASE}/fields/:fieldId/policy`,async(request,reply)=>{
+    const {params,input,ctx}=await write(request,fieldParamsSchema,setTaskFieldPolicyInputSchema);
+    return sendData(request,reply,taskFieldPolicyResponseSchema,await deps.fields.setPolicy(ctx,params.fieldId,input));
+  });
+  app.get(`${BASE}/tasks/:taskId/field-values/:fieldId/policy-state`,async(request,reply)=>{
+    const {params,ctx}=await read(request,taskValueParamsSchema,noQuerySchema);
+    return sendData(request,reply,taskFieldPolicyStateResponseSchema,await deps.fields.getPolicyState(ctx,params.taskId,params.fieldId));
+  });
+  app.post(`${BASE}/tasks/:taskId/field-values/:fieldId/exception`,async(request,reply)=>{
+    const {params,input,ctx}=await write(request,taskValueParamsSchema,setTaskFieldValueExceptionInputSchema);
+    return sendData(request,reply,taskFieldValueResponseSchema,await deps.fields.setTaskValueException(ctx,params.taskId,params.fieldId,input));
+  });
 
   // Field definitions and options
   app.get(`${BASE}/fields`, async (request, reply) => {

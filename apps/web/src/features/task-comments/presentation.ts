@@ -149,8 +149,9 @@ export function describeChange(change: TaskActivityChangeDto): ChangeLine[] {
     }];
     case 'custom': {
       const label: Phrase = change.fieldName === null ? { key: 'activity.field.customUnknown' } : { key: 'activity.field.custom', params: { name: change.fieldName } };
-      if (change.availability !== 'history') return [{ label, note: { key: `activity.custom.${change.availability}` as const } }];
-      return [{ label, from: customShown(change.before, change.definition, 'activity.value.noPrevious'), to: customShown(change.after, change.definition, 'activity.value.cleared') }];
+      const exception:ChangeLine[]=change.ownerException?[{label:{key:'fieldRules.ownerException'},value:[{text:change.ownerException.reason}]}]:[];
+      if (change.availability !== 'history') return [...exception,{ label, note: { key: `activity.custom.${change.availability}` as const } }];
+      return [...exception,{ label, from: customShown(change.before, change.definition, 'activity.value.noPrevious'), to: customShown(change.after, change.definition, 'activity.value.cleared') }];
     }
     case 'dependency': {
       const open = change.other.availability === 'current' && change.other.id !== null ? { openTaskId: change.other.id } : {};

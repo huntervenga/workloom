@@ -51,9 +51,9 @@ describe('loadConfig', () => {
 
   it.each([
     [{ APP_ENV: undefined }, /APP_ENV is required/],
-    [{ APP_ENV: 'staging' }, /APP_ENV=staging is not supported/],
-    [{ APP_ENV: 'production' }, /APP_ENV=production is not supported/],
-    [{ APP_ENV: 'dev' }, /APP_ENV must be "local"/],
+    [{ APP_ENV: 'staging' }, /Hosted mode requires/],
+    [{ APP_ENV: 'production' }, /Hosted mode requires/],
+    [{ APP_ENV: 'dev' }, /APP_ENV is required/],
     [{ AUTH_MODE: undefined }, /AUTH_MODE is required/],
     [{ AUTH_MODE: 'shared' }, /AUTH_SESSION_KEY is required for AUTH_MODE=shared/],
     [{ AUTH_MODE: 'none' }, /AUTH_MODE must be "dev" or "shared"/],
@@ -63,7 +63,7 @@ describe('loadConfig', () => {
   });
 
   it.each(['0.0.0.0', '::', '192.168.1.10', 'example.com', '127.0.0.2'])('rejects non-loopback HOST %s', (host) => {
-    expect(issuesOf({ ...base, HOST: host }).join('\n')).toMatch(/HOST must be a loopback/);
+    expect(issuesOf({ ...base, HOST: host }).join('\n')).toMatch(/HOST must be/);
   });
 
   it.each(['-1', '65536', 'abc', '4310.5', '99999'])('rejects PORT %s', (port) => {
@@ -194,8 +194,8 @@ describe('loadConfig AUTH_MODE=shared', () => {
   it.each([
     [{ RAILWAY_ENVIRONMENT: 'production' }, /Railway environment detected/],
     [{ DATABASE_URL: `postgres://u:${SECRET}@db.example.com:5432/workloom` }, /loopback/],
-    [{ HOST: '0.0.0.0' }, /HOST must be a loopback/],
-    [{ APP_ENV: 'production' }, /APP_ENV=production is not supported/],
+    [{ HOST: '0.0.0.0' }, /HOST must be/],
+    [{ APP_ENV: 'production' }, /Hosted mode requires/],
   ])('still enforces the local-only guards with a valid key %o', (override, pattern) => {
     const issues = issuesOf({ ...shared, ...override }).join('\n');
     expect(issues).toMatch(pattern);

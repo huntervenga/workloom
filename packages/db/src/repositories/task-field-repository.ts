@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
+  taskFieldPolicySchema,
   taskFieldDataSchema,
   taskFieldValueHistorySchema,
   type ProjectColumnsDto,
@@ -25,6 +26,7 @@ import {
   taskFieldDefinitions,
   taskFieldOptions,
   taskFieldValueHistory,
+  taskFieldPolicies, taskFieldPolicyUsage,
   taskFieldValues,
 } from '../schema.js';
 import { createTaskRepository } from './task-repository.js';
@@ -228,6 +230,22 @@ export function createTaskFieldRepository(source: Database | WorkloomExecutor): 
   }
 
   return {
+    policies: {
+      async find(workspaceId,fieldId) {
+        const [row]=await db.select().from(taskFieldPolicies).where(and(eq(taskFieldPolicies.workspaceId,workspaceId),eq(taskFieldPolicies.fieldId,fieldId)));
+        return row?taskFieldPolicySchema.parse({...row,lockAt:toIsoOrNull(row.lockAt),activatedAt:toIsoOrNull(row.activatedAt),updatedAt:toIso(row.updatedAt)}):null;
+      },
+      async save(policy) {
+        if(policy.updatedAt===null||policy.updatedByUserId===null)throw new Error('A stored policy requires its author and timestamp.');
+        const row={...policy,lockAt:toDateOrNull(policy.lockAt),activatedAt:toDateOrNull(policy.activatedAt),updatedAt:new Date(policy.updatedAt),updatedByUserId:policy.updatedByUserId};
+        await db.insert(taskFieldPolicies).values(row).onConflictDoUpdate({target:[taskFieldPolicies.workspaceId,taskFieldPolicies.fieldId],set:row});
+      },
+      async count(workspaceId,taskId,fieldId,actorUserId) {
+        const [row]=await db.select({count:sql<number>`count(*)::integer`}).from(taskFieldPolicyUsage).where(and(eq(taskFieldPolicyUsage.workspaceId,workspaceId),eq(taskFieldPolicyUsage.taskId,taskId),eq(taskFieldPolicyUsage.fieldId,fieldId),eq(taskFieldPolicyUsage.actorUserId,actorUserId)));
+        return row?.count??0;
+      },
+      async insertUsage(usage) {await db.insert(taskFieldPolicyUsage).values({...usage,recordedAt:new Date(usage.recordedAt)});},
+    },
     tasks: createTaskRepository(db),
 
     async findField(workspaceId, fieldId) {

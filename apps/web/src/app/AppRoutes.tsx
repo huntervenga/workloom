@@ -1,6 +1,9 @@
 import { t, useTranslation } from '../i18n';
 import { LoaderCircle } from 'lucide-react';
-import { Route, Routes } from 'react-router';
+import { Route, Routes, useLocation } from 'react-router';
+import { useLayoutEffect } from 'react';
+import { JoinInvitationPage } from '../features/team/JoinInvitationPage';
+import { invitationHandoff, isJoinInvitationPath } from '../features/team/invitationHandoff';
 import { HomeRedirect } from '../routes/HomeRedirect';
 import { MembersPage } from '../routes/MembersPage';
 import { NotFoundPage } from '../routes/NotFoundPage';
@@ -19,10 +22,16 @@ const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPa
 export function AppRoutes() {
   useTranslation();
   const { switching, signingOut } = useSession();
+  const location = useLocation();
+  useLayoutEffect(() => {
+    if (switching || !isJoinInvitationPath(`/app${location.pathname}`)) invitationHandoff.clear();
+    else invitationHandoff.capture(window.location, window.history);
+  }, [location.pathname, location.hash, switching]);
   if (switching) return <SwitchingScreen signingOut={signingOut} />;
 
   return (
     <Routes>
+      <Route path="join" element={<JoinInvitationPage />} />
       <Route element={<AppShell />}>
         <Route index element={<HomeRedirect />} />
         <Route path="w/:workspaceId" element={<WorkspaceLayout />}>

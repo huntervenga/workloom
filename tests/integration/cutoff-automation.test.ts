@@ -6,18 +6,20 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CutoffJob, PlanningPeriodDto, RecurrenceCreatePreviewInput } from '@workloom/contracts';
 import type { CommandContext } from '@workloom/domain';
-import { createDatabase, createCutoffApplication, createCutoffWorkerFacade, createCutoffDiscovery, createCutoffOutboxRelay, createPlanningApplication, createRecurrenceApplication, runMigrations, MIGRATIONS_FOLDER, createReadinessProbe, seedDemoData, FIXTURE_USER_IDS as U, FIXTURE_MEMBERSHIP_IDS as M, FIXTURE_WORKSPACE_IDS as W, schema, type Database } from '@workloom/db';
+import { createDatabase, createCutoffApplication, createCutoffWorkerFacade, createCutoffDiscovery, createCutoffOutboxRelay, createPlanningApplication, createRecurrenceApplication, runMigrations, MIGRATIONS_FOLDER, createReadinessProbe, FIXTURE_USER_IDS as U, FIXTURE_MEMBERSHIP_IDS as M, FIXTURE_WORKSPACE_IDS as W, schema, type Database } from '@workloom/db';
 import { createCutoffRepository } from '../../packages/db/src/cutoff/repository.js';
 import { createApp } from '../../apps/api/src/app.js';
 import { loadConfig } from '../../apps/api/src/config.js';
 import { createThrowawayDatabase, type ThrowawayDatabase } from './support/test-database.js';
 import { requireTestDatabaseUrl } from './support/test-database-url.js';
+import { seedLegacyDemoData } from './support/legacy-upgrade-fixture.js';
 requireTestDatabaseUrl();
 const context = (userId: string = U.owner, key = randomUUID(), workspaceId: string = W.team): CommandContext => ({ workspaceId, actor: { userId, displayName: 'Synthetic cutoff test', kind: 'fixture' }, source: 'web', requestId: randomUUID(), idempotencyKey: key });
 function required<T>(value: T | null | undefined): T { if (value === null || value === undefined) throw new Error('Expected fixture value.'); return value; }
 
 let target: ThrowawayDatabase | undefined;
 let db: Database;
+let expectedUpgradeTags: readonly string[];
 let upgrade: { applied: readonly string[]; unchanged: boolean; historyUnchanged: boolean; pendingNotReady: boolean; ready: boolean; periodId: string }; 
 const app = () => createCutoffApplication(db);
 const worker = () => createCutoffWorkerFacade(db);
@@ -62,15 +64,32 @@ describe('explicit cutoff automation on an owned throwaway PostgreSQL child', ()
     const prior = mkdtempSync(join(tmpdir(), 'workloom-cutoff-prior-migrations-'));
     try {
       const journal = JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8')) as { entries: { tag: string }[] };
-      journal.entries = journal.entries.slice(0, journal.entries.findIndex(entry => entry.tag === '0013_planning_cutoff_automation'));
+      const cutoffIndex = journal.entries.findIndex(entry => entry.tag === '0013_planning_cutoff_automation');
+      expect(cutoffIndex).toBe(13);
+      expectedUpgradeTags = journal.entries.slice(cutoffIndex).map(entry => entry.tag);
+      journal.entries = journal.entries.slice(0, cutoffIndex);
       mkdirSync(join(prior, 'meta')); writeFileSync(join(prior, 'meta', '_journal.json'), JSON.stringify(journal));
       for (const entry of journal.entries) copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(prior, `${entry.tag}.sql`));
       await runMigrations(target.url, { requireLoopback: true, migrationsFolder: prior });
     } finally { rmSync(prior, { recursive: true, force: true }); }
-    db = createDatabase(target.url, { requireLoopback: true, maxConnections: 8 }); await seedDemoData(db);
+    db = createDatabase(target.url, { requireLoopback: true, maxConnections: 8 });
+    // This child is still pre-0013: current mapped inserts include later columns such as users.avatar_url.
+    await seedLegacyDemoData(db.sql);
     const oldPeriod = await fixture(false);
     const names = (await db.sql`select table_name from information_schema.tables where table_schema='public' and table_type='BASE TABLE' order by table_name`).map(row => String(row.table_name));
-    const snapshot = async () => { const result: Record<string, string> = {}; for (const name of names) { if (!/^[a-z_]+$/.test(name)) throw new Error('Unsafe synthetic snapshot table.'); const [row] = await db.sql.unsafe<{ hash: string }[]>(`select md5(coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text)::text,'[]')) as hash from "${name}" t`); result[name] = row?.hash ?? ''; } return result; };
+    // Preserve every original column; additive migrations may introduce new nullable columns.
+    const legacyColumns = await db.sql<{ table_name: string; column_name: string }[]>`select table_name, column_name from information_schema.columns where table_schema='public' order by table_name, ordinal_position`;
+    const snapshot = async () => {
+      const result: Record<string, string> = {};
+      for (const name of names) {
+        const columns = legacyColumns.filter(column => column.table_name === name).map(column => column.column_name);
+        if (!/^[a-z_]+$/.test(name) || !columns.length || columns.some(column => !/^[a-z_]+$/.test(column))) throw new Error('Unsafe synthetic snapshot identifier.');
+        const projection = columns.map(column => `"${column}"`).join(',');
+        const [row] = await db.sql.unsafe<{ hash: string }[]>(`select md5(coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text)::text,'[]')) as hash from (select ${projection} from "${name}") t`);
+        result[name] = row?.hash ?? '';
+      }
+      return result;
+    };
     const before = await snapshot(), history = await db.sql`select * from drizzle.__drizzle_migrations order by created_at`, pendingNotReady = !(await createReadinessProbe(db).check()).ready;
     const migration = await runMigrations(target.url, { requireLoopback: true });
     const afterHistory = await db.sql`select * from drizzle.__drizzle_migrations order by created_at`;
@@ -79,7 +98,7 @@ describe('explicit cutoff automation on an owned throwaway PostgreSQL child', ()
   afterAll(async () => { try { await db?.close(); } finally { await target?.drop(); } });
 
   it('upgrades populated pre-0013 data and journal without opting existing periods into automation', async () => {
-    expect(upgrade).toMatchObject({ applied: ['0013_planning_cutoff_automation'], unchanged: true, historyUnchanged: true, pendingNotReady: true, ready: true });
+    expect(upgrade).toMatchObject({ applied: expectedUpgradeTags, unchanged: true, historyUnchanged: true, pendingNotReady: true, ready: true });
     expect(await app().getReadiness(context(), upgrade.periodId)).toMatchObject({ persistedState: 'planning', automation: { state: 'not_configured', grant: null }, latestRequest: null, missingCount: 0, blockedCount: 0 });
     for (const table of ['planning_cutoff_automations','planning_cutoff_grant_versions','planning_cutoff_requests']) expect(await db.sql.unsafe(`select * from "${table}"`)).toHaveLength(0);
   });

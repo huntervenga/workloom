@@ -1,0 +1,8 @@
+import {describe,it,expect} from 'vitest';
+import type {TeamInvitationDto,TeamMembershipDto} from '@workloom/contracts';
+import {validateTeamAdmission} from './policy.js';
+const id=(n:number)=>`a0000000-0000-4000-8000-${String(n).padStart(12,'0')}`,at=new Date('2026-10-18T12:00:00Z');
+const invite:TeamInvitationDto={id:id(5),workspaceId:id(9),role:'viewer',hashVersion:1,createdByUserId:id(1),createdByMembershipId:id(11),createdAt:'2026-10-18T11:00:00Z',expiresAt:'2026-10-18T13:00:00Z',revision:1,revokedAt:null,acceptedAt:null,acceptedByUserId:null,acceptedMembershipId:null};
+const issuer:TeamMembershipDto={id:id(11),workspaceId:id(9),userId:id(1),displayName:'Manager',role:'admin',state:'active',revision:1,revokedAt:null};
+const prior:TeamMembershipDto={id:id(12),workspaceId:id(9),userId:id(2),displayName:'Prior administrator',role:'admin',state:'revoked',revision:2,revokedAt:'2026-10-18T11:00:00Z'};
+describe('prior-role admission ceiling',()=>{it('requires owner authority to reactivate a revoked administrator',()=>{expect(()=>validateTeamAdmission(invite,prior,issuer,id(2),at)).toThrow();expect(validateTeamAdmission(invite,prior,{...issuer,role:'owner'},id(2),at)).toBe('admit');});it('never changes a revoked owner through any pending invitation',()=>{expect(()=>validateTeamAdmission(invite,{...prior,role:'owner'},{...issuer,role:'owner'},id(2),at)).toThrow();});it('still allows an active administrator to consume a lower-role invitation because membership is untouched',()=>{expect(validateTeamAdmission(invite,{...prior,state:'active',revokedAt:null},issuer,id(2),at)).toBe('admit');});});

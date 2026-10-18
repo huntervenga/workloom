@@ -40,3 +40,7 @@ export { taskTimelineQuerySchema, taskTimelineItemSchema, taskTimelineResponseSc
 export type { TaskTimelineQueryInput, TaskTimelineItemDto, TaskTimelineResponse, TaskActivityChangeDto, TaskActivityLabelRef, TaskActivityTaskRef } from './task-comments.js';
 
 export * from './task-project-placements.js';
+
+export * from './team.js';
+
+export * from './field-policies.js';

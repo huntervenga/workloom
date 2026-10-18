@@ -4,7 +4,7 @@ import type {DependencyMutationCommand,TaskStatusTransitionPolicy} from '../depe
 import type {MeetingMutationCommand} from '../meetings/ports.js';
 import type { WorkCategoryResolver, WorkCategoryMutationCommand } from '../categories/ports.js';
 import type {
-  BulkUpdateTasksInput,CreateTaskRowInput,FreezeScope,RecurrenceSnapshotSectionDto,MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
+  TaskFieldData, BulkUpdateTasksInput,CreateTaskRowInput,FreezeScope,RecurrenceSnapshotSectionDto,MeetingDto,AttendanceDto,RecordedWorkLogDto, ManualPeriodWorkLogDto, MembershipDto, PackageBaselineDto, PeriodCommitmentDto, PlanBaselineDto,
   PlanningPackageDto, PlanningPeriodDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto,
   WeeklyPlanFactReportRunDto, WeeklyPlanFactRowDto,
 } from '@workloom/contracts';
@@ -111,7 +111,7 @@ export interface PlanningApplicationDependencies {
 
 /** Commands are exhaustive: adding a mutation requires an explicit policy decision. */
 export type TaskMutationCommand = 'project.create'|'project.update'|'section.create'|'section.update'|'tag.create'|'tag.update'|'task.create'|'task.update'|'task.archive'|'task.restore'|'task.move';
-export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set';
+export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set'|'field.policy.set'|'field.value.exception';
 export type PlanningMutationCommand = 'period.create'|'period.update'|'commitment.create'|'commitment.update'|'plan.freeze'|'work.set'|'report.create';
 export type PlanningMutationIntent =
  | {readonly family:'task_placement';readonly command:TaskProjectPlacementCommand;readonly target:{readonly taskId:string;readonly projectId:string};readonly input:unknown}
@@ -119,7 +119,7 @@ export type PlanningMutationIntent =
  | {readonly family:'table_preference';readonly command:'table.preference.set';readonly target:{readonly projectId:string};readonly input:unknown}
  | {readonly family:'comment';readonly command:'task.comment.create';readonly target:{readonly taskId:string};readonly input:unknown}
  | {readonly family:'import';readonly command:'import.csv.stage';readonly target:{readonly projectId:string};readonly input:unknown}
- | {readonly family:'import';readonly command:'import.project.apply';readonly target:{readonly projectId:string};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>}
+ | {readonly family:'import';readonly command:'import.project.apply';readonly target:{readonly projectId:string};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>;readonly fieldPolicyCandidates:readonly {readonly fieldId:string;readonly value:TaskFieldData}[]}
  | {readonly family:'schedule';readonly command:'task.schedule.apply';readonly target:{readonly projectId:string;readonly affectedProjectIds:readonly string[]};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>}
  | {readonly family:'task';readonly command:TaskMutationCommand;readonly target:string|null;readonly input:unknown}
  /** Atomic table row: its own typed aggregate, never folded into the task commands or their preview hashes. */
@@ -133,7 +133,7 @@ export type PlanningMutationIntent =
  | {readonly family:'recurrence';readonly command:RecurrenceMutationCommand;readonly target:unknown;readonly input:unknown};
 export interface CommittedPlanningRejection {
   readonly __workloomPlanningOutcome:'rejected';readonly code:'FIELD_LOCKED'|'PREVIEW_STALE';
-  readonly details:{readonly committed:true;readonly baselineIds:string[]};
+  readonly details:{readonly committed:true;readonly baselineIds:string[];readonly policyReason?:'deadline'|'change_limit'};
 }
 export interface PlanningMutationGuard {
   /** Ensure due freezes, then classify every protected target BEFORE the proposed handler. */
