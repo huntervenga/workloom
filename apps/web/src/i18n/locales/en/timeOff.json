@@ -72,7 +72,7 @@
   "employmentStart": "Employment start",
   "employmentEnd": "Employment end (optional)",
   "accountingStart": "Balance accounting starts",
-  "accountingHint": "Enter opening balances as of the accounting start. Employment start remains separate, so joining Workloom does not invent earlier leave.",
+  "accountingHint": "By default, allowance accrues from employment start. For an import, enter balances as of the accounting start; accrual before that date is replaced by these balances.",
   "openingBalances": "Opening balances (days)",
   "workSchedule": "Working hours by effective date",
   "effectiveFrom": "Effective from",
@@ -190,5 +190,10 @@
   "capacityPairedDetails": "Plan and Fact columns use the same eligible paired tasks as the configured comparison. A dash means no known paired value; it does not mean zero hours worked.",
   "capacityAbout": "About this comparison",
   "availabilityOutsideCoverage": "Availability is unavailable outside 1900–2200.",
-  "availabilityPartialCoverage": "Availability is shown for {{from}}–{{to}} only."
+  "availabilityPartialCoverage": "Availability is shown for {{from}}–{{to}} only.",
+  "advancedImportSettings": "Advanced import settings",
+  "useOpeningBalance": "Use opening balance",
+  "profileChangeReason": "Reason for change",
+  "profileReasonHint": "A reason is required when changing an existing person’s settings.",
+  "profileReasonRequired": "Add a reason before reviewing changes to an existing profile."
 }

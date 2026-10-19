@@ -32,10 +32,35 @@ describe('time off workspace', () => {
     const { calls } = installFakeApi(routes({ [`GET ${prefix}/overview`]: () => ok({ ...overview(), profiles: [saved] }), [`POST ${prefix}/members/${MEMBER}/profile/preview`]: () => ok({ sourceVersion: 'd'.repeat(64), balancesBefore: [], balancesAfter: [], deficits: [] }), [`PUT ${prefix}/members/${MEMBER}/profile`]: request => { const input = request.body as { timezone: string; expectedRevision: number }; expect(input.expectedRevision).toBe(saved.revision); saved = { ...saved, timezone: input.timezone, revision: saved.revision + 1 }; return ok(saved); } }));
     const { user, queryClient } = renderApp(uiPath); await screen.findByRole('table', { name: 'Team calendar' }); await user.click(screen.getByRole('button', { name: 'People & schedules' })); const region = screen.getByRole('region', { name: 'People & schedules' });
     for (const zone of ['UTC', 'Asia/Nicosia']) {
+      await user.type(within(region).getByLabelText('Reason for change'), 'Correct timezone');
       const input = within(region).getByLabelText('Timezone'); await user.clear(input); await user.type(input, zone); expect(protectedDraftsFor(queryClient).protecting).toBe(true);
       await user.click(within(region).getByRole('button', { name: 'Review changes' })); await user.click(await within(region).findByRole('button', { name: 'Save person settings' })); await waitFor(() => expect(protectedDraftsFor(queryClient).protecting).toBe(false));
     }
     expect(writes(calls).map(call => (call.body as { expectedRevision: number }).expectedRevision)).toEqual([1,2]);
+    expect(within(region).getByRole('button', { name: 'Review changes' })).toBeDisabled();
+    await user.click(within(region).getByRole('button', { name: 'Review changes' }));
+    expect(writes(calls)).toHaveLength(2);
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps an existing profile change local until an administrator reason is supplied', async () => {
+    const { failure } = await import('../../test/fakeApi');
+    const { calls } = installFakeApi(routes({
+      [`POST ${prefix}/members/${MEMBER}/profile/preview`]: () => ok({ sourceVersion: 'd'.repeat(64), balancesBefore: [], balancesAfter: [], deficits: [] }),
+      [`PUT ${prefix}/members/${MEMBER}/profile`]: () => failure(422, 'LEAVE_RULE', 'Changing an existing employment profile requires an administrator reason.'),
+    }));
+    const { user, queryClient } = renderApp(uiPath);
+    await screen.findByRole('table', { name: 'Team calendar' });
+    await user.click(screen.getByRole('button', { name: 'People & schedules' }));
+    const region = screen.getByRole('region', { name: 'People & schedules' });
+    await user.clear(within(region).getByLabelText('Timezone'));
+    await user.type(within(region).getByLabelText('Timezone'), 'UTC');
+    await user.click(within(region).getByRole('button', { name: 'Review changes' }));
+    expect(within(region).getByLabelText('Reason for change')).toHaveFocus();
+    expect(within(region).getByText('Add a reason before reviewing changes to an existing profile.')).toBeVisible();
+    expect(writes(calls)).toHaveLength(0);
+    expect(protectedDraftsFor(queryClient).protecting).toBe(true);
   });
 
   it('closes a committed-but-unknown request after exact retry without creating a duplicate entity',async()=>{
@@ -43,10 +68,33 @@ describe('time off workspace', () => {
     const { calls }=installFakeApi(routes({ [`GET ${prefix}/overview`]:()=>ok({...overview(),requests:stored}), [`POST ${prefix}/preview`]:()=>ok({sourceVersion:'b'.repeat(64),today:'2026-10-19',chargedDays:[],totalMicrodays:0,unavailableMinutes:0,overlappingRequestIds:[],pausesAccrual:false,balancesBefore:[],balancesAfter:[],deficits:[]}), [`POST ${prefix}/requests`]:request=>{ attempts++; if(attempts===1){entities++;const body=request.body as {membershipId:string;typeId:string;startDate:string;endDate:string;note:string};stored=[{id:'f0000000-0000-4000-8000-000000000002',workspaceId:alpha.id,membershipId:body.membershipId,typeId:body.typeId,startDate:body.startDate,endDate:body.endDate,note:body.note,revision:1,status:'pending',createdBy:MEMBER,createdAt:'2026-10-19T12:00:00.000Z',updatedAt:'2026-10-19T12:00:00.000Z',consumesBalance:true,pausesAccrual:false,capacityUnavailable:true,chargedDays:[],negativeApproved:false}];return failure(503,'UNAVAILABLE','Lost ACK');}return ok(stored[0]);} }));
     const {user}=renderApp(uiPath);await screen.findByRole('table',{name:'Team calendar'});await user.click(screen.getByRole('button',{name:'Request time off'}));await user.click(screen.getByRole('button',{name:'Review charge'}));await user.click(await screen.findByRole('button',{name:'Submit request'}));await user.click(await screen.findByRole('button',{name:'Retry exact submission'}));await waitFor(()=>expect(screen.queryByRole('region',{name:'Request time off'})).not.toBeInTheDocument());expect(entities).toBe(1);expect(attempts).toBe(2);const sent=writes(calls);expect(sent[1]?.body).toEqual(sent[0]?.body);expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));
   });
+  it('clears only a confirmed profile draft after a lost ACK and exact retry', async () => {
+    const { failure } = await import('../../test/fakeApi'); let saved = profile(); let attempts = 0;
+    const { calls } = installFakeApi(routes({ [`GET ${prefix}/overview`]: () => ok({ ...overview(), profiles: [saved] }), [`POST ${prefix}/members/${MEMBER}/profile/preview`]: () => ok({ sourceVersion: 'c'.repeat(64), balancesBefore: [], balancesAfter: [], deficits: [] }), [`PUT ${prefix}/members/${MEMBER}/profile`]: request => { attempts++; const input = request.body as { reason: string; timezone: string }; expect(input.reason).toBe('Correct timezone'); if (attempts === 1) { saved = { ...saved, revision: 2, timezone: input.timezone }; return failure(503, 'UNAVAILABLE', 'Lost ACK'); } return ok(saved); } }));
+    const { user, queryClient } = renderApp(uiPath); await screen.findByRole('table', { name: 'Team calendar' }); await user.click(screen.getByRole('button', { name: 'People & schedules' }));
+    const region = screen.getByRole('region', { name: 'People & schedules' }); await user.clear(within(region).getByLabelText('Timezone')); await user.type(within(region).getByLabelText('Timezone'), 'UTC'); await user.type(within(region).getByLabelText('Reason for change'), 'Correct timezone');
+    await user.click(within(region).getByRole('button', { name: 'Review changes' })); await user.click(await within(region).findByRole('button', { name: 'Save person settings' }));
+    expect(await screen.findByRole('button', { name: 'Retry exact submission' })).toBeEnabled(); expect(within(region).getByLabelText('Timezone')).toBeDisabled(); expect(within(region).queryByRole('alert')).not.toBeInTheDocument(); expect(protectedDraftsFor(queryClient).protecting).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Retry exact submission' })); await waitFor(() => expect(protectedDraftsFor(queryClient).protecting).toBe(false));
+    expect(within(region).getByLabelText('Timezone')).toHaveValue('UTC'); expect(within(region).getByRole('button', { name: 'Review changes' })).toBeDisabled(); expect(attempts).toBe(2);
+    const sent = writes(calls); expect(sent[1]?.body).toEqual(sent[0]?.body); expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));
+  });
+
+  it('shows a definite save error beside the affected person without leaking it into another person’s form', async () => {
+    const { failure } = await import('../../test/fakeApi');
+    installFakeApi(routes({ [`POST ${prefix}/members/${MEMBER}/profile/preview`]: () => ok({ sourceVersion: 'c'.repeat(64), balancesBefore: [], balancesAfter: [], deficits: [] }), [`PUT ${prefix}/members/${MEMBER}/profile`]: () => failure(409, 'REVISION_CONFLICT', 'Another correction won') }));
+    const { user } = renderApp(uiPath); await screen.findByRole('table', { name: 'Team calendar' }); await user.click(screen.getByRole('button', { name: 'People & schedules' }));
+    const region = screen.getByRole('region', { name: 'People & schedules' }); await user.clear(within(region).getByLabelText('Timezone')); await user.type(within(region).getByLabelText('Timezone'), 'UTC'); await user.type(within(region).getByLabelText('Reason for change'), 'Correct timezone');
+    await user.click(within(region).getByRole('button', { name: 'Review changes' })); await user.click(await within(region).findByRole('button', { name: 'Save person settings' })); await within(region).findByRole('alert');
+    await user.click(within(region).getByRole('button', { name: 'Discard local changes' })); const colleague = overview().members.find(member => member.id !== MEMBER); if (!colleague) throw Error('Missing colleague');
+    await user.click(within(region).getByRole('combobox', { name: 'Person settings' })); await user.click(screen.getByRole('option', { name: colleague.displayName }));
+    expect(within(region).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('refreshes a known-stale profile preview without losing edits and sends the new source hash',async()=>{
     const {failure}=await import('../../test/fakeApi');let previewVersion='a'.repeat(64);let saved=profile();let attempts=0;
     const {calls}=installFakeApi(routes({[`GET ${prefix}/overview`]:()=>ok({...overview(),profiles:[saved]}),[`POST ${prefix}/members/${MEMBER}/profile/preview`]:()=>ok({sourceVersion:previewVersion,balancesBefore:[],balancesAfter:[],deficits:[]}),[`PUT ${prefix}/members/${MEMBER}/profile`]:request=>{attempts++;if(attempts===1){previewVersion='b'.repeat(64);return failure(409,'PREVIEW_STALE','Changed source');}saved={...saved,revision:2,timezone:(request.body as {timezone:string}).timezone};return ok(saved);}}));
-    const {user}=renderApp(uiPath);await screen.findByRole('table',{name:'Team calendar'});await user.click(screen.getByRole('button',{name:'People & schedules'}));const region=screen.getByRole('region',{name:'People & schedules'});const zone=within(region).getByLabelText('Timezone');await user.clear(zone);await user.type(zone,'UTC');await user.click(within(region).getByRole('button',{name:'Review changes'}));await user.click(await within(region).findByRole('button',{name:'Save person settings'}));await user.click(await screen.findByRole('button',{name:'Try again'}));await waitFor(()=>expect(within(region).getByRole('button',{name:'Save person settings'})).toBeEnabled());expect(zone).toHaveValue('UTC');await user.click(within(region).getByRole('button',{name:'Save person settings'}));await waitFor(()=>expect(attempts).toBe(2));expect(writes(calls).map(call=>(call.body as {expectedSourceVersion:string}).expectedSourceVersion)).toEqual(['a'.repeat(64),'b'.repeat(64)]);
+    const {user}=renderApp(uiPath);await screen.findByRole('table',{name:'Team calendar'});await user.click(screen.getByRole('button',{name:'People & schedules'}));const region=screen.getByRole('region',{name:'People & schedules'});const zone=within(region).getByLabelText('Timezone');await user.clear(zone);await user.type(zone,'UTC');await user.type(within(region).getByLabelText('Reason for change'),'Correct timezone');await user.click(within(region).getByRole('button',{name:'Review changes'}));await user.click(await within(region).findByRole('button',{name:'Save person settings'}));await user.click(await screen.findByRole('button',{name:'Try again'}));await waitFor(()=>expect(within(region).getByRole('button',{name:'Save person settings'})).toBeEnabled());expect(zone).toHaveValue('UTC');await user.click(within(region).getByRole('button',{name:'Save person settings'}));await waitFor(()=>expect(attempts).toBe(2));expect(writes(calls).map(call=>(call.body as {expectedSourceVersion:string}).expectedSourceVersion)).toEqual(['a'.repeat(64),'b'.repeat(64)]);
   });
 
   it('discards an unsent profile draft, unlocks switching people and sends no write',async()=>{
