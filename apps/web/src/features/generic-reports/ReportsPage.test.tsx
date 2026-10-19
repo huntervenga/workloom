@@ -16,7 +16,7 @@ describe('ordinary fields and saved full-scope reports', () => {
     await screen.findByRole('columnheader', { name: 'Budget' });
     expect(screen.queryByRole('combobox', { name: 'Week for hours' })).not.toBeInTheDocument(); expect(screen.queryByRole('combobox', { name: 'Whose hours to show' })).not.toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Hours Est' })).not.toBeInTheDocument(); expect(screen.queryByText('Loaded team budget')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', uiPath);
+    expect(within(screen.getByRole('navigation',{name:'Project views'})).getByRole('link', { name: 'Reports' })).toHaveAttribute('href', uiPath);
     expect(screen.queryByRole('button', { name: 'Legacy time columns' })).not.toBeInTheDocument(); expect(screen.queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Columns$/ })); const dialog = screen.getByRole('dialog', { name: 'My task columns' });
     expect(within(dialog).queryByText('Team estimate', { exact: true })).not.toBeInTheDocument(); expect(within(dialog).queryByText('Personal weekly plan', { exact: true })).not.toBeInTheDocument(); expect(within(dialog).queryByText('Personal actual hours', { exact: true })).not.toBeInTheDocument();

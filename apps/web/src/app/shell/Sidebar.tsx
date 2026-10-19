@@ -1,7 +1,7 @@
 import { t, useTranslation } from '../../i18n';
 import type { MeDto } from '@workloom/contracts';
 import { Logomark, Skeleton, cn } from '@workloom/ui';
-import { CalendarDays, CheckCheck, Folder, FolderKanban, LayoutDashboard, RefreshCw, Users } from 'lucide-react';
+import { BarChart3, CalendarDays, CheckCheck, Folder, FolderKanban, LayoutDashboard, RefreshCw, Users } from 'lucide-react';
 import { Link, NavLink, useLocation } from 'react-router';
 import { useProjectsQuery } from '../../features/projects/queries';
 import type { WorkspaceRole } from '../../features/workspace/roles';
@@ -120,6 +120,12 @@ export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarCon
                     <FolderKanban size={18} aria-hidden="true" />
 
                     {t('routes.projects')}
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink to={`/w/${workspaceId}/reports`} className={navLinkClass} onClick={onNavigate}>
+                    <BarChart3 size={18} aria-hidden="true" />
+                    {t('workspaceReports.title')}
                   </NavLink>
                 </li>
                 <li>

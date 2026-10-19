@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { errorResponseSchema, meResponseSchema, workspaceListResponseSchema } from '@workloom/contracts';
+import { errorResponseSchema, meResponseSchema, workspaceListResponseSchema, workspaceResponseSchema } from '@workloom/contracts';
 import {
   DEMO_MEMBERSHIPS,
   DEMO_USERS,
@@ -130,7 +130,7 @@ describe('API app', () => {
 
   it('lists only workspaces of the actor and hides foreign ones with an identical 404', async () => {
     const list = workspaceListResponseSchema.parse((await get(app, '/api/v1/workspaces')).json());
-    expect(list.data).toEqual([{ id: FIXTURE_WORKSPACE_IDS.team, name: 'Synthetic Team Workspace', role: 'owner', timezone: 'Asia/Nicosia' }]);
+    expect(list.data).toEqual([{ id: FIXTURE_WORKSPACE_IDS.team, name: 'Synthetic Team Workspace', role: 'owner', timezone: 'Asia/Nicosia', weekStart: 1 }]);
     expect(list.meta.nextCursor).toBeNull();
 
     const foreign = await get(app, `/api/v1/workspaces/${FIXTURE_WORKSPACE_IDS.outside}`);
@@ -144,6 +144,21 @@ describe('API app', () => {
     expect(members.statusCode).toBe(200);
     expect(members.json().data).toHaveLength(6);
     expect((await get(app, `/api/v1/workspaces/${FIXTURE_WORKSPACE_IDS.outside}/memberships`)).statusCode).toBe(404);
+  });
+
+  it('returns the persisted workspace week start and timezone in both read routes', async () => {
+    const withSunday = (record: WorkspaceAccessRecord): WorkspaceAccessRecord => ({ ...record, workspace: { ...record.workspace, timezone: 'America/Los_Angeles', weekStart: 7 } });
+    const sundayRepository: AccessRepository = { ...repository,
+      listAccessibleWorkspaces: async userId => (await repository.listAccessibleWorkspaces(userId)).map(withSunday),
+      findWorkspaceAccess: async (workspaceId, userId) => { const record = await repository.findWorkspaceAccess(workspaceId, userId); return record ? withSunday(record) : null; },
+    };
+    const sunday = await createApp(config(), { accessRepository: sundayRepository, readiness, logger: false, webDistDir: null });
+    try {
+      const listed = workspaceListResponseSchema.parse((await get(sunday, '/api/v1/workspaces')).json());
+      const fetched = workspaceResponseSchema.parse((await get(sunday, `/api/v1/workspaces/${FIXTURE_WORKSPACE_IDS.team}`)).json());
+      expect(listed.data[0]).toMatchObject({ id: FIXTURE_WORKSPACE_IDS.team, timezone: 'America/Los_Angeles', weekStart: 7 });
+      expect(fetched.data).toEqual(listed.data[0]);
+    } finally { await sunday.close(); }
   });
 
   it('validates path parameters', async () => {

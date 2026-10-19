@@ -4,9 +4,27 @@ import { genericReportConfigSchema } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useTranslation } from '../../i18n';
 import { ReportSelect } from './ReportConfigEditor';
+import { DEFAULT_REPORT_CALENDAR, reportCalendarRange, type ReportCalendarContext } from './reportCalendar';
+
+/** Calendar presets are transient report filters, never native planning periods or saved definition writes. */
+export function reportPeriodConfig(config: GenericReportConfig, preset: 'week' | 'month' | 'all', calendar: ReportCalendarContext = DEFAULT_REPORT_CALENDAR, clock: Date = new Date()): GenericReportConfig {
+  const {capacity, ...withoutCapacity} = config;
+  void capacity;
+  if (preset === 'all') return { ...withoutCapacity, filters: { ...config.filters, dateRange: null } };
+  const {from, to} = reportCalendarRange(preset, calendar, clock), assignee = config.filters.assignee;
+  return { ...withoutCapacity, filters: { ...config.filters, dateRange: { source: config.filters.dateRange?.source ?? {kind:'due_date'}, from, to } }, ...(assignee.kind === 'unassigned' ? {} : { capacity: {startDate: from, endDate: to, people: assignee.kind === 'member' ? {kind:'selected' as const, membershipIds:[assignee.membershipId]} : {kind:'all_active' as const}} }) };
+}
+
+/** Add capacity only for an explicit task-date interval and explicit person scope. */
+export function reportScopeCapacityConfig(config: GenericReportConfig, calendar: ReportCalendarContext = DEFAULT_REPORT_CALENDAR, clock: Date = new Date()): GenericReportConfig {
+  const date = config.filters.dateRange, person = config.filters.assignee;
+  if (!date) return reportPeriodConfig(config, 'week', calendar, clock);
+  if (person.kind === 'unassigned') return config;
+  return { ...config, capacity: { startDate: date.from, endDate: date.to, people: person.kind === 'member' ? { kind: 'selected', membershipIds: [person.membershipId] } : { kind: 'all_active' } } };
+}
 
 /** Read-only overrides are sent to the existing authoritative aggregate endpoint, never applied to a loaded page. */
-export function ReportQuickFilters({ config, originalConfig, members, fields, disabled, onApply, onReset }: { config: GenericReportConfig; originalConfig: GenericReportConfig; members: readonly MembershipDto[]; fields: readonly TaskFieldDefinitionDto[]; disabled: boolean; onApply: (config: GenericReportConfig) => void; onReset: () => void }) {
+export function ReportQuickFilters({ config, originalConfig, members, fields, disabled, calendar = DEFAULT_REPORT_CALENDAR, onApply, onReset }: { config: GenericReportConfig; originalConfig: GenericReportConfig; members: readonly MembershipDto[]; fields: readonly TaskFieldDefinitionDto[]; disabled: boolean; calendar?: ReportCalendarContext; onApply: (config: GenericReportConfig) => void; onReset: () => void }) {
   const { t } = useTranslation();
   const [person, setPerson] = useState(config.filters.assignee.kind === 'member' ? config.filters.assignee.membershipId : config.filters.assignee.kind);
   const [dateSource, setDateSource] = useState(config.filters.dateRange?.source.kind === 'field' ? config.filters.dateRange.source.fieldId : config.filters.dateRange ? 'due_date' : 'all');
@@ -19,6 +37,7 @@ export function ReportQuickFilters({ config, originalConfig, members, fields, di
     if(alignCapacity && dateSource !== 'all' && person !== 'unassigned' && config.capacity) next.capacity={startDate:from,endDate:to,people:person==='all'?{kind:'all_active'}:{kind:'selected',membershipIds:[person]}};
     const parsed = genericReportConfigSchema.safeParse(next); setInvalid(!parsed.success); if(parsed.success) onApply(parsed.data);
   }}>
+    <div className="flex flex-wrap gap-1" role="group" aria-label={t('genericReports.rangePreset')}>{(['week','month','all'] as const).map(preset=><Button key={preset} type="button" size="sm" variant="ghost" disabled={disabled} onClick={()=>{const next=reportPeriodConfig(config,preset,calendar);setDateSource(next.filters.dateRange?.source.kind==='field'?next.filters.dateRange.source.fieldId:next.filters.dateRange?'due_date':'all');setFrom(next.filters.dateRange?.from??'');setTo(next.filters.dateRange?.to??'');setInvalid(false);onApply(next);}}>{t(preset==='week'?'genericReports.weekPreset':preset==='month'?'genericReports.monthPreset':'genericReports.quickAllTime')}</Button>)}</div>
     <ReportSelect label={t('genericReports.quickPeople')} value={person} disabled={disabled} onChange={setPerson}><option value="all">{t('genericReports.everyone')}</option><option value="unassigned">{t('genericReports.unassigned')}</option>{members.map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}</ReportSelect>
     <ReportSelect label={t('genericReports.quickDateSource')} value={dateSource} disabled={disabled} onChange={setDateSource}><option value="all">{t('genericReports.allTime')}</option><option value="due_date">{t('genericReports.dueDate')}</option>{fields.filter(field=>field.type==='date'&&field.archivedAt===null).map(field=><option key={field.id} value={field.id}>{field.name}</option>)}</ReportSelect>
     {dateSource !== 'all' ? <><label className="grid w-40 gap-1 text-xs text-muted">{t('genericReports.from')}<TextInput type="date" value={from} disabled={disabled} onChange={e=>setFrom(e.target.value)}/></label><label className="grid w-40 gap-1 text-xs text-muted">{t('genericReports.to')}<TextInput type="date" value={to} disabled={disabled} onChange={e=>setTo(e.target.value)}/></label></> : null}

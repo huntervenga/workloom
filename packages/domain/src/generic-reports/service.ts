@@ -5,11 +5,14 @@ import { DomainError, notFoundError } from '../errors.js';
 import { canonicalJson } from '../tasks/service.js';
 import { createTaskFieldInScope } from '../fields/service.js';
 import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
+import {workspaceReportSources,queryWorkspaceReport} from './workspace-service.js';
 import { calculateGenericReport, usedFieldIds, validateGenericConfig } from './engine.js';
 import type { CommittedPlanningRejection } from '../planning/ports.js';
 import type { GenericReportDependencies, GenericReportScope, GenericReportSource } from './ports.js';
 
 export interface GenericReportApplication {
+  workspaceSources(context: CommandContext): Promise<C.WorkspaceReportSourcesDto>;
+  workspaceQuery(context: CommandContext, input: C.WorkspaceReportQueryInput): Promise<C.WorkspaceReportResultDto>;
   list(context: CommandContext, projectId: string): Promise<C.GenericReportDefinitionDto[]>;
   get(context: CommandContext, reportId: string): Promise<C.GenericReportDefinitionDto>;
   create(context: CommandContext, input: C.CreateGenericReportInput): Promise<C.GenericReportDefinitionDto>;
@@ -81,6 +84,8 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
     return { ...result, reportId: definition?.id ?? null, definitionRevision: definition?.revision ?? null };
   }
   return {
+    workspaceSources(ctx) { return deps.read(normalize(ctx), 'reports.read', scope => workspaceReportSources(scope)); },
+    workspaceQuery(ctx, input) { const parsed = parse(C.workspaceReportQueryInputSchema, input); return deps.read(normalize(ctx), 'reports.read', scope => queryWorkspaceReport(scope,parsed,deps.digest)); },
     list(ctx, projectId) { const pid = id(projectId); return deps.read(normalize(ctx), 'reports.read', async scope => { await project(scope, pid); return scope.reports.list(pid); }); },
     get(ctx, reportId) { const rid = id(reportId); return deps.read(normalize(ctx), 'reports.read', scope => report(scope, rid)); },
     create(ctx, input) { const parsed = parse(C.createGenericReportInputSchema, input); return mutate(ctx, 'generic_report.create', parsed.config.projectId, parsed, C.genericReportDefinitionSchema, s => create(s, parsed)); },

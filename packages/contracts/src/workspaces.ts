@@ -13,6 +13,8 @@ export const workspaceSchema = z.object({
   role: workspaceRoleSchema,
   /** IANA time zone, e.g. `Asia/Nicosia`. */
   timezone: z.string(),
+  /** ISO weekday 1–7; omitted by older responses, which clients treat as Monday. No default changes stored/replayed results. */
+  weekStart: z.number().int().min(1).max(7).optional(),
 });
 
 export const membershipSchema = z.object({

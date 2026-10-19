@@ -337,6 +337,8 @@ for (const [file, expressions] of [
   ['ColumnAggregates.tsx', [['operationLabels[measure.operation]', 'operationLabels']]],
   ['ReportConfigEditor.tsx', [['groupLabels[kind]', 'groupLabels'], ['operationLabels[operation]', 'operationLabels'], ['boundaryLabels[boundary]', 'boundaryLabels']]],
   ['ReportDashboard.tsx', [['reasonLabels[pair.unavailableReason]', 'reasonLabels'], ['operationLabels[measure.operation]', 'operationLabels']]],
+  ['ReportDeliveryOverview.tsx', [['statusLabels[status]', 'statusLabels']]],
+  ['ReportPeopleOverview.tsx', [['reasonLabels[pair.unavailableReason]', 'reasonLabels']]],
   ['ReportResults.tsx', [['operationLabels[measure.operation]', 'operationLabels'], ['comparisonLabels[key]', 'comparisonLabels'], ['reasonLabels[comparison.unavailableReason]', 'reasonLabels'], ["cellLabels[entry?.state ?? 'missing']", 'cellLabels'], ['groupLabels[grouping.kind]', 'groupLabels'], ['statusLabels[status]', 'statusLabels'], ['statusLabels[row.statusGroup]', 'statusLabels'], ['cohortLabels[row.cohort]', 'cohortLabels']]],
 ]) {
   dynamicKeys.set(`apps/web/src/features/generic-reports/${file}`, new Map(expressions.map(([expression, table]) => [expression, { keys: tableTranslationKeys(genericReportLabels, table), reason: 'Public contract union indexes an exhaustive typed literal map. Every value is extracted and checked against the catalog; arithmetic and source labels never form a translation key.' }])));

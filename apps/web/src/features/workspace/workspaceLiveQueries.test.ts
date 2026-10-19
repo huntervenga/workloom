@@ -25,7 +25,7 @@ afterEach(() => { disposers.splice(0).forEach(dispose => dispose()); clients.spl
 describe('workspace live query classification', () => {
   it('includes every audited mutable branch, run lists, import reconciliation and MCP metadata', () => {
     for (const branch of ['memberships', 'projects', 'project', 'tags', 'tasks', 'fields', 'workCategoryBinding',
-      'timeSummaries', 'planning', 'workCategories', 'meetings', 'recurrence', 'dependencies', 'schedule', 'cutoff', 'imports', 'local-mcp-credentials', 'generic-reports', 'time-off']) {
+      'timeSummaries', 'planning', 'workCategories', 'meetings', 'recurrence', 'dependencies', 'schedule', 'cutoff', 'imports', 'local-mcp-credentials', 'generic-reports', 'workspace-reports', 'time-off']) {
       expect(isWorkspaceLiveKey([...scope, branch], ACTOR, WORKSPACE)).toBe(true);
     }
     for (const suffix of [[], ['planning', 'period', 'period-a', 'runs'], ['workCategories', 'runs', 'period-a'],
@@ -46,6 +46,17 @@ describe('workspace live query classification', () => {
 });
 
 describe('fresh catch-up completion', () => {
+  it('refreshes workspace dashboard sources and results after an external change without touching pinned runs', async () => {
+    const client = setup(); const sources = [...scope, 'workspace-reports', 'sources']; const results = [...scope, 'workspace-reports', 'result', { bucket: 'month' }]; const pinned = [...scope, 'planning', 'run', 'accepted'];
+    for (const key of [sources, results, pinned]) client.setQueryData(key, 'before');
+    const readSources = vi.fn().mockResolvedValue('new mappings'), readResults = vi.fn().mockResolvedValue('new totals');
+    active(client, sources, readSources); active(client, results, readResults);
+    expect(await refreshWorkspaceLiveQueries(client, ACTOR, WORKSPACE, new AbortController().signal, () => true)).toEqual({ complete: true, followUp: false });
+    expect(readSources).toHaveBeenCalledTimes(1); expect(readResults).toHaveBeenCalledTimes(1);
+    expect(client.getQueryData(results)).toBe('new totals'); expect(client.getQueryData(sources)).toBe('new mappings');
+    expect(client.getQueryState(pinned)).toMatchObject({ data: 'before', isInvalidated: false });
+  });
+
   it('cancels a pre-head read of previously successful data and only accepts its replacement from the server', async () => {
     const client = setup(); const key = [...scope, 'tasks', 'list']; const before = held<string>(); const fresh = held<string>();
     client.setQueryData(key, 'cached'); await client.invalidateQueries({ queryKey: key, refetchType: 'none' });

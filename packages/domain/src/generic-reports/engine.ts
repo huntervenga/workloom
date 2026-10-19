@@ -92,7 +92,7 @@ export function comparison(rows: readonly GenericReportRowDto[], config: Generic
     unavailableReason, planCoverage, factCoverage,
   };
 }
-function measures(rows: readonly GenericReportRowDto[], config: GenericReportConfig, fields: readonly TaskFieldDefinitionDto[]): GenericMeasureResultDto[] {
+export function genericRowMeasures(rows: readonly GenericReportRowDto[], config: GenericReportConfig, fields: readonly Pick<TaskFieldDefinitionDto, 'id' | 'type'>[]): GenericMeasureResultDto[] {
   return config.measures.map(measure => {
     if (measure.operation === 'count_tasks') return {
       key: measure.key, operation: measure.operation, fieldId: null, unit: 'tasks', value: output(rational(BigInt(rows.length))),
@@ -208,15 +208,15 @@ export function calculateGenericReport(source: GenericReportSource, config: Gene
   const grouped = new Map<string, GenericReportRowDto[]>();
   for (const row of rows) { const group = grouped.get(row.groupKey) ?? []; group.push(row); grouped.set(row.groupKey, group); }
   const groups = [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, group]) => ({
-    key, label: group[0]?.groupLabel ?? key, taskCount: group.length, measures: measures(group, config, fields), comparison: comparison(group, config), initialComparison: initial ? comparison(group, config, true) : null,
+    key, label: group[0]?.groupLabel ?? key, taskCount: group.length, measures: genericRowMeasures(group, config, fields), comparison: comparison(group, config), initialComparison: initial ? comparison(group, config, true) : null,
   }));
   const retained = rows.filter(row => originals.has(normalizeId(row.taskId))).length;
   return {
     ...(source.capacity?{capacity:source.capacity}:{}),...(initial?.header.capacity?{initialCapacity:initial.header.capacity}:{}),
     reportId: null, definitionRevision: null, sourceVersion, config: cloneConfig(config), scope: 'project_presence_canonical_tasks', hierarchy: config.hierarchy,
-    attribution: 'primary_assignee', fields: fields.map(cloneField), totalTasks: rows.length, measures: measures(rows, config, fields), comparison: comparison(rows, config),
+    attribution: 'primary_assignee', fields: fields.map(cloneField), totalTasks: rows.length, measures: genericRowMeasures(rows, config, fields), comparison: comparison(rows, config),
     initialComparison: initial ? comparison(rows, config, true) : null,
-    initialMeasures: initial ? measures(initial.rows, initial.header.config, initial.header.fields) : null,
+    initialMeasures: initial ? genericRowMeasures(initial.rows, initial.header.config, initial.header.fields) : null,
     groups, rows: rows.slice(offset, offset + limit), offset, nextOffset: offset + limit < rows.length ? offset + limit : null,
     initialSnapshot: initial ? { ...initial.header, config: cloneConfig(initial.header.config), fields: initial.header.fields.map(cloneField) } : null,
     cohorts: initial ? { initial: originals.size, retained, added: rows.length - retained, removed: originals.size - retained } : null,

@@ -1,7 +1,7 @@
 import type { GenericComparisonDto, GenericGroupResultDto, GenericMeasureResultDto, GenericReportNumberDto, GenericReportResultDto } from '@workloom/contracts';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ReportDashboard, recordedCapacityRatio } from './ReportDashboard';
 import { amount, coverage, fact, plan, result } from './test/fixtures';
 import { field } from '../fields/test/fixtures';
@@ -33,7 +33,7 @@ function firstMember() {
   if (!member) throw new Error('Missing member fixture');
   return member;
 }
-function view(source: GenericReportResultDto, extra: { onPersonSelect?: (membershipId: string | null) => void } = {}) {
+function view(source: GenericReportResultDto, extra: { onPersonSelect?: (membershipId: string | null) => void; onChoosePeriod?: () => void } = {}) {
   return <MemoryRouter><ReportDashboard result={source} members={alphaMembers} sections={[]} {...extra}/></MemoryRouter>;
 }
 
@@ -48,7 +48,7 @@ describe('top cards', () => {
     expect(within(factCard).getByText('—')).toBeVisible();
     expect(factCard).toHaveTextContent('No full-scope Sum measure for this field.');
     expect(factCard).toHaveTextContent('Paired subset: 17h · 7 of 8 eligible tasks');
-    expect(screen.queryByRole('article', { name: 'Available capacity' })).not.toBeInTheDocument();
+    expect(screen.getByRole('article', { name: 'Available capacity' })).toHaveTextContent('Choose a date range');
   });
 
   it('shows number fields as exact numbers instead of hours', () => {
@@ -82,12 +82,12 @@ describe('top cards', () => {
 describe('plan and actual by primary assignee', () => {
   it('describes paired subsets with explicit deltas and drills down by membership id only when requested', () => {
     const person = firstMember(), former = '99999999-9999-4999-8999-999999999999';
-    const people = byAssignee([group(person.id, [], pair(amount(600), amount(200), amount(-400), 2, 3)), group('unassigned', [], pair(amount(60), amount(90), amount(30), 1, 2)), group(former, [], pair(amount(30), null, null, 0, 1, 'missing_fact'))]);
+    const people = byAssignee([group(person.id, [sum('budget',plan.id,amount(900)),sum('spent',fact.id,amount(400))], pair(amount(600), amount(200), amount(-400), 2, 3)), group('unassigned', [], pair(amount(60), amount(90), amount(30), 1, 2)), group(former, [], pair(amount(30), null, null, 0, 1, 'missing_fact'))]);
     const selected: (string | null)[] = [];
     const ui = render(view(people, { onPersonSelect: id => { selected.push(id); } }));
-    expect(screen.getByRole('img', { name: `${person.displayName} · Budget: 10h · Spent: 3h 20m · Actual − plan: -6h 40m (under plan) · Paired subset: 2 of 3 eligible tasks` })).toBeVisible();
-    expect(screen.getByRole('img', { name: 'Unassigned · Budget: 1h · Spent: 1h 30m · Actual − plan: +30m (over plan) · Paired subset: 1 of 2 eligible tasks' })).toBeVisible();
-    expect(screen.getByRole('img', { name: 'Former member · Budget: 30m · Spent: — · No complete pair: actual is missing. · Paired subset: 0 of 1 eligible tasks' })).toBeVisible();
+    expect(screen.getByRole('row', { name: `${person.displayName} · Available: — · Plan: 15h · Actual: 6h 40m` })).toBeVisible();
+    expect(screen.getByRole('row', { name: 'Unassigned · Available: — · Plan: — · Actual: —' })).toBeVisible();
+    expect(screen.getByRole('row', { name: 'Former member · Available: — · Plan: — · Actual: —' })).toBeVisible();
     expect(screen.getByText('Paired coverage: 7 of 8 eligible tasks in the full scope.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: `Show tasks for ${person.displayName}` }));
     fireEvent.click(screen.getByRole('button', { name: 'Show tasks for Unassigned' }));
@@ -102,8 +102,8 @@ describe('plan and actual by primary assignee', () => {
 
   it('scales bars and shares with exact rationals beyond Number precision', () => {
     const person = firstMember();
-    const ui = render(view(byAssignee([group(person.id, [], pair(giant('9007199254740993001'), giant('27021597764222979003'), giant('18014398509481986002'), 1, 1))])));
-    const bars = screen.getByRole('img', { name: `${person.displayName} · Budget: 150119987579016550h 1m · Spent: 450359962737049650h 3m · Actual − plan: +300239975158033100h 2m (over plan) · Paired subset: 1 of 1 eligible tasks` });
+    const ui = render(view(byAssignee([group(person.id, [sum('budget',plan.id,giant('9007199254740993001')),sum('spent',fact.id,giant('27021597764222979003'))], pair(giant('9007199254740993001'), giant('27021597764222979003'), giant('18014398509481986002'), 1, 1))])));
+    const bars = screen.getByRole('row', { name: `${person.displayName} · Available: — · Plan: 150119987579016550h 1m · Actual: 450359962737049650h 3m` });
     expect(bars.querySelector('[data-series="plan"]')).toHaveStyle({ width: '33.33%' });
     expect(bars.querySelector('[data-series="fact"]')).toHaveStyle({ width: '100%' });
     // Float division rounds both operands to the same double ratio and would claim exactly 50%.
@@ -146,4 +146,20 @@ describe('honest recorded-time capacity ratios',()=>{
  it('uses the authoritative full-scope actual sum, permits over 100%, and never the paired actual subtotal',()=>{const source=aligned();expect(recordedCapacityRatio(source)).toBe('150');render(view(source));expect(screen.getByText('Recorded / available: 150%')).toBeVisible();expect(source.comparison?.fact).toEqual(amount(1020));});
  it('keeps zero, unknown schedules, missing full sums and mismatched people or date boundaries unavailable',()=>{const source=aligned();if(!source.capacity)throw new Error('Missing capacity');expect(recordedCapacityRatio({...source,capacity:{...source.capacity,totals:{...source.capacity.totals,availableMinutes:0}}})).toBeNull();expect(recordedCapacityRatio({...source,capacity:{...source.capacity,totals:{...source.capacity.totals,unconfiguredMembers:1}}})).toBeNull();expect(recordedCapacityRatio({...source,measures:[]})).toBeNull();expect(recordedCapacityRatio({...source,config:{...source.config,filters:{...source.config.filters,dateRange:null}}})).toBeNull();expect(recordedCapacityRatio({...source,config:{...source.config,filters:{...source.config.filters,assignee:{kind:'unassigned'}}}})).toBeNull();});
  it('shows authoritative paired Actual / Estimate at a glance and keeps a missing ratio unknown',()=>{const person=firstMember(),comparison=pair(amount(100),amount(125),amount(25),1,1);comparison.ratio={numerator:'5',denominator:'4',decimal:'1.25'};const source=byAssignee([group(person.id,[],comparison)]);const ui=render(view(source));expect(screen.getByText('Actual / estimate: 125%')).toBeVisible();ui.rerender(view({...source,groups:[group(person.id,[],{...comparison,plan:amount(0),ratio:null,unavailableReason:'zero_plan'})]}));expect(screen.getByText('Actual / estimate: —')).toHaveAttribute('title','The paired plan is zero. A ratio is not available.');});
+});
+
+
+describe('capacity context alongside person totals',()=>{
+ it('retains an authorized person without tasks or a configured schedule, using the provided name rather than omitting the row',()=>{
+  const id='99999999-9999-4999-8999-999999999999',base=byAssignee([]),cal=capacity(false);
+  render(view({...base,capacity:{...cal,members:[{membershipId:id,displayName:'Authorized colleague',scheduleKnown:false,scheduledMinutes:null,holidayMinutes:null,absenceMinutes:null,availableMinutes:null}]}}));
+  expect(screen.getByRole('row',{name:'Authorized colleague · Available: — · Plan: — · Actual: —'})).toHaveTextContent('0 tasks');
+ });
+ it('explains mismatched date scopes and offers an explicit alignment action without inventing comparable capacity',()=>{
+  const base=byAssignee([]),cal=capacity(true),align=vi.fn();
+  render(view({...base,config:{...base.config,filters:{...base.config.filters,dateRange:{source:{kind:'due_date'},from:'2026-10-12',to:'2026-10-18'}}},capacity:cal},{onChoosePeriod:align}));
+  expect(screen.getByText('Available hours cover 2026-10-01 through 2026-10-31; task totals use a different date scope.')).toBeVisible();
+  fireEvent.click(screen.getByRole('button',{name:'Use selected dates'}));expect(align).toHaveBeenCalledOnce();
+  expect(base.config.filters.dateRange).toBeNull();
+ });
 });

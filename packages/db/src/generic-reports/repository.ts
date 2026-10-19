@@ -10,6 +10,19 @@ function definition(row: typeof genericReportDefinitions.$inferSelect): GenericR
 export function createGenericReportRepository(tx: WorkloomExecutor, workspaceId: string): GenericReportRepository {
   const fields = createTaskFieldRepository(tx);
   return {
+    async workspaceCatalog(){
+      const rows=await tx.select({report:genericReportDefinitions,projectName:projects.name}).from(genericReportDefinitions).innerJoin(projects,and(eq(projects.workspaceId,workspaceId),eq(projects.id,genericReportDefinitions.projectId),isNull(projects.archivedAt))).where(and(eq(genericReportDefinitions.workspaceId,workspaceId),isNull(genericReportDefinitions.archivedAt))).orderBy(asc(projects.name),asc(genericReportDefinitions.createdAt),asc(genericReportDefinitions.id)).limit(1001);
+      if(rows.length>1000)throw new DomainError('DOMAIN_VALIDATION_FAILED','The workspace report source catalogue exceeds 1000 saved reports.');
+      const definitions=new Map<string,awaitedFields>();
+      type awaitedFields=Awaited<ReturnType<typeof fields.listFields>>;
+      for(const row of rows)if(!definitions.has(row.report.projectId))definitions.set(row.report.projectId,await fields.listFields(workspaceId,row.report.projectId));
+      return rows.map(row=>({projectId:row.report.projectId,projectName:row.projectName,report:definition(row.report),fields:definitions.get(row.report.projectId)??[]}));
+    },
+    async workspaceMembers(){
+      const rows=await tx.select({membershipId:memberships.id,displayName:users.displayName,avatarUrl:users.avatarUrl}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).where(and(eq(memberships.workspaceId,workspaceId),eq(memberships.state,'active'))).orderBy(asc(users.displayName),asc(memberships.id)).limit(101);
+      if(rows.length>100)throw new DomainError('DOMAIN_VALIDATION_FAILED','The workspace report catalogue supports at most 100 active people.');return rows;
+    },
+    async workspaceCapacity(input,manager){return buildLeaveAvailability(await createLeaveRepository(tx,workspaceId).source(),input,manager,s=>createHash('sha256').update(s).digest('hex'));},
     async list(projectId) { return (await tx.select().from(genericReportDefinitions).where(and(eq(genericReportDefinitions.workspaceId, workspaceId), eq(genericReportDefinitions.projectId, projectId))).orderBy(asc(genericReportDefinitions.createdAt), asc(genericReportDefinitions.id))).map(definition); },
     async find(reportId) { const [row] = await tx.select().from(genericReportDefinitions).where(and(eq(genericReportDefinitions.workspaceId, workspaceId), eq(genericReportDefinitions.id, reportId))).limit(1); return row ? definition(row) : null; },
     async save(report) {

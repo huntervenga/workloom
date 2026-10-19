@@ -82,7 +82,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDependencies)
       request,
       reply,
       workspaceListResponseSchema,
-      workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name, role: workspace.role, timezone: workspace.timezone })),
+      workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name, role: workspace.role, timezone: workspace.timezone, weekStart: workspace.weekStart })),
       { list: true },
     );
   });
@@ -96,6 +96,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDependencies)
       name: workspace.name,
       role: workspace.role,
       timezone: workspace.timezone,
+      weekStart: workspace.weekStart,
     });
   });
 

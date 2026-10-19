@@ -25,3 +25,27 @@ describe('temporary report filters',()=>{
  it('aligns optional capacity boundaries and people only after the explicit checkbox choice',async()=>{const source=definition().config,original={...source,capacity:{startDate:'2026-10-01',endDate:'2026-10-31',people:{kind:'all_active' as const}}},apply=vi.fn(),user=userEvent.setup({pointerEventsCheck:0});render(<ReportQuickFilters config={original} originalConfig={original} fields={[plan,fact]} members={alphaMembers} disabled={false} onApply={apply} onReset={vi.fn()}/>);await choose(user,'Date source','Due date');await user.type(screen.getByLabelText('From (inclusive)'),'2026-10-12');await user.type(screen.getByLabelText('To (inclusive)'),'2026-10-18');await user.click(screen.getByRole('checkbox',{name:'Use these dates and people for capacity too'}));await user.click(screen.getByRole('button',{name:'Apply filters'}));expect(apply).toHaveBeenCalledWith(expect.objectContaining({capacity:{startDate:'2026-10-12',endDate:'2026-10-18',people:{kind:'all_active'}}}));expect(original.capacity.endDate).toBe('2026-10-31');});
 
 });
+
+describe('one-click calendar dashboard scope',()=>{
+ it('adds explicit matching people and capacity without changing the saved definition or creating a week',async()=>{
+  const saved=definition().config,apply=vi.fn(),user=userEvent.setup({pointerEventsCheck:0});
+  render(<ReportQuickFilters config={saved} originalConfig={saved} fields={[plan,fact]} members={alphaMembers} disabled={false} onApply={apply} onReset={vi.fn()}/>);
+  await user.click(screen.getByRole('button',{name:'This week'}));
+  const next=apply.mock.calls[0]?.[0] as typeof saved;
+  expect(next.filters.dateRange?.source).toEqual({kind:'due_date'});
+  expect(next.capacity).toEqual({startDate:next.filters.dateRange?.from,endDate:next.filters.dateRange?.to,people:{kind:'all_active'}});
+  expect(saved.filters.dateRange).toBeNull();expect(saved.capacity).toBeUndefined();expect(next.comparison).toEqual(saved.comparison);
+  await user.click(screen.getByRole('button',{name:'All time'}));expect(apply.mock.calls[1]?.[0]).toEqual(saved);
+ });
+});
+
+it('passes the supplied workspace calendar through the quick preset control at a timezone rollover',async()=>{
+ const saved=definition().config,apply=vi.fn();
+ vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-10-19T00:30:00.000Z'));
+ try {
+  const user=userEvent.setup({pointerEventsCheck:0});
+  render(<ReportQuickFilters config={saved} originalConfig={saved} calendar={{timezone:'America/Los_Angeles',weekStart:7}} fields={[plan,fact]} members={alphaMembers} disabled={false} onApply={apply} onReset={vi.fn()}/>);
+  await user.click(screen.getByRole('button',{name:'This week'}));
+  expect(apply).toHaveBeenCalledWith(expect.objectContaining({filters:expect.objectContaining({dateRange:{source:{kind:'due_date'},from:'2026-10-18',to:'2026-10-24'}}),capacity:{startDate:'2026-10-18',endDate:'2026-10-24',people:{kind:'all_active'}}}));
+ } finally {vi.useRealTimers();}
+});

@@ -2,7 +2,8 @@ import type { GenericComparisonDto, GenericMeasureResultDto, GenericReportNumber
 import { useTranslation } from '../../i18n';
 import { reportGroupLabel } from './groupLabel';
 import { reportNumber, roundedRational } from './reportFormatting';
-import { operationLabels, reasonLabels } from './translationKeys';
+import { operationLabels } from './translationKeys';
+import { ReportPeopleOverview } from './ReportPeopleOverview';
 
 type Unit = GenericMeasureResultDto['unit'];
 type Share = { exact: boolean; basisPoints: bigint };
@@ -20,17 +21,7 @@ function percentDigits({ basisPoints }: Share): string {
   return `${basisPoints / 100n}${fraction ? `.${fraction}` : ''}`;
 }
 const percentText = (value: Share) => `${value.exact ? '' : '≈'}${percentDigits(value)}`;
-const greater = (a: GenericReportNumberDto, b: GenericReportNumberDto) => BigInt(a.numerator) * BigInt(b.denominator) > BigInt(b.numerator) * BigInt(a.denominator);
 const wholeMinutes = (minutes: number): GenericReportNumberDto => ({ numerator: String(minutes), denominator: '1', decimal: String(minutes) });
-
-function Bar({ label, value, unit, scale, series }: { label: string; value: GenericReportNumberDto | null; unit: Unit; scale: GenericReportNumberDto | null; series: 'plan' | 'fact' }) {
-  const fill = value && scale ? share(value, scale) : null;
-  return <span className="flex items-center gap-2 text-xs">
-    <span className="w-14 shrink-0 text-muted">{label}</span>
-    <span aria-hidden="true" className="block h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-canvas">{fill ? <span data-series={series} className={`block h-full rounded-full ${series === 'plan' ? 'bg-muted' : 'bg-accent'}`} style={{ width: `${percentDigits(fill)}%` }}/> : null}</span>
-    <span className="shrink-0 tabular-nums">{reportNumber(value, unit, true)}</span>
-  </span>;
-}
 
 /** Headline is the full-scope SUM measure; the paired comparison value is shown only as a labelled subset. */
 function TotalCard({ title, measure, unit, comparison, paired }: { title: string; measure: GenericMeasureResultDto | undefined; unit: Unit; comparison: GenericComparisonDto | null; paired: GenericReportNumberDto | null }) {
@@ -57,10 +48,11 @@ export function recordedCapacityRatio(result: GenericReportResultDto): string | 
 }
 
 /** Capacity is compared with recorded task-date cohorts only when people, dates and schedules align. */
-function CapacityCard({ capacity, result }: { capacity: Capacity; result: GenericReportResultDto }) {
+function CapacityCard({ capacity, result, onChoosePeriod }: { capacity: Capacity; result: GenericReportResultDto; onChoosePeriod?: () => void }) {
   const { t } = useTranslation();
   const { totals, settingsConfigured } = capacity, title = t('genericReports.dashboard.capacityTitle');
   const ratio = recordedCapacityRatio(result);
+  const date = result.config.filters.dateRange, datesAligned = !!date && date.from === capacity.startDate && date.to === capacity.endDate;
   const duration = (minutes: number) => reportNumber(wholeMinutes(minutes), 'minutes', true);
   return <article aria-label={title} className="min-w-0 space-y-1 rounded-xl border border-line bg-surface p-4">
     <h3 className="truncate text-sm font-medium">{title}</h3>
@@ -68,59 +60,36 @@ function CapacityCard({ capacity, result }: { capacity: Capacity; result: Generi
     <p className="text-xl font-semibold tabular-nums">{settingsConfigured ? duration(totals.availableMinutes) : '—'}</p>
     {settingsConfigured ? <p className="text-xs text-muted">{t('genericReports.dashboard.capacityBreakdown', { scheduled: duration(totals.scheduledMinutes), holidays: duration(totals.holidayMinutes), absence: duration(totals.absenceMinutes) })}</p> : <p role="status" className="text-xs text-muted">{t('genericReports.dashboard.capacityUnconfigured')}</p>}
     {settingsConfigured && totals.unconfiguredMembers > 0 ? <p className="text-xs text-muted">{t('genericReports.dashboard.capacityUnknownMembers', { members: totals.unconfiguredMembers })}</p> : null}
-    <p className="text-sm font-medium tabular-nums" title={ratio===null?t('genericReports.dashboard.ratioUnavailable'):undefined}>{t('genericReports.dashboard.recordedCapacity', {percent:ratio===null?'—':`${ratio}%`})}</p>
-    <p className="text-xs text-muted">{t('genericReports.dashboard.capacityCaveat')}</p>
+    <p className="text-sm font-medium tabular-nums" title={ratio===null?t('genericReports.dashboard.ratioUnavailable'):t('genericReports.dashboard.capacityCaveat')}>{t('genericReports.dashboard.recordedCapacity', {percent:ratio===null?'—':`${ratio}%`})}</p>
+    <p className="sr-only">{t('genericReports.dashboard.capacityCaveat')}</p>
+    {!datesAligned && onChoosePeriod && result.config.filters.assignee.kind !== 'unassigned' ? <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={onChoosePeriod}>{t(date?'genericReports.dashboard.useSelectedDates':'genericReports.dashboard.showThisWeek')}</button> : null}
   </article>;
 }
 
 /** Manager overview built only from authoritative server aggregates; never from loaded detail rows. */
-export function ReportDashboard({ result, members, sections, hideSummary = false, onPersonSelect }: { result: GenericReportResultDto; members: readonly MembershipDto[]; sections: readonly SectionDto[]; hideSummary?: boolean; onPersonSelect?: (membershipId: string | null) => void }) {
+export function ReportDashboard({ result, members, sections, hideSummary = false, summaryOnly = false, onChoosePeriod, onPersonSelect }: { result: GenericReportResultDto; members: readonly MembershipDto[]; sections: readonly SectionDto[]; hideSummary?: boolean; summaryOnly?: boolean; onChoosePeriod?: () => void; onPersonSelect?: (membershipId: string | null) => void }) {
   const { t } = useTranslation();
   const { comparison, groupBy, filters } = result.config;
   const fieldName = (id: string | null) => result.fields.find(field => field.id === id)?.name ?? t('genericReports.unavailableField');
   /** Only duration fields are minutes; number and other numeric fields are never shown as hours. */
   const unitOf = (id: string): Unit => result.fields.find(field => field.id === id)?.type === 'duration' ? 'minutes' : 'number';
   const fullSum = (id: string) => result.measures.find(measure => measure.operation === 'sum' && measure.fieldId === id);
-  const groupName = (key: string, label: string) => reportGroupLabel(result.config, key, label, result.fields, members, sections);
+  const groupName = (key: string, label: string) => !result.groups.some(group => group.key === key) ? result.capacity?.members.find(member => member.membershipId === key)?.displayName ?? reportGroupLabel(result.config, key, label, result.fields, members, sections) : reportGroupLabel(result.config, key, label, result.fields, members, sections);
   const planName = comparison ? fieldName(comparison.planFieldId) : '', factName = comparison ? fieldName(comparison.factFieldId) : '';
   const planUnit: Unit = comparison ? unitOf(comparison.planFieldId) : 'number', factUnit: Unit = comparison ? unitOf(comparison.factFieldId) : 'number';
-  const deltaText = (pair: GenericComparisonDto) => {
-    if (!pair.difference) return pair.unavailableReason ? t(reasonLabels[pair.unavailableReason]) : t('genericReports.dashboard.deltaUnknown');
-    const sign = BigInt(pair.difference.numerator), value = reportNumber(pair.difference, factUnit, true);
-    return sign < 0n ? t('genericReports.dashboard.deltaUnder', { value }) : sign === 0n ? t('genericReports.dashboard.deltaEqual') : t('genericReports.dashboard.deltaOver', { value });
-  };
-  const people = comparison && groupBy.kind === 'assignee' ? result.groups : null;
-  const scale = people && planUnit === factUnit ? people.flatMap(group => group.comparison ? [group.comparison.plan, group.comparison.fact] : []).reduce<GenericReportNumberDto | null>((max, value) => value && BigInt(value.numerator) >= 0n && (!max || greater(value, max)) ? value : max, null) : null;
+  const people = comparison && groupBy.kind === 'assignee';
   const distribution = groupBy.kind === 'category' ? (comparison && fullSum(comparison.factFieldId)) || result.measures.find(measure => measure.operation === 'sum' && measure.unit === 'minutes') : undefined;
   const total = distribution ? reportNumber(distribution.value, distribution.unit, true) : '';
-  const peopleTitle = t('genericReports.dashboard.peopleTitle'), categoryTitle = groupBy.kind === 'category' ? t('genericReports.dashboard.categoryTitle', { field: fieldName(groupBy.fieldId) }) : '';
+  const categoryTitle = groupBy.kind === 'category' ? t('genericReports.dashboard.categoryTitle', { field: fieldName(groupBy.fieldId) }) : '';
   return <section aria-label={t('genericReports.dashboard.title')} className="min-w-0 space-y-4">
     {!hideSummary && (comparison || result.capacity) ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {result.capacity ? <CapacityCard capacity={result.capacity} result={result} {...(onChoosePeriod ? {onChoosePeriod} : {})}/> : comparison ? <article aria-label={t('genericReports.dashboard.capacityTitle')} className="min-w-0 space-y-2 rounded-xl border border-line bg-surface p-4"><h3 className="text-sm font-medium">{t('genericReports.dashboard.capacityTitle')}</h3><p className="text-xl font-semibold">—</p><p className="text-xs text-muted">{t(result.config.filters.assignee.kind==='unassigned'?'genericReports.dashboard.capacityUnassigned':'genericReports.dashboard.capacityNeedsPeriod')}</p>{onChoosePeriod && result.config.filters.assignee.kind !== 'unassigned' ? <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={onChoosePeriod}>{t(result.config.filters.dateRange?'genericReports.dashboard.useSelectedDates':'genericReports.dashboard.showThisWeek')}</button> : null}</article> : null}
       {comparison ? <TotalCard title={t('genericReports.dashboard.planTitle', { name: planName })} measure={fullSum(comparison.planFieldId)} unit={planUnit} comparison={result.comparison} paired={result.comparison?.plan ?? null}/> : null}
       {comparison ? <TotalCard title={t('genericReports.dashboard.factTitle', { name: factName })} measure={fullSum(comparison.factFieldId)} unit={factUnit} comparison={result.comparison} paired={result.comparison?.fact ?? null}/> : null}
-      {result.capacity ? <CapacityCard capacity={result.capacity} result={result}/> : null}
     </div> : null}
     {!hideSummary && !comparison && !result.capacity && groupBy.kind !== 'category' ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{result.measures.slice(0,3).map(measure=><TotalCard key={measure.key} title={`${t(operationLabels[measure.operation])} · ${measure.fieldId?fieldName(measure.fieldId):t('genericReports.task')}`} measure={measure} unit={measure.unit} comparison={null} paired={null}/>)}</div> : null}
-    {hideSummary && result.capacity && recordedCapacityRatio(result)!==null ? <p className="text-sm font-medium tabular-nums">{t('genericReports.dashboard.recordedCapacity',{percent:`${recordedCapacityRatio(result)}%`})}</p> : null}
-    {people ? <section aria-label={peopleTitle} className="space-y-2 rounded-xl border border-line bg-surface p-4">
-      <h3 className="text-sm font-medium">{peopleTitle}</h3>
-      <p className="text-xs text-muted">{t('genericReports.dashboard.peopleHint')}</p>
-      {result.comparison ? <p className="text-xs text-muted">{t('genericReports.dashboard.pairedTotal', { paired: result.comparison.pairedTasks, eligible: result.comparison.eligibleTasks })}</p> : null}
-      <ul className="space-y-3">{people.map(group => {
-        const name = groupName(group.key, group.label), pair = group.comparison;
-        const label = pair ? t('genericReports.dashboard.personComparison', { name, planName, plan: reportNumber(pair.plan, planUnit, true), factName, fact: reportNumber(pair.fact, factUnit, true), delta: deltaText(pair), paired: pair.pairedTasks, eligible: pair.eligibleTasks }) : t('genericReports.dashboard.personUnavailable', { name });
-        return <li key={group.key} className="grid items-center gap-2 sm:grid-cols-[minmax(0,12rem)_1fr]">
-          {onPersonSelect ? <button type="button" aria-label={t('genericReports.dashboard.showPerson', { name })} onClick={() => onPersonSelect(group.key === 'unassigned' ? null : group.key)} className="truncate text-left text-sm font-medium text-accent hover:underline">{name}</button> : <span className="truncate text-sm font-medium">{name}</span>}
-          <div role="img" aria-label={label} title={label} className="min-w-0 space-y-1">
-            <Bar label={t('genericReports.plan')} value={pair?.plan ?? null} unit={planUnit} scale={scale} series="plan"/>
-            <Bar label={t('genericReports.fact')} value={pair?.fact ?? null} unit={factUnit} scale={scale} series="fact"/>
-            <p className="text-xs text-muted">{pair ? deltaText(pair) : '—'}</p>
-            <p className="text-xs font-medium tabular-nums" title={pair?.ratio ? `${pair.ratio.numerator}/${pair.ratio.denominator}` : pair?.unavailableReason ? t(reasonLabels[pair.unavailableReason]) : t('genericReports.dashboard.deltaUnknown')}>{t('genericReports.dashboard.accuracyRatio',{percent:pair?.ratio?`${roundedRational(BigInt(pair.ratio.numerator)*100n,BigInt(pair.ratio.denominator)).text}%`:'—'})}</p>
-          </div>
-        </li>;
-      })}</ul>
-    </section> : null}
-    {groupBy.kind === 'category' ? <section aria-label={categoryTitle} className="space-y-2 rounded-xl border border-line bg-surface p-4">
+    {!summaryOnly && people ? <ReportPeopleOverview result={result} nameOf={groupName} planUnit={planUnit} factUnit={factUnit} {...(onPersonSelect ? {onPersonSelect} : {})}/> : null}
+    {!summaryOnly && groupBy.kind === 'category' ? <section aria-label={categoryTitle} className="space-y-2 rounded-xl border border-line bg-surface p-4">
       <h3 className="text-sm font-medium">{categoryTitle}</h3>
       {distribution ? <>
         <p className="text-xs text-muted">{t('genericReports.dashboard.categoryTotal', { measure: fieldName(distribution.fieldId), total })}</p>

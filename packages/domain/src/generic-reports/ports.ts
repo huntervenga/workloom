@@ -15,6 +15,9 @@ export interface GenericReportSource {
 }
 export interface StoredGenericInitial { header: GenericInitialSnapshotDto; rows: GenericReportRowDto[]; values: TaskFieldValueDto[] }
 export interface GenericReportRepository {
+  workspaceCatalog?(): Promise<import('@workloom/contracts').WorkspaceReportSourceDto[]>;
+  workspaceMembers?(): Promise<import('@workloom/contracts').WorkspaceReportSourcesDto['members']>;
+  workspaceCapacity?(input: import('@workloom/contracts').LeaveAvailabilityInput, manager: boolean): Promise<LeaveAvailabilityDto>;
   list(projectId: string): Promise<GenericReportDefinitionDto[]>;
   find(reportId: string): Promise<GenericReportDefinitionDto | null>;
   save(report: GenericReportDefinitionDto): Promise<void>;

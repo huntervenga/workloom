@@ -17,6 +17,7 @@ import { createAsyncRoute } from './AsyncRoute';
 const MyTasksPage = createAsyncRoute(() => import('../routes/MyTasksPage').then(module => ({ default: module.MyTasksPage })), 'myTasks.loading');
 const ProjectPage = createAsyncRoute(() => import('../routes/ProjectPage').then(module => ({ default: module.ProjectPage })), 'shell.loadingProject');
 const ReportsPage = createAsyncRoute(() => import('../routes/ReportsPage').then(module => ({ default: module.ReportsPage })), 'genericReports.loading');
+const WorkspaceReportsPage = createAsyncRoute(() => import('../routes/WorkspaceReportsPage').then(module => ({ default: module.WorkspaceReportsPage })), 'workspaceReports.loading');
 const WeeklyPage = createAsyncRoute(() => import('../routes/WeeklyPage').then(module => ({ default: module.WeeklyPage })), 'shell.loadingWeek');
 const TimeOffPage = createAsyncRoute(() => import('../routes/TimeOffPage').then(module => ({ default: module.TimeOffPage })), 'timeOff.loading');
 const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPage').then(module => ({ default: module.IntegrationsPage })), 'shell.loadingIntegrations');
@@ -40,6 +41,7 @@ export function AppRoutes() {
           <Route index element={<OverviewPage />} />
           <Route path="my-tasks" element={<MyTasksPage />} />
           <Route path="members" element={<MembersPage />} />
+          <Route path="reports" element={<WorkspaceReportsPage />} />
           <Route path="time-off" element={<TimeOffPage />} />
           <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="projects" element={<ProjectsPage />} />

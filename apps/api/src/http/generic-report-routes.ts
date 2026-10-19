@@ -25,6 +25,14 @@ export function registerGenericReportRoutes(app: FastifyInstance, deps: { identi
     const value = parseInput(input, request.body);
     return { p, input: value, ctx: await context(request, p.workspaceId, key) };
   }
+  app.get(`${base}/workspace-reports/sources`, async(request,reply)=>{
+    const {ctx}=await read(request,workspace,none);
+    return sendData(request,reply,C.workspaceReportSourcesResponseSchema,await deps.reports.workspaceSources(ctx));
+  });
+  app.post(`${base}/workspace-reports/query`,async(request,reply)=>{
+    const {input,ctx}=await body(request,workspace,C.workspaceReportQueryInputSchema,false);
+    return sendData(request,reply,C.workspaceReportResultResponseSchema,await deps.reports.workspaceQuery(ctx,input));
+  });
   app.get(`${base}/generic-reports`, async (request, reply) => {
     const { q, ctx } = await read(request, workspace, C.genericReportListQuerySchema);
     return sendData(request, reply, C.genericReportDefinitionListResponseSchema, await deps.reports.list(ctx, q.projectId), { list: true });

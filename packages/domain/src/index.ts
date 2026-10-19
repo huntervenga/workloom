@@ -196,3 +196,5 @@ export * from './leave/availability.js';
 export * from './leave/calendar.js';
 export * from './leave/calculation.js';
 export * from './leave/accrual.js';
+
+export * from './generic-reports/workspace-engine.js';

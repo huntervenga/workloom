@@ -49,3 +49,5 @@ export * from './generic-reports.js';
 
 export * from './leave.js';
 export * from './leave-api.js';
+
+export * from './workspace-reports.js';
