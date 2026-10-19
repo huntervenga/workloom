@@ -39,13 +39,16 @@ describe('Board density with retained time context', () => {
     await screen.findByRole('table');
     await waitFor(() => expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)));
     expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', person));
-    const weekHref = views().getByRole('link', { name: 'Legacy weekly planning' }).getAttribute('href');
+    const reportHref = `${tablePath}/reports`;
+    expect(views().getByRole('link', { name: 'Reports' })).toHaveAttribute('href', reportHref);
+    expect(views().queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
     await showBoard(user);
     expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Whose hours to show')).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Weekly hours in table' })).not.toBeInTheDocument();
     expect(screen.getByText('1 loaded task in this view.')).toBeInTheDocument();
-    expect(views().getByRole('link', { name: 'Legacy weekly planning' })).toHaveAttribute('href', weekHref);
+    expect(views().getByRole('link', { name: 'Reports' })).toHaveAttribute('href', reportHref);
+    expect(views().queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
     const location = screen.getByTestId('location');
     for (const part of [`week=${PERIOD_A}`, `worker=${person}`, `meetingPeriod=${PERIOD_A}`, `meetingMember=${MEMBER_ID}`, 'meetingAttendance=saved-attendance', 'other=kept', '#anchor', 'view=board']) expect(location).toHaveTextContent(part);
     await user.click(views().getByRole('button', { name: 'Tasks' }));

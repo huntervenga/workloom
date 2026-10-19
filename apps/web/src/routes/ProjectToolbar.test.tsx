@@ -1,7 +1,13 @@
+import { QueryClientProvider } from '@tanstack/react-query';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, useLocation } from 'react-router';
+import { AppRoutes } from '../app/AppRoutes';
+import { SessionProvider } from '../app/session';
+import { createQueryClient } from '../lib/queryClient';
 import type { UserEvent } from '@testing-library/user-event';
 import { timeContextLabel } from '../features/work-categories/test/timeContext';
 import type { ColumnChoice, PersonalTablePreferenceDto, TaskDto } from '@workloom/contracts';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, expect, it } from 'vitest';
 import { alpha, alphaMembers, anna, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { graph, layout } from '../features/dependencies/test/fixtures';
@@ -19,6 +25,14 @@ async function tableChoice(user: UserEvent, control: HTMLElement, value: 'sectio
   const name = { section: 'Section', assignee: 'Assignee', manual: 'Manual', due_asc: 'Due date' }[value];
   await user.click(within(screen.getByRole('listbox', { name: control.getAttribute('aria-label') ?? '' })).getByRole('option', { name }));
 }
+
+function LocationProbe() { const location = useLocation(); return <output data-testid="location">{location.pathname}{location.search}{location.hash}</output>; }
+function renderObservedApp(path: string) {
+  const queryClient = createQueryClient({ retry: false });
+  const view = render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[path]}><SessionProvider><AppRoutes /><LocationProbe /></SessionProvider></MemoryRouter></QueryClientProvider>);
+  return { ...view, queryClient, user: userEvent.setup({ pointerEventsCheck: 0 }) };
+}
+function currentParams() { return new URL(screen.getByTestId('location').textContent ?? '', 'http://workloom.test').searchParams; }
 
 beforeAll(async () => { await import('./ProjectPage'); });
 const path = `${rootPath}/projects/${PROJECT_ID}`;
@@ -53,17 +67,22 @@ it.each(['table', 'board', 'gantt', 'graph', 'import'] as const)('shows only con
 
 it('restores retained week/person, search/filter/group/sort and unsaved personal columns after hidden controls return', async () => {
   const person = alphaMembers[1]?.id; if (!person) throw new Error('Missing colleague');
-  const { calls } = installFakeApi(routes()); const { user } = renderApp(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${person}&other=kept#anchor`));
+  const { calls } = installFakeApi(routes()); const { user } = renderObservedApp(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${person}&other=kept#anchor`));
   await screen.findByRole('button', { name: 'Columns' }); await user.type(screen.getByLabelText('Search tasks'), 'retained search');
   await user.click(screen.getByText('Filters', { selector: 'summary' })); await chooseFilter(user, 'Task participant', member.displayName);
   await user.click(screen.getByText('Filters (1)', { selector: 'summary' }));
   await tableChoice(user, screen.getByLabelText('Group by'), 'assignee'); await tableChoice(user, screen.getByLabelText('Sort'), 'due_asc');
   await user.click(screen.getByRole('button', { name: 'Columns' })); await user.click(screen.getByLabelText('Tags')); await user.keyboard('{Escape}');
-  const weekHref = views().getByRole('link', { name: 'Legacy weekly planning' }).getAttribute('href');
+  const reportHref = `${tablePath}/reports`;
+  expect(views().getByRole('link', { name: 'Reports' })).toHaveAttribute('href', reportHref);
+  expect(views().queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
   for (const view of ['graph', 'import', 'gantt', 'board'] as const) {
     await show(user, view); expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Columns · unsaved' })).not.toBeInTheDocument();
-    expect(views().getByRole('link', { name: 'Legacy weekly planning' })).toHaveAttribute('href', weekHref);
+    expect(views().getByRole('link', { name: 'Reports' })).toHaveAttribute('href', reportHref);
+    expect(views().queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
+    const carried = currentParams();
+    expect(carried.get('week')).toBe(PERIOD_A); expect(carried.get('worker')).toBe(person);
   }
   await show(user, 'table');
   expect(screen.getByLabelText('Week for hours')).toHaveTextContent(timeContextLabel('Week for hours', PERIOD_A)); expect(screen.getByLabelText('Whose hours to show')).toHaveTextContent(timeContextLabel('Whose hours to show', person));
@@ -99,7 +118,7 @@ it.each(['board', 'gantt', 'graph', 'import'] as const)('keeps pending/unknown o
   const first = lostResponse(); let attempts = 0;
   const savePath = `${rootPath}/tasks/${task.id}/manual-period-work/${PERIOD_A}/${MEMBER_ID}`;
   const { calls } = installFakeApi(routes({ [`PUT ${savePath}`]: () => ++attempts === 1 ? first.promise : ok(categorized(150)) }));
-  const { user } = renderApp(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}`));
+  const { user } = renderObservedApp(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}`));
   await user.click(await screen.findByRole('button', { name: `Weekly actual hours: ${task.title}` }));
   let dialog = within(await screen.findByRole('dialog', { name: 'Record weekly actual hours' }));
   await user.type(dialog.getByLabelText('Actual hours this week'), '2.5'); await user.click(dialog.getByRole('button', { name: 'Save actual hours' }));
@@ -110,7 +129,10 @@ it.each(['board', 'gantt', 'graph', 'import'] as const)('keeps pending/unknown o
   expect(dialog.getByLabelText('Actual hours this week')).toHaveValue('2:30'); expect(dialog.getByRole('region', { name: 'Time entry context' })).toHaveTextContent(task.title);
   await user.click(dialog.getByRole('button', { name: 'Retry original save' })); await waitFor(() => expect(attempts).toBe(2));
   const sent = writes(calls); expect(sent).toHaveLength(2); expect(sent[1]?.path).toBe(sent[0]?.path); expect(sent[1]?.body).toEqual(sent[0]?.body); expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));
-  expect(views().getByRole('link', { name: 'Legacy weekly planning' }).getAttribute('href')).toContain(`period=${PERIOD_A}`);
+  expect(views().getByRole('link', { name: 'Reports' })).toHaveAttribute('href', `${tablePath}/reports`);
+  expect(views().queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
+  const carried = currentParams();
+  expect(carried.get('week')).toBe(PERIOD_A); expect(carried.get('worker')).toBe(MEMBER_ID);
 });
 
 it.each(['catalog', 'columns', 'values'] as const)('keeps the existing %s error boundary visible on Graph instead of hiding it with table controls', async source => {
