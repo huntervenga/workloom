@@ -140,7 +140,7 @@ describe('sidebar project list', () => {
     expect(await nav.findByText('Projects could not be loaded.')).toBeInTheDocument();
     expect(screen.queryByText('internal project diagnostic')).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(within(sidebar().getByRole('navigation', { name: 'Workspace' })).getAllByRole('link').map(link => link.textContent)).toEqual(['Overview', 'My tasks', 'Projects', 'Members']);
+    expect(within(sidebar().getByRole('navigation', { name: 'Workspace' })).getAllByRole('link').map(link => link.textContent)).toEqual(['Overview', 'My tasks', 'Projects', 'Time off', 'Members']);
     expect(attempts).toBe(1);
     await ui.user.click(nav.getByRole('button', { name: 'Try again' }));
     expect(await nav.findByRole('link', { name: other.name })).toBeInTheDocument();

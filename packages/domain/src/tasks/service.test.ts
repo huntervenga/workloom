@@ -1,7 +1,10 @@
 import type {
   CreateTaskInput,
+  MoveTaskDto,
   MoveTaskInput,
+  MoveUndoAck,
   ProjectDto,
+  RestoreMoveTaskInput,
   SectionDto,
   TagDto,
   TaskDto,
@@ -1867,5 +1870,183 @@ describe('atomic Board status-lane ordering', () => {
     await expectRejectedWithoutWrites(s, 'changed status', () => s.app.moveTask(ctx, source.id, { ...body, statusId: s.statusId }), 'IDEMPOTENCY_KEY_REUSED');
     const restore = revokeMembership(members.owner);
     try { await expectRejectedWithoutWrites(s, 'revoked replay', () => s.app.moveTask(ctx, source.id, body), 'NOT_FOUND'); } finally { restore(); }
+  });
+});
+
+describe('captured move undo', () => {
+  async function doneStatus(s: OrderFixture): Promise<string> {
+    const status = (await s.app.listStatuses(s.ctx(users.owner), s.project.id)).find(row => row.group === 'done');
+    if (!status) throw new Error('Missing done fixture.');
+    return status.id;
+  }
+  function ackOf(task: MoveTaskDto): MoveUndoAck {
+    if (task.moveUndo === undefined) throw new Error(`expected a moveUndo ACK for ${task.id}`);
+    return task.moveUndo;
+  }
+  /** The client undo chain: the newest confirmed head wins, else the task's own last known revision. */
+  const headOf = (acks: readonly MoveUndoAck[], taskId: string, fallback: number): number =>
+    [...acks].reverse().flatMap(ack => ack.afterHeads).find(head => head.taskId === taskId)?.revision ?? fallback;
+  const guardHeads = (ack: MoveUndoAck, known: readonly MoveUndoAck[] = [ack]) => ack.afterHeads.map(row => ({ taskId: row.taskId, revision: headOf(known, row.taskId, row.revision) }));
+  /** Semantic order rows: exactly what the fingerprint covers, keyed by ID. */
+  const orderRows = (s: OrderFixture) => [...s.projected().values()]
+    .filter(row => row.projectId === s.project.id)
+    .sort((a, b) => (a.id < b.id ? -1 : 1))
+    .map(row => [row.id, row.position, row.sectionId, row.parentTaskId, row.responsibleMembershipId, row.statusId, row.archivedAt]);
+  const receiptsOf = (s: OrderFixture, command: string) => [...s.db.state.idempotency.values()].filter(row => row.command === command);
+
+  it('captures a server-only source and restores exact ties, gaps and grouping as a new audited write after a title edit', async () => {
+    const s = await setup(), done = await doneStatus(s);
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Original' });
+    const head = await s.createTask({ title: 'Head', description: 'Private description', dueDate: '2026-10-30' });
+    s.db.state.tasks.set(head.id, { ...(s.db.state.tasks.get(head.id) as TaskDto), position: 4 });
+    const tied = seedTask(s, head, 9301, { position: 4 });
+    const source = seedTask(s, head, 9302, { position: 9, sectionId: section.id, responsibleMembershipId: members.owner });
+    const archived = seedTask(s, head, 9303, { position: 9, archivedAt: ARCHIVED_AT });
+    const lane = seedTask(s, head, 9304, { position: 30, statusId: done });
+    const original = orderRows(s);
+    const key = s.key();
+    const body = { expectedRevision: source.revision, statusId: done, anchorTaskId: lane.id, placement: 'after' as const, captureUndo: true as const };
+
+    const moved = await s.app.moveTask(s.ctx(users.owner, key), source.id, body);
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(idsOf(head, tied, archived, lane, source));
+    const ack = ackOf(moved);
+    expect({ ...moved, moveUndo: undefined }).toEqual(await s.app.getTask(s.ctx(users.owner), source.id));
+    expect(ack.originalKey).toBe(key);
+    expect(ack.beforeHeads).toEqual(idsOf(head, tied, source, archived, lane).map(taskId => ({ taskId, revision: 1 })));
+    expect(ack.afterHeads).toEqual(idsOf(head, tied, source, archived, lane).map(taskId => ({ taskId, revision: 2 })));
+
+    // The public receipt is the compact ACK; the inverse source is a separate server-only receipt without payload text.
+    const [primary] = receiptsOf(s, 'task.move').filter(row => row.idempotencyKey === key);
+    expect(primary?.result).toEqual(moved);
+    const [stored] = receiptsOf(s, 'task.move.undo-source');
+    expect(stored).toMatchObject({ idempotencyKey: key, actorUserId: users.owner, workspaceId: WS, payloadHash: primary?.payloadHash });
+    expect(JSON.stringify(stored?.result)).not.toMatch(/Seeded|Head|Private description|2026-10-30/);
+    expect(JSON.stringify(moved)).not.toContain('positions');
+
+    // Our own title edit and its ordinary inverse advance the known head without changing move semantics.
+    const edited = await s.app.updateTask(s.owner(), source.id, { expectedRevision: moved.revision, title: 'Renamed' });
+    const renamed = await s.app.updateTask(s.owner(), source.id, { expectedRevision: edited.revision, title: source.title });
+    const beforeRestore = s.projected(), events = s.events.length, checks = s.db.planningChecks.length;
+    const restoreKey = s.key();
+    const restoreBody: RestoreMoveTaskInput = { expectedRevision: renamed.revision, originalMoveKey: key, expectedOrderFingerprint: ack.orderFingerprint, expectedHeads: guardHeads(ack).map(row => row.taskId === source.id ? { ...row, revision: renamed.revision } : row) };
+    const restored = await s.app.restoreMoveTask(s.ctx(users.owner, restoreKey), source.id, restoreBody);
+
+    expect(orderRows(s)).toEqual(original);
+    expect(restored).toMatchObject({ title: source.title, statusId: s.statusId, sectionId: section.id, responsibleMembershipId: members.owner, position: 9, revision: renamed.revision + 1 });
+    for (const [id, old] of beforeRestore) {
+      const row = s.projected().get(id) as TaskDto;
+      expect(semantic(row)).toEqual(semantic(id === source.id ? { ...old, statusId: s.statusId } : old));
+      expect(row.revision).toBe(old.revision + 1);
+    }
+    const restoreAck = ackOf(restored);
+    expect(restoreAck.originalKey).toBe(key);
+    expect(restoreAck.afterHeads).toEqual([...beforeRestore.values()].filter(row => row.projectId === s.project.id)
+      .sort((a, b) => (a.id < b.id ? -1 : 1)).map(row => ({ taskId: row.id, revision: row.revision + 1 })));
+    expect(s.events).toHaveLength(events + 5);
+    expect(s.events.slice(events).find(event => event.entityId === source.id)?.diff).toMatchObject({ statusId: { from: done, to: s.statusId }, position: { from: 4, to: 9 } });
+    // The guard sees the stored restored fields, never opaque client input.
+    expect(s.db.planningChecks.slice(checks)).toEqual([[{ family: 'task', command: 'task.move', target: source.id, input: {
+      restore: 'task.move.restore', expectedRevision: renamed.revision, sectionId: section.id, responsibleMembershipId: members.owner, statusId: s.statusId,
+    } }]]);
+    expect(s.db.statusChecks.at(-1)).toEqual({ taskId: source.id, statusId: s.statusId });
+
+    // Exact retry replays the receipt; changed intent, a second undo and a revoked actor never write.
+    const state = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES);
+    expect(await s.app.restoreMoveTask(s.ctx(users.owner, restoreKey), source.id, restoreBody)).toEqual(restored);
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(state);
+    await expectRejectedWithoutWrites(s, 'changed restore body', () => s.app.restoreMoveTask(s.ctx(users.owner, restoreKey), source.id, { ...restoreBody, expectedRevision: restored.revision }), 'IDEMPOTENCY_KEY_REUSED');
+    await expectRejectedWithoutWrites(s, 'second undo', () => s.app.restoreMoveTask(s.owner(), source.id, { ...restoreBody, expectedRevision: restored.revision }), 'REVISION_CONFLICT');
+    const revoke = revokeMembership(members.owner);
+    try { await expectRejectedWithoutWrites(s, 'revoked replay', () => s.app.restoreMoveTask(s.ctx(users.owner, restoreKey), source.id, restoreBody), 'NOT_FOUND'); } finally { revoke(); }
+    // The forward receipt also still replays exactly.
+    expect(await s.app.moveTask(s.ctx(users.owner, key), source.id, body)).toEqual(moved);
+  });
+
+  it('keeps legacy moves free of moveUndo and sources, and stores no source for a captured no-op', async () => {
+    const s = await setup();
+    const a = await s.createTask(), b = await s.createTask(), c = await s.createTask();
+    const legacy = await s.app.moveTask(s.owner(), c.id, { expectedRevision: c.revision, anchorTaskId: a.id, placement: 'before' });
+    expect('moveUndo' in legacy).toBe(false);
+    const noop = await s.app.moveTask(s.owner(), b.id, { expectedRevision: (s.db.state.tasks.get(b.id) as TaskDto).revision, anchorTaskId: a.id, placement: 'after', captureUndo: true });
+    expect(noop).toEqual(await s.app.getTask(s.ctx(users.owner), b.id));
+    expect('moveUndo' in noop).toBe(false);
+    expect(receiptsOf(s, 'task.move.undo-source')).toHaveLength(0);
+    const key = s.key(), body = { expectedRevision: (s.db.state.tasks.get(a.id) as TaskDto).revision, anchorTaskId: c.id, placement: 'before' as const };
+    await s.app.moveTask(s.ctx(users.owner, key), a.id, body);
+    await expectRejectedWithoutWrites(s, 'opt-in on a legacy key', () => s.app.moveTask(s.ctx(users.owner, key), a.id, { ...body, captureUndo: true }), 'IDEMPOTENCY_KEY_REUSED');
+  });
+
+  it('undoes M1 then M2 in stack order through confirmed heads, restoring section and original positions', async () => {
+    const s = await setup();
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Other' });
+    const a = await s.createTask({ title: 'A' }), b = await s.createTask({ title: 'B' });
+    const c = await s.createTask({ title: 'C', sectionId: section.id }), d = await s.createTask({ title: 'D' });
+    const original = orderRows(s);
+    const k1 = s.key(), k2 = s.key();
+    const m1 = await s.app.moveTask(s.ctx(users.owner, k1), a.id, { expectedRevision: a.revision, anchorTaskId: c.id, placement: 'after', captureUndo: true });
+    expect(m1.sectionId).toBe(section.id);
+    const m2 = await s.app.moveTask(s.ctx(users.owner, k2), d.id, { expectedRevision: d.revision, anchorTaskId: b.id, placement: 'before', captureUndo: true });
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(idsOf(d, b, c, a));
+    // M2 shifted M1's source too; its confirmed head is the only way the client knows A's revision.
+    expect(ackOf(m2).afterHeads.map(head => head.taskId)).toContain(a.id);
+    const acks = [ackOf(m1), ackOf(m2)];
+
+    await expectRejectedWithoutWrites(s, 'out-of-order undo', () => s.app.restoreMoveTask(s.owner(), a.id,
+      { expectedRevision: headOf(acks, a.id, m1.revision), originalMoveKey: k1, expectedOrderFingerprint: ackOf(m1).orderFingerprint, expectedHeads: guardHeads(ackOf(m1), acks) }), 'REVISION_CONFLICT');
+
+    const undo2 = await s.app.restoreMoveTask(s.owner(), d.id, { expectedRevision: headOf(acks, d.id, m2.revision), originalMoveKey: k2, expectedOrderFingerprint: ackOf(m2).orderFingerprint, expectedHeads: guardHeads(ackOf(m2), acks) });
+    acks.push(ackOf(undo2));
+    expect(globalOrder(s.projected(), s.project.id)).toEqual(idsOf(b, c, a, d));
+    const undo1 = await s.app.restoreMoveTask(s.owner(), a.id, { expectedRevision: headOf(acks, a.id, m1.revision), originalMoveKey: k1, expectedOrderFingerprint: ackOf(m1).orderFingerprint, expectedHeads: guardHeads(ackOf(m1), acks) });
+    expect(orderRows(s)).toEqual(original);
+    expect(undo1).toMatchObject({ sectionId: null, title: 'A' });
+    expect(undo1.revision).toBeGreaterThan(headOf(acks, a.id, m1.revision));
+    expect(s.db.writesOutsideRun).toBe(0);
+  });
+
+  it('guards every shifted row core head and never rebases a colleague title into an older undo', async () => {
+    const s = await setup(), a = await s.createTask(), b = await s.createTask(), c = await s.createTask();
+    const key = s.key();
+    const moved = await s.app.moveTask(s.ctx(users.owner, key), a.id, { expectedRevision: a.revision, anchorTaskId: c.id, placement: 'after', captureUndo: true });
+    const ack = ackOf(moved), body: RestoreMoveTaskInput = { expectedRevision: moved.revision, originalMoveKey: key, expectedOrderFingerprint: ack.orderFingerprint, expectedHeads: guardHeads(ack) };
+    expect(ack.afterHeads.map(row => row.taskId)).toContain(b.id);
+    await s.app.updateTask(s.owner(), b.id, { expectedRevision: headOf([ack], b.id, b.revision), title: 'Colleague current title' });
+    await expectRejectedWithoutWrites(s, 'foreign sibling core head', () => s.app.restoreMoveTask(s.owner(), a.id, body), 'REVISION_CONFLICT');
+    await expectRejectedWithoutWrites(s, 'missing shifted head', () => s.app.restoreMoveTask(s.owner(), a.id, { ...body, expectedHeads: body.expectedHeads.filter(row => row.taskId !== b.id) }), 'REVISION_CONFLICT');
+    await expectRejectedWithoutWrites(s, 'duplicate shifted head', () => s.app.restoreMoveTask(s.owner(), a.id, { ...body, expectedHeads: [...body.expectedHeads, ...body.expectedHeads.slice(0, 1)] }), 'VALIDATION_FAILED');
+    expect((await s.app.getTask(s.ctx(users.owner), b.id)).title).toBe('Colleague current title');
+  });
+
+  it('preflights every restored field, access and guard before writes, conflicts on foreign reorders and rolls back late failures', async () => {
+    const s = await setup(), done = await doneStatus(s);
+    const source = await s.createTask({ title: 'Source' }), middle = await s.createTask({ title: 'Middle' }), lane = await s.createTask({ title: 'Lane', statusId: done });
+    const key = s.key();
+    const moved = await s.app.moveTask(s.ctx(users.owner, key), source.id, { expectedRevision: source.revision, statusId: done, anchorTaskId: lane.id, placement: 'after', captureUndo: true });
+    const body: RestoreMoveTaskInput = { expectedRevision: moved.revision, originalMoveKey: key, expectedOrderFingerprint: ackOf(moved).orderFingerprint, expectedHeads: guardHeads(ackOf(moved)) };
+    const checks = s.db.planningChecks.length;
+    for (const [label, run, code] of [
+      ['unknown original key', () => s.app.restoreMoveTask(s.owner(), source.id, { ...body, originalMoveKey: 'missing-key' }), 'NOT_FOUND'],
+      ['other target', () => s.app.restoreMoveTask(s.owner(), middle.id, { ...body, expectedRevision: (s.db.state.tasks.get(middle.id) as TaskDto).revision }), 'NOT_FOUND'],
+      ['stale revision', () => s.app.restoreMoveTask(s.owner(), source.id, { ...body, expectedRevision: moved.revision + 1 }), 'REVISION_CONFLICT'],
+      ['client fingerprint', () => s.app.restoreMoveTask(s.owner(), source.id, { ...body, expectedOrderFingerprint: 'stale-fingerprint' }), 'REVISION_CONFLICT'],
+      ['viewer', () => s.app.restoreMoveTask(s.ctx(users.viewer, s.key()), source.id, body), 'CAPABILITY_REQUIRED'],
+      ['revoked', () => s.app.restoreMoveTask(s.ctx(users.revoked, s.key()), source.id, body), 'NOT_FOUND'],
+      ['missing key', () => s.app.restoreMoveTask(s.ctx(users.owner), source.id, body), 'VALIDATION_FAILED'],
+      ['client positions', () => s.app.restoreMoveTask(s.owner(), source.id, { ...body, position: 0 } as unknown as RestoreMoveTaskInput), 'VALIDATION_FAILED'],
+    ] as const) await expectRejectedWithoutWrites(s, label, run, code);
+    s.db.blockedStatusTaskId = source.id;
+    try { await expectRejectedWithoutWrites(s, 'blocked status', () => s.app.restoreMoveTask(s.owner(), source.id, body), 'DOMAIN_VALIDATION_FAILED'); } finally { s.db.blockedStatusTaskId = null; }
+    expect(s.db.planningChecks).toHaveLength(checks);
+
+    const before = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES), events = s.events.length;
+    s.db.failSaveTaskId = middle.id;
+    try { await expect(s.app.restoreMoveTask(s.owner(), source.id, body)).rejects.toThrow('Synthetic late task write failure.'); } finally { s.db.failSaveTaskId = null; }
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(before);
+    expect(s.events).toHaveLength(events);
+
+    // A foreign, uncaptured reorder of another row conservatively blocks the undo.
+    await moveTo(s, middle.id, source.id, 'after');
+    const current = { ...body, expectedRevision: (s.db.state.tasks.get(source.id) as TaskDto).revision };
+    await expectRejectedWithoutWrites(s, 'foreign reorder', () => s.app.restoreMoveTask(s.owner(), source.id, current), 'REVISION_CONFLICT');
   });
 });

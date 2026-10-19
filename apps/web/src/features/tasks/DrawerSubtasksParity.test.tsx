@@ -120,7 +120,7 @@ describe('drawer subtask rows', () => {
     await ui.user.keyboard('{ArrowUp}');
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.path).toBe(`${rootPath}/tasks/${B_ID}/move`);
-    expect(calls[0]?.body).toEqual({ expectedRevision: 3, anchorTaskId: A_ID, placement: 'before' });
+    expect(calls[0]?.body).toEqual({ expectedRevision: 3, anchorTaskId: A_ID, placement: 'before', captureUndo: true });
   });
 
   it('refuses another reorder while one is unknown and retries the exact one from visible feedback', async () => {

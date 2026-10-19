@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import {leaveAvailabilityInputSchema,leaveAvailabilitySchema} from './leave-api.js';
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
 import { calendarDateSchema, revisionSchema, taskStatusGroupSchema, utcTimestampSchema } from './tasks.js';
@@ -32,6 +33,7 @@ export const genericReportConfigSchema = z.strictObject({
   comparison: z.strictObject({ planFieldId: idSchema, factFieldId: idSchema, completion: z.enum(['done_only', 'all_tasks']) }).refine(v => v.planFieldId !== v.factFieldId, 'Choose two different fields.').nullable(),
   groupBy: genericReportGroupSchema,
   filters: genericReportFiltersSchema,
+  capacity: leaveAvailabilityInputSchema.optional(),
 });
 export const genericReportDefinitionSchema = z.strictObject({ id: idSchema, workspaceId: idSchema, projectId: idSchema, name, revision: revisionSchema, config: genericReportConfigSchema, archivedAt: utcTimestampSchema.nullable(), createdAt: utcTimestampSchema, updatedAt: utcTimestampSchema });
 export const createGenericReportInputSchema = z.strictObject({ name, config: genericReportConfigSchema });
@@ -41,7 +43,7 @@ export const genericReportPageSchema = z.strictObject({ offset: z.number().int()
 export const queryGenericReportInputSchema = genericReportPageSchema.extend({ expectedRevision: revisionSchema, snapshotId: idSchema.nullable().default(null) });
 export const queryGenericAggregatesInputSchema = genericReportPageSchema.extend({ config: genericReportConfigSchema });
 export const captureGenericInitialInputSchema = z.strictObject({ expectedRevision: revisionSchema, name, expectedSourceVersion: z.string().regex(/^[a-f0-9]{64}$/) });
-export const genericInitialSnapshotSchema = z.strictObject({ id: idSchema, workspaceId: idSchema, reportId: idSchema, projectId: idSchema, name, definitionRevision: revisionSchema, config: genericReportConfigSchema, fields: z.array(taskFieldDefinitionSchema), capturedAt: utcTimestampSchema, capturedByUserId: idSchema, sourceVersion: z.string().regex(/^[a-f0-9]{64}$/), taskCount: z.number().int().min(0).max(5000) });
+export const genericInitialSnapshotSchema = z.strictObject({ id: idSchema, workspaceId: idSchema, reportId: idSchema, projectId: idSchema, name, definitionRevision: revisionSchema, config: genericReportConfigSchema, fields: z.array(taskFieldDefinitionSchema), capturedAt: utcTimestampSchema, capturedByUserId: idSchema, sourceVersion: z.string().regex(/^[a-f0-9]{64}$/), taskCount: z.number().int().min(0).max(5000), capacity:leaveAvailabilitySchema.optional() });
 
 /** Exact rational is authoritative. Decimal is a deterministic presentation rounded to at most 12 places. */
 export const genericReportNumberSchema = z.strictObject({ numerator: z.string().regex(/^-?\d+$/), denominator: z.string().regex(/^[1-9]\d*$/), decimal: z.string().regex(/^-?\d+(?:\.\d+)?$/) });
@@ -55,6 +57,7 @@ export const genericReportResultSchema = z.strictObject({
   reportId: idSchema.nullable(), definitionRevision: revisionSchema.nullable(), sourceVersion: z.string().regex(/^[a-f0-9]{64}$/), config: genericReportConfigSchema,
   scope: z.literal('project_presence_canonical_tasks'), hierarchy: z.enum(['all_tasks', 'root_tasks']), attribution: z.literal('primary_assignee'), fields: z.array(taskFieldDefinitionSchema),
   totalTasks: z.number().int().nonnegative(), measures: z.array(genericMeasureResultSchema), initialMeasures: z.array(genericMeasureResultSchema).nullable(), comparison: genericComparisonSchema.nullable(), initialComparison: genericComparisonSchema.nullable(), groups: z.array(genericGroupResultSchema), rows: z.array(genericReportRowSchema), offset: z.number().int().nonnegative(), nextOffset: z.number().int().nonnegative().nullable(),
+  capacity:leaveAvailabilitySchema.optional(),initialCapacity:leaveAvailabilitySchema.optional(),
   initialSnapshot: genericInitialSnapshotSchema.nullable(), cohorts: z.strictObject({ initial: z.number().int().nonnegative(), retained: z.number().int().nonnegative(), added: z.number().int().nonnegative(), removed: z.number().int().nonnegative() }).nullable(),
 });
 export const genericAggregateSettingsSchema = z.strictObject({ workspaceId: idSchema, projectId: idSchema, revision: z.number().int().nonnegative(), measures: z.array(genericReportMeasureSchema).max(12).refine(v => unique(v.map(m => m.key))) });

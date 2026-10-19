@@ -10,6 +10,8 @@ import {
   createTaskRowInputSchema,
   taskRowResponseSchema,
   moveTaskInputSchema,
+  movedTaskResponseSchema,
+  restoreMoveTaskInputSchema,
   restoreTaskInputSchema,
   tagListResponseSchema,
   tagResponseSchema,
@@ -23,6 +25,7 @@ import {
   type CreateTaskInput,
   type CreateTaskRowInput,
   type MoveTaskInput,
+  type RestoreMoveTaskInput,
   type RestoreTaskInput,
   type TagDto,
   type TaskDto,
@@ -172,13 +175,17 @@ export function archiveTaskRequest(workspaceId: string, taskId: string, input: A
 }
 
 /** Places the task right before/after its anchor under the same parent; a root may take the anchor's section. */
+export function restoreMoveTaskRequest(workspaceId: string, taskId: string, input: RestoreMoveTaskInput) {
+  return prepareMutation({ method: 'POST', path: `${taskPath(workspaceId, taskId)}/restore-move`, input, inputSchema: restoreMoveTaskInputSchema, responseSchema: movedTaskResponseSchema });
+}
+
 export function moveTaskRequest(workspaceId: string, taskId: string, input: MoveTaskInput) {
   return prepareMutation({
     method: 'POST',
     path: `${taskPath(workspaceId, taskId)}/move`,
     input,
     inputSchema: moveTaskInputSchema,
-    responseSchema: taskResponseSchema,
+    responseSchema: movedTaskResponseSchema,
   });
 }
 

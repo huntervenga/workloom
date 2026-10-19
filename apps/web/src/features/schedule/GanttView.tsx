@@ -1,3 +1,5 @@
+import { useAvailability } from '../time-off/queries';
+import { GanttAvailabilityBands, GanttAvailabilityWarning, supportedAvailabilityWindow, unavailableDates } from '../time-off/GanttAvailability';
 import { t, useTranslation } from '../../i18n';
 import type { BaselineDateValueDto, MembershipDto, PlanningPeriodDto, PlanBaselineDto, ProjectDto, TaskDto, TaskScheduleContextRowDto, WorkspaceDto } from '@workloom/contracts';
 import { useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent } from 'react';
@@ -82,6 +84,9 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
   const refusedTask = useRef<string | null>(null);
   useLayoutEffect(() => { if (moveRefused && readMoveGate(refusedTask.current ?? undefined) === null) setMoveRefused(null); }, [moveRefused, moveGate, readMoveGate, c.drafts, c.held]);
   const axis = useMemo(() => { const window = calendarWindow(c.windowStart, c.windowSize); return window ? { window, ...calendarAxis(window) } : null; }, [c.windowStart, c.windowSize]);
+  const availabilityPeople = [...new Set(tasks.flatMap(task => task.responsibleMembershipId ? [task.responsibleMembershipId] : []))].sort();
+  const availabilityWindow = axis ? supportedAvailabilityWindow(axis.window) : null;
+  const availability = useAvailability(actorId, workspace.id, availabilityWindow ? { startDate: availabilityWindow.startDate, endDate: availabilityWindow.endDate, people: availabilityPeople.length ? { kind: 'selected', membershipIds: availabilityPeople } : { kind: 'all_active' } } : null);
   // Calendar-only values are formatted at UTC midnight so the viewer's zone never shifts a day.
   const formats = useMemo(() => ({
     weekday: new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }),
@@ -173,6 +178,7 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
   const renderRow = (task: TaskDto) => {
     const row = context.rows.get(task.id);
     if (!row || !window) return <div key={task.id} className="px-3 py-2 text-xs text-muted">{t('schedule.ganttView.taskDatesHaveNotLoadedYet')}</div>;
+    const absenceDates = availability.isSuccess && availability.data.settingsConfigured ? unavailableDates(availability.data, task.responsibleMembershipId, window) : new Set<string>();
     const base = row.baselineDates;
     const baseStart = base.state === 'captured' && base.startDate.state === 'set' ? base.startDate.value : null;
     const baseDue = base.state === 'captured' && base.dueDate.state === 'set' ? base.dueDate.value : null;
@@ -186,9 +192,11 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
         {row.meetingId ? <button type="button" className="mt-0.5 rounded text-[11px] text-accent-ink underline" onClick={() => onOpen(task.id)}>{t('schedule.ganttView.meetingOpenCalendar')}</button>
           : <p className="mt-0.5 text-[11px] leading-4 text-muted">{t('schedule.ganttView.datesSummary', { start: row.current.startDate ?? t('schedule.ganttView.notSet'), due: row.current.dueDate ?? t('schedule.ganttView.notSet') })}</p>}
         {base.state === 'not_in_baseline' ? <p className="truncate text-[11px] leading-4 text-muted">{t('schedule.ganttView.taskIsNotIncludedInThisPlan')}</p> : base.state === 'captured' ? <p className="text-[11px] leading-4 text-slate-600">{t('schedule.ganttView.planStartValue', { date: baselineValue(base.startDate, true) })}<br />{t('schedule.ganttView.dueValue', { date: baselineValue(base.dueDate, false) })}</p> : null}
+        <GanttAvailabilityWarning availability={availability.isSuccess ? availability.data : undefined} membershipId={task.responsibleMembershipId} startDate={row.current.startDate} endDate={row.current.dueDate} dates={absenceDates}/>
         {row.blocking.isBlocked ? <p className="text-[11px] leading-4 text-amber-900">{t('schedule.ganttView.unfinishedPredecessorCount', { count: row.blocking.unresolvedCount })}</p> : null}
       </div>
       <div data-gantt-track="" className={`relative shrink-0 py-1.5 ${TRACK_BACKGROUND}`} style={{ width: window.days * width, ...background }}>
+        <GanttAvailabilityBands dates={absenceDates} window={window} width={width}/>
         {todayOffset !== null ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-0.5 bg-rose-500/70" style={{ left: (todayOffset + 0.5) * width - 1 }} /> : null}
         {row.meetingId ? <p className="px-1 text-xs leading-6 text-muted">{t('schedule.ganttView.meetingScheduleIsInTheCalendarWithoutA')}</p>
           : <GanttMoveBar actorId={actorId} workspaceId={workspace.id} source={dateMoveSource(task, row, { projectId: project.id, writable, ready: snapshotReady })} viewportKey={viewportKey} pixelsPerDay={width} window={window} staged={movedDrafts.get(task.id) ?? null} canStart={() => c.moveGate(task.id) === null} onRefused={() => refuseMove(task.id)} onDrop={dropMove}>
@@ -209,9 +217,12 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
       <h2 className="text-base font-semibold">{t('schedule.ganttView.timelineGantt')}</h2>
       {window ? <p className="text-xs text-muted">{t('schedule.ganttView.scopeLine', { range: formatRange(window.start, window.end), scope })} <span className="sr-only">{t('schedule.ganttView.windowRangeDetail', { count: window.days, startIso: window.start, endIso: window.end, timezone: workspace.timezone })}</span></p> : null}
     </header>
+    {axis && !availabilityWindow ? <p className="text-xs text-muted">{t('timeOff.availabilityOutsideCoverage')}</p> : availabilityWindow && !availabilityWindow.complete ? <p className="text-xs text-muted">{t('timeOff.availabilityPartialCoverage', { from: availabilityWindow.startDate, to: availabilityWindow.endDate })}</p> : null}
+    {availabilityWindow && availability.isError ? <p role="status" className="text-xs text-muted">{t('timeOff.availabilityFailed')} <button type="button" className="text-accent-ink underline" onClick={() => void availability.refetch()}>{t('common.retry')}</button></p> : availability.isSuccess && !availability.data.settingsConfigured ? <p className="text-xs text-muted">{t('timeOff.availabilityNotConfigured')}</p> : null}
     <div id={aboutId} hidden={!advancedOpen} className="space-y-1 rounded-lg bg-canvas px-3 py-2 text-xs text-muted">
       {window ? <p>{t('schedule.ganttView.aboutWindow', { count: window.days, startIso: window.start, endIso: window.end, timezone: workspace.timezone })}</p> : null}
       <p>{t('schedule.ganttView.aboutLoaded')}</p>
+      <p>{t('timeOff.ganttLegend')}</p>
       <p>{t('schedule.ganttView.datesDoNotChangePlans')}</p>
       <p>{t('timelineUX.about.move')}</p>
       <p>{t('schedule.ganttView.connectorsAbout')} {t('timelineUX.about.neutral')}</p>

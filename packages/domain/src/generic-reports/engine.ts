@@ -212,6 +212,7 @@ export function calculateGenericReport(source: GenericReportSource, config: Gene
   }));
   const retained = rows.filter(row => originals.has(normalizeId(row.taskId))).length;
   return {
+    ...(source.capacity?{capacity:source.capacity}:{}),...(initial?.header.capacity?{initialCapacity:initial.header.capacity}:{}),
     reportId: null, definitionRevision: null, sourceVersion, config: cloneConfig(config), scope: 'project_presence_canonical_tasks', hierarchy: config.hierarchy,
     attribution: 'primary_assignee', fields: fields.map(cloneField), totalTasks: rows.length, measures: measures(rows, config, fields), comparison: comparison(rows, config),
     initialComparison: initial ? comparison(rows, config, true) : null,

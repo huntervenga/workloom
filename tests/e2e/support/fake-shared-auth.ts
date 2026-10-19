@@ -3,7 +3,7 @@
 // The account chooser is explicitly a private test identity picker, not Google sign-in.
 import { createPrivateKey, createPublicKey, createSign, createVerify, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 export interface FakeSharedAuthIdentity {
@@ -99,8 +99,9 @@ async function readRefreshToken(req: IncomingMessage): Promise<string | null> {
 function privateProviderKeys() {
   const path = process.env.WORKLOOM_QA_AUTH_KEY_FILE;
   if (path === undefined) return { ...generateKeyPairSync('rsa', { modulusLength: 2048 }), kid: randomUUID() };
-  const root = '/private/tmp/workloom-inline-ux-20261019';
-  if (!/^\/private\/tmp\/workloom-inline-ux-20261019\/fake-auth-key-[0-9a-f-]{36}\.json$/.test(path)
+  const ownedRoots = ['/private/tmp/workloom-inline-ux-20261019', '/private/tmp/workloom-time-off-20261019'] as const;
+  const root = ownedRoots.find(candidate => candidate === dirname(path));
+  if (root === undefined || !/^fake-auth-key-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/.test(basename(path))
     || realpathSync(dirname(path)) !== root) throw new Error('Private provider key path is not an owned QA path.');
   const directory = lstatSync(root);
   if (!directory.isDirectory() || directory.uid !== process.getuid?.() || (directory.mode & 0o077) !== 0) throw new Error('Private provider key directory is not owner-only.');

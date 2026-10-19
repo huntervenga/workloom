@@ -27,7 +27,8 @@ import { createTaskFieldDataSchema } from './common/task-field-data.js';
  * - `PATCH /tasks/:taskId` (`updateTaskInputSchema`) → `taskResponseSchema`
  * - `POST /tasks/:taskId/archive` (`archiveTaskInputSchema`) → `taskResponseSchema`
  * - `POST /tasks/:taskId/restore` (`restoreTaskInputSchema`) → `taskResponseSchema`
- * - `POST /tasks/:taskId/move` (`moveTaskInputSchema`) → `taskResponseSchema`
+ * - `POST /tasks/:taskId/move` (`moveTaskInputSchema`) → `movedTaskResponseSchema`
+ * - `POST /tasks/:taskId/restore-move` (`restoreMoveTaskInputSchema`) → `movedTaskResponseSchema`
  *
  * Every mutation requires an `Idempotency-Key` header. The actor is resolved by the server and
  * never read from a body; the workspace comes from the path. Write bodies are strict: unknown
@@ -400,6 +401,11 @@ export const moveTaskInputSchema = z.strictObject({
   responsibleMembershipId: idSchema.nullable().optional(),
   /** Explicit selects atomic Board status-lane order; omission preserves existing move hashes. */
   statusId: idSchema.optional(),
+  /**
+   * Explicit opt-in, no default: a real move also stores a server-only inverse source under this
+   * request's Idempotency-Key and answers with `moveUndo`. Omission keeps old hashes and receipts.
+   */
+  captureUndo: z.literal(true).optional(),
 }).superRefine((input, ctx) => {
   if (input.statusId !== undefined && input.responsibleMembershipId !== undefined) {
     ctx.addIssue({ code: 'custom', path: ['statusId'], message: 'Choose status or assignee order, not both.' });
@@ -407,6 +413,49 @@ export const moveTaskInputSchema = z.strictObject({
   if (input.anchorTaskId === null && ((input.responsibleMembershipId === undefined && input.statusId === undefined) || input.placement !== 'after')) {
     ctx.addIssue({ code: 'custom', path: ['anchorTaskId'], message: 'A null anchor requires an explicit assignee or status and placement after.' });
   }
+});
+
+/** Same rule as the `Idempotency-Key` header: visible ASCII, 1–128 characters. */
+const idempotencyKeySchema = z.string().regex(/^[\x21-\x7e]{1,128}$/);
+export const TASK_MOVE_UNDO_LIMITS = { maxProjectTasks: 5000 } as const;
+
+/** Opaque server digest of the complete project order and grouping; compare for equality only. */
+const orderFingerprintSchema = z.string().min(1).max(8192);
+
+/**
+ * Server-confirmed revision of one task row written by a move or its restore. A client undo chain
+ * replaces its expected revision of `taskId` with this value.
+ */
+export const taskRevisionHeadSchema = z.strictObject({
+  taskId: idSchema,
+  revision: revisionSchema,
+});
+
+/**
+ * Compact ACK of a captured move or of its restore. `originalKey` is the Idempotency-Key of the
+ * original move. `beforeHeads`/`afterHeads` list exactly the rows the command wrote (the moved task
+ * and every renumbered row, unloaded and archived ones included), sorted by `taskId`.
+ * `orderFingerprint` is the confirmed post-command order; the inverse source itself stays server-only.
+ */
+export const moveUndoAckSchema = z.strictObject({
+  originalKey: idempotencyKeySchema,
+  orderFingerprint: orderFingerprintSchema,
+  beforeHeads: z.array(taskRevisionHeadSchema).min(1).max(TASK_MOVE_UNDO_LIMITS.maxProjectTasks),
+  afterHeads: z.array(taskRevisionHeadSchema).min(1).max(TASK_MOVE_UNDO_LIMITS.maxProjectTasks),
+});
+
+/**
+ * Undo of one captured move. The server restores the complete original numeric positions (ties and
+ * gaps included) and the moved task's section, responsible person and status from its own stored
+ * source; the client sends guards only. `expectedRevision` guards the moved task, and the current
+ * order must still equal the move's confirmed `orderFingerprint`, else the restore conflicts.
+ */
+export const restoreMoveTaskInputSchema = z.strictObject({
+  expectedRevision: revisionSchema,
+  originalMoveKey: idempotencyKeySchema,
+  expectedOrderFingerprint: orderFingerprintSchema,
+  /** Exact confirmed current core heads of every row affected by the original move. */
+  expectedHeads: z.array(taskRevisionHeadSchema).min(1).max(TASK_MOVE_UNDO_LIMITS.maxProjectTasks).refine(rows => new Set(rows.map(row => row.taskId)).size === rows.length, 'Duplicate task heads.'),
 });
 
 /**
@@ -516,6 +565,12 @@ export const tagResponseSchema = envelopeSchema(tagSchema);
 export const tagListResponseSchema = envelopeSchema(z.array(tagSchema));
 export const taskResponseSchema = envelopeSchema(taskSchema);
 export const taskListResponseSchema = envelopeSchema(z.array(taskSchema));
+/** Move and restore-move result; `moveUndo` is present only for `captureUndo` moves that wrote and for restores. */
+export const movedTaskSchema = taskSchema.extend({
+  moveUndo: moveUndoAckSchema.optional(),
+});
+export type MoveTaskDto = z.infer<typeof movedTaskSchema>;
+export const movedTaskResponseSchema = envelopeSchema(movedTaskSchema);
 export const bulkUpdatedTaskSchema = taskSchema.extend({
   /** Present only for explicitly opted-in bulk value writes; captured in the same transaction. */
   customFieldAck: createTaskFieldValueSchema({ valueSchema: createTaskFieldDataSchema({ calendarDateSchema, minutesSchema }), revisionSchema, timestampSchema: utcTimestampSchema }).optional(),
@@ -548,6 +603,10 @@ export type ArchiveTaskInput = z.infer<typeof archiveTaskInputSchema>;
 export type RestoreTaskInput = z.infer<typeof restoreTaskInputSchema>;
 export type TaskInsertion = z.infer<typeof taskInsertionSchema>;
 export type MoveTaskInput = z.infer<typeof moveTaskInputSchema>;
+export type RestoreMoveTaskInput = z.infer<typeof restoreMoveTaskInputSchema>;
+export type TaskRevisionHead = z.infer<typeof taskRevisionHeadSchema>;
+export type MoveUndoAck = z.infer<typeof moveUndoAckSchema>;
+export type MovedTaskResponse = z.infer<typeof movedTaskResponseSchema>;
 export type BulkUpdateTasksInput = z.infer<typeof bulkUpdateTasksInputSchema>;
 export type BulkTaskUpdateResponse = z.infer<typeof bulkTaskUpdateResponseSchema>;
 export type TaskListQuery = z.infer<typeof taskListQuerySchema>;

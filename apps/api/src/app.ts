@@ -22,6 +22,7 @@ import {
   createPersonalTablePreferenceApplication,
   createTaskFieldApplication,
   createGenericReportApplication,
+  createLeaveApplication,
   createTaskScheduleApplication,
   createTaskRowApplication,
   createWorkCategoryApplication,
@@ -31,7 +32,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { GenericReportApplication, TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
+import type { LeaveApplication, GenericReportApplication, TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { JWTVerifyGetKey } from 'jose';
 
@@ -43,6 +44,7 @@ import { registerAuthConfigRoute, registerSharedAuthRoutes } from './http/auth-r
 import { HttpError, mapError } from './http/errors.js';
 import { registerCutoffRoutes } from './http/cutoff-routes.js';
 import { registerCategoryRoutes } from './http/category-routes.js';
+import {registerLeaveRoutes} from './http/leave-routes.js';
 import { registerGenericReportRoutes } from './http/generic-report-routes.js';
 import { registerFieldRoutes } from './http/field-routes.js';
 import { registerDependencyRoutes } from './http/dependency-routes.js';
@@ -65,6 +67,7 @@ import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, replyWebNavigation, resolveWebDist } from './http/static-web.js';
 
 export interface AppDependencies {
+  readonly leaveApplication?: LeaveApplication;
   readonly genericReportApplication?: GenericReportApplication;
   readonly teamApplication?: TeamApplication;
   /** Shared database. When given, the app does NOT close it. */
@@ -183,6 +186,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const personalTablePreferenceApplication = dependencies.personalTablePreferenceApplication ?? (database === undefined ? undefined : createPersonalTablePreferenceApplication(database));
   const taskFieldApplication =
     dependencies.taskFieldApplication ?? (database === undefined ? undefined : createTaskFieldApplication(database));
+  const leaveApplication = dependencies.leaveApplication ?? (database === undefined ? undefined : createLeaveApplication(database));
   const genericReportApplication = dependencies.genericReportApplication ?? (database === undefined ? undefined : createGenericReportApplication(database));
   const planningApplication =
     dependencies.planningApplication ?? (database === undefined ? undefined : createPlanningApplication(database));
@@ -336,6 +340,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (taskFieldApplication !== undefined) {
     registerFieldRoutes(app, { identity, fields: taskFieldApplication });
   }
+  if (leaveApplication !== undefined) registerLeaveRoutes(app,{identity,leave:leaveApplication});
   if (genericReportApplication !== undefined) registerGenericReportRoutes(app, { identity, reports: genericReportApplication });
   if (planningApplication !== undefined) {
     registerPlanningRoutes(app, { identity, planning: planningApplication });

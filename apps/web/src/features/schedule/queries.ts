@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import type { TaskScheduleContextDto, TaskScheduleApplyInput, TaskScheduleContextRowDto, ScheduleDependencyComparisonDto } from '@workloom/contracts';
+import type { TaskScheduleContextDto, TaskScheduleApplyInput, TaskScheduleContextRowDto, ScheduleDependencyComparisonDto, TaskSchedulePreviewDto } from '@workloom/contracts';
+import { recordScheduleUndo } from '../undo/recordSpatialUndo';
 import { queryKeys } from '../../lib/queryKeys';
 import { isAccessDenied } from '../../lib/api';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
@@ -36,10 +38,16 @@ export function useScheduleContext(a: string, w: string, p: string, taskIds: rea
     refetch: async () => (await Promise.all(results.map(result => result.refetch()))).every(result => result.isSuccess),
   };
 }
-export interface ApplyScheduleVariables extends IdempotentVariables { draftId: string; input: TaskScheduleApplyInput }
+export interface ApplyScheduleVariables extends IdempotentVariables { draftId: string; input: TaskScheduleApplyInput; undoPreview?: TaskSchedulePreviewDto }
 export function useApplySchedule(a: string, w: string, p: string, onSuccess: (variables: ApplyScheduleVariables) => void) {
   const client = useQueryClient();
-  return useIdempotentMutation({ prepare: (v: ApplyScheduleVariables) => applyScheduleRequest(w, p, v.input), onSuccess: (_data, variables) => {
+  const snapshots = useRef(new WeakMap<ApplyScheduleVariables, TaskSchedulePreviewDto | undefined>()).current;
+  return useIdempotentMutation({ prepare: (v: ApplyScheduleVariables) => {
+    if (!snapshots.has(v)) snapshots.set(v, v.undoPreview ? structuredClone(v.undoPreview) : undefined);
+    return applyScheduleRequest(w, p, v.input);
+  }, onSuccess: (data, variables, ack) => {
+    if (ack.actorId !== null && ack.actorId !== a) return;
+    if (ack.actorId === a) recordScheduleUndo(client, a, w, p, snapshots.get(variables), data, variables.input, ack.receipt);
     onSuccess(variables);
     void client.invalidateQueries({ queryKey: scheduleKeys.root(a, w) });
     void client.invalidateQueries({ queryKey: queryKeys.tasks(a, w) });

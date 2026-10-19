@@ -4,6 +4,7 @@ import postgres from 'postgres';
 
 import { parseDatabaseUrl, type DatabaseUrlInfo } from './database-url.js';
 import {
+  leaveSettings,leaveSettingsVersions,leaveProfiles,leaveProfileVersions,leaveRequests,leaveRequestVersions,leaveChargeLedger,leaveAdjustments,
   genericReportDefinitions,genericReportDefinitionVersions,genericReportInitialSnapshots,genericReportColumnSettings,
   taskDependencies,projectDependencyPolicies,graphLayouts,graphLayoutPositions,
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
@@ -52,6 +53,7 @@ import {
 } from './schema.js';
 
 export const tables = {
+  leaveSettings,leaveSettingsVersions,leaveProfiles,leaveProfileVersions,leaveRequests,leaveRequestVersions,leaveChargeLedger,leaveAdjustments,
   genericReportDefinitions,genericReportDefinitionVersions,genericReportInitialSnapshots,genericReportColumnSettings,
   taskDependencies,projectDependencyPolicies,graphLayouts,graphLayoutPositions,
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,

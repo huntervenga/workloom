@@ -1,4 +1,4 @@
-import type { GenericAggregateSettingsDto, GenericInitialSnapshotDto, GenericReportConfig, GenericReportDefinitionDto, GenericReportRowDto, TaskFieldDefinitionDto, TaskFieldValueDto, TaskStatusDto } from '@workloom/contracts';
+import type { LeaveAvailabilityDto, GenericAggregateSettingsDto, GenericInitialSnapshotDto, GenericReportConfig, GenericReportDefinitionDto, GenericReportRowDto, TaskFieldDefinitionDto, TaskFieldValueDto, TaskStatusDto } from '@workloom/contracts';
 import type { CommandContext } from '../access/context.js';
 import type { Capability } from '../access/capabilities.js';
 import type { TaskFieldWriteScope } from '../fields/ports.js';
@@ -9,6 +9,7 @@ export interface GenericSourceTask {
 }
 export interface GenericReportSource {
   /** Workspace change sequence + permission epoch under the same shared/exclusive barrier. */
+  capacity?: LeaveAvailabilityDto;
   head: string; fields: TaskFieldDefinitionDto[]; tasks: GenericSourceTask[]; values: TaskFieldValueDto[];
   memberLabels: Record<string, string>; sectionLabels: Record<string, string>;
 }
@@ -17,6 +18,7 @@ export interface GenericReportRepository {
   list(projectId: string): Promise<GenericReportDefinitionDto[]>;
   find(reportId: string): Promise<GenericReportDefinitionDto | null>;
   save(report: GenericReportDefinitionDto): Promise<void>;
+  validateCapacity?(config:GenericReportConfig,allowFormer?:boolean):Promise<void>;
   source(config: GenericReportConfig): Promise<GenericReportSource>;
   listSnapshots(reportId: string): Promise<GenericInitialSnapshotDto[]>;
   findSnapshot(reportId: string, snapshotId: string): Promise<StoredGenericInitial | null>;

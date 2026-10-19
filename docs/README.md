@@ -137,3 +137,5 @@
 - [89: Board ordering, section-column Graph and ordinary report demo — accepted locally](89-board-sections-and-ordinary-report-demo.md).
 
 - [90: Inline editing, compact task pane and Undo — accepted and activated locally](90-inline-editing-compact-pane-and-undo.md).
+
+- [92: Guarded Undo of task moves, Gantt dates and confirmed personal layouts — implementation/verification contract](92-spatial-undo.md).

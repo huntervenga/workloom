@@ -1,12 +1,13 @@
+import { availabilityReadRoutes, isAvailabilityRead } from './test/availability';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import type { TaskDto, TaskScheduleBatchInput } from '@workloom/contracts';
+import { leaveAvailabilityInputSchema, type TaskDto, type TaskScheduleBatchInput } from '@workloom/contracts';
 import { describe, expect, it } from 'vitest';
 import { ok, installFakeApi, renderApp } from '../../test/fakeApi';
 import { tablePath, tableRoutes } from '../work-categories/test/fixtures';
 import { baseline, period } from '../planning/test/fixtures';
 import { scheduledTask, scheduleContext, schedulePreview, schedulePath, PROJECT_ID, BASELINE_ID, PERIOD_A, rootPath } from './test/fixtures';
 
-const routes = (tasks: () => TaskDto[]) => ({ ...tableRoutes(),
+const routes = (tasks: () => TaskDto[]) => ({ ...tableRoutes(), ...availabilityReadRoutes,
   [`GET ${rootPath}/tasks`]: () => ok(tasks()),
   [`GET ${rootPath}/periods`]: () => ok([period()]),
   [`GET ${rootPath}/periods/${PERIOD_A}/baselines`]: () => ok([baseline()]),
@@ -32,6 +33,8 @@ describe('actual project date view and date editor', () => {
     await within(gantt).findByRole('group', { name: `Calendar dates: ${extreme.title}` });
     // First open fits the loaded 0001..9999 span: bounded to the first 366 days and explained.
     expect(within(gantt).getByLabelText("Window start")).toHaveValue('0001-01-01');
+    expect(within(gantt).getByText('Availability is unavailable outside 1900–2200.')).toBeInTheDocument();
+    expect(calls.filter(isAvailabilityRead).every(call => leaveAvailabilityInputSchema.safeParse(call.body).success)).toBe(true);
     expect(within(gantt).getByRole('status')).toHaveTextContent(/more than|showing the first 366 from the earliest/);
     await user.selectOptions(within(gantt).getByLabelText("Days in window"), '28');
     fireEvent.change(within(gantt).getByLabelText("Window start"), { target: { value: '2026-03-28' } });
@@ -55,10 +58,12 @@ describe('actual project date view and date editor', () => {
     await user.selectOptions(within(gantt).getByLabelText("Frozen plan to compare"), BASELINE_ID);
     await waitFor(() => expect(within(gantt).getAllByText(/Start date was not captured in this plan/).length).toBeGreaterThan(0));
     expect(within(gantt).getByRole('img', { name: "Frozen: start 0001-01-01, due 9999-12-31" })).toHaveStyle({ left: '0%', width: '100%' });
-    expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+    expect(calls.filter(call => call.method !== 'GET' && !isAvailabilityRead(call))).toHaveLength(0);
     fireEvent.change(within(gantt).getByLabelText("Window start"), { target: { value: '9999-12-31' } });
     expect(within(within(gantt).getByRole('list', { name: "Calendar window days" })).getAllByRole('listitem')).toHaveLength(1);
     expect(within(gantt).getByRole('button', { name: "Next window" })).toBeDisabled();
+    expect(within(gantt).getByText('Availability is unavailable outside 1900–2200.')).toBeInTheDocument();
+    expect(calls.filter(isAvailabilityRead).every(call => leaveAvailabilityInputSchema.safeParse(call.body).success)).toBe(true);
   });
 
   it('edits dates through reviewed atomic apply and leaves whole-task effort and package revisions alone', async () => {

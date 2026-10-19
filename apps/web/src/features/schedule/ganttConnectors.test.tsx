@@ -1,3 +1,4 @@
+import { availabilityReadRoutes, isAvailabilityRead } from './test/availability';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -34,7 +35,7 @@ beforeEach(() => {
 afterEach(() => { restoreRect(); for (const client of clients.splice(0)) client.clear(); });
 const today = todayIn(alpha.timezone);
 function day(offset: number) { const value = shiftDay(today, offset); if (!value) throw new Error('Expected day'); return value; }
-const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET');
+const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET' && !isAvailabilityRead(call));
 let sequence = 0;
 function link(from: TaskDto, to: TaskDto, state: 'compatible' | 'conflict' = 'compatible'): ScheduleDependencyComparisonDto {
   return { dependencyId: `d1000000-0000-4000-8000-${String(++sequence).padStart(12, '0')}`, predecessorTaskId: from.id, successorTaskId: to.id, predecessorDueDate: from.dueDate, successorStartDate: to.startDate ?? null, predecessorContext: dependencyContext(from), successorContext: dependencyContext(to), state };
@@ -51,6 +52,7 @@ function comparisons(): ScheduleDependencyComparisonDto[] {
 function mount() {
   const state = { deny: false };
   const { calls } = installFakeApi({
+    ...availabilityReadRoutes,
     [`GET ${schedulePath}/schedule-context`]: request => {
       if (state.deny) return failure(403, 'CAPABILITY_REQUIRED', 'Denied');
       const ids = new Set(request.searchParams.get('taskIds')?.split(','));

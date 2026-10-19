@@ -176,7 +176,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
   const apply = (draft: ScheduleDraft) => {
     const input = scheduleDraftInput(draft);
     if (!input || held || denied || rebasing !== null || laneOwned(draft.id) || !draft.preview || draft.previewFingerprint !== fingerprint(input) || draft.preview.protectedTargets.length || draft.preview.recoveryPeriodIds.length) return;
-    mutation.mutate({ draftId: draft.id, input: { ...input, previewHash: draft.preview.previewHash } });
+    mutation.mutate({ draftId: draft.id, undoPreview: structuredClone(draft.preview), input: { ...input, previewHash: draft.preview.previewHash } });
   };
   /** Cancel never writes: a queued proposal leaves the lane, an in-flight preview is ignored when it answers. */
   const discard = (id: string) => { if (held?.draftId === id) return; forget(id); setDrafts(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== id))); setActiveId(current => current === id ? null : current); };
@@ -257,7 +257,7 @@ export function useScheduleWorkspace(actorId: string, workspaceId: string, proje
     try {
       entry.state = 'sending';
       patchDraft(id, { moveState: 'sending' });
-      await m.mutateAsync({ draftId: id, input: { ...input, previewHash: result.previewHash } });
+      await m.mutateAsync({ draftId: id, undoPreview: structuredClone(result), input: { ...input, previewHash: result.previewHash } });
       return 'done';
     } catch (error) {
       if (moves.current.get(id) !== entry) return 'done';

@@ -7,8 +7,10 @@ import type {
   CreateSectionInput,
   CreateTagInput,
   CreateTaskInput,
+  MoveTaskDto,
   MoveTaskInput,
   ProjectDto,
+  RestoreMoveTaskInput,
   RestoreTaskInput,
   SectionDto,
   TagDto,
@@ -66,8 +68,16 @@ export interface TaskApplication {
   updateTask(context: CommandContext, taskId: string, input: UpdateTaskInput): Promise<TaskDto>;
   archiveTask(context: CommandContext, taskId: string, input: ArchiveTaskInput): Promise<TaskDto>;
   restoreTask(context: CommandContext, taskId: string, input: RestoreTaskInput): Promise<TaskDto>;
-  /** Manual reorder next to an active sibling; see `moveTaskInputSchema`. */
-  moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<TaskDto>;
+  /**
+   * Manual reorder next to an active sibling; see `moveTaskInputSchema`. Only `captureUndo: true`
+   * moves that wrote carry `moveUndo`; otherwise the result is the plain task, as before.
+   */
+  moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<MoveTaskDto>;
+  /**
+   * Undo of one captured move by the same actor, from its server-only source; see
+   * `restoreMoveTaskInputSchema`. A new audited all-or-nothing write; exact retries replay its receipt.
+   */
+  restoreMoveTask(context: CommandContext, taskId: string, input: RestoreMoveTaskInput): Promise<MoveTaskDto>;
   /** Explicit all-or-nothing selection patch, with current access checked before receipt replay. */
   bulkUpdateTasks(context: CommandContext, input: BulkUpdateTasksInput): Promise<BulkUpdatedTaskDto[]>;
 }

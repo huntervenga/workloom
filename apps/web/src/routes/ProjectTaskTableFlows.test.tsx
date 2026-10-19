@@ -170,7 +170,7 @@ describe('manual reorder', () => {
     await user.pointer({ keys: '[/MouseLeft]', target, coords: { clientX: 2, clientY: 90 } });
 
     await waitFor(() => expect(moves(calls)).toHaveLength(1));
-    expect(moves(calls)[0]?.body).toEqual({ expectedRevision: A.revision, anchorTaskId: C.id, placement: 'after' });
+    expect(moves(calls)[0]?.body).toEqual({ expectedRevision: A.revision, anchorTaskId: C.id, placement: 'after', captureUndo: true });
     expect(moves(calls)[0]?.headers.get('Idempotency-Key')).toBeTruthy();
     // The pointer position is not persistence: nothing moves before the server answers.
     expect(order()).toEqual([A.id, B.id, C.id]);
@@ -189,7 +189,7 @@ describe('manual reorder', () => {
     (await screen.findByRole('button', { name: `Move task: ${A.title}` })).focus();
     await user.keyboard('{ArrowDown}');
     await waitFor(() => expect(moves(calls)).toHaveLength(1));
-    expect(moves(calls)[0]?.body).toEqual({ expectedRevision: A.revision, anchorTaskId: B.id, placement: 'after' });
+    expect(moves(calls)[0]?.body).toEqual({ expectedRevision: A.revision, anchorTaskId: B.id, placement: 'after', captureUndo: true });
 
     const other = await screen.findByRole('button', { name: `Move task: ${B.title}` });
     await waitFor(() => expect(other).toHaveAttribute('aria-disabled', 'true'));

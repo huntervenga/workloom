@@ -189,3 +189,10 @@ export * from './generic-reports/ports.js';
 export * from './generic-reports/service.js';
 export * from './generic-reports/engine.js';
 export { createTaskFieldInScope } from './fields/service.js';
+
+export * from './leave/ports.js';
+export * from './leave/service.js';
+export * from './leave/availability.js';
+export * from './leave/calendar.js';
+export * from './leave/calculation.js';
+export * from './leave/accrual.js';

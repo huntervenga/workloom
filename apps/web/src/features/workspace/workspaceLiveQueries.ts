@@ -5,7 +5,7 @@ import { queryKeys } from '../../lib/queryKeys';
 const LIVE_BRANCHES = new Set([
   'memberships', 'projects', 'project', 'tags', 'tasks', 'fields', 'workCategoryBinding',
   'timeSummaries', 'planning', 'workCategories', 'meetings', 'recurrence', 'dependencies',
-  'schedule', 'cutoff', 'imports', 'local-mcp-credentials', 'generic-reports',
+  'schedule', 'cutoff', 'imports', 'local-mcp-credentials', 'generic-reports', 'time-off',
 ]);
 
 export function isWorkspaceLiveKey(key: QueryKey, actorId: string, workspaceId: string): boolean {

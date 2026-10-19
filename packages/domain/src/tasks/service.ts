@@ -3,6 +3,7 @@ import {assertTaskDateRange,assertOrdinaryTaskDates} from './dates.js';
 import type { TaskMutationCommand } from '../planning/ports.js';
 import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
 import {
+  TASK_MOVE_UNDO_LIMITS,
   archiveTaskInputSchema,
   bulkUpdateTasksInputSchema,
   bulkChangesForTask,
@@ -14,7 +15,9 @@ import {
   createTaskInputSchema,
   idSchema,
   moveTaskInputSchema,
+  movedTaskSchema,
   projectSchema,
+  restoreMoveTaskInputSchema,
   restoreTaskInputSchema,
   sectionSchema,
   tagSchema,
@@ -30,8 +33,11 @@ import {
   type CreateSectionInput,
   type CreateTagInput,
   type CreateTaskInput,
+  type MoveTaskDto,
   type MoveTaskInput,
+  type MoveUndoAck,
   type ProjectDto,
+  type RestoreMoveTaskInput,
   type RestoreTaskInput,
   type SectionDto,
   type TagDto,
@@ -53,6 +59,15 @@ import { DomainError, notFoundError, unauthenticatedError } from '../errors.js';
 import type { RecordedChange } from '../transactions/ports.js';
 import { loadTaskActivityLabels, taskActivityDiff } from './activity.js';
 import type { TaskApplication, TaskPage } from './application.js';
+import {
+  MOVE_RESTORE_COMMAND,
+  MOVE_UNDO_SOURCE_COMMAND,
+  moveGroupOf,
+  orderFingerprint,
+  parseMoveUndoSource,
+  revisionHeads,
+  type MoveUndoSource,
+} from './move-undo.js';
 import type { TaskApplicationDependencies, TaskCursorAnchor, TaskRepository, TaskWriteScope, WorkPackageRecord } from './ports.js';
 
 const MAX_POSITION = 2_147_483_647;
@@ -119,6 +134,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
     input: unknown,
     resultSchema: SafeParser<R>,
     work: (scope: TaskWriteScope, workspaceId: string, now: string) => Promise<R>,
+    authorizeBeforeReplay?: (scope: TaskWriteScope) => Promise<void>,
   ): Promise<R> {
     const ctx = normalizeContext(context);
     const key = ctx.idempotencyKey;
@@ -130,6 +146,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
     const actorUserId = ctx.actor.userId;
 
     const outcome = await writer.run(ctx, capability, async (scope) => {
+      if (authorizeBeforeReplay) await authorizeBeforeReplay(scope);
       const existing = await scope.repository.findIdempotency(workspaceId, actorUserId, command, key);
       if (existing !== null) {
         if (existing.payloadHash !== payloadHash) {
@@ -609,10 +626,13 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
       return unwrapPlanningOutcome(outcome);
     },
 
-    async moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<TaskDto> {
+    async moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<MoveTaskDto> {
       const id = parsePathId(taskId);
       const parsed = parseInput<MoveTaskInput>(moveTaskInputSchema, input);
-      return mutate(context, 'task.edit', 'task.move', id, parsed, taskSchema, async (scope, ws, now) => {
+      // Opt-in only: without captureUndo the hash, receipt schema and output stay byte-exact.
+      const captureUndo = parsed.captureUndo === true;
+      const resultSchema: SafeParser<MoveTaskDto> = captureUndo ? movedTaskSchema : taskSchema;
+      return mutate(context, 'task.edit', 'task.move', id, parsed, resultSchema, async (scope, ws, now) => {
         const repo = scope.repository;
         const task = requireFound(await repo.findTask(ws, id));
         expectRevision(task.revision, parsed.expectedRevision);
@@ -632,6 +652,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         }
         const responsibleMembershipId = assigneeMode ? parsed.responsibleMembershipId ?? null : task.responsibleMembershipId;
         const projectOrder = await listOrderScope(repo, ws, task.projectId);
+        if (captureUndo && projectOrder.length > TASK_MOVE_UNDO_LIMITS.maxProjectTasks) throw ruleError('This project is too large to capture a move undo.', 'captureUndo');
         let anchor: TaskDto | null;
         if (parsed.anchorTaskId === null) {
           // Full project scope, never the filtered/loaded client group. Archived rows keep their relative order.
@@ -677,8 +698,104 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const labels = await loadTaskActivityLabels(scope, [activityPair]);
         await record(scope, 'task', id, 'updated', updated.revision, taskActivityDiff(activityPair, diff, labels), taskEventIds(updated));
         if (renumber) await saveShiftedTasks(scope, order, now);
-        return updated;
+        if (!captureUndo) return updated;
+        // A no-op above returns without moveUndo: there is nothing to undo and no source is stored.
+        // Same normalized actor, key and payload hash as the primary receipt that mutate writes next.
+        const owner = normalizeContext(context);
+        const receipt = { actorUserId: owner.actor.userId, key: owner.idempotencyKey, payloadHash: hash({ command: 'task.move', target: id, input: parsed }) };
+        return { ...updated, moveUndo: await saveMoveUndoSource(scope, hash, receipt, task, projectOrder, now) };
+      }, captureUndo ? async scope => {
+        const current = requireFound(await scope.repository.findTask(scope.context.workspaceId, id));
+        requireFound(await scope.repository.findProject(scope.context.workspaceId, current.projectId));
+      } : undefined);
+    },
+
+    async restoreMoveTask(context: CommandContext, taskId: string, input: RestoreMoveTaskInput): Promise<MoveTaskDto> {
+      const id = parsePathId(taskId);
+      const parsed = parseInput<RestoreMoveTaskInput>(restoreMoveTaskInputSchema, input);
+      const ctx = normalizeContext(context);
+      const key = ctx.idempotencyKey;
+      if (key === undefined || !IDEMPOTENCY_KEY_PATTERN.test(key)) throw validationError(['Idempotency-Key'], 'A valid Idempotency-Key is required.');
+      const command = MOVE_RESTORE_COMMAND;
+      const payloadHash = hash({ command, target: id, input: parsed });
+      const ws = ctx.workspaceId, actorUserId = ctx.actor.userId;
+      const outcome = await writer.run(ctx, 'task.edit', async (scope) => {
+        const repo = scope.repository;
+        // Current access to the actor's own stored source, its task and project precede any receipt replay.
+        const stored = await repo.findIdempotency(ws, actorUserId, MOVE_UNDO_SOURCE_COMMAND, parsed.originalMoveKey);
+        if (stored === null) throw notFoundError();
+        const source = parseMoveUndoSource(stored.result);
+        if (source === null) throw new Error('Stored move undo source does not match its contract.');
+        if (source.taskId !== id || source.originalKey !== parsed.originalMoveKey) throw notFoundError();
+        const task = requireFound(await repo.findTask(ws, id));
+        requireSameProject(task, source.projectId, 'taskId');
+        requireFound(await repo.findProject(ws, source.projectId));
+        const existing = await repo.findIdempotency(ws, actorUserId, command, key);
+        if (existing !== null) {
+          if (existing.payloadHash !== payloadHash) throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This Idempotency-Key was already used for a different request.');
+          if (isCommittedPlanningRejection(existing.result)) return existing.result;
+          const replay = movedTaskSchema.safeParse(existing.result);
+          if (!replay.success) throw new Error('Stored idempotent result does not match its contract.');
+          return replay.data;
+        }
+        await requireOpenProject(repo, ws, task.projectId);
+        expectRevision(task.revision, parsed.expectedRevision);
+        if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before undoing its move.', 'taskId');
+        // The client fingerprint only binds the request; the stored source and the re-read rows are the authority.
+        if (parsed.expectedOrderFingerprint !== source.afterFingerprint) throw orderConflictError();
+        const projectOrder = await listOrderScope(repo, ws, task.projectId);
+        if (orderFingerprint(hash, task.projectId, projectOrder) !== source.afterFingerprint) throw orderConflictError();
+        const positions = new Map(source.positions.map((row) => [row.taskId, row.position]));
+        if (positions.size !== projectOrder.length || projectOrder.some((row) => !positions.has(row.id))) throw orderConflictError();
+        if (task.parentTaskId !== source.before.parentTaskId) throw orderConflictError();
+        const verifyHeads = (rows: readonly TaskDto[]) => {
+          const expected = new Map(parsed.expectedHeads.map(row => [row.taskId, row.revision]));
+          if (expected.size !== source.affectedTaskIds.length || source.affectedTaskIds.some(id => !expected.has(id))) throw orderConflictError();
+          for (const id of source.affectedTaskIds) {
+            const row = requireFound(rows.find(item => item.id === id) ?? null);
+            expectRevision(row.revision, expected.get(id) ?? -1, 'expectedHeads');
+          }
+          if (expected.get(task.id) !== parsed.expectedRevision) throw orderConflictError();
+        };
+        verifyHeads(projectOrder);
+
+        // Complete preflight of the stored restored fields before the guard and any proposed write.
+        const target = source.before;
+        if (target.statusId !== task.statusId) {
+          await scope.statusTransitions.assertTransition(task, target.statusId);
+          requireSameProject(requireFound(await repo.findStatus(ws, target.statusId)), task.projectId, 'statusId');
+        }
+        await requireActiveMembers(repo, ws, target.responsibleMembershipId, [], { responsibleId: task.responsibleMembershipId, participantIds: [] });
+        if (target.sectionId !== null && target.sectionId !== task.sectionId) await requireAssignableSection(repo, ws, task.projectId, target.sectionId);
+
+        const now = scope.barrierAt.toISOString();
+        // Deliberately mapped onto the task.move guard with the actual restored fields from the stored source.
+        const rejected = await scope.planningGuard.check({
+          family: 'task',
+          command: 'task.move',
+          target: id,
+          input: {
+            restore: MOVE_RESTORE_COMMAND,
+            expectedRevision: parsed.expectedRevision,
+            sectionId: target.sectionId,
+            responsibleMembershipId: target.responsibleMembershipId,
+            statusId: target.statusId,
+          },
+        });
+        let result;
+        if (rejected) result = rejected;
+        else {
+          // A cutoff prerequisite may write within this transaction; never restore from a pre-guard snapshot.
+          const freshOrder = await listOrderScope(repo, ws, task.projectId);
+          if (orderFingerprint(hash, task.projectId, freshOrder) !== source.afterFingerprint) throw orderConflictError();
+          verifyHeads(freshOrder);
+          const freshTask = requireFound(freshOrder.find(row => row.id === id) ?? null);
+          result = await writeMoveRestore(scope, hash, freshTask, freshOrder, source, now);
+        }
+        await repo.insertIdempotency({ workspaceId: ws, actorUserId, command, idempotencyKey: key, payloadHash, result, createdAt: now });
+        return result;
       });
+      return unwrapPlanningOutcome(outcome);
     },
   };
 }
@@ -1138,4 +1255,98 @@ async function saveShiftedTasks(scope: TaskWriteScope, order: readonly (TaskDto 
     const diff = { position: { from: row.position, to: position }, revision: { from: row.revision, to: revision } };
     await record(scope, 'task', row.id, 'updated', revision, diff, taskEventIds(row));
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Move undo
+
+/** Any foreign order or grouping change since the move: conservative, the client reloads instead. */
+function orderConflictError(): DomainError {
+  return new DomainError('REVISION_CONFLICT', 'The task order changed after this move. Reload before undoing it.', {
+    details: { fields: ['expectedOrderFingerprint'] },
+  });
+}
+
+/**
+ * Stores the server-only inverse source of a move that wrote, in the same transaction, under the
+ * real Idempotency-Key of that move, and returns its compact public ACK.
+ */
+async function saveMoveUndoSource(
+  scope: TaskWriteScope,
+  hash: (value: unknown) => string,
+  receipt: { readonly actorUserId: string; readonly key: string | undefined; readonly payloadHash: string },
+  before: TaskDto,
+  beforeOrder: readonly TaskDto[],
+  now: string,
+): Promise<MoveUndoAck> {
+  const { actorUserId, key, payloadHash } = receipt;
+  if (key === undefined) throw new Error('A captured move needs its real Idempotency-Key.');
+  const ws = before.workspaceId;
+  const afterOrder = await listOrderScope(scope.repository, ws, before.projectId);
+  const after = afterOrder.find((row) => row.id === before.id);
+  if (after === undefined) throw new Error('Task is missing inside its own transaction.');
+  const source: MoveUndoSource = {
+    v: 1,
+    taskId: before.id,
+    projectId: before.projectId,
+    originalKey: key,
+    before: moveGroupOf(before),
+    after: moveGroupOf(after),
+    affectedTaskIds: revisionHeads(beforeOrder, afterOrder).afterHeads.map(row => row.taskId),
+    positions: beforeOrder.map((row) => ({ taskId: row.id, position: row.position })),
+    beforeFingerprint: orderFingerprint(hash, before.projectId, beforeOrder),
+    afterFingerprint: orderFingerprint(hash, before.projectId, afterOrder),
+  };
+  await scope.repository.insertIdempotency({
+    workspaceId: ws,
+    actorUserId,
+    command: MOVE_UNDO_SOURCE_COMMAND,
+    idempotencyKey: key,
+    payloadHash,
+    result: source,
+    createdAt: now,
+  });
+  return { originalKey: key, orderFingerprint: source.afterFingerprint, ...revisionHeads(beforeOrder, afterOrder) };
+}
+
+/**
+ * Restores the source task's grouping and every row's exact captured position as a new audited write:
+ * each written row gets revision + 1 and one event; history, receipts and other fields stay untouched.
+ */
+async function writeMoveRestore(
+  scope: TaskWriteScope,
+  hash: (value: unknown) => string,
+  task: TaskDto,
+  projectOrder: readonly TaskDto[],
+  source: MoveUndoSource,
+  now: string,
+): Promise<MoveTaskDto> {
+  const repo = scope.repository, ws = task.workspaceId;
+  const positions = new Map(source.positions.map((row) => [row.taskId, row.position]));
+  const position = positions.get(task.id);
+  if (position === undefined) throw new Error('The move undo source misses its own task.');
+  const { sectionId, responsibleMembershipId, statusId } = source.before;
+  await repo.saveTaskCore({ ...task, sectionId, responsibleMembershipId, statusId, position, revision: task.revision + 1, updatedAt: now });
+  const updated = await reloadTask(repo, ws, task.id);
+  const diff = {
+    ...changedFields(task, updated, ['sectionId', 'position', 'responsibleMembershipId', 'statusId']),
+    revision: { from: task.revision, to: updated.revision },
+    restore: { command: 'task.move' },
+  };
+  const activityPair = { before: task, after: updated };
+  const labels = await loadTaskActivityLabels(scope, [activityPair]);
+  await record(scope, 'task', task.id, 'updated', updated.revision, taskActivityDiff(activityPair, diff, labels), taskEventIds(updated));
+  for (const row of projectOrder) {
+    const restored = positions.get(row.id);
+    if (row.id === task.id || restored === undefined || restored === row.position) continue;
+    const revision = row.revision + 1;
+    await repo.saveTaskCore({ ...row, position: restored, revision, updatedAt: now });
+    const rowDiff = { position: { from: row.position, to: restored }, revision: { from: row.revision, to: revision } };
+    await record(scope, 'task', row.id, 'updated', revision, rowDiff, taskEventIds(row));
+  }
+  const afterOrder = await listOrderScope(repo, ws, task.projectId);
+  const fingerprint = orderFingerprint(hash, task.projectId, afterOrder);
+  // Internal invariant; throwing rolls back every write of this command.
+  if (fingerprint !== source.beforeFingerprint) throw new Error('Move restore did not reproduce its captured order.');
+  return { ...updated, moveUndo: { originalKey: source.originalKey, orderFingerprint: fingerprint, ...revisionHeads(projectOrder, afterOrder) } };
 }

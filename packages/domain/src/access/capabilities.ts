@@ -27,6 +27,10 @@ export const CAPABILITIES = [
   'reports.read',
   'dependencies.manage',
   'imports.manage',
+  'leave.read',
+  'leave.request_self',
+  'leave.manage',
+  'leave.approve',
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
@@ -52,9 +56,15 @@ export const CAPABILITY_STAGE: Readonly<Record<Capability, 'P0' | 'P1' | 'P2' | 
   'reports.read': 'P2',
   'dependencies.manage':'P4',
   'imports.manage':'P5',
+  'leave.read':'P6',
+  'leave.request_self':'P6',
+  'leave.manage':'P6',
+  'leave.approve':'P6',
 };
 
 const MEMBER_CAPABILITIES: readonly Capability[] = [
+  'leave.read',
+  'leave.request_self',
   'workspace.read',
   'members.read',
   'task.read',
@@ -65,7 +75,7 @@ const MEMBER_CAPABILITIES: readonly Capability[] = [
   'reports.read',
 ];
 
-const VIEWER_CAPABILITIES: readonly Capability[] = ['workspace.read', 'members.read', 'task.read', 'reports.read'];
+const VIEWER_CAPABILITIES: readonly Capability[] = ['leave.read', 'workspace.read', 'members.read', 'task.read', 'reports.read'];
 
 const ROLE_CAPABILITIES: Readonly<Record<WorkspaceRole, ReadonlySet<Capability>>> = {
   owner: new Set(CAPABILITIES),

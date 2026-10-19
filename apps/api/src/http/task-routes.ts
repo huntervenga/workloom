@@ -9,6 +9,8 @@ import {
   createTaskInputSchema,
   idSchema,
   moveTaskInputSchema,
+  restoreMoveTaskInputSchema,
+  movedTaskResponseSchema,
   projectListResponseSchema,
   projectResponseSchema,
   restoreTaskInputSchema,
@@ -221,8 +223,13 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskRouteDependen
     return sendData(request, reply, bulkTaskUpdateResponseSchema, await deps.tasks.bulkUpdateTasks(ctx, input));
   });
 
+  app.post(`${BASE}/tasks/:taskId/restore-move`, async (request, reply) => {
+    const { params, input, ctx } = await write(request, taskParamsSchema, restoreMoveTaskInputSchema);
+    return sendData(request, reply, movedTaskResponseSchema, await deps.tasks.restoreMoveTask(ctx, params.taskId, input));
+  });
+
   app.post(`${BASE}/tasks/:taskId/move`, async (request, reply) => {
     const { params, input, ctx } = await write(request, taskParamsSchema, moveTaskInputSchema);
-    return sendData(request, reply, taskResponseSchema, await deps.tasks.moveTask(ctx, params.taskId, input));
+    return sendData(request, reply, movedTaskResponseSchema, await deps.tasks.moveTask(ctx, params.taskId, input));
   });
 }

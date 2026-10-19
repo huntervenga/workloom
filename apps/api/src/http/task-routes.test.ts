@@ -132,6 +132,7 @@ const tasks: TaskApplication = {
   archiveTask: recorder('archiveTask', () => task),
   restoreTask: recorder('restoreTask', () => task),
   moveTask: recorder('moveTask', () => task),
+  restoreMoveTask: recorder('restoreMoveTask', () => task),
   bulkUpdateTasks: recorder('bulkUpdateTasks', () => [task]),
 };
 
@@ -253,6 +254,12 @@ const CATALOG: RouteCase[] = [
     args: [IDS.task, { expectedRevision: 4 }],
     status: 200,
     schema: taskResponseSchema,
+  },
+  {
+    method: 'POST', path: '/tasks/:taskId/restore-move',
+    body: { expectedRevision: 3, originalMoveKey: 'original-move', expectedOrderFingerprint: 'confirmed-order', expectedHeads: [{ taskId: IDS.task, revision: 3 }] },
+    call: 'restoreMoveTask', args: [IDS.task, { expectedRevision: 3, originalMoveKey: 'original-move', expectedOrderFingerprint: 'confirmed-order', expectedHeads: [{ taskId: IDS.task, revision: 3 }] }],
+    status: 200, schema: taskResponseSchema,
   },
   {
     method: 'POST',

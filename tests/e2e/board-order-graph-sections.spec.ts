@@ -65,7 +65,7 @@ test.describe('compiled Board order and section diagram', () => {
       const same = taskResponseSchema.parse(await sameResponse.json()).data;
       expect(semantic(same)).toEqual(semantic(source)); expect(same.statusId).toBe(f.todoId);
       expect(writes.commands.map(command => ({ method: command.method, path: command.path, body: JSON.parse(command.body) }))).toEqual([
-        { method: 'POST', path, body: { expectedRevision: source.revision, statusId: f.todoId, anchorTaskId: b.id, placement: 'before' } },
+        { method: 'POST', path, body: { expectedRevision: source.revision, statusId: f.todoId, anchorTaskId: b.id, placement: 'before', captureUndo: true } },
       ]);
       await laneOrder(page, f.todoId, [a.id, source.id, b.id]); await expect(page.getByTestId('board-drag-preview')).toHaveCount(0);
       expect(manualOrder(await allTasks(f)).map(task => task.id)).toEqual([a.id, source.id, b.id, d.id, e.id]);
@@ -77,7 +77,7 @@ test.describe('compiled Board order and section diagram', () => {
       const cross = taskResponseSchema.parse(await crossResponse.json()).data;
       expect(semantic(cross)).toEqual(semantic(source)); expect(cross.statusId).toBe(progress.id);
       expect(writes.commands).toHaveLength(2);
-      expect(JSON.parse(requireValue(writes.commands[1]).body)).toEqual({ expectedRevision: same.revision, statusId: progress.id, anchorTaskId: e.id, placement: 'before' });
+      expect(JSON.parse(requireValue(writes.commands[1]).body)).toEqual({ expectedRevision: same.revision, statusId: progress.id, anchorTaskId: e.id, placement: 'before', captureUndo: true });
       expect(requireValue(writes.commands[0]).key).toMatch(/^[0-9a-f-]{36}$/i); expect(requireValue(writes.commands[1]).key).not.toBe(requireValue(writes.commands[0]).key);
       await laneOrder(page, f.todoId, [a.id, b.id]); await laneOrder(page, progress.id, [d.id, source.id, e.id]);
       expect(manualOrder(await allTasks(f)).map(task => task.id)).toEqual([a.id, b.id, d.id, source.id, e.id]); expect(await readTask(f, source.id)).toEqual(cross);

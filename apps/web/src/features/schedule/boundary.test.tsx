@@ -1,3 +1,4 @@
+import { availabilityReadRoutes, isAvailabilityRead } from './test/availability';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { taskScheduleContextRowSchema, taskScheduleContextSchema, taskSchedulePreviewSchema, type TaskDto, type TaskScheduleBatchInput, type TaskScheduleContextDto } from '@workloom/contracts';
@@ -37,7 +38,7 @@ function preview(input: TaskScheduleBatchInput) {
   return taskSchedulePreviewSchema.parse({ projectId: PROJECT_ID, previewHash: hash, asOfChangeSeq: '1', rows: input.rows.map(value => ({ taskId: value.taskId, expectedRevision: value.expectedRevision, before: { startDate: null, dueDate: null }, after: { startDate: value.startDate, dueDate: value.dueDate }, changed: true })), comparisons: [], protectedTargets: [], recoveryPeriodIds: [] });
 }
 function routes(extra: RouteTable = {}) {
-  return installFakeApi({ [`POST ${previewPath}`]: request => ok(preview(request.body as TaskScheduleBatchInput)), ...extra });
+  return installFakeApi({ ...availabilityReadRoutes, [`POST ${previewPath}`]: request => ok(preview(request.body as TaskScheduleBatchInput)), ...extra });
 }
 function active(c: ScheduleWorkspace): ScheduleDraft { if (!c.active) throw new Error('Expected active draft'); return c.active; }
 function open(c: ScheduleWorkspace, task: TaskDto) { c.open([task], new Map([[task.id, row(task)]])); }
@@ -237,6 +238,6 @@ describe('multiple schedule context batches', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: first.title })).not.toBeInTheDocument());
     expect(screen.queryAllByText(/Start date was not captured in this plan/)).toHaveLength(0);
     expect(screen.getByRole('button', { name: "Check timeline access" })).toBeInTheDocument();
-    expect(calls.filter(call => call.method === 'POST')).toHaveLength(0);
+    expect(calls.filter(call => call.method === 'POST' && !isAvailabilityRead(call))).toHaveLength(0);
   });
 });

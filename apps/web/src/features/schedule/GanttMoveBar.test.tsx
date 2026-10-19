@@ -1,3 +1,4 @@
+import { availabilityReadRoutes, isAvailabilityRead } from './test/availability';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { TaskDto, TaskScheduleBatchInput, TaskScheduleContextDto } from '@workloom/contracts';
@@ -27,7 +28,7 @@ beforeEach(() => {
 });
 afterEach(() => { for (const client of clients.splice(0)) client.clear(); });
 const previewPath = `${schedulePath}/schedule-preview`, applyPath = `${schedulePath}/schedule-apply`;
-const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET');
+const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET' && !isAvailabilityRead(call));
 /** The authorized context reports a newer revision than the loaded task: the move must use the context's. */
 const CONTEXT_REVISION = 7;
 
@@ -35,6 +36,7 @@ interface HostProps { shown?: boolean; writable?: boolean }
 function mount(tasks: TaskDto[], options: { context?: (dto: TaskScheduleContextDto) => TaskScheduleContextDto; routes?: RouteTable } = {}) {
   let current = tasks.map(task => ({ ...task, revision: CONTEXT_REVISION }));
   const { calls } = installFakeApi({
+    ...availabilityReadRoutes,
     [`GET ${schedulePath}/schedule-context`]: request => {
       const ids = new Set(request.searchParams.get('taskIds')?.split(','));
       // The context echoes the requested baseline, exactly as the strict client read requires.

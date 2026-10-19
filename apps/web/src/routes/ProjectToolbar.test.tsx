@@ -12,6 +12,7 @@ import { beforeAll, expect, it } from 'vitest';
 import { alpha, alphaMembers, anna, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { graph, layout } from '../features/dependencies/test/fixtures';
 import { scheduleContext } from '../features/schedule/test/fixtures';
+import { availabilityReadRoutes, isAvailabilityRead } from '../features/schedule/test/availability';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { columns, field } from '../features/fields/test/fixtures';
 import { MEMBER_ID, PERIOD_A, PROJECT_ID, categorized, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
@@ -38,7 +39,7 @@ beforeAll(async () => { await import('./ProjectPage'); });
 const path = `${rootPath}/projects/${PROJECT_ID}`;
 const preferencePath = `${path}/table-preferences/me`;
 function routes(extra: RouteTable = {}): RouteTable {
-  return { ...tableRoutes(), [`GET ${rootPath}/tasks`]: () => json(200, { data: [task], meta: { requestId: 'toolbar-fixture', nextCursor: null } }),
+  return { ...tableRoutes(), ...availabilityReadRoutes, [`GET ${rootPath}/tasks`]: () => json(200, { data: [task], meta: { requestId: 'toolbar-fixture', nextCursor: null } }),
     [`GET ${path}/graph`]: request => ok(graph([task], request.searchParams.get('rootTaskIds')?.split(',') ?? [task.id])),
     [`GET ${path}/graph-layout`]: () => ok(layout()), [`GET ${path}/dependency-policy`]: () => ok({ projectId: PROJECT_ID, mode: 'warn', revision: 0, updatedAt: null }),
     [`GET ${path}/schedule-context`]: () => ok(scheduleContext([task])), ...extra };
@@ -50,7 +51,7 @@ async function show(user: ReturnType<typeof renderApp>['user'], view: keyof type
   await waitFor(() => expect(views().getByRole('button', { name: names[view] })).toHaveAttribute('aria-current', 'page'));
 }
 function columnHead(revision = 0, columns: ColumnChoice[] | null = null): PersonalTablePreferenceDto { return { workspaceId: alpha.id, projectId: PROJECT_ID, membershipId: MEMBER_ID, revision, columns }; }
-const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filter(call => call.method !== 'GET');
+const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filter(call => call.method !== 'GET' && !isAvailabilityRead(call));
 
 it.each(['table', 'board', 'gantt', 'graph', 'import'] as const)('shows only controls that act on the %s presentation', async view => {
   const { calls } = installFakeApi(routes()); renderApp(legacyTablePath(`${tablePath}?${view === 'table' ? '' : `view=${view}&`}week=${PERIOD_A}&worker=${MEMBER_ID}`));

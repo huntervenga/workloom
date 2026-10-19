@@ -23,12 +23,13 @@ beforeEach(() => {
 });
 afterEach(() => { for (const client of clients.splice(0)) client.clear(); });
 const previewPath = `${schedulePath}/schedule-preview`, applyPath = `${schedulePath}/schedule-apply`;
-const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET' && call.path !== previewPath);
+const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET' && call.path !== previewPath && !call.path.endsWith('/time-off/availability'));
 
 function mount(tasks: TaskDto[], writable = true) {
   let current = tasks.map(task => ({ ...task, revision: 7 }));
   const onOpen = vi.fn();
   const { calls } = installFakeApi({
+    [`POST /api/v1/workspaces/${alpha.id}/time-off/availability`]: request => { const range = request.body as { startDate: string; endDate: string }; return ok({ ...range, settingsConfigured: false, sourceVersion: 'a'.repeat(64), days: [], members: [], totals: { scheduledMinutes: 0, holidayMinutes: 0, absenceMinutes: 0, availableMinutes: 0, unconfiguredMembers: 0 }, intervals: [], companyHolidays: [], inputVersions: { settingsRevision: 0, profiles: [], requests: [] } }); },
     [`GET ${schedulePath}/schedule-context`]: request => { const ids = new Set(request.searchParams.get('taskIds')?.split(',')); return ok(scheduleContext(current.filter(task => ids.has(task.id)))); },
     [`POST ${previewPath}`]: request => ok(schedulePreview(request.body as TaskScheduleBatchInput, current)),
     [`POST ${applyPath}`]: request => {

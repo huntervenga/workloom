@@ -1,3 +1,4 @@
+import { recordMoveUndo } from '../undo/recordMoveUndo';
 import { reconcileFieldAcks } from '../undo/storeFieldAck';
 import { captureTask, recordTaskUndo, recordBulkUndo, type BulkUndoMetadata } from '../undo/recordUndo';
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
@@ -320,15 +321,13 @@ export interface MoveTaskVariables extends IdempotentVariables {
  */
 export function useMoveTaskMutation(actorId: string, workspaceId: string) {
   const queryClient = useQueryClient();
-  const snapshots = useRef(new WeakMap<MoveTaskVariables, TaskDto | undefined>()).current;
   return useIdempotentMutation({
     prepare: (variables: MoveTaskVariables) => {
-      if (!snapshots.has(variables)) snapshots.set(variables, captureTask(queryClient, actorId, workspaceId, variables.taskId, variables.input));
-      return moveTaskRequest(workspaceId, variables.taskId, variables.input);
+      return moveTaskRequest(workspaceId, variables.taskId, { ...variables.input, captureUndo: true });
     },
     onSuccess: (task, variables, ack) => {
       if (ack.actorId !== null && ack.actorId !== actorId) return;
-      if (ack.actorId === actorId) recordTaskUndo(queryClient, actorId, workspaceId, 'move', snapshots.get(variables), task, variables.input, ack.receipt);
+      if (ack.actorId === actorId && task.id === variables.taskId) recordMoveUndo(queryClient, actorId, workspaceId, task, variables.input.expectedRevision, ack.idempotencyKey, ack.receipt);
       void storeTask(queryClient, actorId, workspaceId, task);
     },
   });

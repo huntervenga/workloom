@@ -1,3 +1,4 @@
+import { ReportCapacityEditor } from '../time-off/ReportCapacityEditor';
 import { operationLabels, groupLabels, boundaryLabels } from './translationKeys';
 import type { GenericReportConfig, MembershipDto, TagDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
@@ -67,6 +68,7 @@ export function ReportConfigEditor({ config, onChange, fields, members, tags, di
       {tags.length ? <fieldset className="sm:col-span-2"><legend className="text-xs text-muted">{t('genericReports.tags')}</legend><div className="mt-1 flex flex-wrap gap-3">{tags.map(tag => <label key={tag.id} className="flex items-center gap-1 text-sm"><input type="checkbox" checked={config.filters.tagIds.includes(tag.id)} onChange={event => patchFilters({ tagIds: event.target.checked ? [...config.filters.tagIds, tag.id] : config.filters.tagIds.filter(id => id !== tag.id) })}/>{tag.name}</label>)}</div></fieldset> : null}
       <Button type="button" variant="ghost" size="sm" onClick={() => patchFilters({ statusGroups: [], tagIds: [], assignee: { kind: 'all' }, dateRange: null })}>{t('genericReports.clearFilters')}</Button>
     </div></details>
+    <ReportCapacityEditor config={config} onChange={onChange} members={members}/>
     <p className="text-xs text-muted">{t('genericReports.scopeHint')}</p></> : null}
   </fieldset>;
 }

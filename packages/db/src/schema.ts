@@ -1,3 +1,4 @@
+import type {LeaveSettingsDto,LeaveProfileDto,LeaveRequestDto,LeaveAdjustmentDto} from '@workloom/contracts';
 import type { GenericReportConfig, GenericReportDefinitionDto, GenericInitialSnapshotDto, GenericReportRowDto, GenericReportMeasure, TaskFieldValueDto } from '@workloom/contracts';
 import type { ColumnChoice, CutoffWorkerOutcome } from '@workloom/contracts';
 /**
@@ -819,6 +820,7 @@ export const taskFieldValueHistory = pgTable(
 
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'leave_settings','leave_settings_versions','leave_profiles','leave_profile_versions','leave_requests','leave_request_versions','leave_charge_ledger','leave_adjustments',
   'generic_report_definitions', 'generic_report_definition_versions', 'generic_report_initial_snapshots', 'generic_report_column_settings',
   'task_field_policies', 'task_field_policy_usage',
   'team_invitations',
@@ -1591,3 +1593,41 @@ export const genericReportColumnSettings = pgTable('generic_report_column_settin
  foreignKey({name:'generic_report_columns_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
  check('generic_report_columns_revision_positive',sql`${t.revision}>0`),check('generic_report_columns_measures',sql`jsonb_typeof(${t.measures})='array' and jsonb_array_length(${t.measures})<=12`),
 ]);
+
+
+/** Availability is workspace scoped and deliberately independent of planning-period freezes. */
+export const leaveSettings = pgTable('leave_settings', {
+ workspaceId:uuid('workspace_id').primaryKey().references(()=>workspaces.id), revision:integer('revision').notNull(),
+ snapshot:jsonb('snapshot').$type<LeaveSettingsDto>().notNull(),
+ updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[check('leave_settings_revision',sql`${t.revision}>0`),check('leave_settings_scope',sql`(snapshot->>'workspaceId'=workspace_id::text and (snapshot->>'revision')::integer=revision) is true`)]);
+export const leaveSettingsVersions = pgTable('leave_settings_versions', {
+ workspaceId:uuid('workspace_id').notNull().references(()=>workspaces.id),revision:integer('revision').notNull(),
+ snapshot:jsonb('snapshot').$type<LeaveSettingsDto>().notNull(),
+ actorMembershipId:uuid('actor_membership_id').notNull(),reason:text('reason').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
+},t=>[primaryKey({columns:[t.workspaceId,t.revision]}),foreignKey({columns:[t.workspaceId,t.actorMembershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),check('leave_settings_versions_revision',sql`${t.revision}>0`),check('leave_settings_versions_scope',sql`(snapshot->>'workspaceId'=workspace_id::text and (snapshot->>'revision')::integer=revision) is true`)]);
+export const leaveProfiles = pgTable('leave_profiles', {
+ workspaceId:uuid('workspace_id').notNull(),membershipId:uuid('membership_id').notNull(),revision:integer('revision').notNull(),
+ snapshot:jsonb('snapshot').$type<LeaveProfileDto>().notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[primaryKey({columns:[t.workspaceId,t.membershipId]}),foreignKey({columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),check('leave_profiles_revision',sql`${t.revision}>0`),check('leave_profiles_scope',sql`(snapshot->>'workspaceId'=workspace_id::text and snapshot->>'membershipId'=membership_id::text and (snapshot->>'revision')::integer=revision) is true`)]);
+export const leaveProfileVersions = pgTable('leave_profile_versions', {
+ workspaceId:uuid('workspace_id').notNull(),membershipId:uuid('membership_id').notNull(),revision:integer('revision').notNull(),
+ snapshot:jsonb('snapshot').$type<LeaveProfileDto>().notNull(),actorMembershipId:uuid('actor_membership_id').notNull(),reason:text('reason').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
+},t=>[primaryKey({columns:[t.workspaceId,t.membershipId,t.revision]}),foreignKey({columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),foreignKey({columns:[t.workspaceId,t.actorMembershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),check('leave_profile_versions_revision',sql`${t.revision}>0`),check('leave_profile_versions_scope',sql`(snapshot->>'workspaceId'=workspace_id::text and snapshot->>'membershipId'=membership_id::text and (snapshot->>'revision')::integer=revision) is true`)]);
+export const leaveRequests = pgTable('leave_requests', {
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),membershipId:uuid('membership_id').notNull(),revision:integer('revision').notNull(),
+ snapshot:jsonb('snapshot').$type<LeaveRequestDto>().notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[unique('leave_requests_scope_unique').on(t.workspaceId,t.id),foreignKey({columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),index('leave_requests_member_idx').on(t.workspaceId,t.membershipId),check('leave_requests_revision',sql`${t.revision}>0`),check('leave_requests_scope',sql`(snapshot->>'workspaceId'=workspace_id::text and snapshot->>'membershipId'=membership_id::text and snapshot->>'id'=id::text and (snapshot->>'revision')::integer=revision) is true`)]);
+export const leaveRequestVersions = pgTable('leave_request_versions', {
+ workspaceId:uuid('workspace_id').notNull(),requestId:uuid('request_id').notNull(),revision:integer('revision').notNull(),
+ snapshot:jsonb('snapshot').$type<LeaveRequestDto>().notNull(),actorMembershipId:uuid('actor_membership_id').notNull(),reason:text('reason').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
+},t=>[primaryKey({columns:[t.workspaceId,t.requestId,t.revision]}),foreignKey({columns:[t.workspaceId,t.requestId],foreignColumns:[leaveRequests.workspaceId,leaveRequests.id]}),foreignKey({columns:[t.workspaceId,t.actorMembershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),check('leave_request_versions_revision',sql`${t.revision}>0`),check('leave_request_versions_scope',sql`(snapshot->>'workspaceId'=workspace_id::text and snapshot->>'id'=request_id::text and (snapshot->>'revision')::integer=revision) is true`)]);
+/** Signed append-only charge/release events; old allocations are never rewritten. */
+export const leaveChargeLedger = pgTable('leave_charge_ledger', {
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),requestId:uuid('request_id').notNull(),requestRevision:integer('request_revision').notNull(),
+ membershipId:uuid('membership_id').notNull(),typeId:uuid('type_id').notNull(),date:date('date').notNull(),deltaMicrodays:bigint('delta_microdays',{mode:'number'}).notNull(),scheduledMinutes:integer('scheduled_minutes').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
+},t=>[foreignKey({columns:[t.workspaceId,t.requestId,t.requestRevision],foreignColumns:[leaveRequestVersions.workspaceId,leaveRequestVersions.requestId,leaveRequestVersions.revision]}),foreignKey({columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),unique('leave_charge_ledger_revision_day').on(t.workspaceId,t.requestId,t.requestRevision,t.date),check('leave_ledger_values',sql`delta_microdays between -1000000000000 and 1000000000000 and scheduled_minutes between 0 and 1440`)]);
+export const leaveAdjustments = pgTable('leave_adjustments', {
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),membershipId:uuid('membership_id').notNull(),
+ snapshot:jsonb('snapshot').$type<LeaveAdjustmentDto>().notNull(),actorMembershipId:uuid('actor_membership_id').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
+},t=>[foreignKey({columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),foreignKey({columns:[t.workspaceId,t.actorMembershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),check('leave_adjustments_scope',sql`(snapshot->>'id'=id::text and snapshot->>'membershipId'=membership_id::text) is true`)]);

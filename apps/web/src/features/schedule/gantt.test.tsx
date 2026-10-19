@@ -1,3 +1,4 @@
+import { availabilityReadRoutes, isAvailabilityRead } from './test/availability';
 import { QueryClientProvider, useQuery, type QueryClient } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -23,11 +24,12 @@ const medium = new Intl.DateTimeFormat('en', { dateStyle: 'medium', timeZone: 'U
 // Testing Library normalizes the thin spaces Intl puts around the range dash.
 const range = (start: string, end: string) => medium.formatRange(new Date(`${start}T00:00:00Z`), new Date(`${end}T00:00:00Z`)).replace(/\s/g, ' ');
 function day(offset: number) { const value = shiftDay(today, offset); if (!value) throw new Error('Expected calendar day'); return value; }
-const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET');
+const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET' && !isAvailabilityRead(call));
 interface HostProps { tasks: TaskDto[]; shown?: boolean; hasMore?: boolean; pageList?: Promise<TaskDto[]>; tasksSettled?: boolean }
 function mount(initial: HostProps, routes: { context?: (request: FakeRequest, tasks: TaskDto[]) => Response | Promise<Response> } = {}) {
   let current = initial.tasks;
   const { calls } = installFakeApi({
+    ...availabilityReadRoutes,
     [`GET ${schedulePath}/schedule-context`]: request => {
       if (routes.context) return routes.context(request, current);
       const ids = new Set(request.searchParams.get('taskIds')?.split(','));

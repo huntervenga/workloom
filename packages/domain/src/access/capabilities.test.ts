@@ -35,10 +35,12 @@ describe('role capability policy', () => {
   });
 
   it('keeps viewers read-only', () => {
-    expect(capabilitiesForRole('viewer')).toEqual(['workspace.read', 'members.read', 'task.read', 'reports.read']);
+    expect(capabilitiesForRole('viewer')).toEqual(['workspace.read', 'members.read', 'task.read', 'reports.read', 'leave.read']);
     expect(roleHasCapability('viewer', 'task.edit')).toBe(false);
     expect(roleHasCapability('viewer', 'time.write_self')).toBe(false);
   });
+
+  it('separates neutral availability, own requests, management and approval',()=>{expect(roleHasCapability('viewer','leave.read')).toBe(true);expect(roleHasCapability('viewer','leave.request_self')).toBe(false);expect(roleHasCapability('member','leave.request_self')).toBe(true);expect(roleHasCapability('member','leave.manage')).toBe(false);expect(roleHasCapability('member','leave.approve')).toBe(false);expect(roleHasCapability('admin','leave.approve')).toBe(true);});
 
   it('documents a stage for every capability', () => {
     expect(Object.keys(CAPABILITY_STAGE).sort()).toEqual([...CAPABILITIES].sort());

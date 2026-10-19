@@ -1,4 +1,5 @@
 import * as C from '@workloom/contracts';
+import {roleHasCapability} from '../access/capabilities.js';
 import type { CommandContext } from '../access/context.js';
 import { DomainError, notFoundError } from '../errors.js';
 import { canonicalJson } from '../tasks/service.js';
@@ -44,6 +45,7 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
     if (!key || !/^[\x21-\x7e]{1,128}$/.test(key)) throw new DomainError('VALIDATION_FAILED', 'A valid Idempotency-Key is required.');
     const payloadHash = deps.digest(canonicalJson({ command, target, input }));
     const result = await deps.write(context, 'fields.manage', async scope => {
+      if(target){if(command==='generic_report.update'||command==='generic_report.capture')await report(scope,target);else await project(scope,target);}
       const repo = scope.repository.tasks, existing = await repo.findIdempotency(context.workspaceId, context.actor.userId, command, key);
       if (existing) { if (existing.payloadHash !== payloadHash) throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This key was used for a different request.'); if (isCommittedPlanningRejection(existing.result)) return existing.result; return parse(schema, existing.result); }
       // Explicit metadata-only intent. Template separately invokes ordinary field.create guards.
@@ -56,7 +58,7 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
   }
   async function create(scope: GenericReportScope, input: C.CreateGenericReportInput) {
     await project(scope, input.config.projectId, true);
-    validateGenericConfig(input.config, await scope.repository.listFields(scope.context.workspaceId, input.config.projectId));
+    validateGenericConfig(input.config, await scope.repository.listFields(scope.context.workspaceId, input.config.projectId));await scope.reports.validateCapacity?.(input.config);
     if ((await scope.reports.list(input.config.projectId)).length >= 100) throw rule('The project report limit is 100.');
     const now = scope.barrierAt.toISOString();
     const value: C.GenericReportDefinitionDto = { id: deps.newId(), workspaceId: scope.context.workspaceId, projectId: input.config.projectId, name: input.name, revision: 1, config: input.config, archivedAt: null, createdAt: now, updatedAt: now };
@@ -69,6 +71,7 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
   }
   async function calculate(scope: GenericReportScope, config: C.GenericReportConfig, definition: C.GenericReportDefinitionDto | null, input: { offset: number; limit: number; expectedSourceVersion?: string | undefined }, snapshotId: string | null = null) {
     await project(scope, config.projectId);
+    if(!definition&&config.capacity)await scope.reports.validateCapacity?.(config,roleHasCapability(scope.access.membership.role,'leave.manage'));
     const source = await scope.reports.source(config), version = sourceVersion(source, config, definition?.revision ?? null, snapshotId);
     if (input.expectedSourceVersion && version !== input.expectedSourceVersion) throw new DomainError('PREVIEW_STALE', 'The source changed. Reload the complete report.');
     const snapshot = snapshotId && definition ? found(await scope.reports.findSnapshot(definition.id, snapshotId)) : null;
@@ -89,6 +92,7 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
         await project(scope, current.projectId, true);
         // A broken historical configuration can still be archived without rebinding its field IDs.
         if (!parsed.archived || canonicalJson(parsed.config) !== canonicalJson(current.config)) validateGenericConfig(parsed.config, await scope.repository.listFields(scope.context.workspaceId, current.projectId));
+        await scope.reports.validateCapacity?.(parsed.config);
         const next = { ...current, name: parsed.name, config: parsed.config, revision: current.revision + 1, archivedAt: parsed.archived ? current.archivedAt ?? scope.barrierAt.toISOString() : null, updatedAt: scope.barrierAt.toISOString() };
         await scope.reports.save(next); await metadata(scope, next, 'updated'); return next;
       });
@@ -105,7 +109,7 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
         if (version !== parsed.expectedSourceVersion) throw new DomainError('PREVIEW_STALE', 'The source changed. Review the current report before capturing it.');
         // Full authorized scope, independent of any client page size or loaded rows.
         const computed = calculateGenericReport(source, current.config, version, null, 0, 5000);
-        const header: C.GenericInitialSnapshotDto = { id: deps.newId(), workspaceId: scope.context.workspaceId, projectId: current.projectId, reportId: rid, name: parsed.name, definitionRevision: current.revision, config: current.config, fields: computed.fields, capturedAt: scope.barrierAt.toISOString(), capturedByUserId: scope.context.actor.userId, sourceVersion: version, taskCount: computed.totalTasks };
+        const header: C.GenericInitialSnapshotDto = { id: deps.newId(), workspaceId: scope.context.workspaceId, projectId: current.projectId, reportId: rid, name: parsed.name, definitionRevision: current.revision, config: current.config, fields: computed.fields, capturedAt: scope.barrierAt.toISOString(), capturedByUserId: scope.context.actor.userId, sourceVersion: version, taskCount: computed.totalTasks,...(source.capacity?{capacity:source.capacity}: {}) };
         const taskIds = new Set(computed.rows.map(r => r.taskId)), fieldIds = new Set(usedFieldIds(current.config));
         await scope.reports.insertSnapshot({ header, rows: computed.rows, values: source.values.filter(v => taskIds.has(v.taskId) && fieldIds.has(v.fieldId)) });
         await scope.recordChange({ entityType: 'generic_report_snapshot', entityId: header.id, action: 'captured', diff: { reportId: rid, definitionRevision: current.revision, taskCount: header.taskCount }, outbox: { type: 'generic_report_snapshot.captured', payload: { reportId: rid, snapshotId: header.id } } }); return header;
