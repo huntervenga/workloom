@@ -1,5 +1,7 @@
 # Календарь команды, стабильный Board и проектные Reports
 
+**Последующий локальный срез:** product `1677d7d` активирован 20 октября 2026 в 01:21 Asia/Nicosia: единый проектный Available/Plan/Actual и workspace Reports — [98](98-project-and-workspace-manager-reports.md). Приёмка Candidate K ниже остаётся исторической и не заменяет proofs D.
+
 **ПРИНЯТО И АКТИВИРОВАНО ЛОКАЛЬНО.** Product `58ed0c9` (`58ed0c98baedd2dc4c2f35a24e762f87c0c90435`), Candidate K, `http://127.0.0.1:4310/app`. Web-only активация завершена **19Oct2026 21:16:36.817 UTC** (20Oct local), без DB writes, миграций и перезапуска процессов. Это docs-only follow-up после принятого product/source/build snapshot. Ограниченная доработка интерфейса поверх [94](94-time-off-profile-defaults-and-save-feedback.md), [91](91-time-off-and-capacity.md), [92](92-spatial-undo.md) и [88](88-generic-report-implementation-contract.md). Не вводит обязательную неделю, специальные Hours-поля или новый источник фактически отработанного времени.
 
 ## Календарь и Timeline

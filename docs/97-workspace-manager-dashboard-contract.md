@@ -1,5 +1,7 @@
 # Workspace manager dashboard: bounded read contract
 
+**Local acceptance follow-up, 20 October 2026:** product `1677d7d` implements this bounded read contract; final D checks, limits and controlled local activation are in [98](98-project-and-workspace-manager-reports.md). The implementation-in-progress marker below records the contract drafting stage, not the current runtime status.
+
 **IMPLEMENTATION IN PROGRESS — NOT A RELEASE ACCEPTANCE.** This contract implements a bounded first part of [96](96-workspace-report-trends.md), alongside the project dashboard from [95](95-manager-calendar-board-and-reports.md). Runtime activation, browser acceptance and final verification are separate owner steps.
 
 ## Routes and configuration

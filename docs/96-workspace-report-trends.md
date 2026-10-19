@@ -1,5 +1,7 @@
 # Workspace/person Reports: proposed follow-up contract
 
+**Bounded implementation follow-up, 20 October 2026:** the selected-project workspace Reports hub and current task-cohort trends are implemented and accepted locally in [98](98-project-and-workspace-manager-reports.md), with the read contract in [97](97-workspace-manager-dashboard-contract.md). The original proposal below remains design history; true dated worklogs, multi-year history and cross-project snapshot series are still proposed, not implemented.
+
 **PROPOSED / NOT IMPLEMENTED.** Design follow-up, 19 October 2026. This document introduces no runtime behavior, accepted API or release claim; current project-dashboard implementation remains a separate bounded task. Existing contracts: [generic reports](88-generic-report-implementation-contract.md), [ordinary fields and reports direction](86-generic-fields-and-reports.md), [Time off/capacity](91-time-off-and-capacity.md).
 
 ## Recommendation
