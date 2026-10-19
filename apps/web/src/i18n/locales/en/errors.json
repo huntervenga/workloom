@@ -65,5 +65,7 @@
   "subject.commentSave": "Unable to add the comment",
   "subject.activity": "Unable to load activity",
   "subject.tablePreference": "Unable to load your table columns",
-  "subject.tablePreferenceSave": "Unable to save your table columns"
+  "subject.tablePreferenceSave": "Unable to save your table columns",
+  "subject.timeOffPreview": "Unable to review time off",
+  "subject.timeOffSave": "Unable to update time off"
 }

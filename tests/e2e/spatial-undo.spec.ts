@@ -45,15 +45,52 @@ test.describe('native confirmed task and Gantt drag Undo', () => {
     await undo(page, f, a.id, savedRow(page, a.id).getByRole('button', { name: `Select task: ${a.title}`, exact: true }));
     await expect.poll(() => orderState(f)).toEqual(original);
   });
-  test('Board mouse move and keyboard Undo restore lane and exact card order', async ({ page }) => {
+  test('Board mouse move and keyboard Undo restore lane and exact card order', async ({ page }, info) => {
     const f = await freshProject(page, provider, 'Undo Board drag');
-    const a = await createFixtureTask(f, 'Board movable'); await createFixtureTask(f, 'Board stays');
+    const a = await createFixtureTask(f, 'Board movable'); const stays = await createFixtureTask(f, 'Board stays');
     const c = await createFixtureTask(f, 'Board done anchor', { statusId: f.doneId }); const original = await orderState(f);
     await page.goto(`${APP}/app/w/${f.workspaceId}/projects/${f.projectId}?view=board`);
-    const card = page.locator(`[data-board-card="${a.id}"]`); const saved = responseDuring(page, 'POST', `${f.prefix}/tasks/${a.id}/move`);
-    await drop(page, card.getByRole('button', { name: `Drag task: ${a.title}`, exact: true }), page.locator(`[data-board-card="${c.id}"]`), 'before', 'board-drag-preview'); await page.mouse.up(); expect(requireValue(await saved).status()).toBe(200);
+    const card = page.locator(`[data-board-card="${a.id}"]`);
+    await expect(card.getByRole('button', { name: `Drag task: ${a.title}`, exact: true })).toBeEnabled();
+    await expect(page.locator(`[data-board-card="${stays.id}"]`)).toBeVisible();
+    const cardBox = await card.boundingBox(), handleBox = await card.getByRole('button', { name: `Drag task: ${a.title}`, exact: true }).boundingBox();
+    if (!cardBox || !handleBox) throw Error('Missing rendered Board corner geometry');
+    expect(handleBox.x).toBeGreaterThan(cardBox.x + cardBox.width / 2);
+    expect(handleBox.y - cardBox.y).toBeLessThanOrEqual(8);
+    expect(cardBox.x + cardBox.width - handleBox.x - handleBox.width).toBeLessThanOrEqual(8);
+    // Read real rendered geometry every frame, including pointer release, pending ACK and refetch.
+    await page.evaluate(staysId => {
+      type Sample = { navTop: number; navLeft: number; navWidth: number; scrollX: number; scrollY: number; viewport: number; boardTop: number; boardHeight: number; cardWidth: number; cardHeight: number; titleWidth: number };
+      const state: { active: boolean; samples: Sample[]; missing: boolean } = { active: true, samples: [], missing: false };
+      (window as typeof window & { boardUndoGeometry?: typeof state }).boardUndoGeometry = state;
+      const sample = () => {
+        if (!state.active) return;
+        const nav = document.querySelector<HTMLElement>('nav[aria-label="Project views"]');
+        const board = document.querySelector<HTMLElement>('[data-board-scroll]');
+        const unchanged = document.querySelector<HTMLElement>(`[data-board-card="${staysId}"]`);
+        if (!nav || !board || !unchanged) { state.missing = true; return; }
+        const title = unchanged.querySelector<HTMLElement>('button[id]:not([data-task-completion])'); if (!title) { state.missing = true; return; }
+        const n = nav.getBoundingClientRect(), b = board.getBoundingClientRect(), c = unchanged.getBoundingClientRect(), titleRect = title.getBoundingClientRect();
+        state.samples.push({ navTop: n.top, navLeft: n.left, navWidth: n.width, scrollX, scrollY, viewport: document.documentElement.clientWidth, boardTop: b.top, boardHeight: b.height, cardWidth: c.width, cardHeight: c.height, titleWidth: titleRect.width });
+        if (state.samples.length < 2000) requestAnimationFrame(sample);
+      };
+      sample();
+    }, stays.id);
+    const saved = responseDuring(page, 'POST', `${f.prefix}/tasks/${a.id}/move`);
+    await drop(page, card.getByRole('button', { name: `Drag task: ${a.title}`, exact: true }), page.locator(`[data-board-card="${c.id}"]`), 'before', 'board-drag-preview');
+    await page.screenshot({ path: info.outputPath('board-top-right-drag-preview.png') });
+    await page.mouse.up(); expect(requireValue(await saved).status()).toBe(200);
     await expect(page.locator(`[data-board-status="${f.doneId}"] [data-board-card="${a.id}"]`)).toBeVisible();
     await expect(card.getByRole('button', { name: `Drag task: ${a.title}`, exact: true })).toBeEnabled();
+    await page.screenshot({ path: info.outputPath('board-top-right-confirmed-drop.png') });
+    const geometry = await page.evaluate(async () => {
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const state = (window as typeof window & { boardUndoGeometry?: { active: boolean; samples: Record<string, number>[]; missing: boolean } }).boardUndoGeometry;
+      if (!state) throw Error('Missing Board frame geometry'); state.active = false; return state;
+    });
+    expect(geometry.missing).toBe(false); expect(geometry.samples.length).toBeGreaterThanOrEqual(3);
+    const initial = requireValue(geometry.samples[0]);
+    for (const frame of geometry.samples) for (const key of Object.keys(initial)) expect(Math.abs(requireValue(frame[key]) - requireValue(initial[key])), `Board frame ${key} moved`).toBeLessThanOrEqual(0.5);
     await undo(page, f, a.id, card.getByRole('button', { name: a.title, exact: true })); await expect.poll(() => orderState(f)).toEqual(original);
   });
   test('Gantt mouse range move and keyboard Undo restore the original nullable date pair', async ({ page }) => {

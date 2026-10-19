@@ -29,7 +29,7 @@ describe('ordinary fields and saved full-scope reports', () => {
   });
   it('creates a saved report with stable field IDs, All time by default and selected calculation; reload uses server definition', async () => {
     let saved = definition(); const { calls } = installFakeApi(routes({ [`GET ${reportPath}`]: () => ok([saved]), [`GET ${reportPath}/${REPORT_ID}`]: () => ok(saved), [`POST ${reportPath}`]: request => { const input = request.body as { name: string; config: typeof saved.config }; saved = { ...saved, ...input }; return created(saved); } }));
-    const { user } = renderApp(uiPath); await user.click(await screen.findByRole('button', { name: 'New report' }));
+    const { user } = renderApp(uiPath); await screen.findByRole('heading',{name:'Budget review'}); const newReport=screen.getByRole('button',{name:'New report'}); await waitFor(()=>expect(newReport).toBeEnabled()); await user.click(newReport);
     await user.type(screen.getByRole('textbox', { name: 'Report name' }), 'A / B');
     await choose(user, 'Calculation 1', 'Sum'); await choose(user, 'Value field 1', 'Budget');
     expect(screen.getByRole('combobox', { name: 'Date filter' })).toHaveTextContent('All time');
@@ -40,14 +40,14 @@ describe('ordinary fields and saved full-scope reports', () => {
   it('uses authoritative totals, exact ratio and coverage across detail pages, sending expected source version', async () => {
     const { calls } = installFakeApi(routes({ [`POST ${reportPath}/${REPORT_ID}/query`]: request => { const offset = (request.body as { offset: number }).offset; return ok({ ...result(), offset, nextOffset: offset === 0 ? 1 : null }); } }));
     const { user } = renderApp(uiPath); await selectReport(user);
-    const results = screen.getByRole('region', { name: 'Results' });
+    await user.click(screen.getByText('Coverage and calculation details')); const results = screen.getByText('Coverage and calculation details').closest('details'); if(!results) throw new Error('Missing calculations');
     expect(within(results).getByText('18h 51m')).toBeVisible(); expect(within(results).getByText('≈1.17')).toBeVisible(); expect(within(results).getByTitle('34/29 (1.172413793103)')).toBeVisible(); // Compact presentation retains the exact server value.
     expect(within(results).getByText('60/63 filled · 2 missing · 1 cleared · 1 zero')).toBeVisible();
     expect(within(results).getByText('7 paired of 8 eligible tasks. Both comparison sums use these same complete pairs.')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Next page' }));
     await waitFor(() => expect(calls.filter(call => call.path.endsWith('/query'))).toHaveLength(2));
     expect(calls.filter(call => call.path.endsWith('/query'))[1]?.body).toEqual({ expectedRevision: 1, snapshotId: null, offset: 1, limit: 100, expectedSourceVersion: 'a'.repeat(64) });
-    expect(await screen.findByText('18h 51m')).toBeVisible();
+    const refreshedSummary=await screen.findByText('Coverage and calculation details'); if(!refreshedSummary.closest('details')?.open) await user.click(refreshedSummary); const refreshedDetails=refreshedSummary.closest('details'); if(!refreshedDetails)throw new Error('Missing refreshed calculations'); expect(await within(refreshedDetails).findByText('18h 51m')).toBeVisible();
     expect(calls.filter(call => call.path.endsWith('/query')).every(call => !call.headers.has('Idempotency-Key'))).toBe(true);
   });
   it('retains a report draft across a newer definition and retries an unknown update with identical body and key', async () => {
@@ -64,15 +64,15 @@ describe('ordinary fields and saved full-scope reports', () => {
   it('captures only after explicit confirmation using the current source version, then separates frozen totals from retained accuracy', async () => {
     const initial = snapshot(); let captured = false;
     const { calls } = installFakeApi(routes({ [`GET ${reportPath}/${REPORT_ID}/initial-snapshots`]: () => ok(captured ? [initial] : []), [`POST ${reportPath}/${REPORT_ID}/initial-snapshots`]: () => { captured = true; return created(initial); }, [`POST ${reportPath}/${REPORT_ID}/query`]: request => ok((request.body as { snapshotId: string | null }).snapshotId ? { ...result(), initialSnapshot: initial, initialMeasures: [{ ...result().measures[0], key: 'original', value: amount(900) }], initialComparison: { ...result().comparison, plan: amount(120), fact: amount(200), difference: amount(80) }, cohorts: { initial: 60, retained: 58, added: 5, removed: 2 } } : result()) }));
-    const { user } = renderApp(uiPath); await selectReport(user); await user.click(screen.getByRole('button', { name: 'Capture initial snapshot' }));
+    const { user } = renderApp(uiPath); await selectReport(user); await user.click(screen.getByText('Initial plan snapshots')); await user.click(screen.getByRole('button', { name: 'Capture initial snapshot' }));
     expect(writes(calls)).toHaveLength(0); await user.type(screen.getByRole('textbox', { name: 'Snapshot name' }), 'Initial scope'); await user.click(screen.getByRole('button', { name: 'Save immutable snapshot' }));
-    expect(await screen.findByText('60 originally included · 58 retained · 5 added · 2 removed from scope')).toBeVisible();
+    await user.click(await screen.findByText('Coverage and calculation details')); expect(await screen.findByText('60 originally included · 58 retained · 5 added · 2 removed from scope')).toBeVisible();
     expect(screen.getByRole('region', { name: 'Original full-scope totals' })).toHaveTextContent('15h'); expect(screen.getByText('Original plan vs current actual · retained paired tasks')).toBeVisible();
     expect(writes(calls)[0]?.body).toEqual({ name: 'Initial scope', expectedRevision: 1, expectedSourceVersion: 'a'.repeat(64) });
   });
   it('previews ordinary fields without writes and applies only the atomic template endpoint', async () => {
     const { calls } = installFakeApi(routes({ [`POST ${rootPath}/projects/${PROJECT_ID}/plan-fact-template`]: () => created({ fields: [plan, fact], columns: { workspaceId: alpha.id, projectId: PROJECT_ID, revision: 4, columns: [plan, fact].map((field, position) => ({ fieldId: field.id, visible: true, position, width: 160 })) }, report: definition() }) }));
-    const { user } = renderApp(uiPath); await user.click(await screen.findByRole('button', { name: 'Preview Plan and fact' }));
+    const { user } = renderApp(uiPath); await screen.findByRole('heading',{name:'Budget review'}); await user.click(screen.getByText('Templates and setup')); await user.click(screen.getByRole('button', { name: 'Preview Plan and fact' }));
     expect(writes(calls)).toHaveLength(0); const name = screen.getByRole('textbox', { name: 'Plan column name' }); await user.clear(name); await user.type(name, 'A');
     const other = screen.getByRole('textbox', { name: 'Fact column name' }); await user.clear(other); await user.type(other, 'B'); await user.click(screen.getByRole('button', { name: 'Apply template' }));
     await waitFor(() => expect(writes(calls)).toHaveLength(1)); expect(writes(calls)[0]?.path).toBe(`${rootPath}/projects/${PROJECT_ID}/plan-fact-template`); expect(writes(calls)[0]?.body).toEqual({ planName: 'A', factName: 'B', reportName: 'Plan and fact', expectedColumnsRevision: 3 });
@@ -102,7 +102,7 @@ describe('ordinary fields and saved full-scope reports', () => {
   it.each([null, '2026-10-18T10:00:00.000Z'])('blocks an existing active or archived column name before any template write (%s)', async archivedAt => {
     const reserved = { ...plan, archivedAt };
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/fields`]: () => ok([reserved, fact]) }));
-    const { user } = renderApp(uiPath); const preview = await screen.findByRole('button', { name: 'Preview Plan and fact' }); await waitFor(() => expect(preview).toBeEnabled()); await user.click(preview);
+    const { user } = renderApp(uiPath); await screen.findByRole('heading',{name:'Budget review'}); await user.click(screen.getByText('Templates and setup')); const preview = screen.getByRole('button', { name: 'Preview Plan and fact' }); await waitFor(() => expect(preview).toBeEnabled()); await user.click(preview);
     const name = screen.getByRole('textbox', { name: 'Plan column name' }); await user.clear(name); await user.type(name, '  bUdGeT  ');
     expect(screen.getByText('A column named “Budget” already exists, including archived columns. Choose a unique name. To compare existing columns, use New report.')).toBeVisible(); expect(screen.getByRole('button', { name: 'Apply template' })).toBeDisabled(); expect(writes(calls)).toHaveLength(0);
     await user.clear(name); await user.type(name, 'Budget 2'); expect(screen.getByRole('button', { name: 'Apply template' })).toBeEnabled(); expect(writes(calls)).toHaveLength(0);
@@ -113,7 +113,7 @@ describe('ordinary fields and saved full-scope reports', () => {
     let catalog = [plan, fact];
     const response = { fields: [madePlan, madeFact], columns: { workspaceId: alpha.id, projectId: PROJECT_ID, revision: 5, columns: [plan, fact, madePlan, madeFact].map((field, position) => ({ fieldId: field.id, position, width: 160, visible: true })) }, report: definition() };
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/fields`]: () => ok(catalog), [`POST ${rootPath}/projects/${PROJECT_ID}/plan-fact-template`]: () => { attempts++; catalog = [plan, fact, madePlan, madeFact]; return attempts === 1 ? gate.promise : created(response); } }));
-    const { user, queryClient } = renderApp(uiPath); const preview = await screen.findByRole('button', { name: 'Preview Plan and fact' }); await waitFor(() => expect(preview).toBeEnabled()); await user.click(preview);
+    const { user, queryClient } = renderApp(uiPath); await screen.findByRole('heading',{name:'Budget review'}); await user.click(screen.getByText('Templates and setup')); const preview = screen.getByRole('button', { name: 'Preview Plan and fact' }); await waitFor(() => expect(preview).toBeEnabled()); await user.click(preview);
     for (const [label, value] of [['Plan column name', 'A'], ['Fact column name', 'B']] as const) { const input = screen.getByRole('textbox', { name: label }); await user.clear(input); await user.type(input, value); }
     await user.click(screen.getByRole('button', { name: 'Apply template' })); await waitFor(() => expect(attempts).toBe(1));
     await act(async () => queryClient.invalidateQueries({ queryKey: queryKeys.fieldDefinitions('11111111-1111-4111-8111-111111111111', alpha.id, PROJECT_ID), exact: true })); await act(async () => gate.lose());

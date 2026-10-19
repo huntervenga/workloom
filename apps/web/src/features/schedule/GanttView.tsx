@@ -1,5 +1,5 @@
 import { useAvailability } from '../time-off/queries';
-import { GanttAvailabilityBands, GanttAvailabilityWarning, supportedAvailabilityWindow, unavailableDates } from '../time-off/GanttAvailability';
+import { GanttAvailabilityBands, GanttAvailabilityWarning, supportedAvailabilityWindow, unavailableDates, availabilitySummary } from '../time-off/GanttAvailability';
 import { t, useTranslation } from '../../i18n';
 import type { BaselineDateValueDto, MembershipDto, PlanningPeriodDto, PlanBaselineDto, ProjectDto, TaskDto, TaskScheduleContextRowDto, WorkspaceDto } from '@workloom/contracts';
 import { useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent } from 'react';
@@ -30,11 +30,34 @@ const noConnectors: ConnectorPlan = { drawn: [], skipped: [] };
 /** Day separators plus Saturday/Sunday shading as two repeating backgrounds, aligned to the window's first weekday. */
 const TRACK_BACKGROUND = '[background-image:linear-gradient(90deg,var(--color-line)_1px,transparent_1px),linear-gradient(90deg,transparent_calc(var(--gantt-day)*5px),var(--color-gantt-weekend)_calc(var(--gantt-day)*5px),var(--color-gantt-weekend)_calc(var(--gantt-day)*7px))] [background-size:calc(var(--gantt-day)*1px)_100%,calc(var(--gantt-day)*7px)_100%] [background-position:0_0,calc(var(--gantt-shift)*1px)_0]';
 const trackBackground = (width: number, firstWeekday: number) => ({ '--gantt-day': width, '--gantt-shift': -(firstWeekday - 1) * width }) as CSSProperties;
-export function ScheduleBar({ start, due, window, baseline = false, onFocus, startLabel, dueLabel, incomplete = false, title, anchor, handle = null, onActivate }: { start: string | null; due: string | null; window: CalendarWindow; baseline?: boolean; startLabel?: string; dueLabel?: string; incomplete?: boolean; title?: string; anchor?: string; onFocus: (date: string) => void; handle?: MoveHandle | null;
+export function ScheduleBar({ start, due, window, baseline = false, onFocus, startLabel, dueLabel, incomplete = false, title, anchor, handle = null, onActivate, availabilityHint }: { start: string | null; due: string | null; window: CalendarWindow; baseline?: boolean; startLabel?: string; dueLabel?: string; incomplete?: boolean; title?: string; anchor?: string; onFocus: (date: string) => void; handle?: MoveHandle | null;
   /** Current bars only: a click (not a drag past the threshold) or Enter/Space opens the task, movable or read-only. */
-  onActivate?: () => void }) {
+  onActivate?: () => void; availabilityHint?: string | undefined }) {
   const { t } = useTranslation();
   const clipped = clipDates(start, due, window);
+  const hintId = useId();
+  const [hintOpen, setHintOpen] = useState(false);
+  const [hintLeft, setHintLeft] = useState<number | null>(null);
+  const hintHost = useRef<HTMLDivElement>(null), hintAnchor = useRef<HTMLElement | null>(null), hintBubble = useRef<HTMLSpanElement>(null);
+  const hintOffset = clipped.kind === 'range' || clipped.kind === 'point' ? clipped.left : 0;
+  useLayoutEffect(() => {
+    if (!hintOpen || !availabilityHint) return;
+    const host = hintHost.current, anchor = hintAnchor.current, bubble = hintBubble.current;
+    if (!host || !anchor || !bubble) return;
+    const viewport = host.closest<HTMLElement>('[data-gantt-scroll]');
+    const position = () => {
+      const bounds = viewport?.getBoundingClientRect();
+      const leftEdge = Math.max(0, bounds?.left ?? 0) + 8;
+      const rightEdge = Math.min(globalThis.innerWidth, bounds?.right ?? globalThis.innerWidth) - 8;
+      const width = bubble.getBoundingClientRect().width;
+      const left = Math.max(leftEdge, Math.min(anchor.getBoundingClientRect().left, rightEdge - width));
+      setHintLeft(left - host.getBoundingClientRect().left);
+    };
+    position();
+    viewport?.addEventListener('scroll', position);
+    globalThis.addEventListener('resize', position);
+    return () => { viewport?.removeEventListener('scroll', position); globalThis.removeEventListener('resize', position); };
+  }, [hintOpen, availabilityHint, hintOffset]);
   const label = t('schedule.ganttView.valueStartValueDueValue', { p0: baseline ? t('schedule.ganttView.frozenDatesLabel') : t('schedule.ganttView.current'), p1: startLabel ?? start ?? t('schedule.ganttView.notSet'), p2: dueLabel ?? due ?? t('schedule.ganttView.notSet') });
   // The move handle sits on the saved body itself; the body keeps its saved dates while a ghost shows the proposal.
   // data-gantt-movable carries the source task ID only while a move could start now; blocked bodies keep the handle for guidance.
@@ -44,12 +67,15 @@ export function ScheduleBar({ start, due, window, baseline = false, onFocus, sta
     role: 'button', tabIndex: 0, 'aria-label': t('timelineUX.bar.openTask', { title: title ?? '', dates: pointLabel }), onClick: onActivate,
     onKeyDown: (event: KeyboardEvent<HTMLElement>) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onActivate(); } },
   } : null;
+  const hint = !baseline && availabilityHint ? { ref: (node: HTMLElement | null) => { hintAnchor.current = node; }, 'aria-describedby': hintId, onPointerEnter: () => setHintOpen(true), onPointerLeave: () => setHintOpen(false), onFocus: () => setHintOpen(true), onBlur: () => setHintOpen(false), onPointerDownCapture: () => setHintOpen(false), onKeyDownCapture: (event: KeyboardEvent<HTMLElement>) => { if (event.key === 'Escape') setHintOpen(false); } } : {};
+  const hoverTitle = [title, label, !baseline ? availabilityHint : null].filter(Boolean).join(' · ');
   const focusRing = activate ? 'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-indigo-900' : '';
-  return <div aria-label={label} className="relative h-6" {...(anchor ? { [anchorAttribute]: anchor } : {})}>
-    {clipped.kind === 'range' ? <div title={title ? `${title} · ${label}` : label} className={`absolute top-0.5 z-[2] flex h-5 items-center gap-0.5 overflow-hidden rounded px-0.5 text-[11px] leading-5 ${baseline ? 'border border-dashed border-slate-500 bg-slate-100 text-slate-700' : 'bg-indigo-500 text-white shadow-xs'} ${handle ? 'cursor-grab touch-none select-none active:cursor-grabbing' : activate ? 'cursor-pointer' : ''} ${focusRing}`} style={{ left: `${clipped.left}%`, width: `${clipped.width}%`, minWidth: 2 }} {...body} {...(activate ?? { role: 'img', 'aria-label': label })}><span aria-hidden="true">{clipped.continuesBefore ? '‹' : ''}</span>{title ? <span aria-hidden="true" className="min-w-0 flex-1 truncate">{title}</span> : <span className="flex-1" />}<span aria-hidden="true">{clipped.continuesAfter ? '›' : ''}</span></div>
-      : clipped.kind === 'point' ? <span title={label} className={`absolute top-1 z-[2] rounded-sm ${baseline ? 'border border-slate-500 bg-slate-100' : 'bg-indigo-500'} ${handle ? 'cursor-grab touch-none select-none active:cursor-grabbing' : activate ? 'cursor-pointer' : ''} ${focusRing}`} style={{ ...pointStyle, left: `${clipped.left}%` }} {...body} {...(activate ?? { role: 'img', 'aria-label': pointLabel })} />
+  return <div ref={hintHost} aria-label={label} className="relative h-6" {...(anchor ? { [anchorAttribute]: anchor } : {})}>
+    {clipped.kind === 'range' ? <div title={hoverTitle} className={`absolute top-0.5 z-[2] flex h-5 items-center gap-0.5 overflow-hidden rounded px-0.5 text-[11px] leading-5 ${baseline ? 'border border-dashed border-slate-500 bg-slate-100 text-slate-700' : 'bg-indigo-500 text-white shadow-xs'} ${handle ? 'cursor-grab touch-none select-none active:cursor-grabbing' : activate ? 'cursor-pointer' : ''} ${focusRing}`} style={{ left: `${clipped.left}%`, width: `${clipped.width}%`, minWidth: 2 }} {...body} {...(activate ?? { role: 'img', 'aria-label': label })} {...hint}><span aria-hidden="true">{clipped.continuesBefore ? '‹' : ''}</span>{title ? <span aria-hidden="true" className="min-w-0 flex-1 truncate">{title}</span> : <span className="flex-1" />}<span aria-hidden="true">{clipped.continuesAfter ? '›' : ''}</span></div>
+      : clipped.kind === 'point' ? <span title={hoverTitle} className={`absolute top-1 z-[2] rounded-sm ${baseline ? 'border border-slate-500 bg-slate-100' : 'bg-indigo-500'} ${handle ? 'cursor-grab touch-none select-none active:cursor-grabbing' : activate ? 'cursor-pointer' : ''} ${focusRing}`} style={{ ...pointStyle, left: `${clipped.left}%` }} {...body} {...(activate ?? { role: 'img', 'aria-label': pointLabel })} {...hint} />
       : clipped.kind === 'outside' ? <button type="button" className="rounded px-1 text-xs leading-6 text-muted underline" onClick={() => onFocus(clipped.endpoint)}>{t('schedule.ganttView.outsideWindowShowValue', { date: clipped.endpoint })}</button>
       : <span className="px-1 text-xs leading-6 text-muted">{clipped.kind === 'none' ? incomplete ? t('schedule.ganttView.datesWereNotFullyCaptured') : t('schedule.ganttView.noDates') : t('schedule.ganttView.checkDates')}</span>}
+    {!baseline && availabilityHint ? <span ref={hintBubble} id={hintId} role="tooltip" hidden={!hintOpen} className="pointer-events-none absolute bottom-full z-40 mb-1 w-max max-w-[min(18rem,calc(100vw_-_16px))] rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink shadow-lg" style={{ left: hintLeft ?? `${hintOffset}%` }}>{availabilityHint}</span> : null}
   </div>;
 }
 function planLabel(plan: PlanBaselineDto, members: readonly MembershipDto[]) {
@@ -179,6 +205,14 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
     const row = context.rows.get(task.id);
     if (!row || !window) return <div key={task.id} className="px-3 py-2 text-xs text-muted">{t('schedule.ganttView.taskDatesHaveNotLoadedYet')}</div>;
     const absenceDates = availability.isSuccess && availability.data.settingsConfigured ? unavailableDates(availability.data, task.responsibleMembershipId, window) : new Set<string>();
+    const unavailable = availabilitySummary(availability.isSuccess ? availability.data : undefined, task.responsibleMembershipId, row.current.startDate, row.current.dueDate);
+    const assigneeName = availability.isSuccess ? availability.data.members.find(member => member.membershipId === task.responsibleMembershipId)?.displayName : undefined;
+    const dateHint = unavailable?.dates.slice(0, 3).join(', ') ?? '';
+    const shownDates = unavailable && unavailable.dates.length > 3 ? t('timeOff.availabilityMoreDates', { dates: dateHint, count: unavailable.dates.length - 3 }) : dateHint;
+    const availabilityHint = unavailable?.dates.length ? t('timeOff.ganttAbsenceHint', { person: assigneeName ?? t('timeOff.person'), dates: shownDates, hours: unavailable.minutes / 60 }) : undefined;
+    const visibleUnavailable = availabilitySummary(availability.isSuccess ? availability.data : undefined, task.responsibleMembershipId, window.start, window.end);
+    const visibleDates = visibleUnavailable?.dates.slice(0, 3).join(', ') ?? '';
+    const trackHint = visibleUnavailable?.dates.length ? t('timeOff.ganttAbsenceHint', { person: assigneeName ?? t('timeOff.person'), dates: visibleUnavailable.dates.length > 3 ? t('timeOff.availabilityMoreDates', { dates: visibleDates, count: visibleUnavailable.dates.length - 3 }) : visibleDates, hours: visibleUnavailable.minutes / 60 }) : undefined;
     const base = row.baselineDates;
     const baseStart = base.state === 'captured' && base.startDate.state === 'set' ? base.startDate.value : null;
     const baseDue = base.state === 'captured' && base.dueDate.state === 'set' ? base.dueDate.value : null;
@@ -192,15 +226,15 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
         {row.meetingId ? <button type="button" className="mt-0.5 rounded text-[11px] text-accent-ink underline" onClick={() => onOpen(task.id)}>{t('schedule.ganttView.meetingOpenCalendar')}</button>
           : <p className="mt-0.5 text-[11px] leading-4 text-muted">{t('schedule.ganttView.datesSummary', { start: row.current.startDate ?? t('schedule.ganttView.notSet'), due: row.current.dueDate ?? t('schedule.ganttView.notSet') })}</p>}
         {base.state === 'not_in_baseline' ? <p className="truncate text-[11px] leading-4 text-muted">{t('schedule.ganttView.taskIsNotIncludedInThisPlan')}</p> : base.state === 'captured' ? <p className="text-[11px] leading-4 text-slate-600">{t('schedule.ganttView.planStartValue', { date: baselineValue(base.startDate, true) })}<br />{t('schedule.ganttView.dueValue', { date: baselineValue(base.dueDate, false) })}</p> : null}
-        <GanttAvailabilityWarning availability={availability.isSuccess ? availability.data : undefined} membershipId={task.responsibleMembershipId} startDate={row.current.startDate} endDate={row.current.dueDate} dates={absenceDates}/>
+        <GanttAvailabilityWarning availability={availability.isSuccess ? availability.data : undefined} membershipId={task.responsibleMembershipId} startDate={row.current.startDate} endDate={row.current.dueDate}/>
         {row.blocking.isBlocked ? <p className="text-[11px] leading-4 text-amber-900">{t('schedule.ganttView.unfinishedPredecessorCount', { count: row.blocking.unresolvedCount })}</p> : null}
       </div>
-      <div data-gantt-track="" className={`relative shrink-0 py-1.5 ${TRACK_BACKGROUND}`} style={{ width: window.days * width, ...background }}>
+      <div data-gantt-track="" title={trackHint} className={`relative shrink-0 py-1.5 ${TRACK_BACKGROUND}`} style={{ width: window.days * width, ...background }}>
         <GanttAvailabilityBands dates={absenceDates} window={window} width={width}/>
         {todayOffset !== null ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-0.5 bg-rose-500/70" style={{ left: (todayOffset + 0.5) * width - 1 }} /> : null}
         {row.meetingId ? <p className="px-1 text-xs leading-6 text-muted">{t('schedule.ganttView.meetingScheduleIsInTheCalendarWithoutA')}</p>
           : <GanttMoveBar actorId={actorId} workspaceId={workspace.id} source={dateMoveSource(task, row, { projectId: project.id, writable, ready: snapshotReady })} viewportKey={viewportKey} pixelsPerDay={width} window={window} staged={movedDrafts.get(task.id) ?? null} canStart={() => c.moveGate(task.id) === null} onRefused={() => refuseMove(task.id)} onDrop={dropMove}>
-            {handle => <ScheduleBar start={row.current.startDate} due={row.current.dueDate} title={task.title} anchor={task.id} window={window} onFocus={c.setWindowStart} handle={handle} onActivate={() => onOpen(task.id)} />}
+            {handle => <ScheduleBar start={row.current.startDate} due={row.current.dueDate} title={task.title} anchor={task.id} availabilityHint={availabilityHint} window={window} onFocus={c.setWindowStart} handle={handle} onActivate={() => onOpen(task.id)} />}
           </GanttMoveBar>}
         {base.state === 'captured' && !row.meetingId ? <ScheduleBar start={baseStart} due={baseDue} startLabel={baselineValue(base.startDate, true)} dueLabel={baselineValue(base.dueDate, false)} incomplete={base.startDate.state === 'not_captured' || base.dueDate.state === 'not_captured'} window={window} baseline onFocus={c.setWindowStart} /> : null}
       </div>
@@ -239,6 +273,7 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
       <Button size="sm" variant={missedWindow ? 'primary' : 'secondary'} disabled={!contextReady || fit.kind === 'none'} aria-describedby={fitHelp ? fitHelpId : undefined} title={t('schedule.ganttView.fitLoadedTasksHint')} onClick={() => c.fitWindow(fit)}>{t('schedule.ganttView.fitLoadedTasks')}</Button>
       <Button size="sm" variant="ghost" aria-expanded={advancedOpen} aria-controls={`${aboutId} ${compareId} ${legendId} ${checksId}`} onClick={() => setAdvancedOpen(open => !open)}>{t('timelineUX.advanced.toggle')}</Button>
     </div>
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted" aria-label={t('timeOff.dayLegend')}><span className="inline-flex items-center gap-1"><span aria-hidden="true" className="h-2.5 w-4 rounded-sm bg-indigo-500"/>{t('timeOff.legendTask')}</span><span className="inline-flex items-center gap-1"><span aria-hidden="true" className="h-2.5 w-4 rounded-sm bg-gantt-weekend ring-1 ring-inset ring-line"/>{t('timeOff.legendWeekend')}</span>{availability.isSuccess && availability.data.settingsConfigured ? <span className="inline-flex items-center gap-1"><span aria-hidden="true" className="h-2.5 w-4 rounded-sm border border-accent-line bg-accent-soft"/>{t('timeOff.legendUnavailable')}</span> : null}</div>
     {window ? null : <p role="alert" className="text-sm text-red-800">{t('schedule.ganttView.enterADateFrom00010101To')}</p>}
     {fitShown ? <p role="status" className="text-xs text-indigo-900">{fitShown.kind === 'wide' ? t('schedule.ganttView.fitWide', { span: fitShown.span, range: fitRange }) : fitShown.origin === 'initial' ? t('schedule.ganttView.initialFitStatus', { count: fitShown.count, range: fitRange }) : t('schedule.ganttView.fittedStatus', { count: fitShown.count, range: fitRange })} {fitQualifier}</p> : null}
     {missedWindow && coverage ? <p role="status" className="text-xs text-amber-900">{t('schedule.ganttView.missedWindow', { before: coverage.before, after: coverage.after })} {t('schedule.ganttView.useFitLoadedTasks')}</p> : null}
@@ -272,14 +307,14 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
       {skippedText.length ? <span>{t('schedule.ganttView.connectorsNotDrawn', { reasons: skippedText.join(', ') })}</span> : null}
       <a className="text-accent-ink underline" href={`#${checksId}`}>{t('schedule.ganttView.reviewDependencyChecks')}</a>
     </div> : null}
-    {context.error ? <QueryErrorState error={context.error} subject="tasks" headingLevel={3} onRetry={() => void context.refetch()} /> : context.pending ? <p role="status" className="text-sm text-muted">{t('schedule.ganttView.loadingCurrentDates')}</p> : window && axis ? <div className="relative max-w-full overflow-x-auto rounded-xl border border-line" aria-label={t('schedule.ganttView.loadedTaskCalendar')} tabIndex={0}>
+    {context.error ? <QueryErrorState error={context.error} subject="tasks" headingLevel={3} onRetry={() => void context.refetch()} /> : context.pending ? <p role="status" className="text-sm text-muted">{t('schedule.ganttView.loadingCurrentDates')}</p> : window && axis ? <div data-gantt-scroll="" className="relative max-w-full overflow-x-auto rounded-xl border border-line" aria-label={t('schedule.ganttView.loadedTaskCalendar')} tabIndex={0}>
       <div ref={connectors.hostRef} className="relative isolate w-max min-w-full">
         <GanttConnectors plan={connectorPlan} anchors={connectors.anchors} label={connectorLabel} />
         <div className="flex border-b border-line bg-canvas">
           <div className={`sticky left-0 z-20 ${LABEL_COLUMN} flex shrink-0 items-end border-r border-line bg-canvas px-2 py-1.5 text-xs font-medium text-muted`}>{comparing ? t('schedule.ganttView.taskCurrentAndFrozenDates') : t('schedule.ganttView.taskCurrentDates')}</div>
           <div className="shrink-0">
             <div aria-hidden="true" className="relative h-6 border-b border-line" style={{ width: window.days * width }}>{axis.months.map(month => { const span = month.days * width, long = formats.month.format(calendarDate(month.first)); return <div key={month.month} title={long} className="absolute inset-y-0 truncate border-l border-slate-300 px-1 text-[11px] font-semibold leading-6 text-ink-soft" style={{ left: month.offset * width, width: span }}>{span >= 84 ? long : span >= 28 ? formats.monthShort.format(calendarDate(month.first)) : ''}</div>; })}</div>
-            <ol aria-label={t('schedule.ganttView.calendarWindowDays')} className="flex" style={{ width: window.days * width }}>{axis.days.map(day => { const isToday = day.date === today; return <li key={day.date} title={day.date} aria-current={isToday ? 'date' : undefined} className={`shrink-0 overflow-visible whitespace-nowrap border-r border-line py-0.5 text-center leading-tight ${isToday ? 'bg-rose-100 font-semibold text-rose-900' : day.weekend ? 'bg-slate-100 text-muted' : 'text-ink-soft'}`} style={{ width }}>
+            <ol aria-label={t('schedule.ganttView.calendarWindowDays')} className="flex" style={{ width: window.days * width }}>{axis.days.map(day => { const isToday = day.date === today; return <li key={day.date} title={day.date} aria-current={isToday ? 'date' : undefined} className={`shrink-0 overflow-visible whitespace-nowrap border-r border-line py-0.5 text-center leading-tight ${isToday ? 'bg-rose-100 font-semibold text-rose-900' : day.weekend ? 'bg-gantt-weekend text-ink-soft' : 'text-ink-soft'}`} style={{ width }}>
               <span className="sr-only">{isToday ? t('schedule.ganttView.todayDayLabel', { date: formats.full.format(calendarDate(day.date)) }) : formats.full.format(calendarDate(day.date))}</span>
               <span aria-hidden="true" className="block text-[10px]">{width >= 20 ? formats.weekday.format(calendarDate(day.date)) : ' '}</span>
               <span aria-hidden="true" className="block text-[11px]">{width >= 20 || day.day === 1 || day.weekday === 1 ? day.day : ' '}</span>

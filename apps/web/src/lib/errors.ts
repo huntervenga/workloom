@@ -32,6 +32,8 @@ export type ErrorSubject =
   | 'fieldHistory'
   | 'planning'
   | 'planSave'
+  | 'timeOffPreview'
+  | 'timeOffSave'
   | 'freeze'
   | 'factSave'
   | 'report'
@@ -81,6 +83,8 @@ const subjectTitles: Record<ErrorSubject, string> = {
   get fieldHistory() { return t('errors.subject.fieldHistory'); },
   get planning() { return t('errors.subject.planning'); },
   get planSave() { return t('errors.subject.planSave'); },
+  get timeOffPreview() { return t('errors.subject.timeOffPreview'); },
+  get timeOffSave() { return t('errors.subject.timeOffSave'); },
   get freeze() { return t('errors.subject.freeze'); },
   get factSave() { return t('errors.subject.factSave'); },
   get report() { return t('errors.subject.report'); },
@@ -161,6 +165,8 @@ const saveSubjects: ReadonlySet<ErrorSubject> = new Set([
   'columnsSave',
   'fieldValueSave',
   'planSave',
+  'timeOffPreview',
+  'timeOffSave',
   'freeze',
   'factSave',
   'workCategorySave',

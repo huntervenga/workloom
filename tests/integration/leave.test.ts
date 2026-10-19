@@ -32,6 +32,26 @@ describe('Time off authoritative PostgreSQL lifecycle',()=>{
   const f=await fixture();await request(f,add(today,10));const peer=await leave.overview(f.ctx(U.viewer));expect(peer.requests).toEqual([]);expect(peer.balances).toEqual([]);expect(peer.profiles).toEqual([]);const neutral=await leave.availability(f.ctx(U.viewer),{startDate:today,endDate:add(today,30),people:{kind:'all_active'}});expect(JSON.stringify(neutral)).not.toContain('PRIVATE');expect(neutral.inputVersions.requests).toEqual([]);expect(neutral.inputVersions.profiles).toEqual([]);expect(neutral.inputVersions.digest).toMatch(/^[a-f0-9]{64}$/);expect(neutral.members).toHaveLength(3);expect(neutral.members.find(m=>m.membershipId===f.owner)?.scheduleKnown).toBe(false);
   await expect(leave.create(f.ctx(U.memberA),{membershipId:f.owner,typeId:f.vacation.id,startDate:add(today,20),endDate:add(today,20),note:'',reason:''})).rejects.toMatchObject({code:'NOT_FOUND'});await expect(leave.overview({...f.ctx(),workspaceId:randomUUID()})).rejects.toMatchObject({code:'NOT_FOUND'});
  });
+ it('rejects guessed cross-person preview, update and cancellation without changing stored state',async()=>{
+  const f=await fixture(),start=add(today,20);await leave.profile(f.ctx(),f.owner,f.input);
+  const other=await leave.create(f.ctx(),{membershipId:f.owner,typeId:f.vacation.id,startDate:start,endDate:add(start,2),note:'Private owner request',reason:''});
+  const before=await databaseSnapshot(db.sql),preview={membershipId:f.member,typeId:f.vacation.id,startDate:start,endDate:add(start,2),note:'',reason:'',approveNegative:false};
+  await expect(leave.preview(f.ctx(U.memberA),{...preview,membershipId:f.owner})).rejects.toMatchObject({code:'NOT_FOUND'});
+  await expect(leave.preview(f.ctx(U.memberA),{...preview,excludeRequestId:other.id})).rejects.toMatchObject({code:'NOT_FOUND'});
+  await expect(leave.update(f.ctx(U.memberA),other.id,{expectedRevision:other.revision,startDate:start,endDate:add(start,1),note:'Attempted peer edit',reason:''})).rejects.toMatchObject({code:'NOT_FOUND'});
+  await expect(leave.decide(f.ctx(U.memberA),other.id,decision(other.revision,'cancel'))).rejects.toMatchObject({code:'NOT_FOUND'});
+  expect(await databaseSnapshot(db.sql)).toEqual(before);
+ });
+ it('denies member approval, rejection and bulk assignment even for their own requests',async()=>{
+  const f=await fixture(),start=add(today,20),own=await leave.create(f.ctx(U.memberA),{membershipId:f.member,typeId:f.vacation.id,startDate:start,endDate:start,note:'Own pending request',reason:''});
+  expect(own.status).toBe('pending');const before=await databaseSnapshot(db.sql);
+  await expect(leave.decide(f.ctx(U.memberA),own.id,decision(own.revision,'approve'))).rejects.toMatchObject({code:'CAPABILITY_REQUIRED'});
+  await expect(leave.decide(f.ctx(U.memberA),own.id,decision(own.revision,'reject','Attempted self approval workflow'))).rejects.toMatchObject({code:'CAPABILITY_REQUIRED'});
+  const bulk={membershipIds:[f.member],typeId:f.vacation.id,startDate:add(today,40),endDate:add(today,40),note:'',reason:'',approveNegative:false};
+  await expect(leave.previewBulk(f.ctx(U.memberA),bulk)).rejects.toMatchObject({code:'CAPABILITY_REQUIRED'});
+  await expect(leave.bulk(f.ctx(U.memberA),bulk)).rejects.toMatchObject({code:'CAPABILITY_REQUIRED'});
+  expect(await databaseSnapshot(db.sql)).toEqual(before);
+ });
  it('charges weekdays only, excludes configured company holidays, reserves once, and emits signed immutable compensation on cancellation',async()=>{
   const f=await fixture(),start=add(today,15);await settings(f,s=>{must(s.policyVersions[0]).holidays=[{id:randomUUID(),name:'Synthetic company day',rule:{kind:'date',date:start}}];});
   const pending=await request(f,start,add(start,13)),preview=await leave.preview(f.ctx(),{membershipId:f.member,typeId:f.vacation.id,startDate:start,endDate:add(start,13),note:'',reason:'',excludeRequestId:pending.id,approveNegative:false});

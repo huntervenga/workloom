@@ -148,3 +148,5 @@
 - [93: Time off, capacity and spatial Undo — final E acceptance, controlled local activation and quickstart](93-time-off-capacity-and-spatial-undo.md).
 
 - [94: Time off profile defaults, optional opening balances, save feedback and web-only activation](94-time-off-profile-defaults-and-save-feedback.md).
+
+- [96: Workspace/person report trends — proposed future design, not implemented; cohort dates, snapshots and honest time attribution](96-workspace-report-trends.md).

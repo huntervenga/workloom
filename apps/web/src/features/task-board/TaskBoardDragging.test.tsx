@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useLayoutEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTask, statuses } from '../task-table/taskTableFixtures';
 import { TaskBoard, type TaskBoardProps } from './TaskBoard';
@@ -14,6 +15,10 @@ function example(overrides: Partial<TaskBoardProps> = {}) {
   const props: TaskBoardProps = { tasks: [task], statuses, members: [], partial: false, writable: true, onOpenTask: vi.fn(), onEditStatus: vi.fn(), renderStatusEditor: () => null,
     onMoveStatus: move, dragBlocked: false, dragContextKey: 'fixture-context', acquireDragProtection: acquire, ...overrides };
   return { ...render(<TaskBoard {...props} />), props, move, acquire, release, user: userEvent.setup() };
+}
+function CompletionProbe({ id, mount, unmount }: { id: string; mount: () => void; unmount: () => void }) {
+  useLayoutEffect(() => { mount(); return unmount; }, [mount, unmount]);
+  return <button type="button" data-task-completion={id}>Complete</button>;
 }
 afterEach(() => { Reflect.deleteProperty(document, 'elementFromPoint'); vi.restoreAllMocks(); });
 
@@ -72,8 +77,47 @@ describe('status board pointer intent', () => {
     ui.rerender(<TaskBoard {...ui.props} tasks={rows} writable={false} />);
     expect(screen.queryByRole('button', { name: /^Drag task:/ })).not.toBeInTheDocument();
     ui.rerender(<TaskBoard {...ui.props} tasks={rows} dragBlocked />);
-    expect(screen.queryByRole('button', { name: /^Drag task:/ })).not.toBeInTheDocument();
+    // A pending/refetch block disables the eligible handle in place; it never makes ineligible cards draggable.
+    const blocked = screen.getAllByRole('button', { name: /^Drag task:/ });
+    expect(blocked).toHaveLength(1); expect(blocked[0]).toHaveAccessibleName('Drag task: Board source'); expect(blocked[0]).toBeDisabled();
     expect(screen.getByLabelText('Saved status draft')).toBeInTheDocument();
+    // Eligible and ineligible cards reserve the same handle chrome, so titles wrap alike.
+    expect(new Set([...document.querySelectorAll('[data-board-card] [data-board-card-body]')].map(body => body.className)).size).toBe(1);
+  });
+
+  it('keeps the same card chrome and a mounted, visibly disabled handle across dragBlocked false/true/false', () => {
+    const ui = example({ onMoveCard: vi.fn() });
+    const handle = screen.getByRole('button', { name: 'Drag task: Board source' });
+    const chrome = () => {
+      const current = screen.getByRole('button', { name: 'Drag task: Board source' }), card = required(current.closest<HTMLElement>('[data-board-card]'));
+      return { same: current === handle, first: card.firstElementChild === current, card: card.className, handle: current.className,
+        body: required(card.querySelector('[data-board-card-body]')).className, title: required(screen.getByRole('button', { name: task.title }).parentElement).className };
+    };
+    const idle = chrome();
+    expect(idle).toMatchObject({ same: true, first: true }); expect(handle).toBeEnabled();
+    ui.rerender(<TaskBoard {...ui.props} dragBlocked />);
+    expect(chrome()).toEqual(idle); expect(handle).toBeDisabled();
+    fireEvent.pointerDown(handle, { button: 0, isPrimary: true, pointerId: 1, clientX: 10, clientY: 10 });
+    expect(ui.acquire).not.toHaveBeenCalled(); expect(screen.queryByTestId('board-drag-preview')).not.toBeInTheDocument();
+    ui.rerender(<TaskBoard {...ui.props} dragBlocked={false} />);
+    expect(chrome()).toEqual(idle); expect(handle).toBeEnabled();
+  });
+
+  it('draws the lane-end landing marker as an overlay without adding lane flow children', async () => {
+    const ui = example({ onMoveCard: vi.fn() }), destination = required(lane(doing.id));
+    const flow = (element: Element) => [...element.children].map(child => `${child.tagName}.${child.className}`);
+    const body = required(destination.querySelector('[data-board-lane-body]'));
+    const laneFlow = flow(destination), bodyFlow = flow(body);
+    await ui.user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: 'Drag task: Board source' }), coords: { clientX: 10, clientY: 10 } });
+    await ui.user.pointer({ target: destination, coords: { clientX: 100, clientY: 100 } });
+    const marker = required(destination.querySelector('[data-board-drop-placeholder]'));
+    const overlay = required(marker.closest<HTMLElement>('[data-board-lane-end]'));
+    expect(flow(destination)).toEqual(laneFlow);
+    expect(overlay.parentElement).toBe(body); expect(body).toHaveClass('relative');
+    expect(overlay).toHaveClass('absolute', 'pointer-events-none');
+    expect(flow(body).filter(entry => !entry.includes('absolute'))).toEqual(bodyFlow);
+    await ui.user.pointer({ keys: '[/MouseLeft]', target: destination, coords: { clientX: 100, clientY: 100 } });
+    expect(destination.querySelector('[data-board-lane-end]')).toBeNull(); expect(flow(body)).toEqual(bodyFlow);
   });
 
   it('opens a card from its blank surface while controls and an active editor keep their own actions', async () => {
@@ -111,7 +155,8 @@ describe('status board pointer intent', () => {
 
   it('moves to an empty lane and carries full card metadata in an inert floating preview', async () => {
     const ordered = vi.fn(), source = { ...task, dueDate: '2027-03-20', responsibleMembershipId: null };
-    const ui = example({ tasks: [source], onMoveCard: ordered });
+    const mount = vi.fn(), unmount = vi.fn();
+    const ui = example({ tasks: [source], onMoveCard: ordered, renderCompletionAction: row => <CompletionProbe id={row.id} mount={mount} unmount={unmount} /> });
     const handle = screen.getByRole('button', { name: 'Drag task: Board source' });
     const sourceCard = required(handle.closest('[data-board-card]'));
     expect(sourceCard.firstElementChild).toBe(handle);
@@ -122,6 +167,12 @@ describe('status board pointer intent', () => {
     expect(ghost).toHaveAttribute('inert'); expect(ghost).toHaveAttribute('aria-hidden', 'true');
     expect(ghost).toHaveTextContent(source.title); expect(ghost).toHaveTextContent('Unassigned'); expect(ghost).toHaveTextContent('Due');
     expect(screen.getAllByRole('button', { name: source.title })).toHaveLength(1);
+    // Same body chrome, handle shape and status-control shape as the source, without live control hooks.
+    expect(required(ghost.querySelector('[data-board-card-body]')).className).toBe(required(sourceCard.querySelector('[data-board-card-body]')).className);
+    expect(ghost.querySelector('li > span[aria-hidden="true"]')).not.toBeNull(); expect(ghost).toHaveTextContent('Change status');
+    expect(ghost.querySelector('[data-task-cell]')).toBeNull(); expect(ghost.querySelector('[data-task-completion]')).toBeNull(); expect(ghost.querySelector('[data-board-card]')).toBeNull();
+    expect(document.querySelectorAll(`[data-task-completion="${source.id}"]`)).toHaveLength(1);
+    expect(mount).toHaveBeenCalledTimes(1); expect(unmount).not.toHaveBeenCalled();
     await ui.user.pointer({ keys: '[/TouchA]', target: destination, coords: { clientX: 100, clientY: 100 } });
     expect(ordered).toHaveBeenCalledExactlyOnceWith(source, doing.id, null, 'after');
   });

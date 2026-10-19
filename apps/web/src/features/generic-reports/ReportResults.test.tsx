@@ -1,11 +1,12 @@
 import type { GenericMeasureResultDto, GenericReportNumberDto, GenericReportResultDto } from '@workloom/contracts';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render as renderBase, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { ReportResults } from './ReportResults';
 import { amount, result, plan } from './test/fixtures';
 import { field } from '../fields/test/fixtures';
 import { alpha, alphaMembers } from '../../test/fakeApi';
+function render(ui: Parameters<typeof renderBase>[0]) { const view=renderBase(ui); const summary=screen.getByText('Coverage and calculation details'),details=summary.closest('details'); if(!details)throw new Error('Missing calculation disclosure');details.open=true;fireEvent(details,new Event('toggle'));return view; }
 describe('aggregate duration results', () => {
   it('renders negative current and original differences without applying task-value validation', () => {
     const source = result();
@@ -18,7 +19,7 @@ describe('aggregate duration results', () => {
     const source = result(), measure = source.measures[0];
     if (!measure) throw new Error('Missing measure fixture');
     render(<MemoryRouter><ReportResults workspaceId={alpha.id} members={alphaMembers} sections={[]} result={{ ...source, comparison: null, measures: [{ ...measure, value: { numerator: '9007199254740993001', denominator: '1', decimal: '9007199254740993001' } }] }}/></MemoryRouter>);
-    expect(within(screen.getByRole('region', { name: 'Results' })).getByText('150119987579016550h 1m')).toBeVisible();
+    expect(screen.getByTitle('9007199254740993001/1 (9007199254740993001)')).toHaveTextContent('150119987579016550h 1m');
   });
 });
 

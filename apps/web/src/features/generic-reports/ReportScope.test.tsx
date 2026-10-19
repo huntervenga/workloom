@@ -24,7 +24,7 @@ describe('report scope, renamed sources and authoritative column totals', () => 
     expect((calls.find(call => call.method === 'PATCH')?.body as { config: typeof saved.config }).config.filters.dateRange).toEqual({ source: { kind: 'due_date' }, from: '2026-10-12', to: '2026-10-18' });
     await user.click(await screen.findByRole('button', { name: 'Edit report' })); await choose(user, 'Date filter', 'All time');
     expect(screen.queryByLabelText('From (inclusive)')).not.toBeInTheDocument();
-    expect(calls.filter(call => call.method !== 'GET' && !call.path.endsWith('/query')).every(call => call.path.startsWith(reportPath))).toBe(true);
+    expect(calls.filter(call => call.method !== 'GET' && !call.path.endsWith('/query') && !call.path.endsWith('/field-aggregates')).every(call => call.path.startsWith(reportPath))).toBe(true);
   });
   it('does not rebind a deleted source to a new field of the same name, and retains its unavailable stable ID', async () => {
     const replacement = { ...plan, id: '90000000-0000-4000-8000-000000000099' };
