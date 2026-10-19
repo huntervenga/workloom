@@ -72,6 +72,8 @@ import {
 } from './useTaskCommands';
 
 export interface TaskDrawerProps {
+  /** Explicit legacy planning routes only; ordinary time values are custom fields. */
+  legacyTime?: boolean;
   placementCommands?: PlacementCommands | undefined;
   /** The page context remains visible while editing a linked canonical task. */
   viewedProjectName?: string | undefined;
@@ -589,12 +591,12 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
   return (<>
     {/* One scroller for the whole task: its form, then subtasks and activity with their own forms.
         The actions stay in the footer below and submit the form by ID. */}
-    <div className={`mt-3 ${formBodyClassName}`}>
+    <div className={`mt-1 ${formBodyClassName}`}>
       <form id={formId} noValidate onSubmit={submit} onKeyDown={event => submitTaskFormShortcut(event, canEdit || (locked && !busy))} className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        {archived || base.parentTaskId !== null ? <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {archived ? <Badge tone="muted">{t('tasks.taskDrawer.archived')}</Badge> : null}
           {base.parentTaskId !== null ? <Badge tone="muted">{t('tasks.taskDrawer.subtask')}</Badge> : null}
-        </div>
+        </div> : null}
 
         {latest.parentTaskId!==null?<div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           {latest.parentTaskId!==null?<ParentTaskAction actorId={actorId} workspaceId={workspace.id} projectId={props.project.id} sourceId={taskId} parentId={latest.parentTaskId} beforeOpen={retainForNavigation} intent={autosave.editIntent(taskId)} onOpenTask={onOpenTask} disabled={!props.hierarchyCurrent}/>:null}
@@ -667,7 +669,8 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             projectName={props.project.name}
             projectsField={props.placementCommands && latest.meetingId === null ? <TaskProjectsField actorId={actorId} task={latest} homeProject={props.project} writable={canEdit} commands={props.placementCommands} /> : undefined}
             disabled={fieldsDisabled}
-            estimateSupplement={latest.meetingId === null ? <div className="space-y-1.5 text-xs text-muted">
+            showLegacyEstimate={props.legacyTime === true}
+            estimateSupplement={props.legacyTime === true && latest.meetingId === null ? <div className="space-y-1.5 text-xs text-muted">
               {draft.estimate !== baseDraft.estimate ? <section aria-label={t('tasks.estimates.current')} className="space-y-0.5">
                 <p><span className="font-medium">{t('tasks.estimates.current')}: </span>{latest.estimateMinutes === null ? t('tasks.estimates.notSet') : formatEstimate(latest.estimateMinutes)}</p>
                 <p>{t('tasks.estimates.unsavedHint')}</p>
@@ -685,6 +688,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
                 />
               ) : null
             }
+            dependenciesField={props.dependencyController ? <DependencyPanel compact actorId={actorId} workspaceId={workspace.id} project={props.project} task={latest} controller={props.dependencyController} writable={canEdit} onOpenTask={onOpenTask} /> : null}
             moreFields={<>
               {/* Values have their own revisions and commands, independent of the task fields. */}
               {fieldValueMutation ? (
@@ -699,18 +703,15 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
                   onOpenTask={onOpenTask}
                 />
               ) : null}
-              {writable && !archived && !locked ? (
-                retained ? <p className="text-xs text-muted">{t('autosave.archive.waitForSave')}</p> : (
-                  <Button size="sm" aria-disabled={busy || undefined} onClick={runArchive}>
-                    <Archive size={16} aria-hidden="true" />
-                    {t('tasks.taskDrawer.archive')}</Button>
-                )
-              ) : null}
+
             </>}
+            secondaryActions={writable && !archived && !locked ? (
+              retained ? <p className="text-xs text-muted">{t('autosave.archive.waitForSave')}</p> : (
+                <Button size="sm" aria-disabled={busy || undefined} onClick={runArchive}><Archive size={16} aria-hidden="true" />{t('tasks.taskDrawer.archive')}</Button>
+              )
+            ) : null}
           />
         </div>
-
-        {props.dependencyController ? <DependencyPanel compact actorId={actorId} workspaceId={workspace.id} project={props.project} task={latest} controller={props.dependencyController} writable={canEdit} onOpenTask={onOpenTask} /> : null}
 
         {errors.form ? <p className="text-sm text-red-700">{t(errors.form.key, errors.form.params)}</p> : null}
         <SaveFeedback
@@ -1067,6 +1068,7 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
             savedTagIds={[]}
             unavailableParticipantIds={[]}
             estimateMode={estimateMode}
+            showLegacyEstimate={props.legacyTime === true}
             autoFocusTitle
             tagAction={
               locked ? null : (

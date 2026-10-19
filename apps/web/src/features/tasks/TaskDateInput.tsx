@@ -1,7 +1,7 @@
 import { sqlCalendarDateSchema } from '@workloom/contracts';
 import { cn } from '@workloom/ui';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
 import { Temporal } from 'temporal-polyfill';
 import { useTranslation } from '../../i18n';
 import { CellPopover } from './CellPopover';
@@ -86,6 +86,15 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
   const [viewMonth, setViewMonth] = useState(() => monthOf(initial));
   const [cursor, setCursor] = useState(initial);
   const showStart = expanded || startDate !== '' || Boolean(errors?.startDate);
+  const focusNewStart = useRef(false);
+  // Expanding removes the focused +Start button. Move focus during the DOM commit,
+  // before an owner's deferred blur check can mistake the temporary body focus for leaving.
+  useLayoutEffect(() => {
+    if (showStart && focusNewStart.current) {
+      focusNewStart.current = false;
+      startRef.current?.focus({ preventScroll: true });
+    }
+  }, [showStart]);
   const month = Temporal.PlainDate.from(viewMonth);
   const selected = active === 'startDate' ? startDate : dueDate;
   const format = useMemo(() => ({
@@ -182,7 +191,7 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
     {errors?.startDate ? <p id={`${id}-start-error`} role="alert" className="text-xs text-red-700">{errors.startDate}</p> : null}
     {errors?.dueDate ? <p id={`${id}-due-error`} role="alert" className="text-xs text-red-700">{errors.dueDate}</p> : null}
     {!showStart ? <button type="button" disabled={disabled} className="rounded px-1 py-1 text-xs font-medium text-accent-ink hover:bg-canvas disabled:text-muted"
-      onClick={() => { setExpanded(true); setActive('startDate'); requestAnimationFrame(() => startRef.current?.focus({ preventScroll: true })); }}>{t('tasks.dates.addStart')}</button> : null}
+      onClick={() => { focusNewStart.current = true; setExpanded(true); setActive('startDate'); }}>{t('tasks.dates.addStart')}</button> : null}
     {calendarPopover ? calendarOpen ? <CellPopover anchor={rootRef.current}>{calendar}</CellPopover> : null : calendar}
   </div>;
 }

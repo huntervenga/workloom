@@ -1411,6 +1411,36 @@ describe('atomic assignee moves and explicit bulk patches', () => {
     await expect(s.app.bulkUpdateTasks(s.ctx(users.owner, key), body)).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 
+  it('atomically restores heterogeneous values and independent participant sets with a new audited command', async () => {
+    const s = await setup();
+    const a = await s.createTask({ responsibleMembershipId: members.owner, participantMembershipIds: [members.owner], dueDate: '2030-01-02' });
+    const b = await s.createTask({ responsibleMembershipId: null, participantMembershipIds: [], dueDate: null });
+    const changed = await s.app.bulkUpdateTasks(s.owner(), { projectId: s.project.id, tasks: [a,b].map(task => ({ taskId: task.id, expectedRevision: task.revision, expectedParticipantsRevision: task.participantsRevision })), changes: { responsibleMembershipId: members.viewer, participantMembershipIds: [members.viewer], dueDate: '2030-02-01' } });
+    const body = { projectId: s.project.id, tasks: changed.map(task => ({ taskId: task.id, expectedRevision: task.revision, expectedParticipantsRevision: task.participantsRevision })), changes: { restore: [a,b].map(task => ({ taskId: task.id, changes: { responsibleMembershipId: task.responsibleMembershipId, participantMembershipIds: task.participants.filter(row => row.active).map(row => row.membershipId), dueDate: task.dueDate } })) } };
+    const key = s.key(), restored = await s.app.bulkUpdateTasks(s.ctx(users.owner,key), body);
+    for (const [index, task] of restored.entries()) {
+      expect(task.responsibleMembershipId).toBe([a,b][index]?.responsibleMembershipId);
+      expect(task.dueDate).toBe([a,b][index]?.dueDate);
+      expect(task.participants.filter(row => row.active).map(row => row.membershipId)).toEqual([a,b][index]?.participants.filter(row => row.active).map(row => row.membershipId));
+      expect(task.revision).toBe(3); expect(task.participantsRevision).toBe(3);
+    }
+    const state = dumpOf(s.db.state, 'tasks', 'participants', 'idempotency', ...SIDE_TABLES);
+    expect(await s.app.bulkUpdateTasks(s.ctx(users.owner,key), body)).toEqual(restored);
+    expect(dumpOf(s.db.state, 'tasks', 'participants', 'idempotency', ...SIDE_TABLES)).toBe(state);
+  });
+
+  it('preflights all heterogeneous inverse rows before writes, including participant guards and late bad references', async () => {
+    const s = await setup(), a = await s.createTask(), b = await s.createTask();
+    const body = { projectId: s.project.id, tasks: [a,b].map(task => ({ taskId: task.id, expectedRevision: task.revision })), changes: { restore: [{ taskId: a.id, changes: { dueDate: '2030-01-02' } }, { taskId: b.id, changes: { responsibleMembershipId: members.revoked } }] } };
+    await expectRejectedWithoutWrites(s, 'later inverse inactive member', () => s.app.bulkUpdateTasks(s.owner(), body), 'NOT_FOUND');
+    await expectRejectedWithoutWrites(s, 'later inverse participant guard', () => s.app.bulkUpdateTasks(s.owner(), { ...body, tasks: [{ taskId:a.id,expectedRevision:1 },{ taskId:b.id,expectedRevision:1,expectedParticipantsRevision:99 }], changes:{restore:[{taskId:a.id,changes:{dueDate:'2030-01-02'}},{taskId:b.id,changes:{participantMembershipIds:[]}}]} }), 'REVISION_CONFLICT');
+    const rows = s.db.state.tasks, original = rows.set;
+    rows.set = function (key, value) { if (key === b.id) throw new Error('Synthetic inverse second save failure'); return original.call(this,key,value); };
+    const before = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES), events = s.events.length;
+    await expect(s.app.bulkUpdateTasks(s.owner(), { ...body,changes:{restore:[{taskId:a.id,changes:{dueDate:'2030-01-02'}},{taskId:b.id,changes:{priority:'high'}}]} })).rejects.toThrow('Synthetic inverse second save failure');
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(before); expect(s.events).toHaveLength(events);
+  });
+
   it('preflights all revisions and final date ranges before any bulk proposal', async () => {
     const s = await setup();
     const a = await s.createTask(), b = await s.createTask({ startDate: '2026-12-01' });

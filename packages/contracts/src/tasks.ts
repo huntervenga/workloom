@@ -1,3 +1,4 @@
+import { createTaskFieldValueSchema } from './common/task-field-value.js';
 import { z } from 'zod';
 
 import { envelopeSchema } from './common/envelope.js';
@@ -419,31 +420,50 @@ const bulkCustomFieldSchema = z.strictObject({
   expectedDefinitionRevision: revisionSchema,
   value: createTaskFieldDataSchema({ calendarDateSchema, minutesSchema }),
 });
+/** Per-target patches are ordinary user edits, not historical snapshots. */
+export const bulkTaskChangesSchema = z.strictObject({
+  responsibleMembershipId: idSchema.nullable().optional(),
+  participantMembershipIds: membershipIdListSchema.optional(),
+  startDate: sqlCalendarDateSchema.nullable().optional(),
+  dueDate: sqlCalendarDateSchema.nullable().optional(),
+  statusId: idSchema.optional(),
+  priority: taskPrioritySchema.optional(),
+  tagIds: tagIdListSchema.optional(),
+  sectionId: idSchema.nullable().optional(),
+  estimateMinutes: minutesSchema.nullable().optional(),
+  customField: bulkCustomFieldSchema.optional(),
+});
+const bulkChangeKeys = ['responsibleMembershipId', 'participantMembershipIds', 'startDate', 'dueDate', 'statusId', 'priority', 'tagIds', 'sectionId', 'estimateMinutes', 'customField'] as const;
 export const bulkUpdateTasksInputSchema = z.strictObject({
   projectId: idSchema,
+  /** Explicit opt-in; old requests and stored receipts remain byte-compatible. */
+  includeFieldValueAck: z.literal(true).optional(),
   tasks: z.array(z.strictObject({
     taskId: idSchema,
     expectedRevision: revisionSchema,
+    expectedParticipantsRevision: revisionSchema.optional(),
     expectedWorkPackageRevision: revisionSchema.optional(),
     expectedFieldValueRevision: z.number().int().min(0).optional(),
   })).min(1).max(100)
     .refine(rows => hasUniqueIds(rows.map(row => row.taskId)), { error: 'Task IDs must be unique.' }),
-  changes: z.strictObject({
-    responsibleMembershipId: idSchema.nullable().optional(),
-    startDate: sqlCalendarDateSchema.nullable().optional(),
-    dueDate: sqlCalendarDateSchema.nullable().optional(),
-    statusId: idSchema.optional(),
-    priority: taskPrioritySchema.optional(),
-    tagIds: tagIdListSchema.optional(),
-    sectionId: idSchema.nullable().optional(),
-    estimateMinutes: minutesSchema.nullable().optional(),
-    customField: bulkCustomFieldSchema.optional(),
-  }).refine(input => hasAnyField(input, ['responsibleMembershipId', 'startDate', 'dueDate', 'statusId', 'priority', 'tagIds', 'sectionId', 'estimateMinutes', 'customField']), noChangeError),
+  changes: bulkTaskChangesSchema.extend({
+    /** Atomic heterogeneous inverse; every selected task occurs exactly once. */
+    restore: z.array(z.strictObject({ taskId: idSchema, changes: bulkTaskChangesSchema.refine(value => hasAnyField(value, bulkChangeKeys), noChangeError) })).min(1).max(100).optional(),
+  }).refine(input => hasAnyField(input, [...bulkChangeKeys, 'restore']), noChangeError),
 }).superRefine((input, ctx) => {
+  const restore = input.changes.restore;
+  if (restore !== undefined) {
+    if (hasAnyField(input.changes, bulkChangeKeys)) ctx.addIssue({ code: 'custom', path: ['changes'], message: 'Choose uniform changes or per-task restore changes.' });
+    if (restore.length !== input.tasks.length || !hasUniqueIds(restore.map(row => row.taskId)) || restore.some(row => !input.tasks.some(task => task.taskId === row.taskId))) {
+      ctx.addIssue({ code: 'custom', path: ['changes', 'restore'], message: 'Restore changes must match every selected task exactly once.' });
+    }
+  }
   for (const [index, row] of input.tasks.entries()) {
+    const changes = restore?.find(change => change.taskId === row.taskId)?.changes ?? input.changes;
     for (const [field, present, guard] of [
-      ['estimateMinutes', input.changes.estimateMinutes !== undefined, 'expectedWorkPackageRevision'],
-      ['customField', input.changes.customField !== undefined, 'expectedFieldValueRevision'],
+      ['estimateMinutes', changes.estimateMinutes !== undefined, 'expectedWorkPackageRevision'],
+      ['customField', changes.customField !== undefined, 'expectedFieldValueRevision'],
+      ['participantMembershipIds', changes.participantMembershipIds !== undefined, 'expectedParticipantsRevision'],
     ] as const) {
       if (present !== (row[guard] !== undefined)) ctx.addIssue({
         code: 'custom', path: ['tasks', index, guard],
@@ -452,6 +472,14 @@ export const bulkUpdateTasksInputSchema = z.strictObject({
     }
   }
 });
+export type BulkTaskChanges = z.infer<typeof bulkTaskChangesSchema>;
+/** Shared exhaustive interpretation used by the command and its mandatory planning guard. */
+export function bulkChangesForTask(input: z.infer<typeof bulkUpdateTasksInputSchema>, taskId: string): BulkTaskChanges {
+  if (input.changes.restore === undefined) return input.changes;
+  const row = input.changes.restore.find(row => row.taskId === taskId);
+  if (!row) throw new Error('Missing per-task bulk changes.');
+  return row.changes;
+}
 
 /** Query strings carry booleans as text; only `true`/`false` are accepted (never truthy coercion). */
 const queryBooleanSchema = z.union([
@@ -488,7 +516,12 @@ export const tagResponseSchema = envelopeSchema(tagSchema);
 export const tagListResponseSchema = envelopeSchema(z.array(tagSchema));
 export const taskResponseSchema = envelopeSchema(taskSchema);
 export const taskListResponseSchema = envelopeSchema(z.array(taskSchema));
-export const bulkTaskUpdateResponseSchema = envelopeSchema(z.array(taskSchema));
+export const bulkUpdatedTaskSchema = taskSchema.extend({
+  /** Present only for explicitly opted-in bulk value writes; captured in the same transaction. */
+  customFieldAck: createTaskFieldValueSchema({ valueSchema: createTaskFieldDataSchema({ calendarDateSchema, minutesSchema }), revisionSchema, timestampSchema: utcTimestampSchema }).optional(),
+});
+export type BulkUpdatedTaskDto = z.infer<typeof bulkUpdatedTaskSchema>;
+export const bulkTaskUpdateResponseSchema = envelopeSchema(z.array(bulkUpdatedTaskSchema));
 /** Participant rows of one task, inactive ones included. No dedicated P1a route is listed above. */
 export const taskParticipantListResponseSchema = envelopeSchema(z.array(taskParticipantSchema));
 

@@ -1,17 +1,19 @@
 import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskDto, TaskFieldData, TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
+import { useQueryClient } from '@tanstack/react-query';
+import { protectedCommandsFor } from '../../lib/protectedCommands';
 import { Button, cn } from '@workloom/ui';
 import { CircleAlert, LoaderCircle, Lock } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
-import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
+import { FieldCellControl } from './FieldCellControl';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { CellPopover } from '../tasks/CellPopover';
 import { FieldValueDisplay } from './FieldValueDisplay';
 import { heldFieldCommand, isSessionDirty, newFieldSession, type FieldEditSession, type SetFieldValueMutation } from './FieldValueForm';
 import type { ObservableFieldValueDraftStore } from './fieldValueDraftStore';
 import type { SetTaskFieldValueVariables } from './queries';
-import { NOTHING_SELECTED, NOT_SET, UNAVAILABLE_MEMBER, optionsByPosition, parseFieldDraft, referenceLabels, sameId, type FieldDraft } from './valueDraft';
+import { parseFieldDraft, sameId, type FieldDraft } from './valueDraft';
 
 export interface InlineFieldValueCellProps {
   actorId: string;
@@ -28,25 +30,16 @@ export interface InlineFieldValueCellProps {
   drafts: ObservableFieldValueDraftStore;
   /** Opens the task's details, where drafts, conflicts and locks are reviewed. */
   onMoreDetails: () => void;
+  presentation?: 'pane' | 'cell';
 }
 
-/** Picker value when nothing is stored: it matches no option, so the trigger stays blank. */
-const NONE = '\u0000none';
-/** Picker value for an explicit empty person list (`[]`), distinct from a cleared value. */
-const EMPTY = '\u0000empty';
-
-const cellButtonClassName = cn(
-  'flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1.5 text-left outline-none',
-  'hover:bg-slate-100 focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
-);
-// The picker keeps its focus and open rings; at rest it reads as plain cell text.
-const pickerClassName = 'border-transparent! bg-transparent! px-1.5 shadow-none! hover:bg-slate-100!';
+const cellButtonClassName = cn('flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1.5 text-left outline-none hover:bg-canvas focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent');
 
 function isCommandFor(variables: SetTaskFieldValueVariables | null | undefined, taskId: string, fieldId: string): boolean {
   return variables !== null && variables !== undefined && sameId(variables.taskId, taskId) && sameId(variables.fieldId, fieldId);
 }
 
-function isProtected(session: FieldEditSession | undefined): session is FieldEditSession {
+function isProtected(session: FieldEditSession | undefined): boolean {
   return session !== undefined && (isSessionDirty(session) || session.stale || session.serverLocked);
 }
 
@@ -55,61 +48,10 @@ function unchanged(original: TaskFieldData | null, next: TaskFieldData): boolean
   return original === null ? next.value === null : JSON.stringify(original) === JSON.stringify(next);
 }
 
-type ChoiceKind = 'single' | 'person';
-
-/** A person value with several people cannot be shown as one choice, so it is edited in details. */
-function choiceKind(field: TaskFieldDefinitionDto, data: TaskFieldData | null): ChoiceKind | null {
-  if (field.type === 'single_select') return 'single';
-  if (field.type !== 'person') return null;
-  return data?.type !== 'person' || data.value === null || data.value.length <= 1 ? 'person' : null;
-}
-
-function pickerValue(data: TaskFieldData | null): string {
-  if (data?.type === 'single_select') return data.value?.toLowerCase() ?? NONE;
-  if (data?.type === 'person') return data.value === null ? NONE : (data.value[0]?.toLowerCase() ?? EMPTY);
-  return NONE;
-}
-
-function choiceOptions(kind: ChoiceKind, field: TaskFieldDefinitionDto, current: string, members: readonly MembershipDto[]): ChoiceOption[] {
-  const stored = current === NONE || current === EMPTY ? null : current;
-  if (kind === 'single') {
-    const active = optionsByPosition(field.options).filter((option) => option.archivedAt === null);
-    const retained = stored !== null && !active.some((option) => sameId(option.id, stored)) ? referenceLabels(field, [stored], members)[0] : undefined;
-    return [
-      { value: '', label: NOT_SET() },
-      // An archived or unknown stored option stays visible, but is never offered as a new choice.
-      ...(retained ? [{ value: stored ?? '', label: retained.label, color: retained.color ?? undefined, disabled: true }] : []),
-      ...active.map((option) => ({ value: option.id.toLowerCase(), label: option.name, color: option.color ?? undefined })),
-    ];
-  }
-  return [
-    { value: '', label: NOT_SET() },
-    ...(current === EMPTY ? [{ value: EMPTY, label: NOTHING_SELECTED(), disabled: true }] : []),
-    ...(stored !== null && !members.some((member) => sameId(member.id, stored)) ? [{ value: stored, label: UNAVAILABLE_MEMBER(), disabled: true }] : []),
-    ...members.map((member) => ({ value: member.id.toLowerCase(), label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
-  ];
-}
-
-/** The draft for an explicit choice, with the stable ID exactly as loaded; null for anything not offered. */
-function draftForChoice(kind: ChoiceKind, field: TaskFieldDefinitionDto, choice: string, members: readonly MembershipDto[]): FieldDraft | null {
-  if (kind === 'single') {
-    if (choice === '') return { type: 'single_select', value: null };
-    const option = field.options.find((candidate) => candidate.archivedAt === null && sameId(candidate.id, choice));
-    return option ? { type: 'single_select', value: option.id } : null;
-  }
-  if (choice === '') return { type: 'person', value: null };
-  const member = members.find((candidate) => sameId(candidate.id, choice));
-  return member ? { type: 'person', value: [member.id] } : null;
-}
-
-/**
- * One custom-field value in a fixed-size table cell. Single-select and single-person values are
- * chosen directly and saved at once through the page's value command, against the exact loaded
- * value and definition revisions. Other types, kept drafts, conflicts and locks open the task's
- * details. Feedback floats in a cell popover, so the cell and its row never change size.
- */
-export function InlineFieldValueCell({ actorId, workspaceId, task, field, value, members, writable, mutation, drafts, onMoreDetails }: InlineFieldValueCellProps) {
+export function InlineFieldValueCell({ actorId, workspaceId, task, field, value, members, writable, mutation, drafts, onMoreDetails, presentation = 'cell' }: InlineFieldValueCellProps) {
   const { t } = useTranslation();
+  const registry = protectedCommandsFor(useQueryClient());
+  useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
   const key = field.id.toLowerCase();
   const context = `${actorId}:${workspaceId}:${task.id}:${field.id}`.toLowerCase();
   // The task's session object changes identity on every write, so same-dirty edits re-render too.
@@ -118,10 +60,12 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const restoreFocus = useRef(false);
+  const editing = useRef<object | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const held = heldFieldCommand(mutation);
   const heldHere = isCommandFor(held, task.id, field.id) ? held : null;
-  const blocked = held !== null && heldHere === null;
+  const blocked = (held !== null && heldHere === null) || mutation.hasOtherProtectedCommands();
   const pending = heldHere !== null && mutation.pendingCommand !== null;
   const uncertainHere = isCommandFor(mutation.uncertain?.variables, task.id, field.id) ? mutation.uncertain : null;
 
@@ -139,7 +83,7 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
   // Shown and used as the next base only until a loaded row is as new; it is not the current head,
   // so the server still checks the revision and an older replay can only lead to a reviewed conflict.
   const base = confirmed && confirmed.revision > (value?.revision ?? 0) ? confirmed : value;
-  const review = heldHere === null && isProtected(kept) ? kept : null;
+  const review = heldHere === null && isProtected(kept) && (editing.current !== kept?.identity || !writable || field.locked || field.archivedAt !== null) ? kept : null;
   const ownError = review?.submitted === true && isCommandFor(mutation.variables, task.id, field.id) ? mutation.error : null;
   const feedbackError = (pending ? null : uncertainHere?.error) ?? ownError;
   const editable = writable && !field.locked && field.archivedAt === null;
@@ -161,29 +105,53 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
     drafts.set(task.id, { ...current, [key]: error.code === 'FIELD_LOCKED' ? { ...session, serverLocked: true } : { ...session, stale: true } });
   };
 
-  const choose = (kind: ChoiceKind, choice: string) => {
-    if (heldFieldCommand(mutation) !== null || !editable) return;
+  const begin = () => {
+    if (heldFieldCommand(mutation) !== null || mutation.hasOtherProtectedCommands() || !editable) return;
     const current = drafts.getTask(task.id);
-    // Checked again at commit: a draft, conflict or lock kept since this render is never replaced.
-    if (isProtected(current[key])) return;
-    const draft = draftForChoice(kind, field, choice, members);
-    if (draft === null) return;
-    const parsed = parseFieldDraft(field, draft);
-    if (!parsed.ok || unchanged(base?.value ?? null, parsed.value)) return;
-    const session = newFieldSession(field, base, draft);
-    drafts.set(task.id, { ...current, [key]: { ...session, submitted: true } });
-    // Captured before sending; the page's confirmation retires only this exact session.
+    if (current[key]) {
+      if (!isProtected(current[key])) editing.current = current[key].identity;
+      return;
+    }
+    const session = newFieldSession(field, base);
+    editing.current = session.identity;
+    drafts.set(task.id, { ...current, [key]: session });
+  };
+  const cancel = (onlyClean = false) => {
+    const current = drafts.getTask(task.id);
+    const session = current[key];
+    if (!session || session.identity !== editing.current || session.submitted || heldFieldCommand(mutation) || (onlyClean && isSessionDirty(session))) return;
+    drafts.set(task.id, Object.fromEntries(Object.entries(current).filter(([id]) => id !== key)));
+    editing.current = null;
+    setParseError(null);
+  };
+  const change = (draft: FieldDraft) => {
+    begin();
+    const current = drafts.getTask(task.id);
+    if (!current[key] || current[key].identity !== editing.current || current[key].submitted) return;
+    drafts.set(task.id, { ...current, [key]: { ...current[key], draft } });
+    setParseError(null);
+  };
+  const commit = (draft: FieldDraft): boolean => {
+    if (heldFieldCommand(mutation) !== null || mutation.hasOtherProtectedCommands() || !editable) return false;
+    begin();
+    const current = drafts.getTask(task.id);
+    const original = current[key];
+    if (!original || original.identity !== editing.current || original.stale || original.serverLocked || original.submitted) return false;
+    const parsed = parseFieldDraft(original.field, draft);
+    if (!parsed.ok) { setParseError(parsed.message); setFeedbackOpen(true); return false; }
+    if (unchanged(original.value?.value ?? null, parsed.value)) { cancel(); return true; }
+    const session = { ...original, draft, submitted: true };
+    drafts.set(task.id, { ...current, [key]: session });
     drafts.capture(task.id, session);
+    editing.current = null;
     restoreFocus.current = true;
+    setParseError(null);
     setFeedbackOpen(true);
-    mutation.mutate(
-      {
-        taskId: task.id,
-        fieldId: field.id,
-        input: { expectedRevision: session.value?.revision ?? 0, expectedDefinitionRevision: session.field.revision, value: parsed.value },
-      },
-      { onError: handleError },
-    );
+    mutation.mutate({ taskId: task.id, fieldId: field.id,
+      input: { expectedRevision: session.value?.revision ?? 0, expectedDefinitionRevision: session.field.revision, value: parsed.value },
+      undo: { before: session.value, field: session.field },
+    }, { onError: handleError });
+    return true;
   };
 
   const retry = () => {
@@ -202,10 +170,9 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
   const title = task.title;
   const editLabel = t('inlineFields.edit', { field: field.name, title });
   const shown = heldHere ? heldHere.input.value : (base?.value ?? null);
-  const kind = choiceKind(field, shown);
   const display = (
     <span className="min-w-0 flex-1 truncate">
-      <FieldValueDisplay field={field} value={shown} members={members} compact />
+      {shown?.type === 'url' ? <span className="block truncate" title={shown.value ?? undefined}>{shown.value}</span> : <FieldValueDisplay field={field} value={shown} members={members} compact />}
     </span>
   );
 
@@ -220,29 +187,10 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
         </span>
       </button>
     );
-  } else if (kind !== null && (editable || heldHere !== null)) {
-    const current = pickerValue(shown);
-    control = (
-      <div className="min-w-0 flex-1" title={blocked ? t('inlineFields.otherCommand') : undefined}>
-        <ChoicePicker
-          compact
-          label={editLabel}
-          value={current}
-          options={choiceOptions(kind, field, current, members)}
-          searchable={kind === 'person' ? true : undefined}
-          placeholder=""
-          disabled={held !== null}
-          onValueChange={(choice) => choose(kind, choice)}
-          className={pickerClassName}
-        />
-      </div>
-    );
   } else if (editable || heldHere !== null) {
-    control = (
-      <button type="button" aria-label={editLabel} title={editLabel} className={cellButtonClassName} onClick={moreDetails}>
-        {display}
-      </button>
-    );
+    control = <FieldCellControl field={field} value={shown} members={members} label={editLabel} disabled={held !== null || blocked}
+      draft={kept?.identity === editing.current ? kept.draft : undefined}
+      error={parseError} onBegin={begin} onChange={change} onCommit={commit} onCancel={cancel} />;
   } else {
     const lockedLabel = field.locked ? t('inlineFields.locked', { field: field.name }) : undefined;
     control = (
@@ -254,7 +202,7 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
   }
 
   return (
-    <div ref={setAnchor} data-inline-field-cell={`${task.id}:${field.id}`} className="relative flex h-8 min-w-0 flex-1 items-center gap-1">
+    <div ref={setAnchor} data-inline-field-cell={`${task.id}:${field.id}`} data-presentation={presentation} className="relative flex h-8 min-w-0 flex-1 items-center gap-1" onClick={event => event.stopPropagation()}>
       {control}
       {pending ? (
         <>
@@ -262,7 +210,7 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
           <span role="status" className="sr-only">{t('inlineFields.saving', { field: field.name, title })}</span>
         </>
       ) : null}
-      {feedbackError && !feedbackOpen ? (
+      {(feedbackError || parseError) && !feedbackOpen ? (
         <button
           type="button"
           aria-label={t('inlineFields.showProblem', { field: field.name })}
@@ -274,8 +222,9 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
         </button>
       ) : null}
       {/* The picker is closed whenever there is feedback, so it sits below the cell, away from page notices above the table. */}
-      {feedbackError && feedbackOpen ? (
+      {(feedbackError || parseError) && feedbackOpen ? (
         <CellPopover anchor={anchor}>
+          {parseError ? <p role="alert" className="text-sm text-red-700">{parseError}</p> : null}
           <SaveFeedback subject="fieldValueSave" error={ownError} uncertainError={pending ? null : (uncertainHere?.error ?? null)} />
           <div data-inline-actions="" className="flex min-w-0 flex-wrap items-center gap-1">
             {uncertainHere ? <Button size="sm" variant="primary" onClick={retry}>{t('inlineFields.retry')}</Button> : null}

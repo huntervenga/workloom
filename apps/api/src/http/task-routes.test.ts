@@ -635,6 +635,16 @@ describe('P1a task routes (HTTP adapter)', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('delegates an opt-in heterogeneous inverse without changing its guarded parsed body', async () => {
+    const route = routeFor('bulkUpdateTasks');
+    const body = { projectId: IDS.project, includeFieldValueAck: true, tasks: [{ taskId: IDS.task, expectedRevision: 3, expectedParticipantsRevision: 2 }], changes: { restore: [{ taskId: IDS.task, changes: { participantMembershipIds: [], dueDate: null } }] } };
+    const response = await send(app, route, { body }); expect(response.statusCode).toBe(200);
+    expect(calls[0]?.args).toEqual([body]);
+    calls.length = 0;
+    expectRejected(await send(app, route, { body: { ...body, changes: { restore: [], dueDate: null } } }), 400, 'VALIDATION_FAILED');
+    expect(calls).toHaveLength(0);
+  });
+
   it('rejects invalid entire bulk selections and missing identity protection before one domain call', async () => {
     const route = routeFor('bulkUpdateTasks');
     const body = route.body as { projectId: string; tasks: { taskId: string; expectedRevision: number }[]; changes: object };

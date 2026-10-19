@@ -190,3 +190,32 @@ describe('column manager command boundaries', () => {
     expectExactRetry(calls.filter((call) => call.method === 'PATCH'));
   });
 });
+
+
+it('archives a field without deleting its identity or history and restores it from archived fields', async () => {
+  let stored = field('Hours Estimation', 'duration');
+  const { calls } = installFakeApi({
+    ['GET ' + fieldsPath]: () => ok([stored]),
+    ['GET ' + columnsPath]: () => ok(columns(stored.archivedAt ? [] : [stored], stored.revision)),
+    ['PATCH ' + fieldsPath + '/' + FIELD_ID]: request => {
+      const input = request.body as { expectedRevision: number; archived: boolean };
+      stored = { ...stored, revision: stored.revision + 1, archivedAt: input.archived ? STAMP : null };
+      return ok(stored);
+    },
+  });
+  const { user } = renderFieldUi(manager());
+  const dialog = await open(user);
+  await user.click(await within(dialog).findByRole('button', { name: 'Edit column “Hours Estimation”' }));
+  await user.click(within(dialog).getByRole('button', { name: 'Archive field for the project' }));
+  const summary = await within(dialog).findByText('Archived fields');
+  await user.click(summary);
+  await user.click(within(dialog).getByRole('button', { name: 'Restore' }));
+  await waitFor(() => expect(within(dialog).queryByText('Archived fields')).not.toBeInTheDocument());
+  const writes = calls.filter(call => call.method === 'PATCH');
+  expect(writes).toHaveLength(2);
+  expect(writes[0]?.body).toEqual({ expectedRevision: 1, archived: true });
+  expect(writes[1]?.body).toEqual({ expectedRevision: 2, archived: false });
+  expect(writes.every(call => call.path.includes(FIELD_ID))).toBe(true);
+  expect(calls.some(call => call.method === 'DELETE')).toBe(false);
+  expect(stored.historyEnabled).toBe(true);
+});

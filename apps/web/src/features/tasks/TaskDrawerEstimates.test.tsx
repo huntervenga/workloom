@@ -1,5 +1,4 @@
 import type { OriginalPackageEstimateDto, TaskDto } from '@workloom/contracts';
-import userEvent from '@testing-library/user-event';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { alpha, deferred, failure, installFakeApi, ok, renderApp, type RouteTable } from '../../test/fakeApi';
@@ -30,15 +29,13 @@ const originalReads = (calls: Calls) => calls.filter(call => call.path.endsWith(
 const writes = (calls: Calls) => calls.filter(call => call.method !== 'GET');
 async function drawer(title: string) {
   const dialog = within(await screen.findByRole('dialog', { name: title }));
-  const more = dialog.getByText(/^More fields/, { selector: 'summary' });
-  if (!more.parentElement?.hasAttribute('open')) await userEvent.setup().click(more);
   return { dialog, current: dialog.getByLabelText('Team estimate, hours'), original: dialog.getByRole('region', { name: 'Original estimate' }) };
 }
 
 describe('drawer current and original estimates', () => {
   it('shows a captured zero original beside the current estimate field, with only a read on open', async () => {
     const { calls } = installFakeApi(routes({ [PACKAGE_ID]: () => ok(capturedZero) }));
-    renderApp(`${tablePath}?task=${task.id}`);
+    renderApp(`${tablePath}?legacyTime=1&task=${task.id}`);
     const { current, original } = await drawer(task.title);
     expect(current).toHaveValue(formatEstimateInput(1200));
     expect(await within(original).findByText(formatEstimate(0))).toBeInTheDocument();
@@ -50,7 +47,7 @@ describe('drawer current and original estimates', () => {
 
   it('keeps an unknown original unknown even though a current estimate exists', async () => {
     installFakeApi(routes({ [PACKAGE_ID]: () => ok(unknown) }));
-    renderApp(`${tablePath}?task=${task.id}`);
+    renderApp(`${tablePath}?legacyTime=1&task=${task.id}`);
     const { current, original } = await drawer(task.title);
     expect(await within(original).findByText('Unknown')).toBeInTheDocument();
     expect(within(original).queryByText(formatEstimate(1200))).not.toBeInTheDocument();
@@ -59,7 +56,7 @@ describe('drawer current and original estimates', () => {
 
   it('claims no lock while the original is not captured yet', async () => {
     installFakeApi(routes({ [PACKAGE_ID]: () => ok(pending()) }));
-    renderApp(`${tablePath}?task=${task.id}`);
+    renderApp(`${tablePath}?legacyTime=1&task=${task.id}`);
     const { dialog, current } = await drawer(task.title);
     expect(await dialog.findByText('Not captured yet')).toBeInTheDocument();
     expect(dialog.queryByText(/Locked/)).not.toBeInTheDocument();
@@ -69,7 +66,7 @@ describe('drawer current and original estimates', () => {
 
   it('reads the parent’s package for a detail child and the child’s own package for additional work', async () => {
     const { calls } = installFakeApi(routes({ [PACKAGE_ID]: () => ok(capturedZero), [OWN_PACKAGE]: () => ok(pending(OWN_PACKAGE)) }));
-    const { user } = renderApp(`${tablePath}?task=${task.id}`);
+    const { user } = renderApp(`${tablePath}?legacyTime=1&task=${task.id}`);
     await within((await drawer(task.title)).original).findByText(formatEstimate(0));
     await user.click(screen.getByRole('button', { name: /^Open subtask “Detail child”/ }));
     const detail = await drawer(detailChild.title);
@@ -87,7 +84,7 @@ describe('drawer current and original estimates', () => {
 
   it('shows a denied original as unavailable without hiding the current value', async () => {
     installFakeApi(routes({ [PACKAGE_ID]: () => failure(403, 'FORBIDDEN', 'private original detail') }));
-    renderApp(`${tablePath}?task=${task.id}`);
+    renderApp(`${tablePath}?legacyTime=1&task=${task.id}`);
     const { current, original } = await drawer(task.title);
     expect(await within(original).findByText('The original estimate is not available.')).toBeInTheDocument();
     expect(current).toHaveValue(formatEstimateInput(1200));
@@ -96,7 +93,7 @@ describe('drawer current and original estimates', () => {
 
   it('marks the current value as saved while an unsaved estimate is in the form', async () => {
     const { calls } = installFakeApi(routes({ [PACKAGE_ID]: () => ok(capturedZero) }));
-    const { user } = renderApp(`${tablePath}?task=${task.id}`);
+    const { user } = renderApp(`${tablePath}?legacyTime=1&task=${task.id}`);
     const { dialog } = await drawer(task.title);
     const more = dialog.queryByText('More details', { selector: 'summary' });
     if (more && !more.parentElement?.hasAttribute('open')) await user.click(more);
@@ -116,7 +113,7 @@ describe('drawer current and original estimates', () => {
     const { calls } = installFakeApi(routes({ [PACKAGE_ID]: () => ok(capturedZero) }, {
       [`GET ${rootPath}/tasks/${task.id}`]: () => detail.promise,
     }));
-    renderApp(`${tablePath}?task=${task.id}`);
+    renderApp(`${tablePath}?legacyTime=1&task=${task.id}`);
     const loading = within(await screen.findByRole('dialog', { name: 'Task' }));
     await waitFor(() => expect(calls.some(call => call.path === `${rootPath}/tasks/${task.id}`)).toBe(true));
     expect(loading.queryByRole('region', { name: 'Original estimate' })).not.toBeInTheDocument();
@@ -136,6 +133,22 @@ describe('drawer current and original estimates', () => {
     expect(composer.queryByRole('region', { name: 'Original estimate' })).not.toBeInTheDocument();
     expect(composer.queryByRole('region', { name: 'Current shared estimate' })).not.toBeInTheDocument();
     await waitFor(() => expect(composer.getByLabelText('Task name')).toBeInTheDocument());
+    const more = composer.getByText('More details', { selector: 'summary' });
+    expect(more).not.toHaveTextContent(/estimate/i);
+    await user.click(more);
+    expect(composer.queryByLabelText('Team estimate, hours')).not.toBeInTheDocument();
+    expect(composer.queryByText(/Weekly personal plans and actual hours/)).not.toBeInTheDocument();
+    expect(originalReads(calls)).toHaveLength(0); expect(writes(calls)).toHaveLength(0);
+  });
+
+  it('keeps the create estimate in an explicit legacy view without loading original package history', async () => {
+    const { calls } = installFakeApi(routes({}));
+    const { user } = renderApp(`${tablePath}?legacyTime=1&view=board`);
+    await screen.findByRole('region', { name: 'Task status lanes' });
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+    const composer = within(await screen.findByRole('dialog', { name: 'New task' }));
+    await user.click(composer.getByText('More details', { selector: 'summary' }));
+    expect(composer.getByLabelText('Team estimate, hours')).toBeVisible();
     expect(originalReads(calls)).toHaveLength(0); expect(writes(calls)).toHaveLength(0);
   });
 });

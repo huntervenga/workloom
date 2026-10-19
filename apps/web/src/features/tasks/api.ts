@@ -1,5 +1,7 @@
+import { canonicalJson } from '../../lib/idempotency';
 import {
   bulkUpdateTasksInputSchema,
+  bulkChangesForTask,
   bulkTaskUpdateResponseSchema,
   type BulkUpdateTasksInput,
   archiveTaskInputSchema,
@@ -249,6 +251,15 @@ export function bulkUpdateTasksRequest(workspaceId: string, input: BulkUpdateTas
     inputSchema: bulkUpdateTasksInputSchema, responseSchema: bulkTaskUpdateResponseSchema.refine(response => {
       const expected = new Set(input.tasks.map(row => row.taskId.toLowerCase()));
       const received = new Set(response.data.map(task => task.id.toLowerCase()));
-      return response.data.length === expected.size && received.size === expected.size && response.data.every(task => expected.has(task.id.toLowerCase()) && task.projectId.toLowerCase() === input.projectId.toLowerCase());
+      const parsed = bulkUpdateTasksInputSchema.safeParse(input);
+      return parsed.success && response.data.length === expected.size && received.size === expected.size && response.data.every(task => {
+        if (!expected.has(task.id.toLowerCase()) || task.projectId.toLowerCase() !== input.projectId.toLowerCase() || task.workspaceId.toLowerCase() !== workspaceId.toLowerCase()) return false;
+        const target = parsed.data.tasks.find(row => row.taskId === task.id);
+        if (!target || task.revision < target.expectedRevision) return false;
+        const change = bulkChangesForTask(parsed.data, task.id).customField;
+        if (!input.includeFieldValueAck || !change) return true;
+        const ack = task.customFieldAck;
+        return ack !== undefined && ack.fieldId === change.fieldId && ack.taskId === task.id && ack.projectId === task.projectId && ack.workspaceId === task.workspaceId && ack.revision >= (target.expectedFieldValueRevision ?? 0) && canonicalJson(ack.value) === canonicalJson(change.value);
+      });
     }, { message: 'BULK_RESPONSE_INCOMPLETE' }) });
 }

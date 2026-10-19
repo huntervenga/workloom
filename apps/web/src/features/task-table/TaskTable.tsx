@@ -65,6 +65,10 @@ export interface TaskTableQuickAdd {
 export interface TaskTableProps {
   showLegacySummary?: boolean;
   aggregateFooter?: ReactNode;
+  /** A trailing, fixed-width header control for adding and choosing columns. */
+  columnMenu?: ReactNode;
+  /** Starts the ordinary section composer at the bottom of the table. */
+  onCreateSection?: (() => void) | undefined;
   selectedTaskIds?: readonly string[] | undefined;
   selectionDisabled?: boolean | undefined;
   dragScope?: string | undefined;
@@ -451,6 +455,7 @@ interface RowContext {
   today: string | undefined;
   customColumns: readonly TaskTableCustomColumn[];
   columnIds: readonly string[];
+  trailingColumn: boolean;
   onEditTaskField: TaskTableProps['onEditTaskField'];
   renderTaskFieldEditor: TaskTableProps['renderTaskFieldEditor'];
   renderCompletionAction: TaskTableProps['renderCompletionAction'];
@@ -657,7 +662,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     dueDate: td('dueDate', 'dueDate', cell('dueDate', <DueDateCell startDate={task.startDate ?? null} dueDate={task.dueDate} today={ctx.today} finished={finished} />)),
     tags: td('tags', 'tagIds', cell('tagIds', <span className="flex h-8 min-w-0 items-center px-1.5"><TagsCell tags={task.tags} /></span>)),
     priority: td('priority', 'priority', cell('priority', <PriorityCell priority={task.priority} />)),
-    estimate: td('estimate', 'estimate', cell('estimate', <EstimateCell task={task} summary={ctx.summary} />), cn('text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && stickyEstimateClassName)),
+    estimate: td('estimate', 'estimate', cell('estimate', <EstimateCell task={task} summary={ctx.summary} />), cn('text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && !ctx.trailingColumn && stickyEstimateClassName)),
   };
   return <tr data-task-row={task.id} data-task-drop={drop} data-task-dragging={ctx.draggingTaskId === task.id ? '' : undefined}
     onContextMenu={openMenuFromRow}
@@ -667,7 +672,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     const custom = ctx.customColumns.find(column => column.id === id);
     // Supplied cells bring their own control padding; the row height still bounds them.
     return <Fragment key={id}>{builtinCells[id] ?? (custom ? td(id, null, <div className="flex h-10 min-w-0 items-center overflow-hidden">{custom.renderCell(task)}</div>, 'min-w-0') : null)}</Fragment>;
-  })}</tr>;
+  })}{ctx.trailingColumn ? <td data-task-column-menu-cell="" className={cellClassName} style={rowCellStyle(drop, selected)} /> : null}</tr>;
 }
 
 function groupTitle(group: TableTaskGroup): string {
@@ -733,8 +738,8 @@ function GroupHeader({
   return (
     <tr data-task-group-header={dropMembershipId} data-task-drop={dropLine ? 'after' : undefined}
       className={cn('h-10 border-t border-line bg-canvas', dropLine && 'shadow-[inset_0_-2px_0_var(--color-accent)]')}>
-      <th scope="rowgroup" colSpan={columnCount} className="h-10 px-3 py-0 text-left font-normal" style={dropCellStyle(dropLine ? 'after' : undefined)}>
-        <div className="sticky left-0 flex w-[calc(100cqw-1.5rem)] min-w-0 items-center gap-2">
+      <th scope="rowgroup" colSpan={columnCount} className="h-10 p-0 text-left font-normal" style={dropCellStyle(dropLine ? 'after' : undefined)}>
+        <div data-task-group-label="" className="sticky left-0 flex w-[100cqw] min-w-0 items-center gap-2 px-3">
           <button
             type="button"
             data-task-group={group.key}
@@ -779,15 +784,14 @@ function GroupHeader({
   );
 }
 
-function AddTaskRow({ sectionId, label, columnCount, onCreate }: { sectionId: string | null; label: string; columnCount: number; onCreate: () => void }) {
+function AddTaskRow({ sectionId, label, columnCount, titleInset, onCreate }: { sectionId: string | null; label: string; columnCount: number; titleInset: number; onCreate: () => void }) {
   const { t } = useTranslation();
   return (
     <tr className="h-10 border-t border-line">
       <td colSpan={columnCount} className="h-10 p-0">
-        <div className="sticky left-0 flex h-10 w-[min(100cqw,44rem)] max-w-full items-center pr-2 pl-[42px]">
+        <div className="sticky left-0 flex h-10 w-[min(100cqw,44rem)] max-w-full items-center pr-2" style={{ paddingLeft: titleInset }}>
           <button type="button" data-add-task-row={sectionId ?? ''} aria-label={label} onClick={onCreate}
-            className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded px-1.5 text-left text-sm text-muted outline-none hover:bg-slate-100 hover:text-ink focus-visible:bg-slate-100 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
-            <Plus size={14} aria-hidden="true" className="shrink-0" />
+            className="flex h-8 min-w-0 flex-1 items-center rounded text-left text-sm text-muted outline-none hover:bg-canvas hover:text-ink focus-visible:bg-canvas focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
             <span className="truncate">{t('taskTable.taskTable.addTaskRow')}</span>
           </button>
         </div>
@@ -843,7 +847,7 @@ export function TaskTable({
   columnPreset = 'expanded',
   columnIds,
   onEditTaskField, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
-  showLegacySummary = true, aggregateFooter,
+  showLegacySummary = true, aggregateFooter, columnMenu, onCreateSection,
   onMoveTask, moveBlocked = false, acquireDragProtection,
   grouping = 'section',
   sortMode = 'manual',
@@ -870,7 +874,8 @@ export function TaskTable({
   const orderedIds = columnIds ? ['title', ...columnIds.filter(id => id !== 'title')] : defaultIds;
   const columns = orderedIds.flatMap(id => { const column = byColumnId.get(id); return column ? [column] : []; });
   const visibleIds = columns.map(column => column.id);
-  const columnCount = columns.length;
+  const trailingColumn = columnMenu !== undefined && columnMenu !== null;
+  const columnCount = columns.length + (trailingColumn ? 1 : 0);
   const loadedGroups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale, sortMode, writable && onMoveTask !== undefined && sortMode === 'manual'), [tasks, sections, members, grouping, locale, sortMode, writable, onMoveTask]);
   // Retain a captured empty group while its unsent row owns this presentation.
   const capturedPlacement = quickAdd?.placement;
@@ -878,12 +883,12 @@ export function TaskTable({
     ? [...loadedGroups, { ...capturedPlacement.group, roots: [], taskCount: 0 }] : loadedGroups, [loadedGroups, capturedPlacement]);
   const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
   // Widths never depend on an open editor: the grid stays still while any cell is edited.
-  const otherColumnsWidth = columns.reduce((sum, column) => sum + (column.id === 'title' ? 0 : column.width), 0);
+  const otherColumnsWidth = columns.reduce((sum, column) => sum + (column.id === 'title' ? 0 : column.width), trailingColumn ? 44 : 0);
   const minWidth = `calc(${titleWidth} + ${otherColumnsWidth}px)`;
-  const stickyEstimate = visibleIds.at(-1) === 'estimate';
+  const stickyEstimate = visibleIds.at(-1) === 'estimate' && !trailingColumn;
   const columnLine = (id: string): string | undefined => {
     const index = visibleIds.indexOf(id);
-    if (id === 'title' || index < 0 || index === visibleIds.length - 1) return undefined;
+    if (id === 'title' || index < 0 || index === visibleIds.length - 1 && !trailingColumn) return undefined;
     // From lg the sticky estimate draws its own leading line.
     return stickyEstimate && index === visibleIds.length - 2 ? 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)]' : gridLineClassName;
   };
@@ -1042,6 +1047,7 @@ export function TaskTable({
     today,
     customColumns,
     columnIds: visibleIds,
+    trailingColumn,
     onEditTaskField: writable ? onEditTaskField : undefined,
     renderTaskFieldEditor, renderCompletionAction, draftTaskIds,
     columnLine,
@@ -1067,8 +1073,11 @@ export function TaskTable({
           <div className="flex h-10 min-w-0 items-center overflow-hidden">{renderCell(id)}</div>
         </td>
       ))}
+      {trailingColumn ? <td data-task-column-menu-cell="" className={cellClassName} /> : null}
     </tr>
   );
+  // Match the real root title: cell inset, selection gutter, disclosure, completion and title padding.
+  const titleInset = 12 + (selectRow ? 40 : 0) + 28 + (renderCompletionAction ? 32 : 0) + 4;
   // Confirmed rows the list has not loaded yet stay in place, read-only, so the next input never jumps.
   const confirmedCtx: RowContext = { ...ctx, onEditTaskField: undefined, renderTaskFieldEditor: undefined, activeFieldEditor: undefined, onCreateChild: null, move: null, renderCompletionAction: () => <span aria-hidden="true" className="size-7 shrink-0" /> };
   const quickRows = (group: TableTaskGroup | null, depth: number): ReactNode => quickAdd ? <>
@@ -1107,8 +1116,8 @@ export function TaskTable({
       {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} /> : null}
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
-        <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? titleWidth : column.width }} />)}</colgroup>
-        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}</tr></thead>
+        <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? titleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
+        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
           const collapsed = collapsedGroups.has(group.key);
@@ -1145,15 +1154,16 @@ export function TaskTable({
                 : items}
               {/* Asana-style: the quick row, or a persistent Add task row, closes every expanded section. */}
               {grouping !== 'section' || collapsed ? null : anchored === null && quickAdd?.sectionId === group.sectionId ? quickRows(group, 0)
-                : acceptsNewTasks(group, writable) ? <AddTaskRow sectionId={group.sectionId} label={addTaskLabel(group)} columnCount={columnCount} onCreate={() => onCreateTask(group.sectionId)} /> : null}
+                : acceptsNewTasks(group, writable) ? <AddTaskRow sectionId={group.sectionId} label={addTaskLabel(group)} columnCount={columnCount} titleInset={titleInset} onCreate={() => onCreateTask(group.sectionId)} /> : null}
             </tbody>
           );
         })}
         {grouping === 'section' && quickAdd && anchored === null && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody>{quickRows(null, 0)}</tbody> : null}
-        {sectionComposer ? <tbody><tr className="border-t border-line bg-canvas"><td colSpan={columnCount} className="px-3"><div className="sticky left-0 w-[calc(100cqw-1.5rem)] min-w-0">{sectionComposer}</div></td></tr></tbody> : null}
+        {sectionComposer ? <tbody><tr className="border-t border-line bg-canvas"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] min-w-0 px-3">{sectionComposer}</div></td></tr></tbody> : null}
+        {writable && onCreateSection && !sectionComposer ? <tbody><tr className="h-11 border-t border-line"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] px-3"><button type="button" data-add-section-row="" onClick={onCreateSection} className="flex h-10 min-w-0 items-center gap-1 rounded text-sm font-medium text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"><Plus size={16} aria-hidden="true" /><span>{t('taskTable.sections.add')}</span></button></div></td></tr></tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
           {showLegacySummary ? <SummaryRow summary={summary} partial={partial} columnCount={columnCount} /> : null}
-          {aggregateFooter ? <tr className="border-t border-line-strong bg-surface"><td colSpan={columnCount} className="px-3"><div className="sticky left-0 w-[calc(100cqw-1.5rem)]">{aggregateFooter}</div></td></tr> : null}
+          {aggregateFooter ? <tr className="border-t border-line-strong bg-surface"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] px-3">{aggregateFooter}</div></td></tr> : null}
         </tfoot>
       </table>
     </div>

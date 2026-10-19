@@ -1,3 +1,5 @@
+import { reconcileFieldAcks } from '../undo/storeFieldAck';
+import { captureTask, recordTaskUndo, recordBulkUndo, type BulkUndoMetadata } from '../undo/recordUndo';
 import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/react-query';
 import type {
   BulkUpdateTasksInput,
@@ -12,7 +14,7 @@ import type {
   UpdateTagInput,
   UpdateTaskInput,
 } from '@workloom/contracts';
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { isUuid } from '../../lib/format';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
@@ -256,7 +258,9 @@ export function useCreateTaskMutation(actorId: string, workspaceId: string) {
       hasInitialRowData(initial)
         ? createTaskRowRequest(workspaceId, { task: input, ...initial })
         : createTaskRequest(workspaceId, input),
-    onSuccess: (task, { initial }) => {
+    onSuccess: (task, { initial, input }, ack) => {
+      if (ack.actorId !== null && ack.actorId !== actorId) return;
+      if (ack.actorId === actorId && task.projectId === input.projectId && task.workspaceId === workspaceId) recordTaskUndo(queryClient, actorId, workspaceId, 'create', undefined, task, undefined, ack.receipt);
       if (hasInitialRowData(initial)) invalidateTaskRowProjections(queryClient, actorId, workspaceId);
       void storeTask(queryClient, actorId, workspaceId, task);
     },
@@ -270,9 +274,17 @@ export interface UpdateTaskVariables extends IdempotentVariables {
 
 export function useUpdateTaskMutation(actorId: string, workspaceId: string) {
   const queryClient = useQueryClient();
+  const snapshots = useRef(new WeakMap<UpdateTaskVariables, TaskDto | undefined>()).current;
   return useIdempotentMutation({
-    prepare: ({ taskId, input }: UpdateTaskVariables) => updateTaskRequest(workspaceId, taskId, input),
-    onSuccess: (task) => void storeTask(queryClient, actorId, workspaceId, task),
+    prepare: (variables: UpdateTaskVariables) => {
+      if (!snapshots.has(variables)) snapshots.set(variables, captureTask(queryClient, actorId, workspaceId, variables.taskId, variables.input));
+      return updateTaskRequest(workspaceId, variables.taskId, variables.input);
+    },
+    onSuccess: (task, variables, ack) => {
+      if (ack.actorId !== null && ack.actorId !== actorId) return;
+      if (ack.actorId === actorId) recordTaskUndo(queryClient, actorId, workspaceId, 'update', snapshots.get(variables), task, variables.input, ack.receipt);
+      void storeTask(queryClient, actorId, workspaceId, task);
+    },
   });
 }
 
@@ -283,9 +295,17 @@ export interface ArchiveTaskVariables extends IdempotentVariables {
 
 export function useArchiveTaskMutation(actorId: string, workspaceId: string) {
   const queryClient = useQueryClient();
+  const snapshots = useRef(new WeakMap<ArchiveTaskVariables, TaskDto | undefined>()).current;
   return useIdempotentMutation({
-    prepare: ({ taskId, input }: ArchiveTaskVariables) => archiveTaskRequest(workspaceId, taskId, input),
-    onSuccess: (task) => void storeTask(queryClient, actorId, workspaceId, task),
+    prepare: (variables: ArchiveTaskVariables) => {
+      if (!snapshots.has(variables)) snapshots.set(variables, captureTask(queryClient, actorId, workspaceId, variables.taskId, variables.input));
+      return archiveTaskRequest(workspaceId, variables.taskId, variables.input);
+    },
+    onSuccess: (task, variables, ack) => {
+      if (ack.actorId !== null && ack.actorId !== actorId) return;
+      if (ack.actorId === actorId) recordTaskUndo(queryClient, actorId, workspaceId, 'archive', snapshots.get(variables), task, variables.input, ack.receipt);
+      void storeTask(queryClient, actorId, workspaceId, task);
+    },
   });
 }
 
@@ -300,9 +320,17 @@ export interface MoveTaskVariables extends IdempotentVariables {
  */
 export function useMoveTaskMutation(actorId: string, workspaceId: string) {
   const queryClient = useQueryClient();
+  const snapshots = useRef(new WeakMap<MoveTaskVariables, TaskDto | undefined>()).current;
   return useIdempotentMutation({
-    prepare: ({ taskId, input }: MoveTaskVariables) => moveTaskRequest(workspaceId, taskId, input),
-    onSuccess: (task) => void storeTask(queryClient, actorId, workspaceId, task),
+    prepare: (variables: MoveTaskVariables) => {
+      if (!snapshots.has(variables)) snapshots.set(variables, captureTask(queryClient, actorId, workspaceId, variables.taskId, variables.input));
+      return moveTaskRequest(workspaceId, variables.taskId, variables.input);
+    },
+    onSuccess: (task, variables, ack) => {
+      if (ack.actorId !== null && ack.actorId !== actorId) return;
+      if (ack.actorId === actorId) recordTaskUndo(queryClient, actorId, workspaceId, 'move', snapshots.get(variables), task, variables.input, ack.receipt);
+      void storeTask(queryClient, actorId, workspaceId, task);
+    },
   });
 }
 
@@ -313,22 +341,33 @@ export interface RestoreTaskVariables extends IdempotentVariables {
 
 export function useRestoreTaskMutation(actorId: string, workspaceId: string) {
   const queryClient = useQueryClient();
+  const snapshots = useRef(new WeakMap<RestoreTaskVariables, TaskDto | undefined>()).current;
   return useIdempotentMutation({
-    prepare: ({ taskId, input }: RestoreTaskVariables) => restoreTaskRequest(workspaceId, taskId, input),
-    onSuccess: (task) => void storeTask(queryClient, actorId, workspaceId, task),
+    prepare: (variables: RestoreTaskVariables) => {
+      if (!snapshots.has(variables)) snapshots.set(variables, captureTask(queryClient, actorId, workspaceId, variables.taskId, variables.input));
+      return restoreTaskRequest(workspaceId, variables.taskId, variables.input);
+    },
+    onSuccess: (task, variables, ack) => {
+      if (ack.actorId !== null && ack.actorId !== actorId) return;
+      if (ack.actorId === actorId) recordTaskUndo(queryClient, actorId, workspaceId, 'restore', snapshots.get(variables), task, variables.input, ack.receipt);
+      void storeTask(queryClient, actorId, workspaceId, task);
+    },
   });
 }
 
-export interface BulkUpdateTaskVariables extends IdempotentVariables { input: BulkUpdateTasksInput }
+export interface BulkUpdateTaskVariables extends IdempotentVariables { input: BulkUpdateTasksInput; undo?: BulkUndoMetadata }
 export function useBulkUpdateTasksMutation(actorId: string, workspaceId: string) {
   const client = useQueryClient();
   return useIdempotentMutation({
     prepare: ({ input }: BulkUpdateTaskVariables) => bulkUpdateTasksRequest(workspaceId, input),
-    onSuccess: (tasks, variables) => {
-      void storeConfirmedTasks(client, actorId, workspaceId, tasks, variables.input.changes.estimateMinutes !== undefined);
+    onSuccess: async (tasks, variables, ack) => {
+      if (ack.actorId !== null && ack.actorId !== actorId) return;
+      if (ack.actorId === actorId) recordBulkUndo(client, actorId, workspaceId, variables.undo, tasks, variables.input, ack.receipt);
+      await reconcileFieldAcks(client, actorId, workspaceId, tasks.flatMap(task => task.customFieldAck ? [task.customFieldAck] : []));
+      void storeConfirmedTasks(client, actorId, workspaceId, tasks, variables.input.changes.estimateMinutes !== undefined || !!variables.input.changes.restore?.some(row => row.changes.estimateMinutes !== undefined));
       // The task projection does not carry independently revisioned custom values. Invalidate
       // their whole scoped family once, never once per selected row or with a fabricated value.
-      if (variables.input.changes.customField !== undefined) {
+      if (variables.input.changes.customField !== undefined || variables.input.changes.restore?.some(row => row.changes.customField)) {
         void client.invalidateQueries({ queryKey: queryKeys.fieldValues(actorId, workspaceId) });
         void client.invalidateQueries({ queryKey: [...queryKeys.fields(actorId, workspaceId), 'history'] });
       }

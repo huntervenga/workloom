@@ -1,3 +1,4 @@
+import { createTaskFieldValueSchema } from './common/task-field-value.js';
 import { z } from 'zod';
 
 import { envelopeSchema } from './common/envelope.js';
@@ -165,16 +166,7 @@ export const projectColumnsSchema = z.strictObject({
 });
 
 /** Current value row. A row holding typed `null` is an explicit clear with its own revision. */
-export const taskFieldValueSchema = z.strictObject({
-  workspaceId: idSchema,
-  projectId: idSchema,
-  taskId: idSchema,
-  fieldId: idSchema,
-  definitionVersionId: idSchema,
-  revision: revisionSchema,
-  value: taskFieldDataSchema,
-  updatedAt: utcTimestampSchema,
-});
+export const taskFieldValueSchema = createTaskFieldValueSchema({ valueSchema: taskFieldDataSchema, revisionSchema, timestampSchema: utcTimestampSchema });
 
 const taskFieldChangeSourceSchema = z.enum(['web', 'api', 'mcp', 'job', 'import']);
 

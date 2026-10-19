@@ -69,6 +69,11 @@ literalExemptions.set("apps/web/src/features/fields/FieldPolicyPanel.tsx:FIELD_P
 literalExemptions.set("apps/web/src/features/fields/FieldPolicyPanel.tsx:FIELD_POLICY_INVALID_LIMIT", "Internal raw numeric-draft validation invariant; the Rules form catches it and renders fieldRules.invalid, never error.message.");
 
 const readSource = path => readFileSync(join(root, path), 'utf8');
+literalExemptions.set("apps/web/src/features/task-table/TableColumnMenu.tsx:relative flex min-h-8 cursor-default select-none items-center gap-2 rounded px-2 py-1.5 text-sm text-ink outline-none data-[highlighted]:bg-canvas data-[disabled]:opacity-40", "Exact Radix column-menu CSS tokens assigned only to item className; never user-visible copy.");
+
+literalExemptions.set("apps/web/src/features/undo/recordUndo.ts:UNDO_CONFIRMED_REVISION_MISSING", "Internal fail-closed undo invariant for a missing confirmed revision; never rendered. describeError maps this non-ApiError to the fixed localized errors.unexpected fallback.");
+literalExemptions.set("apps/web/src/features/undo/recordUndo.ts:UNDO_CONFIRMED_TASK_MISSING", "Internal fail-closed undo invariant for a missing acknowledged task; never rendered. describeError maps this non-ApiError to the fixed localized errors.unexpected fallback.");
+
 // Finite descriptor sources below are inspected as syntax, never executed. New computed
 // producers must get an explicit domain instead of inheriting every English catalog key.
 const unwrap = node => ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node) ? unwrap(node.expression) : node;
@@ -190,6 +195,7 @@ const dynamicKeys = new Map([
     ['automationKeys[data.automation.state]', { keys: tableTranslationKeys(readSource('apps/web/src/features/cutoff/CutoffPanel.tsx'), 'automationKeys'), reason: 'Three finite persisted automation states map to literal catalog keys.' }],
   ])],
   ['apps/web/src/features/task-table/PersonalColumnsDialog.tsx', new Map([['builtinLabels[ref.key]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-table/PersonalColumnsDialog.tsx'), 'builtinLabels'), reason: 'Exhaustive finite ten built-in table-column IDs map to literal localization keys.' }]])],
+  ['apps/web/src/features/task-table/TableColumnMenu.tsx', new Map([['labels[ref.key]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-table/TableColumnMenu.tsx'), 'labels'), reason: 'Exhaustive finite built-in table-column IDs index the labels dictionary; every literal value is extracted and checked against the English catalog.' }]])],
   ['apps/web/src/features/task-comments/TaskDiscussion.tsx', new Map([
     ['activityKeys[event.kind]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-comments/TaskDiscussion.tsx'), 'activityKeys'), reason: 'Exhaustive finite public activity kind dictionary; all values are literal localization keys.' }],
     ['problemKeys[problem]', { keys: tableTranslationKeys(readSource('apps/web/src/features/task-comments/TaskDiscussion.tsx'), 'problemKeys'), reason: 'Finite local comment validation enum mapped to literal message keys; server text is never rendered.' }],

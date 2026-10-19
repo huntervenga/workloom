@@ -173,7 +173,8 @@
     "collapse": "Collapse section “{{section}}”",
     "expand": "Expand section “{{section}}”",
     "collapseNumbered": "Collapse section {{position}} “{{section}}”",
-    "expandNumbered": "Expand section {{position}} “{{section}}”"
+    "expandNumbered": "Expand section {{position}} “{{section}}”",
+    "add": "Add section"
   },
   "grouping": {
     "label": "Group by",
@@ -235,5 +236,28 @@
     "range": "{{start}} – {{due}}",
     "rangeLabel": "Start date: {{start}}; due date: {{due}}",
     "startOnly": "From {{start}}"
+  },
+  "columnMenu": {
+    "trigger": "Add or show columns",
+    "create": "Create field",
+    "resume": "Resume field creation",
+    "visible": "Columns in this table",
+    "saving": "Saving…",
+    "order": "Column order…",
+    "settings": "Field settings…",
+    "visibilityHint": "Show or hide columns for your view. Hiding a column keeps its values and history.",
+    "name": "Field name",
+    "type": "Field type",
+    "options": "Options · one per line",
+    "history": "Record value history",
+    "invalid": "Enter a field name (up to 160 characters) and valid, unique options (up to 100 characters each).",
+    "close": "Close field creation",
+    "retry": "Retry original field",
+    "add": "Create field",
+    "created": "Created “{{name}}”.",
+    "archive": "Archive field for the project",
+    "archiveHint": "Removes this field from project tables. Values and history are kept, and the field can be restored. To hide it only for yourself, use the table + menu.",
+    "archived": "Archived fields",
+    "restore": "Restore"
   }
 }

@@ -1,7 +1,9 @@
 // Test-only stand-in for the shared Auth provider (RS256/JWKS, aud=pet-projects) used by native
 // private-QA specs. Real node:crypto keys and signatures, in-memory state, bound to 127.0.0.1 only.
 // The account chooser is explicitly a private test identity picker, not Google sign-in.
-import { createSign, createVerify, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
+import { createPrivateKey, createPublicKey, createSign, createVerify, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 export interface FakeSharedAuthIdentity {
@@ -89,14 +91,47 @@ async function readRefreshToken(req: IncomingMessage): Promise<string | null> {
   }
 }
 
+/**
+ * A worker restart must not rotate the private provider's key under the running API's JWKS
+ * cooldown. The optional material stays only in the root-owned throwaway QA directory.
+ * No real Auth keys, repository files or caller-selected arbitrary paths are accepted.
+ */
+function privateProviderKeys() {
+  const path = process.env.WORKLOOM_QA_AUTH_KEY_FILE;
+  if (path === undefined) return { ...generateKeyPairSync('rsa', { modulusLength: 2048 }), kid: randomUUID() };
+  const root = '/private/tmp/workloom-inline-ux-20261019';
+  if (!/^\/private\/tmp\/workloom-inline-ux-20261019\/fake-auth-key-[0-9a-f-]{36}\.json$/.test(path)
+    || realpathSync(dirname(path)) !== root) throw new Error('Private provider key path is not an owned QA path.');
+  const directory = lstatSync(root);
+  if (!directory.isDirectory() || directory.uid !== process.getuid?.() || (directory.mode & 0o077) !== 0) throw new Error('Private provider key directory is not owner-only.');
+  let descriptor: number | null = null;
+  try {
+    descriptor = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    writeFileSync(descriptor, JSON.stringify({ version: 1, kid: randomUUID(), privateKey: pair.privateKey.export({ format: 'pem', type: 'pkcs8' }) }));
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw new Error('Private provider key creation failed.');
+  } finally { if (descriptor !== null) closeSync(descriptor); }
+  const reader = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const info = fstatSync(reader);
+    if (!info.isFile() || info.uid !== process.getuid?.() || info.nlink !== 1 || (info.mode & 0o077) !== 0 || info.size > 8192) throw new Error('Private provider key file is not owner-only regular data.');
+    const value: unknown = JSON.parse(readFileSync(reader, 'utf8'));
+    if (!isRecord(value) || value['version'] !== 1 || typeof value['kid'] !== 'string' || !/^[0-9a-f-]{36}$/.test(value['kid']) || typeof value['privateKey'] !== 'string') throw new Error('Private provider key shape is invalid.');
+    const privateKey = createPrivateKey(value['privateKey']);
+    if (privateKey.asymmetricKeyType !== 'rsa' || privateKey.asymmetricKeyDetails?.modulusLength !== 2048) throw new Error('Private provider key type is invalid.');
+    return { privateKey, publicKey: createPublicKey(privateKey), kid: value['kid'] };
+  } catch { throw new Error('Private provider key data is unavailable or invalid.'); }
+  finally { closeSync(reader); }
+}
+
 export async function startFakeSharedAuth(options: { port: number; appOrigin: string }): Promise<FakeSharedAuth> {
   const { port, appOrigin } = options;
   if (port !== PRIVATE_QA_PORT || appOrigin !== PRIVATE_QA_APP_ORIGIN) {
     throw new Error(`Fake shared auth only runs on ${HOST}:${PRIVATE_QA_PORT} for app ${PRIVATE_QA_APP_ORIGIN}`);
   }
   const origin = `http://${HOST}:${port}`;
-  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const kid = randomUUID();
+  const { privateKey, publicKey, kid } = privateProviderKeys();
   const jwk = { ...publicKey.export({ format: 'jwk' }), kid, alg: 'RS256', use: 'sig' };
   const observedAt = new Date().toISOString();
   const identities = {

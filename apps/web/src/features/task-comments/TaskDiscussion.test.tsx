@@ -35,13 +35,13 @@ function routes(extra: RouteTable = {}): RouteTable {
   };
   return table;
 }
-function example({ viewer = false }: { viewer?: boolean } = {}) {
+function example({ viewer = false, legacyTime = false }: { viewer?: boolean; legacyTime?: boolean } = {}) {
   let current: TaskCommentsWorkspace | null = null;
   function Example() {
     const controller = useTaskCommentsWorkspace(anna.id, alpha.id); current = controller;
     const commands = useTaskCommands(anna.id, alpha.id);
     const [open, setOpen] = useState(true);
-    return <><CommentCommandRecovery controller={controller} visibleTaskId={open ? task.id : null} onOpen={() => setOpen(true)} />{open ? <TaskDrawer actorId={anna.id} workspace={alpha} project={project(alpha.id, PROJECT_ID, 'Stored project')} sections={[]} statuses={[]} members={alphaMembers} tags={[]} writable={!viewer} commands={commands} commentsController={controller} taskId={task.id} creating={null} onClose={() => setOpen(false)} onOpenTask={vi.fn()} onResumeCreate={vi.fn()} onCreated={vi.fn()} onAnnounce={vi.fn()} /> : null}<button onClick={() => setOpen(true)}>Reopen QA task</button><button>Outside QA focus</button></>;
+    return <><CommentCommandRecovery controller={controller} visibleTaskId={open ? task.id : null} onOpen={() => setOpen(true)} />{open ? <TaskDrawer legacyTime={legacyTime} actorId={anna.id} workspace={alpha} project={project(alpha.id, PROJECT_ID, 'Stored project')} sections={[]} statuses={[]} members={alphaMembers} tags={[]} writable={!viewer} commands={commands} commentsController={controller} taskId={task.id} creating={null} onClose={() => setOpen(false)} onOpenTask={vi.fn()} onResumeCreate={vi.fn()} onCreated={vi.fn()} onAnnounce={vi.fn()} /> : null}<button onClick={() => setOpen(true)}>Reopen QA task</button><button>Outside QA focus</button></>;
   }
   return { ...renderFieldUi(<Example />), controller: () => { if (!current) throw new Error('Missing controller'); return current; } };
 }
@@ -54,7 +54,7 @@ describe('saved task discussion', () => {
   it('keeps field drafts in a sibling form and posts exact inert plaintext without changing task revision', async () => {
     let stored: TaskCommentDto[] = [];
     const { calls } = installFakeApi(routes({ [`GET ${path}/comments`]: () => page(stored), [`POST ${path}/comments`]: request => { stored = [{ ...comment, body: (request.body as { body: string }).body }]; return created(stored[0]); } }));
-    const ui = example();
+    const ui = example({ legacyTime: true });
     const title = await screen.findByLabelText('Task name');
     await ui.user.clear(title); await ui.user.type(title, '  ');
     await ui.user.clear(screen.getByLabelText('Team estimate, hours')); await ui.user.type(screen.getByLabelText('Team estimate, hours'), 'invalid');

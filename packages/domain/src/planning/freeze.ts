@@ -1,6 +1,6 @@
 import { fieldPolicyBlock, fieldPolicyError, type FieldPolicyBlock } from '../fields/policy.js';
 import { preflightTaskFieldValueInScope } from '../fields/service.js';
-import { RECURRENCE_LIMITS, idSchema, type TaskFieldData, type FreezeScope, type PlanBaselineDto, type PlanningPeriodDto, type PlanningSnapshotDto } from '@workloom/contracts';
+import { RECURRENCE_LIMITS, idSchema, bulkChangesForTask, type TaskFieldData, type FreezeScope, type PlanBaselineDto, type PlanningPeriodDto, type PlanningSnapshotDto } from '@workloom/contracts';
 import type { CommandContext } from '../access/context.js';
 import { DomainError } from '../errors.js';
 import { RECURRENCE_PREREQUISITE_BY_COMMAND, type RecurrenceCensusAssessment } from '../recurrence/ports.js';
@@ -254,10 +254,11 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
         // Same meeting roster/calendar policy as task.update, classified for every row before any proposal.
         for(const row of intent.input.tasks) {
           const task=await repo.tasks.findTask(ws,row.taskId);
-          if(task && intent.input.changes.estimateMinutes !== undefined) {
+          const changes=bulkChangesForTask(intent.input,row.taskId);
+          if(task && changes.estimateMinutes !== undefined) {
             blocked.push(...locks.filter(lock => lock.kind === 'estimate' && lock.workPackageId === task.workPackageId).map(lock => lock.baselineId));
           }
-          const custom = intent.input.changes.customField;
+          const custom = changes.customField;
           if (task && custom) {
             blocked.push(...locks.filter(lock => lock.kind === 'custom_value' && lock.taskId === task.id && lock.fieldId === custom.fieldId).map(lock => lock.baselineId));
           }
@@ -267,17 +268,20 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
             else throw rule('Use the meeting command to change its roster, schedule or package.');
           }
         }
-        const custom = intent.input.changes.customField;
-        if (custom) {
+        for (const row of intent.input.tasks) {
+          const custom = bulkChangesForTask(intent.input, row.taskId).customField;
+          if (!custom) continue;
           const definition = await repo.fields.findField(ws, custom.fieldId);
           if (definition?.projectId === intent.input.projectId && definition.locked) return {
             __workloomPlanningOutcome: 'rejected', code: 'FIELD_LOCKED',
             details: { committed: true, baselineIds: [...new Set(newlyFrozen)].sort() },
           };
         }
-        if(custom&&!blocked.length)for(const row of intent.input.tasks) {
-          policyReason=await policyCheck(custom.fieldId,row.taskId,custom.value,custom.expectedDefinitionRevision,row.expectedFieldValueRevision);
-          if(policyReason)break;
+        if (!blocked.length) for (const row of intent.input.tasks) {
+          const custom = bulkChangesForTask(intent.input, row.taskId).customField;
+          if (!custom) continue;
+          policyReason = await policyCheck(custom.fieldId, row.taskId, custom.value, custom.expectedDefinitionRevision, row.expectedFieldValueRevision);
+          if (policyReason) break;
         }
         break;
       }

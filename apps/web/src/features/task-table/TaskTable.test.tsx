@@ -444,3 +444,31 @@ describe('TaskTable Asana-style add rows', () => {
     expect(onEditTaskField).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe('TaskTable column and section entry points', () => {
+  it('keeps the header add control, ordinary rows, drafts and spanning rows in the same grid', () => {
+    renderTable({ tasks: [launch], writable: true, showLegacySummary: false, columnIds: ['title', 'status'], columnMenu: <button>Add or show columns</button>, quickAdd: { sectionId: analytics.id, render: row => row('draft')(id => <span>{id === 'title' ? 'New title' : 'New status'}</span>) } });
+    expect(screen.getAllByRole('columnheader')).toHaveLength(3);
+    expect(within(rowOf(launch.title)).getAllByRole('cell')).toHaveLength(3);
+    const draft = screen.getByText('New title').closest('tr');
+    expect(within(draft as HTMLElement).getAllByRole('cell')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Collapse section “Аналитика”' }).closest('th')).toHaveAttribute('colspan', '3');
+    expect(screen.getByRole('button', { name: 'Add or show columns' }).closest('th')).toBe(screen.getAllByRole('columnheader').at(-1));
+  });
+
+  it('offers Add section after the last group and delegates creation in either grouping', async () => {
+    const user = userEvent.setup(); const onCreateSection = vi.fn();
+    renderTable({ tasks: [launch], writable: true, grouping: 'assignee', onCreateSection });
+    const add = screen.getByRole('button', { name: 'Add section' });
+    const bodies = screen.getByRole('table').querySelectorAll('tbody');
+    expect(add.closest('tbody')).toBe(bodies[bodies.length - 1]);
+    await user.click(add); expect(onCreateSection).toHaveBeenCalledOnce();
+  });
+
+  it('replaces the bottom Add section action with its active composer', () => {
+    renderTable({ tasks: [launch], writable: true, onCreateSection: vi.fn(), sectionComposer: <input aria-label="Section name" /> });
+    expect(screen.queryByRole('button', { name: 'Add section' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Section name' })).toBeInTheDocument();
+  });
+});

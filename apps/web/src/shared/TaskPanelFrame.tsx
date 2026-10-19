@@ -173,7 +173,7 @@ export function TaskPanelFrame({ title, description, trigger, open, onOpenChange
               inert={!open || undefined}
               aria-hidden={!open || undefined}
               // Below the global header (styles.css sets its top and height).
-              className="task-panel fixed right-0 flex flex-col overflow-hidden border-l border-line bg-surface p-5 outline-none sm:p-6"
+              className="task-panel fixed right-0 flex flex-col overflow-hidden border-l border-line bg-surface px-5 pt-2 pb-5 outline-none sm:px-6 sm:pb-6"
               style={{ zIndex }}
               onKeyDown={onKeyDown}
               onFocus={() => {

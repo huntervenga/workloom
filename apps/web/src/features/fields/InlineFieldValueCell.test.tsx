@@ -1,5 +1,5 @@
 import type { TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { alpha, alphaMembers, anna, failure, installFakeApi, ok, type FakeRequest, type RouteTable } from '../../test/fakeApi';
@@ -184,6 +184,20 @@ describe('InlineFieldValueCell retained sessions and recovery', () => {
     expect(ui.onMoreDetails).toHaveBeenCalledTimes(1);
     expect(ui.exposed.drafts.getTask(task.id)[FIELD_ID]).toBe(kept);
     expect(ui.writes()).toEqual([]);
+  });
+
+  it('keeps a retained URL value inert inside the explicit draft review button', async () => {
+    const definition = { ...field('Website', 'url'), projectId: task.projectId };
+    const value = row(definition, { type: 'url', value: 'https://example.com/original' });
+    const kept = newFieldSession(definition, value, { type: 'url', text: 'https://example.com/draft' });
+    const ui = setup({ definition, value, seed: drafts => drafts.set(task.id, { [FIELD_ID]: kept }) });
+    const review = screen.getByRole('button', { name: `Website for ${task.title} has an unsaved draft. Review it in task details.` });
+    expect(within(review).queryByRole('link')).not.toBeInTheDocument();
+    expect(review).toHaveTextContent('https://example.com/original');
+    await ui.user.click(within(review).getByText('https://example.com/original'));
+    expect(ui.onMoreDetails).toHaveBeenCalledTimes(1);
+    expect(ui.writes()).toHaveLength(0);
+    expect(ui.exposed.drafts.getTask(task.id)[FIELD_ID]).toBe(kept);
   });
 
   it('switches to review and keeps a draft started in the drawer while the menu is open', async () => {
@@ -489,18 +503,62 @@ describe('InlineFieldValueCell other types', () => {
     expect(ui.writes()[0]?.body).toEqual({ expectedRevision: 0, expectedDefinitionRevision: 1, value: { type: 'person', value: [target.id] } });
   });
 
-  it('opens details instead of replacing several people, and for non-choice types', async () => {
+  it('edits several people and text directly without opening task details', async () => {
     const people = { ...field('Reviewers', 'person'), projectId: task.projectId };
-    const many = setup({ definition: people, value: row(people, { type: 'person', value: alphaMembers.slice(0, 2).map((member) => member.id) }) });
-    expect(screen.queryByRole('combobox')).toBeNull();
-    await many.user.click(screen.getByRole('button', { name: `Edit Reviewers for ${task.title}` }));
-    expect(many.onMoreDetails).toHaveBeenCalledTimes(1);
+    const member = alphaMembers[0];
+    if (!member) throw new Error('Expected first member fixture');
+    const ids = alphaMembers.slice(0, 2).map(member => member.id);
+    const many = setup({ definition: people, value: row(people, { type: 'person', value: ids }), routes: { [`PUT ${valuePath}`]: echo(people, 4) } });
+    await many.user.click(screen.getByRole('combobox', { name: `Edit Reviewers for ${task.title}` }));
+    await many.user.click(screen.getByRole('option', { name: new RegExp(member.displayName) }));
+    await waitFor(() => expect(many.writes()).toHaveLength(1));
+    expect(many.writes()[0]?.body).toMatchObject({ value: { type: 'person', value: [ids[1]] } });
+    expect(many.onMoreDetails).not.toHaveBeenCalled();
     many.unmount();
-
     const notes = { ...field('Notes', 'text'), projectId: task.projectId };
-    const text = setup({ definition: notes, value: row(notes, { type: 'text', value: 'hello' }) });
+    const text = setup({ definition: notes, value: row(notes, { type: 'text', value: 'hello' }), routes: { [`PUT ${valuePath}`]: echo(notes, 4) } });
     await text.user.click(screen.getByRole('button', { name: `Edit Notes for ${task.title}` }));
-    expect(text.onMoreDetails).toHaveBeenCalledTimes(1);
-    expect(text.writes()).toEqual([]);
+    const input = screen.getByRole('textbox', { name: `Edit Notes for ${task.title}` });
+    await text.user.clear(input); await text.user.type(input, 'updated{Enter}');
+    await waitFor(() => expect(text.writes()).toHaveLength(1));
+    expect(text.writes()[0]?.body).toMatchObject({ value: { type: 'text', value: 'updated' } });
+    expect(text.onMoreDetails).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('ordinary inline scalar safety', () => {
+  it.each([
+    ['number', '0', { type: 'number', value: 0 }],
+    ['duration', '1:30', { type: 'duration', value: 90 }],
+    ['date', '2026-10-20', { type: 'date', value: '2026-10-20' }],
+    ['url', 'https://example.com', { type: 'url', value: 'https://example.com' }],
+  ] as const)('autosaves ordinary %s without opening details', async (type, text, expected) => {
+    const definition = { ...field('Field', type), projectId: task.projectId };
+    const ui = setup({ definition, routes: { [`PUT ${valuePath}`]: echo(definition, 1) } });
+    const name = `Edit Field for ${task.title}`;
+    await ui.user.click(screen.getByRole('button', { name }));
+    await ui.user.type(screen.getByRole('textbox', { name }), `${text}{Enter}`);
+    await waitFor(() => expect(ui.writes()).toHaveLength(1));
+    expect(ui.writes()[0]?.body).toEqual({ expectedRevision: 0, expectedDefinitionRevision: 1, value: expected });
+    expect(ui.onMoreDetails).not.toHaveBeenCalled();
+  });
+
+  it('keeps invalid input correctable inline, ignores IME Enter, and Escape cancels without a write', async () => {
+    const definition = { ...field('Hours Estimation', 'duration'), projectId: task.projectId };
+    const ui = setup({ definition });
+    const name = `Edit Hours Estimation for ${task.title}`;
+    await ui.user.click(screen.getByRole('button', { name }));
+    const input = screen.getByRole('textbox', { name });
+    fireEvent.change(input, { target: { value: 'not hours' } });
+    await ui.user.keyboard('{Enter}');
+    expect(input).toHaveValue('not hours'); expect(input).toHaveAttribute('aria-invalid', 'true');
+    fireEvent.change(input, { target: { value: '1:30' } });
+    fireEvent.keyDown(input, { key: 'Enter', isComposing: true, keyCode: 229 });
+    expect(ui.writes()).toHaveLength(0);
+    await ui.user.keyboard('{Escape}');
+    expect(screen.queryByRole('textbox', { name })).not.toBeInTheDocument();
+    expect(ui.exposed.drafts.getTask(task.id)).toEqual({});
+    expect(ui.writes()).toHaveLength(0); expect(ui.onMoreDetails).not.toHaveBeenCalled();
   });
 });

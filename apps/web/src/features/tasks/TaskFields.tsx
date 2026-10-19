@@ -1,13 +1,15 @@
 import { t, useTranslation } from '../../i18n';
 import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto, TaskStatusGroup } from '@workloom/contracts';
 import { TextInput, cn, inputClassName } from '@workloom/ui';
-import { UserRound, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { formatEstimate, parseEstimateInput } from '../task-table';
 import { TagBadge } from './TagBadge';
 import { tagColor } from './tagColors';
 import { TaskDateInput } from './TaskDateInput';
+import { TaskCompactDateField } from './TaskCompactDateField';
+import { TaskParticipantPicker } from './TaskParticipantPicker';
 import { TASK_DESCRIPTION_MAX, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors, type TaskDraftIssue, type TaskDraftKey } from './taskDraft';
 
 export const priorityLabels: Record<TaskPriority, string> = {
@@ -130,8 +132,12 @@ export interface TaskFieldsProps {
    * choice). Typing alone only calls `onChange`. Absent, nothing commits and forms behave as before.
    */
   onCommit?: ((keys: readonly TaskDraftKey[]) => void) | undefined;
-  /** `saved` part: extra read-only or independently saved content under More fields. */
+  /** Saved task custom values, visible beside the built-in properties. */
   moreFields?: ReactNode;
+  dependenciesField?: ReactNode;
+  /** Only explicit legacy views expose the old package estimate; lineage/drafts stay intact. */
+  showLegacyEstimate?: boolean;
+  secondaryActions?: ReactNode;
 }
 
 const labelClassName = 'text-sm font-medium text-ink';
@@ -170,6 +176,9 @@ export function TaskFields({
   disabled = false,
   onCommit,
   moreFields,
+  dependenciesField,
+  showLegacyEstimate = false,
+  secondaryActions,
 }: TaskFieldsProps) {
   const { t, locale } = useTranslation();
   const id = useId();
@@ -233,7 +242,6 @@ export function TaskFields({
 
   // Retained references to memberships outside the workspace: shown without names, removable.
   const memberIds = new Set(members.map((member) => member.id));
-  const savedRetained = new Set(unavailableParticipantIds);
   const retainedParticipantIds = [
     ...new Set([
       ...unavailableParticipantIds,
@@ -394,61 +402,13 @@ export function TaskFields({
             ? t('tasks.taskFields.sharedBudgetForTheWholeTeamAndLinked')
             : t('tasks.taskFields.sharedBudgetForTheWholeTeamEnter1')}
       </p>);
-  const participantsField = (<fieldset>
-        <legend className={labelClassName}>{t('tasks.taskFields.participants')}</legend>
-        {members.length === 0 && retainedParticipantIds.length === 0 ? (
-          <p className="mt-1.5 text-sm text-muted">{t('tasks.taskFields.noWorkspaceMembers')}</p>
-        ) : (
-          <ul className="mt-1.5 grid gap-1 sm:grid-cols-2">
-            {members.map((member) => (
-              <li key={member.id}>
-                <label className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-sm text-ink-soft">
-                  <input
-                    type="checkbox"
-                    className="size-4 shrink-0 accent-accent"
-                    checked={draft.participantMembershipIds.includes(member.id)}
-                    onChange={(event) =>
-                      choose({
-                        participantMembershipIds: toggle(draft.participantMembershipIds, member.id, event.target.checked),
-                      })
-                    }
-                  />
-                  <span className="truncate">{member.displayName}</span>
-                </label>
-              </li>
-            ))}
-            {retainedParticipantIds.map((membershipId, index) => {
-              const checked = draft.participantMembershipIds.includes(membershipId);
-              return (
-                <li key={membershipId}>
-                  <label className="flex min-w-0 items-center gap-2 rounded-md px-1 py-1 text-sm text-muted">
-                    <input
-                      type="checkbox"
-                      className="size-4 shrink-0 accent-accent"
-                      checked={checked}
-                      // Only removal, or putting back a saved reference; never a new assignment.
-                      disabled={!checked && !savedRetained.has(membershipId)}
-                      onChange={(event) =>
-                        choose({
-                          participantMembershipIds: toggle(draft.participantMembershipIds, membershipId, event.target.checked),
-                        })
-                      }
-                    />
-                    <UserRound size={14} aria-hidden="true" className="shrink-0" />
-                    <span className="truncate">
-                      {retainedParticipantIds.length > 1 ? `${UNAVAILABLE_MEMBER()} ${index + 1}` : UNAVAILABLE_MEMBER()}
-                    </span>
-                  </label>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {retainedParticipantIds.length > 0 ? (
-          <p className="mt-1 text-xs text-muted">
-            {t('tasks.taskFields.thisMemberHasLeftTheWorkspaceButRemains')}</p>
-        ) : null}
-      </fieldset>);
+  const participantsField = (<div className="min-w-0 space-y-1.5">
+        <p className={labelClassName}>{t('tasks.taskFields.participants')}</p>
+        <TaskParticipantPicker members={members} value={draft.participantMembershipIds} retainedIds={unavailableParticipantIds} disabled={disabled}
+          onChange={participantMembershipIds => choose({ participantMembershipIds })} />
+        {members.length === 0 && retainedParticipantIds.length === 0 ? <p className="text-xs text-muted">{t('tasks.taskFields.noWorkspaceMembers')}</p> : null}
+        {retainedParticipantIds.length > 0 ? <p className="text-xs text-muted">{t('tasks.taskFields.thisMemberHasLeftTheWorkspaceButRemains')}</p> : null}
+      </div>);
   const tagsField = (<fieldset>
         <legend className={labelClassName}>{t('tasks.taskFields.tags')}</legend>
         {tagAction ? <div className="mt-1">{tagAction}</div> : null}
@@ -490,53 +450,48 @@ export function TaskFields({
       </fieldset>);
 
   if (saved) {
-    const rowLabel = 'min-h-9 py-2 text-sm text-ink-soft';
+    const rowLabel = 'flex min-h-8 items-center py-1 text-sm text-ink-soft';
+    const compactPicker = 'border-transparent! bg-transparent! px-1.5 shadow-none! hover:bg-canvas!';
     const addableTags = tagOptions.filter((tag) => !selectedTags.has(tag.id) && (tag.archivedAt === null || savedTags.has(tag.id)));
-    // Common fields as compact label/value rows; the description follows them directly and
-    // everything advanced stays under More fields, so it never pushes the description down.
     return (
       <div className="space-y-3">
         <fieldset disabled={disabled} className="min-w-0 space-y-3">
           <legend className="sr-only">{t('autosave.fields.label')}</legend>
-          {titleField}
-          <dl className="grid grid-cols-[minmax(6rem,9rem)_minmax(0,1fr)] items-start gap-x-3 gap-y-0.5">
+          <div className="flex min-w-0 items-start gap-2">
+            <div className="min-w-0 flex-1">{titleField}</div>
+            <div className="max-w-[11rem] shrink-0 pt-1">
+              <ChoicePicker id={ids.status} compact className={compactPicker} label={t('tasks.taskFields.status')} value={draft.statusId} options={statusChoices} onValueChange={(statusId) => choose({ statusId })} />
+            </div>
+          </div>
+          <dl className="grid grid-cols-[minmax(6rem,8rem)_minmax(0,1fr)] items-start gap-x-3 gap-y-0.5">
             <dt className={rowLabel}><label htmlFor={ids.responsible}>{t('tasks.taskFields.assignee')}</label></dt>
             <dd className="min-w-0">
-              <ChoicePicker id={ids.responsible} label={t('tasks.taskFields.assignee')} searchable value={draft.responsibleMembershipId ?? ''} options={responsibleChoices}
+              <ChoicePicker id={ids.responsible} compact className={compactPicker} label={t('tasks.taskFields.assignee')} searchable value={draft.responsibleMembershipId ?? ''} options={responsibleChoices}
                 onValueChange={(value) => choose({ responsibleMembershipId: value === '' ? null : value })} />
             </dd>
-            <dt className={rowLabel}><label htmlFor={ids.status}>{t('tasks.taskFields.status')}</label></dt>
-            <dd className="min-w-0">
-              <ChoicePicker id={ids.status} label={t('tasks.taskFields.status')} value={draft.statusId} options={statusChoices} onValueChange={(statusId) => choose({ statusId })} />
-            </dd>
             <dt className={rowLabel}>{t('autosave.fields.dates')}</dt>
-            <dd className="min-w-0">{datesField}</dd>
+            <dd className="min-w-0"><TaskCompactDateField startDate={draft.startDate ?? ''} dueDate={draft.dueDate} disabled={disabled}
+              errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }}
+              onDraftChange={onChange} onCommit={dates => choose(dates)} /></dd>
             <dt className={rowLabel}>{t(projectsField ? 'placements.projects' : 'tasks.taskFields.project')}</dt>
-            <dd className="flex min-h-9 min-w-0 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{projectsField ?? projectName}</dd>
+            <dd className="flex min-h-8 min-w-0 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{projectsField ?? projectName}</dd>
             <dt className={rowLabel}><label htmlFor={ids.section}>{t('tasks.taskFields.section')}</label></dt>
             <dd className="min-w-0">
-              <ChoicePicker id={ids.section} label={t('tasks.taskFields.section')} value={draft.sectionId ?? ''} options={sectionChoices}
+              <ChoicePicker id={ids.section} compact className={compactPicker} label={t('tasks.taskFields.section')} value={draft.sectionId ?? ''} options={sectionChoices}
                 onValueChange={(value) => choose({ sectionId: value === '' ? null : value })} />
             </dd>
-            <dt className={rowLabel}><label htmlFor={ids.estimate}>{t('tasks.taskFields.teamEstimateHours')}</label></dt>
-            <dd className="min-w-0">
-              <TextInput
-                id={ids.estimate}
-                inputMode="decimal"
-                autoComplete="off"
-                placeholder={t('tasks.taskFields.notEstimated')}
-                value={draft.estimate}
-                aria-invalid={errors.estimate ? true : undefined}
-                aria-describedby={errors.estimate ? `${ids.estimateError} ${ids.estimateHint}` : ids.estimateHint}
-                onChange={(event) => onChange({ estimate: event.target.value })}
-                onBlur={() => commit('estimate')}
-                onKeyDown={commitOnEnter('estimate')}
-              />
-              <FieldError id={ids.estimateError} message={errors.estimate} />
-            </dd>
+            {showLegacyEstimate ? <>
+              <dt className={rowLabel}><label htmlFor={ids.estimate}>{t('tasks.taskFields.teamEstimateHours')}</label></dt>
+              <dd className="min-w-0">
+                <TextInput id={ids.estimate} className="h-8" inputMode="decimal" autoComplete="off" placeholder={t('tasks.taskFields.notEstimated')} value={draft.estimate}
+                  aria-invalid={errors.estimate ? true : undefined} aria-describedby={errors.estimate ? `${ids.estimateError} ${ids.estimateHint}` : ids.estimateHint}
+                  onChange={(event) => onChange({ estimate: event.target.value })} onBlur={() => commit('estimate')} onKeyDown={commitOnEnter('estimate')} />
+                <FieldError id={ids.estimateError} message={errors.estimate} />
+              </dd>
+            </> : null}
             <dt className={rowLabel}><label htmlFor={ids.priority}>{t('tasks.taskFields.priority')}</label></dt>
             <dd className="min-w-0">
-              <ChoicePicker id={ids.priority} label={t('tasks.taskFields.priority')} value={draft.priority} options={priorityChoices}
+              <ChoicePicker id={ids.priority} compact className={compactPicker} label={t('tasks.taskFields.priority')} value={draft.priority} options={priorityChoices}
                 onValueChange={(value) => { const next = priorities.find((priority) => priority === value); if (next) choose({ priority: next }); }} />
             </dd>
             <dt className={rowLabel}>{t('tasks.taskFields.tags')}</dt>
@@ -552,24 +507,22 @@ export function TaskFields({
                   : <span key={tagId} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-line py-0.5 pr-1 pl-2.5 text-xs text-ink-soft"><span className="truncate">{name}</span>{remove}</span>;
               })}
               {addableTags.length > 0 ? (
-                <ChoicePicker label={t('autosave.fields.addTag')} value="" searchable
+                <ChoicePicker label={t('autosave.fields.addTag')} value="" compact searchable className={compactPicker}
                   options={[{ value: '', label: t('autosave.fields.addTag') }, ...addableTags.map((tag) => ({ value: tag.id, label: tag.archivedAt === null ? tag.name : t('tasks.taskFields.valueArchived', { p0: tag.name }), color: tagColor(tag) }))]}
                   onValueChange={(value) => { if (value !== '' && !selectedTags.has(value)) choose({ tagIds: [...draft.tagIds, value] }); }} />
               ) : draft.tagIds.length === 0 ? <span className="text-sm text-muted">{t('tasks.taskFields.noTagsYet')}</span> : null}
               {tagAction}
             </dd>
+            <dt className={rowLabel}>{t('tasks.taskFields.participants')}</dt>
+            <dd className="min-w-0"><TaskParticipantPicker members={members} value={draft.participantMembershipIds} retainedIds={unavailableParticipantIds} disabled={disabled}
+              onChange={participantMembershipIds => choose({ participantMembershipIds })} /></dd>
           </dl>
-          {descriptionField}
         </fieldset>
-        <details className="rounded-lg border border-line px-3 py-2">
-          <summary className="cursor-pointer text-sm font-medium text-ink">{t('autosave.fields.moreFields')}<span className="ml-2 text-xs font-normal text-muted">{t('autosave.fields.moreFieldsHint')}</span></summary>
-          <div className="mt-3 space-y-4">
-            <fieldset disabled={disabled} className="min-w-0">{participantsField}</fieldset>
-            {estimateHint}
-            {estimateSupplement}
-            {moreFields}
-          </div>
-        </details>
+        {dependenciesField}
+        {moreFields}
+        {showLegacyEstimate ? <div className="space-y-1.5">{estimateHint}{estimateSupplement}</div> : null}
+        <fieldset disabled={disabled} className="min-w-0">{descriptionField}</fieldset>
+        {secondaryActions}
       </div>
     );
   }
@@ -592,10 +545,10 @@ export function TaskFields({
     return (
       <div className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="min-w-0 space-y-2"><fieldset disabled={disabled}>{estimateField}</fieldset>{estimateSupplement}</div>
+          {showLegacyEstimate ? <div className="min-w-0 space-y-2"><fieldset disabled={disabled}>{estimateField}</fieldset>{estimateSupplement}</div> : null}
           <fieldset disabled={disabled}>{priorityField}</fieldset>
         </div>
-        {estimateHint}
+        {showLegacyEstimate ? estimateHint : null}
         <fieldset disabled={disabled} className="min-w-0 space-y-4">{participantsField}{tagsField}</fieldset>
       </div>
     );
@@ -608,8 +561,8 @@ export function TaskFields({
       <div className="grid gap-3 sm:grid-cols-2">{statusField}{assigneeField}{datesField}</div>
       {descriptionField}
 <details ref={detailsRef} className="rounded-lg border border-line p-3">
-<summary className="cursor-pointer text-sm font-medium text-ink">{t('tasks.taskFields.moreDetails')}<span className="ml-2 text-xs font-normal text-muted">{t('tasks.taskFields.moreDetailsHint')}</span></summary>
-<div className="mt-4 space-y-4"><div className="grid gap-4 sm:grid-cols-2">{sectionField}{priorityField}{estimateField}</div>{estimateHint}{participantsField}{tagsField}</div>
+<summary className="cursor-pointer text-sm font-medium text-ink">{t('tasks.taskFields.moreDetails')}<span className="ml-2 text-xs font-normal text-muted">{t(showLegacyEstimate ? 'tasks.taskFields.moreDetailsHint' : 'tasks.taskFields.moreDetailsOrdinaryHint')}</span></summary>
+<div className="mt-4 space-y-4"><div className="grid gap-4 sm:grid-cols-2">{sectionField}{priorityField}{showLegacyEstimate ? estimateField : null}</div>{showLegacyEstimate ? estimateHint : null}{participantsField}{tagsField}</div>
 </details>
     </div>
   );

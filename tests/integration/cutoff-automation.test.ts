@@ -253,9 +253,16 @@ describe('explicit cutoff automation on an owned throwaway PostgreSQL child', ()
 
   it('freezes cancelled header-only census without future generation authority', async () => {
     const f = await fixture(false);
-    await db.sql`update planning_periods set local_start='2026-10-19',local_end_exclusive='2026-10-26' where id=${f.periodId}`;
-    const recurrence = createRecurrenceApplication(db), source = await series(f, 1, U.memberA, false, '2026-10-19');
+    // The skip must precede the occurrence; a fixed calendar date eventually becomes protected past work.
+    const dates = required((await db.sql<{ local_start: string; local_end: string }[]>`
+      select to_char(date_trunc('week', clock_timestamp() at time zone 'UTC') + interval '14 days', 'YYYY-MM-DD') as local_start,
+             to_char(date_trunc('week', clock_timestamp() at time zone 'UTC') + interval '21 days', 'YYYY-MM-DD') as local_end
+    `)[0]);
+    await db.sql`update planning_periods set local_start=${dates.local_start}::date,local_end_exclusive=${dates.local_end}::date where id=${f.periodId}`;
+    const recurrence = createRecurrenceApplication(db), source = await series(f, 1, U.memberA, false, dates.local_start);
     const header = required((await recurrence.listInstances(context(), source.id, { periodId: f.periodId, limit: 100, includeCancelled: true })).items[0]);
+    const [clock] = await db.sql<{ future: boolean }[]>`select ${header.resolution.resolvedStartAt}::timestamptz > clock_timestamp() as future`;
+    expect(clock?.future, 'the cancelled header is still in the future when its skip is requested').toBe(true);
     const input = { expectedSeriesRevision: source.revision, expectedInstanceRevision: header.revision, kind: 'skip' as const, reason: 'Synthetic cancellation' };
     const preview = await recurrence.previewException(context(U.memberA), source.id, header.occurrenceKey, input);
     await recurrence.setException(context(U.memberA), source.id, header.occurrenceKey, { ...input, previewHash: preview.previewHash });

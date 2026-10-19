@@ -1,3 +1,6 @@
+import { reportMutationObserverFailure } from './mutationDiagnostics';
+import { queryKeys } from './queryKeys';
+import { publishMutationAcknowledgement, type MutationAcknowledgement } from './mutationAcknowledgements';
 import {
   useMutation,
   useQueryClient,
@@ -10,6 +13,11 @@ import { isUncertainOutcome, sendMutation, type MutationRequest } from './api';
 import { IdempotencyKeyTracker, PendingCommandError } from './idempotency';
 import { protectedCommandsFor, type ProtectedCommandEntry } from './protectedCommands';
 
+/** A retained receipt belongs to the actor who first sent it; nothing was resent. */
+export class MutationActorChangedError extends Error {
+  constructor() { super('MUTATION_RETRY_ACTOR_CHANGED'); this.name = 'MutationActorChangedError'; }
+}
+
 export interface IdempotentVariables {
   /**
    * Key the caller already holds for this operation. When omitted, a key is
@@ -21,7 +29,7 @@ export interface IdempotentVariables {
 export interface IdempotentMutationConfig<TVariables extends IdempotentVariables, TData> {
   /** Builds and validates the request; see `prepareMutation`. */
   prepare: (variables: TVariables) => MutationRequest<{ data: TData }>;
-  onSuccess?: ((data: TData, variables: TVariables) => void) | undefined;
+  onSuccess?: ((data: TData, variables: TVariables, acknowledgement: MutationAcknowledgement) => void | Promise<void>) | undefined;
 }
 
 /** A sent write without a confirmed answer; the server may have applied it. */
@@ -86,6 +94,8 @@ export function useIdempotentMutation<TVariables extends IdempotentVariables, TD
   prepare,
   onSuccess,
 }: IdempotentMutationConfig<TVariables, TData>): IdempotentMutation<TData, TVariables> {
+  const receiptContext = useRef<MutationAcknowledgement | null>(null);
+  const acknowledgements = useRef(new WeakMap<TVariables, MutationAcknowledgement>()).current;
   const queryClient = useQueryClient();
   const registry = protectedCommandsFor(queryClient);
   const [tracker] = useState(() => new IdempotencyKeyTracker());
@@ -123,6 +133,14 @@ export function useIdempotentMutation<TVariables extends IdempotentVariables, TD
       const request = prepare(variables);
       // Refuses, without sending, anything but the uncertain command itself.
       const idempotencyKey = tracker.keyFor(request.fingerprint, variables.idempotencyKey);
+      const actorId = (queryClient.getQueryData(queryKeys.me) as { actor?: { id?: string } } | undefined)?.actor?.id ?? null;
+      const receipt = `${idempotencyKey}:${request.fingerprint}`;
+      const captured = receiptContext.current;
+      // Outside the send catch: a refused cross-actor retry must retain the original unknown command.
+      if (captured?.receipt === receipt && captured.actorId !== actorId) throw new MutationActorChangedError();
+      const ack = captured?.receipt === receipt ? captured : { fingerprint: request.fingerprint, path: request.path, actorId, idempotencyKey, receipt };
+      receiptContext.current = ack;
+      acknowledgements.set(variables, ack);
       try {
         const response = await sendMutation(request, { idempotencyKey });
         tracker.complete(request.fingerprint);
@@ -139,7 +157,19 @@ export function useIdempotentMutation<TVariables extends IdempotentVariables, TD
         throw error;
       }
     },
-    onSuccess: (data, variables) => onSuccess?.(data, variables),
+    onSuccess: async (data, variables) => {
+      const ack = acknowledgements.get(variables);
+      let observerFailed = ack === undefined;
+      try { if (ack) await onSuccess?.(data, variables, ack); }
+      catch { observerFailed = true; }
+      if (observerFailed) {
+        reportMutationObserverFailure();
+        // A confirmed write remains successful. Refresh authoritative data instead of retrying it.
+        try { void queryClient.invalidateQueries().catch(() => reportMutationObserverFailure()); }
+        catch { reportMutationObserverFailure(); }
+      }
+      if (ack) publishMutationAcknowledgement(queryClient, observerFailed ? { ...ack, observerFailed: true } : ack);
+    },
   });
 
   const { mutateAsync: execute } = mutation;

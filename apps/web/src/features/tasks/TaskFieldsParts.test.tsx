@@ -1,4 +1,3 @@
-import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -35,7 +34,7 @@ describe('task field parts for the compact drawer', () => {
   });
 
   it('shows the estimate, priority, participants and tags openly instead of behind More details', () => {
-    show({ part: 'details' });
+    show({ part: 'details', showLegacyEstimate: true });
     expect(screen.getByLabelText('Team estimate, hours')).toBeVisible();
     expect(screen.getByLabelText('Team estimate, hours')).toHaveValue('2:00');
     expect(screen.getByText(/Weekly personal plans and actual hours are recorded separately/)).toBeVisible();
@@ -55,7 +54,7 @@ describe('task field parts for the compact drawer', () => {
   });
 
   it('keeps every other field behind More details by default', () => {
-    show({});
+    show({ showLegacyEstimate: true });
     expect(screen.getByText('More details').closest('details')).not.toHaveAttribute('open');
     expect(screen.getByLabelText('Team estimate, hours')).not.toBeVisible();
     expect(screen.queryByText('Project')).not.toBeInTheDocument();
@@ -64,7 +63,7 @@ describe('task field parts for the compact drawer', () => {
 
 
 it('keeps the estimate supplement readable and retryable while editable detail fields are locked', () => {
-  show({ part: 'details', disabled: true, estimateSupplement: <button type="button">Retry original read</button> });
+  show({ part: 'details', showLegacyEstimate: true, disabled: true, estimateSupplement: <button type="button">Retry original read</button> });
   expect(screen.getByLabelText('Team estimate, hours')).toBeDisabled();
   expect(screen.getByRole('combobox', { name: 'Priority' })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Retry original read' })).toBeEnabled();
@@ -72,20 +71,21 @@ it('keeps the estimate supplement readable and retryable while editable detail f
 });
 
 
-it('keeps saved common fields and description visible while advanced participants and estimate history stay under More fields', async () => {
-  show({ part: 'saved', projectName: 'Launch plan', estimateSupplement: <button type="button">Retry original read</button> });
+it('shows compact saved properties and custom values openly, hiding the legacy package estimate', () => {
+  show({ part: 'saved', projectName: 'Launch plan', moreFields: <button type="button">Hours Estimation 2h</button>, estimateSupplement: <button type="button">Retry original read</button> });
   expect(screen.getByLabelText('Task name')).toHaveValue('Stored task');
   expect(screen.getByText('Launch plan')).toBeVisible();
-  expect(screen.queryByRole('combobox', { name: 'Project' })).not.toBeInTheDocument();
-  for (const name of ['Assignee', 'Status', 'Section', 'Priority']) expect(screen.getByRole('combobox', { name })).toBeVisible();
-  expect(screen.getByLabelText('Due date')).toBeVisible();
-  expect(screen.getByLabelText('Team estimate, hours')).toBeVisible();
+  for (const name of ['Assignee', 'Status', 'Section', 'Priority', 'Add participant']) expect(screen.getByRole('combobox', { name })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Edit dates' })).toBeVisible();
+  expect(screen.queryByLabelText('Team estimate, hours')).not.toBeInTheDocument();
+  expect(screen.queryByText('Retry original read')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Hours Estimation 2h' })).toBeVisible();
   expect(screen.getByLabelText('Description')).toHaveValue('Stored notes');
-  const more = screen.getByText('More fields', { selector: 'summary' });
-  expect(more.closest('details')).not.toHaveAttribute('open');
-  expect(screen.getByText('Participants')).not.toBeVisible();
-  expect(screen.getByText('Retry original read')).not.toBeVisible();
-  await userEvent.setup().click(more);
-  expect(screen.getByRole('group', { name: 'Participants' })).toBeVisible();
+  expect(screen.queryByText('More fields')).not.toBeInTheDocument();
+});
+
+it('retains the old package estimate and history only for an explicit legacy view', () => {
+  show({ part: 'saved', showLegacyEstimate: true, estimateSupplement: <button type="button">Retry original read</button> });
+  expect(screen.getByLabelText('Team estimate, hours')).toHaveValue('2:00');
   expect(screen.getByRole('button', { name: 'Retry original read' })).toBeEnabled();
 });

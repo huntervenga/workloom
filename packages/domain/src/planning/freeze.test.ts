@@ -197,6 +197,12 @@ describe('bulk selected-cell estimate and custom locks', () => {
     } });
     expect(result).toMatchObject({ code: 'FIELD_LOCKED', details: { committed: true, baselineIds: [id(921)] } });
   });
+  it('enumerates every inverse row and field identity instead of treating restore as an unprotected key', async () => {
+    const second = id(925), another = id(926);
+    const repo = repository({ tasks: { ...repository().tasks, findTask: async (_ws, target) => ({ ...task, id: target }) }, fields: bulkGuardFields(async (_ws, id) => ({ ...field, id })), listLocks: async () => [{ kind: 'custom_value', taskId: second, fieldId: another, baselineId: id(927) }] as Awaited<ReturnType<PlanningRepository['listLocks']>> });
+    const result = await createPlanningMutationGuard(scope(repo), tools).check({ family:'task_bulk', command:'task.bulk.update', target:{projectId:project}, input:{projectId:project,tasks:[{taskId,expectedRevision:1,expectedFieldValueRevision:0},{taskId:second,expectedRevision:1,expectedFieldValueRevision:0}],changes:{restore:[{taskId,changes:{customField:{fieldId,expectedDefinitionRevision:1,value:{type:'text',value:'first'}}}},{taskId:second,changes:{customField:{fieldId:another,expectedDefinitionRevision:1,value:{type:'text',value:null}}}}]}} });
+    expect(result).toMatchObject({code:'FIELD_LOCKED',details:{committed:true,baselineIds:[id(927)]}});
+  });
   it('keeps a manual definition lock a committed controlled rejection', async () => {
     const repo = repository({ fields: bulkGuardFields(async () => ({ ...field, locked: true })) });
     const result = await createPlanningMutationGuard(scope(repo), tools).check({ family: 'task_bulk', command: 'task.bulk.update', target: { projectId: project }, input: {

@@ -317,19 +317,16 @@ it.each([false, true])('keeps an invalid unsent or exact submitted custom value 
   const customHeading = await screen.findByText('Custom fields', { selector: 'h3' });
   const advanced = customHeading.closest('details');
   if (advanced && !advanced.open) await user.click(within(advanced).getByText(/^More fields/, { selector: 'summary' }));
-  await user.click(await screen.findByRole('button', { name: 'Edit “Section note”' }));
-  let valueDialog = await screen.findByRole('dialog', { name: 'Value of “Section note”' });
-  fireEvent.change(within(valueDialog).getByRole('textbox', { name: 'Section note' }), { target: { value: retainedText } });
-  if (submitted) {
-    await user.click(within(valueDialog).getByRole('textbox', { name: 'Section note' }));
-    await user.tab();
-    await waitFor(() => expect(attempts).toBe(1));
-  }
-  await closeDialog(user, 'Value of “Section note”');
-  if (!submitted) {
-    expect(within(valueDialog).getByText('Text must be 10,000 characters or fewer.')).toBeInTheDocument();
+  const editLabel = `Edit Section note for ${parent.title}`;
+  await user.click(await screen.findByRole('button', { name: editLabel }));
+  const inlineInput = screen.getByRole('textbox', { name: editLabel });
+  fireEvent.change(inlineInput, { target: { value: retainedText } });
+  await user.click(inlineInput); await user.tab();
+  if (submitted) await waitFor(() => expect(attempts).toBe(1));
+  else {
+    expect(screen.getByText('Text must be 10,000 characters or fewer.')).toBeInTheDocument();
+    expect(inlineInput).toHaveValue(retainedText);
     expect(writes(calls)).toHaveLength(0);
-    await closeDialog(user, 'Value of “Section note”');
   }
   await closeDialog(user, parent.title); await user.click(collapse());
   if (submitted) {
@@ -340,8 +337,8 @@ it.each([false, true])('keeps an invalid unsent or exact submitted custom value 
   const reopenedHeading = await screen.findByText('Custom fields', { selector: 'h3' });
   const reopenedAdvanced = reopenedHeading.closest('details');
   if (reopenedAdvanced && !reopenedAdvanced.open) await user.click(within(reopenedAdvanced).getByText(/^More fields/, { selector: 'summary' }));
-  await user.click(await screen.findByRole('button', { name: 'Edit “Section note”' }));
-  valueDialog = await screen.findByRole('dialog', { name: 'Value of “Section note”' });
+  await user.click(await screen.findByRole('button', { name: submitted ? 'Open “Section note”' : `Section note for ${parent.title} has an unsaved draft. Review it in task details.` }));
+  const valueDialog = await screen.findByRole('dialog', { name: 'Value of “Section note”' });
   expect(within(valueDialog).getByRole('textbox', { name: 'Section note' })).toHaveValue(retainedText);
   if (submitted) {
     expect(within(valueDialog).getByRole('textbox', { name: 'Section note' })).toBeDisabled();

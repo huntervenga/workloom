@@ -202,8 +202,9 @@ it('keeps original task-command recovery reachable when a saved preference hides
   expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
   const drawer = await screen.findByRole('dialog', { name: task.title });
-  expect(within(drawer).getByLabelText('Due date')).toHaveValue('2026-10-20');
-  expect(within(drawer).getByLabelText('Due date')).toBeDisabled();
+  const retainedDates = within(drawer).getByRole('button', { name: 'Edit dates' });
+  expect(retainedDates).toHaveTextContent(/20.*Oct|Oct.*20/);
+  expect(retainedDates).toBeDisabled();
   expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
 });
 

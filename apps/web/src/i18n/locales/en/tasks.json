@@ -158,7 +158,10 @@
     "thisMemberHasLeftTheWorkspaceButRemains": "This member has left the workspace but remains on the task. Uncheck to remove them.",
     "noTagsYet": "No tags yet.",
     "moreDetails": "More details",
-    "moreDetailsHint": "Dates, priority, estimate, people and tags"
+    "moreDetailsHint": "Dates, priority, estimate, people and tags",
+    "addParticipant": "Add participant",
+    "removeParticipant": "Remove {{name}}",
+    "moreDetailsOrdinaryHint": "Section, priority, people and tags"
   },
   "taskFilters": {
     "searchTasks": "Search tasks",

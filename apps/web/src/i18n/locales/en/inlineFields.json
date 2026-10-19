@@ -1,6 +1,6 @@
 {
   "edit": "Edit {{field}} for {{title}}",
-  "saving": "Saving {{field}} for {{title}}…",
+  "saving": "Saving {{field}} for {{title}}\u2026",
   "draft": "Draft",
   "draftLabel": "{{field}} for {{title}} has an unsaved draft. Review it in task details.",
   "locked": "{{field}} is locked",
@@ -8,5 +8,6 @@
   "showProblem": "Show the save problem for {{field}}",
   "review": "Review in details",
   "retry": "Retry original",
-  "hide": "Hide"
+  "hide": "Hide",
+  "selectedChoice": "Selected \u00b7 click to remove"
 }

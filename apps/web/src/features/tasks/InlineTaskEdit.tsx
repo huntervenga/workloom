@@ -408,7 +408,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   const primary = uncertain ? <Button size="sm" className="h-7 px-2" variant="primary" type="submit">{t('tasks.inlineEdit.retry')}</Button>
     : choice ? null
     : <Button size="sm" className="h-7 px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || staleEstimate || tagHeld || undefined}>{pending ? t('tasks.inlineEdit.saving') : t('tasks.inlineEdit.save')}</Button>;
-  const popoverShown = (hasFeedback || singleOnly || bulkCopy !== null || field === 'estimate' || field === 'dueDate' || field === 'tagIds') && !pickerOpen;
+  const popoverShown = (hasFeedback || singleOnly || field === 'estimate' || field === 'dueDate' || field === 'tagIds') && !pickerOpen;
   return <form ref={attach} noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} aria-busy={pending || undefined} onSubmit={submit}
     // A held press on a date/tag panel's static content must not blur into the deferred autosave below.
     onMouseDown={field === 'dueDate' || field === 'tagIds' ? keepFocusOnPopoverPress : undefined}

@@ -26,6 +26,9 @@ interface Capture {
   missing: boolean;
   unsupported: boolean;
   custom?: { fieldId: string; definitionRevision: number };
+  before: readonly TaskDto[];
+  customValues?: readonly (TaskFieldValueDto | null)[];
+  definition?: TaskFieldDefinitionDto;
 }
 
 interface Attempt {
@@ -116,7 +119,7 @@ export function useBulkInlineEdit(commands: TaskCommands, context: BulkInlineCon
       const row = id === task.id ? originBase : rowFor(id);
       return row ? [{ taskId: id, expectedRevision: row.revision, ...(field === 'estimate' ? { expectedWorkPackageRevision: row.workPackageRevision } : {}) }] : [];
     });
-    return { originTaskId: task.id, field, count: selectedTaskIds.length, targets, missing: targets.length !== selectedTaskIds.length, unsupported: field !== 'completion' && field !== 'custom' && unsupportedFields.has(field) };
+    return { originTaskId: task.id, field, count: selectedTaskIds.length, before: targets.flatMap(target => { const row = target.taskId === task.id ? originBase : rowFor(target.taskId); return row ? [row] : []; }), targets, missing: targets.length !== selectedTaskIds.length, unsupported: field !== 'completion' && field !== 'custom' && unsupportedFields.has(field) };
   };
 
   const refuse = (capture: Capture, key: Parameters<typeof message>[0]): InlineBulkVerdict => {
@@ -175,11 +178,11 @@ export function useBulkInlineEdit(commands: TaskCommands, context: BulkInlineCon
     if (badRange) return refuse(capture, 'bulkInline.dateRange');
     if (loaded.every(row => alreadyApplied(row, changes))) { setNotice(null); return 'unchanged'; }
     // Only the cell's own keys, cloned once: later drafts, selections and views never reach this body.
-    const input = { projectId: head.projectId, tasks: capture.targets.map(target => ({ ...target })), changes: structuredClone(changes) } as BulkUpdateTasksInput;
+    const input = { projectId: head.projectId, tasks: capture.targets.map(target => ({ ...target })), changes: structuredClone(changes), ...(changes.customField ? { includeFieldValueAck: true } : {}) } as BulkUpdateTasksInput;
     const attempt: Attempt = { capture, input, callbacks, live: callbacks !== null, dataBefore: current.bulk.data, state: 'sent' };
     last.current = attempt;
     setNotice(null);
-    current.bulk.mutate({ input }, { onSuccess: answer => settle(attempt, answer), onSettled: () => release(attempt) });
+    current.bulk.mutate({ input, undo: { before: capture.before, ...(capture.customValues ? { customValues: capture.customValues, field: capture.definition } : {}) } }, { onSuccess: answer => settle(attempt, answer), onSettled: () => release(attempt) });
     return 'sent';
   };
 
@@ -214,6 +217,8 @@ export function useBulkInlineEdit(commands: TaskCommands, context: BulkInlineCon
       const capture = captureFor(task, 'custom');
       if (!capture) return;
       capture.custom = { fieldId: field.id, definitionRevision: field.revision };
+      capture.definition = field;
+      capture.customValues = capture.targets.map(target => target.taskId === task.id ? value : latest.current.fieldValues?.find(value => value.taskId === target.taskId && value.fieldId === field.id) ?? null);
       capture.missing ||= capture.targets.some(target => !latest.current.knownFieldTaskIds?.includes(target.taskId));
       capture.targets = capture.targets.map(target => ({ ...target, expectedFieldValueRevision: target.taskId === task.id ? value?.revision ?? 0 : latest.current.fieldValues?.find(value => value.taskId === target.taskId && value.fieldId === field.id)?.revision ?? 0 }));
       captures.current.set(claim, capture);

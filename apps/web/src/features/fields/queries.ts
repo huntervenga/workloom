@@ -1,3 +1,5 @@
+import { reconcileFieldAcks } from '../undo/storeFieldAck';
+import { recordFieldUndo, type FieldUndoMetadata } from '../undo/recordUndo';
 import {setFieldValueExceptionRequest} from './policy-api';
 import {fieldPolicyKeys} from './policy-queries';
 import { useInfiniteQuery, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from '@tanstack/react-query';
@@ -114,8 +116,9 @@ export function useTaskFieldHistoryQuery(actorId: string, workspaceId: string, t
 }
 
 /*
- * Writes only invalidate: a confirmed answer, possibly an idempotent replay of an older one, is
- * never merged into the cache, and entries removed meanwhile (a workspace left) are not recreated.
+ * Definition writes invalidate their scopes. Confirmed value writes also reconcile their exact
+ * persisted ACK into existing task/project value scopes after older reads are cancelled; newer
+ * value heads are preserved, and removed actor/workspace query scopes are never recreated.
  */
 
 export function invalidateFieldDefinitions(queryClient: QueryClient, actorId: string, workspaceId: string, projectId: string) {
@@ -225,6 +228,7 @@ export interface SetTaskFieldValueVariables extends IdempotentVariables {
   fieldId: string;
   input: SetTaskFieldValueInput;
   exception?:{expectedPolicyRevision:number;reason:string};
+  undo?: FieldUndoMetadata;
 }
 
 export function useSetTaskFieldValueMutation(actorId: string, workspaceId: string) {
@@ -232,6 +236,11 @@ export function useSetTaskFieldValueMutation(actorId: string, workspaceId: strin
   return useIdempotentMutation({
     prepare: ({ taskId, fieldId, input, exception }: SetTaskFieldValueVariables) =>
       exception ? setFieldValueExceptionRequest(workspaceId,taskId,fieldId,{...input,...exception}) : setTaskFieldValueRequest(workspaceId, taskId, fieldId, input),
-    onSuccess: (value) => void invalidateFieldValue(queryClient, actorId, workspaceId, value),
+    onSuccess: async (value, variables, ack) => {
+      if (ack.actorId !== null && ack.actorId !== actorId) return;
+      if (ack.actorId === actorId) recordFieldUndo(queryClient, actorId, workspaceId, variables.undo, value, variables.input, ack.receipt, variables.taskId);
+      await reconcileFieldAcks(queryClient, actorId, workspaceId, [value]);
+      void invalidateFieldValue(queryClient, actorId, workspaceId, value);
+    },
   });
 }

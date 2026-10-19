@@ -182,11 +182,15 @@ describe('project Board integration', () => {
     expect(within(card).getByText('No due date')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
     const dialog = await screen.findByRole('dialog', { name: task.title });
-    expect(within(dialog).getByLabelText('Due date')).toHaveValue('2026-10-20'); expect(within(dialog).getByLabelText('Due date')).toBeDisabled();
+    const dates = within(dialog).getByRole('button', { name: 'Edit dates' });
+    const compactDate = formatDate(new Date(Date.UTC(2026, 9, 20)), new Date().getFullYear() === 2026
+      ? { day: 'numeric', month: 'short', timeZone: 'UTC' }
+      : { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+    expect(dates).toHaveTextContent(compactDate); expect(dates).toBeDisabled();
     const focus = document.activeElement;
     await act(async () => gate.resolve(ok(current = { ...task, dueDate: '2026-10-20', revision: 2 })));
-    await waitFor(() => expect(within(dialog).getByLabelText('Due date')).toBeEnabled());
-    expect(within(dialog).getByLabelText('Due date')).toHaveValue('2026-10-20'); expect(document.activeElement).toBe(focus);
+    await waitFor(() => expect(dates).toBeEnabled());
+    expect(dates).toHaveTextContent(compactDate); expect(document.activeElement).toBe(focus);
     await closeDrawer(user);
     expect(screen.getByRole('region', { name: 'Task status lanes' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument(); expect(screen.queryByText('Draft kept')).not.toBeInTheDocument();
@@ -209,6 +213,7 @@ describe('project Board integration', () => {
     expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: task.title }));
     const dialog = await screen.findByRole('dialog', { name: task.title });
+    await user.click(within(dialog).getByRole('button', { name: 'Edit dates' }));
     expect(within(dialog).getByLabelText('Due date')).toHaveValue(task.dueDate ?? '');
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });

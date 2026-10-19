@@ -1,13 +1,14 @@
 import { useTranslation } from '../../i18n';
 import type { MembershipDto, TaskDto, TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
 import { Badge, Button, Skeleton } from '@workloom/ui';
-import { Lock, Pencil } from 'lucide-react';
-import { useEffect, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { Lock } from 'lucide-react';
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from 'react';
 import { isAccessDenied } from '../../lib/api';
 import { isUuid } from '../../lib/format';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { FieldHistoryDialog } from './FieldHistoryDialog';
+import { InlineFieldValueCell } from './InlineFieldValueCell';
 import {
   FieldValueForm,
   StoredValue,
@@ -79,7 +80,6 @@ export function TaskCustomFields({
   /** `undefined` while the values are not loaded; `null` when the task has no row. */
   const currentValueOf = (fieldId: string): TaskFieldValueDto | null | undefined =>
     valuesQuery.data === undefined ? undefined : (valuesByField.get(fieldId.toLowerCase()) ?? null);
-  const isHeldHere = (fieldId: string) => heldOnTask !== null && sameId(heldOnTask.fieldId, fieldId);
 
   const openEditor = (field: TaskFieldDefinitionDto) => {
     const key = field.id.toLowerCase();
@@ -127,19 +127,22 @@ export function TaskCustomFields({
   const confirmedField = confirmedFieldId !== null ? findField(confirmedFieldId) : null;
 
   const rowFor = (field: TaskFieldDefinitionDto) => {
-    const heldHere = isHeldHere(field.id);
-    const canEdit =
-      heldHere || (writable && !field.locked && field.archivedAt === null && valuesQuery.data !== undefined);
+    const value = currentValueOf(field.id);
     return (
-      <FieldRow
-        key={field.id}
-        field={field}
-        value={currentValueOf(field.id)}
-        members={members}
-        heldState={heldHere ? (mutation.pendingCommand !== null ? 'pending' : 'uncertain') : null}
-        onEdit={canEdit ? () => openEditor(field) : null}
-        history={<FieldHistoryDialog actorId={actorId} workspaceId={workspaceId} taskId={task.id} field={field} members={members} />}
-      />
+      <li key={field.id} className="grid min-h-8 grid-cols-[minmax(6rem,8rem)_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1">
+        <span className="flex min-h-8 min-w-0 items-center gap-1.5 py-1 text-sm text-ink-soft [overflow-wrap:anywhere]">
+          {field.name}
+          {field.locked ? <Lock size={12} aria-label={t('fields.taskCustomFields.thisFieldIsLockedItsValuesCannotBe')} className="shrink-0 text-muted" /> : null}
+          {field.archivedAt !== null ? <Badge tone="muted">{t('fields.taskCustomFields.archived')}</Badge> : null}
+        </span>
+        <div className="flex min-h-8 min-w-0 items-center text-sm text-ink">
+          {value !== undefined && field.archivedAt === null ? <InlineFieldValueCell
+            actorId={actorId} workspaceId={workspaceId} task={task} field={field} value={value} members={members}
+            writable={writable} mutation={mutation} drafts={store} presentation="pane" onMoreDetails={() => openEditor(field)}
+          /> : value !== undefined ? <StoredValue field={field} value={value} members={members} /> : null}
+        </div>
+        <div className="flex min-h-8 shrink-0 items-center"><FieldHistoryDialog actorId={actorId} workspaceId={workspaceId} taskId={task.id} field={field} members={members} /></div>
+      </li>
     );
   };
 
@@ -153,10 +156,10 @@ export function TaskCustomFields({
   }
 
   return (
-    <section aria-labelledby={headingId} className="space-y-3">
-      <h3 id={headingId} className="text-sm font-semibold text-ink">
+    <section aria-labelledby={headingId} className="space-y-1.5">
+      <h3 id={headingId} className="sr-only">
         {t('fields.taskCustomFields.customFields')}</h3>
-      <div role="status">
+      <div role="status" className="sr-only">
         {confirmedFieldId !== null ? (
           <p className="rounded-lg bg-canvas px-3 py-2 text-sm text-ink-soft">
             {confirmedField ? t('fields.taskCustomFields.valueOfValueSaved', { p0: confirmedField.name }) : t('fields.taskCustomFields.fieldValueSaved')}
@@ -184,9 +187,7 @@ export function TaskCustomFields({
           {fieldsQuery.isRefetchError ? (
             <StaleNotice text={t('fields.taskCustomFields.couldNotRefreshFieldsShowingTheLastLoaded')} onRetry={() => void fieldsQuery.refetch()} />
           ) : null}
-          {activeFields.length === 0 ? (
-            <p className="text-sm text-muted">{t('fields.taskCustomFields.noCustomFieldsInThisProject')}</p>
-          ) : valuesQuery.isPending ? (
+          {activeFields.length === 0 ? null : valuesQuery.isPending ? (
             <div role="status" className="space-y-2">
               <span className="sr-only">{t('fields.taskCustomFields.loadingFieldValues')}</span>
               <Skeleton className="h-10" />
@@ -208,7 +209,7 @@ export function TaskCustomFields({
                   onRetry={() => void valuesQuery.refetch()}
                 />
               ) : null}
-              <ul className="divide-y divide-line rounded-lg border border-line">{activeFields.map(rowFor)}</ul>
+              <ul className="space-y-0.5">{activeFields.map(rowFor)}</ul>
             </>
           )}
           {archivedFields.length > 0 ? (
@@ -255,49 +256,6 @@ export function TaskCustomFields({
         />
       ) : null}
     </section>
-  );
-}
-
-interface FieldRowProps {
-  field: TaskFieldDefinitionDto;
-  value: TaskFieldValueDto | null | undefined;
-  members: readonly MembershipDto[];
-  heldState: 'pending' | 'uncertain' | null;
-  onEdit: (() => void) | null;
-  history: ReactNode;
-}
-
-function FieldRow({ field, value, members, heldState, onEdit, history }: FieldRowProps) {
-  const { t } = useTranslation();
-  return (
-    <li className="flex flex-wrap items-start gap-x-3 gap-y-1 px-3 py-2.5">
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium [overflow-wrap:anywhere] text-ink-soft">
-          {field.name}
-          {field.locked ? <Lock size={14} aria-hidden="true" className="shrink-0 text-muted" /> : null}
-          {field.archivedAt !== null ? <Badge tone="muted">{t('fields.taskCustomFields.archived')}</Badge> : null}
-        </p>
-        {value !== undefined ? (
-          <div className="text-sm [overflow-wrap:anywhere] text-ink">
-            <StoredValue field={field} value={value} members={members} />
-          </div>
-        ) : null}
-        {field.locked ? <p className="text-xs text-muted">{t('fields.taskCustomFields.thisFieldIsLockedItsValuesCannotBe')}</p> : null}
-        {heldState ? (
-          <p className="text-xs font-medium text-amber-800">
-            {heldState === 'pending' ? t('fields.taskCustomFields.submittingANewValue') : t('fields.taskCustomFields.theNewValueSubmissionIsUnconfirmed')}
-          </p>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 flex-wrap gap-1">
-        {onEdit ? (
-          <Button size="sm" aria-label={t('fields.taskCustomFields.editValue', { p0: field.name })} onClick={onEdit}>
-            <Pencil size={14} aria-hidden="true" />
-            {t('fields.taskCustomFields.edit')}</Button>
-        ) : null}
-        {history}
-      </div>
-    </li>
   );
 }
 

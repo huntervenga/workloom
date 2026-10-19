@@ -43,18 +43,29 @@ function setup(extra: RouteTable = {}, definitions: TaskFieldDefinitionDto[] = [
   cleanups.push(() => { ui.unmount(); router.dispose(); client.clear(); });
   return { ...ui, ...api, client, router, user: userEvent.setup({ pointerEventsCheck: 0 }) };
 }
-async function openField(ui: ReturnType<typeof setup>, name = 'Field signal') {
-  const heading = await screen.findByText('Custom fields', { selector: 'h3' });
-  const advanced = heading.closest('details');
-  if (advanced && !advanced.open) await ui.user.click(within(advanced).getByText(/^More fields/, { selector: 'summary' }));
-  await ui.user.click(await screen.findByRole('button', { name: `Edit “${name}”` }));
-  return screen.getByRole('dialog', { name: `Value of “${name}”` });
+function fieldInput(editor: HTMLElement, name: string) {
+  return within(editor).getByRole('textbox', { name: label => label === name || label.startsWith(`Edit ${name} for `) });
+}
+async function openField(ui: { user: ReturnType<typeof userEvent.setup> }, name = 'Field signal') {
+  await screen.findByText('Custom fields', { selector: 'h3' });
+  const held = screen.queryByRole('button', { name: `Open “${name}”` });
+  if (held) { await ui.user.click(held); return screen.getByRole('dialog', { name: `Value of “${name}”` }); }
+  const trigger = await screen.findByRole('button', { name: label => label.startsWith(`Edit ${name} for `) || label.startsWith(`${name} for `) && label.includes('unsaved draft') });
+  const cell = trigger.closest<HTMLElement>('[data-inline-field-cell]');
+  await ui.user.click(trigger);
+  return screen.queryByRole('dialog', { name: `Value of “${name}”` }) ?? cell ?? (() => { throw new Error('Missing inline field'); })();
 }
 async function closeFieldAndDrawer(ui: ReturnType<typeof setup>) {
-  await ui.user.click(within(screen.getByRole('dialog', { name: 'Value of “Field signal”' })).getByLabelText('Close', { selector: 'button' }));
-  const invalidNotice = screen.queryByText('This value is not valid and was not saved. Fix it, or close again to keep it as an unsent draft.');
-  if (invalidNotice) await ui.user.click(within(screen.getByRole('dialog', { name: 'Value of “Field signal”' })).getByLabelText('Close', { selector: 'button' }));
-  await ui.user.keyboard('{Escape}');
+  const recovery = screen.queryByRole('dialog', { name: 'Value of “Field signal”' });
+  if (recovery) {
+    await ui.user.click(within(recovery).getByLabelText('Close', { selector: 'button' }));
+    if (screen.queryByText('This value is not valid and was not saved. Fix it, or close again to keep it as an unsent draft.')) {
+      await ui.user.click(within(recovery).getByLabelText('Close', { selector: 'button' }));
+    }
+  }
+  const pane = screen.getAllByRole('dialog').at(-1);
+  if (!pane) throw new Error('Missing task pane');
+  await ui.user.click(within(pane).getByLabelText('Close', { selector: 'button' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 }
 
@@ -63,11 +74,11 @@ describe('actual retained custom-field draft protection', () => {
     const ui = setup();
     const editor = await openField(ui);
     expect(unload()).toBe(false);
-    fireEvent.change(within(editor).getByLabelText('Field signal'), { target: { value: 'not a valid number' } });
+    fireEvent.change(fieldInput(editor, 'Field signal'), { target: { value: 'not a valid number' } });
     expect(unload()).toBe(true);
     await closeFieldAndDrawer(ui);
     await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
-    expect(within(await openField(ui)).getByLabelText('Field signal')).toHaveValue('not a valid number');
+    expect(fieldInput(await openField(ui), 'Field signal')).toHaveValue('not a valid number');
     await closeFieldAndDrawer(ui);
 
     const hidden = { native: unload(), drafts: protectedDraftsFor(ui.client).protecting, commands: protectedCommandsFor(ui.client).protecting };
@@ -79,7 +90,7 @@ describe('actual retained custom-field draft protection', () => {
     expect(guard).not.toHaveTextContent('The server may have saved');
     await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
     await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
-    expect(within(await openField(ui)).getByLabelText('Field signal')).toHaveValue('not a valid number');
+    expect(fieldInput(await openField(ui), 'Field signal')).toHaveValue('not a valid number');
     expect(ui.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });
 });
@@ -94,12 +105,17 @@ it('leaves clean open/close input unprotected and releases an explicitly discard
   expect(protectedDraftsFor(ui.client).protecting).toBe(false);
   await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
   const editor = await openField(ui);
-  fireEvent.change(within(editor).getByLabelText('Field signal'), { target: { value: 'invalid zero draft' } });
-  await ui.user.click(within(editor).getByLabelText('Field signal'));
+  fireEvent.change(fieldInput(editor, 'Field signal'), { target: { value: 'invalid zero draft' } });
+  await ui.user.click(fieldInput(editor, 'Field signal'));
   await ui.user.tab();
   expect(unload()).toBe(true);
-  await ui.user.click(within(editor).getByRole('button', { name: 'Discard draft' }));
-  expect(within(editor).getByLabelText('Field signal')).toHaveValue('');
+  await closeFieldAndDrawer(ui);
+  await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
+  const recovery = await openField(ui);
+  await ui.user.click(fieldInput(recovery, 'Field signal'));
+  await ui.user.tab();
+  await ui.user.click(within(recovery).getByRole('button', { name: 'Discard draft' }));
+  expect(fieldInput(recovery, 'Field signal')).toHaveValue('');
   expect(unload()).toBe(false);
   await closeFieldAndDrawer(ui);
   await act(async () => { await ui.router.navigate('/clean-field-departure'); });
@@ -111,7 +127,7 @@ it('asks before an actual actor switch with only a hidden field draft and keeps 
   const switchActor = vi.fn(() => ok({ actor: boris, authMode: 'dev' }));
   const ui = setup({ 'GET /api/v1/dev/actors': () => ok([anna, boris]), 'POST /api/v1/dev/session': switchActor });
   const editor = await openField(ui);
-  fireEvent.change(within(editor).getByLabelText('Field signal'), { target: { value: 'invalid actor-owned input' } });
+  fireEvent.change(fieldInput(editor, 'Field signal'), { target: { value: 'invalid actor-owned input' } });
   await closeFieldAndDrawer(ui);
   (await screen.findByRole('button', { name: /Switch user/ })).focus();
   await ui.user.keyboard('{Enter}');
@@ -121,7 +137,7 @@ it('asks before an actual actor switch with only a hidden field draft and keeps 
   expect(switchActor).not.toHaveBeenCalled();
   await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
   await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
-  expect(within(await openField(ui)).getByLabelText('Field signal')).toHaveValue('invalid actor-owned input');
+  expect(fieldInput(await openField(ui), 'Field signal')).toHaveValue('invalid actor-owned input');
   expect(ui.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
 });
 
@@ -137,14 +153,13 @@ it('keeps pending/unknown field commands exact while confirmation retires only i
     [`PUT ${rootPath}/tasks/${task.id}/field-values/${FIELD_ID}`]: () => ++attempts === 1 ? gate.promise : (confirmed = true, ok(saved)),
   }, [first, second]);
   let editor = await openField(ui, 'Other signal');
-  fireEvent.change(within(editor).getByLabelText('Other signal'), { target: { value: '17 invalid' } });
-  await ui.user.click(within(editor).getByLabelText('Close', { selector: 'button' }));
-  expect(within(editor).getByText('Enter a number, such as 12 or 3.5.')).toBeInTheDocument();
+  fireEvent.change(fieldInput(editor, 'Other signal'), { target: { value: '17 invalid' } });
+  await ui.user.tab();
+  expect(screen.getByText('Enter a number, such as 12 or 3.5.')).toBeInTheDocument();
   expect(ui.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
-  await ui.user.click(within(editor).getByLabelText('Close', { selector: 'button' }));
   editor = await openField(ui);
-  fireEvent.change(within(editor).getByLabelText('Field signal'), { target: { value: '0' } });
-  await ui.user.click(within(editor).getByLabelText('Field signal'));
+  fireEvent.change(fieldInput(editor, 'Field signal'), { target: { value: '0' } });
+  await ui.user.click(fieldInput(editor, 'Field signal'));
   await ui.user.tab();
   await waitFor(() => expect(attempts).toBe(1));
   await closeFieldAndDrawer(ui);
@@ -157,15 +172,15 @@ it('keeps pending/unknown field commands exact while confirmation retires only i
   await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
   await ui.user.click(screen.getByRole('button', { name: `Open task “${task.title}”` }));
   editor = await openField(ui);
-  expect(within(editor).getByLabelText('Field signal')).toHaveValue('0');
-  expect(within(editor).getByLabelText('Field signal')).toBeDisabled();
+  expect(fieldInput(editor, 'Field signal')).toHaveValue('0');
+  expect(fieldInput(editor, 'Field signal')).toBeDisabled();
   await ui.user.click(within(editor).getByRole('button', { name: 'Retry' }));
   await waitFor(() => expect(protectedCommandsFor(ui.client).protecting).toBe(false));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Value of “Field signal”' })).not.toBeInTheDocument());
   expect(unload()).toBe(true);
   editor = await openField(ui, 'Other signal');
-  expect(within(editor).getByLabelText('Other signal')).toHaveValue('17 invalid');
-  await ui.user.click(within(editor).getByLabelText('Other signal'));
+  expect(fieldInput(editor, 'Other signal')).toHaveValue('17 invalid');
+  await ui.user.click(fieldInput(editor, 'Other signal'));
   await ui.user.tab();
   expect(within(editor).getByText('Enter a number, such as 12 or 3.5.')).toBeInTheDocument();
   await ui.user.click(within(editor).getByRole('button', { name: 'Discard draft' }));
@@ -197,7 +212,7 @@ it('protects an actual Weekly meeting fallback field draft after closing its dra
   await ui.user.click(await screen.findByRole('button', { name: 'Open meeting' }));
   const editor = await openField(ui);
   expect(unload()).toBe(false);
-  fireEvent.change(within(editor).getByLabelText('Field signal'), { target: { value: 'Weekly raw invalid' } });
+  fireEvent.change(fieldInput(editor, 'Field signal'), { target: { value: 'Weekly raw invalid' } });
   await closeFieldAndDrawer(ui);
   expect(unload()).toBe(true);
   expect(protectedCommandsFor(ui.client).protecting).toBe(false);
@@ -206,7 +221,7 @@ it('protects an actual Weekly meeting fallback field draft after closing its dra
   expect(guard).toHaveTextContent('You have an unsaved draft');
   await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
   await ui.user.click(screen.getByRole('button', { name: 'Open meeting' }));
-  expect(within(await openField(ui)).getByLabelText('Field signal')).toHaveValue('Weekly raw invalid');
+  expect(fieldInput(await openField(ui), 'Field signal')).toHaveValue('Weekly raw invalid');
   expect(ui.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
 });
 
@@ -244,11 +259,10 @@ it('never pairs an external meeting field mutation with the controller fallback 
     return open ? <MeetingDrawer controller={controller} actorId={anna.id} workspace={alpha} project={project(alpha.id, task.projectId, 'Project')} members={alphaMembers} taskId={task.id} open onClose={() => setOpen(false)} fieldValueMutation={externalMutation} /> : null;
   }
   const ui = renderFieldUi(<MemoryRouter><Example /></MemoryRouter>);
-  await ui.user.click(await screen.findByRole('button', { name: 'Edit “Field signal”' }));
-  const editor = screen.getByRole('dialog', { name: 'Value of “Field signal”' });
-  expect(within(editor).getByLabelText('Field signal')).toHaveValue('');
-  fireEvent.change(within(editor).getByLabelText('Field signal'), { target: { value: '0' } });
-  await ui.user.click(within(editor).getByLabelText('Field signal'));
+  const editor = await openField(ui);
+  expect(fieldInput(editor, 'Field signal')).toHaveValue('');
+  fireEvent.change(fieldInput(editor, 'Field signal'), { target: { value: '0' } });
+  await ui.user.click(fieldInput(editor, 'Field signal'));
   await ui.user.keyboard('{Enter}');
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Value of “Field signal”' })).not.toBeInTheDocument());
   expect(currentStore?.getTask(task.id)[FIELD_ID]).toBe(controllerDraft);

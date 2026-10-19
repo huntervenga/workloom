@@ -5,6 +5,8 @@ import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning
 import {
   archiveTaskInputSchema,
   bulkUpdateTasksInputSchema,
+  bulkChangesForTask,
+  type BulkUpdatedTaskDto,
   bulkTaskUpdateResponseSchema,
   createProjectInputSchema,
   createSectionInputSchema,
@@ -501,7 +503,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
       });
     },
 
-    async bulkUpdateTasks(context: CommandContext, input: BulkUpdateTasksInput): Promise<TaskDto[]> {
+    async bulkUpdateTasks(context: CommandContext, input: BulkUpdateTasksInput): Promise<BulkUpdatedTaskDto[]> {
       const parsed = parseInput<BulkUpdateTasksInput>(bulkUpdateTasksInputSchema, input);
       const ctx = normalizeContext(context);
       const key = ctx.idempotencyKey;
@@ -528,12 +530,14 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           return stored.data;
         }
         await requireOpenProject(repo, ws, parsed.projectId);
-        const changes = parsed.changes;
-        if (changes.responsibleMembershipId !== undefined) await requireActiveMembers(repo, ws, changes.responsibleMembershipId, []);
-        // The shared section is validated even when it equals a row's current one, as in an ordinary update.
-        if (isSet(changes.sectionId)) await requireAssignableSection(repo, ws, parsed.projectId, changes.sectionId);
-        // Complete preflight before cutoff prerequisites or proposed writes. Revisions are not rechecked on exact replay.
+        // Complete preflight before cutoff prerequisites or proposed writes. Replays retain old guards.
         for (const [index, task] of targets.entries()) {
+          const changes = bulkChangesForTask(parsed, task.id);
+          await requireActiveMembers(repo, ws, changes.responsibleMembershipId ?? null, changes.participantMembershipIds ?? [], {
+            responsibleId: task.responsibleMembershipId, participantIds: task.participants.filter(row => row.active).map(row => row.membershipId),
+          });
+          if (isSet(changes.sectionId)) await requireAssignableSection(repo, ws, parsed.projectId, changes.sectionId);
+          if (changes.participantMembershipIds !== undefined) expectRevision(task.participantsRevision, parsed.tasks[index]?.expectedParticipantsRevision ?? 0, 'expectedParticipantsRevision');
           expectRevision(task.revision, parsed.tasks[index]?.expectedRevision ?? 0);
           if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before editing.', 'tasks');
           assertTaskDateRange(changes.startDate === undefined ? task.startDate : changes.startDate, changes.dueDate === undefined ? task.dueDate : changes.dueDate);
@@ -553,12 +557,15 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const now = scope.barrierAt.toISOString();
         const rejected = await scope.planningGuard.check({ family: 'task_bulk', command, target: { projectId: parsed.projectId }, input: parsed });
         const sameIds = (left: readonly string[], right: readonly string[]) => left.length === right.length && right.every(id => left.includes(id));
-        const updated: TaskDto[] = [];
+        const updated: BulkUpdatedTaskDto[] = [];
         const audit: { before: TaskDto; after: TaskDto; diff: Record<string, unknown> }[] = [];
         const recordedPackages = new Set<string>();
         if (rejected === null) {
-          await applyBulkExtras(scope, parsed, targets, extras, tools);
+          const fieldValues = await applyBulkExtras(scope, parsed, targets, extras, tools);
           for (const task of targets) {
+            const changes = bulkChangesForTask(parsed, task.id);
+            const participants = changes.participantMembershipIds === undefined ? null : nextParticipantRows(task.participants, changes.participantMembershipIds);
+            if (participants && participants.rows.length > 0) await repo.saveParticipants(ws, task.id, participants.rows, now);
             const next: TaskDto = { ...task,
               ...(changes.responsibleMembershipId !== undefined ? { responsibleMembershipId: changes.responsibleMembershipId } : {}),
               ...(changes.startDate !== undefined ? { startDate: changes.startDate } : {}),
@@ -572,10 +579,11 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
             const tagIds = changes.tagIds !== undefined && !sameIds(currentTagIds, changes.tagIds) ? changes.tagIds : null;
             if (tagIds !== null) diff.tagIds = { from: currentTagIds, to: tagIds };
             const coreChanged = Object.keys(diff).length > 0;
-            if (coreChanged) {
-              await repo.saveTaskCore({ ...next, revision: task.revision + 1, updatedAt: now });
+            if (participants) diff.participants = { revision: { from: task.participantsRevision, to: task.participantsRevision + 1 }, added: participants.added, removed: participants.removed };
+            if (coreChanged || participants) {
+              await repo.saveTaskCore({ ...next, revision: coreChanged ? task.revision + 1 : task.revision, participantsRevision: task.participantsRevision + (participants ? 1 : 0), updatedAt: now });
               if (tagIds !== null) await repo.setTaskTagIds(ws, task.id, tagIds);
-              diff.revision = { from: task.revision, to: task.revision + 1 };
+              if (coreChanged) diff.revision = { from: task.revision, to: task.revision + 1 };
             }
             const pack = extras.packages.get(task.workPackageId);
             if (pack && !recordedPackages.has(task.workPackageId)) {
@@ -584,8 +592,9 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
                 revision: { from: pack.before.revision, to: pack.after.revision },
                 estimateMinutes: { from: pack.before.estimateMinutes, to: pack.after.estimateMinutes } };
             }
-            const confirmed = coreChanged || pack ? await reloadTask(repo, ws, task.id) : task;
-            updated.push(confirmed);
+            const confirmed = coreChanged || pack || participants ? await reloadTask(repo, ws, task.id) : task;
+            const valueAck = fieldValues.get(task.id);
+            updated.push(parsed.includeFieldValueAck && valueAck ? { ...confirmed, customFieldAck: valueAck } : confirmed);
             if (Object.keys(diff).length > 0) audit.push({ before: task, after: confirmed, diff });
           }
           // Batch reference labels once. Audit-only snapshots never enter the outbox or receipt.

@@ -1,10 +1,10 @@
 import type { UserEvent } from '@testing-library/user-event';
-import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
+import type { TaskDto, TaskStatusDto, TaskFieldData, TaskFieldDefinitionDto, TaskFieldValueDto, BulkUpdateTasksInput } from '@workloom/contracts';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { alpha, alphaMembers, installFakeApi, json, ok, renderApp, type FakeRequest, type RouteTable } from '../test/fakeApi';
+import { alpha, alphaMembers, deferred, failure, installFakeApi, json, ok, renderApp, type FakeRequest, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
-import { field as fieldFixture } from '../features/fields/test/fixtures';
+import { STAMP, field as fieldFixture } from '../features/fields/test/fixtures';
 import { PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 
 beforeAll(async () => { await import('./ProjectPage'); });
@@ -39,6 +39,18 @@ function applied(rows: { current: TaskDto[] }, request: FakeRequest) {
   const changed = body.tasks.map(target => ({ ...rows.current.find(row => row.id === target.taskId) as TaskDto, ...body.changes, revision: target.expectedRevision + 1 }));
   rows.current = rows.current.map(row => changed.find(item => item.id === row.id) ?? row);
   return ok(changed);
+}
+/** Opt-in custom receipt includes the actual persisted field value, independently of task revision. */
+function customApplied(rows: { current: TaskDto[] }, request: FakeRequest, definition: TaskFieldDefinitionDto) {
+  const body = request.body as { tasks: { taskId: string }[]; changes: { customField: { value: TaskFieldData } } };
+  return ok(body.tasks.map(target => {
+    const row = rows.current.find(row => row.id === target.taskId);
+    if (!row) throw new Error('Custom receipt target missing from fixture');
+    return { ...row, customFieldAck: {
+      workspaceId: alpha.id, projectId: PROJECT_ID, taskId: target.taskId, fieldId: definition.id, definitionVersionId: definition.definitionVersionId,
+      revision: 1, value: body.changes.customField.value, updatedAt: STAMP,
+    } };
+  }));
 }
 const writes = (calls: FakeRequest[]) => calls.filter(call => call.method !== 'GET');
 const bulkWrites = (calls: FakeRequest[]) => calls.filter(call => call.method === 'POST' && call.path === bulkPath);
@@ -188,17 +200,149 @@ describe('selected-cell bulk inline editing', () => {
       [`GET ${rootPath}/fields`]: () => ok([definition]),
       [`GET ${rootPath}/projects/${PROJECT_ID}/columns`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, columns: [{ fieldId: definition.id, position: 0, width: 160, visible: true }] }),
       [`GET ${rootPath}/projects/${PROJECT_ID}/field-values`]: () => ok([]),
-      [`POST ${bulkPath}`]: request => ok((request.body as { tasks: { taskId: string }[] }).tasks.map(target => rows.current.find(row => row.id === target.taskId))),
+      [`POST ${bulkPath}`]: request => customApplied(rows, request, definition),
     })));
     const { user } = renderApp(tablePath); await selectBoth(user);
     await user.click(screen.getByRole('button', { name: `Edit Score for ${first.title}` }));
-    const dialog = screen.getByRole('dialog', { name: `Edit Score for ${first.title}` });
-    await user.click(within(dialog).getByLabelText('Score'));
-    fireEvent.change(within(dialog).getByLabelText('Score'), { target: { value: '0' } });
+    const dialog = screen.getByRole('textbox', { name: `Edit Score for ${first.title}` }).closest('[data-inline-field-cell]') as HTMLElement;
+    await user.click(within(dialog).getByLabelText(`Edit Score for ${first.title}`));
+    fireEvent.change(within(dialog).getByLabelText(`Edit Score for ${first.title}`), { target: { value: '0' } });
     await user.tab();
     await screen.findByText('Saved 2 selected tasks.');
     expect(writes(calls)).toHaveLength(1);
-    expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, tasks: both.map(row => ({ ...row, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 4, value: { type: 'number', value: 0 } } } });
+    expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, includeFieldValueAck: true, tasks: both.map(row => ({ ...row, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 4, value: { type: 'number', value: 0 } } } });
+  });
+
+  it('starts a selected custom edit from a single-write ACK while its authoritative refetch is still pending', async () => {
+    const definition = { ...fieldFixture('Hours Estimation', 'duration'), projectId: PROJECT_ID };
+    const refetch = deferred<Response>(); let valueReads = 0;
+    const persisted: TaskFieldValueDto = { workspaceId: alpha.id, projectId: PROJECT_ID, taskId: first.id, fieldId: definition.id,
+      definitionVersionId: definition.definitionVersionId, revision: 1, value: { type: 'duration', value: 150 }, updatedAt: STAMP };
+    const { calls } = installFakeApi(routes(rows => ({
+      [`GET ${rootPath}/fields`]: () => ok([definition]),
+      [`GET ${rootPath}/projects/${PROJECT_ID}/columns`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, columns: [{ fieldId: definition.id, position: 0, width: 160, visible: true }] }),
+      [`GET ${rootPath}/projects/${PROJECT_ID}/field-values`]: () => ++valueReads === 1 ? ok([]) : refetch.promise,
+      [`PUT ${rootPath}/tasks/${first.id}/field-values/${definition.id}`]: () => ok(persisted),
+      [`POST ${bulkPath}`]: request => {
+        const input = request.body as BulkUpdateTasksInput;
+        if (input.changes.restore) {
+          const restore = input.changes.restore;
+          return ok(input.tasks.map(target => {
+            const row = rows.current.find(row => row.id === target.taskId);
+            const value = restore.find(change => change.taskId === target.taskId)?.changes.customField?.value;
+            if (!row || !value) throw new Error('Restored custom ACK fixture target missing');
+            return { ...row, customFieldAck: { ...persisted, taskId: target.taskId, revision: (target.expectedFieldValueRevision ?? 0) + 1, value } };
+          }));
+        }
+        const source = input.tasks.find(target => target.taskId === first.id);
+        if (source?.expectedFieldValueRevision !== persisted.revision) return failure(409, 'REVISION_CONFLICT', 'Field value changed.');
+        const result = input.tasks.map(target => {
+          const row = rows.current.find(row => row.id === target.taskId);
+          if (!row) throw new Error('Custom ACK fixture target missing');
+          return { ...row, customFieldAck: {
+            ...persisted, taskId: target.taskId, revision: target.taskId === first.id ? 2 : 1, value: { type: 'duration', value: 180 },
+          } };
+        });
+        return ok(result);
+      },
+    })));
+    const { user } = renderApp(tablePath);
+    const name = `Edit Hours Estimation for ${first.title}`;
+    await user.click(await screen.findByRole('button', { name }));
+    await user.type(screen.getByRole('textbox', { name }), '2.5{Enter}');
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    await waitFor(() => expect(valueReads).toBeGreaterThan(1));
+    expect(screen.getByRole('button', { name })).toHaveTextContent('2h 30m');
+    // A confirmed single value must survive switching to the selected-row editor before GET settles.
+    await selectBoth(user);
+    await user.click(screen.getByRole('button', { name }));
+    expect(screen.getByRole('textbox', { name })).toHaveValue('2:30');
+    await user.clear(screen.getByRole('textbox', { name }));
+    await user.type(screen.getByRole('textbox', { name }), '3{Enter}');
+    await screen.findByText('Saved 2 selected tasks.');
+    expect(bulkWrites(calls)).toHaveLength(1);
+    expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, includeFieldValueAck: true,
+      tasks: both.map(target => ({ ...target, expectedFieldValueRevision: target.taskId === first.id ? 1 : 0 })),
+      changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 1, value: { type: 'duration', value: 180 } } } });
+    // The inverse also uses persisted ACK heads, and preserves the actual 150 / absent before-values.
+    await waitFor(() => expect(gutter(first)).not.toHaveAttribute('aria-disabled', 'true'));
+    gutter(first).focus(); await user.keyboard('{Control>}z{/Control}');
+    await waitFor(() => expect(bulkWrites(calls)).toHaveLength(2));
+    expect(bulkWrites(calls)[1]?.body).toEqual({ projectId: PROJECT_ID, includeFieldValueAck: true,
+      tasks: both.map(target => ({ ...target, expectedFieldValueRevision: target.taskId === first.id ? 2 : 1 })),
+      changes: { restore: both.map(target => ({ taskId: target.taskId, changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 1,
+        value: { type: 'duration', value: target.taskId === first.id ? 150 : null } } } })) } });
+    // Settle only after the guarded batch and its exact inverse; no sleeps or deadline changes.
+    await act(async () => refetch.resolve(ok([{ ...persisted, revision: 3 }, { ...persisted, taskId: second.id, revision: 2, value: { type: 'duration', value: null } }])));
+  });
+
+  it('keeps an ordinary duration edit anchored to the selection captured before a later selection change', async () => {
+    const definition = { ...fieldFixture('Hours Estimation', 'duration'), projectId: PROJECT_ID, revision: 4 };
+    const { calls } = installFakeApi(routes(rows => ({
+      [`GET ${rootPath}/fields`]: () => ok([definition]),
+      [`GET ${rootPath}/projects/${PROJECT_ID}/columns`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, columns: [{ fieldId: definition.id, position: 0, width: 160, visible: true }] }),
+      [`GET ${rootPath}/projects/${PROJECT_ID}/field-values`]: () => ok([]),
+      [`POST ${bulkPath}`]: request => customApplied(rows, request, definition),
+    })));
+    const { user } = renderApp(tablePath); await selectBoth(user);
+    const name = `Edit Hours Estimation for ${first.title}`;
+    await user.click(screen.getByRole('button', { name }));
+    const input = screen.getByRole('textbox', { name });
+    fireEvent.change(input, { target: { value: '1:30' } });
+    fireEvent.click(gutter(third));
+    expect(screen.getByRole('textbox', { name })).toBe(input);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await screen.findByText('Saved 2 selected tasks.');
+    expect(writes(calls)).toHaveLength(1);
+    expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, includeFieldValueAck: true, tasks: both.map(target => ({ ...target, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 4, value: { type: 'duration', value: 90 } } } });
+  });
+
+  it('keeps an already-open one-task custom editor single-task when a later selection grows', async () => {
+    const definition = { ...fieldFixture('Hours Estimation', 'duration'), projectId: PROJECT_ID };
+    const { calls } = installFakeApi(routes(() => ({
+      [`GET ${rootPath}/fields`]: () => ok([definition]),
+      [`GET ${rootPath}/projects/${PROJECT_ID}/columns`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, columns: [{ fieldId: definition.id, position: 0, width: 160, visible: true }] }),
+      [`GET ${rootPath}/projects/${PROJECT_ID}/field-values`]: () => ok([]),
+      [`PUT ${rootPath}/tasks/${first.id}/field-values/${definition.id}`]: request => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, taskId: first.id, fieldId: definition.id, definitionVersionId: definition.definitionVersionId, revision: 1, value: (request.body as { value: TaskFieldData }).value, updatedAt: STAMP }),
+    })));
+    const { user } = renderApp(tablePath);
+    const name = `Edit Hours Estimation for ${first.title}`;
+    await user.click(await screen.findByRole('button', { name }));
+    const input = screen.getByRole('textbox', { name });
+    fireEvent.change(input, { target: { value: '2' } });
+    fireEvent.click(gutter(first)); fireEvent.click(gutter(second), { ctrlKey: true });
+    expect(screen.getByRole('textbox', { name })).toBe(input);
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' });
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]).toMatchObject({ method: 'PUT', path: `${rootPath}/tasks/${first.id}/field-values/${definition.id}`, body: { expectedRevision: 0, expectedDefinitionRevision: 1, value: { type: 'duration', value: 120 } } });
+    expect(bulkWrites(calls)).toHaveLength(0);
+  });
+
+  it('retries an uncertain ordinary custom batch with its exact original value, targets and key', async () => {
+    const definition = { ...fieldFixture('Hours Estimation', 'duration'), projectId: PROJECT_ID };
+    const gate = lostResponse(); let attempts = 0;
+    const { calls } = installFakeApi(routes(rows => ({
+      [`GET ${rootPath}/fields`]: () => ok([definition]),
+      [`GET ${rootPath}/projects/${PROJECT_ID}/columns`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, columns: [{ fieldId: definition.id, position: 0, width: 160, visible: true }] }),
+      [`GET ${rootPath}/projects/${PROJECT_ID}/field-values`]: () => ok([]),
+      [`POST ${bulkPath}`]: request => ++attempts === 1 ? gate.promise : customApplied(rows, request, definition),
+    })));
+    const { user } = renderApp(tablePath); await selectBoth(user);
+    const name = `Edit Hours Estimation for ${first.title}`;
+    await user.click(screen.getByRole('button', { name }));
+    await user.type(screen.getByRole('textbox', { name }), '0{Enter}');
+    await waitFor(() => expect(attempts).toBe(1));
+    await act(async () => gate.lose());
+    const retry = await within(bar()).findByRole('button', { name: 'Retry original' });
+    fireEvent.click(gutter(third));
+    expect(attempts).toBe(1);
+    await user.click(retry);
+    await screen.findByText('Saved 2 selected tasks.');
+    const sent = bulkWrites(calls); expect(sent).toHaveLength(2);
+    expect(sent[1]?.body).toEqual(sent[0]?.body);
+    expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));
+    expect(sent[0]?.body).toEqual({ projectId: PROJECT_ID, includeFieldValueAck: true, tasks: both.map(target => ({ ...target, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 1, value: { type: 'duration', value: 0 } } } });
   });
 
   it('labels a selected title edit as single-task and never mass-renames', async () => {
@@ -286,21 +430,21 @@ describe('neighboring table edits beside an existing desktop task pane', () => {
       [`GET ${rootPath}/fields`]: () => ok([definition]),
       [`GET ${rootPath}/projects/${PROJECT_ID}/columns`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, columns: [{ fieldId: definition.id, position: 0, width: 160, visible: true }] }),
       [`GET ${rootPath}/projects/${PROJECT_ID}/field-values`]: () => ok([]),
-      [`POST ${bulkPath}`]: request => ok((request.body as { tasks: { taskId: string }[] }).tasks.map(target => rows.current.find(row => row.id === target.taskId))),
+      [`POST ${bulkPath}`]: request => customApplied(rows, request, definition),
     })));
     const { user } = renderApp(tablePath); await selectBoth(user);
     await user.click(screen.getByRole('button', { name: `Open task “${third.title}”` }));
     const pane = await screen.findByRole('dialog', { name: third.title });
     await user.click(screen.getByRole('button', { name: `Edit Score for ${first.title}` }));
-    const editor = screen.getByRole('dialog', { name: `Edit Score for ${first.title}` });
+    const editor = screen.getByRole('textbox', { name: `Edit Score for ${first.title}` }).closest('[data-inline-field-cell]') as HTMLElement;
     expect(pane).toBeInTheDocument();
-    await user.click(within(editor).getByLabelText('Score'));
-    fireEvent.change(within(editor).getByLabelText('Score'), { target: { value: '0' } });
+    await user.click(within(editor).getByLabelText(`Edit Score for ${first.title}`));
+    fireEvent.change(within(editor).getByLabelText(`Edit Score for ${first.title}`), { target: { value: '0' } });
     await user.tab();
     await screen.findByText('Saved 2 selected tasks.');
     await waitFor(() => expect(screen.queryByRole('dialog', { name: `Edit Score for ${first.title}` })).not.toBeInTheDocument());
     expect(screen.getByRole('dialog', { name: third.title })).toBe(pane);
     expect(writes(calls)).toHaveLength(1); expect(bulkWrites(calls)).toHaveLength(1);
-    expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, tasks: both.map(target => ({ ...target, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 4, value: { type: 'number', value: 0 } } } });
+    expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, includeFieldValueAck: true, tasks: both.map(target => ({ ...target, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 4, value: { type: 'number', value: 0 } } } });
   });
 });

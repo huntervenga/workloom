@@ -57,6 +57,10 @@ function updateValue({ input }: UpdateTaskFieldVariables, base: TaskFieldDefinit
 
 export interface FieldManagerDialogProps {
   triggerLabel?: string;
+  /** Controlled opening lets a table header menu reuse the same durable manager. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
   actorId: string;
   workspaceId: string;
   projectId: string;
@@ -68,9 +72,11 @@ export interface FieldManagerDialogProps {
  * and options of existing ones. Every write hook lives here, outside the dialog content, so closing
  * the dialog keeps a pending or unconfirmed write, its frozen form and the navigation guard.
  */
-export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage, triggerLabel }: FieldManagerDialogProps) {
+export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage, triggerLabel, open: controlledOpen, onOpenChange, showTrigger = true }: FieldManagerDialogProps) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = onOpenChange ?? setLocalOpen;
   const fields = useTaskFieldsQuery(actorId, workspaceId, projectId);
   const columns = useProjectColumnsQuery(actorId, workspaceId, projectId);
   const policyMutation=useSetFieldPolicyMutation(actorId,workspaceId);
@@ -163,10 +169,10 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
     <DialogShell
       title={t('fields.fieldManagerDialog.projectColumns')}
       description={t('fields.fieldManagerDialog.customColumnsForThisProjectSTaskTable')}
-      trigger={
+      trigger={showTrigger ?
         <Button>
           <Columns3 size={16} aria-hidden="true" />
-          {triggerLabel ?? t('fields.fieldManagerDialog.columns')}</Button>
+          {triggerLabel ?? t('fields.fieldManagerDialog.columns')}</Button> : undefined
       }
       open={open}
       onOpenChange={changeOpen}
@@ -223,6 +229,23 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
               }}
             />
 
+            {projectFields.some(field => field.archivedAt !== null) ? (
+              <details className="rounded-lg border border-line px-3 py-2 text-sm">
+                <summary className="cursor-pointer text-muted">{t('taskTable.columnMenu.archived')}</summary>
+                <ul className="mt-2 space-y-1">
+                  {projectFields.filter(field => field.archivedAt !== null).map(field => (
+                    <li key={field.id} className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate">{field.name}</span>
+                      {canManage ? <Button size="sm" variant="ghost" disabled={sentCommand(updateField) !== null} onClick={() => updateField.mutate({ fieldId: field.id, input: { expectedRevision: field.revision, archived: false } })}>{t('taskTable.columnMenu.restore')}</Button> : null}
+                    </li>
+                  ))}
+                </ul>
+                <SaveFeedback subject={FIELDS_SAVE_SUBJECT} error={updateField.variables && projectFields.some(field => field.id === updateField.variables?.fieldId && field.archivedAt !== null) ? updateField.error : null} uncertainError={null} />
+                {updateField.error ? <Button size="sm" variant="ghost" onClick={() => {
+                  void reloadFields().then(() => { if (!sentCommand(updateField)) updateField.reset(); }).catch(() => undefined);
+                }}>{t('fields.fieldManagerDialog.loadLatestVersion')}</Button> : null}
+              </details>
+            ) : null}
             {editedField ? (
               <section aria-label={t('fields.fieldManagerDialog.columnValue', { p0: editedField.name })} className="rounded-xl border border-line p-3">
                 <EditFieldPanel
@@ -428,6 +451,10 @@ function EditFieldPanel({
         }}
         onCancel={() => onDone(null)}
       />
+      <div className="border-t border-line pt-3">
+        <Button size="sm" variant="ghost" disabled={own !== null || otherTarget || optionBusy || correctable} onClick={() => updateField.mutate({ fieldId: field.id, input: { expectedRevision: base.revision, archived: true } }, callbacks)}>{t('taskTable.columnMenu.archive')}</Button>
+        <p className="mt-1 text-xs text-muted">{t('taskTable.columnMenu.archiveHint')}</p>
+      </div>
       {isSelectType(base.type) ? (
         <FieldOptionsEditor
           field={base}

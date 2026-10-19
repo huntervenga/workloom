@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -8,12 +8,14 @@ import { renderFieldUi } from '../fields/test/fixtures';
 import { alpha, alphaMembers, anna, project } from '../../test/fakeApi';
 import { TaskDrawer } from './TaskDrawer';
 import { draftFromTask } from './taskDraft';
+import { queryKeys } from '../../lib/queryKeys';
+import { protectedDraftsFor } from '../../lib/protectedDrafts';
 import { useTaskCommands } from './useTaskCommands';
 import { AppRoutes } from '../../app/AppRoutes';
 import { ProtectedNavigationGuard } from '../../app/ProtectedNavigationGuard';
 import { SessionProvider } from '../../app/session';
 import { createQueryClient } from '../../lib/queryClient';
-import { installFakeApi, ok, type RouteTable } from '../../test/fakeApi';
+import { failure, installFakeApi, ok, type RouteTable } from '../../test/fakeApi';
 import { rootPath, task, tablePath, tableRoutes } from '../../features/work-categories/test/fixtures';
 
 beforeAll(async () => { await import('../../routes/ProjectPage'); });
@@ -140,4 +142,55 @@ describe('saved task pane autosave', () => {
     expect(bodyOf(writes(api.calls)[0])).toEqual({ expectedRevision: task.revision, title: seed.draft.title, description: seed.draft.description });
     await waitFor(() => expect(unload()).toBe(false));
   });
+
+  it('pins the opening task base for dates and rejects a concurrent refetch instead of silently overwriting it', async () => {
+    let current = task;
+    const ui = setup({
+      [`GET ${rootPath}/tasks/${task.id}`]: () => ok(current),
+      [`PATCH ${rootPath}/tasks/${task.id}`]: request => {
+        const input = request.body as { expectedRevision: number; dueDate?: string };
+        if (input.expectedRevision !== current.revision) return failure(409, 'REVISION_CONFLICT', 'Concurrent change');
+        current = { ...current, dueDate: input.dueDate ?? null, revision: current.revision + 1 };
+        return ok(current);
+      },
+    });
+    await ui.user.click(await screen.findByRole('button', { name: 'Edit dates' }));
+    // Refetch arrives after opening, before the first key: the editor still owns its original base.
+    current = { ...task, revision: task.revision + 1, dueDate: '2027-04-02' };
+    act(() => ui.client.setQueryData(queryKeys.task(anna.id, alpha.id, task.id), current));
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2027-03-21' } });
+    expect(protectedDraftsFor(ui.client).protecting).toBe(true);
+    await ui.user.keyboard('{Enter}');
+    await waitFor(() => expect(writes(ui.calls)).toHaveLength(1));
+    expect(bodyOf(writes(ui.calls)[0])).toEqual({ expectedRevision: task.revision, dueDate: '2027-03-21' });
+    expect(await screen.findByText('This task changed on the server. Review the latest version to keep saving.')).toBeVisible();
+    expect(current.dueDate).toBe('2027-04-02');
+    expect(current.revision).toBe(task.revision + 1);
+    expect(unload()).toBe(true);
+    expect(writes(ui.calls)).toHaveLength(1);
+  });
+
+  it('protects raw calendar typing on keyboard routing, retains it on Stay, and Escape releases the draft without a write', async () => {
+    const ui = setup();
+    await ui.user.click(await screen.findByRole('button', { name: 'Edit dates' }));
+    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: 'raw invalid date' } });
+    expect(protectedDraftsFor(ui.client).protecting).toBe(true);
+    expect(unload()).toBe(true);
+    await act(async () => { await ui.router.navigate('/keyboard-date-departure'); });
+    const guard = await screen.findByRole('dialog', { name: 'Leave this page?' });
+    expect(guard).toHaveTextContent('You have an unsaved draft');
+    await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
+    expect(screen.getByLabelText('Due date')).toHaveValue('raw invalid date');
+    screen.getByLabelText('Due date').focus();
+    await ui.user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Edit dates' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: task.title })).toBeInTheDocument();
+    expect(protectedDraftsFor(ui.client).protecting).toBe(false);
+    expect(unload()).toBe(false);
+    expect(writes(ui.calls)).toHaveLength(0);
+    await act(async () => { await ui.router.navigate('/clean-date-departure'); });
+    expect(ui.router.state.location.pathname).toBe('/clean-date-departure');
+    expect(writes(ui.calls)).toHaveLength(0);
+  });
+
 });

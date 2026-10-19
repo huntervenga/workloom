@@ -2,6 +2,7 @@ import type {TaskProjectPlacementApplication} from './project-placement-ports.js
 import type {
   ArchiveTaskInput,
   BulkUpdateTasksInput,
+  BulkUpdatedTaskDto,
   CreateProjectInput,
   CreateSectionInput,
   CreateTagInput,
@@ -68,5 +69,5 @@ export interface TaskApplication {
   /** Manual reorder next to an active sibling; see `moveTaskInputSchema`. */
   moveTask(context: CommandContext, taskId: string, input: MoveTaskInput): Promise<TaskDto>;
   /** Explicit all-or-nothing selection patch, with current access checked before receipt replay. */
-  bulkUpdateTasks(context: CommandContext, input: BulkUpdateTasksInput): Promise<TaskDto[]>;
+  bulkUpdateTasks(context: CommandContext, input: BulkUpdateTasksInput): Promise<BulkUpdatedTaskDto[]>;
 }

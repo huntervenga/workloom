@@ -13,7 +13,7 @@ const initial = { ...emptyDraft('status-todo', section.id), title: 'Stored task'
 function show(props: Partial<TaskFieldsProps> = {}) {
   function Example() {
     const [draft, setDraft] = useState<TaskDraft>(initial);
-    return <TaskFields draft={draft} onChange={patch => setDraft(before => ({ ...before, ...patch }))} errors={{}} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} {...props} />;
+    return <TaskFields showLegacyEstimate draft={draft} onChange={patch => setDraft(before => ({ ...before, ...patch }))} errors={{}} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} {...props} />;
   }
   return render(<Example />);
 }
@@ -42,13 +42,32 @@ describe('everyday task fields', () => {
     expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Stored section');
   });
 
+  it('uses selected chips and search in ordinary creation instead of rendering a 100-person checkbox roster', async () => {
+    const user = userEvent.setup();
+    const members = Array.from({ length: 100 }, (_, index) => makeMember({ id: `person-${index}`, userId: `user-${index}`, displayName: `Create teammate ${index}` }));
+    show({ showLegacyEstimate: false, members });
+    await user.click(screen.getByText('More details'));
+    expect(screen.queryByLabelText('Team estimate, hours')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByText('Create teammate 99')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: 'Add participant' }));
+    await user.type(screen.getByRole('combobox', { name: 'Search: Add participant' }), 'teammate 99');
+    await user.click(screen.getByRole('option', { name: 'Create teammate 99' }));
+    expect(screen.getByText('Create teammate 99')).toBeVisible();
+    await user.click(screen.getByText('More details'));
+    await user.click(screen.getByText('More details'));
+    expect(screen.getByText('Create teammate 99')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Remove Create teammate 99' }));
+    expect(screen.queryByText('Create teammate 99')).not.toBeInTheDocument();
+  });
+
   it('chooses status, assignee and section in pickers, keeping null choices and unknown references distinct', async () => {
     const user = userEvent.setup();
     const changes: Partial<TaskDraft>[] = [];
     const retained = { ...initial, statusId: 'status-missing', responsibleMembershipId: 'member-gone', sectionId: 'section-gone' };
     function Example() {
       const [draft, setDraft] = useState<TaskDraft>(retained);
-      return <TaskFields draft={draft} onChange={patch => { changes.push(patch); setDraft(before => ({ ...before, ...patch })); }} errors={{}} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} />;
+      return <TaskFields showLegacyEstimate draft={draft} onChange={patch => { changes.push(patch); setDraft(before => ({ ...before, ...patch })); }} errors={{}} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} />;
     }
     render(<Example />);
     const status = screen.getByRole('combobox', { name: 'Status' });
@@ -82,7 +101,7 @@ describe('everyday task fields', () => {
   it('locks every picker inside a disabled fieldset', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
-    render(<fieldset disabled><TaskFields draft={initial} onChange={onChange} errors={{}} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} /></fieldset>);
+    render(<fieldset disabled><TaskFields showLegacyEstimate draft={initial} onChange={onChange} errors={{}} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} /></fieldset>);
     for (const name of ['Status', 'Assignee', 'Section', 'Priority']) expect(screen.getByRole('combobox', { name })).toBeDisabled();
     await user.click(screen.getByRole('combobox', { name: 'Status' }));
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
@@ -102,7 +121,7 @@ describe('everyday task fields', () => {
     function Example() {
       const [errors, setErrors] = useState<TaskDraftErrors>({});
       return <form onSubmit={event => { event.preventDefault(); const result = buildCreateInput('project-a', { ...initial, estimate: 'invalid' }, { parentTaskId: null, workScope: 'detail' }); if (!result.ok) setErrors(result.errors); }}>
-        <TaskFields draft={{ ...initial, estimate: 'invalid' }} onChange={() => undefined} errors={errors} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} />
+        <TaskFields showLegacyEstimate draft={{ ...initial, estimate: 'invalid' }} onChange={() => undefined} errors={errors} statuses={statuses} sections={[section]} members={[assignee]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'shared' }} />
         <button type="submit">Validate task</button>
       </form>;
     }

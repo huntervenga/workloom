@@ -51,7 +51,7 @@ describe('owned UI live locale feedback', () => {
     function Example() {
       const [errors, setErrors] = useState<TaskDraftErrors>({});
       return <form onSubmit={event => { event.preventDefault(); const result = buildCreateInput('project', draft, { parentTaskId: null, workScope: 'detail' }); if (!result.ok) setErrors(result.errors); }}>
-        <TaskFields draft={draft} onChange={() => undefined} errors={errors} statuses={statuses} sections={[]} members={[]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'own' }} />
+        <TaskFields draft={draft} onChange={() => undefined} errors={errors} statuses={statuses} sections={[]} members={[]} tags={new Map()} savedTagIds={[]} unavailableParticipantIds={[]} estimateMode={{ kind: 'own' }} showLegacyEstimate />
         <button type="submit">Validate QA task</button>
       </form>;
     }

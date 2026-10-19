@@ -1,0 +1,13 @@
+{
+  "action": "Undo",
+  "retry": "Retry undo",
+  "dismiss": "Dismiss notification",
+  "saved": "Change saved",
+  "archived": "Task deleted",
+  "pending": "Undoing…",
+  "unknown": "Undo is unconfirmed. Retry the same command to check it.",
+  "unsupported": "This action cannot be undone here. No earlier change was reverted.",
+  "blocked": "Could not undo. Finish pending edits first, or check whether the task or field is locked or has changed.",
+  "cleared": "Entered value cleared; history retained",
+  "done": "Change undone"
+}

@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import type { TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contracts';
 import { describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, anna, deferred, installFakeApi, ok } from '../../test/fakeApi';
@@ -41,9 +41,12 @@ function bodyOf(call: unknown): unknown {
   return typeof body === 'string' ? JSON.parse(body) : body;
 }
 
+const label = (name: string) => `Edit ${name} for ${task.title}`;
 async function openEditor(user: ReturnType<typeof setup>['user'], name: string) {
-  await user.click(await screen.findByRole('button', { name: `Edit “${name}”` }));
-  return screen.getByRole('dialog', { name: `Value of “${name}”` });
+  const picker = await screen.findByLabelText(label(name), { selector: 'button' });
+  const cell = picker.closest('[data-inline-field-cell]') as HTMLElement;
+  if (picker.getAttribute('role') !== 'combobox' && !picker.hasAttribute('disabled')) await user.click(picker);
+  return cell;
 }
 
 describe('custom field autosave', () => {
@@ -64,9 +67,9 @@ describe('custom field autosave', () => {
     await user.click(screen.getByRole('button', { name: 'Start another write' }));
     await waitFor(() => expect(calls.filter(call => call.method === 'PUT')).toHaveLength(1));
     const dialog = await openEditor(user, 'Score');
-    expect(within(dialog).getByRole('textbox', { name: 'Score' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: label('Score') })).toBeDisabled();
     await act(async () => gate.resolve(ok({ workspaceId: alpha.id, projectId: PROJECT_ID, taskId: foreignTaskId, fieldId: FIELD_ID, definitionVersionId: definition.definitionVersionId, revision: 1, value: { type: 'number', value: 9 }, updatedAt: STAMP })));
-    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'Score' })).toBeEnabled());
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: label('Score') })).toBeEnabled());
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
   });
 
@@ -75,7 +78,7 @@ describe('custom field autosave', () => {
     const initial: TaskFieldValueDto = { workspaceId: alpha.id, projectId: PROJECT_ID, taskId: task.id, fieldId: FIELD_ID, definitionVersionId: definition.definitionVersionId, revision: 3, value: { type: 'number', value: 5 }, updatedAt: STAMP };
     const { user, sent } = setup(definition, [], [initial]);
     const dialog = await openEditor(user, 'Score');
-    const input = within(dialog).getByRole('textbox', { name: 'Score' });
+    const input = within(dialog).getByRole('textbox', { name: label('Score') });
     await user.clear(input); await user.type(input, '7');
     expect(sent()).toHaveLength(0);
     await user.click(within(dialog).getByRole('button', { name: 'Clear: Score' }));
@@ -87,7 +90,7 @@ describe('custom field autosave', () => {
     const { user, sent } = setup(field('Оценка', 'number'));
     const dialog = await openEditor(user, 'Оценка');
 
-    await user.type(within(dialog).getByRole('textbox', { name: 'Оценка' }), '7');
+    await user.type(within(dialog).getByRole('textbox', { name: label('Оценка') }), '7');
     expect(sent()).toHaveLength(0);
     await user.tab();
 
@@ -103,75 +106,62 @@ describe('custom field autosave', () => {
     const { user, sent } = setup(field('Готово', 'boolean'));
     const dialog = await openEditor(user, 'Готово');
 
-    await user.click(within(dialog).getByRole('combobox', { name: 'Готово' }));
+    await user.click(within(dialog).getByRole('combobox', { name: label('Готово') }));
     await user.click(screen.getByRole('option', { name: 'No' }));
 
     await waitFor(() => expect(sent()).toHaveLength(1));
     expect(bodyOf(sent()[0])).toMatchObject({ value: { type: 'boolean', value: false } });
     // The held command shows exactly what was sent.
-    expect(within(dialog).getByRole('combobox', { name: 'Готово' })).toHaveTextContent('No');
+    expect(within(dialog).getByRole('combobox', { name: label('Готово') })).toHaveTextContent('No');
     await user.tab();
     expect(sent()).toHaveLength(1);
   });
 
   it('resends an unconfirmed write only on Retry, with the exact same request', async () => {
     const { user, sent, writes } = setup(field('Оценка', 'number'));
-    let dialog = await openEditor(user, 'Оценка');
-    await user.type(within(dialog).getByRole('textbox', { name: 'Оценка' }), '42{Enter}');
+    const cell = await openEditor(user, 'Оценка');
+    await user.type(within(cell).getByRole('textbox', { name: label('Оценка') }), '42{Enter}');
     await waitFor(() => expect(sent()).toHaveLength(1));
-
     const first = writes[0];
     if (!first) throw new Error('First field request missing.');
     await act(async () => first.lose());
-    const actions = () => within(screen.getByRole('dialog', { name: 'Value of “Оценка”' })).getByRole('group', { name: 'Value actions' });
-    expect(await within(actions()).findByRole('button', { name: /retry/i })).toBeInTheDocument();
-    // Neither time, blur, nor close and reopen resends it by itself.
+    await screen.findByRole('button', { name: 'Retry original' });
     await user.tab();
-    await user.click(within(dialog).getByLabelText('Close', { selector: 'button' }));
-    dialog = await openEditor(user, 'Оценка');
-    expect(within(dialog).getByRole('textbox', { name: 'Оценка' })).toHaveValue('42');
+    await user.click(screen.getByRole('button', { name: 'Hide' }));
     expect(sent()).toHaveLength(1);
-
-    await user.click(within(actions()).getByRole('button', { name: /retry/i }));
+    await user.click(screen.getByRole('button', { name: /Show the save problem/ }));
+    await user.click(screen.getByRole('button', { name: 'Retry original' }));
     await waitFor(() => expect(sent()).toHaveLength(2));
-    // Same method, path, body and Idempotency-Key as the first send.
     expect(sent()[1]).toEqual(sent()[0]);
-    expect(sent()[0]?.headers.get('Idempotency-Key')).toBeTruthy();
     expect(sent()[1]?.headers.get('Idempotency-Key')).toBe(sent()[0]?.headers.get('Idempotency-Key'));
     expect(bodyOf(sent()[1])).toEqual({ expectedRevision: 0, expectedDefinitionRevision: 1, value: { type: 'number', value: 42 } });
   });
 
   it('keeps an invalid partial date as a visible draft instead of saving it', async () => {
     const { user, sent } = setup(field('Срок', 'date'));
-    let dialog = await openEditor(user, 'Срок');
-    const input = within(dialog).getByRole('textbox', { name: 'Срок' });
-
+    const cell = await openEditor(user, 'Срок');
+    const input = within(cell).getByRole('textbox', { name: label('Срок') });
     await user.type(input, '2026-1');
     await user.tab();
     expect(input).toHaveValue('2026-1');
     expect(input).toHaveAttribute('aria-invalid', 'true');
-
-    // The first close is refused so the error stays visible; the second keeps the draft unsent.
-    const close = within(dialog).getByLabelText('Close', { selector: 'button' });
-    await user.click(close);
-    expect(screen.getByRole('dialog', { name: 'Value of “Срок”' })).toBeInTheDocument();
-    await user.click(close);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-
-    dialog = await openEditor(user, 'Срок');
-    expect(within(dialog).getByRole('textbox', { name: 'Срок' })).toHaveValue('2026-1');
     expect(sent()).toHaveLength(0);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    // A normal validation failure is corrected in the same input, without opening details.
+    fireEvent.change(input, { target: { value: '2026-10-20' } });
+    await user.click(input); await user.keyboard('{Enter}');
+    await waitFor(() => expect(sent()).toHaveLength(1));
+    expect(bodyOf(sent()[0])).toMatchObject({ value: { type: 'date', value: '2026-10-20' } });
   });
 
   it('shows a clean editor without Save value or Discard and closes without writing', async () => {
     const { user, sent } = setup(field());
-    const dialog = await openEditor(user, 'Заметка');
-
-    expect(within(dialog).queryByRole('button', { name: 'Save value' })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
-    await user.click(within(dialog).getByLabelText('Close', { selector: 'button' }));
-
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const cell = await openEditor(user, 'Заметка');
+    expect(within(cell).queryByRole('button', { name: 'Save value' })).not.toBeInTheDocument();
+    expect(within(cell).queryByRole('button', { name: 'Discard draft' })).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(within(cell).queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(sent()).toHaveLength(0);
   });
 });

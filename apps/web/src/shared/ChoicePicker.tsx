@@ -28,6 +28,8 @@ export interface ChoicePickerProps {
   value: string;
   options: readonly ChoiceOption[];
   onValueChange: (value: string) => void;
+  /** Normal open/close lifecycle, after a selected value has been committed on close. */
+  onOpenChange?: ((open: boolean) => void) | undefined;
   /** Accessible name of the trigger and list; a visible `<label htmlFor={id}>` may repeat it. */
   label: string;
   disabled?: boolean | undefined;
@@ -146,6 +148,7 @@ export function ChoicePicker({
   value,
   options,
   onValueChange,
+  onOpenChange,
   label,
   disabled = false,
   autoFocus = false,
@@ -192,15 +195,17 @@ export function ChoicePicker({
     return disabled || trigger === null || trigger.disabled || disabledByFieldset(trigger);
   };
 
-  const close = useCallback((restoreFocus: boolean) => {
+  const close = useCallback((restoreFocus: boolean, notify = true) => {
     setMenu(null);
     setQuery('');
+    if (notify) onOpenChange?.(false);
     if (restoreFocus) triggerRef.current?.focus({ preventScroll: true });
-  }, []);
+  }, [onOpenChange]);
 
   const openMenu = (start: Start, seed = '') => {
     const trigger = triggerRef.current;
     if (trigger === null || isBlocked()) return;
+    onOpenChange?.(true);
     const search = searchable ?? options.length > SEARCH_THRESHOLD;
     const seedNeedle = search ? fold(seed.trim(), locale) : '';
     const pool = options.filter((option) => !option.disabled && (seedNeedle === '' || fold(option.label, locale).includes(seedNeedle)));
@@ -223,8 +228,9 @@ export function ChoicePicker({
       close(false);
       return;
     }
-    close(true);
+    close(true, false);
     if (choice.value !== value) onValueChange(choice.value);
+    onOpenChange?.(false);
   };
 
   const move = (to: 'next' | 'previous' | 'first' | 'last' | 'pageDown' | 'pageUp') => {

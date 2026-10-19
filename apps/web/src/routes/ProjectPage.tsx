@@ -74,6 +74,8 @@ import { ProjectCreateMenu } from '../features/projects/ProjectCreateMenu';
 import { SectionCreateForm, useSectionCreate } from '../features/projects/SectionCreateForm';
 import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, type TaskDropPlacement, type TaskTableCustomColumn, type TaskTableDraftRow, type TaskTableQuickAdd } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
+import { TableColumnMenu } from '../features/task-table/TableColumnMenu';
+import { ProjectUndoSurface } from '../features/undo/ProjectUndoSurface';
 import { TaskDrawer, type LoadedSubtasks } from '../features/tasks/TaskDrawer';
 import {
   TaskFilters,
@@ -418,7 +420,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     fieldValues.data.map((value) => [fieldValueKey(value.taskId, value.fieldId), value]),
   );
   // A selected row of a multi-selection never writes a team column alone; one already held keeps its recovery.
-  const customBlockedByBulk = (task: TaskDto) => bulkInline.selectsMany(task.id) && heldFieldTaskId?.toLowerCase() !== task.id.toLowerCase();
+  const customBlockedByBulk = (task: TaskDto, fieldId: string) => {
+    const session = fieldValueDrafts.current.getTask(task.id)[fieldId.toLowerCase()];
+    // An already-open one-task editor stays one-task too, when the selection changes around it.
+    const capturedBulk = session ? bulkInline.port(session.identity) !== undefined : bulkInline.selectsMany(task.id);
+    return capturedBulk && heldFieldTaskId?.toLowerCase() !== task.id.toLowerCase();
+  };
   const customColumns: TaskTableCustomColumn[] = fieldColumns.map(({ field, width }) => ({
     id: field.id,
     label: field.name,
@@ -427,9 +434,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     renderCell: (task) => {
       if (fieldValues.isError) return <ValueUnavailableCell />;
       if (fieldValues.isPending) return <ValueLoadingCell />;
-      const blocked = customBlockedByBulk(task);
+      const blocked = customBlockedByBulk(task, field.id);
       if (blocked) return <BulkCustomFieldCell task={task} field={field} value={valueByKey.get(fieldValueKey(task.id, field.id)) ?? null} members={members.data ?? []}
-        writable={writable && canEditTaskInline(task)} drafts={fieldValueDrafts.current}
+        writable={writable && canEditTaskInline(task)} drafts={fieldValueDrafts.current} onMoreDetails={() => openTask(task.id)}
         capture={(claim, baseField, baseValue) => bulkInline.captureCustom(task, baseField, baseValue, claim)} port={claim => bulkInline.port(claim)} />;
       const cell = (
         <InlineFieldValueCell
@@ -1240,6 +1247,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} titleCaret={activeInline.titleCaret} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} bulkEdit={bulkInline.port(activeInline.focusClaim)} singleOnly={activeInline.field === 'title' && bulkInline.selectsMany(task.id)} /> : null}
+            columnMenu={<TableColumnMenu actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} controller={personalColumns} fields={fieldDefinitions.data ?? []} projectColumns={projectColumns.data} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} />}
+            onCreateSection={startSection}
             quickAdd={quickAdd}
             sectionComposer={sectionCreate.open && grouping === 'section' ? <SectionCreateForm controller={sectionCreate} writable={completionWritable} /> : undefined}
             onMoveTask={moveTask}
@@ -1269,7 +1278,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onRenameSection={writable ? renameSection : undefined}
           />}
           {!importMode && !graphMode ? <LinkedProjectTasks actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
+          <ProjectUndoSurface actorId={actorId} workspaceId={workspace.id} projectId={project.id} writable={writable} />
           <TaskDrawer
+            legacyTime={timeAvailable}
             placementCommands={placementCommands}
             commentsController={commentsController}
             dependencyController={dependencies}
@@ -1360,6 +1371,8 @@ interface TaskListProps {
   draftTaskIds: ReadonlySet<string>;
   quickAdd: ComponentProps<typeof TaskTable>['quickAdd'];
   sectionComposer?: ComponentProps<typeof TaskTable>['sectionComposer'];
+  columnMenu?: ComponentProps<typeof TaskTable>['columnMenu'];
+  onCreateSection?: ComponentProps<typeof TaskTable>['onCreateSection'];
   showLegacySummary?: boolean;
   aggregateFooter?: ComponentProps<typeof TaskTable>['aggregateFooter'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
