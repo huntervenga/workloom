@@ -229,5 +229,19 @@
     "refresh": "Refresh blockers",
     "restart": "Restart blocker list",
     "unavailable": "Blockers are unavailable. Previous details are hidden; check again before relying on task readiness."
+  },
+  "sectionLayout": {
+    "viewLayout": "Diagram layout",
+    "bySection": "Section columns",
+    "useLayout": "Use section layout",
+    "previewHint": "Sections run left to right; tasks use their own section and order. This preview keeps your saved personal positions. Use section layout to start arranging, then Save my layout to keep changes.",
+    "unsectioned": "Unsectioned",
+    "unavailableSection": "Unavailable section",
+    "otherProject": "Other project · {{name}}",
+    "taskCount": {
+      "one": "{{count}} task",
+      "other": "{{count}} tasks"
+    },
+    "header": "{{name}} · {{count}} tasks"
   }
 }

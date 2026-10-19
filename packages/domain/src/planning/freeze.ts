@@ -221,7 +221,7 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
             break;
           }
           // They still run overdue freeze first. These edits do not rewrite protected value identities.
-          // task.move rewrites only position/section/revision metadata of one sibling list.
+          // task.move changes order/section, or current assignee/status; protected values and lineage stay unchanged.
           case 'project.create':case 'project.update':case 'section.create':case 'section.update':
           case 'tag.create':case 'tag.update':break;
           case 'task.move': {

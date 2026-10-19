@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { TaskDto, TaskStatusGroup } from '@workloom/contracts';
-import { useEffect, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../lib/queryClient';
 import { alpha, anna, installFakeApi, ok, project } from '../../test/fakeApi';
@@ -12,18 +12,18 @@ import { arrangeGraph } from './layout';
 import { edge, graph, layout, PROJECT_ID, rootPath, summary, taskAt } from './test/fixtures';
 import { useDependencyWorkspace, type DependencyWorkspace } from './useDependencyWorkspace';
 
-interface FlowNode { id: string; ariaLabel: string; selected?: boolean; style: CSSProperties; data: { label: ReactNode } }
+interface FlowNode { draggable?: boolean; selectable?: boolean; connectable?: boolean; focusable?: boolean; id: string; ariaLabel: string; selected?: boolean; style: CSSProperties; data: { label: ReactNode } }
 interface FlowEdge { id: string; ariaLabel: string; zIndex: number; style: CSSProperties; markerEnd: { color: string } }
-interface FlowProps { nodes: FlowNode[]; edges: FlowEdge[]; onNodesChange: (changes: { type: 'select'; id: string; selected: boolean }[]) => void; onInit?: (instance: { fitView: () => Promise<boolean> }) => void; children: ReactNode }
+interface FlowProps { nodes: FlowNode[]; edges: FlowEdge[]; onNodesChange: (changes: { type: 'select'; id: string; selected: boolean }[]) => void; onNodeDoubleClick?: (event: MouseEvent, node: FlowNode) => void; onInit?: (instance: { fitView: () => Promise<boolean> }) => void; children: ReactNode }
 const flow = vi.hoisted(() => ({ fitView: null as null | (() => void) }));
 // jsdom gives React Flow no node dimensions, so its edges never render. This stand-in exposes the exact props.
 vi.mock('@xyflow/react', () => ({
   Position: { Left: 'left', Right: 'right' }, MarkerType: { ArrowClosed: 'arrowclosed' }, Background: () => null, Controls: () => null,
-  ReactFlow: function MockFlow({ nodes, edges, onNodesChange, onInit, children }: FlowProps) {
+  ReactFlow: function MockFlow({ nodes, edges, onNodesChange, onNodeDoubleClick, onInit, children }: FlowProps) {
     useEffect(() => { onInit?.({ fitView: async () => { flow.fitView?.(); return true; } }); }, [onInit]);
     return <div>
-      {nodes.map(node => <div key={node.id} data-testid={`node-${node.id}`} aria-label={node.ariaLabel} data-selected={String(node.selected === true)} style={node.style}>
-        <button type="button" data-testid={`select-${node.id}`} onClick={() => onNodesChange([{ type: 'select', id: node.id, selected: true }])} />{node.data.label}
+      {nodes.map(node => <div key={node.id} data-testid={`node-${node.id}`} aria-label={node.ariaLabel} data-selected={String(node.selected === true)} data-draggable={String(node.draggable)} data-selectable={String(node.selectable)} data-connectable={String(node.connectable)} data-focusable={String(node.focusable)} style={node.style}>
+        <button type="button" data-testid={`select-${node.id}`} onDoubleClick={event => onNodeDoubleClick?.(event, node)} onClick={() => onNodesChange([{ type: 'select', id: node.id, selected: true }])} />{node.data.label}
       </div>)}
       {edges.map(item => <span key={item.id} data-testid={`edge-${item.id}`} aria-label={item.ariaLabel} data-dash={String(item.style.strokeDasharray ?? 'solid')} data-width={String(item.style.strokeWidth)} data-opacity={String(item.style.opacity)} data-layer={String(item.zIndex)} data-marker={item.markerEnd.color} />)}
       {children}
@@ -45,6 +45,17 @@ function renderCanvas(fitRequest?: number) {
 }
 
 describe('dependency diagram semantics', () => {
+  it('treats section headers as non-task geometry without movement, selection, connection or open actions', async () => {
+    const handlers = { onMove: vi.fn(), onOpen: vi.fn(), onConnect: vi.fn(), onViewBlockers: vi.fn() };
+    render(<GraphCanvas tasks={[node('a','todo')]} edges={[]} positions={{a:{x:24,y:120}}} columns={[{id:'section:s',title:'Discovery',count:1,x:24,y:24,width:240}]} movable={false} connectable {...handlers}/>);
+    const header = screen.getByTestId('node-section-header:section:s');
+    expect(header).toHaveAttribute('aria-label','Discovery · 1 tasks');
+    for (const attribute of ['draggable','selectable','connectable','focusable']) expect(header).toHaveAttribute(`data-${attribute}`,'false');
+    await userEvent.setup().dblClick(screen.getByTestId('select-section-header:section:s'));
+    expect(screen.getByRole('status',{name:'Selected task dependencies'})).toHaveTextContent('Select a task to highlight');
+    expect(Object.values(handlers).every(handler => handler.mock.calls.length === 0)).toBe(true);
+  });
+
   it('labels each arrow with the predecessor-done rule and distinguishes done and violating tasks in text', () => {
     const { handlers } = renderCanvas();
     expect(screen.getByRole('list', { name: 'Dependency arrow legend' })).toHaveTextContent('Solid amber arrow: the predecessor is not done, so the dependency is unresolved');

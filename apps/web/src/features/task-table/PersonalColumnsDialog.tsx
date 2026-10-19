@@ -7,7 +7,7 @@ import { ApiError, isAccessDenied } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
-import { columnKey, reconcilePersonalColumns } from './personalColumns';
+import { columnKey, isLegacyTimeColumn, reconcilePersonalColumns } from './personalColumns';
 import type { PersonalTablePreferenceController } from './usePersonalTablePreference';
 
 const builtinLabels = {
@@ -31,6 +31,9 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
   const stored = c.held ? c.held.variables.input.columns : c.draft ? c.draft.columns : c.query.data?.columns ?? null;
   const result = projectColumns ? reconcilePersonalColumns(stored, fields, projectColumns, timeAvailable) : null;
   const choices = result?.choices ?? [];
+  // Keep the complete saved payload; ordinary UI only presents controls for ordinary columns.
+  const displayedChoices = choices.map((choice, index) => ({ choice, index })).filter(({ choice }) => timeAvailable || !isLegacyTimeColumn(choice.column));
+  const addedCount = result?.addedRefs.filter(ref => timeAvailable || !isLegacyTimeColumn(ref)).length ?? 0;
   const ownFields = new Map(fields.filter(field => field.projectId === projectColumns?.projectId && field.workspaceId === projectColumns.workspaceId).map(field => [field.id.toLowerCase(), field]));
   const conflict = c.command.error instanceof ApiError && c.command.error.kind === 'conflict';
   const frozen = c.frozen || !c.query.data || !projectColumns || Boolean(catalogError);
@@ -42,8 +45,9 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
   useLayoutEffect(() => { const key = focusAfterMove.current; if (key) { focusAfterMove.current = null; const primary = refs.current.get(key); const opposite = key.endsWith(':-1') ? `${key.slice(0, -3)}:1` : `${key.slice(0, -2)}:-1`; (primary && !primary.disabled ? primary : refs.current.get(opposite))?.focus(); } });
   const reload = async () => { await onReloadCatalog(); await c.reload(); };
   const move = (index: number, direction: -1 | 1) => {
-    const target = index + direction;
-    if (frozen || index === 0 || target < 1 || target >= choices.length) return;
+    const visibleIndex = displayedChoices.findIndex(item => item.index === index);
+    const target = displayedChoices[visibleIndex + direction]?.index;
+    if (frozen || visibleIndex < 1 || visibleIndex + direction < 1 || target === undefined) return;
     const next = [...choices]; const a = next[index]; const b = next[target]; if (!a || !b) return;
     next[index] = b; next[target] = a;
     focusAfterMove.current = `${columnKey(a.column)}:${direction}`; c.setDraft(next);
@@ -58,11 +62,11 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
         {c.query.isPending ? <p role="status" className="mt-3 text-sm">{t('taskTable.personalColumns.loading')}</p> : null}
         {c.query.isError ? <QueryErrorState error={c.query.error} subject="tablePreference" headingLevel={2} onRetry={() => void reload()} retrying={c.query.isFetching} /> : null}
         {catalogError ? <QueryErrorState error={catalogError} subject="columns" headingLevel={2} onRetry={() => void reload()} /> : null}
-        {result?.addedRefs.length ? <p role="status" className="mt-3 text-xs text-muted">{t('taskTable.personalColumns.newColumns', { count: result.addedRefs.length })}</p> : null}
+        {addedCount ? <p role="status" className="mt-3 text-xs text-muted">{t('taskTable.personalColumns.newColumns', { count: addedCount })}</p> : null}
         {result?.limitExceeded ? <p role="alert" className="mt-3 text-sm text-red-700">{t('taskTable.personalColumns.limit')}</p> : null}
         {result?.invalidRefs.length ? <p role="alert" className="mt-3 text-sm text-red-700">{t('taskTable.personalColumns.invalid')}</p> : null}
         <ul aria-label={t('taskTable.personalColumns.list')} className="mt-3 max-h-[48dvh] space-y-2 overflow-y-auto py-1">
-          {choices.map((choice, index) => {
+          {displayedChoices.map(({ choice, index }, displayIndex) => {
             const ref = choice.column; const key = columnKey(ref);
             const field = ref.kind === 'field' ? ownFields.get(ref.fieldId.toLowerCase()) : undefined;
             const invalid = ref.kind === 'field' && !field;
@@ -72,7 +76,7 @@ export function PersonalColumnsDialog({ controller: c, fields, projectColumns, t
             return <li key={key} className="flex items-center gap-2 rounded-lg border border-line px-2 py-2 text-sm">
               <label className="flex min-w-0 flex-1 items-start gap-2"><input type="checkbox" className="mt-0.5" checked={choice.visible} disabled={frozen || index === 0 || inactive || invalid || time && !timeAvailable} onChange={event => c.setDraft(choices.map((item, at) => at === index ? { ...item, visible: event.target.checked } : item))} /><span className="min-w-0"><span className="block truncate" title={name}>{name}</span>{index === 0 ? <span className="block text-xs text-muted">{t('taskTable.personalColumns.pinned')}</span> : inactive || invalid ? <span className="block text-xs text-muted">{t('taskTable.personalColumns.inactive')}</span> : time && !timeAvailable ? <span className="block text-xs text-muted">{t('genericReports.legacyOnly')}</span> : null}</span></label>
               {inactive || invalid ? <Button size="sm" variant="ghost" disabled={frozen} aria-label={t('taskTable.personalColumns.remove', { name })} onClick={() => c.setDraft(choices.filter((_, at) => at !== index))}>{t('taskTable.personalColumns.removeShort')}</Button> : null}
-              {([-1, 1] as const).map(direction => <button key={direction} ref={node => { const id = `${key}:${direction}`; if (node) refs.current.set(id, node); else refs.current.delete(id); }} type="button" disabled={frozen || index === 0 || index + direction < 1 || index + direction >= choices.length} aria-label={t(direction === -1 ? 'taskTable.personalColumns.moveUp' : 'taskTable.personalColumns.moveDown', { name })} className="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas disabled:opacity-30" onClick={() => move(index, direction)}>{direction === -1 ? <ArrowUp size={14} aria-hidden="true" /> : <ArrowDown size={14} aria-hidden="true" />}</button>)}
+              {([-1, 1] as const).map(direction => <button key={direction} ref={node => { const id = `${key}:${direction}`; if (node) refs.current.set(id, node); else refs.current.delete(id); }} type="button" disabled={frozen || index === 0 || displayIndex + direction < 1 || displayIndex + direction >= displayedChoices.length} aria-label={t(direction === -1 ? 'taskTable.personalColumns.moveUp' : 'taskTable.personalColumns.moveDown', { name })} className="inline-flex size-7 shrink-0 items-center justify-center rounded text-muted hover:bg-canvas disabled:opacity-30" onClick={() => move(index, direction)}>{direction === -1 ? <ArrowUp size={14} aria-hidden="true" /> : <ArrowDown size={14} aria-hidden="true" />}</button>)}
             </li>;
           })}
         </ul>

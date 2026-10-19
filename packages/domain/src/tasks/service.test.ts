@@ -88,6 +88,8 @@ function harness() {
     statusChecks: [] as { taskId: string; statusId: string }[],
     /** Test knob: the transition policy rejects any status change of this task. */
     blockedStatusTaskId: null as string | null,
+    /** A late storage error proves status and earlier shifts roll back together. */
+    failSaveTaskId: null as string | null,
     /** Test knob: task row writes made outside a unit-of-work run; must stay 0. */
     writesOutsideRun: 0,
     inRun: false,
@@ -190,6 +192,7 @@ function harness() {
       db.state.tasks.set(row.id, row);
     },
     saveTaskCore: async (row) => {
+      if (row.id === db.failSaveTaskId) throw new Error('Synthetic late task write failure.');
       db.writesOutsideRun += db.inRun ? 0 : 1;
       db.state.tasks.set(row.id, row);
     },
@@ -1727,5 +1730,112 @@ describe('bulk status, priority, tag and section patches', () => {
     // A subtask may be selected when its section does not actually change; its lineage stays.
     const [kept] = await s.app.bulkUpdateTasks(s.owner(), { projectId: s.project.id, tasks: selection(s, child), changes: { sectionId: null, priority: 'low' } });
     expect(kept).toMatchObject({ parentTaskId: root.id, sectionId: null, workPackageId: child.workPackageId, priority: 'low', revision: 2 });
+  });
+});
+
+
+describe('atomic Board status-lane ordering', () => {
+  async function doneStatus(s: OrderFixture): Promise<string> {
+    const status = (await s.app.listStatuses(s.ctx(users.owner), s.project.id)).find(row => row.group === 'done');
+    if (!status) throw new Error('Missing done fixture.');
+    return status.id;
+  }
+  it('persists same-lane before and after moves across parents without reparenting or changing sections', async () => {
+    const s = await setup(), section = await s.app.createSection(s.owner(), s.project.id, { name: 'Other section' });
+    const parent = await s.createTask({ title: 'Parent' }), first = await s.createTask({ title: 'First child', parentTaskId: parent.id });
+    const other = await s.createTask({ title: 'Other parent', sectionId: section.id });
+    const second = await s.createTask({ title: 'Second child', parentTaskId: other.id, sectionId: section.id });
+    let before = orderSnapshot(s);
+    const moved = await s.app.moveTask(s.owner(), second.id, { expectedRevision: second.revision, statusId: s.statusId, anchorTaskId: first.id, placement: 'before' });
+    expectOrderWrite(s, before, [parent.id, second.id, first.id, other.id], { id: second.id });
+    expect(moved.parentTaskId).toBe(other.id); expect(moved.sectionId).toBe(section.id);
+    before = orderSnapshot(s);
+    await s.app.moveTask(s.owner(), second.id, { expectedRevision: moved.revision, statusId: s.statusId, anchorTaskId: other.id, placement: 'after' });
+    expectOrderWrite(s, before, [parent.id, first.id, other.id, second.id], { id: second.id });
+  });
+  it('changes status and exact position once while preserving source semantics and shifted siblings', async () => {
+    const s = await setup(), done = await doneStatus(s);
+    const section = await s.app.createSection(s.owner(), s.project.id, { name: 'Original' });
+    const source = await s.createTask({ title: 'Source', sectionId: section.id, responsibleMembershipId: members.owner, participantMembershipIds: [members.owner], estimateMinutes: 90, startDate: '2026-10-20', dueDate: '2026-10-21' });
+    const hidden = await s.createTask({ title: 'Hidden' }), first = await s.createTask({ title: 'Done first', statusId: done }), second = await s.createTask({ title: 'Done second', statusId: done });
+    const before = orderSnapshot(s), checks = s.db.statusChecks.length;
+    const moved = await s.app.moveTask(s.owner(), source.id, { expectedRevision: source.revision, statusId: done, anchorTaskId: second.id, placement: 'before' });
+    expect(globalOrder(s.projected(), s.project.id)).toEqual([hidden.id, first.id, source.id, second.id]);
+    expect(semantic(moved)).toEqual(semantic({ ...source, statusId: done }));
+    expect(moved.revision).toBe(source.revision + 1);
+    for (const [id, old] of before.rows) if (id !== source.id) {
+      const current = s.projected().get(id) as TaskDto;
+      expect(semantic(current)).toEqual(semantic(old));
+      expect(current.revision).toBe(old.revision + (old.position === current.position ? 0 : 1));
+    }
+    expect(dumpOf(s.db.state, ...SIDE_TABLES)).toBe(before.side);
+    expect(s.db.statusChecks.slice(checks)).toEqual([{ taskId: source.id, statusId: done }]);
+    expect(s.events.slice(before.events).filter(e => e.entityId === source.id)).toHaveLength(1);
+    expect(s.events.slice(before.events).find(e => e.entityId === source.id)?.diff).toMatchObject({ statusId: { from: s.statusId, to: done }, position: { from: source.position, to: 2 } });
+    expect(s.db.planningChecks.at(-1)).toEqual([{ family: 'task', command: 'task.move', target: source.id, input: { expectedRevision: source.revision, statusId: done, anchorTaskId: second.id, placement: 'before' } }]);
+  });
+  it('resolves the full lane end beyond 200 unloaded tasks, including children but excluding archived tasks', async () => {
+    const s = await setup(), done = await doneStatus(s), source = await s.createTask();
+    const parent = await s.createTask({ statusId: done });
+    const rows = Array.from({ length: 220 }, (_, index) => seedTask(s, parent, 20000 + index, { position: index + 2, statusId: index % 2 ? s.statusId : done, parentTaskId: index % 3 ? null : parent.id }));
+    const last = rows[218] as TaskDto;
+    const archived = seedTask(s, parent, 20300, { position: 222, statusId: done, archivedAt: ARCHIVED_AT });
+    const moved = await s.app.moveTask(s.owner(), source.id, { expectedRevision: source.revision, statusId: done, anchorTaskId: null, placement: 'after' });
+    const order = globalOrder(s.projected(), s.project.id);
+    expect(order.indexOf(source.id)).toBe(order.indexOf(last.id) + 1);
+    expect(order.at(-1)).toBe(archived.id); expect(moved.statusId).toBe(done);
+    expect(s.db.listInputs.at(-1)).toEqual({ projectId: s.project.id, includeArchived: true, limit: 200 });
+  });
+  it('keeps numeric ties and gaps for a true no-op or a status-only empty-lane move', async () => {
+    const s = await setup(), done = await doneStatus(s), first = await s.createTask(), source = await s.createTask();
+    s.db.state.tasks.set(first.id, { ...first, position: 7 }); s.db.state.tasks.set(source.id, { ...source, position: 23 });
+    const events = s.events.length;
+    const noop = await s.app.moveTask(s.owner(), source.id, { expectedRevision: source.revision, statusId: s.statusId, anchorTaskId: first.id, placement: 'after' });
+    expect(noop).toEqual({ ...source, position: 23 }); expect(s.events).toHaveLength(events);
+    const moved = await s.app.moveTask(s.owner(), source.id, { expectedRevision: source.revision, statusId: done, anchorTaskId: null, placement: 'after' });
+    expect(moved).toMatchObject({ position: 23, statusId: done, revision: source.revision + 1 });
+    expect(s.projected().get(first.id)).toEqual({ ...first, position: 7 });
+    expect(s.events).toHaveLength(events + 1);
+  });
+  it('rejects stale, foreign, archived, wrong-lane and unauthorized moves without any write', async () => {
+    const s = await setup(), done = await doneStatus(s), source = await s.createTask(), anchor = await s.createTask({ statusId: done });
+    const foreignProject = await s.app.createProject(s.owner(), { name: 'Foreign project' });
+    const foreignStatus = (await s.app.listStatuses(s.ctx(users.owner), foreignProject.id))[0] as TaskStatusDto;
+    const foreign = await s.createTask({ projectId: foreignProject.id, statusId: foreignStatus.id });
+    const archived = seedTask(s, anchor, 20400, { archivedAt: ARCHIVED_AT });
+    const body = { expectedRevision: source.revision, statusId: done, anchorTaskId: anchor.id, placement: 'before' as const };
+    for (const [label, patch, code] of [
+      ['stale', { expectedRevision: 99 }, 'REVISION_CONFLICT'],
+      ['wrong lane', { statusId: s.statusId }, 'DOMAIN_VALIDATION_FAILED'],
+      ['foreign status', { statusId: foreignStatus.id }, 'DOMAIN_VALIDATION_FAILED'],
+      ['foreign anchor', { anchorTaskId: foreign.id }, 'DOMAIN_VALIDATION_FAILED'],
+      ['missing status', { statusId: uuid(20800) }, 'NOT_FOUND'],
+      ['archived anchor', { anchorTaskId: archived.id }, 'DOMAIN_VALIDATION_FAILED'],
+    ] as const) await expectRejectedWithoutWrites(s, label, () => s.app.moveTask(s.owner(), source.id, { ...body, ...patch }), code);
+    await expectRejectedWithoutWrites(s, 'viewer', () => s.app.moveTask(s.ctx(users.viewer, s.key()), source.id, body), 'CAPABILITY_REQUIRED');
+    await expectRejectedWithoutWrites(s, 'revoked', () => s.app.moveTask(s.ctx(users.revoked, s.key()), source.id, body), 'NOT_FOUND');
+  });
+  it('keeps dependency rejection and a late shifted-row failure fully atomic', async () => {
+    const s = await setup(), done = await doneStatus(s), source = await s.createTask(), middle = await s.createTask(), anchor = await s.createTask({ statusId: done });
+    const body = { expectedRevision: source.revision, statusId: done, anchorTaskId: anchor.id, placement: 'after' as const };
+    s.db.blockedStatusTaskId = source.id;
+    await expectRejectedWithoutWrites(s, 'dependency policy', () => s.app.moveTask(s.owner(), source.id, body), 'DOMAIN_VALIDATION_FAILED');
+    s.db.blockedStatusTaskId = null;
+    const before = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES), events = s.events.length;
+    s.db.failSaveTaskId = middle.id;
+    await expect(s.app.moveTask(s.owner(), source.id, body)).rejects.toThrow('Synthetic late task write failure.');
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(before); expect(s.events).toHaveLength(events);
+  });
+  it('replays the exact status-order receipt after later edits, rejects changed intent and rechecks current membership', async () => {
+    const s = await setup(), done = await doneStatus(s), source = await s.createTask(), anchor = await s.createTask({ statusId: done });
+    const ctx = s.owner(), body = { expectedRevision: source.revision, statusId: done, anchorTaskId: anchor.id, placement: 'after' as const };
+    const result = await s.app.moveTask(ctx, source.id, body);
+    await s.app.updateTask(s.owner(), source.id, { expectedRevision: result.revision, title: 'Later title' });
+    const before = dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES), events = s.events.length;
+    expect(await s.app.moveTask(ctx, source.id, body)).toEqual(result);
+    expect(dumpOf(s.db.state, 'tasks', 'idempotency', ...SIDE_TABLES)).toBe(before); expect(s.events).toHaveLength(events);
+    await expectRejectedWithoutWrites(s, 'changed status', () => s.app.moveTask(ctx, source.id, { ...body, statusId: s.statusId }), 'IDEMPOTENCY_KEY_REUSED');
+    const restore = revokeMembership(members.owner);
+    try { await expectRejectedWithoutWrites(s, 'revoked replay', () => s.app.moveTask(ctx, source.id, body), 'NOT_FOUND'); } finally { restore(); }
   });
 });

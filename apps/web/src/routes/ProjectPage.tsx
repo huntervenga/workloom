@@ -16,13 +16,12 @@ import { TaskCompletionAction } from '../features/tasks/TaskCompletionAction';
 import { TaskCompletionFeedback, TaskFeedbackLayer } from '../features/tasks/TaskCompletionFeedback';
 import { useTaskCompletion } from '../features/tasks/useTaskCompletion';
 import { useCurrentSearchParams } from '../lib/useCurrentSearchParams';
-import { TaskBoard } from '../features/task-board';
+import { TaskBoard, type BoardMoveCard } from '../features/task-board';
 import { PersonalColumnsDialog } from '../features/task-table/PersonalColumnsDialog';
 import { reconcilePersonalColumns, tableColumnId } from '../features/task-table/personalColumns';
 import { usePersonalTablePreference } from '../features/task-table/usePersonalTablePreference';
 import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/task-comments';
 import { ProjectActions } from '../features/projects/ProjectActions';
-import { weeklyPlanningHref } from '../features/planning/navigation';
 import { QuickTaskAdd, QuickTaskDraftPreview, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
 import { InlineTaskEdit, type InlineCloseReason, type InlineSaveIntent } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
@@ -56,7 +55,7 @@ import type {
 } from '@workloom/contracts';
 import { explicitTimeContext, type InitialTimeContext } from '../features/tasks/InitialTaskCells';
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
-import { ArrowLeft, CalendarDays, Lock, Pencil, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Lock, Pencil, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
@@ -398,7 +397,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     fieldDefinitions.isSuccess ? fieldDefinitions.data : [], projectColumns.isSuccess ? projectColumns.data : { workspaceId: workspace.id, projectId: project.id, revision: 1, columns: [] }, timeAvailable),
     [personalColumns.query.data?.columns, fieldDefinitions.data, fieldDefinitions.isSuccess, projectColumns.data, projectColumns.isSuccess, workspace.id, project.id, timeAvailable]);
   const ordinaryAggregates = useColumnAggregates({ actorId, workspaceId: workspace.id, projectId: project.id, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], grouping, filters: { ...filters, search }, writable, enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && projectColumns.isSuccess && members.isSuccess && !personalColumns.denied });
-  const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.filter(ref => timeAvailable || ref.kind !== 'builtin' || ref.key !== 'estimate').map(tableColumnId), [reconciledColumns, timeAvailable]);
+  const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.map(tableColumnId), [reconciledColumns]);
   const fieldColumns: FieldColumn[] = reconciledColumns.effectiveVisibleRefs.flatMap(ref => {
     if (ref.kind !== 'field' || !fieldDefinitions.isSuccess || !projectColumns.isSuccess) return [];
     const field = fieldDefinitions.data.find(item => item.id === ref.fieldId && item.projectId === project.id && item.workspaceId === workspace.id && item.archivedAt === null);
@@ -997,14 +996,21 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const moveBlocked = !completionWritable || unresolvedTaskCommand(commands) !== null || commands.move.pendingCommand !== null || commands.move.uncertain !== null
     || commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching;
   // Board drag is one explicit status intent, using the same page-owned serialized field writer.
-  const moveBoardStatus = (seen: TaskDto, statusId: string) => {
-    if (moveBlocked || activeInline !== null || !completionWritable || commands.editSessions.current.has(seen.id)) return;
-    const current = dedupeTasks(shownTasks).find(task => task.id === seen.id);
+  const moveBoardCard: BoardMoveCard = (seen, statusId, anchor, placement) => {
+    if (moveBlocked || activeInline !== null || !completionWritable || sortMode !== 'manual' || commands.editSessions.current.has(seen.id)) return;
+    const heads = dedupeTasks(shownTasks);
+    const current = heads.find(task => task.id === seen.id);
     const target = statuses.data?.find(status => status.id === statusId && status.projectId === project.id && status.workspaceId === workspace.id);
-    if (!current || !target || !canEditTaskInline(current) || current.statusId === statusId || current.revision !== seen.revision
-      || current.statusId !== seen.statusId || current.workPackageRevision !== seen.workPackageRevision || current.participantsRevision !== seen.participantsRevision) return;
-    commands.autosave.authorize(current.id, completionWritable);
-    commands.autosave.choose(current, { statusId });
+    const currentAnchor = anchor ? heads.find(task => task.id === anchor.id) : null;
+    if (!current || !target || !canEditTaskInline(current) || current.revision !== seen.revision || current.statusId !== seen.statusId || current.position !== seen.position
+      || current.workPackageRevision !== seen.workPackageRevision || current.participantsRevision !== seen.participantsRevision) return;
+    if (anchor && (!currentAnchor || currentAnchor.id === current.id || currentAnchor.statusId !== statusId || currentAnchor.archivedAt !== null
+      || currentAnchor.revision !== anchor.revision || currentAnchor.position !== anchor.position)) return;
+    invalidateInlineSave(); setActiveInline(null);
+    setAnnouncement(message('taskTable.move.moving', { title: current.title }));
+    commands.move.mutate({ taskId: current.id, input: { expectedRevision: current.revision, statusId, anchorTaskId: currentAnchor?.id ?? null, placement } }, {
+      onSuccess: moved => setAnnouncement(message('taskTable.move.moved', { title: moved.title })),
+    });
   };
   const moveTask = (task: TaskDto, anchor: TaskDto | null, placement: TaskDropPlacement, target?: { responsibleMembershipId: string | null }) => {
     if (!completionWritable || sortMode !== 'manual' || (!anchor && target === undefined)) return;
@@ -1125,9 +1131,6 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         <Button ref={graphMode ? activeViewControl : undefined} size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
         <Button ref={ganttMode ? activeViewControl : undefined} size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
         <Link to={`/w/${workspace.id}/projects/${project.id}/reports`} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>{t('genericReports.reports')}</Link>
-        <Button size="sm" variant="ghost" onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('legacyTime', '1'); return next; })}>{t('genericReports.legacyColumns')}</Button>
-        <Link to={weeklyPlanningHref(workspace.id, project.id, { periodId: taskTime.context.periodId, workerId: taskTime.context.workerId, explicitEmptyPeriod: true })} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>
-          <CalendarDays size={16} aria-hidden="true" />{t('genericReports.legacy')}</Link>
         {canManageImports ? <Button ref={importMode ? activeViewControl : undefined} size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
       </nav>
 
@@ -1212,7 +1215,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               </div>
             </details>
           ) : null}
-          {boardMode && sortMode === 'due_asc' ? <p className="text-xs text-muted">{t('taskTable.sort.boardHelp')}</p> : null}
+          {boardMode && sortMode === 'due_asc' ? <div className="flex items-center gap-2 text-xs text-muted"><p>{t('taskTable.sort.boardHelp')}</p><Button size="sm" variant="ghost" onClick={() => { invalidateInlineSave(); setSearchParams(before => { const next = new URLSearchParams(before); next.delete('sort'); return next; }); }}>{t('taskTable.sort.manual')}</Button></div> : null}
           {personalColumns.query.isError && !personalColumns.denied ? <p role="status" className="text-xs text-amber-800">{t('taskTable.personalColumns.loadFailed')}</p> : null}
           {/* A custom field failure never hides the built-in table. */}
           {fieldsError ? (
@@ -1224,7 +1227,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
               onRetry={() => void fieldsError.query.refetch()}
             />
           ) : null}
-          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} tasksSettled={tasks.isSuccess} selectedIds={selectedTaskIds} selectionDisabled={bulkHeld} onSelect={(id, selected) => changeSelection(selected ? selectedTaskIds.includes(id) || selectedTaskIds.length >= 100 ? selectedTaskIds : [...selectedTaskIds, id] : selectedTaskIds.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable && !bulkHeld} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
+          {importMode ? <ImportView actorId={actorId} workspaceId={workspace.id} project={project} selectedId={importId} canManage={canManageImports} writable={writable && canManageImports} catalog={{ members: members.data, statuses: statuses.data, sections: sections.data, tags: tags.data, fields: fieldDefinitions.data ?? [] }} catalogDenied={importCatalogDenied} onRefreshCatalog={refreshImportCatalog} controller={imports} onSelect={selectImport} onOpenTask={openTask} /> : graphMode ? <>{dependencies.roots === null && shownTasks.length > 100 && selectedTaskIds.length === 0 ? <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{t('projects.projectPage.moreThan100TasksAreLoadedSelectUp')}</p> : null}<GraphView actorId={actorId} workspace={workspace} project={project} controller={dependencies} loadedTasks={dedupeTasks(shownTasks)} sections={sections.data ?? []} onOpen={openGraphTask} /></> : ganttMode ? <GanttView actorId={actorId} workspace={workspace} project={project} tasks={dedupeTasks(shownTasks)} tasksSettled={tasks.isSuccess} selectedIds={selectedTaskIds} selectionDisabled={bulkHeld} onSelect={(id, selected) => changeSelection(selected ? selectedTaskIds.includes(id) || selectedTaskIds.length >= 100 ? selectedTaskIds : [...selectedTaskIds, id] : selectedTaskIds.filter(item => item !== id))} periods={meetingPeriods.data ?? []} members={members.data} controller={schedule} writable={writable && !bulkHeld} hasMore={tasks.hasNextPage} loadingMore={tasks.isFetchingNextPage} onLoadMore={() => void tasks.fetchNextPage()} onOpen={openTask} /> : personalColumns.denied ? <QueryErrorState error={personalColumns.query.error ?? personalColumns.command.error} subject="tablePreference" headingLevel={2} onRetry={() => void personalColumns.reload()} /> : <TaskList
             renderCompletionAction={completionAction}
             boardMode={boardMode}
             sortMode={sortMode}
@@ -1240,7 +1243,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             quickAdd={quickAdd}
             sectionComposer={sectionCreate.open && grouping === 'section' ? <SectionCreateForm controller={sectionCreate} writable={completionWritable} /> : undefined}
             onMoveTask={moveTask}
-            onMoveBoardStatus={moveBoardStatus}
+            onMoveBoardCard={moveBoardCard}
             moveBlocked={moveBlocked}
             acquireDragProtection={acquireDragProtection}
             selectedTaskIds={selectedTaskIds}
@@ -1360,7 +1363,7 @@ interface TaskListProps {
   showLegacySummary?: boolean;
   aggregateFooter?: ComponentProps<typeof TaskTable>['aggregateFooter'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
-  onMoveBoardStatus: (task: TaskDto, statusId: string) => void;
+  onMoveBoardCard: BoardMoveCard;
   moveBlocked: boolean;
   acquireDragProtection: () => () => void;
   writable: boolean;
@@ -1397,7 +1400,7 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
   const scope = loadedTaskScope(query.data);
   return (
     <div className="space-y-3">
-      {boardMode ? <TaskBoard onMoveStatus={table.onMoveBoardStatus} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
+      {boardMode ? <TaskBoard onMoveCard={table.sortMode === 'manual' ? table.onMoveBoardCard : undefined} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={table.sortMode === 'manual' ? orderBoardTaskHeads(scope.tasks, 'manual').sort((left, right) => compareTaskRows(left, right, 'manual')) : orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={scope.tasks}
         partial={filtered || !scope.complete}

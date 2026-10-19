@@ -231,12 +231,11 @@ describe('moveTaskInputSchema', () => {
     }
   });
 
-  it('rejects fields that would change anything but the order', () => {
+  it('rejects fields outside the supported order modes', () => {
     for (const extra of [
       { position: 0 },
       { sectionId: ids.parent },
       { parentTaskId: ids.parent },
-      { statusId: ids.status },
       { insertion: { anchorTaskId: anchor, placement: 'after' } },
       { actor: ids.memberA },
       { workspaceId: ids.workspace },
@@ -490,5 +489,25 @@ describe('open task completion filter query', () => {
     }
     expect(taskListQuerySchema.safeParse({ projectId: ids.project, completed: 'open' }).success).toBe(false);
     expect(taskListQuerySchema.safeParse({ projectId: ids.project, statusGroup: 'todo' }).success).toBe(false);
+  });
+});
+
+
+describe('atomic Board lane move input', () => {
+  const legacy = { expectedRevision: 1, anchorTaskId: ids.parent, placement: 'before' as const };
+  it('adds no status default to old parsed moves and accepts exact status lane placement', () => {
+    expect(moveTaskInputSchema.parse(legacy)).toEqual(legacy);
+    expect(Object.hasOwn(moveTaskInputSchema.parse(legacy), 'statusId')).toBe(false);
+    expect(moveTaskInputSchema.parse({ ...legacy, statusId: ids.status.toUpperCase() })).toEqual({ ...legacy, statusId: ids.status });
+    expect(moveTaskInputSchema.parse({ ...legacy, statusId: ids.status, anchorTaskId: null, placement: 'after' })).toEqual({ ...legacy, statusId: ids.status, anchorTaskId: null, placement: 'after' });
+  });
+  it('rejects mixed modes, unbounded positions and invalid lane ends', () => {
+    for (const extra of [
+      { statusId: null }, { statusId: 'unknown' },
+      { statusId: ids.status, responsibleMembershipId: null },
+      { statusId: ids.status, responsibleMembershipId: ids.memberA },
+      { statusId: ids.status, anchorTaskId: null },
+      { statusId: ids.status, position: 3 }, { statusId: ids.status, placement: 'end' },
+    ]) expect(moveTaskInputSchema.safeParse({ ...legacy, ...extra }).success).toBe(false);
   });
 });

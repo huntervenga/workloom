@@ -46,6 +46,15 @@ describe('personal column chooser and page-owned commands', () => {
     await waitFor(() => expect(ui.controller().query.data?.revision).toBe(1));
   });
 
+  it('edits ordinary columns while hidden legacy choices retain their exact saved flags and positions', async () => {
+    const saved: ColumnChoice[] = [title, { column: { kind: 'builtin', key: 'weeklyActual' }, visible: true }, { column: { kind: 'builtin', key: 'status' }, visible: true }, { column: { kind: 'builtin', key: 'estimate' }, visible: false }, { column: { kind: 'builtin', key: 'tags' }, visible: true }, { column: { kind: 'field', fieldId: note.id }, visible: false }];
+    let current = head(4, saved); const ui = example({ [`GET ${path}`]: () => ok(current), [`PUT ${path}`]: request => ok(current = head(5, (request.body as { columns: ColumnChoice[] }).columns)) }); await open(ui);
+    expect(screen.queryByText('Team estimate', { exact: true })).not.toBeInTheDocument(); expect(screen.queryByText('Personal actual hours', { exact: true })).not.toBeInTheDocument();
+    await ui.user.click(screen.getByRole('button', { name: 'Move Tags up' })); await ui.user.click(screen.getByLabelText('Stored note')); await ui.user.click(screen.getByRole('button', { name: 'Save columns' }));
+    await waitFor(() => expect(ui.controller().query.data?.revision).toBe(5)); const write = ui.calls.find(call => call.method === 'PUT'); const choices = (write?.body as { columns: ColumnChoice[] }).columns;
+    expect(choices[1]).toEqual(saved[1]); expect(choices[3]).toEqual(saved[3]); expect(choices[2]?.column).toEqual({ kind: 'builtin', key: 'tags' }); expect(choices[4]?.column).toEqual({ kind: 'builtin', key: 'status' }); expect(choices.find(choice => choice.column.kind === 'field' && choice.column.fieldId === note.id)?.visible).toBe(true); expect(ui.calls.filter(call => call.method === 'PUT')).toHaveLength(1);
+  });
+
   it('retains unsent visibility/order after Escape and reopens without any write', async () => {
     const ui = example({ [`GET ${path}`]: () => ok(head()) }); await open(ui);
     await ui.user.click(screen.getByLabelText('Tags')); await ui.user.keyboard('{Escape}');
@@ -67,8 +76,8 @@ describe('personal column chooser and page-owned commands', () => {
     await act(async () => response.resolve(ok(head(2, [title]))));
     await waitFor(() => expect(ui.controller().query.data?.revision).toBe(3));
     expect(ui.controller().query.data?.columns).toEqual(newer); expect(ui.controller().draft).toBeNull();
-    const estimate = screen.getByLabelText('Team estimateAvailable in Legacy time columns; your saved visibility is preserved.');
-    expect(estimate).toBeDisabled(); expect(estimate).not.toBeChecked();
+    expect(screen.queryByText('Team estimate', { exact: true })).not.toBeInTheDocument();
+    expect(ui.controller().query.data?.columns).toEqual(newer);
     expect(ui.calls.filter(call => call.method === 'PUT')).toHaveLength(1);
   });
 

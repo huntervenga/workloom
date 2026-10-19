@@ -581,6 +581,21 @@ describe('P1a task routes (HTTP adapter)', () => {
     expect(calls).toHaveLength(1);
   });
 
+  it('forwards atomic Board lane placement through the existing move route and rejects mixed modes', async () => {
+    const route = routeFor('moveTask');
+    for (const anchorTaskId of [IDS.anchor, null]) {
+      const body = { expectedRevision: 3, statusId: IDS.status.toUpperCase(), anchorTaskId, placement: 'after' };
+      const response = await send(app, route, { body });
+      expect(response.statusCode).toBe(200);
+      expect(taskResponseSchema.parse(response.json()).data).toEqual(task);
+      expect(calls.at(-1)?.args).toEqual([IDS.task, { ...body, statusId: IDS.status }]);
+    }
+    for (const extra of [{ responsibleMembershipId: null }, { statusId: null }, { anchorTaskId: null, placement: 'before' }, { position: 12 }]) {
+      expectRejected(await send(app, route, { body: { expectedRevision: 3, statusId: IDS.status, anchorTaskId: IDS.anchor, placement: 'after', ...extra } }), 400, 'VALIDATION_FAILED');
+    }
+    expect(calls).toHaveLength(2);
+  });
+
   it('refuses to send a service result that breaks the response contract', async () => {
     overrides.set('getTask', () => ({ ...task, visibility: 'private' }));
     expectRejected(await send(app, routeFor('getTask')), 500, 'INTERNAL_ERROR');

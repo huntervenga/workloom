@@ -12,7 +12,7 @@ describe('pure personal column reconciliation', () => {
   it('follows current shared visibility under null with tags visible and no legacy compact gate', () => {
     const settings = columns([note, other]); settings.columns = settings.columns.map((choice, index) => ({ ...choice, visible: index !== 1 }));
     const result = reconcilePersonalColumns(null, [note, other], settings, false);
-    expect(result.effectiveVisibleRefs.map(tableColumnId)).toEqual(['title', 'status', 'responsible', 'dueDate', 'tags', note.id, 'estimate']);
+    expect(result.effectiveVisibleRefs.map(tableColumnId)).toEqual(['title', 'status', 'responsible', 'dueDate', 'tags', note.id]);
     expect(result.choices.find(choice => columnKey(choice.column) === 'builtin:weeklyPlan')?.visible).toBe(true);
     expect(result.addedRefs).toEqual([]);
     const changed = reconcilePersonalColumns(null, [note, other], { ...settings, columns: settings.columns.map(choice => ({ ...choice, visible: true })) }, true);
@@ -25,7 +25,8 @@ describe('pure personal column reconciliation', () => {
     const settings = columns([note]); settings.columns = settings.columns.map(choice => ({ ...choice, visible: false }));
     const result = reconcilePersonalColumns(stored, [note], settings, false);
     expect(result.choices.slice(0, stored.length)).toEqual(stored);
-    expect(result.effectiveVisibleRefs.map(tableColumnId).slice(0, 3)).toEqual(['title', note.id, 'estimate']);
+    expect(result.effectiveVisibleRefs.map(tableColumnId).slice(0, 2)).toEqual(['title', note.id]);
+    expect(result.effectiveVisibleRefs.map(tableColumnId)).not.toContain('estimate');
     expect(result.effectiveVisibleRefs.map(tableColumnId)).not.toContain('tags');
     expect(stored).toHaveLength(4);
   });

@@ -1,9 +1,10 @@
 import { useTranslation } from '../../i18n';
-import { Background, Controls, MarkerType, Position, ReactFlow, type AriaLabelConfig, type Edge, type Node, type NodeChange, type ReactFlowInstance } from '@xyflow/react';
+import { Background, Controls, MarkerType, Position, ReactFlow, type AriaLabelConfig, type Edge, type Node, type NodeChange, type NodeProps, type ReactFlowInstance } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button } from '@workloom/ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { LayoutEdge } from './layout';
+import type { GraphSectionColumn } from './sectionLayout';
 import { GraphNodeContent, graphNodeBoxStyle, type GraphCanvasTask } from './GraphNodeContent';
 import { edgeEmphasis, graphEdgeColor, graphEdgeStyle, graphNeighborhood, graphNodeTone, nodeEmphasis, presentGraphEdges, type GraphEdgeState } from './graphPresentation';
 export type { GraphCanvasTask } from './GraphNodeContent';
@@ -12,6 +13,7 @@ export interface GraphCanvasProps {
   tasks: readonly GraphCanvasTask[];
   edges: readonly LayoutEdge[];
   positions: Readonly<Record<string, Point>>;
+  columns?: readonly GraphSectionColumn[] | undefined;
   movable: boolean;
   connectable: boolean;
   /** Each increment refits the viewport once; it never moves nodes or saves the layout. */
@@ -22,6 +24,11 @@ export interface GraphCanvasProps {
   onViewBlockers: (id: string) => void;
 }
 const FOCUS_NAME_LIMIT = 5;
+function SectionHeading({ data }: NodeProps<Node<{ title: string; count: number }>>) {
+  const { t } = useTranslation();
+  return <div data-graph-section-header className="h-full rounded-lg border border-line bg-canvas p-2 text-left text-ink"><h3 className="line-clamp-2 text-sm leading-5 font-semibold [overflow-wrap:anywhere]" title={data.title}>{data.title}</h3><p className="text-xs text-muted">{t('dependencies.sectionLayout.taskCount', { count: data.count })}</p></div>;
+}
+const nodeTypes = { sectionHeading: SectionHeading };
 function LegendLine({ state }: { state: GraphEdgeState }) {
   const style = graphEdgeStyle(state, 'normal');
   return <svg aria-hidden="true" width="28" height="8" className="shrink-0"><line x1="0" y1="4" x2="28" y2="4" stroke={graphEdgeColor(state)} strokeWidth={style.strokeWidth} strokeDasharray={style.strokeDasharray} /></svg>;
@@ -63,6 +70,13 @@ export default function GraphCanvas(p: GraphCanvasProps) {
       data: { label: <GraphNodeContent task={task} onOpen={onOpen} onViewBlockers={onViewBlockers} /> },
     };
   }), [p.tasks, p.positions, onOpen, onViewBlockers, focus, focusId, t]);
+  const columns: Node[] = useMemo(() => (p.columns ?? []).map(column => ({
+    id: `section-header:${column.id}`, type: 'sectionHeading', position: { x: column.x, y: column.y },
+    data: { title: column.title, count: column.count }, width: column.width, height: 80,
+    style: { width: column.width, height: 80, border: 'none', background: 'transparent', padding: 0 },
+    draggable: false, selectable: false, connectable: false, focusable: false, deletable: false,
+    ariaLabel: t('dependencies.sectionLayout.header', { name: column.title, count: column.count }),
+  })), [p.columns, t]);
   const edges: Edge[] = useMemo(() => presented.map(edge => {
     const emphasis = edgeEmphasis(edge.id, focus);
     const names = { predecessor: titles.get(edge.source) ?? t('dependencies.graphView.predecessorTask'), successor: titles.get(edge.target) ?? t('dependencies.graphView.successorTask') };
@@ -76,10 +90,10 @@ export default function GraphCanvas(p: GraphCanvasProps) {
   const move = p.onMove;
   const changes = useCallback((items: NodeChange[]) => {
     for (const change of items) {
-      if (change.type === 'position' && change.position && p.movable) move(change.id, change.position);
-      if (change.type === 'select') setSelected(current => change.selected ? change.id : current === change.id ? null : current);
+      if (change.type === 'position' && change.position && p.movable && p.tasks.some(task => task.id === change.id)) move(change.id, change.position);
+      if (change.type === 'select' && p.tasks.some(task => task.id === change.id)) setSelected(current => change.selected ? change.id : current === change.id ? null : current);
     }
-  }, [move, p.movable]);
+  }, [move, p.movable, p.tasks]);
   const instance = useRef<ReactFlowInstance | null>(null);
   const fitRequest = p.fitRequest ?? 0;
   const seenFit = useRef(fitRequest);
@@ -113,7 +127,7 @@ export default function GraphCanvas(p: GraphCanvasProps) {
       {focus ? <Button size="sm" onClick={() => setSelected(null)}>{t('dependencies.graphCanvas.clearFocus')}</Button> : null}
     </div>
     <div role="region" aria-label={t('dependencies.graphCanvas.dependencyGraph')} className="relative h-[34rem] w-full min-w-0 overflow-hidden rounded-xl border border-line bg-surface">
-      <ReactFlow nodes={nodes} edges={edges} onNodesChange={changes} onInit={flow => { instance.current = flow; }} nodesDraggable={p.movable} nodesConnectable={p.connectable} nodesFocusable edgesFocusable deleteKeyCode={null} onNodeDoubleClick={(_event, node) => p.onOpen(node.id)} onConnect={connection => { if (connection.source && connection.target && connection.source !== connection.target) p.onConnect(connection.source, connection.target); }} fitView minZoom={0.15} maxZoom={2} ariaLabelConfig={labels}>
+      <ReactFlow nodes={[...columns, ...nodes]} nodeTypes={nodeTypes} edges={edges} onNodesChange={changes} onInit={flow => { instance.current = flow; }} nodesDraggable={p.movable} nodesConnectable={p.connectable} nodesFocusable edgesFocusable deleteKeyCode={null} onNodeDoubleClick={(_event, node) => { if (p.tasks.some(task => task.id === node.id)) p.onOpen(node.id); }} onConnect={connection => { if (connection.source && connection.target && connection.source !== connection.target && p.tasks.some(task => task.id === connection.source) && p.tasks.some(task => task.id === connection.target)) p.onConnect(connection.source, connection.target); }} fitView minZoom={0.15} maxZoom={2} ariaLabelConfig={labels}>
         <Background /><Controls showInteractive={false} />
       </ReactFlow>
     </div>

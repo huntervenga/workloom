@@ -611,6 +611,13 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         if (parsed.anchorTaskId === id) throw ruleError('A task cannot be placed next to itself.', 'anchorTaskId');
         await requireOpenProject(repo, ws, task.projectId);
         const assigneeMode = parsed.responsibleMembershipId !== undefined;
+        const statusMode = parsed.statusId !== undefined;
+        const flatMode = assigneeMode || statusMode;
+        const statusId = parsed.statusId ?? task.statusId;
+        if (statusMode) {
+          await scope.statusTransitions.assertTransition(task, statusId);
+          requireSameProject(requireFound(await repo.findStatus(ws, statusId)), task.projectId, 'statusId');
+        }
         if (assigneeMode) {
           await requireActiveMembers(repo, ws, parsed.responsibleMembershipId ?? null, []);
         }
@@ -619,9 +626,9 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         let anchor: TaskDto | null;
         if (parsed.anchorTaskId === null) {
           // Full project scope, never the filtered/loaded client group. Archived rows keep their relative order.
-          anchor = projectOrder.filter(row => row.id !== id && row.archivedAt === null && row.responsibleMembershipId === responsibleMembershipId).at(-1) ?? null;
+          anchor = projectOrder.filter(row => row.id !== id && row.archivedAt === null && (statusMode ? row.statusId === statusId : row.responsibleMembershipId === responsibleMembershipId)).at(-1) ?? null;
         } else {
-          if (assigneeMode) {
+          if (flatMode) {
             anchor = requireFound(await repo.findTask(ws, parsed.anchorTaskId));
             requireSameProject(anchor, task.projectId, 'anchorTaskId');
             if (anchor.archivedAt !== null) throw ruleError('The anchor task is archived.', 'anchorTaskId');
@@ -629,13 +636,16 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           if (assigneeMode && anchor.responsibleMembershipId !== responsibleMembershipId) {
             throw ruleError('The anchor belongs to another responsible person.', 'anchorTaskId');
           }
+          if (statusMode && anchor.statusId !== statusId) {
+            throw ruleError('The anchor belongs to another status lane.', 'anchorTaskId');
+          }
         }
-        // Legacy section moves take the root anchor's section; assignee moves keep source section.
+        // Legacy section moves take the root anchor's section; flat lane moves keep source section.
         let sectionId = task.sectionId;
-        if (!assigneeMode && task.parentTaskId === null && anchor !== null) {
+        if (!flatMode && task.parentTaskId === null && anchor !== null) {
           sectionId = anchor.sectionId;
           if (sectionId !== null) await requireAssignableSection(repo, ws, task.projectId, sectionId);
-        } else if (!assigneeMode && task.parentTaskId !== null && anchor?.sectionId !== task.sectionId) {
+        } else if (!flatMode && task.parentTaskId !== null && anchor?.sectionId !== task.sectionId) {
           throw ruleError('A subtask can only be moved within its own section.', 'anchorTaskId');
         }
         // A null anchor constrains only a non-empty active group, and a source already after its last member keeps its global slot.
@@ -643,14 +653,14 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const keepSlot = parsed.anchorTaskId === null && anchorRank < projectOrder.findIndex(row => row.id === id);
         const order = anchor === null || keepSlot ? projectOrder.map(row => (row.id === id ? null : row)) : placeInOrder(projectOrder, id, anchor.id, parsed.placement, 'anchorTaskId');
         const orderChanged = order.some((row, rank) => (row?.id ?? id) !== projectOrder[rank]?.id);
-        const unchanged = sectionId === task.sectionId && responsibleMembershipId === task.responsibleMembershipId && !orderChanged;
+        const unchanged = sectionId === task.sectionId && responsibleMembershipId === task.responsibleMembershipId && statusId === task.statusId && !orderChanged;
         if (unchanged) return task;
-        // Assignee writes that keep the global order keep the numeric position, ties and gaps included; legacy moves always renumber.
-        const renumber = !assigneeMode || orderChanged;
-        await repo.saveTaskCore({ ...task, sectionId, responsibleMembershipId, position: renumber ? order.indexOf(null) : task.position, revision: task.revision + 1, updatedAt: now });
+        // Flat lane writes that keep the global order keep the numeric position, ties and gaps included; legacy moves always renumber.
+        const renumber = !flatMode || orderChanged;
+        await repo.saveTaskCore({ ...task, sectionId, responsibleMembershipId, statusId, position: renumber ? order.indexOf(null) : task.position, revision: task.revision + 1, updatedAt: now });
         const updated = await reloadTask(repo, ws, id);
         const diff = {
-          ...changedFields(task, updated, assigneeMode ? ['sectionId', 'position', 'responsibleMembershipId'] : ['sectionId', 'position']),
+          ...changedFields(task, updated, statusMode ? ['statusId', 'position'] : assigneeMode ? ['sectionId', 'position', 'responsibleMembershipId'] : ['sectionId', 'position']),
           revision: { from: task.revision, to: updated.revision },
           anchor: { taskId: anchor?.id ?? null, placement: parsed.placement },
         };

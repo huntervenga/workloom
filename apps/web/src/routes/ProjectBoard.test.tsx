@@ -1,6 +1,6 @@
 import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { alpha, alphaMembers, deferred, failure, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
@@ -37,6 +37,31 @@ const choose = (user: ReturnType<typeof renderApp>['user'], option: string) => u
 const statusPicker = () => screen.getByRole('combobox', { name: 'Status' });
 
 describe('project Board integration', () => {
+  it('sends one atomic status/order move through the page controller and keeps ordinary status edits separate', async () => {
+    let current = { ...task, position: 1000 };
+    const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`POST ${rootPath}/tasks/${task.id}/move`]: request => { const input = request.body as { statusId: string }; return ok(current = { ...current, statusId: input.statusId, position: 2000, revision: current.revision + 1 }); } }));
+    const { user } = renderApp(`${tablePath}?view=board`); const handle = await screen.findByRole('button', { name: `Drag task: ${task.title}` }); const lane = document.querySelector<HTMLElement>(`[data-board-status="${DONE_A}"]`); if (!lane) throw new Error('Missing target lane');
+    await user.pointer({ keys: '[MouseLeft>]', target: handle, coords: { clientX: 10, clientY: 10 } }); await user.pointer({ target: lane, coords: { clientX: 120, clientY: 40 } }); await user.pointer({ keys: '[/MouseLeft]', target: lane, coords: { clientX: 120, clientY: 40 } });
+    await waitFor(() => expect(calls.filter(call => call.path.endsWith('/move'))).toHaveLength(1)); const move = calls.find(call => call.path.endsWith('/move')); expect(move?.body).toEqual({ expectedRevision: task.revision, statusId: DONE_A, anchorTaskId: null, placement: 'after' }); expect(move?.headers.get('Idempotency-Key')).toBeTruthy();
+    await waitFor(() => expect(within(lane).getByRole('button', { name: task.title })).toBeInTheDocument()); expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(0);
+  });
+
+  it('preserves same-lane before-anchor intent and displays authoritative positions after an unsorted refreshed page', async () => {
+    let current = { ...task, position: 2000 }; const anchor = { ...other, statusId: task.statusId, position: 1000 };
+    const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([anchor, current]), [`POST ${rootPath}/tasks/${task.id}/move`]: () => ok(current = { ...current, position: 500, revision: 2 }) }));
+    const { user } = renderApp(`${tablePath}?view=board`); const handle = await screen.findByRole('button', { name: `Drag task: ${task.title}` }); const card = screen.getByRole('button', { name: anchor.title }).closest('li'); if (!card) throw new Error('Missing anchor card');
+    const rect = vi.spyOn(card, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 0, top: 0, left: 0, right: 200, bottom: 80, width: 200, height: 80, toJSON: () => ({}) });
+    await user.pointer({ keys: '[MouseLeft>]', target: handle, coords: { clientX: 10, clientY: 10 } }); await user.pointer({ target: card, coords: { clientX: 100, clientY: 20 } }); await user.pointer({ keys: '[/MouseLeft]', target: card, coords: { clientX: 100, clientY: 20 } }); rect.mockRestore();
+    await waitFor(() => expect(calls.filter(call => call.path.endsWith('/move'))).toHaveLength(1)); expect(calls.find(call => call.path.endsWith('/move'))?.body).toEqual({ expectedRevision: task.revision, statusId: task.statusId, anchorTaskId: anchor.id, placement: 'before' });
+    const lane = document.querySelector<HTMLElement>(`[data-board-status="${task.statusId}"]`); if (!lane) throw new Error('Missing current lane'); await waitFor(() => expect(within(lane).getAllByRole('button').filter(button => button.textContent === current.title || button.textContent === anchor.title).map(button => button.textContent)).toEqual([current.title, anchor.title]));
+  });
+
+  it('offers an explicit Manual switch under due-date sort without permitting misleading drag ordering', async () => {
+    const { calls } = installFakeApi(routes()); const { user } = renderApp(`${tablePath}?view=board&sort=due_asc`); await screen.findByRole('button', { name: task.title });
+    expect(screen.queryByRole('button', { name: /^Drag task:/ })).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Change status' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: /^Manual$/ })); expect(await screen.findByRole('button', { name: `Drag task: ${task.title}` })).toBeVisible(); expect(screen.getByRole('combobox', { name: 'Sort' })).toHaveTextContent('Manual'); expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+  });
+
   it('switches the same filtered loaded set between Table and Board and uses the existing task drawer', async () => {
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => page(request.searchParams.get('statusId') === NEXT ? [other] : [task, other]) }));
     const { user } = renderApp(tablePath);

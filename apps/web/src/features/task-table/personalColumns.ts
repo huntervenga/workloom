@@ -2,6 +2,7 @@ import type { ColumnChoice, ProjectColumnsDto, TableColumnRef, TaskFieldDefiniti
 
 export const BUILTIN_COLUMN_KEYS: readonly TaskTableBuiltinColumn[] = ['title', 'status', 'responsible', 'participants', 'dueDate', 'tags', 'priority', 'weeklyPlan', 'weeklyActual', 'estimate'];
 const hiddenDefaults = new Set<TaskTableBuiltinColumn>(['participants', 'priority']);
+export const isLegacyTimeColumn = (column: TableColumnRef): boolean => column.kind === 'builtin' && (column.key === 'weeklyPlan' || column.key === 'weeklyActual' || column.key === 'estimate');
 export const columnKey = (column: TableColumnRef): string => column.kind === 'builtin' ? `builtin:${column.key}` : `field:${column.fieldId.toLowerCase()}`;
 export const tableColumnId = (column: TableColumnRef): string => column.kind === 'field' ? column.fieldId.toLowerCase() : column.key === 'weeklyPlan' ? 'weekly-plan' : column.key === 'weeklyActual' ? 'weekly-fact' : column.key;
 export interface ReconciledColumns {
@@ -32,7 +33,7 @@ export function reconcilePersonalColumns(stored: readonly ColumnChoice[] | null,
       if (!field) { invalidRefs.push(ref); return []; }
       if (field.archivedAt !== null) { inactiveRefs.push(ref); return []; }
     } else if (!BUILTIN_COLUMN_KEYS.includes(ref.key)) { invalidRefs.push(ref); return []; }
-    else if ((ref.key === 'weeklyPlan' || ref.key === 'weeklyActual') && !timeAvailable) return [];
+    else if (isLegacyTimeColumn(ref) && !timeAvailable) return [];
     return choice.visible ? [ref] : [];
   });
   return { choices, effectiveVisibleRefs, addedRefs: added.map(choice => choice.column), inactiveRefs, invalidRefs,

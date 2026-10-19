@@ -31,5 +31,7 @@
   "dragHandle": "Drag task: {{title}}",
   "dragHelp": "Drag to another status. For keyboard editing, use Change status.",
   "dragLabel": "Drag to move",
-  "dropHere": "Release to move to {{status}}"
+  "dropHere": "Release to move to {{status}}",
+  "dragOrderHelp": "Drag between cards to change their order or status. For keyboard status editing, use Change status.",
+  "dropBefore": "Release before {{title}}"
 }

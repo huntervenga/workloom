@@ -82,4 +82,66 @@ describe('status board pointer intent', () => {
     await ui.user.click(within(card).getByRole('button', { name: 'Change status' }));
     expect(ui.props.onEditStatus).toHaveBeenCalledExactlyOnceWith(task); expect(ui.props.onOpenTask).toHaveBeenCalledTimes(1);
   });
+  it.each([
+    { name: 'before the first card', same: false, y: 120, anchor: 'first' },
+    { name: 'between cards in another lane', same: false, y: 200, anchor: 'second' },
+    { name: 'between cards in the same lane', same: true, y: 200, anchor: 'second' },
+    { name: 'at the full lane end', same: false, y: 320, anchor: null },
+  ])('emits one atomic status/order intent $name and leaves supplied card order unchanged', async ({ same, y, anchor }) => {
+    const statusId = same ? todo.id : doing.id, ordered = vi.fn();
+    const first = makeTask({ id: 'first', title: 'First anchor', statusId, position: 10 });
+    const second = makeTask({ id: 'second', title: 'Second anchor', statusId, position: 20 });
+    const ui = example({ tasks: [task, first, second], onMoveCard: ordered });
+    const destination = required(lane(statusId));
+    for (const [row, top] of [[first, 100], [second, 220]] as const) {
+      vi.spyOn(required(document.querySelector<HTMLElement>(`[data-board-card="${row.id}"]`)), 'getBoundingClientRect').mockReturnValue(new DOMRect(20, top, 274, 80));
+    }
+    await ui.user.pointer({ keys: '[MouseLeft>]', target: screen.getByRole('button', { name: 'Drag task: Board source' }), coords: { clientX: 10, clientY: 10 } });
+    await ui.user.pointer({ target: destination, coords: { clientX: 100, clientY: y } });
+    const line = required(destination.querySelector('[data-board-drop-placeholder]'));
+    if (anchor !== null) expect(line.closest('[data-board-card]')).toHaveAttribute('data-board-card', anchor);
+    else expect(line.closest('[data-board-card]')).toBeNull();
+    expect(ordered).not.toHaveBeenCalled();
+    expect([...destination.querySelectorAll('[data-board-card]')].map(element => element.getAttribute('data-board-card'))).toEqual(same ? [task.id, first.id, second.id] : [first.id, second.id]);
+    await ui.user.pointer({ keys: '[/MouseLeft]', target: destination, coords: { clientX: 100, clientY: y } });
+    expect(ordered).toHaveBeenCalledExactlyOnceWith(task, statusId, anchor === 'first' ? first : anchor === 'second' ? second : null, anchor === null ? 'after' : 'before');
+    expect(ui.move).not.toHaveBeenCalled(); expect(ui.release).toHaveBeenCalledTimes(1);
+    expect(required(lane(todo.id))).toContainElement(screen.getByRole('button', { name: task.title }));
+  });
+
+  it('moves to an empty lane and carries full card metadata in an inert floating preview', async () => {
+    const ordered = vi.fn(), source = { ...task, dueDate: '2027-03-20', responsibleMembershipId: null };
+    const ui = example({ tasks: [source], onMoveCard: ordered });
+    const handle = screen.getByRole('button', { name: 'Drag task: Board source' });
+    const sourceCard = required(handle.closest('[data-board-card]'));
+    expect(sourceCard.firstElementChild).toBe(handle);
+    const destination = required(lane(doing.id));
+    await ui.user.pointer({ keys: '[TouchA>]', target: handle, coords: { clientX: 10, clientY: 10 } });
+    await ui.user.pointer({ pointerName: 'TouchA', target: destination, coords: { clientX: 100, clientY: 100 } });
+    const ghost = screen.getByTestId('board-drag-preview');
+    expect(ghost).toHaveAttribute('inert'); expect(ghost).toHaveAttribute('aria-hidden', 'true');
+    expect(ghost).toHaveTextContent(source.title); expect(ghost).toHaveTextContent('Unassigned'); expect(ghost).toHaveTextContent('Due');
+    expect(screen.getAllByRole('button', { name: source.title })).toHaveLength(1);
+    await ui.user.pointer({ keys: '[/TouchA]', target: destination, coords: { clientX: 100, clientY: 100 } });
+    expect(ordered).toHaveBeenCalledExactlyOnceWith(source, doing.id, null, 'after');
+  });
+
+  it('rehits the insertion gap at release and cancels when the anchor changes under a drag', async () => {
+    const ordered = vi.fn(), first = makeTask({ id: 'first', statusId: doing.id }), second = makeTask({ id: 'second', statusId: doing.id });
+    const ui = example({ tasks: [task, first, second], onMoveCard: ordered });
+    const destination = required(lane(doing.id));
+    for (const [row, top] of [[first, 100], [second, 220]] as const) vi.spyOn(required(document.querySelector<HTMLElement>(`[data-board-card="${row.id}"]`)), 'getBoundingClientRect').mockReturnValue(new DOMRect(20, top, 274, 80));
+    const handle = screen.getByRole('button', { name: 'Drag task: Board source' });
+    await ui.user.pointer({ keys: '[MouseLeft>]', target: handle, coords: { clientX: 10, clientY: 10 } });
+    await ui.user.pointer({ target: destination, coords: { clientX: 100, clientY: 120 } });
+    await ui.user.pointer({ keys: '[/MouseLeft]', target: destination, coords: { clientX: 100, clientY: 200 } });
+    expect(ordered).toHaveBeenCalledExactlyOnceWith(task, doing.id, second, 'before');
+    ordered.mockClear();
+    await ui.user.pointer({ keys: '[MouseLeft>]', target: handle, coords: { clientX: 10, clientY: 10 } });
+    await ui.user.pointer({ target: destination, coords: { clientX: 100, clientY: 200 } });
+    ui.rerender(<TaskBoard {...ui.props} tasks={[task, first, { ...second, revision: second.revision + 1 }]} />);
+    await ui.user.pointer({ keys: '[/MouseLeft]', target: destination, coords: { clientX: 100, clientY: 200 } });
+    expect(ordered).not.toHaveBeenCalled(); expect(ui.release).toHaveBeenCalledTimes(2);
+  });
+
 });

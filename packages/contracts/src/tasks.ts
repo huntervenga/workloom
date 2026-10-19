@@ -382,8 +382,14 @@ export const restoreTaskInputSchema = z.strictObject({
  * numeric position; otherwise it is placed directly after that member. Assignee mode changes only
  * the source's current responsible person, never history (baselines, participants, recorded work).
  *
- * Status, parent, dates, participants and estimates never change. `expectedRevision` guards the
- * moved task only; other rows are re-read under the workspace barrier.
+ * Explicit `statusId` selects the flat Board lane mode, mutually exclusive with assignee mode.
+ * Its anchor is any active task in the same home project with that exact status, regardless of
+ * parent/section. A null anchor with `after` means the complete active target lane end; an empty
+ * lane keeps the source's global slot. Status and position change atomically through the ordinary
+ * status policy. Parent, section, responsible person and historical identities stay unchanged.
+ *
+ * Other modes never change status. Parent, dates, participants and estimates never change.
+ * `expectedRevision` guards the moved task only; anchors and all rows are re-read under the barrier.
  */
 export const moveTaskInputSchema = z.strictObject({
   expectedRevision: revisionSchema,
@@ -391,9 +397,14 @@ export const moveTaskInputSchema = z.strictObject({
   placement: taskPlacementSchema,
   /** Explicit (including null) selects assignee mode; omission preserves the legacy section move. */
   responsibleMembershipId: idSchema.nullable().optional(),
+  /** Explicit selects atomic Board status-lane order; omission preserves existing move hashes. */
+  statusId: idSchema.optional(),
 }).superRefine((input, ctx) => {
-  if (input.anchorTaskId === null && (input.responsibleMembershipId === undefined || input.placement !== 'after')) {
-    ctx.addIssue({ code: 'custom', path: ['anchorTaskId'], message: 'A null anchor requires an explicit assignee and placement after.' });
+  if (input.statusId !== undefined && input.responsibleMembershipId !== undefined) {
+    ctx.addIssue({ code: 'custom', path: ['statusId'], message: 'Choose status or assignee order, not both.' });
+  }
+  if (input.anchorTaskId === null && ((input.responsibleMembershipId === undefined && input.statusId === undefined) || input.placement !== 'after')) {
+    ctx.addIssue({ code: 'custom', path: ['anchorTaskId'], message: 'A null anchor requires an explicit assignee or status and placement after.' });
   }
 });
 

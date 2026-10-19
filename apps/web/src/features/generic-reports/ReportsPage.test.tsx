@@ -11,16 +11,21 @@ async function selectReport(user: ReturnType<typeof renderApp>['user']) { await 
 const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filter(call => call.method !== 'GET' && !call.path.endsWith('/query') && !call.path.endsWith('/field-aggregates'));
 
 describe('ordinary fields and saved full-scope reports', () => {
-  it('shows ordinary columns without Week, Person, native estimate or preference writes; legacy requires an explicit action', async () => {
+  it('keeps legacy planning out of primary navigation and ordinary Columns without rewriting saved settings', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
     await screen.findByRole('columnheader', { name: 'Budget' });
     expect(screen.queryByRole('combobox', { name: 'Week for hours' })).not.toBeInTheDocument(); expect(screen.queryByRole('combobox', { name: 'Whose hours to show' })).not.toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Hours Est' })).not.toBeInTheDocument(); expect(screen.queryByText('Loaded team budget')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Reports' })).toHaveAttribute('href', uiPath);
-    expect(writes(calls)).toHaveLength(0);
-    await user.click(screen.getByRole('button', { name: 'Legacy time columns' }));
+    expect(screen.queryByRole('button', { name: 'Legacy time columns' })).not.toBeInTheDocument(); expect(screen.queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Columns$/ })); const dialog = screen.getByRole('dialog', { name: 'My task columns' });
+    expect(within(dialog).queryByText('Team estimate', { exact: true })).not.toBeInTheDocument(); expect(within(dialog).queryByText('Personal weekly plan', { exact: true })).not.toBeInTheDocument(); expect(within(dialog).queryByText('Personal actual hours', { exact: true })).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Budget')).toBeChecked(); expect(within(dialog).getByLabelText('Spent')).toBeChecked(); expect(writes(calls)).toHaveLength(0);
+  });
+  it('keeps an explicit old time-columns URL compatible without advertising it or writing preferences', async () => {
+    const { calls } = installFakeApi(routes()); renderApp(`${tablePath}?legacyTime=1`);
     expect(await screen.findByRole('combobox', { name: 'Week for hours' })).toBeVisible();
-    expect(writes(calls)).toHaveLength(0);
+    expect(screen.queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument(); expect(writes(calls)).toHaveLength(0);
   });
   it('creates a saved report with stable field IDs, All time by default and selected calculation; reload uses server definition', async () => {
     let saved = definition(); const { calls } = installFakeApi(routes({ [`GET ${reportPath}`]: () => ok([saved]), [`GET ${reportPath}/${REPORT_ID}`]: () => ok(saved), [`POST ${reportPath}`]: request => { const input = request.body as { name: string; config: typeof saved.config }; saved = { ...saved, ...input }; return created(saved); } }));
@@ -36,7 +41,7 @@ describe('ordinary fields and saved full-scope reports', () => {
     const { calls } = installFakeApi(routes({ [`POST ${reportPath}/${REPORT_ID}/query`]: request => { const offset = (request.body as { offset: number }).offset; return ok({ ...result(), offset, nextOffset: offset === 0 ? 1 : null }); } }));
     const { user } = renderApp(uiPath); await selectReport(user);
     const results = screen.getByRole('region', { name: 'Results' });
-    expect(within(results).getByText('18h 51m')).toBeVisible(); expect(within(results).getByText('1.172413793103')).toBeVisible(); // Exact server decimal, never a browser row sum.
+    expect(within(results).getByText('18h 51m')).toBeVisible(); expect(within(results).getByText('≈1.17')).toBeVisible(); expect(within(results).getByTitle('34/29 (1.172413793103)')).toBeVisible(); // Compact presentation retains the exact server value.
     expect(within(results).getByText('60/63 filled · 2 missing · 1 cleared · 1 zero')).toBeVisible();
     expect(within(results).getByText('7 paired of 8 eligible tasks. Both comparison sums use these same complete pairs.')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Next page' }));
