@@ -1,4 +1,4 @@
-import type { LeaveAvailabilityDto, GenericAggregateSettingsDto, GenericInitialSnapshotDto, GenericReportConfig, GenericReportDefinitionDto, GenericReportRowDto, TaskFieldDefinitionDto, TaskFieldValueDto, TaskStatusDto } from '@workloom/contracts';
+import type { LeaveAvailabilityInput, WorkspaceReportSourceDto, WorkspaceReportSourcesDto, LeaveAvailabilityDto, GenericAggregateSettingsDto, GenericInitialSnapshotDto, GenericReportConfig, GenericReportDefinitionDto, GenericReportRowDto, TaskFieldDefinitionDto, TaskFieldValueDto, TaskStatusDto } from '@workloom/contracts';
 import type { CommandContext } from '../access/context.js';
 import type { Capability } from '../access/capabilities.js';
 import type { TaskFieldWriteScope } from '../fields/ports.js';
@@ -15,9 +15,9 @@ export interface GenericReportSource {
 }
 export interface StoredGenericInitial { header: GenericInitialSnapshotDto; rows: GenericReportRowDto[]; values: TaskFieldValueDto[] }
 export interface GenericReportRepository {
-  workspaceCatalog?(): Promise<import('@workloom/contracts').WorkspaceReportSourceDto[]>;
-  workspaceMembers?(): Promise<import('@workloom/contracts').WorkspaceReportSourcesDto['members']>;
-  workspaceCapacity?(input: import('@workloom/contracts').LeaveAvailabilityInput, manager: boolean): Promise<LeaveAvailabilityDto>;
+  workspaceCatalog?(): Promise<WorkspaceReportSourceDto[]>;
+  workspaceMembers?(): Promise<WorkspaceReportSourcesDto['members']>;
+  workspaceCapacity?(input: LeaveAvailabilityInput, manager: boolean): Promise<LeaveAvailabilityDto>;
   list(projectId: string): Promise<GenericReportDefinitionDto[]>;
   find(reportId: string): Promise<GenericReportDefinitionDto | null>;
   save(report: GenericReportDefinitionDto): Promise<void>;
