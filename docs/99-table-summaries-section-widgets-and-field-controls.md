@@ -1,5 +1,7 @@
 # Table summaries, section widgets and field controls
 
+Historical accepted slice, superseded locally by [100: configurable planning checks](100-configurable-planning-checks.md), product `98a6d24`. Its original G proofs below remain unchanged.
+
 **ACCEPTED AND ACTIVATED LOCALLY.** Product `b0efabd` (`b0efabd5cf2f1bb90abf44cfee2a38cb6cb9e162`), final Candidate G: 1,508 source files / 1,095 compiled files. Source SHA-256 `188146e1dc96444517b14f8448c44e90cbb3fc2e82ca314ae756378f1947ea5f`; build manifest SHA-256 `7266a2bb5c4ce6e1ea10207ed16cc04df3e7950764a0eefae3c9188dc7de66ab`. Controlled local activation completed **20 October 2026, 10:15:28 Asia/Nicosia** (`2026-10-20T07:15:28.884Z`). This document is a documentation-only follow-up to the frozen, verified product snapshot. The previous accepted slice is [98](98-project-and-workspace-manager-reports.md).
 
 Open the [demo project](http://127.0.0.1:4310/app/w/2ea2e40e-b442-48b7-9b9d-45c26e9eb77b/projects/1268a6cd-c760-4c72-b4af-6caf988b303d), or [workspace Reports](http://127.0.0.1:4310/app/w/2ea2e40e-b442-48b7-9b9d-45c26e9eb77b/reports). These are user entry links, not evidence of a newly checked main authenticated session.
