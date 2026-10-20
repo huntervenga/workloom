@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { WorkspaceReportPersonDto, WorkspaceReportResultDto, WorkspaceReportSummaryDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { useTranslation } from '../../i18n';
 import { capacitySummary } from '../generic-reports/capacitySummary';
-import { categoryColor } from '../generic-reports/categoryColors';
+import { categoryColor, effortCategoryColor } from '../generic-reports/categoryColors';
 import { reportNumber, roundedRational } from '../generic-reports/reportFormatting';
 
 type Num = WorkspaceReportSummaryDto['plan']['value'];
@@ -67,7 +67,7 @@ export function WorkspaceDashboard({ result, onPersonSelect, onConfigureTypes, c
   const teamRatioCapacity = hasUnassignedActual || !known.complete ? null : teamAvailable;
   const personAvailable = (p: WorkspaceReportPersonDto) => (capacity.settingsConfigured && p.capacity?.scheduleKnown ? p.capacity.availableMinutes : null);
   const bucketAvailable = (c: BucketCapacity) => (capacity.settingsConfigured && c.unconfiguredMembers === 0 ? c.availableMinutes : null);
-  const recordedPercent = (s: WorkspaceReportSummaryDto, available: number | null) => available !== null && available > 0 && s.fact.unit === 'minutes' && s.fact.value && s.fact.coverage.filled > 0 ? `${roundedRational(BigInt(s.fact.value.numerator) * 100n, BigInt(s.fact.value.denominator) * BigInt(available)).text}%` : '—';
+  const recordedPercent = (s: WorkspaceReportSummaryDto, available: number | null) => !s.effort?.fact.coverage.unknown && available !== null && available > 0 && s.fact.unit === 'minutes' && s.fact.value && s.fact.coverage.filled > 0 ? `${roundedRational(BigInt(s.fact.value.numerator) * 100n, BigInt(s.fact.value.denominator) * BigInt(available)).text}%` : '—';
   const bars = (s: WorkspaceReportSummaryDto, available: number | null, scale: Map<string, Rat>): [Bar, Bar, Bar] => [
     { label: series.available, text: duration(available), width: barLength(minutesRat(available), scale.get('minutes')), tone: tones.available },
     { label: series.plan, text: amount(s.plan.value, s.plan.unit), width: barLength(rat(s.plan.value), scale.get(s.plan.unit)), tone: tones.plan },
@@ -83,7 +83,7 @@ export function WorkspaceDashboard({ result, onPersonSelect, onConfigureTypes, c
   };
   const totalNote = !total ? t('workspaceReports.categories.totalUnknown') : total.n === 0n ? t('workspaceReports.categories.totalZero') : t('workspaceReports.categories.total', { total: amount(summary.fact.value, summary.fact.unit) });
   const capacityNote = teamAvailable !== null ? t('workspaceReports.cards.capacityBreakdown', { scheduled: duration(capacity.totals.scheduledMinutes), holidays: duration(capacity.totals.holidayMinutes), absence: duration(capacity.totals.absenceMinutes) }) : capacity.settingsConfigured ? t('workspaceReports.cards.capacityUnknownMembers', { members: capacity.totals.unconfiguredMembers }) : t('workspaceReports.cards.capacityUnconfigured');
-  const paired = summary.comparison.ratio ? t('workspaceReports.cards.paired', { percent: ratioPercent(summary.comparison.ratio), paired: summary.comparison.pairedTasks, eligible: summary.comparison.eligibleTasks }) : t('workspaceReports.cards.pairedUnavailable', { reason: reason(summary) ?? '—' });
+  const paired = summary.comparison.ratio ? t(summary.effort ? 'effortReports.pairedAccuracy' : 'workspaceReports.cards.paired', { percent: ratioPercent(summary.comparison.ratio), paired: summary.comparison.pairedTasks, eligible: summary.comparison.eligibleTasks }) : t('workspaceReports.cards.pairedUnavailable', { reason: reason(summary) ?? '—' });
   const trendTitle = result.bucket === 'week' ? t('workspaceReports.trend.weekly') : t('workspaceReports.trend.monthly');
   const legend = <ul className="flex flex-wrap gap-3 text-xs text-muted">{(['available', 'plan', 'actual'] as const).map(key => <li key={key} className="flex items-center gap-1"><span aria-hidden="true" className={`h-2 w-2 rounded-full ${tones[key]}`}/>{series[key]}</li>)}</ul>;
   return <section aria-label={t('workspaceReports.overviewTitle')} className="min-w-0 space-y-4 text-ink">
@@ -91,10 +91,11 @@ export function WorkspaceDashboard({ result, onPersonSelect, onConfigureTypes, c
       <h2 className="text-base font-semibold">{t('workspaceReports.overviewTitle')}</h2>
       <p className="text-xs text-muted">{t('workspaceReports.scope', { from: result.range.from, to: result.range.to, tasks: summary.taskCount, completion: result.completion === 'done_only' ? t('workspaceReports.completion.doneOnly') : t('workspaceReports.completion.allTasks') })}</p>
     </header>
+    {result.attribution === 'personal_effort' ? <div className="space-y-1 rounded-lg bg-canvas px-3 py-2 text-xs text-muted"><p className="font-medium text-ink">{t('effortReports.personalEffort')}</p><p>{t('effortReports.sourceHint')}</p><p>{t('effortReports.dateHint')}</p>{summary.effort ? <><p>{t('effortReports.measureCoverage',{tasks:summary.effort.fact.canonicalTaskCount,participations:summary.effort.fact.participationCount})}</p><p>{t('effortReports.coverage',summary.effort.fact.coverage)}</p>{summary.effort.fact.coverage.unknown>0?<p>{t('effortReports.knownSubtotal')}</p>:null}</>:null}</div> : null}
     <div className="grid gap-3 sm:grid-cols-3">
       <Card title={t('workspaceReports.cards.available')} action={!known.complete ? capacityAction : undefined} value={duration(teamAvailable)} lines={[t('workspaceReports.cards.range', { from: capacity.startDate, to: capacity.endDate }), ...(known.partial ? [t('workspaceReports.cards.capacityPartial', { known: known.knownMembers, total: known.totalMembers })] : []), capacityNote]}/>
-      <Card title={t('workspaceReports.cards.plan')} value={amount(summary.plan.value, summary.plan.unit)} lines={[t('workspaceReports.cards.coverage', coverage(summary.plan.coverage))]}/>
-      <Card title={t('workspaceReports.cards.actual')} hint={hasUnassignedActual ? t('workspaceReports.unassignedRatio') : undefined} value={amount(summary.fact.value, summary.fact.unit)} lines={[t('workspaceReports.cards.coverage', coverage(summary.fact.coverage)), t('workspaceReports.recordedAvailable', { percent: recordedPercent(summary, teamRatioCapacity) }), paired]}/>
+      <Card title={t('workspaceReports.cards.plan')} value={amount(summary.plan.value, summary.plan.unit)} lines={[summary.effort ? t('effortReports.coverage',summary.effort.plan.coverage) : t('workspaceReports.cards.coverage', coverage(summary.plan.coverage))]}/>
+      <Card title={t('workspaceReports.cards.actual')} hint={hasUnassignedActual ? t('workspaceReports.unassignedRatio') : undefined} value={amount(summary.fact.value, summary.fact.unit)} lines={[summary.effort ? t('effortReports.coverage',summary.effort.fact.coverage) : t('workspaceReports.cards.coverage', coverage(summary.fact.coverage)), t('workspaceReports.recordedAvailable', { percent: recordedPercent(summary, teamRatioCapacity) }), paired]}/>
     </div>
     <div className="grid gap-4 lg:grid-cols-2">
       <section aria-label={trendTitle} className={panel}>
@@ -115,9 +116,9 @@ export function WorkspaceDashboard({ result, onPersonSelect, onConfigureTypes, c
         <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium">{t('workspaceReports.categories.title')}</h3>{result.sources.every(source => source.categoryFieldId === null) && onConfigureTypes ? <button type="button" className="text-xs font-medium text-accent-strong hover:underline" onClick={onConfigureTypes}>{t('workspaceReports.configureTypes')}</button> : null}</div>
         <p className="text-xs text-muted">{totalNote}</p>
         {result.categories.length ? <ul className="space-y-2">{result.categories.map(c => {
-          const color = categoryColor(categoryFields, c.projectId, c.fieldId, c.optionId);
+          const color = c.color && /^#[0-9a-f]{6}$/i.test(c.color) ? c.color.toLowerCase() : effortCategoryColor(c.fact.effort??c.effort?.fact,c.fieldId,c.optionId) ?? categoryColor(categoryFields, c.projectId, c.fieldId, c.optionId);
           const portion = share(c.fact.value), value = amount(c.fact.value, c.fact.unit);
-          const name = c.projectName ? t('workspaceReports.categories.name', { label: c.optionId === null ? t('workspaceReports.uncategorized') : c.label, project: c.projectName }) : c.optionId === null ? t('workspaceReports.uncategorized') : c.label;
+          const name = c.projectName ? t('workspaceReports.categories.name', { label: c.key === 'category_not_captured' ? t('effortReports.categoryNotCaptured') : c.optionId === null ? t('workspaceReports.uncategorized') : c.label, project: c.projectName }) : c.key === 'category_not_captured' ? t('effortReports.categoryNotCaptured') : c.optionId === null ? t('workspaceReports.uncategorized') : c.label;
           const label = portion ? t('workspaceReports.categories.share', { name, value, percent: portion.text }) : t('workspaceReports.categories.unknownShare', { name, value });
           return <li key={c.key} data-report-category-option={c.optionId ?? 'uncategorized'}><div role="img" aria-label={label} title={label} className="space-y-1">
             <span className="flex min-w-0 justify-between gap-2 text-sm"><span className="inline-flex min-w-0 items-center gap-2"><span aria-hidden="true" data-category-swatch="" className={`size-2.5 shrink-0 rounded-full border border-ink/60 ${color ? '' : 'bg-accent'}`} style={color ? { backgroundColor: color } : undefined}/><span className="truncate">{name}</span></span><span className="shrink-0 tabular-nums">{portion ? t('workspaceReports.categories.value', { value, percent: portion.text }) : value}</span></span>
@@ -139,7 +140,7 @@ export function WorkspaceDashboard({ result, onPersonSelect, onConfigureTypes, c
             <span>{p.membershipId === null ? <span className="block truncate font-medium">{t('workspaceReports.people.unassigned')}</span> : <button type="button" title={p.displayName} className="block w-full min-w-0 truncate text-left font-medium text-accent-strong hover:underline" onClick={() => onPersonSelect(p.membershipId)}>{p.displayName}</button>}</span>
             <p className="text-xs text-muted">{t('workspaceReports.people.tasks', { tasks: p.taskCount })}</p>
           </th>
-          <td className="py-2"><Bars items={bars(p, personAvailable(p), peopleScale)}/></td>
+          <td className="py-2"><Bars items={bars(p, personAvailable(p), peopleScale)}/>{p.effort ? <p className="mt-1 text-xs text-muted">{t('effortReports.coverage',p.effort.fact.coverage)}{p.effort.fact.coverage.unknown?` · ${t('effortReports.knownSubtotal')}`:''}</p>:null}</td>
           <td className="py-2 pl-3 text-right align-top tabular-nums" title={reason(p)}>{ratioPercent(p.comparison.ratio)}<p className="text-xs text-muted">{t('workspaceReports.recordedAvailable', { percent: recordedPercent(p, personAvailable(p)) })}</p><p className="text-xs text-muted">{t('workspaceReports.people.paired', { paired: p.comparison.pairedTasks, eligible: p.comparison.eligibleTasks })}</p></td>
         </tr>)}</tbody>
       </table></div> : <p role="status" className="text-xs text-muted">{t('workspaceReports.people.empty')}</p>}

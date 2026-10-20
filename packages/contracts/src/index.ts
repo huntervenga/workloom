@@ -55,3 +55,7 @@ export * from './workspace-reports.js';
 export * from "./planning-checks.js";
 
 export * from './duplication.js';
+
+export * from './summary-templates.js';
+
+export * from './shared-activities.js';

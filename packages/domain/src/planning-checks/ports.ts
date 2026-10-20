@@ -4,14 +4,14 @@ import type {CommandContext} from '../access/context.js';
 import type {GenericReportScope,GenericSourceTask} from '../generic-reports/ports.js';
 export interface PlanningCheckValue {taskId:string;fieldId:string;revision:number;definitionVersionId:string;present:boolean;numberValue:number|null;dateValue:string|null}
 /** Deliberately excludes raw custom text/arrays, descriptions and private leave data. */
-export interface PlanningCheckSource {head:string;fields:C.TaskFieldDefinitionDto[];tasks:GenericSourceTask[];values:PlanningCheckValue[];memberLabels:Record<string,string>;sectionLabels:Record<string,string>;activeSectionIds:string[];excludedLinkedTasks:number}
+export interface PlanningCheckSource {durationValues?:C.TaskFieldValueDto[];sharedActivities?:Pick<C.SharedActivityRecordDto,'activity'|'contributions'>[];head:string;fields:C.TaskFieldDefinitionDto[];tasks:GenericSourceTask[];values:PlanningCheckValue[];memberLabels:Record<string,string>;sectionLabels:Record<string,string>;activeSectionIds:string[];excludedLinkedTasks:number}
 export interface PlanningCheckCapacity {ruleId:string;membershipId:string;range:{from:string;to:string}|null;availableMinutes:number|null;reason:'member_unavailable'|'schedule_unknown'|'project_dates_missing'|'project_dates_too_long'|null}
 export interface PlanningCheckEvaluationInput {source:PlanningCheckSource;settings:C.PlanningCheckSettingsDto;project:C.ProjectDto;asOf:string;timezone:string;weekStart:number;capacities:PlanningCheckCapacity[]}
 export interface PlanningCheckEvaluation {assessment:Omit<C.PlanningCheckAssessmentDto,'sourceVersion'>;issues:Map<string,string[]>}
 export interface PlanningCheckRepository {
  settings(projectId:string):Promise<C.PlanningCheckSettingsDto>;
  saveSettings(settings:C.PlanningCheckSettingsDto,actorUserId:string,at:string):Promise<void>;
- source(projectId:string,fieldIds:readonly string[]):Promise<PlanningCheckSource>;
+ source(projectId:string,fieldIds:readonly string[],includeSharedActivities?:boolean):Promise<PlanningCheckSource>;
  checkpointCount(projectId:string):Promise<number>;
  insertCheckpoint(value:C.PlanningCheckCheckpointDto):Promise<void>;
  checkpoints(projectId:string,offset:number,limit:number):Promise<{total:number;rows:C.PlanningCheckCheckpointDto[]}>;

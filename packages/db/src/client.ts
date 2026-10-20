@@ -5,6 +5,8 @@ import postgres from 'postgres';
 import { parseDatabaseUrl, type DatabaseUrlInfo } from './database-url.js';
 import {
   leaveSettings,leaveSettingsVersions,leaveProfiles,leaveProfileVersions,leaveRequests,leaveRequestVersions,leaveChargeLedger,leaveAdjustments,
+  summaryTemplates,summaryTemplateVersions,summaryTemplateBindings,summaryTemplateBindingVersions,
+  sharedActivities,sharedActivityVersions,sharedActivityContributions,sharedActivityContributionVersions,
   genericReportDefinitions,genericReportDefinitionVersions,genericReportInitialSnapshots,genericReportColumnSettings,
   taskDependencies,projectDependencyPolicies,graphLayouts,graphLayoutPositions,
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,
@@ -54,6 +56,8 @@ import {
 
 export const tables = {
   leaveSettings,leaveSettingsVersions,leaveProfiles,leaveProfileVersions,leaveRequests,leaveRequestVersions,leaveChargeLedger,leaveAdjustments,
+  summaryTemplates,summaryTemplateVersions,summaryTemplateBindings,summaryTemplateBindingVersions,
+  sharedActivities,sharedActivityVersions,sharedActivityContributions,sharedActivityContributionVersions,
   genericReportDefinitions,genericReportDefinitionVersions,genericReportInitialSnapshots,genericReportColumnSettings,
   taskDependencies,projectDependencyPolicies,graphLayouts,graphLayoutPositions,
   meetings,meetingRevisions,meetingAttendances,meetingAttendanceRevisions,meetingScheduleLocks,

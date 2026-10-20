@@ -1,0 +1,8 @@
+import { configureSharedActivityInputSchema, sharedActivityResponseSchema, createSharedActivityInputSchema, createSharedActivityResponseSchema, confirmSharedActivityAttendanceInputSchema, type ConfigureSharedActivityInput, type CreateSharedActivityInput, type ConfirmSharedActivityAttendanceInput } from '@workloom/contracts';
+import { ApiError, apiGet, prepareMutation } from '../../lib/api';
+import { workspacePath } from '../workspace/queries';
+const taskPath=(workspace:string,task:string)=>`${workspacePath(workspace)}/tasks/${encodeURIComponent(task)}/shared-activity`;
+export async function fetchSharedActivity(workspace:string,task:string,signal?:AbortSignal){try{return(await apiGet(taskPath(workspace,task),sharedActivityResponseSchema,signal)).data;}catch(error){if(error instanceof ApiError&&error.status===404)return null;throw error;}}
+export function configureActivityRequest(workspace:string,task:string,input:ConfigureSharedActivityInput){return prepareMutation({method:'PUT',path:taskPath(workspace,task),input,inputSchema:configureSharedActivityInputSchema,responseSchema:sharedActivityResponseSchema});}
+export function createActivityRequest(workspace:string,project:string,input:CreateSharedActivityInput){return prepareMutation({method:'POST',path:`${workspacePath(workspace)}/projects/${encodeURIComponent(project)}/shared-activities`,input,inputSchema:createSharedActivityInputSchema,responseSchema:createSharedActivityResponseSchema});}
+export function confirmAttendanceRequest(workspace:string,task:string,input:ConfirmSharedActivityAttendanceInput){return prepareMutation({method:'POST',path:`${taskPath(workspace,task)}/attendance`,input,inputSchema:confirmSharedActivityAttendanceInputSchema,responseSchema:sharedActivityResponseSchema});}

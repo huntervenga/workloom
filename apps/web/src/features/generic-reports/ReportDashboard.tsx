@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
+import { comparisonOperation, isComparisonMeasure } from './effortAttribution';
 import { capacitySummary } from './capacitySummary';
 import type { GenericComparisonDto, GenericMeasureResultDto, GenericReportNumberDto, GenericReportResultDto, MembershipDto, SectionDto } from '@workloom/contracts';
 import { useTranslation } from '../../i18n';
 import { reportGroupLabel } from './groupLabel';
 import { reportNumber, roundedRational } from './reportFormatting';
 import { operationLabels } from './translationKeys';
-import { categoryColor } from './categoryColors';
+import { categoryColor, effortCategoryColor } from './categoryColors';
 import { ReportPeopleOverview } from './ReportPeopleOverview';
 
 type Unit = GenericMeasureResultDto['unit'];
@@ -39,9 +40,10 @@ function TotalCard({ title, measure, unit, comparison, paired }: { title: string
   const { t } = useTranslation();
   return <article aria-label={title} className="min-w-0 space-y-1 rounded-xl border border-line bg-surface p-3">
     <MetricHeader title={title} value={reportNumber(measure?.value ?? null, measure?.unit ?? unit, true)}/>
-    <p className="text-xs text-muted">{t('genericReports.dashboard.fullScope')}</p>
-    <p className="text-xs text-muted">{measure ? t('genericReports.coverage', { filled: measure.coverage.filled, tasks: measure.coverage.tasks, missing: measure.coverage.missing, nulls: measure.coverage.null, zero: measure.coverage.zero }) : t('genericReports.dashboard.noFullSum')}</p>
-    {comparison ? <p className="text-xs text-muted">{t('genericReports.dashboard.pairedValue', { value: reportNumber(paired, unit, true), paired: comparison.pairedTasks, eligible: comparison.eligibleTasks })}</p> : null}
+    <p className="text-xs text-muted">{t(measure?.operation === 'personal_effort' ? 'effortReports.personalFullScope' : 'genericReports.dashboard.fullScope')}</p>
+    <p className="text-xs text-muted">{measure?.effort ? t('effortReports.coverage', measure.effort.coverage) : measure ? t('genericReports.coverage', { filled: measure.coverage.filled, tasks: measure.coverage.tasks, missing: measure.coverage.missing, nulls: measure.coverage.null, zero: measure.coverage.zero }) : t('genericReports.dashboard.noFullSum')}</p>
+    {measure?.effort?.coverage.unknown ? <p className="text-xs text-muted">{t('effortReports.knownSubtotal')}</p> : null}
+    {comparison ? <p className="text-xs text-muted">{measure?.operation === 'personal_effort' ? t('effortReports.paired', { paired:comparison.pairedTasks,eligible:comparison.eligibleTasks }) : t('genericReports.dashboard.pairedValue', { value: reportNumber(paired, unit, true), paired: comparison.pairedTasks, eligible: comparison.eligibleTasks })}</p> : null}
   </article>;
 }
 
@@ -52,8 +54,8 @@ export function recordedCapacityRatio(result: GenericReportResultDto): string | 
   const assignee=result.config.filters.assignee,ids=new Set(capacity.members.map(member=>member.membershipId));
   const peopleAligned=assignee.kind==='member'?capacity.members.length===1&&ids.has(assignee.membershipId):assignee.kind==='all'&&result.config.groupBy.kind==='assignee'&&result.groups.every(group=>group.taskCount===0||ids.has(group.key));
   if(!peopleAligned)return null;
-  const actual=result.measures.find(measure=>measure.operation==='sum'&&measure.fieldId===comparison.factFieldId&&measure.unit==='minutes');
-  if(!actual?.value||actual.coverage.filled===0||BigInt(actual.value.numerator)<0n)return null;
+  const actual=result.measures.find(measure=>isComparisonMeasure(measure,result.config,comparison.factFieldId)&&measure.unit==='minutes');
+  if(!actual?.value||actual.effort?.coverage.unknown||actual.coverage.filled===0||BigInt(actual.value.numerator)<0n)return null;
   return roundedRational(BigInt(actual.value.numerator)*100n,BigInt(actual.value.denominator)*BigInt(capacity.totals.availableMinutes)).text;
 }
 
@@ -84,12 +86,12 @@ export function ReportDashboard({ result, members, sections, hideSummary = false
   const fieldName = (id: string | null) => result.fields.find(field => field.id === id)?.name ?? t('genericReports.unavailableField');
   /** Only duration fields are minutes; number and other numeric fields are never shown as hours. */
   const unitOf = (id: string): Unit => result.fields.find(field => field.id === id)?.type === 'duration' ? 'minutes' : 'number';
-  const fullSum = (id: string) => result.measures.find(measure => measure.operation === 'sum' && measure.fieldId === id);
+  const fullSum = (id: string) => result.measures.find(measure => isComparisonMeasure(measure, result.config, id));
   const groupName = (key: string, label: string) => !result.groups.some(group => group.key === key) ? result.capacity?.members.find(member => member.membershipId === key)?.displayName ?? reportGroupLabel(result.config, key, label, result.fields, members, sections) : reportGroupLabel(result.config, key, label, result.fields, members, sections);
   const planName = comparison ? fieldName(comparison.planFieldId) : '', factName = comparison ? fieldName(comparison.factFieldId) : '';
   const planUnit: Unit = comparison ? unitOf(comparison.planFieldId) : 'number', factUnit: Unit = comparison ? unitOf(comparison.factFieldId) : 'number';
   const people = comparison && groupBy.kind === 'assignee';
-  const distribution = groupBy.kind === 'category' ? (comparison && fullSum(comparison.factFieldId)) || result.measures.find(measure => measure.operation === 'sum' && measure.unit === 'minutes') : undefined;
+  const distribution = groupBy.kind === 'category' ? (comparison && fullSum(comparison.factFieldId)) || result.measures.find(measure => (comparison ? measure.operation === comparisonOperation(result.config) : measure.operation === 'sum' || measure.operation === 'personal_effort') && measure.unit === 'minutes') : undefined;
   const total = distribution ? reportNumber(distribution.value, distribution.unit, true) : '';
   const categoryTitle = groupBy.kind === 'category' ? t('genericReports.dashboard.categoryTitle', { field: fieldName(groupBy.fieldId) }) : '';
   return <section aria-label={t('genericReports.dashboard.title')} className="min-w-0 space-y-4">
@@ -105,9 +107,9 @@ export function ReportDashboard({ result, members, sections, hideSummary = false
       {distribution ? <>
         <p className="text-xs text-muted">{t('genericReports.dashboard.categoryTotal', { measure: fieldName(distribution.fieldId), total })}</p>
         <ul className="space-y-2">{result.groups.map(group => {
-          const part = group.measures.find(measure => measure.key === distribution.key && measure.operation === 'sum' && measure.fieldId === distribution.fieldId);
+          const part = group.measures.find(measure => measure.key === distribution.key && measure.operation === distribution.operation && measure.fieldId === distribution.fieldId);
           const portion = part?.value && distribution.value && part.coverage.filled > 0 && distribution.coverage.filled > 0 ? share(part.value, distribution.value) : null;
-          const color = categoryColor(result.fields, result.config.projectId, groupBy.fieldId, group.key);
+          const color = effortCategoryColor(part?.effort,groupBy.fieldId,group.key) ?? categoryColor(result.fields, result.config.projectId, groupBy.fieldId, group.key);
           const name = groupName(group.key, group.label), value = reportNumber(part?.value ?? null, distribution.unit, true);
           const label = portion ? t('genericReports.dashboard.categoryShare', { name, value, total, percent: percentText(portion) }) : t('genericReports.dashboard.categoryUnknown', { name, value });
           return <li key={group.key} data-report-category-option={group.key}><div role="img" aria-label={label} title={label} className="space-y-1">
@@ -116,7 +118,7 @@ export function ReportDashboard({ result, members, sections, hideSummary = false
           </div></li>;
         })}</ul>
       </> : <p role="status" className="text-xs text-muted">{t('genericReports.dashboard.noDistributionMeasure')}</p>}
-      <p className="text-xs text-muted">{t('genericReports.dashboard.categoryHint')}</p>
+      <p className="text-xs text-muted">{t(distribution?.operation === 'personal_effort' ? 'effortReports.categoryHint' : 'genericReports.dashboard.categoryHint')}</p>
       {filters.tagIds.length ? <p className="text-xs text-muted">{t('genericReports.dashboard.categoryTags')}</p> : null}
     </section> : null}
   </section>;

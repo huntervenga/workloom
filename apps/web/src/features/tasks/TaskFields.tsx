@@ -94,6 +94,7 @@ export type EstimateMode =
   | { kind: 'inherited'; text: string; parentTitle: string };
 
 export interface TaskFieldsProps {
+  participantsLabel?: string;
   draft: TaskDraft;
   onChange: (patch: Partial<TaskDraft>) => void;
   errors: TaskDraftErrors;
@@ -179,6 +180,7 @@ export function TaskFields({
   dependenciesField,
   showLegacyEstimate = false,
   secondaryActions,
+  participantsLabel,
 }: TaskFieldsProps) {
   const { t, locale } = useTranslation();
   const id = useId();
@@ -403,7 +405,7 @@ export function TaskFields({
             : t('tasks.taskFields.sharedBudgetForTheWholeTeamEnter1')}
       </p>);
   const participantsField = (<div className="min-w-0 space-y-1.5">
-        <p className={labelClassName}>{t('tasks.taskFields.participants')}</p>
+        <p className={labelClassName}>{participantsLabel??t('tasks.taskFields.participants')}</p>
         <TaskParticipantPicker members={members} value={draft.participantMembershipIds} retainedIds={unavailableParticipantIds} disabled={disabled}
           onChange={participantMembershipIds => choose({ participantMembershipIds })} />
         {members.length === 0 && retainedParticipantIds.length === 0 ? <p className="text-xs text-muted">{t('tasks.taskFields.noWorkspaceMembers')}</p> : null}
@@ -513,7 +515,7 @@ export function TaskFields({
               ) : draft.tagIds.length === 0 ? <span className="text-sm text-muted">{t('tasks.taskFields.noTagsYet')}</span> : null}
               {tagAction}
             </dd>
-            <dt className={rowLabel}>{t('tasks.taskFields.participants')}</dt>
+            <dt className={rowLabel}>{participantsLabel??t('tasks.taskFields.participants')}</dt>
             <dd className="min-w-0"><TaskParticipantPicker members={members} value={draft.participantMembershipIds} retainedIds={unavailableParticipantIds} disabled={disabled}
               onChange={participantMembershipIds => choose({ participantMembershipIds })} /></dd>
           </dl>

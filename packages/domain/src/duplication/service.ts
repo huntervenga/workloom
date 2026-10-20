@@ -1,3 +1,4 @@
+import {resolveSummaryTemplate,summaryBindingTaskScope} from '../summary-templates/resolution.js';
 import * as C from '@workloom/contracts';
 import { roleHasCapability } from '../access/capabilities.js';
 import type { CommandContext } from '../access/context.js';
@@ -96,6 +97,7 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       if (placements.some(row => row.sectionId === id && row.homeProjectId !== project.id && row.archivedAt === null)) invalid('linked_task');
     }
     const rows = includeTasks ? selectDuplicationTree(allRows, roots, input.copy.subtasks) : [];
+    if(rows.length&&(await scope.sharedActivityTaskIds?.(rows.map(r=>r.id))??[]).length)invalid('shared_activity_requires_explicit_copy');
     const fields = (await scope.repository.fields.listFields(ws, project.id)).filter(field => field.archivedAt === null);
     for (const fieldId of input.copy.customFieldIds) if (!fields.some(field => field.id === fieldId)) invalid('field_unavailable');
     const values = rows.length && input.copy.customFieldIds.length ? (await scope.repository.fields.listProjectValues(ws, project.id, rows.map(row => row.id))).filter(value => input.copy.customFieldIds.includes(value.fieldId)) : [];
@@ -105,11 +107,14 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
     const aggregates = carry ? await scope.reports.settings(project.id) : null, checks = carry ? await scope.checks.settings(project.id) : null;
     const headerWidgets = aggregates?.headerWidgets?.filter(rule => rule.group.kind === 'section' && rule.group.sectionId === id) ?? [];
     const balanceChecks = checks?.config.rules.filter(rule => rule.kind === 'balance' && rule.group.kind === 'section' && rule.group.sectionId === id) ?? [];
-    const settings = carry && aggregates && checks ? { aggregateRevision: aggregates.revision, checksRevision: checks.revision, headerWidgets, balanceChecks } : null;
+    const activeBindings=carry?(await scope.templates?.bindings(project.id)??[]).filter(b=>!b.detached):[];
+    const binding=activeBindings.find(b=>b.group.kind==='section'&&b.group.sectionId===id);
+    if(binding&&'templateMode' in input&&input.templateMode==='keep_link'&&activeBindings.length>=100)invalid('template_binding_limit');
+    const settings = carry && aggregates && checks ? { aggregateRevision: aggregates.revision, checksRevision: checks.revision, headerWidgets, balanceChecks,...(binding?{templateBinding:binding}:{}) } : null;
     const inputName = 'title' in input ? input.title : input.name;
     // Entire inventory protects hierarchy and insertion order, selected values protect independent revisions.
     // No server clock in this digest: unchanged previews remain usable until a semantic source changes.
-    const sourceVersion = deps.digest(canonicalJson({ kind, id, input, project, sourceTask, sourceSection, allRows, sections, fields, values, statuses, aggregates, checks, actor: scope.context.actor.userId, epoch: await repo.permissionEpoch(ws) }));
+    const sourceVersion = deps.digest(canonicalJson({ kind, id, input, project, sourceTask, sourceSection, allRows, sections, fields, values, statuses, aggregates, checks,...(binding?{binding}:{}), actor: scope.context.actor.userId, epoch: await repo.permissionEpoch(ws) }));
     const preview: C.DuplicationPreviewDto = { kind, sourceId: id, projectId: project.id, sourceVersion, name: inputName, taskCount: rows.length, customValueCount: values.length, copyableFields: fields, settings };
     return { kind, id, project, sourceTask, sourceSection, rows, allRows, sections, fields, values, status, aggregates, checks, preview };
   }
@@ -125,6 +130,7 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       const repo = scope.repository.tasks, ws = context.workspaceId, previous = await repo.findIdempotency(ws, context.actor.userId, command, key);
       if (previous) { if (previous.payloadHash !== payloadHash) throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This key was used for another duplication.'); return isCommittedPlanningRejection(previous.result) ? previous.result : parse(C.duplicationResultSchema, previous.result); }
       const selected = await source(scope, kind, id, input);
+      if(selected.preview.settings?.templateBinding&&'includeSettings' in input&&input.includeSettings&&!input.templateMode)invalid('choose_template_link_mode');
       if (selected.preview.sourceVersion !== expectedSourceVersion) throw new DomainError('PREVIEW_STALE', 'Review the changed duplication preview.');
       const guard = createPlanningMutationGuard(scope, deps);
       let result: C.DuplicationResultDto | CommittedPlanningRejection | null = await guard.check({ family: 'duplication', command, target: { projectId: selected.project.id, sourceId: id }, input, fieldPolicyCandidates: selected.values.map(value => ({ fieldId: value.fieldId, value: value.value, expectedDefinitionRevision: found(selected.fields.find(field => field.id === value.fieldId) ?? null).revision })) });
@@ -173,10 +179,20 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
     }
     if (section && selected.preview.settings && selected.aggregates && selected.checks) {
       const fieldsScope = { ...scope, repository: scope.repository.fields, planningGuard: guard };
-      const widgets = [...(selected.aggregates.headerWidgets ?? []), ...selected.preview.settings.headerWidgets.map(rule => ({ ...rule, group: { kind: 'section' as const, sectionId: section.id }, widgets: rule.widgets.map(widget => { const key = `copy_${deps.newId().replaceAll('-', '')}`; return { ...widget, key, ...(widget.kind === 'measure' ? { measure: { ...widget.measure, key } } : {}) }; }) }))];
+      let linked:C.SummaryTemplateBindingDto|undefined;
+      const sourceBinding=selected.preview.settings.templateBinding;
+      if(sourceBinding&&'templateMode' in input&&input.templateMode==='keep_link'){
+       if(!scope.templates)throw Error('Missing summary template repository.');const template=found((await scope.templates.list(projectId)).find(t=>t.id===sourceBinding.templateId)??null),parameters={group:{kind:'section' as const,sectionId:section.id},person:input.templatePerson===undefined?sourceBinding.person:input.templatePerson,overrides:sourceBinding.overrides,ruleIds:{}};
+       linked={...sourceBinding,id:deps.newId(),group:parameters.group,person:parameters.person,revision:1,detached:false,...resolveSummaryTemplate(template,parameters,deps.newId)};
+       const reject=await guard.check({family:'summary_template',command:'summary_template.bind',target:{kind:'project',id:projectId},input:{expectedSourceVersion:selected.preview.sourceVersion,group:linked.group,person:linked.person,templateId:template.id,expectedTemplateRevision:template.revision,overrides:linked.overrides}});if(reject)throw Error('Metadata summary guard unexpectedly rejected a copied binding.');
+      }
+      const linkedTemplateId=linked?.templateId;const template=linked?found((await found(scope.templates??null).list(projectId)).find(t=>t.id===linkedTemplateId)??null):null;
+      const widgets = [...(selected.aggregates.headerWidgets ?? []), ...(linked&&template?[{group:linked.group,widgets:linked.resolved.widgets,...(summaryBindingTaskScope(template,linked)?{taskScope:summaryBindingTaskScope(template,linked)}:{})}]:selected.preview.settings.headerWidgets.map(rule => ({ ...rule, group: { kind: 'section' as const, sectionId: section.id }, widgets: rule.widgets.map(widget => { const key = `copy_${deps.newId().replaceAll('-', '')}`; return { ...widget, key, ...(widget.kind === 'measure' ? { measure: { ...widget.measure, key } } : {}) }; }) })))];
       const aggregate = parse(C.genericAggregateSettingsSchema, { ...selected.aggregates, revision: selected.aggregates.revision + 1, headerWidgets: widgets });
-      const rules = [...selected.checks.config.rules, ...selected.preview.settings.balanceChecks.map(rule => rule.kind === 'balance' ? { ...rule, id: deps.newId(), group: { kind: 'section' as const, sectionId: section.id } } : rule)];
+      const rules = [...selected.checks.config.rules, ...(linked?linked.resolved.balanceChecks:selected.preview.settings.balanceChecks.map(rule => rule.kind === 'balance' ? { ...rule, id: deps.newId(), group: { kind: 'section' as const, sectionId: section.id } } : rule))];
       const checks = parse(C.planningCheckSettingsSchema, { ...selected.checks, revision: selected.checks.revision + 1, config: { ...selected.checks.config, rules } });
+      if(linked)await found(scope.templates??null).saveBinding(linked,scope.context.actor.userId,scope.barrierAt.toISOString());
+      if(linked)await scope.recordChange({entityType:'summary_template',entityId:linked.id,entityRevision:linked.revision,action:'bound',diff:{projectId,revision:linked.revision},outbox:{type:'summary_template.updated',payload:{projectId,revision:linked.revision}}});
       if (selected.preview.settings.headerWidgets.length) await validateHeaderWidgets(fieldsScope, projectId, widgets, selected.fields);
       if (selected.preview.settings.balanceChecks.length) await validatePlanningCheckConfigInScope(fieldsScope, projectId, checks.config);
       if (selected.preview.settings.headerWidgets.length) { await scope.reports.saveSettings(aggregate); await scope.recordChange({ entityType: 'generic_report_columns', entityId: projectId, action: 'updated', entityRevision: aggregate.revision, diff: { projectId, revision: aggregate.revision }, outbox: { type: 'generic_report_columns.updated', payload: { projectId, revision: aggregate.revision } } }); }

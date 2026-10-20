@@ -99,7 +99,7 @@ async function readRefreshToken(req: IncomingMessage): Promise<string | null> {
 function privateProviderKeys() {
   const path = process.env.WORKLOOM_QA_AUTH_KEY_FILE;
   if (path === undefined) return { ...generateKeyPairSync('rsa', { modulusLength: 2048 }), kid: randomUUID() };
-  const ownedRoots = ['/private/tmp/workloom-inline-ux-20261019', '/private/tmp/workloom-time-off-20261019', '/private/tmp/workloom-manager-reports-20261020'] as const;
+  const ownedRoots = ['/private/tmp/workloom-inline-ux-20261019', '/private/tmp/workloom-time-off-20261019', '/private/tmp/workloom-manager-reports-20261020', '/private/tmp/workloom-shared-20261020'] as const;
   const root = ownedRoots.find(candidate => candidate === dirname(path));
   if (root === undefined || !/^fake-auth-key-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/.test(basename(path))
     || realpathSync(dirname(path)) !== root) throw new Error('Private provider key path is not an owned QA path.');

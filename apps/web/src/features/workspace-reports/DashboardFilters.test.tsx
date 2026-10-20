@@ -38,3 +38,11 @@ it('uses the trusted workspace date and week start for an explicit current-week 
  render(<DashboardFilters discovery={data} input={base} weekStart={7} busy={false} onApply={apply} onReset={()=>undefined} sourcesOpen={false} onSourcesOpenChange={()=>undefined}/>);
  await user.click(screen.getByRole('button',{name:'This week'}));expect(apply).toHaveBeenCalledWith({...base,range:{from:'2026-10-18',to:'2026-10-24'}});expect(base.range).not.toEqual({from:'2026-10-18',to:'2026-10-24'});
 });
+
+it('selects participant attribution explicitly and removes it again without changing field mappings',async()=>{
+ const data=discovery(),input=defaultDashboardInput(data);if(!input)throw Error('fixture');const apply=vi.fn(),user=userEvent.setup();
+ render(<DashboardFilters discovery={data} input={input} busy={false} onApply={apply} onReset={()=>undefined} sourcesOpen={false} onSourcesOpenChange={()=>undefined}/>);
+ await user.click(screen.getByRole('combobox',{name:'Time attribution'}));await user.click(screen.getByRole('option',{name:'Personal effort'}));await user.click(screen.getByRole('button',{name:'Apply'}));
+ expect(apply.mock.calls[0]?.[0]).toEqual({...input,attribution:'personal_effort'});
+ await user.click(screen.getByRole('combobox',{name:'Time attribution'}));await user.click(screen.getByRole('option',{name:'Task values'}));await user.click(screen.getByRole('button',{name:'Apply'}));expect(apply.mock.calls[1]?.[0]).toEqual(input);
+});

@@ -1,5 +1,6 @@
 import type { GenericCoverageDto, GenericMeasureResultDto, GenericReportConfig, GenericReportNumberDto, GenericReportResultDto } from '@workloom/contracts';
-import { categoryColor } from './categoryColors';
+import { comparisonOperation } from './effortAttribution';
+import { categoryColor, effortCategoryColor } from './categoryColors';
 import type { PersonMetricsRow } from './dashboardMetrics';
 
 /** Neutral decoration for Uncategorized and for options without a valid persisted color. */
@@ -44,8 +45,8 @@ const known = (measure: GenericMeasureResultDto) => measure.coverage.filled > 0 
 
 /** Only an explicitly configured SUM of the metric field qualifies; results are matched by that measure's key. */
 function metricMatcher(config: GenericReportConfig, metricFieldId: string) {
-  const configured = config.measures.find(measure => measure.operation === 'sum' && sameId(measure.fieldId, metricFieldId));
-  return configured ? (measure: GenericMeasureResultDto) => measure.key === configured.key && measure.operation === 'sum' && measure.fieldId !== null && sameId(measure.fieldId, metricFieldId) : null;
+  const configured = config.measures.find(measure => (config.comparison ? measure.operation === comparisonOperation(config) : measure.operation === 'sum' || measure.operation === 'personal_effort') && 'fieldId' in measure && sameId(measure.fieldId, metricFieldId));
+  return configured ? (measure: GenericMeasureResultDto) => measure.key === configured.key && measure.operation === configured.operation && measure.fieldId !== null && sameId(measure.fieldId, metricFieldId) : null;
 }
 
 /**
@@ -69,12 +70,14 @@ export function workTypeDistribution(result: GenericReportResultDto, metricField
     if (!groupMeasure || groupMeasure.unit !== unit || value && !exact) return { state: 'inconsistent', total, items: [] };
     slices.push({ key: group.key, value, exact, coverage: groupMeasure.coverage, taskCount: group.taskCount });
   }
-  const legend = (slice: Slice): WorkTypeLegendItem => ({ stableKey: slice.key, value: copy(slice.value), percentText: null, color: categoryColor(result.fields, projectId, fieldId, slice.key) ?? UNCATEGORIZED_COLOR });
+  const legend = (slice: Slice): WorkTypeLegendItem => ({ stableKey: slice.key, value: copy(slice.value), percentText: null, color: effortCategoryColor(result.groups.find(group=>group.key===slice.key)?.measures.find(isMetric)?.effort,fieldId,slice.key) ?? categoryColor(result.fields, projectId, fieldId, slice.key) ?? UNCATEGORIZED_COLOR });
   const items = slices.map(legend);
 
   /** Groups must partition the full scope exactly once; this also rejects multi-value double counting. */
+  const totalSources = measure.effort?.contributions.map(row => row.sourceKey), groupSources = slices.flatMap(slice => result.groups.find(group => group.key === slice.key)?.measures.find(isMetric)?.effort?.contributions.map(row => row.sourceKey) ?? []);
+  const sourcePartitioned = totalSources !== undefined && new Set(totalSources).size === totalSources.length && new Set(groupSources).size === groupSources.length && totalSources.length === groupSources.length && totalSources.every(key => groupSources.includes(key));
   const partitioned = new Set(slices.map(slice => slice.key.toLowerCase())).size === slices.length
-    && slices.reduce((count, slice) => count + slice.taskCount, 0) === result.totalTasks
+    && (measure.effort ? sourcePartitioned : slices.reduce((count, slice) => count + slice.taskCount, 0) === result.totalTasks)
     && COVERAGE_PARTS.every(part => slices.reduce((count, slice) => count + slice.coverage[part], 0) === coverage[part]);
   if (!partitioned) return { state: 'inconsistent', total, items };
   if (result.totalTasks === 0) return { state: 'empty', total, items: [] };

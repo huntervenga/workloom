@@ -1,3 +1,5 @@
+import {sharedActivityTaskIds} from '../shared-activities/repository.js';
+import {createSummaryTemplateRepository} from '../summary-templates/repository.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { authorizeWorkspace, createDuplicationApplication as createDomainDuplicationApplication, notFoundError, temporarilyUnavailableError, type DuplicationApplication, type DuplicationScope, type CommandContext } from '@workloom/domain';
@@ -15,7 +17,7 @@ import { createTaskProjectPlacementRepository } from '../repositories/task-proje
 export function createDuplicationApplication(source: Database | WorkloomExecutor): DuplicationApplication {
   const db = isDatabase(source) ? source.db : source, writer = createWorkspaceWriteRunner(source), runtime = createRecurrenceRuntime();
   const tools = { newId: randomUUID, digest: (value: string) => createHash('sha256').update(value).digest('hex') };
-  const compose = (scope: DbWorkspaceWriteScope): DuplicationScope => ({ ...composeRecurrenceCensusScope(scope, runtime), reports: createGenericReportRepository(scope.tx, scope.context.workspaceId), checks: createPlanningCheckRepository(scope.tx, scope.context.workspaceId), placements: createTaskProjectPlacementRepository(scope.tx) });
+  const compose = (scope: DbWorkspaceWriteScope): DuplicationScope => ({ ...composeRecurrenceCensusScope(scope, runtime), sharedActivityTaskIds:ids=>sharedActivityTaskIds(scope.tx,scope.context.workspaceId,ids), templates:createSummaryTemplateRepository(scope.tx,scope.context.workspaceId), reports: createGenericReportRepository(scope.tx, scope.context.workspaceId), checks: createPlanningCheckRepository(scope.tx, scope.context.workspaceId), placements: createTaskProjectPlacementRepository(scope.tx) });
   return createDomainDuplicationApplication({ ...tools,
     write: (ctx, capability, work) => writer.run(ctx, capability, scope => work(compose(scope))),
     read: (ctx: CommandContext, capability, work) => db.transaction(async tx => {

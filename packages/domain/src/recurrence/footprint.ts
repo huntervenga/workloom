@@ -28,7 +28,13 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
  // Broad sources (a workspace tag) include every project and period owner: fail closed, never narrowed by guess.
  const allProjects=async()=>projects(...(await repo.tasks.listProjects(ws)).map(p=>p.id),...(await repo.listPeriods(ws)).map(p=>p.projectId));
  switch(i.family){
-  case 'comment':case 'table_preference':case 'cutoff':case 'generic_report':case 'planning_check':return none;
+  case 'shared_activity':
+   switch(i.command){
+    case 'shared_activity.create':return projects(i.target.projectId??undefined);
+    case 'shared_activity.configure':case 'shared_activity.attendance':return projects(i.target.taskId?await taskProject(i.target.taskId):undefined);
+    default:return never(i);
+   }
+  case 'comment':case 'table_preference':case 'cutoff':case 'generic_report':case 'planning_check':case 'summary_template':return none;
   case 'task_placement':
    switch(i.command){
     case 'task.project.attach':case 'task.project.update':case 'task.project.detach':case 'task.project.restore':return projects(await taskProject(i.target.taskId),(await repo.tasks.findProject(ws,i.target.projectId))?.id);

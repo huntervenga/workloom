@@ -5,7 +5,8 @@ import { ChoicePicker } from '../../shared/ChoicePicker';
 import { UserAvatar } from '../../shared/UserAvatar';
 
 /** Selected people stay compact; the searchable menu scales without rendering a roster. */
-export function TaskParticipantPicker({ members, value, retainedIds, disabled = false, onChange }: {
+export function TaskParticipantPicker({ members, value, retainedIds, disabled = false, label, onChange }: {
+  label?: string;
   members: readonly MembershipDto[];
   value: readonly string[];
   retainedIds: readonly string[];
@@ -16,7 +17,7 @@ export function TaskParticipantPicker({ members, value, retainedIds, disabled = 
   const selected = new Set(value);
   const available = members.filter(member => !selected.has(member.id));
   const unavailable = retainedIds.filter(id => !selected.has(id) && !members.some(member => member.id === id));
-  return <div role="group" aria-label={t('tasks.taskFields.participants')} className="flex min-h-8 min-w-0 flex-wrap items-center gap-1.5">
+  return <div role="group" aria-label={label??t('tasks.taskFields.participants')} className="flex min-h-8 min-w-0 flex-wrap items-center gap-1.5">
     {value.map(id => {
       const member = members.find(candidate => candidate.id === id);
       const name = member?.displayName ?? t('tasks.taskFields.memberUnavailable');

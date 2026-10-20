@@ -207,3 +207,11 @@ export * from "./planning-checks/math.js";
 
 export * from './duplication/ports.js';
 export * from './duplication/service.js';
+
+export * from './summary-templates/ports.js';
+export * from './summary-templates/service.js';
+export * from './summary-templates/resolution.js';
+
+export * from './shared-activities/ports.js';
+export * from './shared-activities/service.js';
+export * from './shared-activities/effort.js';

@@ -1,3 +1,4 @@
+import type {SummaryTemplateRepository} from '../summary-templates/ports.js';
 import type * as C from '@workloom/contracts';
 import type { CommandContext } from '../access/context.js';
 import type { Capability } from '../access/capabilities.js';
@@ -6,6 +7,8 @@ import type { GenericReportRepository } from '../generic-reports/ports.js';
 import type { PlanningCheckRepository } from '../planning-checks/ports.js';
 import type { TaskProjectPlacementRepository } from '../tasks/project-placement-ports.js';
 export interface DuplicationScope extends PlanningApplicationWriteScope {
+  readonly templates?:SummaryTemplateRepository;
+  sharedActivityTaskIds?(taskIds:readonly string[]):Promise<string[]>;
   readonly reports: GenericReportRepository;
   readonly checks: PlanningCheckRepository;
   readonly placements: TaskProjectPlacementRepository;

@@ -1,3 +1,4 @@
+import {effortMeasure,effortGroup,reportPersonalEffort,personalEffortComparison} from './effort.js';
 import type {
   GenericComparisonDto, GenericCoverageDto, GenericMeasureResultDto, GenericReportCellDto,
   GenericReportConfig, GenericReportNumberDto, GenericReportResultDto, GenericReportRowDto,
@@ -124,7 +125,7 @@ export function validateGenericConfig(config: GenericReportConfig, fields: reado
     const key = normalizeId(id), old = required.get(key);
     required.set(key, old ? types.filter(type => old.includes(type)) : types);
   };
-  for (const measure of config.measures) if (measure.operation !== 'count_tasks') requireType(measure.fieldId, ['number', 'duration']);
+  for (const measure of config.measures) if (measure.operation !== 'count_tasks') requireType(measure.fieldId, measure.operation==='personal_effort'?['duration']:['number', 'duration']);
   if (config.comparison) for (const id of [config.comparison.planFieldId, config.comparison.factFieldId]) requireType(id, ['duration']);
   if (config.groupBy.kind === 'category') requireType(config.groupBy.fieldId, ['single_select']);
   if (config.filters.dateRange?.source.kind === 'field') requireType(config.filters.dateRange.source.fieldId, ['date']);
@@ -163,6 +164,8 @@ export function calculateGenericReport(source: GenericReportSource, config: Gene
     const value = readValue(task, range.source.fieldId);
     return value?.value.type === 'date' ? value.value.value : null;
   };
+  const personalMode=config.measures.some(measure=>measure.operation==='personal_effort')||config.comparison?.attribution==='personal_effort';
+  if(initial&&personalMode)invalid('Personal effort cannot use an initial task-value snapshot.');
   const seen = new Set<string>(), rows: GenericReportRowDto[] = [];
   for (const task of source.tasks) {
     const taskId = normalizeId(task.id);
@@ -172,8 +175,8 @@ export function calculateGenericReport(source: GenericReportSource, config: Gene
     if (config.filters.statusGroups.length > 0 && !config.filters.statusGroups.includes(task.statusGroup)) continue;
     if (config.filters.tagIds.some(tagId => !task.tagIds.some(id => sameId(id, tagId)))) continue;
     const assignee = config.filters.assignee;
-    if (assignee.kind === 'unassigned' && task.responsibleMembershipId !== null) continue;
-    if (assignee.kind === 'member' && (task.responsibleMembershipId === null || !sameId(task.responsibleMembershipId, assignee.membershipId))) continue;
+    if (!personalMode && assignee.kind === 'unassigned' && task.responsibleMembershipId !== null) continue;
+    if (!personalMode && assignee.kind === 'member' && (task.responsibleMembershipId === null || !sameId(task.responsibleMembershipId, assignee.membershipId))) continue;
     const range = config.filters.dateRange;
     if (range) { const date = readDate(task); if (date === null || date < range.from || date > range.to) continue; }
     let groupKey = 'all', groupLabel = 'All tasks';
@@ -207,19 +210,33 @@ export function calculateGenericReport(source: GenericReportSource, config: Gene
     if (rows.length > MAX_SCOPE) invalid('The complete report scope exceeds 5000 tasks.');
   }
   rows.sort((left, right) => left.taskId.localeCompare(right.taskId));
+  const scopedIds=new Set(rows.map(row=>row.taskId));
+  const effortSource:GenericReportSource={...source,tasks:source.tasks.filter(task=>scopedIds.has(task.id))};
+  const ordinaryRows=(items:readonly GenericReportRowDto[])=>items.filter(row=>config.filters.assignee.kind==='all'||(config.filters.assignee.kind==='unassigned'?row.primaryAssigneeId===null:row.primaryAssigneeId===config.filters.assignee.membershipId));
+  const measuresFor=(items:readonly GenericReportRowDto[],groupKey?:string)=>config.measures.map(measure=>measure.operation==='personal_effort'?effortMeasure(measure.key,measure.fieldId,reportPersonalEffort(effortSource,config,measure.fieldId,groupKey)):genericRowMeasures(ordinaryRows(items),{...config,measures:[measure]},fields)[0] as GenericMeasureResultDto);
+  const comparisonFor=(items:readonly GenericReportRowDto[],groupKey?:string)=>config.comparison?.attribution==='personal_effort'?personalEffortComparison(reportPersonalEffort(effortSource,config,config.comparison.planFieldId,groupKey),reportPersonalEffort(effortSource,config,config.comparison.factFieldId,groupKey),rows,config):comparison(ordinaryRows(items),config);
+  const effortFieldIds=[...config.measures.flatMap(measure=>measure.operation==='personal_effort'?[measure.fieldId]:[]),...(config.comparison?.attribution==='personal_effort'?[config.comparison.planFieldId,config.comparison.factFieldId]:[])];
+  const hasOrdinary=config.measures.some(measure=>measure.operation!=='personal_effort')||(config.comparison!==null&&config.comparison.attribution!=='personal_effort');
+  const visibleIds=new Set([...effortFieldIds.flatMap(fieldId=>reportPersonalEffort(effortSource,config,fieldId).contributions.map(row=>row.taskId)),...(hasOrdinary?ordinaryRows(rows).map(row=>row.taskId):[])]);
+  const visibleRows=personalMode?rows.filter(row=>visibleIds.has(row.taskId)):rows;
+  const pageRows=visibleRows.slice(offset,offset+limit);
+  if(config.comparison?.attribution==='personal_effort')for(const row of pageRows){const taskSource:GenericReportSource={...effortSource,tasks:effortSource.tasks.filter(task=>task.id===row.taskId)};row.comparison=personalEffortComparison(reportPersonalEffort(taskSource,config,config.comparison.planFieldId),reportPersonalEffort(taskSource,config,config.comparison.factFieldId),[row],config);}
+
   const grouped = new Map<string, GenericReportRowDto[]>();
-  for (const row of rows) { const group = grouped.get(row.groupKey) ?? []; group.push(row); grouped.set(row.groupKey, group); }
+  for (const row of hasOrdinary?ordinaryRows(visibleRows):[]) { const group = grouped.get(row.groupKey) ?? []; group.push(row); grouped.set(row.groupKey, group); }
+  const effortGroupLabels=new Map<string,string>();
+  if(personalMode){for(const fieldId of [...config.measures.flatMap(measure=>measure.operation==='personal_effort'?[measure.fieldId]:[]),...(config.comparison?.attribution==='personal_effort'?[config.comparison.planFieldId,config.comparison.factFieldId]:[])])for(const contribution of reportPersonalEffort(effortSource,config,fieldId).contributions){const group=effortGroup(effortSource,config,contribution);effortGroupLabels.set(group.key,group.label);if(!grouped.has(group.key))grouped.set(group.key,[]);}}
   const groups = [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, group]) => ({
-    key, label: group[0]?.groupLabel ?? key, taskCount: group.length, measures: genericRowMeasures(group, config, fields), comparison: comparison(group, config), initialComparison: initial ? comparison(group, config, true) : null,
+    key, label: effortGroupLabels.get(key)??group[0]?.groupLabel ?? key, taskCount: personalMode?new Set([...group.map(row=>row.taskId),...effortFieldIds.flatMap(fieldId=>reportPersonalEffort(effortSource,config,fieldId,key).contributions.map(row=>row.taskId))]).size:group.length, measures: measuresFor(group,key), comparison: comparisonFor(group,key), initialComparison: initial ? comparison(group, config, true) : null,
   }));
   const retained = rows.filter(row => originals.has(normalizeId(row.taskId))).length;
   return {
     ...(source.capacity?{capacity:source.capacity}:{}),...(initial?.header.capacity?{initialCapacity:initial.header.capacity}:{}),
     reportId: null, definitionRevision: null, sourceVersion, config: cloneConfig(config), scope: 'project_presence_canonical_tasks', hierarchy: config.hierarchy,
-    attribution: 'primary_assignee', fields: fields.map(cloneField), totalTasks: rows.length, measures: genericRowMeasures(rows, config, fields), comparison: comparison(rows, config),
+    attribution: personalMode?'personal_effort':'primary_assignee', fields: fields.map(cloneField), totalTasks: visibleRows.length, measures: measuresFor(rows), comparison: comparisonFor(rows),
     initialComparison: initial ? comparison(rows, config, true) : null,
     initialMeasures: initial ? genericRowMeasures(initial.rows, initial.header.config, initial.header.fields) : null,
-    groups, rows: rows.slice(offset, offset + limit), offset, nextOffset: offset + limit < rows.length ? offset + limit : null,
+    groups, rows: pageRows, offset, nextOffset: offset + limit < visibleRows.length ? offset + limit : null,
     initialSnapshot: initial ? { ...initial.header, config: cloneConfig(initial.header.config), fields: initial.header.fields.map(cloneField) } : null,
     cohorts: initial ? { initial: originals.size, retained, added: rows.length - retained, removed: originals.size - retained } : null,
   };

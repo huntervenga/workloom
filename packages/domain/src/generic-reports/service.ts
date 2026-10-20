@@ -1,3 +1,4 @@
+import {sameSummaryGroup} from '../summary-templates/resolution.js';
 import * as C from '@workloom/contracts';
 import {roleHasCapability} from '../access/capabilities.js';
 import type { CommandContext } from '../access/context.js';
@@ -79,6 +80,7 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
     if(!definition&&config.capacity)await scope.reports.validateCapacity?.(config,roleHasCapability(scope.access.membership.role,'leave.manage'));
     const source = await scope.reports.source(config), version = sourceVersion(source, config, definition?.revision ?? null, snapshotId);
     if (input.expectedSourceVersion && version !== input.expectedSourceVersion) throw new DomainError('PREVIEW_STALE', 'The source changed. Reload the complete report.');
+    if(snapshotId&&(config.measures.some(measure=>measure.operation==='personal_effort')||config.comparison?.attribution==='personal_effort'))throw rule('Personal effort cannot be queried with an initial task-value snapshot. Choose current effort or an immutable planning checkpoint.');
     const snapshot = snapshotId && definition ? found(await scope.reports.findSnapshot(definition.id, snapshotId)) : null;
     if (snapshot && (snapshot.header.workspaceId !== scope.context.workspaceId || snapshot.header.reportId !== definition?.id || snapshot.header.projectId !== config.projectId)) throw notFoundError();
     if (snapshot && canonicalJson(snapshot.header.config) !== canonicalJson(config)) throw rule('This initial snapshot uses another report configuration. Restore that configuration or choose a matching snapshot.');
@@ -111,6 +113,7 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
       return mutate(ctx, 'generic_report.capture', rid, parsed, C.genericInitialSnapshotSchema, async scope => {
         const current = await report(scope, rid); revision(current.revision, parsed.expectedRevision); await project(scope, current.projectId, true);
         if (current.archivedAt) throw rule('Restore the report before capturing an initial snapshot.');
+        if(current.config.measures.some(measure=>measure.operation==='personal_effort')||current.config.comparison?.attribution==='personal_effort')throw rule('Initial snapshots of personal effort are not supported yet. Use ordinary task-value snapshots or an explicit planning checkpoint.');
         if ((await scope.reports.listSnapshots(rid)).length >= 100) throw rule('The initial snapshot limit is 100.');
         const source = await scope.reports.source(current.config), version = sourceVersion(source, current.config, current.revision);
         if (version !== parsed.expectedSourceVersion) throw new DomainError('PREVIEW_STALE', 'The source changed. Review the current report before capturing it.');
@@ -131,6 +134,7 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
       return mutate(ctx, 'generic_report.settings', pid, parsed, C.genericAggregateSettingsSchema, async scope => {
         await project(scope, pid, true); const current = await scope.reports.settings(pid); revision(current.revision, parsed.expectedRevision);
         if (parsed.measures.length) validateGenericConfig({ projectId: pid, hierarchy: 'all_tasks', measures: parsed.measures, comparison: null, groupBy: { kind: 'none' }, filters: { statusGroups: [], tagIds: [], assignee: { kind: 'all' }, dateRange: null } }, await scope.repository.listFields(scope.context.workspaceId, pid));
+        if(parsed.headerWidgets!==undefined)for(const binding of await scope.reports.templateBindings?.(pid)??[]){const before=current.headerWidgets?.find(r=>sameSummaryGroup(r.group,binding.group)),after=parsed.headerWidgets.find(r=>sameSummaryGroup(r.group,binding.group));if(canonicalJson(before??null)!==canonicalJson(after??null))throw rule('Customize or detach the linked summary before editing this section.');}
         if(parsed.headerWidgets!==undefined)await validateHeaderWidgets(scope,pid,parsed.headerWidgets,await scope.repository.listFields(scope.context.workspaceId,pid));
         const next = { ...current, revision: current.revision + 1, measures: parsed.measures,...(parsed.headerWidgets===undefined?{}:{headerWidgets:parsed.headerWidgets}) }; await scope.reports.saveSettings(next);
         await scope.recordChange({ entityType: 'generic_report_columns', entityId: pid, action: 'updated', entityRevision: next.revision, diff: { projectId: pid, revision: next.revision }, outbox: { type: 'generic_report_columns.updated', payload: { projectId: pid, revision: next.revision } } }); return next;

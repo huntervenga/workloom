@@ -1,3 +1,4 @@
+import {summaryTemplateBindingSchema,summaryTemplatePersonSchema} from './summary-templates.js';
 import { z } from 'zod';
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
@@ -15,7 +16,7 @@ export const duplicationCopyOptionsSchema = z.strictObject({
   customFieldIds: z.array(idSchema).max(DUPLICATION_LIMITS.maxFields).refine(ids => new Set(ids).size === ids.length, 'Choose each field once.').transform(ids => [...ids].sort()),
 });
 export const duplicateTaskPreviewInputSchema = z.strictObject({ projectId: idSchema, title: z.string().trim().min(1).max(500), copy: duplicationCopyOptionsSchema });
-export const duplicateSectionPreviewInputSchema = z.strictObject({ name: z.string().trim().min(1).max(160), includeTasks: z.boolean(), includeSettings: z.boolean(), copy: duplicationCopyOptionsSchema });
+export const duplicateSectionPreviewInputSchema = z.strictObject({ name: z.string().trim().min(1).max(160), includeTasks: z.boolean(), includeSettings: z.boolean(), templateMode:z.enum(['keep_link','independent']).optional(),templatePerson:summaryTemplatePersonSchema.optional(), copy: duplicationCopyOptionsSchema });
 export const duplicateTaskInputSchema = duplicateTaskPreviewInputSchema.extend({ expectedSourceVersion: version });
 export const duplicateSectionInputSchema = duplicateSectionPreviewInputSchema.extend({ expectedSourceVersion: version });
 export const duplicationPreviewSchema = z.strictObject({
@@ -24,7 +25,7 @@ export const duplicationPreviewSchema = z.strictObject({
   copyableFields: z.array(taskFieldDefinitionSchema),
   settings: z.strictObject({
     aggregateRevision: z.number().int().nonnegative(), checksRevision: z.number().int().nonnegative(),
-    headerWidgets: z.array(genericHeaderWidgetRuleSchema), balanceChecks: z.array(planningCheckRuleSchema),
+    headerWidgets: z.array(genericHeaderWidgetRuleSchema), balanceChecks: z.array(planningCheckRuleSchema),templateBinding:summaryTemplateBindingSchema.optional(),
   }).nullable(),
 });
 export const duplicationResultSchema = z.strictObject({ kind: z.enum(['task', 'section']), projectId: idSchema, rootTaskId: idSchema.nullable(), section: sectionSchema.nullable(), taskIds: z.array(idSchema).max(DUPLICATION_LIMITS.maxTasks) });

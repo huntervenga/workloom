@@ -10,9 +10,10 @@ function invalid(message:string):never{throw new DomainError('DOMAIN_VALIDATION_
 function required<T>(value:T|undefined):T{if(value===undefined)throw Error('Workspace reporting repository is unavailable.');return value;}
 function numericConfig(report:C.GenericReportDefinitionDto,categoryFieldId:string|null,dateSource:C.WorkspaceReportQueryInput['dateSource'],input?:C.WorkspaceReportQueryInput):C.GenericReportConfig{
  const compare=report.config.comparison;if(!compare)invalid('Choose a report with ordinary duration plan and actual fields.');
+ const {attribution:_savedAttribution,...ordinaryComparison}=compare;
  const oldDate=report.config.filters.dateRange?.source;
  if(dateSource==='report_date_field'&&oldDate?.kind!=='field')invalid('This report has no configured custom date field. Use due dates or configure its date binding.');
- return{projectId:report.projectId,hierarchy:input?.hierarchy??'all_tasks',measures:[{key:'plan',operation:'sum',fieldId:compare.planFieldId},{key:'fact',operation:'sum',fieldId:compare.factFieldId}],comparison:{...compare,completion:input?.completion??'done_only'},groupBy:categoryFieldId?{kind:'category',fieldId:categoryFieldId}:{kind:'none'},filters:{statusGroups:[],tagIds:[],assignee:{kind:'all'},dateRange:input?{source:dateSource==='report_date_field'&&oldDate?.kind==='field'?oldDate:{kind:'due_date'},from:input.range.from,to:input.range.to}:null}};
+ return{projectId:report.projectId,hierarchy:input?.hierarchy??'all_tasks',measures:[{key:'plan',operation:'sum',fieldId:compare.planFieldId},{key:'fact',operation:'sum',fieldId:compare.factFieldId}],comparison:{...ordinaryComparison,completion:input?.completion??'done_only',...(input?.attribution==='personal_effort'?{attribution:'personal_effort' as const}:{})},groupBy:categoryFieldId?{kind:'category',fieldId:categoryFieldId}:{kind:'none'},filters:{statusGroups:[],tagIds:[],assignee:{kind:'all'},dateRange:input?{source:dateSource==='report_date_field'&&oldDate?.kind==='field'?oldDate:{kind:'due_date'},from:input.range.from,to:input.range.to}:null}};
 }
 export async function workspaceReportSources(scope:GenericReportScope):Promise<C.WorkspaceReportSourcesDto>{
  const catalog=await required(scope.reports.workspaceCatalog).call(scope.reports),members=await required(scope.reports.workspaceMembers).call(scope.reports);

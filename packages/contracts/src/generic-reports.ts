@@ -1,3 +1,4 @@
+import {personalEffortResultSchema} from './shared-activities.js';
 import { z } from 'zod';
 import {leaveAvailabilityInputSchema,leaveAvailabilitySchema,leaveCapacityMemberSchema} from './leave-api.js';
 import { envelopeSchema } from './common/envelope.js';
@@ -10,6 +11,7 @@ const name = z.string().trim().min(1).max(160);
 const unique = (values: readonly string[]) => new Set(values).size === values.length;
 export const genericReportMeasureSchema = z.discriminatedUnion('operation', [
   z.strictObject({ key, operation: z.literal('sum'), fieldId: idSchema }),
+  z.strictObject({ key, operation: z.literal('personal_effort'), fieldId: idSchema }),
   z.strictObject({ key, operation: z.literal('avg'), fieldId: idSchema }),
   z.strictObject({ key, operation: z.literal('min'), fieldId: idSchema }),
   z.strictObject({ key, operation: z.literal('max'), fieldId: idSchema }),
@@ -32,7 +34,7 @@ export const genericReportConfigSchema = z.strictObject({
   projectId: idSchema,
   hierarchy: z.enum(['all_tasks', 'root_tasks']),
   measures: genericReportMeasuresSchema,
-  comparison: z.strictObject({ planFieldId: idSchema, factFieldId: idSchema, completion: z.enum(['done_only', 'all_tasks']) }).refine(v => v.planFieldId !== v.factFieldId, 'Choose two different fields.').nullable(),
+  comparison: z.strictObject({ planFieldId: idSchema, factFieldId: idSchema, completion: z.enum(['done_only', 'all_tasks']), attribution:z.literal('personal_effort').optional() }).refine(v => v.planFieldId !== v.factFieldId, 'Choose two different fields.').nullable(),
   groupBy: genericReportGroupSchema,
   filters: genericReportFiltersSchema,
   capacity: leaveAvailabilityInputSchema.optional(),
@@ -50,14 +52,14 @@ export const genericInitialSnapshotSchema = z.strictObject({ id: idSchema, works
 /** Exact rational is authoritative. Decimal is a deterministic presentation rounded to at most 12 places. */
 export const genericReportNumberSchema = z.strictObject({ numerator: z.string().regex(/^-?\d+$/), denominator: z.string().regex(/^[1-9]\d*$/), decimal: z.string().regex(/^-?\d+(?:\.\d+)?$/) });
 export const genericCoverageSchema = z.strictObject({ tasks: z.number().int().nonnegative(), filled: z.number().int().nonnegative(), missing: z.number().int().nonnegative(), null: z.number().int().nonnegative(), zero: z.number().int().nonnegative() });
-export const genericMeasureResultSchema = z.strictObject({ key, operation: z.enum(['sum', 'avg', 'min', 'max', 'count_values', 'count_tasks']), fieldId: idSchema.nullable(), unit: z.enum(['minutes', 'number', 'tasks', 'values']), value: genericReportNumberSchema.nullable(), coverage: genericCoverageSchema });
-export const genericComparisonSchema = z.strictObject({ eligibleTasks: z.number().int().nonnegative(), pairedTasks: z.number().int().nonnegative(), plan: genericReportNumberSchema.nullable(), fact: genericReportNumberSchema.nullable(), difference: genericReportNumberSchema.nullable(), ratio: genericReportNumberSchema.nullable(), unavailableReason: z.enum(['no_tasks', 'missing_plan', 'missing_fact', 'zero_plan']).nullable(), planCoverage: genericCoverageSchema, factCoverage: genericCoverageSchema });
+export const genericMeasureResultSchema = z.strictObject({ key, operation: z.enum(['sum', 'avg', 'min', 'max', 'count_values', 'count_tasks', 'personal_effort']), fieldId: idSchema.nullable(), unit: z.enum(['minutes', 'number', 'tasks', 'values']), value: genericReportNumberSchema.nullable(), coverage: genericCoverageSchema, effort:personalEffortResultSchema.optional() });
+export const genericComparisonSchema = z.strictObject({ eligibleTasks: z.number().int().nonnegative(), pairedTasks: z.number().int().nonnegative(), plan: genericReportNumberSchema.nullable(), fact: genericReportNumberSchema.nullable(), difference: genericReportNumberSchema.nullable(), ratio: genericReportNumberSchema.nullable(), unavailableReason: z.enum(['no_tasks', 'missing_plan', 'missing_fact', 'zero_plan']).nullable(), planCoverage: genericCoverageSchema, factCoverage: genericCoverageSchema, attribution:z.literal('personal_effort').optional(), effort:z.strictObject({plan:personalEffortResultSchema,fact:personalEffortResultSchema}).optional() });
 export const genericReportCellSchema = z.strictObject({ fieldId: idSchema, state: z.enum(['missing', 'null', 'value', 'not_in_snapshot']), value: z.number().nullable(), valueRevision: z.number().int().nonnegative().nullable(), definitionVersionId: idSchema.nullable() });
 export const genericReportRowSchema = z.strictObject({ taskId: idSchema, homeProjectId: idSchema, title: z.string(), taskRevision: revisionSchema, parentTaskId: idSchema.nullable(), primaryAssigneeId: idSchema.nullable(), statusGroup: taskStatusGroupSchema, dueDate: calendarDateSchema.nullable(), groupKey: z.string(), groupLabel: z.string(), placement: z.enum(['home', 'linked']), values: z.array(genericReportCellSchema), initialValues: z.array(genericReportCellSchema).nullable(), cohort: z.enum(['current', 'retained', 'added']), comparison: genericComparisonSchema.nullable(), initialComparison: genericComparisonSchema.nullable() });
 export const genericGroupResultSchema = z.strictObject({ key: z.string(), label: z.string(), taskCount: z.number().int().nonnegative(), measures: z.array(genericMeasureResultSchema), comparison: genericComparisonSchema.nullable(), initialComparison: genericComparisonSchema.nullable() });
 export const genericReportResultSchema = z.strictObject({
   reportId: idSchema.nullable(), definitionRevision: revisionSchema.nullable(), sourceVersion: z.string().regex(/^[a-f0-9]{64}$/), config: genericReportConfigSchema,
-  scope: z.literal('project_presence_canonical_tasks'), hierarchy: z.enum(['all_tasks', 'root_tasks']), attribution: z.literal('primary_assignee'), fields: z.array(taskFieldDefinitionSchema),
+  scope: z.literal('project_presence_canonical_tasks'), hierarchy: z.enum(['all_tasks', 'root_tasks']), attribution: z.enum(['primary_assignee','personal_effort']), fields: z.array(taskFieldDefinitionSchema),
   totalTasks: z.number().int().nonnegative(), measures: z.array(genericMeasureResultSchema), initialMeasures: z.array(genericMeasureResultSchema).nullable(), comparison: genericComparisonSchema.nullable(), initialComparison: genericComparisonSchema.nullable(), groups: z.array(genericGroupResultSchema), rows: z.array(genericReportRowSchema), offset: z.number().int().nonnegative(), nextOffset: z.number().int().nonnegative().nullable(),
   capacity:leaveAvailabilitySchema.optional(),initialCapacity:leaveAvailabilitySchema.optional(),
   initialSnapshot: genericInitialSnapshotSchema.nullable(), cohorts: z.strictObject({ initial: z.number().int().nonnegative(), retained: z.number().int().nonnegative(), added: z.number().int().nonnegative(), removed: z.number().int().nonnegative() }).nullable(),
@@ -71,16 +73,18 @@ const headerRangeSchema=z.discriminatedUnion('kind',[
   z.strictObject({kind:z.literal('project_dates')}),
   z.strictObject({kind:z.literal('dates'),from:calendarDateSchema,to:calendarDateSchema}).superRefine((v,ctx)=>{if(!leaveAvailabilityInputSchema.safeParse({startDate:v.from,endDate:v.to,people:{kind:'all_active'}}).success)ctx.addIssue({code:'custom',message:'Choose an inclusive range of at most 366 days.'});}),
 ]);
+export const genericHeaderTaskScopeSchema=z.strictObject({kind:z.literal('selected_person_project'),membershipId:idSchema});
 export const genericHeaderWidgetSchema=z.discriminatedUnion('kind',[
   z.strictObject({key,label:name.optional(),kind:z.literal('measure'),measure:genericReportMeasureSchema}),
+  z.strictObject({key,label:name.optional(),kind:z.literal('personal_effort'),fieldId:idSchema,membershipId:idSchema.optional()}),
   z.strictObject({key,label:name.optional(),kind:z.literal('capacity'),membershipId:idSchema,range:headerRangeSchema,override:z.strictObject({minutes:z.number().int().min(0).max(527040),note:z.string().trim().max(200).optional()}).optional()}),
 ]);
-export const genericHeaderWidgetRuleSchema=z.strictObject({group:genericHeaderWidgetGroupSchema,widgets:z.array(genericHeaderWidgetSchema).max(4).refine(w=>unique(w.map(widget=>widget.key)),'Widget keys must be unique in a group.')});
+export const genericHeaderWidgetRuleSchema=z.strictObject({group:genericHeaderWidgetGroupSchema,taskScope:genericHeaderTaskScopeSchema.optional(),widgets:z.array(genericHeaderWidgetSchema).max(4).refine(w=>unique(w.map(widget=>widget.key)),'Widget keys must be unique in a group.')});
 export const genericHeaderWidgetsSchema=z.array(genericHeaderWidgetRuleSchema).max(100).refine(rules=>unique(rules.map(rule=>rule.group.kind+':'+(rule.group.kind==='section'?rule.group.sectionId:rule.group.membershipId))),'Each group may have only one header rule.').refine(rules=>new Set(rules.flatMap(rule=>rule.widgets.flatMap(widget=>widget.kind==='measure'&&widget.measure.operation!=='count_tasks'?[widget.measure.fieldId]:[]))).size<=12,'Choose at most 12 distinct metric fields across header widgets.');
 export const queryGenericHeaderWidgetsInputSchema=z.strictObject({expectedSettingsRevision:z.number().int().nonnegative(),groupBy:z.enum(['section','assignee']),hierarchy:z.enum(['all_tasks','root_tasks']),filters:genericReportFiltersSchema,expectedSourceVersion:z.string().regex(/^[a-f0-9]{64}$/).optional()});
 const headerMeasureResultSchema=z.strictObject({key,label:name.optional(),kind:z.literal('measure'),result:genericMeasureResultSchema.nullable(),unavailableReason:z.enum(['field_unavailable','group_unavailable']).nullable()});
 const headerCapacityResultSchema=z.strictObject({key,label:name.optional(),kind:z.literal('capacity'),membershipId:idSchema,range:z.strictObject({from:calendarDateSchema,to:calendarDateSchema}).nullable(),person:leaveCapacityMemberSchema.nullable(),computedAvailableMinutes:z.number().int().nonnegative().nullable(),displayAvailableMinutes:z.number().int().nonnegative().nullable(),manualOverride:z.boolean(),overrideNote:z.string().max(200).optional(),unavailableReason:z.enum(['member_unavailable','schedule_unknown','group_unavailable','project_dates_missing','project_dates_too_long']).nullable()});
-export const genericHeaderWidgetsResultSchema=z.strictObject({projectId:idSchema,settingsRevision:z.number().int().nonnegative(),sourceVersion:z.string().regex(/^[a-f0-9]{64}$/),groupBy:z.enum(['section','assignee']),hierarchy:z.enum(['all_tasks','root_tasks']),filters:genericReportFiltersSchema,groups:z.array(z.strictObject({group:genericHeaderWidgetGroupSchema,widgets:z.array(z.discriminatedUnion('kind',[headerMeasureResultSchema,headerCapacityResultSchema])).max(4)})).max(100)});
+export const genericHeaderWidgetsResultSchema=z.strictObject({projectId:idSchema,settingsRevision:z.number().int().nonnegative(),sourceVersion:z.string().regex(/^[a-f0-9]{64}$/),groupBy:z.enum(['section','assignee']),hierarchy:z.enum(['all_tasks','root_tasks']),filters:genericReportFiltersSchema,groups:z.array(z.strictObject({group:genericHeaderWidgetGroupSchema,widgets:z.array(z.discriminatedUnion('kind',[headerMeasureResultSchema,headerCapacityResultSchema,z.strictObject({key,label:name.optional(),kind:z.literal('personal_effort'),result:personalEffortResultSchema.nullable(),unavailableReason:z.enum(['field_unavailable','group_unavailable','person_unavailable']).nullable()})])).max(4)})).max(100)});
 export const genericHeaderWidgetsResponseSchema=envelopeSchema(genericHeaderWidgetsResultSchema);
 export const genericAggregateSettingsSchema = z.strictObject({ workspaceId: idSchema, projectId: idSchema, revision: z.number().int().nonnegative(), measures: z.array(genericReportMeasureSchema).max(12).refine(v => unique(v.map(m => m.key))), headerWidgets:genericHeaderWidgetsSchema.optional() });
 export const setGenericAggregateSettingsInputSchema = z.strictObject({ expectedRevision: z.number().int().nonnegative(), measures: z.array(genericReportMeasureSchema).max(12).refine(v => unique(v.map(m => m.key))), headerWidgets:genericHeaderWidgetsSchema.optional() });

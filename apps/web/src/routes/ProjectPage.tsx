@@ -1,3 +1,5 @@
+import { useSharedActivityWorkspace } from '../features/shared-activities/queries';
+import { CreateSharedActivityDialog } from '../features/shared-activities/CreateSharedActivityDialog';
 import { useDuplication } from '../features/duplication/useDuplication';
 import { useProjectPlanningChecks } from '../features/planning-checks/useProjectPlanningChecks';
 import { ProjectDateRange } from '../features/projects/ProjectDateRange';
@@ -263,6 +265,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const navigate = useNavigate();
   const location = useLocation();
   const meetingController=useMeetingWorkspace(actorId,workspace.id,project.id);
+  const sharedActivityController=useSharedActivityWorkspace(actorId,workspace.id,project.id);
   const meetingPeriods=usePlanningPeriodsQuery(actorId,workspace.id,project.id);
   // Same for custom field values: a hidden drawer keeps a value write that is pending or unconfirmed.
   const fieldValueMutation = useSetTaskFieldValueMutation(actorId, workspace.id);
@@ -1090,7 +1093,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
           </div>
         </div>
-        {writable && metadataReady ? <ProjectCreateMenu returnFocus={sectionCreate.returnFocus} onAddTask={() => { if (grouping === 'section' && tableMode) startQuickAdd(null); else startCreate({ sectionId: null, parent: null }); }} onAddSection={startSection} /> : null}
+        {writable && metadataReady ? <ProjectCreateMenu onAddSharedActivity={()=>sharedActivityController.setCreateOpen(true)} returnFocus={sectionCreate.returnFocus} onAddTask={() => { if (grouping === 'section' && tableMode) startQuickAdd(null); else startCreate({ sectionId: null, parent: null }); }} onAddSection={startSection} /> : null}
         <ProjectActions>
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
@@ -1143,6 +1146,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       <EdgeDialog controller={dependencies} actorId={actorId} workspaceId={workspace.id} project={project} writable={writable} />
       <MeetingCommandNotices controller={meetingController} onOpen={(id,tab,selection)=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab',tab);if(selection?.requestedPeriodId)next.set('meetingPeriod',selection.requestedPeriodId);else next.delete('meetingPeriod');if(selection?.membershipId)next.set('meetingMember',selection.membershipId);else next.delete('meetingMember');if(selection?.attendanceId)next.set('meetingAttendance',selection.attendanceId);else next.delete('meetingAttendance');return next;})}/>
       {meetingController.commands.create.pendingCommand||meetingController.commands.create.uncertain?<div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">{t('projects.projectPage.meetingCreationIsUnconfirmed')}<Button size="sm" onClick={()=>meetingController.setCreateOpen(true)}>{t('projects.projectPage.openMeetingCreation')}</Button></div>:null}
+      {[sharedActivityController.configure,sharedActivityController.attendance].map((command,index)=>command.uncertain||command.pendingCommand?<div key={`shared-${index}`} role="status" className="flex flex-wrap gap-2 rounded border border-line p-2 text-xs text-muted"><span>{t('sharedActivities.reopenTask')}</span><Button size="sm" variant="ghost" onClick={()=>openTask((command.uncertain?.variables??command.pendingCommand?.variables)?.taskId??'')}>{t('sharedActivities.reopenTask')}</Button></div>:null)}
+      {sharedActivityController.create.uncertain||sharedActivityController.create.pendingCommand?<Button size="sm" variant="ghost" onClick={()=>sharedActivityController.setCreateOpen(true)}>{t('sharedActivities.reopenCreate')}</Button>:null}
+      <CreateSharedActivityDialog controller={sharedActivityController} members={members.data??[]} fields={fieldDefinitions.data??[]} statuses={statuses.data??[]} sections={sections.data??[]} ownMembershipId={members.data?.find(member=>member.userId===actorId)?.id??''} writable={writable&&metadataReady&&!fieldDefinitions.isFetching&&!fieldDefinitions.isError} onCreated={id=>openTask(id)}/>
       <CreateMeetingDialog accessDenied={[members.error,sections.error,statuses.error,meetingPeriods.error].some(isAccessDenied)} controller={meetingController} members={members.data??[]} periods={meetingPeriods.data??[]} statuses={statuses.data??[]} sections={sections.data??[]} ownMembershipId={members.data?.find(m=>m.userId===actorId)?.id??''} timezone={workspace.timezone} onCreated={id=>setSearchParams(before=>{const next=new URLSearchParams(before);next.set('task',id);next.set('meetingTab','plan');return next;})}/>
       <nav aria-label={t('projects.projectPage.projectViews')} className="flex min-w-0 flex-nowrap gap-1 overflow-x-auto border-b border-line pb-2">
         <Button ref={tableMode || (importMode && !canManageImports) ? activeViewControl : undefined} size="sm" variant={boardMode || graphMode || ganttMode || importMode ? 'ghost' : 'primary'} aria-current={!boardMode && !graphMode && !ganttMode && !importMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('view'); return next; })}>{t('projects.projectPage.tasks')}</Button>
@@ -1298,6 +1304,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           {!importMode && !graphMode ? <LinkedProjectTasks actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
           <ProjectUndoSurface actorId={actorId} workspaceId={workspace.id} projectId={project.id} writable={writable} />
           <TaskDrawer
+            sharedActivityController={sharedActivityController}
             legacyTime={timeAvailable}
             placementCommands={placementCommands}
             commentsController={commentsController}

@@ -143,3 +143,7 @@ export {createLeaveApplication} from './leave/application.js';
 export {createPlanningCheckApplication} from "./planning-checks/application.js";
 
 export { createDuplicationApplication } from './duplication/application.js';
+
+export {createSummaryTemplateApplication} from './summary-templates/application.js';
+
+export {createSharedActivityApplication} from './shared-activities/application.js';

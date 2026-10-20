@@ -141,7 +141,7 @@ function never(value:never):never {throw new Error(`Unhandled planning mutation 
 export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<PlanningTools,'newId'|'digest'>):PlanningMutationGuard {
   return {async check(intent:PlanningMutationIntent) {
     // Comments and own display preferences are explicitly inert: no planning/census work.
-    if(intent.family==='comment'||intent.family==='table_preference'||intent.family==='cutoff'||intent.family==='generic_report'||intent.family==='planning_check')return null;
+    if(intent.family==='comment'||intent.family==='table_preference'||intent.family==='cutoff'||intent.family==='generic_report'||intent.family==='planning_check'||intent.family==='summary_template')return null;
     const repo=scope.repository,ws=scope.context.workspaceId,census=requireCensus(scope);
     // materializePeriod and authorizeGeneration bypass every due-freeze loop; their handlers create only approved
     // target-period census or replace grant metadata, and never depend on a revoked old grant.
@@ -173,6 +173,13 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
       return fieldPolicyBlock(repo.fields.policies,policy,taskId,scope.context.actor.userId,scope.barrierAt);
     };
     switch(intent.family) {
+      case 'shared_activity': {
+        // Period-free participation changes still require the full affected-project census and due freezes.
+        // Atomic creation checks ordinary custom-field policies before its task or values exist.
+        switch(intent.command){case 'shared_activity.create':case 'shared_activity.configure':case 'shared_activity.attendance':break;default:never(intent);}
+        for(const candidate of intent.fieldPolicyCandidates){policyReason=await policyCheck(candidate.fieldId,null,candidate.value,candidate.expectedDefinitionRevision);if(policyReason)break;}
+        break;
+      }
       case 'task_placement': {
         // Metadata-only: due freezes/census still cover canonical home and target project.
         switch(intent.command){

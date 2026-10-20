@@ -1,0 +1,11 @@
+import {and,asc,eq} from 'drizzle-orm';
+import {summaryTemplateDefinitionSchema,summaryTemplateBindingSchema} from '@workloom/contracts';
+import type {SummaryTemplateRepository} from '@workloom/domain';
+import type {WorkloomExecutor} from '../client.js';
+import {summaryTemplates,summaryTemplateVersions,summaryTemplateBindings,summaryTemplateBindingVersions} from '../schema.js';
+export function createSummaryTemplateRepository(tx:WorkloomExecutor,workspaceId:string):SummaryTemplateRepository{return{
+ async list(projectId){return(await tx.select().from(summaryTemplates).where(and(eq(summaryTemplates.workspaceId,workspaceId),eq(summaryTemplates.projectId,projectId))).orderBy(asc(summaryTemplates.id))).map(r=>summaryTemplateDefinitionSchema.parse(r.snapshot));},
+ async bindings(projectId){return(await tx.select().from(summaryTemplateBindings).where(and(eq(summaryTemplateBindings.workspaceId,workspaceId),eq(summaryTemplateBindings.projectId,projectId))).orderBy(asc(summaryTemplateBindings.id))).map(r=>summaryTemplateBindingSchema.parse(r.snapshot));},
+ async saveTemplate(value,actorUserId,at){const row={id:value.id,workspaceId,projectId:value.projectId,revision:value.revision,snapshot:value};await tx.insert(summaryTemplates).values(row).onConflictDoUpdate({target:summaryTemplates.id,set:{revision:value.revision,snapshot:value}});await tx.insert(summaryTemplateVersions).values({workspaceId,projectId:value.projectId,templateId:value.id,revision:value.revision,snapshot:value,actorUserId,createdAt:new Date(at)});},
+ async saveBinding(value,actorUserId,at){const row={id:value.id,workspaceId,projectId:value.projectId,templateId:value.templateId,revision:value.revision,groupKey:value.group.kind+':'+(value.group.kind==='section'?value.group.sectionId:value.group.membershipId),detached:value.detached,snapshot:value};await tx.insert(summaryTemplateBindings).values(row).onConflictDoUpdate({target:summaryTemplateBindings.id,set:{revision:value.revision,detached:value.detached,snapshot:value}});await tx.insert(summaryTemplateBindingVersions).values({workspaceId,projectId:value.projectId,bindingId:value.id,revision:value.revision,snapshot:value,actorUserId,createdAt:new Date(at)});},
+};}

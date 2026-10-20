@@ -1,4 +1,4 @@
-import type { TaskFieldDefinitionDto } from '@workloom/contracts';
+import type { TaskFieldDefinitionDto, PersonalEffortResultDto } from '@workloom/contracts';
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const sameId = (first: string, second: string) => first.toLowerCase() === second.toLowerCase();
 /** Decoration follows persisted option identity, never translated labels or category position. */
@@ -8,4 +8,11 @@ export function categoryColor(fields: readonly TaskFieldDefinitionDto[], project
   if (!field || field.type !== 'single_select' && field.type !== 'multi_select') return null;
   const color = field.options.find(option => sameId(option.id, optionId))?.color;
   return color && HEX_COLOR.test(color) ? color.toLowerCase() : null;
+}
+
+/** Confirmed contribution colors are pinned evidence; later option edits do not recolor history. */
+export function effortCategoryColor(effort:PersonalEffortResultDto|undefined,fieldId:string|null,optionId:string|null):string|null {
+ if(!effort||!fieldId||!optionId)return null;
+ const pinned=effort.contributions.filter(row=>row.sourceKind==='shared_attendance'&&row.state==='value'&&row.category?.fieldId===fieldId&&row.category.optionId===optionId).sort((a,b)=>a.sourceKey<b.sourceKey?-1:a.sourceKey>b.sourceKey?1:0).find(row=>row.category?.color&&HEX_COLOR.test(row.category.color))?.category?.color;
+ return pinned?.toLowerCase()??null;
 }

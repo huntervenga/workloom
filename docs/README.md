@@ -42,6 +42,7 @@
 
 | Документ | Для чего читать |
 | --- | --- |
+| [104 Связанные сводки и личное время созвонов](104-linked-section-templates-and-shared-effort.md) | Предварительная реализация: linked templates, отдельный roster/attendance, Personal effort; final global/PG/native/activation ещё не приняты |
 | [101 UX настроек и completion requirements](101-planning-settings-ux-and-completion-requirements.md) | Текущий локально принятый 9860ac5: прямой Save Summary, закрытие Checks, sticky-заголовки, правила демо, 18 gates и main owner UI proof |
 | [100 Проверки планирования](100-configurable-planning-checks.md) | Предыдущий локально принятый 98a6d24: мягкие напоминания, пороги/цвета нагрузки, explicit checkpoints, 16 gates и additive 0024 |
 | [99 Итоги таблицы, сводки секций и поля](99-table-summaries-section-widgets-and-field-controls.md) | Предыдущий локально принятый b0efabd: полные серверные итоги, даты проекта, capacity/manual summaries, Boolean/Undo, 13 gates и additive 0022/0023 |
