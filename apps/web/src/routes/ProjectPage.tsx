@@ -1195,7 +1195,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                 {t('projects.projectPage.openSubmission')}</Button>
             </div>
           ) : null}
-          {!timeAvailable && tableMode ? <>{planningChecks.control}{ordinaryAggregates.panel}</> : null}
+          {!timeAvailable && tableMode ? ordinaryAggregates.panel : null}
           {timeAvailable ? <><p className="text-xs text-muted">{t('genericReports.legacyColumns')} <Button size="sm" variant="ghost" onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('legacyTime'); next.delete('week'); next.delete('worker'); return next; })}>{t('genericReports.ordinaryMode')}</Button></p>{tableMode ? taskTime.controls : taskTime.notices}</> : null}
           <div className="flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
             {showTaskFilters ? <div className="min-w-0 max-w-full shrink grow basis-full"><TaskFilters value={filters} onChange={changeFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
@@ -1215,6 +1215,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                   setSearchParams(before => { const next = new URLSearchParams(before); if (nextSort === 'due_asc') next.set('sort', nextSort); else next.delete('sort'); return next; });
                 }} />
             </label> : null}
+            {!timeAvailable && tableMode ? planningChecks.control : null}
             <DialogReturnFocus targetRef={tableMode ? defaultColumnReturn : activeViewControl}>
               <PersonalColumnsDialog showTrigger={tableMode} controller={personalColumns} fields={fieldDefinitions.isSuccess ? fieldDefinitions.data : []} projectColumns={projectColumns.isSuccess ? projectColumns.data : undefined} timeAvailable={timeAvailable} catalogError={fieldDefinitions.error ?? projectColumns.error} onReloadCatalog={async () => { await Promise.all([fieldDefinitions.refetch(), projectColumns.refetch()]); }} />
             </DialogReturnFocus>
