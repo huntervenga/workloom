@@ -94,3 +94,26 @@ describe('custom inline Priority editor', () => {
     await ui.user.click(screen.getByRole('combobox', { name: 'Priority' })); expect(screen.queryByRole('listbox')).not.toBeInTheDocument(); expect(calls).toHaveLength(1);
   });
 });
+
+it('disables an already-open selected Priority picker during a list refresh and resumes its guarded port afterward', async () => {
+  const submit = vi.fn(() => 'sent' as const), retry = vi.fn();
+  let refresh: (busy: boolean) => void = () => { throw new Error('Missing editor readiness harness'); };
+  function Example() {
+    const commands = useTaskCommands(anna.id, alpha.id);
+    const [busy, setBusy] = useState(false); refresh = setBusy;
+    return <InlineTaskEdit task={task} field="priority" statuses={[]} members={alphaMembers} commands={commands} writable onClose={() => undefined} onMoreDetails={() => undefined} onSaved={() => undefined}
+      bulkEdit={{ count: 2, busy, pending: false, uncertain: false, error: null, notice: null, unsupported: false, submit, retry }} />;
+  }
+  const ui = renderFieldUi(<Example />);
+  expect(list()).toBeInTheDocument();
+  await act(async () => refresh(true));
+  expect(screen.getByRole('combobox', { name: 'Priority' })).toBeDisabled();
+  expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  await ui.user.click(screen.getByRole('combobox', { name: 'Priority' }));
+  expect(submit).not.toHaveBeenCalled(); expect(retry).not.toHaveBeenCalled();
+  await act(async () => refresh(false));
+  expect(screen.getByRole('combobox', { name: 'Priority' })).toBeEnabled();
+  await ui.user.click(screen.getByRole('combobox', { name: 'Priority' }));
+  await ui.user.click(within(list()).getByRole('option', { name: 'High' }));
+  expect(submit).toHaveBeenCalledExactlyOnceWith({ priority: 'high' }, expect.any(Object));
+});

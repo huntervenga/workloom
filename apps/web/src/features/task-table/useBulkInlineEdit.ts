@@ -210,6 +210,8 @@ export function useBulkInlineEdit(commands: TaskCommands, context: BulkInlineCon
   };
 
   return {
+    // A reactive snapshot for visible controls; dispatch still checks the latest context.
+    busy: context.busy,
     holds,
     captureCustom: (task: TaskDto, field: TaskFieldDefinitionDto, value: TaskFieldValueDto | null, claim: object) => {
       const existing = captures.current.get(claim);
@@ -238,7 +240,7 @@ export function useBulkInlineEdit(commands: TaskCommands, context: BulkInlineCon
       const error = uncertain ? bulk.uncertain?.error ?? null
         : attempt?.state === 'sent' && !pending && owns(attempt, bulk.variables) ? bulk.error : null;
       return {
-        count: capture.count, pending, uncertain, error, unsupported: capture.unsupported,
+        count: capture.count, busy: context.busy, pending, uncertain, error, unsupported: capture.unsupported,
         notice: notice?.capture === capture ? notice.message : capture.unsupported ? message('bulkInline.estimateUnsupported') : null,
         submit: (changes, callbacks) => submit(capture, changes, callbacks),
         retry: callbacks => retry(capture, callbacks),

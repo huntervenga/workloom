@@ -42,6 +42,7 @@ import {
   type SectionDto,
   type TagDto,
   type TaskDto,
+  type TaskFieldData,
   type TaskInsertion,
   type TaskListQuery,
   type TaskParticipantDto,
@@ -408,7 +409,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         assertOrdinaryTaskDates(task,parsed);
         // Every provided reference is validated, even when it equals the current value.
         if (parsed.statusId !== undefined) {
-          await scope.statusTransitions.assertTransition(task,parsed.statusId);
+          await scope.statusTransitions.assertTransition(task,parsed.statusId,{prospective:completionScope(parsed)});
           requireSameProject(requireFound(await repo.findStatus(ws, parsed.statusId)), task.projectId, 'statusId');
         }
         if (isSet(parsed.sectionId)) await requireAssignableSection(repo, ws, task.projectId, parsed.sectionId);
@@ -561,7 +562,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           assertTaskDateRange(changes.startDate === undefined ? task.startDate : changes.startDate, changes.dueDate === undefined ? task.dueDate : changes.dueDate);
           // One target status for every row; each transition is asserted even when the row already has it.
           if (changes.statusId !== undefined) {
-            await scope.statusTransitions.assertTransition(task, changes.statusId);
+            await scope.statusTransitions.assertTransition(task, changes.statusId,{prospective:completionScope(changes),...(changes.customField?{fieldValues:[changes.customField]}:{})});
             requireSameProject(requireFound(await repo.findStatus(ws, changes.statusId)), task.projectId, 'statusId');
           }
           // Sections move root tasks only; a subtask never leaves its parent's section or lineage.
@@ -645,7 +646,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const flatMode = assigneeMode || statusMode;
         const statusId = parsed.statusId ?? task.statusId;
         if (statusMode) {
-          await scope.statusTransitions.assertTransition(task, statusId);
+          await scope.statusTransitions.assertTransition(task, statusId,{prospective:completionScope(parsed)});
           requireSameProject(requireFound(await repo.findStatus(ws, statusId)), task.projectId, 'statusId');
         }
         if (assigneeMode) {
@@ -763,7 +764,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         // Complete preflight of the stored restored fields before the guard and any proposed write.
         const target = source.before;
         if (target.statusId !== task.statusId) {
-          await scope.statusTransitions.assertTransition(task, target.statusId);
+          await scope.statusTransitions.assertTransition(task, target.statusId,{prospective:completionScope(target)});
           requireSameProject(requireFound(await repo.findStatus(ws, target.statusId)), task.projectId, 'statusId');
         }
         await requireActiveMembers(repo, ws, target.responsibleMembershipId, [], { responsibleId: task.responsibleMembershipId, participantIds: [] });
@@ -1082,7 +1083,7 @@ function record(
 }
 
 /** Shared validated in-transaction primitive. Caller owns current authorization, barrier, guard and receipt. */
-export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInput,tools:Pick<TaskApplicationDependencies['tools'],'newId'>):Promise<TaskDto> {
+export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInput,tools:Pick<TaskApplicationDependencies['tools'],'newId'>,completionFieldValues:readonly {readonly fieldId:string;readonly value:TaskFieldData}[]=[]):Promise<TaskDto> {
  const parsed=parseInput<CreateTaskInput>(createTaskInputSchema,input),ws=scope.context.workspaceId,now=scope.barrierAt.toISOString();
  const newId=()=>idSchema.parse(tools.newId());
         const repo = scope.repository;
@@ -1169,6 +1170,7 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
         if (tagIds.length > 0) await repo.setTaskTagIds(ws, id, tagIds);
 
         const task = await reloadTask(repo, ws, id);
+        await scope.statusTransitions.assertTransition(task,task.statusId,{creating:true,fieldValues:completionFieldValues});
         const activityPair = { before: null, after: task };
         const labels = await loadTaskActivityLabels(scope, [activityPair]);
         await record(
@@ -1350,4 +1352,9 @@ async function writeMoveRestore(
   // Internal invariant; throwing rolls back every write of this command.
   if (fingerprint !== source.beforeFingerprint) throw new Error('Move restore did not reproduce its captured order.');
   return { ...updated, moveUndo: { originalKey: source.originalKey, orderFingerprint: fingerprint, ...revisionHeads(projectOrder, afterOrder) } };
+}
+
+/** Only fields used by a completion rule; omitted keys retain the current task values. */
+function completionScope(value:{parentTaskId?:string|null|undefined;responsibleMembershipId?:string|null|undefined;dueDate?:string|null|undefined;tagIds?:readonly string[]|undefined}){
+ return{...(value.parentTaskId===undefined?{}:{parentTaskId:value.parentTaskId}),...(value.responsibleMembershipId===undefined?{}:{responsibleMembershipId:value.responsibleMembershipId}),...(value.dueDate===undefined?{}:{dueDate:value.dueDate}),...(value.tagIds===undefined?{}:{tagIds:value.tagIds})};
 }

@@ -220,6 +220,8 @@ export function describeError(error: unknown, subject: ErrorSubject): ErrorDescr
     };
   }
 
+  if(error.kind==='validation'&&error.completionFieldsRequired)return{title:t('errors.completionFieldsRequiredTitle'),description:t('errors.completionFieldsRequired'),retryable:false,unavailable:false,requestId:error.requestId};
+
   const isSave = saveSubjects.has(subject);
   return {
     title: subjectTitles[subject],

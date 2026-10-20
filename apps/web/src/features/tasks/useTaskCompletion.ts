@@ -1,11 +1,11 @@
 import type { TaskDto, TaskStatusDto, UpdateTaskInput } from '@workloom/contracts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
-import { isUncertainOutcome } from '../../lib/api';
+import { ApiError,isUncertainOutcome } from '../../lib/api';
 import { draftFromTask } from './taskDraft';
 import { taskCompletion } from './taskCompletion';
 import { unresolvedTaskCommand, type EditSession, type TaskCommands } from './useTaskCommands';
 
-interface Attempt { session: EditSession; variables: { taskId: string; input: UpdateTaskInput }; error: Error | null }
+interface Attempt { session: EditSession; variables: { taskId: string; input: UpdateTaskInput }; error: Error | null; released?:true }
 interface Context { tasks: readonly TaskDto[]; statuses: readonly TaskStatusDto[]; writable: boolean; editingTaskId: string | null; focusScope?: string }
 interface FocusLease { session: EditSession; scope: string | undefined; source: HTMLButtonElement; receipt: TaskDto | null }
 interface FocusTarget { task: TaskDto; element: HTMLButtonElement }
@@ -73,6 +73,16 @@ export function useTaskCompletion(commands: TaskCommands, context: Context, onSa
     if (current.current?.session !== submitted.session) return;
     current.current = null; busy.current = false; if (alive.current) { setAttempt(null); onSaved(); }
   };
+  // A confirmed prerequisite refusal is not an unsaved task edit. Release only that bounded
+  // case so the user can immediately fill the missing field; uncertain and other drafts stay held.
+  const rejected = (submitted:Attempt,error:Error) => {
+    const session=submitted.session;
+    if(focusLease.current?.session===session)focusLease.current=null;
+    if(current.current?.session!==session)return;
+    const released=error instanceof ApiError&&error.kind==='validation'&&error.completionFieldsRequired;
+    if(released&&latestCommands.current.editSessions.current.get(session.base.id)===session)latestCommands.current.editSessions.current.delete(session.base.id);
+    const failed={...submitted,error,...(released?{released:true as const}:{})};current.current=failed;setAttempt(failed);
+  };
   const choose = (seen: TaskDto, statusId: string, source?: HTMLButtonElement | null) => {
     const head = latest.current;
     if (!alive.current || !head.writable || busy.current || current.current?.error && isUncertainOutcome(current.current.error) || unresolvedTaskCommand(latestCommands.current) || head.editingTaskId === seen.id || commands.editSessions.current.has(seen.id)) return;
@@ -87,7 +97,7 @@ export function useTaskCompletion(commands: TaskCommands, context: Context, onSa
     commands.editSessions.current.set(task.id, session);
     commands.update.mutate(submitted.variables, {
       onSuccess: task => saved(submitted, task),
-      onError: error => { if (focusLease.current?.session === session) focusLease.current = null; if (current.current?.session === session) { const failed = { ...submitted, error }; current.current = failed; setAttempt(failed); } },
+      onError:error=>rejected(submitted,error),
       onSettled: () => { busy.current = false; },
     });
   };
@@ -96,14 +106,14 @@ export function useTaskCompletion(commands: TaskCommands, context: Context, onSa
   const canRetry = uncertain && context.writable;
   const retained = attempt ? commands.editSessions.current.get(attempt.session.base.id) : null;
   useEffect(() => {
-    if (attempt && !pending && !uncertain && !confirmed && retained !== attempt.session) { current.current = null; setAttempt(null); }
+    if (attempt && !attempt.released && !pending && !uncertain && !confirmed && retained !== attempt.session) { current.current = null; setAttempt(null); }
   }, [attempt, confirmed, pending, retained, uncertain]);
   const retry = (event?: Pick<MouseEvent<HTMLButtonElement>, 'currentTarget'>) => {
     const submitted = current.current;
     if (!alive.current || !submitted || !latest.current.writable || busy.current || latestCommands.current.update.pendingCommand || latestCommands.current.update.uncertain?.variables !== submitted.variables) return;
     claimFocus(submitted.session, event?.currentTarget);
     busy.current = true;
-    latestCommands.current.update.retryUncertain({ onSuccess: task => saved(submitted, task), onError: error => { if (focusLease.current?.session === submitted.session) focusLease.current = null; if (current.current?.session === submitted.session) { const failed = { ...submitted, error }; current.current = failed; setAttempt(failed); } }, onSettled: () => { busy.current = false; } });
+    latestCommands.current.update.retryUncertain({ onSuccess: task => saved(submitted, task), onError:error=>rejected(submitted,error), onSettled: () => { busy.current = false; } });
   };
   const acknowledgeReview = (taskId: string) => setReviewTaskId(before => before === taskId ? null : before);
   return { acknowledgeReview, targetReady, choose, attempt: confirmed ? null : attempt, pending, uncertain, canRetry, retry, reviewTaskId };

@@ -1,6 +1,6 @@
 import {createMeetingInputSchema,type CreateMeetingInput,type MeetingDto,type RecurrenceCalendarState,type RecurrenceResolutionDto,type UpdateMeetingInput} from '@workloom/contracts';
 import {DomainError,notFoundError} from '../errors.js';
-import {createSingleMeetingInScope,updateSingleMeetingInScope} from '../meetings/service.js';
+import {meetingLocalDate,createSingleMeetingInScope,updateSingleMeetingInScope} from '../meetings/service.js';
 import type {PlanningTools} from '../planning/ports.js';
 import {canonicalJson} from '../tasks/service.js';
 import type {RecurrenceInstanceHeader,RecurrenceOccurrenceComposer,RecurrenceSeriesVersionRecord,RecurrenceTools,RecurrenceWriteScope} from './ports.js';
@@ -45,6 +45,8 @@ export interface OccurrenceMeetingTarget {
  readonly calendarState:RecurrenceCalendarState;readonly resolution:RecurrenceResolutionDto;
  readonly version:Pick<RecurrenceSeriesVersionRecord,'template'|'schedule'>;
 }
+/** Same prospective scope used by whole-series preflight and final meeting composition. */
+export function recurrenceCompletionScope(target:OccurrenceMeetingTarget){return{responsibleMembershipId:target.version.template.organizerMembershipId,dueDate:meetingLocalDate(target.resolution.resolvedStartAt,target.version.schedule.timezone)};}
 /** Applies the current recurrence schedule/template to an existing composition. It changes only planned schedule,
  * roster, organizer, link, state and title; never actuals, recording/summary, attendance statuses, categories or plans.
  */

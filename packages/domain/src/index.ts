@@ -111,6 +111,7 @@ export * from './dependencies/application.js';
 export * from './dependencies/ports.js';
 export {createDependencyApplication} from './dependencies/service.js';
 export {createTaskStatusTransitionPolicy} from './dependencies/status-policy.js';
+export {createTaskCompletionRequirementPolicy} from './planning-checks/completion-policy.js';
 
 export type {TaskScheduleApplication} from './schedule/application.js';
 

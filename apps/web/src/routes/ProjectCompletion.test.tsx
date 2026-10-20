@@ -78,7 +78,7 @@ describe('explicit task completion', () => {
     await screen.findByRole('region', { name: 'Task completion status' });
     await screen.findByRole('button', { name: `Resume draft for ${task.title}` });
     expect(screen.queryByRole('button', { name: `Reopen ${task.title}` })).not.toBeInTheDocument();
-    expect(screen.queryByText('private predecessor value')).not.toBeInTheDocument(); expect(screen.getByRole('alert')).toBeVisible();
+    expect(screen.queryByText('private predecessor value')).not.toBeInTheDocument(); expect(within(screen.getByRole('region',{name:'Task completion status'})).getByRole('alert')).toBeVisible();
     expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
   });
   it('retains a committed unknown command across Board and a hidden task and retries exact bytes/key', async () => {
@@ -127,4 +127,11 @@ it.each(['{Enter}', ' '] as const)('completes through the native keyboard action
   const { user } = renderApp(tablePath); const button = await complete(); button.focus(); await user.keyboard(key);
   expect(await screen.findByRole('button', { name: `Reopen ${task.title}` })).toHaveFocus();
   expect(screen.queryByRole('menu')).not.toBeInTheDocument(); expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
+});
+
+it('releases a confirmed missing-required-field completion draft so inline edits and a new completion work immediately',async()=>{
+ let current=task,attempts=0;const{calls}=installFakeApi(routes({[`GET ${rootPath}/tasks`]:()=>page([current]),[`PATCH ${rootPath}/tasks/${task.id}`]:(request)=>{attempts++;if(attempts===1)return json(422,{error:{code:'DOMAIN_VALIDATION_FAILED',message:'Do not retain private field text',retryable:false,details:{policyReason:'completion_fields_required'}},meta:{requestId:'missing-field'}});const input=request.body as {title?:string;statusId?:string};return ok(current={...current,...(input.title?{title:input.title}:{}),...(input.statusId?{statusId:input.statusId}:{}),revision:current.revision+1});}}));
+ const{user}=renderApp(tablePath);await user.click(await complete());await screen.findByText('Required fields are missing');expect(screen.queryByRole('button',{name:`Resume draft for ${task.title}`})).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:`Reopen ${task.title}`})).not.toBeInTheDocument();
+ await user.click(screen.getByRole('button',{name:task.title}));const input=screen.getByLabelText('Task name');await user.clear(input);await user.type(input,'Editable after refusal{Enter}');await screen.findByRole('button',{name:'Editable after refusal'});
+ await user.click(screen.getByRole('button',{name:'Mark Editable after refusal complete'}));await screen.findByRole('button',{name:'Reopen Editable after refusal'});expect(calls.filter(call=>call.method==='PATCH')).toHaveLength(3);expect(screen.queryByText('Do not retain private field text')).not.toBeInTheDocument();
 });

@@ -11,6 +11,15 @@ export function resolvePlanningCheckRange(asOf:string,weekStart:number,project:C
 const counts=():C.PlanningCheckCountsDto=>({eligibleTasks:0,missingRequiredTasks:0,overdueTasks:0,underplannedGroups:0,overplannedGroups:0,unavailableRules:0});
 const groupKey=(group:C.GenericHeaderWidgetGroupDto)=>group.kind+':'+(group.kind==='section'?group.sectionId:group.membershipId);
 function matches(task:GenericSourceTask,group:C.GenericHeaderWidgetGroupDto){return group.kind==='section'?task.sectionId===group.sectionId:task.responsibleMembershipId===group.membershipId;}
+/** Shared advisory/enforcement task scope; the caller supplies current or prospective status/data. */
+export function matchesPlanningCheckTask(rule:C.PlanningCheckRuleDto,task:GenericSourceTask,date:(source:C.PlanningCheckDateSourceDto)=>string|null):boolean{
+ if(rule.hierarchy==='root_tasks'&&task.parentTaskId!==null)return false;
+ if(rule.filters.statusGroups.length&&!rule.filters.statusGroups.includes(task.statusGroup))return false;
+ if(rule.filters.tagIds.some(tag=>!task.tagIds.includes(tag)))return false;
+ if(rule.filters.assignee.kind==='unassigned'&&task.responsibleMembershipId!==null)return false;
+ if(rule.filters.assignee.kind==='member'&&task.responsibleMembershipId!==rule.filters.assignee.membershipId)return false;
+ const range=rule.filters.dateRange;if(range){const value=date(range.source);if(value===null||value<range.from||value>range.to)return false;}return true;
+}
 export function evaluatePlanningChecks(input:PlanningCheckEvaluationInput):PlanningCheckEvaluation{
  if(input.source.tasks.length>5000)throw new DomainError('DOMAIN_VALIDATION_FAILED','Planning checks exceed5000 tasks; no partial assessment was calculated.');
  const{source,settings,project,asOf,timezone}=input,values=new Map(source.values.map(value=>[value.taskId+':'+value.fieldId,value])),field=new Map(source.fields.filter(f=>f.archivedAt===null).map(f=>[f.id,f])),issues=new Map<string,string[]>(),eligible=new Set<string>(),missing=new Set<string>(),overdue=new Set<string>(),under=new Set<string>(),over=new Set<string>();
@@ -24,7 +33,7 @@ export function evaluatePlanningChecks(input:PlanningCheckEvaluationInput):Plann
    if(rule.filters.dateRange?.source.kind==='field'&&field.get(rule.filters.dateRange.source.fieldId)?.type!=='date')reason='date_field_unavailable';
    if(rule.kind==='presence'&&!field.has(rule.fieldId))reason='field_unavailable';
    if(rule.kind==='balance'&&!['number','duration'].includes(field.get(rule.sumFieldId)?.type??''))reason='field_unavailable';
-   if(reason===null)tasks=source.tasks.filter(task=>{if(rule.hierarchy==='root_tasks'&&task.parentTaskId!==null)return false;if(rule.filters.statusGroups.length&&!rule.filters.statusGroups.includes(task.statusGroup))return false;if(rule.filters.tagIds.some(tag=>!task.tagIds.includes(tag)))return false;if(rule.filters.assignee.kind==='unassigned'&&task.responsibleMembershipId!==null)return false;if(rule.filters.assignee.kind==='member'&&task.responsibleMembershipId!==rule.filters.assignee.membershipId)return false;const range=rule.filters.dateRange;if(range){const value=date(task,range.source);if(value===null||value<range.from||value>range.to)return false;}return true;});
+   if(reason===null)tasks=source.tasks.filter(task=>matchesPlanningCheckTask(rule,task,source=>date(task,source)));
   }
   if(rule.kind==='balance'){
    tasks=tasks.filter(task=>matches(task,rule.group));const key=groupKey(rule.group),label=rule.group.kind==='section'?rule.group.sectionId===null?'No section':source.sectionLabels[rule.group.sectionId]??'Unavailable group':rule.group.membershipId===null?'Unassigned':source.memberLabels[rule.group.membershipId]??'Unavailable group';

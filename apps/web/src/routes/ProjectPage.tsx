@@ -443,7 +443,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       if (fieldValues.isPending) return <ValueLoadingCell />;
       const blocked = customBlockedByBulk(task, field.id);
       if (blocked) return <BulkCustomFieldCell advisory={planningChecks.fieldAdvisory(task, field)} task={task} field={field} value={valueByKey.get(fieldValueKey(task.id, field.id)) ?? null} members={members.data ?? []}
-        writable={writable && canEditTaskInline(task)} drafts={fieldValueDrafts.current} onMoreDetails={() => openTask(task.id)}
+        writable={writable && canEditTaskInline(task)} busy={bulkInline.busy} drafts={fieldValueDrafts.current} onMoreDetails={() => openTask(task.id)}
         capture={(claim, baseField, baseValue) => bulkInline.captureCustom(task, baseField, baseValue, claim)} port={claim => bulkInline.port(claim)} />;
       const cell = (
         <InlineFieldValueCell
@@ -1255,6 +1255,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             collapsedGroupKeys={collapsedGroupKeys}
             onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
+            isTaskFieldEditBusy={(task, field) => field !== 'title' && bulkInline.selectsMany(task.id) && bulkInline.busy}
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
             renderTaskFieldEditor={(task, field) => activeInline?.taskId === task.id && activeInline.field === field ? <InlineTaskEdit key={`${task.id}:${field}`} focusClaim={activeInline.focusClaim} titleCaret={activeInline.titleCaret} task={task} field={field} estimatePackages={loadedPackages.packages} statuses={statuses.data} members={members.data} tags={tags.data} sections={sections.data} commands={commands} writable={writable} onClose={reason => closeInline(task, field, reason)} onMoreDetails={() => openTask(task.id)} onSaveStarted={beginInlineSave} onSaved={() => setAnnouncement(message('tasks.taskDrawer.taskSaved'))} bulkEdit={bulkInline.port(activeInline.focusClaim)} singleOnly={activeInline.field === 'title' && bulkInline.selectsMany(task.id)} /> : null}
@@ -1379,6 +1380,7 @@ interface TaskListProps {
   customColumns: readonly TaskTableCustomColumn[];
   columnIds: readonly string[];
   onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;
+  isTaskFieldEditBusy?: ComponentProps<typeof TaskTable>['isTaskFieldEditBusy'];
   renderTaskFieldEditor: NonNullable<ComponentProps<typeof TaskTable>['renderTaskFieldEditor']>;
   activeFieldEditor: ComponentProps<typeof TaskTable>['activeFieldEditor'];
   draftTaskIds: ReadonlySet<string>;
@@ -1429,7 +1431,7 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
   const scope = loadedTaskScope(query.data);
   return (
     <div className="space-y-3">
-      {boardMode ? <TaskBoard onMoveCard={table.sortMode === 'manual' ? table.onMoveBoardCard : undefined} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={table.sortMode === 'manual' ? orderBoardTaskHeads(scope.tasks, 'manual').sort((left, right) => compareTaskRows(left, right, 'manual')) : orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
+      {boardMode ? <TaskBoard onMoveCard={table.sortMode === 'manual' ? table.onMoveBoardCard : undefined} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={table.sortMode === 'manual' ? orderBoardTaskHeads(scope.tasks, 'manual').sort((left, right) => compareTaskRows(left, right, 'manual')) : orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} isStatusEditBusy={task => table.isTaskFieldEditBusy?.(task, 'statusId') === true} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={scope.tasks}
         partial={filtered || !scope.complete}

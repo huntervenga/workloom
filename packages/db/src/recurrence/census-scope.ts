@@ -1,8 +1,9 @@
+import {createPlanningCheckRepository} from '../planning-checks/repository.js';
 import { createCutoffRepository } from '../cutoff/repository.js';
 import {createDependencyRepository} from '../repositories/dependency-repository.js';
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  createTaskStatusTransitionPolicy,
+  createTaskStatusTransitionPolicy,createTaskCompletionRequirementPolicy,
   createRecurrenceOccurrenceComposer,
   createRecurrenceOccurrenceResolver,
   createRecurrenceScopedMaterializer,
@@ -85,7 +86,7 @@ export function composeRecurrenceCensusScope(scope: DbWorkspaceWriteScope, runti
     barrierAt: scope.barrierAt,
     recordChange: scope.recordChange,
     repository: meetings.planning,
-    statusTransitions:createTaskStatusTransitionPolicy(createDependencyRepository(scope.tx)),
+    statusTransitions:createTaskStatusTransitionPolicy(createDependencyRepository(scope.tx),createTaskCompletionRequirementPolicy({settings:(_ws,projectId)=>createPlanningCheckRepository(scope.tx,scope.context.workspaceId).settings(projectId),fields:meetings.planning.fields})),
     meetings,
     categoryResolver: createWorkCategoryResolver(createWorkCategoryRepository(scope.tx), scope.context.workspaceId),
     cutoff: createCutoffRepository(scope.tx),

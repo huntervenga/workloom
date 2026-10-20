@@ -1,4 +1,4 @@
-import type {DependencyTaskContextDto,TaskDto,TaskDependencyDto,ProjectDependencyPolicyDto,GraphLayoutDto,TaskDependencyListQuery} from '@workloom/contracts';
+import type {DependencyTaskContextDto,TaskDto,TaskDependencyDto,ProjectDependencyPolicyDto,GraphLayoutDto,TaskDependencyListQuery,TaskFieldData} from '@workloom/contracts';
 import type {CommandContext} from '../access/context.js';
 import type {Capability} from '../access/capabilities.js';
 import type {WorkspaceAccessRecord} from '../access/ports.js';
@@ -27,7 +27,14 @@ export interface DependencyRepository {
  saveLayout(row:GraphLayoutDto,newId:string):Promise<void>;
 }
 /** Mandatory domain policy shared by ordinary task updates and internal recurrence task writes. */
-export interface TaskStatusTransitionPolicy {assertTransition(task:TaskDto,nextStatusId:string):Promise<void>}
+export interface TaskStatusTransitionOptions {
+ /** Internal creation only; candidate values are validated and saved by the same atomic command. */
+ readonly creating?:true;
+ readonly fieldValues?:readonly {readonly fieldId:string;readonly value:TaskFieldData}[];
+ /** Values this atomic command will write, used to evaluate the prospective rule scope. */
+ readonly prospective?:Partial<Pick<TaskDto,'parentTaskId'|'responsibleMembershipId'|'dueDate'>> & {readonly tagIds?:readonly string[]};
+}
+export interface TaskStatusTransitionPolicy {assertTransition(task:TaskDto,nextStatusId:string,options?:TaskStatusTransitionOptions):Promise<void>}
 export interface DependencyWriteScope extends PlanningWriteScope {readonly dependencies:DependencyRepository}
 export interface DependencyUnitOfWork {
  run<T>(ctx:CommandContext,cap:Capability,work:(scope:DependencyWriteScope)=>Promise<T>):Promise<T>;

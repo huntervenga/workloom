@@ -69,7 +69,7 @@ export function createTaskRowApplication({writer,tools}:TaskRowApplicationDepend
   };
 
   async function createAll(scope:PlanningApplicationWriteScope,p:CreateTaskRowInput,branch:PlanBranch|null,planningGuard:PlanningMutationGuard):Promise<TaskRowCreatedDto> {
-    const task=await createTaskInScope({...scope,repository:scope.repository.tasks,planningGuard},p.task,tools);
+    const task=await createTaskInScope({...scope,repository:scope.repository.tasks,planningGuard},p.task,tools,p.fields??[]);
     // Every custom value first: the category resolver captures custom work-category sources for the actual.
     const fields:TaskFieldValueDto[]=[];
     for(const f of p.fields??[])fields.push(await setTaskFieldValueInScope({...scope,repository:scope.repository.fields,planningGuard},task.id,f.fieldId,{expectedRevision:0,expectedDefinitionRevision:f.expectedDefinitionRevision,value:f.value},tools));

@@ -31,14 +31,17 @@ export class ApiError extends Error {
   readonly requestId: string | null;
   /** Bounded FIELD_LOCKED rule classification only; never retains generic error details. */
   readonly fieldPolicyReason: 'deadline'|'change_limit'|null;
+  /** Fixed completion-policy classification only; raw field values and server text are discarded. */
+  readonly completionFieldsRequired:boolean;
 
-  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null }) {
+  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean }) {
     super(`Workloom API request failed: ${init.kind}${init.status === null ? '' : ` (${init.status})`}`);
     this.name = 'ApiError';
     this.kind = init.kind;
     this.status = init.status;
     this.code = init.code ?? null;
     this.requestId = init.requestId ?? null;
+    this.completionFieldsRequired = this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&init.completionFieldsRequired===true;
     this.fieldPolicyReason = this.code === 'FIELD_LOCKED' ? (init.fieldPolicyReason ?? null) : null;
   }
 }
@@ -105,6 +108,7 @@ export async function apiRequest(path: string, options: ApiRequestOptions = {}):
       status: response.status,
       code: safeToken(envelope.code, SAFE_CODE),
       fieldPolicyReason:envelope.fieldPolicyReason,
+      completionFieldsRequired:envelope.completionFieldsRequired,
       requestId: safeToken(envelope.requestId ?? response.headers.get('x-request-id'), SAFE_REQUEST_ID),
     });
   }
@@ -213,15 +217,16 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null } {
+function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean } {
   const parsed = errorResponseSchema.safeParse(payload);
-  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null };
+  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false };
   const envelope: unknown = parsed.data;
   const error = isRecord(envelope) ? envelope['error'] : undefined;
   const meta = isRecord(envelope) ? envelope['meta'] : undefined;
   const details=isRecord(error)?error['details']:null;
   const reason=isRecord(details)?details['policyReason']:null;
   return {
+    completionFieldsRequired:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&reason==='completion_fields_required',
     fieldPolicyReason:isRecord(error)&&error['code']==='FIELD_LOCKED'&&(reason==='deadline'||reason==='change_limit')?reason:null,
     code: isRecord(error) ? error['code'] : null,
     requestId: isRecord(meta) ? meta['requestId'] : null,

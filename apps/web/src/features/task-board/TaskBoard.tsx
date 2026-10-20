@@ -22,6 +22,7 @@ export interface TaskBoardProps {
   renderCompletionAction?: ((task: TaskDto) => ReactNode) | undefined;
   onOpenTask: (taskId: string) => void;
   onEditStatus: (task: TaskDto) => void;
+  isStatusEditBusy?: ((task: TaskDto) => boolean) | undefined;
   /** Atomic canonical home status and manual-order intent; never enabled under a different sort. */
   onMoveCard?: BoardMoveCard | undefined;
   /** One page-owned status command; the board never patches a card optimistically. */
@@ -103,7 +104,7 @@ function TaskCard({ card, props, status, editor, canDrag, dragDisabled, drag, on
     </div> : null}
     <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <dl className="min-w-0 text-xs [overflow-wrap:anywhere]"><dt className="sr-only">{t('board.due')}</dt><dd className={overdue ? 'text-amber-800' : 'text-muted'}>{due}{overdue ? <span className="ml-1 font-medium">{t('board.overdue')}</span> : null}</dd></dl>
-      {!hasEditor && props.writable && canEditTaskInline(task) ? preview ? <Button size="sm" variant="ghost" className="shrink-0" tabIndex={-1}>{t('board.changeStatus')}</Button> : <Button size="sm" variant="ghost" className="shrink-0" data-task-cell={`${task.id}:statusId`} aria-describedby={`${id}-title`} onClick={() => props.onEditStatus(task)}>{t('board.changeStatus')}</Button> : null}
+      {!hasEditor && props.writable && canEditTaskInline(task) ? preview ? <Button size="sm" variant="ghost" className="shrink-0" tabIndex={-1}>{t('board.changeStatus')}</Button> : <Button size="sm" variant="ghost" className="shrink-0" data-task-cell={`${task.id}:statusId`} disabled={props.isStatusEditBusy?.(task)} aria-describedby={`${id}-title`} onClick={() => props.onEditStatus(task)}>{t('board.changeStatus')}</Button> : null}
     </div>
     {task.tags.length ? <div className="flex min-w-0 flex-wrap gap-1">{task.tags.slice(0, 3).map(tag => <TagBadge key={tag.id} tag={tag} />)}{task.tags.length > 3 ? <span className="text-xs text-muted">+{task.tags.length - 3}</span> : null}</div> : null}
     {hasEditor ? <div className="border-t border-line pt-2">{editor}</div> : null}

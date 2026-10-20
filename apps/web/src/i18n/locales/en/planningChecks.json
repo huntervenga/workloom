@@ -1,7 +1,7 @@
 {
   "entry": "Checks",
   "title": "Planning checks",
-  "editorHelp": "Optional visual checks. They never prevent creating or editing tasks.",
+  "editorHelp": "Optional visual checks. Missing-value checks can also require a field before completion when explicitly enabled.",
   "enable": "Enable planning checks",
   "noRules": "Choose Missing value or Planning load to add your first check.",
   "ruleType": "Check type",
@@ -32,7 +32,7 @@
   "field": "Field",
   "chooseField": "Choose a field",
   "unavailableField": "Unavailable field",
-  "presenceHelp": "Empty values are highlighted. Zero and No are filled values. This is a reminder, never a required field.",
+  "presenceHelp": "Empty values are highlighted. Zero and No count as filled values. Task editing and autosave remain available.",
   "appearance": "Appearance",
   "severity": "Emphasis",
   "notice": "Notice",
@@ -137,5 +137,11 @@
   "invalidConfig": "Check settings exceed the limits or contain an invalid rule. Edit or remove the affected rule before saving.",
   "manual": "Manual",
   "checkedOn": "Checked as of {{date}} · {{timezone}}",
-  "readOnlyDraft": "You no longer have permission to change these checks. Your draft and any unconfirmed save are preserved."
+  "readOnlyDraft": "You no longer have permission to change these checks. Your draft and any unconfirmed save are preserved.",
+  "discardHelp": "Your check settings have not been saved. Keep editing to preserve them, or discard these changes and close.",
+  "pendingCloseHelp": "Your check settings are being saved. Please wait for the result before closing.",
+  "uncertainCloseHelp": "The last save has not been confirmed. Retry the same save before closing so your changes are not lost or saved twice.",
+  "requireBeforeDone": "Require this field before completing tasks",
+  "requireBeforeDoneHelp": "Applies to matching tasks entering a Done status, including new tasks. Both project checks and this check must be enabled. Existing completed tasks remain editable; zero and No are accepted.",
+  "uncertainReadOnlyCloseHelp": "The last save has not been confirmed, and your permission to change checks has been removed. Your original save is preserved. Ask a workspace owner to restore access, then retry the same save."
 }

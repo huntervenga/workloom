@@ -22,6 +22,7 @@ function harness() {
     resend: (_taskId, input) => { if (state.held !== input) return null; resent.push(input); return answer(); },
     canSend: () => state.allowed,
     classify: (error) => (error instanceof Outcome ? error.outcome : 'rejected'),
+    completionRefused:error=>error instanceof Error&&error.message==='completion_fields_required',
     retain: (taskId, session) => { if (session) mirror.set(taskId, session); else mirror.delete(taskId); },
   };
   const autosave = createTaskAutosave(transport);
@@ -205,4 +206,13 @@ describe('saved-task autosave controller', () => {
     expect(h.mirror.has(task.id)).toBe(false);
   });
 
+});
+
+it('reverts only a confirmed refused completion and unpauses field repair without losing typed text',async()=>{
+ const h=harness();h.autosave.stage(task,{description:'Keep my unsent description'});h.autosave.choose(task,{statusId:'f6000000-0000-4000-8000-000000000002'});h.next().reject(new Error('completion_fields_required'));await h.settle();
+ const entry=h.autosave.get(task.id);expect(entry).toMatchObject({phase:'rejected',failed:null,sending:null,draft:{statusId:task.statusId,description:'Keep my unsent description'}});expect(entry?.base.statusId).toBe(task.statusId);expect(h.autosave.getPaused()).toBeNull();expect(h.mirror.get(task.id)?.draft.description).toBe('Keep my unsent description');
+ h.autosave.choose(task,{priority:'high'});expect(h.sent.at(-1)?.input).toEqual({expectedRevision:task.revision,priority:'high'});h.next().resolve(confirmed({priority:'high'},2));await h.settle();expect(h.autosave.get(task.id)?.draft.description).toBe('Keep my unsent description');expect(h.autosave.get(task.id)?.draft.statusId).toBe(task.statusId);
+});
+it('does not retain a status-only completion refusal or fabricate a saved ACK',async()=>{
+ const h=harness();h.autosave.choose(task,{statusId:'f6000000-0000-4000-8000-000000000002'});h.next().reject(new Error('completion_fields_required'));await h.settle();expect(autosaveRetains(h.autosave.get(task.id))).toBe(false);expect(h.mirror.has(task.id)).toBe(false);expect(h.autosave.get(task.id)).toMatchObject({phase:'rejected',base:task,failed:null});h.autosave.choose(task,{statusId:'f6000000-0000-4000-8000-000000000002'});expect(h.sent).toHaveLength(2);
 });

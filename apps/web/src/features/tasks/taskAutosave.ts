@@ -53,6 +53,8 @@ export interface AutosaveTransport {
   /** Read at send time: current scope and no other unresolved task command. */
   canSend: () => boolean;
   classify: (error: unknown) => AutosaveOutcome;
+  /** True only for the trusted, confirmed completion prerequisite refusal. */
+  completionRefused?: (error:unknown)=>boolean;
   /** Mirrors retained state into the page's edit sessions; `null` once nothing is retained. */
   retain?: (taskId: string, session: EditSession | null) => void;
 }
@@ -217,6 +219,16 @@ export function createTaskAutosave(transport: AutosaveTransport) {
           put({ ...entry, sending: null, committed: unique([...submission.keys, ...entry.committed]), phase: 'idle' });
           enqueue(taskId, true);
           return;
+        }
+        if(outcome==='rejected'&&submission.keys.includes('statusId')&&transport.completionRefused?.(error)){
+          // No ACK: revert the refused status only. Other typed/committed work remains owned,
+          // while required-field edits and the rest of the page queue stay available.
+          const newerStatus=entry.draft.statusId!==submission.draft.statusId;
+          const draft=newerStatus?entry.draft:{...entry.draft,statusId:draftFromTask(entry.base).statusId};
+          const committed=unique([...submission.keys.filter(key=>key!=='statusId'),...entry.committed.filter(key=>key!=='statusId'||newerStatus)]);
+          put({...entry,draft,committed,sending:null,failed:null,phase:'rejected',error});
+          if(committed.length)enqueue(taskId);
+          pump();return;
         }
         paused = taskId;
         put({ ...entry, sending: null, failed: submission, phase: outcome, error });

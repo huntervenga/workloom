@@ -338,6 +338,7 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
         return new Promise<TaskDto>((resolve, reject) => current.retryUncertain({ onSuccess: resolve, onError: reject }));
       },
       canSend: () => live.current.mounted && currentScope.current === scope && !live.current.blocked && !live.current.update.hasOtherProtectedCommands() && !quick.sending,
+      completionRefused:error=>error instanceof ApiError&&error.kind==='validation'&&error.completionFieldsRequired,
       classify: error => error instanceof PendingCommandError ? 'notSent'
         : isUncertainOutcome(error) ? 'unknown'
         : error instanceof ApiError && error.kind === 'conflict' ? 'conflict' : 'rejected',

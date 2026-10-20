@@ -17,10 +17,11 @@ export const planningCheckTargetSchema=z.discriminatedUnion('kind',[
 ]);
 const common={id:idSchema,name,enabled:z.boolean(),hierarchy:z.enum(['all_tasks','root_tasks']),filters:genericReportFiltersSchema};
 export const planningCheckRuleSchema=z.discriminatedUnion('kind',[
- z.strictObject({...common,kind:z.literal('presence'),fieldId:idSchema,color,severity:z.enum(['notice','warning','critical'])}),
+ z.strictObject({...common,kind:z.literal('presence'),fieldId:idSchema,color,severity:z.enum(['notice','warning','critical']),requireBeforeDone:z.boolean().optional()}),
  z.strictObject({...common,kind:z.literal('overdue'),dateSource:z.literal('due_date'),warnAfterDays:z.number().int().min(0).max(3660),fullIntensityAfterDays:z.number().int().min(1).max(3660),nearColor:color,farColor:color}),
  z.strictObject({...common,kind:z.literal('balance'),group:genericHeaderWidgetGroupSchema,sumFieldId:idSchema,cohort:z.discriminatedUnion('kind',[z.strictObject({kind:z.literal('all_tasks')}),z.strictObject({kind:z.literal('task_dates'),source:planningCheckDateSourceSchema,range:planningCheckRangeSchema})]),missingPlan:z.enum(['unknown','known_only']),target:planningCheckTargetSchema,under:planningCheckBandSchema,over:planningCheckBandSchema}),
 ]).superRefine((rule,ctx)=>{
+ if(rule.kind==='presence'&&rule.requireBeforeDone&&rule.filters.statusGroups.length&&!rule.filters.statusGroups.includes('done'))ctx.addIssue({code:'custom',message:'A completion requirement must include completed tasks in its status scope.'});
  if(rule.kind==='overdue'&&rule.fullIntensityAfterDays<=rule.warnAfterDays)ctx.addIssue({code:'custom',message:'Full intensity must follow the warning threshold.'});
  if(rule.kind==='balance'){
   if(rule.under.enabled&&rule.under.fullIntensityAtBps>=rule.under.thresholdBps)ctx.addIssue({code:'custom',message:'Underplanning full intensity must be below its threshold.'});

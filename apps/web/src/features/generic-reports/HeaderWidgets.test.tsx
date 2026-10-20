@@ -16,8 +16,8 @@ it('actually adds and saves metric and capacity widgets when every generated UUI
  const uuids=['90000000-0000-4000-8000-000000000001','90000000-0000-4000-8000-000000000002'] as const;let at=0;
  const generated=vi.spyOn(crypto,'randomUUID').mockImplementation(()=>uuids[at++]??'90000000-0000-4000-8000-000000000099');
  const choose=async(label:string,option:string)=>{await user.click(within(dialog).getByRole('combobox',{name:label}));await user.click(screen.getByRole('option',{name:option}));};
- await choose('Field','Budget');await user.click(within(dialog).getByRole('button',{name:'Add summary'}));expect(within(dialog).getByText('Budget · Sum')).toBeVisible();
- await choose('Summary type','Person’s available working time');await choose('Person','Анна Тестова');await user.click(within(dialog).getByRole('button',{name:'Add summary'}));expect(within(dialog).getByText('Анна Тестова · Available')).toBeVisible();
+ await choose('Field','Budget');await user.click(within(dialog).getByRole('button',{name:'Add another summary'}));expect(within(dialog).getByText('Budget · Sum')).toBeVisible();
+ await choose('Summary type','Person’s available working time');await choose('Person','Анна Тестова');
  await user.click(within(dialog).getByRole('button',{name:'Save summary'}));expect(save).toHaveBeenCalledOnce();const [widgets,revision]=save.mock.calls[0]??[];expect(revision).toBe(2);expect(widgets).toHaveLength(3);expect(widgets?.[0]).toEqual(retained);
  const created=widgets?.slice(1)??[];expect(created.map(widget=>widget.key)).toEqual(uuids.map(uuid=>`w_${uuid}`));for(const widget of created){expect(widget.key.length).toBeLessThanOrEqual(40);expect(genericHeaderWidgetSchema.parse(widget)).toEqual(widget);}expect(created[0]).toMatchObject({kind:'measure',measure:{key:`w_${uuids[0]}`,operation:'sum',fieldId:plan.id}});expect(created[1]).toMatchObject({kind:'capacity',membershipId:alphaMembers[0]?.id,range:{kind:'project_dates'}});expect(screen.queryByRole('dialog',{name:'Summary · Delivery'})).not.toBeInTheDocument();expect(generated).toHaveBeenCalledTimes(2);
 });

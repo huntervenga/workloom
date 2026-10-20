@@ -49,6 +49,8 @@ export interface InlineBulkCallbacks {
  */
 export interface InlineBulkEditPort {
   count: number;
+  /** The selected task list or quick-create is still refreshing; never capture or send stale heads. */
+  busy?: boolean;
   pending: boolean;
   uncertain: boolean;
   /** The batch's own definite or unknown failure. */
@@ -184,8 +186,23 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   const needsReview = ownError instanceof ApiError && ownError.kind === 'conflict';
   const editable = writable && canEditTaskInline(task) && !denied;
   const staleEstimate = field === 'estimate' && !isCurrentEstimateProjection(session.base, estimatePackages);
-  const frozen = pending || uncertain || blocked || !editable;
+  const bulkBusy = bulkEdit?.busy === true;
+  const frozen = pending || uncertain || blocked || bulkBusy || !editable;
+  const submittedStatus=useRef<{session:EditSession;statusId:string;input:UpdateTaskInput|null;bulk:boolean}|null>(null);
   const dirty = changedKeys(draftFromTask(session.base), session.draft).length > 0;
+  // A refused status choice is not a retained edit: keep its error visible, restore only status,
+  // and let the next cell repair required custom fields without a Save/Discard detour.
+  useEffect(()=>{
+    if(field!=='statusId'||foreignDraft||pending||uncertain||!(ownError instanceof ApiError)||ownError.status!==422||ownError.kind!=='validation'||!ownError.completionFieldsRequired)return;
+    const sent=submittedStatus.current;
+    if(!sent||sent.session!==session||sent.statusId!==session.draft.statusId||editSessions.current.get(task.id)!==session||(!sent.bulk&&update.variables?.input!==sent.input))return;
+    const keys=changedKeys(draftFromTask(session.base),session.draft);
+    if(!keys.length||keys.some(key=>key!=='statusId'))return;
+    if(editSessions.current.get(task.id)===session)editSessions.current.delete(task.id);
+    submittedStatus.current=null;
+    setSession(current=>current!==sent.session?current:{...current,draft:{...current.draft,statusId:current.base.statusId}});
+  },[editSessions,field,foreignDraft,ownError,pending,session,task.id,uncertain,update.variables]);
+
   useUnsavedChangesWarning(dirty || uncertain);
   useEffect(() => {
     if (foreignDraft || confirmed) return;
@@ -229,14 +246,14 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     editSessions.current.set(task.id, current);
     const bridge = onSaveStarted?.(form, { continueWithNext: false });
     const verdict = bulkEdit.submit(changes, { session: current, onSuccess: origin => saved(current, origin, bridge), onSettled: () => bridge?.onSettled() });
-    if (verdict === 'sent') return;
+    if (verdict === 'sent') {if(field==='statusId'&&changes.statusId!==undefined)submittedStatus.current={session:current,statusId:changes.statusId,input:null,bulk:true};return;}
     bridge?.onSettled();
     if (verdict === 'unchanged') { editSessions.current.delete(task.id); onClose('cancel'); }
   };
   /** One explicit submission of exactly this session object; its identity is the confirmation key. */
   const submitSession = (current: EditSession, intent: InlineSaveIntent, chosen = false) => {
     const form = formRef.current;
-    if (!form || confirmed || pending || blocked || !editable || needsReview || staleEstimate || isTagHeld()) return;
+    if (!form || confirmed || pending || blocked || bulkBusy || !editable || needsReview || staleEstimate || isTagHeld()) return;
     // A drawer or another cell's draft must never be submitted through this control.
     if (!canResumeInlineSession(current, field)) return;
     const result = buildUpdateInput(current.base, draftFromTask(current.base), current.draft);
@@ -247,11 +264,12 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     // Retain the sent session before rendering, so recovery and confirmation see the same object.
     editSessions.current.set(task.id, current);
     const bridge = onSaveStarted?.(form, intent);
+    if(field==='statusId'&&result.input.statusId!==undefined)submittedStatus.current={session:current,statusId:result.input.statusId,input:result.input,bulk:false};
     update.mutate({ taskId: task.id, input: result.input }, { onSuccess: confirmedTask => saved(current, confirmedTask, bridge), onSettled: () => bridge?.onSettled() });
   };
   const retry = () => {
     const form = formRef.current;
-    if (!form || !uncertain) return;
+    if (!form || !uncertain || bulkBusy) return;
     const bridge = onSaveStarted?.(form, { continueWithNext: false });
     if (bulkEdit?.uncertain) { bulkEdit.retry({ session, onSuccess: result => saved(session, result, bridge), onSettled: () => bridge?.onSettled() }); return; }
     update.retryUncertain({ onSuccess: result => saved(session, result, bridge), onSettled: () => bridge?.onSettled() });
@@ -405,9 +423,9 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     : <span className="min-w-0 truncate px-1 text-sm">{field === 'tagIds'
       ? tagCatalog.filter(tag => session.draft.tagIds.some(id => id.toLowerCase() === tag.id.toLowerCase())).map(tag => tag.name).join(', ') || t('tasks.taskFields.noTags')
       : session.draft.dueDate || t('tasks.taskFields.noDueDate')}</span>;
-  const primary = uncertain ? <Button size="sm" className="h-7 px-2" variant="primary" type="submit">{t('tasks.inlineEdit.retry')}</Button>
+  const primary = uncertain ? <Button size="sm" className="h-7 px-2" variant="primary" type="submit" disabled={bulkBusy}>{t('tasks.inlineEdit.retry')}</Button>
     : choice ? null
-    : <Button size="sm" className="h-7 px-2" variant="primary" type="submit" aria-disabled={pending || blocked || !writable || needsReview || staleEstimate || tagHeld || undefined}>{pending ? t('tasks.inlineEdit.saving') : t('tasks.inlineEdit.save')}</Button>;
+    : <Button size="sm" className="h-7 px-2" variant="primary" type="submit" disabled={bulkBusy} aria-disabled={pending || blocked || !writable || needsReview || staleEstimate || tagHeld || undefined}>{pending ? t('tasks.inlineEdit.saving') : t('tasks.inlineEdit.save')}</Button>;
   const popoverShown = (hasFeedback || singleOnly || field === 'estimate' || field === 'dueDate' || field === 'tagIds') && !pickerOpen;
   return <form ref={attach} noValidate aria-label={t('tasks.inlineEdit.form', { title: task.title })} aria-busy={pending || undefined} onSubmit={submit}
     // A held press on a date/tag panel's static content must not blur into the deferred autosave below.

@@ -448,3 +448,67 @@ describe('neighboring table edits beside an existing desktop task pane', () => {
     expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, includeFieldValueAck: true, tasks: both.map(target => ({ ...target, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 4, value: { type: 'number', value: 0 } } } });
   });
 });
+
+it('disables selected custom controls until the confirmed batch list refresh settles, then captures fresh heads', async () => {
+  const duration = { ...fieldFixture('Hours Estimation', 'duration'), projectId: PROJECT_ID };
+  const flag = { ...fieldFixture('Approved', 'boolean', '90000000-0000-4000-8000-000000000002'), projectId: PROJECT_ID };
+  const refetch = deferred<Response>();
+  let holdList = false, heldReads = 0;
+  let currentRows = [first, second, third];
+  let values: TaskFieldValueDto[] = [{ workspaceId: alpha.id, projectId: PROJECT_ID, taskId: first.id, fieldId: flag.id, definitionVersionId: flag.definitionVersionId, value: { type: 'boolean', value: true }, revision: 1, updatedAt: STAMP }];
+  const { calls } = installFakeApi(routes(rows => ({
+    [`GET ${rootPath}/tasks`]: () => { if (holdList) { heldReads++; return refetch.promise; } return page(rows.current); },
+    [`GET ${rootPath}/fields`]: () => ok([duration, flag]),
+    [`GET ${rootPath}/projects/${PROJECT_ID}/columns`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, columns: [duration, flag].map((field, position) => ({ fieldId: field.id, position, width: 160, visible: true })) }),
+    [`GET ${rootPath}/projects/${PROJECT_ID}/field-values`]: () => ok(values),
+    [`POST ${bulkPath}`]: request => {
+      const input = request.body as BulkUpdateTasksInput;
+      const change = input.changes.customField;
+      const definition = [duration, flag].find(field => field.id === change?.fieldId);
+      if (!change || !definition) return applied(rows, request);
+      const changed = input.tasks.map(target => {
+        const row = rows.current.find(row => row.id === target.taskId);
+        if (!row) throw new Error('Expected selected row');
+        const previous = values.find(value => value.taskId === row.id && value.fieldId === definition.id);
+        const ack: TaskFieldValueDto = { workspaceId: alpha.id, projectId: PROJECT_ID, taskId: row.id, fieldId: definition.id, definitionVersionId: definition.definitionVersionId, value: change.value, revision: (previous?.revision ?? 0) + 1, updatedAt: STAMP };
+        values = [...values.filter(value => value.taskId !== row.id || value.fieldId !== definition.id), ack];
+        return { ...row, revision: row.revision + 1, customFieldAck: ack };
+      });
+      rows.current = rows.current.map(row => changed.find(next => next.id === row.id) ?? row);
+      currentRows = rows.current;
+      if (definition.id === duration.id) holdList = true;
+      return ok(changed);
+    },
+  })));
+  const { user } = renderApp(tablePath); await selectBoth(user);
+  const durationName = `Edit Hours Estimation for ${first.title}`;
+  await user.click(await screen.findByRole('button', { name: durationName }));
+  await user.type(screen.getByRole('textbox', { name: durationName }), '0{Enter}');
+  await waitFor(() => expect(heldReads).toBeGreaterThan(0));
+  const flagName = `Edit Approved for ${first.title}`;
+  const checkbox = screen.getByRole('checkbox', { name: flagName });
+  expect(checkbox).toBeDisabled();
+  expect(screen.getByRole('button', { name: durationName })).toBeDisabled();
+  expect(cell(/status/, first)).toBeDisabled();
+  await user.click(cell(/status/, first));
+  expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+  await user.click(checkbox);
+  expect(bulkWrites(calls)).toHaveLength(1);
+  expect(screen.queryByText('Wait until the current save and list update finish, then try again.')).not.toBeInTheDocument();
+  holdList = false;
+  await act(async () => refetch.resolve(page(currentRows)));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: flagName })).toBeEnabled());
+  await user.click(screen.getByRole('checkbox', { name: flagName }));
+  await waitFor(() => expect(bulkWrites(calls)).toHaveLength(2));
+  expect(bulkWrites(calls)[1]?.body).toMatchObject({
+    tasks: [{ taskId: first.id, expectedRevision: first.revision + 1, expectedFieldValueRevision: 1 }, { taskId: second.id, expectedRevision: second.revision + 1, expectedFieldValueRevision: 0 }],
+    changes: { customField: { fieldId: flag.id, value: { type: 'boolean', value: false } } },
+  });
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: flagName })).not.toBeChecked());
+  expect(values.filter(value => value.fieldId === flag.id).map(value => value.value)).toEqual([{ type: 'boolean', value: false }, { type: 'boolean', value: false }]);
+  await waitFor(() => expect(cell(/status/, first)).toBeEnabled());
+  await user.click(cell(/status/, first)); await choose(user, 'Status', 'Stored progress');
+  await waitFor(() => expect(bulkWrites(calls)).toHaveLength(3));
+  expect(bulkWrites(calls)[2]?.body).toMatchObject({ tasks: [{ taskId: first.id, expectedRevision: first.revision + 2 }, { taskId: second.id, expectedRevision: second.revision + 2 }], changes: { statusId: PROGRESS } });
+  expect(gutter(first)).toHaveAttribute('aria-pressed', 'true'); expect(gutter(second)).toHaveAttribute('aria-pressed', 'true');
+});

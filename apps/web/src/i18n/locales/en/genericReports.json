@@ -286,7 +286,7 @@
     "period": "Period",
     "capacityHelp": "Available time comes from the person’s working schedule, holidays and approved absences.",
     "scheduleSettings": "Working hours settings",
-    "addWidget": "Add summary",
+    "addWidget": "Add another summary",
     "saveWidgets": "Save summary",
     "unknownSchedule": "Working hours are not configured for this person and period.",
     "unavailableWidget": "This configured field, person or group is no longer available.",
@@ -311,7 +311,14 @@
     "retrySettings": "Retry summary settings",
     "retryTotals": "Retry column totals",
     "retryHeaders": "Retry group summaries",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "saveIncludesEditor": "Save summary includes the values below. To prepare more than one, use Add another summary.",
+    "summaryLimit": "A group can show up to four summaries. Edit or remove an existing summary first.",
+    "chooseAvailableField": "Choose an available numeric or duration field for this summary.",
+    "chooseAvailablePerson": "Choose a person who is available in this project.",
+    "invalidManualValue": "Enter whole manual minutes from 0 to 527,040 and a note of at most 200 characters. Check the selected dates too.",
+    "invalidSummaryRange": "Choose a valid inclusive date range of at most 366 days.",
+    "cancelNewWidget": "Cancel new summary"
   },
   "useProjectDates": "Use project dates",
   "checksReport": {

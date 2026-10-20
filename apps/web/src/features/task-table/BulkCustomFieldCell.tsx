@@ -13,9 +13,9 @@ import { parseFieldDraft, type FieldDraft } from '../fields/valueDraft';
 import type { InlineBulkEditPort } from '../tasks/InlineTaskEdit';
 
 /** The same typed field input as details; its one value is atomically applied to a captured selection. */
-export function BulkCustomFieldCell({ task, field, value, members, writable, drafts, capture, port, onMoreDetails, advisory }: {
+export function BulkCustomFieldCell({ task, field, value, members, writable, busy = false, drafts, capture, port, onMoreDetails, advisory }: {
   task: TaskDto; field: TaskFieldDefinitionDto; value: TaskFieldValueDto | null;
-  members: readonly MembershipDto[]; writable: boolean; drafts: ObservableFieldValueDraftStore;
+  members: readonly MembershipDto[]; writable: boolean; busy?: boolean; drafts: ObservableFieldValueDraftStore;
   onMoreDetails?: () => void;
   advisory?: FieldAdvisory | null;
   capture: (identity: object, baseField: TaskFieldDefinitionDto, baseValue: TaskFieldValueDto | null) => void; port: (identity: object) => InlineBulkEditPort | undefined;
@@ -47,7 +47,7 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
     drafts.set(task.id, Object.fromEntries(Object.entries(current).filter(([key]) => key !== field.id.toLowerCase())));
   };
   const begin = () => {
-    if (!writable || field.locked || field.archivedAt !== null) return;
+    if (busy || !writable || field.locked || field.archivedAt !== null) return;
     const current = drafts.getTask(task.id)[field.id.toLowerCase()];
     if (current && (port(current.identity) || isSessionDirty(current) || current.stale || current.serverLocked)) return;
     const next = newFieldSession(field, value);
@@ -57,7 +57,7 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
     // Read the retained store at commit time; a discrete picker change may precede React render.
     const current = drafts.getTask(task.id)[field.id.toLowerCase()];
     const currentBulk = current ? port(current.identity) : undefined;
-    if (!current || !currentBulk || !writable || field.locked || field.archivedAt !== null || currentBulk.pending || sending.current) return false;
+    if (!current || !currentBulk || busy || !writable || field.locked || field.archivedAt !== null || currentBulk.pending || sending.current) return false;
     const submitted = draft === undefined || draft === current.draft ? current : { ...current, draft };
     const callbacks = { onConfirmed: () => discard(submitted), onSuccess: () => { if (mounted.current) setOpen(false); }, onSettled: () => { sending.current = false; } };
     if (currentBulk.uncertain) { sending.current = true; currentBulk.retry(callbacks); return true; }
@@ -84,7 +84,7 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
   return <div ref={setAnchor} data-inline-field-cell={`${task.id}:${field.id}`} style={fieldAdvisoryStyle(advisory)} className="relative flex h-8 min-w-0 flex-1 items-center gap-1" onClick={event => event.stopPropagation()}>
     {session && !bulk && (isSessionDirty(session) || session.stale || session.serverLocked) ? <button type="button" className="h-8 min-w-0 flex-1 truncate px-1.5 text-left" onClick={onMoreDetails} aria-label={t('inlineFields.draftLabel', { field: field.name, title: task.title })}>{t('inlineFields.draft')}</button> : <FieldCellControl field={session?.field ?? field} value={value?.value ?? null} members={members}
       label={t('inlineFields.edit', { field: field.name, title: task.title })}
-      disabled={!writable || field.locked || field.archivedAt !== null || held}
+      disabled={busy || !writable || field.locked || field.archivedAt !== null || held}
       draft={session?.draft} error={parseError} onBegin={begin}
       onChange={draft => {
         begin();
@@ -100,7 +100,7 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
       <SaveFeedback subject="taskSave" error={bulk?.uncertain ? null : bulk?.error ?? null} uncertainError={bulk?.uncertain ? bulk.error : null} />
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="ghost" onClick={() => close()}>{t('inlineFields.hide')}</Button>
-        {bulk?.uncertain || bulk?.error ? <Button type="button" variant="primary" onClick={() => submit()} aria-disabled={bulk.pending || !writable || undefined}>{t('tasks.inlineEdit.retry')}</Button> : null}
+        {bulk?.uncertain || bulk?.error ? <Button type="button" variant="primary" onClick={() => submit()} disabled={busy || bulk.pending || !writable}>{t('tasks.inlineEdit.retry')}</Button> : null}
       </div>
     </CellPopover> : null}
   </div>;

@@ -721,7 +721,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           action={
             phase === 'rejected' || phase === 'conflict' ? (
               <span className="flex flex-wrap gap-2">
-                {phase !== 'conflict' ? <Button size="sm" variant="primary" aria-disabled={entry?.sending || !canEdit ? true : undefined} onClick={() => { if (canEdit) autosave.retry(taskId); }}>{t('autosave.actions.retry')}</Button> : null}
+                {phase !== 'conflict' && entry?.failed ? <Button size="sm" variant="primary" aria-disabled={entry?.sending || !canEdit ? true : undefined} onClick={() => { if (canEdit) autosave.retry(taskId); }}>{t('autosave.actions.retry')}</Button> : null}
                 {review === null ? (
                   <Button size="sm" aria-disabled={reloading === 'loading' || undefined} onClick={() => void loadLatest()}>
                     <RefreshCw size={16} aria-hidden="true" className={reloading === 'loading' ? 'motion-safe:animate-spin' : undefined} />
