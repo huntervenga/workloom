@@ -1,5 +1,7 @@
 # Configurable planning checks and neutral checkpoints
 
+Historical accepted slice, superseded locally by [101: planning-settings UX and optional completion requirements](101-planning-settings-ux-and-completion-requirements.md), product `9860ac5`. The original acceptance and activation proofs below remain unchanged.
+
 **ACCEPTED AND ACTIVATED LOCALLY.** Product `98a6d24` (`98a6d2401f224f769e8316bbb835aedb3349ce33`), final Candidate C: 1,551 source files / 1,127 compiled artifacts. Source SHA-256 `42cc8275f8895b97f1b6b13a2db95037954fd5f0b5fc20b75f6bdf2c31358b49`; build manifest SHA-256 `da17c0e10de19dca28117e260f723d8edc3eac117be1439db327ec4dfb840c3d`. Controlled activation completed **20 October 2026, 11:46:04 Asia/Nicosia** (`2026-10-20T08:46:04.918Z`). This documentation-only follow-up is later than the verified product snapshot. Previous table summaries and field controls remain documented in [99](99-table-summaries-section-widgets-and-field-controls.md).
 
 Open the [demo project](http://127.0.0.1:4310/app/w/2ea2e40e-b442-48b7-9b9d-45c26e9eb77b/projects/1268a6cd-c760-4c72-b4af-6caf988b303d) or its [Reports](http://127.0.0.1:4310/app/w/2ea2e40e-b442-48b7-9b9d-45c26e9eb77b/projects/1268a6cd-c760-4c72-b4af-6caf988b303d/reports). These are entry links, not evidence of a newly checked main authenticated session.
