@@ -104,10 +104,13 @@ function isSet<T>(value: T | null | undefined): value is T {
 
 const noChangeError = { error: 'Provide at least one field to change.' } as const;
 
+export const projectDateRangeSchema=z.strictObject({from:calendarDateSchema,to:calendarDateSchema}).refine(value=>value.from<=value.to&&value.from>='1900-01-01'&&value.to<='2200-12-31','Choose an ordered project date range between 1900 and 2200.');
+
 export const projectSchema = z.object({
   id: idSchema,
   workspaceId: idSchema,
   name: nameSchema,
+  dateRange: projectDateRangeSchema.nullable().optional(),
   revision: revisionSchema,
   archivedAt: utcTimestampSchema.nullable(),
   createdAt: utcTimestampSchema,
@@ -205,8 +208,9 @@ export const updateProjectInputSchema = z
     expectedRevision: revisionSchema,
     name: nameSchema.optional(),
     archived: z.boolean().optional(),
+    dateRange: projectDateRangeSchema.nullable().optional(),
   })
-  .refine((input) => hasAnyField(input, ['name', 'archived']), noChangeError);
+  .refine((input) => hasAnyField(input, ['name', 'archived', 'dateRange']), noChangeError);
 
 export const createSectionInputSchema = z.strictObject({
   name: nameSchema,

@@ -75,7 +75,8 @@
     "capacityUnconfigured": "Unknown: time off settings are not configured",
     "coverage": "{{filled}} of {{tasks}} tasks have a value",
     "paired": "Actual/estimate {{percent}} on {{paired}} of {{eligible}} tasks with both values",
-    "pairedUnavailable": "Actual/estimate unavailable: {{reason}}"
+    "pairedUnavailable": "Actual/estimate unavailable: {{reason}}",
+    "capacityPartial": "Known schedules only · {{known}} of {{total}} people"
   },
   "reason": {
     "noTasks": "no tasks",
@@ -132,5 +133,6 @@
   "removeSource": "Remove",
   "selectedPeople": "{{count}} selected people",
   "setupSchedules": "Set up working schedules",
-  "askAdminSchedules": "Ask a workspace administrator to configure working schedules."
+  "askAdminSchedules": "Ask a workspace administrator to configure working schedules.",
+  "thisWeek": "This week"
 }

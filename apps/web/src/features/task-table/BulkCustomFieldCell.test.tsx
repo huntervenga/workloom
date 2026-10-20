@@ -53,7 +53,7 @@ describe('same custom control for every selected scalar type', () => {
 
 
 describe('same anchored custom picker for every selected choice type', () => {
-  it.each(['single_select', 'multi_select', 'person', 'boolean'] as const)('commits %s using the normal picker and never a batch value dialog', async type => {
+  it.each(['single_select', 'multi_select', 'person'] as const)('commits %s using the normal picker and never a batch value dialog', async type => {
     const member = alphaMembers[0];
     if (!member) throw new Error('Expected first member fixture');
     const option = { id: '91000000-0000-4000-8000-000000000001', name: 'Design', color: '#6366f1', position: 0, revision: 1, archivedAt: null };
@@ -63,9 +63,9 @@ describe('same anchored custom picker for every selected choice type', () => {
       port={() => ({ count: 3, pending: false, uncertain: false, error: null, notice: null, unsupported: false, submit, retry: vi.fn() })} />);
     await ui.user.click(screen.getByRole('combobox', { name: `Edit Choice for ${task.title}` }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    const target = type === 'person' ? member.displayName : type === 'boolean' ? 'No' : 'Design';
+    const target = type === 'person' ? member.displayName : 'Design';
     await ui.user.click(screen.getByRole('option', { name: target }));
-    const expected = type === 'person' ? [member.id] : type === 'boolean' ? false : type === 'multi_select' ? [option.id] : option.id;
+    const expected = type === 'person' ? [member.id] : type === 'multi_select' ? [option.id] : option.id;
     expect(submit).toHaveBeenCalledTimes(1);
     expect(submit).toHaveBeenCalledWith({ customField: { fieldId: field.id, expectedDefinitionRevision: field.revision, value: { type, value: expected } } }, expect.any(Object));
     expect(capture).toHaveBeenCalledTimes(1);
@@ -73,7 +73,7 @@ describe('same anchored custom picker for every selected choice type', () => {
 });
 
 it('releases a clean picker capture on Escape and captures a fresh selection when reopened', async () => {
-  const field = { ...fieldFixture('Flag', 'boolean'), projectId: task.projectId };
+  const field = { ...fieldFixture('Flag', 'single_select'), projectId: task.projectId, options: [{ id: '91000000-0000-4000-8000-000000000001', name: 'Design', color: null, position: 0, revision: 1, archivedAt: null }] };
   const drafts = new ObservableFieldValueDraftStore();
   let selected = ['first', 'second'];
   const captures = new WeakMap<object, readonly string[]>();
@@ -91,8 +91,20 @@ it('releases a clean picker capture on Escape and captures a fresh selection whe
   expect(drafts.getTask(task.id)).toEqual({});
   selected = ['second', 'third'];
   await ui.user.click(screen.getByRole('combobox', { name }));
-  await ui.user.click(screen.getByRole('option', { name: 'No' }));
+  await ui.user.click(screen.getByRole('option', { name: 'Design' }));
   expect(capture).toHaveBeenCalledTimes(2);
   expect(capture.mock.calls[0]?.[0]).not.toBe(capture.mock.calls[1]?.[0]);
   expect(submit).toHaveBeenCalledWith(['second', 'third'], expect.any(Object), expect.any(Object));
+});
+
+it('commits an unchecked Boolean through the captured bulk selection and exposes clear separately', async () => {
+  const field = { ...fieldFixture('Flag', 'boolean'), projectId: task.projectId };
+  const value: TaskFieldValueDto = { workspaceId: task.workspaceId, projectId: task.projectId, taskId: task.id, fieldId: field.id, definitionVersionId: field.definitionVersionId, value: { type: 'boolean', value: true }, revision: 3, updatedAt: STAMP };
+  const submit = vi.fn(() => 'sent' as const), capture = vi.fn();
+  const ui = renderFieldUi(<BulkCustomFieldCell task={task} field={field} value={value} members={[]} writable drafts={new ObservableFieldValueDraftStore()} capture={capture}
+    port={() => ({ count: 2, pending: false, uncertain: false, error: null, notice: null, unsupported: false, submit, retry: vi.fn() })}/>);
+  await ui.user.click(screen.getByRole('checkbox', { name: `Edit Flag for ${task.title}` }));
+  expect(submit).toHaveBeenCalledExactlyOnceWith({ customField: { fieldId: field.id, expectedDefinitionRevision: field.revision, value: { type: 'boolean', value: false } } }, expect.any(Object));
+  expect(capture).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });

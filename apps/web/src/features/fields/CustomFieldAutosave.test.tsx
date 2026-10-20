@@ -43,9 +43,9 @@ function bodyOf(call: unknown): unknown {
 
 const label = (name: string) => `Edit ${name} for ${task.title}`;
 async function openEditor(user: ReturnType<typeof setup>['user'], name: string) {
-  const picker = await screen.findByLabelText(label(name), { selector: 'button' });
+  const picker = await screen.findByLabelText(label(name), { selector: 'button, input[type=checkbox]' });
   const cell = picker.closest('[data-inline-field-cell]') as HTMLElement;
-  if (picker.getAttribute('role') !== 'combobox' && !picker.hasAttribute('disabled')) await user.click(picker);
+  if (picker.tagName === 'BUTTON' && picker.getAttribute('role') !== 'combobox' && !picker.hasAttribute('disabled')) await user.click(picker);
   return cell;
 }
 
@@ -102,19 +102,43 @@ describe('custom field autosave', () => {
     expect(sent()).toHaveLength(1);
   });
 
-  it('sends an explicitly chosen false right away, never as not set', async () => {
-    const { user, sent } = setup(field('Готово', 'boolean'));
-    const dialog = await openEditor(user, 'Готово');
-
-    await user.click(within(dialog).getByRole('combobox', { name: label('Готово') }));
-    await user.click(screen.getByRole('option', { name: 'No' }));
-
+  it('autosaves an unchecked Boolean as false once, never as not set', async () => {
+    const definition = field('Готово', 'boolean');
+    const initial: TaskFieldValueDto = { workspaceId: alpha.id, projectId: PROJECT_ID, taskId: task.id, fieldId: FIELD_ID, definitionVersionId: definition.definitionVersionId, revision: 3, value: { type: 'boolean', value: true }, updatedAt: STAMP };
+    const { user, sent } = setup(definition, [], [initial]);
+    const cell = await openEditor(user, 'Готово');
+    const checkbox = within(cell).getByRole('checkbox', { name: label('Готово') });
+    expect(checkbox).toBeChecked();
+    await user.click(checkbox);
     await waitFor(() => expect(sent()).toHaveLength(1));
-    expect(bodyOf(sent()[0])).toMatchObject({ value: { type: 'boolean', value: false } });
-    // The held command shows exactly what was sent.
-    expect(within(dialog).getByRole('combobox', { name: label('Готово') })).toHaveTextContent('No');
+    expect(bodyOf(sent()[0])).toEqual({ expectedRevision: 3, expectedDefinitionRevision: 1, value: { type: 'boolean', value: false } });
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).not.toBePartiallyChecked();
+    expect(checkbox).toBeDisabled();
     await user.tab();
     expect(sent()).toHaveLength(1);
+  });
+
+  it('clears a saved unchecked Boolean to explicit null without toggling it first', async () => {
+    const definition = field('Approved', 'boolean');
+    const initial: TaskFieldValueDto = { workspaceId: alpha.id, projectId: PROJECT_ID, taskId: task.id, fieldId: FIELD_ID, definitionVersionId: definition.definitionVersionId, revision: 2, value: { type: 'boolean', value: false }, updatedAt: STAMP };
+    const { user, sent } = setup(definition, [], [initial]);
+    const cell = await openEditor(user, 'Approved');
+    await user.click(within(cell).getByRole('button', { name: 'Clear: Approved' }));
+    await waitFor(() => expect(sent()).toHaveLength(1));
+    expect(bodyOf(sent()[0])).toEqual({ expectedRevision: 2, expectedDefinitionRevision: 1, value: { type: 'boolean', value: null } });
+    expect(within(cell).getByRole('checkbox')).toBePartiallyChecked();
+  });
+
+  it('tabbing past an unset Boolean releases the clean session and never writes', async () => {
+    const { user, sent } = setup(field('Approved', 'boolean'));
+    const cell = await openEditor(user, 'Approved');
+    const checkbox = within(cell).getByRole('checkbox');
+    checkbox.focus();
+    await user.tab();
+    expect(sent()).toHaveLength(0);
+    expect(checkbox).toBePartiallyChecked();
+    expect(within(cell).queryByText('Draft')).not.toBeInTheDocument();
   });
 
   it('resends an unconfirmed write only on Retry, with the exact same request', async () => {

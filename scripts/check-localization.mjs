@@ -23,6 +23,8 @@ const english = new Map(Object.entries(catalogs.en).flatMap(([namespace, value])
 const violations = [];
 // These diagnostics are never shown directly: safe error descriptions use fixed catalog keys.
 const literalExemptions = new Map([
+  ['apps/web/src/features/task-table/BulkCustomFieldCell.tsx:input[type=checkbox]:not([disabled]), button:not([disabled])', 'Exact DOM focus selector for an editable checkbox or button; never rendered as copy.'],
+  ['apps/web/src/features/fields/InlineFieldValueCell.tsx:input[type="checkbox"]:not([disabled]), button:not([disabled])', 'Exact DOM focus selector for an editable checkbox or button; never rendered as copy.'],
   ['apps/web/src/main.tsx:Root element #root is missing', 'Developer bootstrap diagnostic; never displayed.'],
   ['apps/web/src/features/projects/ProjectActions.tsx:button, a', 'DOM selector for dismissing the action popover; never rendered as copy.'],
   ['apps/web/src/features/work-categories/CategoryBadge.tsx:legacy', 'Stable reason-enum lookup fallback; the indexed result is a translated label, not the enum string.'],
@@ -334,6 +336,8 @@ for (const [file, expressions, keys] of [
 // Extract every map value so a new/nonliteral key is checked rather than exempting a family.
 const genericReportLabels = readSource('apps/web/src/features/generic-reports/translationKeys.ts');
 for (const [file, expressions] of [
+  ['ColumnAggregateCell.tsx', [['operationLabels[operation]', 'operationLabels'], ['operationLabels[item]', 'operationLabels']]],
+  ['HeaderWidgets.tsx', [['operationLabels[widget.measure.operation]', 'operationLabels'], ['operationLabels[value]', 'operationLabels']]],
   ['ColumnAggregates.tsx', [['operationLabels[measure.operation]', 'operationLabels']]],
   ['ReportConfigEditor.tsx', [['groupLabels[kind]', 'groupLabels'], ['operationLabels[operation]', 'operationLabels'], ['boundaryLabels[boundary]', 'boundaryLabels']]],
   ['ReportDashboard.tsx', [['reasonLabels[pair.unavailableReason]', 'reasonLabels'], ['operationLabels[measure.operation]', 'operationLabels']]],

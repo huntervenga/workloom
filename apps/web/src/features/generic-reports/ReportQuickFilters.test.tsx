@@ -49,3 +49,17 @@ it('passes the supplied workspace calendar through the quick preset control at a
   expect(apply).toHaveBeenCalledWith(expect.objectContaining({filters:expect.objectContaining({dateRange:{source:{kind:'due_date'},from:'2026-10-18',to:'2026-10-24'}}),capacity:{startDate:'2026-10-18',endDate:'2026-10-24',people:{kind:'all_active'}}}));
  } finally {vi.useRealTimers();}
 });
+
+it('can explicitly add capacity to a saved report that never had capacity configured', async () => {
+ const original=definition().config,apply=vi.fn(),user=userEvent.setup({pointerEventsCheck:0});
+ render(<ReportQuickFilters config={original} originalConfig={original} fields={[plan,fact]} members={alphaMembers} disabled={false} onApply={apply} onReset={vi.fn()}/>);
+ await choose(user,'Date source','Due date'); await user.type(screen.getByLabelText('From (inclusive)'),'2026-10-12'); await user.type(screen.getByLabelText('To (inclusive)'),'2026-10-18');
+ await user.click(screen.getByRole('checkbox',{name:'Use these dates and people for capacity too'})); await user.click(screen.getByRole('button',{name:'Apply filters'}));
+ expect(apply).toHaveBeenCalledWith(expect.objectContaining({capacity:{startDate:'2026-10-12',endDate:'2026-10-18',people:{kind:'all_active'}}})); expect(original.capacity).toBeUndefined();
+});
+
+it('uses explicit project dates only when requested, leaving the saved report and undated-task scope untouched until then',async()=>{
+ const original=definition().config,apply=vi.fn(),user=userEvent.setup({pointerEventsCheck:0}),range={from:'2026-10-01',to:'2026-10-31'};
+ render(<ReportQuickFilters config={original} originalConfig={original} projectDateRange={range} fields={[plan,fact]} members={alphaMembers} disabled={false} onApply={apply} onReset={vi.fn()}/>);expect(apply).not.toHaveBeenCalled();
+ await user.click(screen.getByRole('button',{name:'Use project dates'}));expect(apply).toHaveBeenCalledWith(expect.objectContaining({filters:{...original.filters,dateRange:{source:{kind:'due_date'},...range}},capacity:{startDate:range.from,endDate:range.to,people:{kind:'all_active'}}}));expect(original.filters.dateRange).toBeNull();expect(original.capacity).toBeUndefined();
+});

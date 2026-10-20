@@ -94,3 +94,17 @@ describe('confirmed project undo commands', () => {
     expect(isNativeUndoTarget(document.createElement('button'))).toBe(false);
   });
 });
+
+
+it('routes only marked task-value checkboxes to project Undo and preserves unrelated native inputs', () => {
+  const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+  expect(isNativeUndoTarget(checkbox)).toBe(true);
+  checkbox.dataset.projectUndo = 'true';
+  expect(isNativeUndoTarget(checkbox)).toBe(false);
+  checkbox.disabled = true;
+  expect(isNativeUndoTarget(checkbox)).toBe(false);
+  for (const type of ['text', 'number', 'date', 'radio', 'button']) {
+    const input = document.createElement('input'); input.type = type; input.dataset.projectUndo = 'true';
+    expect(isNativeUndoTarget(input)).toBe(true);
+  }
+});

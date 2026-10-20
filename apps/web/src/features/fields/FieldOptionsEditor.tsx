@@ -6,6 +6,7 @@ import { Archive, ArchiveRestore, Pencil, Plus } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
 import { SaveFeedback } from '../../shared/SaveFeedback';
+import { TagColorPalette } from '../tasks/TagColorPalette';
 import { FIELDS_SAVE_SUBJECT, OPTION_NAME_MAX, optionNameProblem, sentCommand } from './FieldDefinitionForm';
 import type { useCreateTaskFieldOptionMutation, useUpdateTaskFieldOptionMutation } from './queries';
 
@@ -78,6 +79,7 @@ export function FieldOptionsEditor({
   const [addError, setAddError] = useState<TranslationMessage | null>(null);
   const [renameError, setRenameError] = useState<TranslationMessage | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
+  const [colorOptionId, setColorOptionId] = useState<string | null>(null);
   const addRef = useRef<HTMLInputElement>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const ids = { add: useId(), addError: useId(), rename: useId(), renameError: useId(), hint: useId() };
@@ -88,6 +90,7 @@ export function FieldOptionsEditor({
     ownUpdate && sentName !== undefined ? { optionId: ownUpdate.variables.optionId, name: sentName } : null;
   const activeRename = sentRename ?? renaming;
   const sentArchive = ownUpdate && ownUpdate.variables.input.archived !== undefined ? ownUpdate : null;
+  const sentColor = ownUpdate && ownUpdate.variables.input.color !== undefined ? ownUpdate : null;
   const uncertainError =
     ownCreate && !ownCreate.pending
       ? (createMutation.uncertain?.error ?? null)
@@ -188,6 +191,15 @@ export function FieldOptionsEditor({
     );
   };
 
+  const setColor = (option: TaskFieldOptionDto, color: string | null) => {
+    if (busy || updateElsewhere || color === option.color) return;
+    setColorOptionId(option.id);
+    updateMutation.mutate(
+      { fieldId: field.id, optionId: option.id, input: { expectedRevision: field.revision, color } },
+      { onSuccess: saved(message('fields.fieldOptionsEditor.optionColorSaved', { p0: option.name })) },
+    );
+  };
+
   const options = orderOptions(field.options);
   const addFrozen = busy || createElsewhere;
   const shownNewName = ownCreate ? ownCreate.variables.input.name : newName;
@@ -210,6 +222,9 @@ export function FieldOptionsEditor({
             const editing = activeRename?.optionId === option.id;
             const own = sentRename?.optionId === option.id;
             const archiving = sentArchive?.variables.optionId === option.id ? sentArchive : null;
+            const coloring = sentColor?.variables.optionId === option.id ? sentColor : null;
+            const changing = archiving ?? coloring;
+            const shownColor = coloring ? coloring.variables.input.color ?? null : option.color;
             if (editing && activeRename) {
               return (
                 <li key={option.id} className="px-3 py-2">
@@ -254,8 +269,8 @@ export function FieldOptionsEditor({
               );
             }
             return (
-              <li key={option.id} className="flex min-w-0 items-center gap-1.5 px-3 py-1.5">
-                <OptionSwatch color={option.color} />
+              <li key={option.id} className="flex min-w-0 flex-wrap items-center gap-1.5 px-3 py-1.5">
+                <OptionSwatch color={shownColor} />
                 <span
                   className={cn('min-w-0 flex-1 truncate text-sm', archived ? 'text-muted' : 'text-ink')}
                   title={option.name}
@@ -263,9 +278,9 @@ export function FieldOptionsEditor({
                   {option.name}
                 </span>
                 {archived ? <Badge tone="muted">{t('fields.fieldOptionsEditor.archived')}</Badge> : null}
-                {archiving?.pending ? (
+                {changing?.pending ? (
                   <Badge tone="warning">{t('fields.fieldOptionsEditor.saving')}</Badge>
-                ) : archiving ? (
+                ) : changing ? (
                   <Button
                     size="sm"
                     onClick={() => updateMutation.retryUncertain({ onSuccess: saved(message('fields.fieldOptionsEditor.optionSaved')) })}
@@ -286,6 +301,11 @@ export function FieldOptionsEditor({
                     >
                       <Pencil size={14} aria-hidden="true" />
                     </Button>
+                    <Button size="sm" variant="ghost" className="px-2" aria-label={t('fields.fieldOptionsEditor.changeColor', { p0: option.name })}
+                      aria-expanded={colorOptionId === option.id} disabled={busy || updateElsewhere}
+                      onClick={() => setColorOptionId(current => current === option.id ? null : option.id)}>
+                      {t('fields.fieldOptionsEditor.color')}
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -303,6 +323,10 @@ export function FieldOptionsEditor({
                     </Button>
                   </>
                 )}
+                {colorOptionId === option.id || coloring ? <div className="basis-full space-y-2 rounded-lg border border-line bg-canvas p-3">
+                  <TagColorPalette value={shownColor} disabled={busy || updateElsewhere} onChange={color => setColor(option, color)}/>
+                  <Button size="sm" variant="ghost" disabled={busy || updateElsewhere || shownColor === null} onClick={() => setColor(option, null)}>{t('fields.fieldOptionsEditor.noColor')}</Button>
+                </div> : null}
               </li>
             );
           })}

@@ -182,19 +182,37 @@ describe('FieldInput', () => {
     expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'single_select', value: BETA } });
   });
 
-  it('tells Not set apart from No for a yes/no field', async () => {
+  it('autosaves native Boolean states and keeps unchecked distinct from Not set', async () => {
     const user = userEvent.setup();
     const onDraft = vi.fn<(draft: FieldDraft) => void>();
     const field = makeField('boolean', 'Готово');
     render(<Harness field={field} initial={draftFromFieldValue(field, null)} onDraft={onDraft} />);
-    const picker = screen.getByRole('combobox', { name: 'Готово' });
-    expect(picker).toHaveTextContent('Not set');
-    await user.click(picker);
-    await user.click(screen.getByRole('option', { name: 'No' }));
+    const checkbox = screen.getByRole('checkbox', { name: 'Готово' });
+    expect(checkbox).toBePartiallyChecked();
+    expect(onDraft).not.toHaveBeenCalled();
+    await user.click(checkbox);
+    expect(checkbox).toBeChecked();
+    expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'boolean', value: true } });
+    await user.keyboard(' ');
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).not.toBePartiallyChecked();
     expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'boolean', value: false } });
-    await user.click(picker);
-    await user.click(screen.getByRole('option', { name: 'Not set' }));
+    await user.keyboard('{Enter}');
+    expect(onDraft).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole('button', { name: 'Clear: Готово' }));
+    expect(checkbox).toBePartiallyChecked();
     expect(lastParsed(field, onDraft)).toEqual({ ok: true, value: { type: 'boolean', value: null } });
+  });
+
+  it('keeps a disabled Boolean inert without replacing its explicit false', async () => {
+    const onDraft = vi.fn();
+    render(<FieldInput field={makeField('boolean', 'Approved')} draft={{ type: 'boolean', value: false }} members={[]} disabled onChange={onDraft}/>);
+    const checkbox = screen.getByRole('checkbox', { name: 'Approved' });
+    expect(checkbox).toBeDisabled();
+    expect(checkbox).not.toBePartiallyChecked();
+    expect(screen.getByRole('button', { name: 'Clear: Approved' })).toBeDisabled();
+    fireEvent.click(checkbox);
+    expect(onDraft).not.toHaveBeenCalled();
   });
 
   it('edits a duration in hours, links the error and clears to an explicit null', async () => {

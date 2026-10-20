@@ -100,6 +100,7 @@ function toProject(row: typeof projects.$inferSelect): ProjectDto {
     id: row.id,
     workspaceId: row.workspaceId,
     name: row.name,
+    ...(row.dateRangeFrom===null||row.dateRangeTo===null?{}:{dateRange:{from:row.dateRangeFrom,to:row.dateRangeTo}}),
     revision: row.revision,
     archivedAt: toIsoOrNull(row.archivedAt),
     createdAt: toIso(row.createdAt),
@@ -362,6 +363,8 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
         .update(projects)
         .set({
           name: row.name,
+          dateRangeFrom:row.dateRange?.from??null,
+          dateRangeTo:row.dateRange?.to??null,
           revision: row.revision,
           archivedAt: toDateOrNull(row.archivedAt),
           updatedAt: new Date(row.updatedAt),

@@ -103,7 +103,9 @@ export function genericRowMeasures(rows: readonly GenericReportRowDto[], config:
       key: measure.key, operation: measure.operation, fieldId: measure.fieldId,
       unit: measure.operation === 'count_values' ? 'values' : fields.find(f => sameId(f.id, measure.fieldId))?.type === 'duration' ? 'minutes' : 'number',
       value: measure.operation === 'count_values' ? output(rational(BigInt(known.length))) : known.length === 0 ? null
-        : output(measure.operation === 'avg' ? rational(total.n, total.d * BigInt(known.length)) : total),
+        : output(measure.operation === 'avg' ? rational(total.n, total.d * BigInt(known.length))
+          : measure.operation === 'min' ? decimal(known.reduce((left,right)=>left<right?left:right))
+          : measure.operation === 'max' ? decimal(known.reduce((left,right)=>left>right?left:right)) : total),
       coverage: coverage(cells),
     };
   });

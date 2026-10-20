@@ -5,7 +5,7 @@ import { useTranslation } from '../../i18n';
 import type { ProjectColumnsDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, Skeleton } from '@workloom/ui';
 import { Columns3, Plus, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { QueryErrorState } from '../../shared/QueryErrorState';
@@ -61,6 +61,8 @@ export interface FieldManagerDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   showTrigger?: boolean;
+  /** A header shortcut can open one field directly; pending commands still retain priority. */
+  initialFieldId?: string | undefined;
   actorId: string;
   workspaceId: string;
   projectId: string;
@@ -72,7 +74,7 @@ export interface FieldManagerDialogProps {
  * and options of existing ones. Every write hook lives here, outside the dialog content, so closing
  * the dialog keeps a pending or unconfirmed write, its frozen form and the navigation guard.
  */
-export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage, triggerLabel, open: controlledOpen, onOpenChange, showTrigger = true }: FieldManagerDialogProps) {
+export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage, triggerLabel, open: controlledOpen, onOpenChange, showTrigger = true, initialFieldId }: FieldManagerDialogProps) {
   const { t } = useTranslation();
   const [localOpen, setLocalOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
@@ -87,6 +89,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
   const updateColumns = useUpdateProjectColumnsMutation(actorId, workspaceId);
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  useEffect(() => { if (open && canManage && initialFieldId) setEditingId(initialFieldId); }, [open, canManage, initialFieldId]);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
 
   const projectFields = fields.data ?? [];
@@ -217,6 +220,25 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
                 )}
               </section>
             ))}
+            {editedField ? (
+              <section aria-label={t('fields.fieldManagerDialog.columnValue', { p0: editedField.name })} className="rounded-xl border border-line p-3">
+                <EditFieldPanel
+                  key={editedField.id}
+                  field={editedField}
+                  updateField={updateField}
+                  createOption={createOption}
+                  updateOption={updateOption}
+                  reloadFields={reloadFields}
+                  onRejected={() => setEditingId(editedField.id)}
+                  onDone={(saved) => {
+                    closeEdit();
+                    if (saved) setAnnouncement(message('fields.fieldManagerDialog.columnValueSaved', { p0: saved.name }));
+                  }}
+                />
+                <FieldPolicyPanel actorId={actorId} workspaceId={workspaceId} field={editedField} mutation={policyMutation}/>
+              </section>
+            ) : null}
+
             <ProjectColumnsEditor
               projectId={projectId}
               columns={columns.data}
@@ -246,24 +268,7 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
                 }}>{t('fields.fieldManagerDialog.loadLatestVersion')}</Button> : null}
               </details>
             ) : null}
-            {editedField ? (
-              <section aria-label={t('fields.fieldManagerDialog.columnValue', { p0: editedField.name })} className="rounded-xl border border-line p-3">
-                <EditFieldPanel
-                  key={editedField.id}
-                  field={editedField}
-                  updateField={updateField}
-                  createOption={createOption}
-                  updateOption={updateOption}
-                  reloadFields={reloadFields}
-                  onRejected={() => setEditingId(editedField.id)}
-                  onDone={(saved) => {
-                    closeEdit();
-                    if (saved) setAnnouncement(message('fields.fieldManagerDialog.columnValueSaved', { p0: saved.name }));
-                  }}
-                />
-                <FieldPolicyPanel actorId={actorId} workspaceId={workspaceId} field={editedField} mutation={policyMutation}/>
-              </section>
-            ) : null}
+
 
             {showCreate ? (
               <section aria-label={t('fields.fieldManagerDialog.newColumn')} className="rounded-xl border border-line p-3">

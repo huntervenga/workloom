@@ -1,8 +1,11 @@
+import type { ReactNode } from 'react';
+import { capacitySummary } from './capacitySummary';
 import type { GenericComparisonDto, GenericMeasureResultDto, GenericReportNumberDto, GenericReportResultDto, MembershipDto, SectionDto } from '@workloom/contracts';
 import { useTranslation } from '../../i18n';
 import { reportGroupLabel } from './groupLabel';
 import { reportNumber, roundedRational } from './reportFormatting';
 import { operationLabels } from './translationKeys';
+import { categoryColor } from './categoryColors';
 import { ReportPeopleOverview } from './ReportPeopleOverview';
 
 type Unit = GenericMeasureResultDto['unit'];
@@ -48,26 +51,28 @@ export function recordedCapacityRatio(result: GenericReportResultDto): string | 
 }
 
 /** Capacity is compared with recorded task-date cohorts only when people, dates and schedules align. */
-function CapacityCard({ capacity, result, onChoosePeriod }: { capacity: Capacity; result: GenericReportResultDto; onChoosePeriod?: () => void }) {
+function CapacityCard({ capacity, result, onChoosePeriod, capacityAction }: { capacityAction?: ReactNode; capacity: Capacity; result: GenericReportResultDto; onChoosePeriod?: () => void }) {
   const { t } = useTranslation();
   const { totals, settingsConfigured } = capacity, title = t('genericReports.dashboard.capacityTitle');
-  const ratio = recordedCapacityRatio(result);
+  const ratio = recordedCapacityRatio(result), known = capacitySummary(capacity);
   const date = result.config.filters.dateRange, datesAligned = !!date && date.from === capacity.startDate && date.to === capacity.endDate;
   const duration = (minutes: number) => reportNumber(wholeMinutes(minutes), 'minutes', true);
   return <article aria-label={title} className="min-w-0 space-y-1 rounded-xl border border-line bg-surface p-4">
     <h3 className="truncate text-sm font-medium">{title}</h3>
     <p className="text-xs text-muted">{t('genericReports.dashboard.capacityRange', { from: capacity.startDate, to: capacity.endDate })}</p>
-    <p className="text-xl font-semibold tabular-nums">{settingsConfigured ? duration(totals.availableMinutes) : '—'}</p>
+    <p className="text-xl font-semibold tabular-nums">{known.availableMinutes === null ? '—' : duration(known.availableMinutes)}</p>
+    {known.partial ? <p className="text-xs text-muted">{t('genericReports.dashboard.capacityHelp.partial', { known: known.knownMembers, total: known.totalMembers })}</p> : null}
     {settingsConfigured ? <p className="text-xs text-muted">{t('genericReports.dashboard.capacityBreakdown', { scheduled: duration(totals.scheduledMinutes), holidays: duration(totals.holidayMinutes), absence: duration(totals.absenceMinutes) })}</p> : <p role="status" className="text-xs text-muted">{t('genericReports.dashboard.capacityUnconfigured')}</p>}
     {settingsConfigured && totals.unconfiguredMembers > 0 ? <p className="text-xs text-muted">{t('genericReports.dashboard.capacityUnknownMembers', { members: totals.unconfiguredMembers })}</p> : null}
     <p className="text-sm font-medium tabular-nums" title={ratio===null?t('genericReports.dashboard.ratioUnavailable'):t('genericReports.dashboard.capacityCaveat')}>{t('genericReports.dashboard.recordedCapacity', {percent:ratio===null?'—':`${ratio}%`})}</p>
+    {(!known.complete || known.availableMinutes === null) ? capacityAction : null}
     <p className="sr-only">{t('genericReports.dashboard.capacityCaveat')}</p>
     {!datesAligned && onChoosePeriod && result.config.filters.assignee.kind !== 'unassigned' ? <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={onChoosePeriod}>{t(date?'genericReports.dashboard.useSelectedDates':'genericReports.dashboard.showThisWeek')}</button> : null}
   </article>;
 }
 
 /** Manager overview built only from authoritative server aggregates; never from loaded detail rows. */
-export function ReportDashboard({ result, members, sections, hideSummary = false, summaryOnly = false, onChoosePeriod, onPersonSelect }: { result: GenericReportResultDto; members: readonly MembershipDto[]; sections: readonly SectionDto[]; hideSummary?: boolean; summaryOnly?: boolean; onChoosePeriod?: () => void; onPersonSelect?: (membershipId: string | null) => void }) {
+export function ReportDashboard({ result, members, sections, hideSummary = false, summaryOnly = false, onChoosePeriod, onPersonSelect, capacityAction }: { capacityAction?: ReactNode; result: GenericReportResultDto; members: readonly MembershipDto[]; sections: readonly SectionDto[]; hideSummary?: boolean; summaryOnly?: boolean; onChoosePeriod?: () => void; onPersonSelect?: (membershipId: string | null) => void }) {
   const { t } = useTranslation();
   const { comparison, groupBy, filters } = result.config;
   const fieldName = (id: string | null) => result.fields.find(field => field.id === id)?.name ?? t('genericReports.unavailableField');
@@ -83,7 +88,7 @@ export function ReportDashboard({ result, members, sections, hideSummary = false
   const categoryTitle = groupBy.kind === 'category' ? t('genericReports.dashboard.categoryTitle', { field: fieldName(groupBy.fieldId) }) : '';
   return <section aria-label={t('genericReports.dashboard.title')} className="min-w-0 space-y-4">
     {!hideSummary && (comparison || result.capacity) ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {result.capacity ? <CapacityCard capacity={result.capacity} result={result} {...(onChoosePeriod ? {onChoosePeriod} : {})}/> : comparison ? <article aria-label={t('genericReports.dashboard.capacityTitle')} className="min-w-0 space-y-2 rounded-xl border border-line bg-surface p-4"><h3 className="text-sm font-medium">{t('genericReports.dashboard.capacityTitle')}</h3><p className="text-xl font-semibold">—</p><p className="text-xs text-muted">{t(result.config.filters.assignee.kind==='unassigned'?'genericReports.dashboard.capacityUnassigned':'genericReports.dashboard.capacityNeedsPeriod')}</p>{onChoosePeriod && result.config.filters.assignee.kind !== 'unassigned' ? <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={onChoosePeriod}>{t(result.config.filters.dateRange?'genericReports.dashboard.useSelectedDates':'genericReports.dashboard.showThisWeek')}</button> : null}</article> : null}
+      {result.capacity ? <CapacityCard capacityAction={capacityAction} capacity={result.capacity} result={result} {...(onChoosePeriod ? {onChoosePeriod} : {})}/> : comparison ? <article aria-label={t('genericReports.dashboard.capacityTitle')} className="min-w-0 space-y-2 rounded-xl border border-line bg-surface p-4"><h3 className="text-sm font-medium">{t('genericReports.dashboard.capacityTitle')}</h3><p className="text-xl font-semibold">—</p><p className="text-xs text-muted">{t(result.config.filters.assignee.kind==='unassigned'?'genericReports.dashboard.capacityUnassigned':'genericReports.dashboard.capacityNeedsPeriod')}</p>{onChoosePeriod && result.config.filters.assignee.kind !== 'unassigned' ? <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={onChoosePeriod}>{t(result.config.filters.dateRange?'genericReports.dashboard.useSelectedDates':'genericReports.dashboard.showThisWeek')}</button> : null}</article> : null}
       {comparison ? <TotalCard title={t('genericReports.dashboard.planTitle', { name: planName })} measure={fullSum(comparison.planFieldId)} unit={planUnit} comparison={result.comparison} paired={result.comparison?.plan ?? null}/> : null}
       {comparison ? <TotalCard title={t('genericReports.dashboard.factTitle', { name: factName })} measure={fullSum(comparison.factFieldId)} unit={factUnit} comparison={result.comparison} paired={result.comparison?.fact ?? null}/> : null}
     </div> : null}
@@ -96,11 +101,12 @@ export function ReportDashboard({ result, members, sections, hideSummary = false
         <ul className="space-y-2">{result.groups.map(group => {
           const part = group.measures.find(measure => measure.key === distribution.key && measure.operation === 'sum' && measure.fieldId === distribution.fieldId);
           const portion = part?.value && distribution.value && part.coverage.filled > 0 && distribution.coverage.filled > 0 ? share(part.value, distribution.value) : null;
+          const color = categoryColor(result.fields, result.config.projectId, groupBy.fieldId, group.key);
           const name = groupName(group.key, group.label), value = reportNumber(part?.value ?? null, distribution.unit, true);
           const label = portion ? t('genericReports.dashboard.categoryShare', { name, value, total, percent: percentText(portion) }) : t('genericReports.dashboard.categoryUnknown', { name, value });
-          return <li key={group.key}><div role="img" aria-label={label} title={label} className="space-y-1">
-            <span className="flex min-w-0 justify-between gap-2 text-sm"><span className="truncate">{name}</span><span className="shrink-0 tabular-nums">{value} · {portion ? `${percentText(portion)}%` : '—'}</span></span>
-            <span aria-hidden="true" className="block h-2 overflow-hidden rounded-full bg-canvas">{portion ? <span className="block h-full rounded-full bg-accent" style={{ width: `${percentDigits(portion)}%` }}/> : null}</span>
+          return <li key={group.key} data-report-category-option={group.key}><div role="img" aria-label={label} title={label} className="space-y-1">
+            <span className="flex min-w-0 justify-between gap-2 text-sm"><span className="inline-flex min-w-0 items-center gap-2"><span aria-hidden="true" data-category-swatch="" className={`size-2.5 shrink-0 rounded-full border border-ink/60 ${color ? '' : 'bg-accent'}`} style={color ? { backgroundColor: color } : undefined}/><span className="truncate">{name}</span></span><span className="shrink-0 tabular-nums">{value} · {portion ? `${percentText(portion)}%` : '—'}</span></span>
+            <span aria-hidden="true" className="block h-2 overflow-hidden rounded-full bg-canvas">{portion ? <span data-category-bar="" className={`block h-full rounded-full border border-ink/60 ${color ? '' : 'bg-accent'}`} style={{ width: `${percentDigits(portion)}%`, ...(color ? { backgroundColor: color } : {}) }}/> : null}</span>
           </div></li>;
         })}</ul>
       </> : <p role="status" className="text-xs text-muted">{t('genericReports.dashboard.noDistributionMeasure')}</p>}

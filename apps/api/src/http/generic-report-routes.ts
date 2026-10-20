@@ -65,6 +65,10 @@ export function registerGenericReportRoutes(app: FastifyInstance, deps: { identi
     const { p, ctx } = await read(request, snapshot, none);
     return sendData(request, reply, C.genericInitialSnapshotResponseSchema, await deps.reports.getSnapshot(ctx, p.reportId, p.snapshotId));
   });
+  app.post(`${base}/projects/:projectId/header-widgets/query`,async(request,reply)=>{
+    const{p,input,ctx}=await body(request,project,C.queryGenericHeaderWidgetsInputSchema,false);
+    return sendData(request,reply,C.genericHeaderWidgetsResponseSchema,await deps.reports.headerWidgets(ctx,p.projectId,input));
+  });
   app.get(`${base}/projects/:projectId/field-aggregate-settings`, async (request, reply) => {
     const { p, ctx } = await read(request, project, none);
     return sendData(request, reply, C.genericAggregateSettingsResponseSchema, await deps.reports.getSettings(ctx, p.projectId));

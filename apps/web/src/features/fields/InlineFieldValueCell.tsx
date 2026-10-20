@@ -7,6 +7,7 @@ import { CircleAlert, LoaderCircle, Lock } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
 import { FieldCellControl } from './FieldCellControl';
+import { BooleanFieldControl } from './BooleanFieldControl';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { CellPopover } from '../tasks/CellPopover';
 import { FieldValueDisplay } from './FieldValueDisplay';
@@ -93,7 +94,7 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
     if (pending || !restoreFocus.current) return;
     restoreFocus.current = false;
     const active = document.activeElement;
-    if (active === null || active === document.body) anchor?.querySelector<HTMLElement>('button:not([disabled])')?.focus({ preventScroll: true });
+    if (active === null || active === document.body) anchor?.querySelector<HTMLElement>('input[type="checkbox"]:not([disabled]), button:not([disabled])')?.focus({ preventScroll: true });
   }, [pending, anchor]);
 
   const handleError = (error: Error) => {
@@ -196,7 +197,7 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
     control = (
       <span className="flex h-8 min-w-0 flex-1 items-center gap-1 px-1.5" title={lockedLabel}>
         {field.locked ? <Lock size={12} aria-label={lockedLabel} className="shrink-0 text-muted" /> : null}
-        {display}
+        {field.type === 'boolean' ? <BooleanFieldControl value={shown?.type === 'boolean' ? shown.value : null} label={editLabel} fieldName={field.name} disabled onChange={() => undefined}/> : display}
       </span>
     );
   }

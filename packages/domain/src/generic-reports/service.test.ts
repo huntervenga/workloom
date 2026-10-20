@@ -49,3 +49,22 @@ describe('generic report transaction decisions',()=>{
   it('binds pagination to the selected immutable snapshot while current-only previews can capture',async()=>{const h=harness(),r=await h.app.create(context(),{name:'R',config:config()}),q=await h.app.query(context(),r.id,{expectedRevision:1,offset:0,limit:1,snapshotId:null});const a=await h.app.capture(context('a'),r.id,{name:'A',expectedRevision:1,expectedSourceVersion:q.sourceVersion}),b=await h.app.capture(context('b'),r.id,{name:'B',expectedRevision:1,expectedSourceVersion:q.sourceVersion});const page=await h.app.query(context(),r.id,{expectedRevision:1,offset:0,limit:1,snapshotId:a.id});await expect(h.app.query(context(),r.id,{expectedRevision:1,offset:1,limit:1,snapshotId:b.id,expectedSourceVersion:page.sourceVersion})).rejects.toMatchObject({code:'PREVIEW_STALE'});await expect(h.app.capture(context('wrong'),r.id,{name:'Wrong preview',expectedRevision:1,expectedSourceVersion:page.sourceVersion})).rejects.toMatchObject({code:'PREVIEW_STALE'});});
   it('refuses a snapshot from another report and explicitly rejects changed configurations',async()=>{const h=harness(),r=await h.app.create(context(),{name:'R',config:config()}),q=await h.app.query(context(),r.id,{expectedRevision:1,offset:0,limit:100,snapshotId:null}),s=await h.app.capture(context('cap'),r.id,{name:'I',expectedRevision:1,expectedSourceVersion:q.sourceVersion}),other=await h.app.create(context('other'),{name:'Other',config:config()});await expect(h.app.query(context(),other.id,{expectedRevision:1,offset:0,limit:100,snapshotId:s.id})).rejects.toMatchObject({code:'NOT_FOUND'});const changed=await h.app.update(context('change'),r.id,{expectedRevision:1,name:'R',config:{...r.config,hierarchy:'root_tasks'},archived:false});await expect(h.app.query(context(),r.id,{expectedRevision:changed.revision,offset:0,limit:100,snapshotId:s.id})).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED'});});
 });
+
+
+describe('shared header preference compatibility',()=>{
+ it('preserves old settings input/replay shape and keeps new widgets when an old client omits them',async()=>{
+  const h=harness(),templateResult=await h.app.template(context('template'),P,template),plan=templateResult.fields[0],oldInput={expectedRevision:0,measures:[]},oldContext=context('legacy-settings');
+  const old=await h.app.setSettings(oldContext,P,oldInput);expect(old).toEqual({workspaceId:WS,projectId:P,revision:1,measures:[]});
+  const headerWidgets=[{group:{kind:'section' as const,sectionId:null},widgets:[{key:'budget',kind:'measure' as const,measure:{key:'sum',operation:'sum' as const,fieldId:plan.id}}]}];
+  const configured=await h.app.setSettings(context('headers'),P,{expectedRevision:1,measures:[],headerWidgets});expect(configured.headerWidgets).toEqual(headerWidgets);
+  expect(await h.app.setSettings(oldContext,P,oldInput)).toEqual(old);
+  const changed=await h.app.setSettings(context('legacy-later'),P,{expectedRevision:2,measures:[{key:'minimum',operation:'min',fieldId:plan.id}]});expect(changed.headerWidgets).toEqual(headerWidgets);expect(changed.revision).toBe(3);
+  const before=clone(h.state);const query=await h.app.headerWidgets(context(),P,{expectedSettingsRevision:3,groupBy:'section',hierarchy:'all_tasks',filters:config().filters});expect(query.groups[0]?.widgets[0]).toMatchObject({kind:'measure',result:{value:null,coverage:{tasks:0}}});expect(h.state).toEqual(before);
+  const cleared=await h.app.setSettings(context('clear-headers'),P,{expectedRevision:3,measures:[],headerWidgets:[]});expect(cleared.headerWidgets).toEqual([]);
+ });
+ it('rejects stale settings revision and unsupported configured field types before saving',async()=>{
+  const h=harness(),result=await h.app.template(context('template'),P,template),plan=result.fields[0];await h.app.setSettings(context('settings'),P,{expectedRevision:0,measures:[]});
+  await expect(h.app.headerWidgets(context(),P,{expectedSettingsRevision:0,groupBy:'section',hierarchy:'all_tasks',filters:config().filters})).rejects.toMatchObject({code:'REVISION_CONFLICT'});
+  h.state.fields[0]={...plan,type:'text'};const before=clone(h.state);await expect(h.app.setSettings(context('bad'),P,{expectedRevision:1,measures:[],headerWidgets:[{group:{kind:'section',sectionId:null},widgets:[{key:'bad',kind:'measure',measure:{key:'sum',operation:'sum',fieldId:plan.id}}]}]})).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED'});expect(h.state).toEqual(before);
+ });
+});

@@ -17,12 +17,13 @@ export interface StoredGenericInitial { header: GenericInitialSnapshotDto; rows:
 export interface GenericReportRepository {
   workspaceCatalog?(): Promise<WorkspaceReportSourceDto[]>;
   workspaceMembers?(): Promise<WorkspaceReportSourcesDto['members']>;
+  workspaceCapacities?(inputs: readonly LeaveAvailabilityInput[], manager: boolean): Promise<LeaveAvailabilityDto[]>;
   workspaceCapacity?(input: LeaveAvailabilityInput, manager: boolean): Promise<LeaveAvailabilityDto>;
   list(projectId: string): Promise<GenericReportDefinitionDto[]>;
   find(reportId: string): Promise<GenericReportDefinitionDto | null>;
   save(report: GenericReportDefinitionDto): Promise<void>;
   validateCapacity?(config:GenericReportConfig,allowFormer?:boolean):Promise<void>;
-  source(config: GenericReportConfig): Promise<GenericReportSource>;
+  source(config: GenericReportConfig, extraFieldIds?: readonly string[]): Promise<GenericReportSource>;
   listSnapshots(reportId: string): Promise<GenericInitialSnapshotDto[]>;
   findSnapshot(reportId: string, snapshotId: string): Promise<StoredGenericInitial | null>;
   insertSnapshot(snapshot: StoredGenericInitial): Promise<void>;

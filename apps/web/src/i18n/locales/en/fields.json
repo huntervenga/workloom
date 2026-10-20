@@ -34,7 +34,8 @@
     "cancel": "Cancel",
     "saving": "Saving…",
     "retrySubmission": "Retry submission",
-    "characterLimit": "Up to {{count}} characters."
+    "characterLimit": "Up to {{count}} characters.",
+    "boolean": "Boolean"
   },
   "fieldHistoryDialog": {
     "webApp": "Web app",
@@ -125,7 +126,11 @@
     "restoreOptionValue": "Restore option “{{p0}}”",
     "archiveOptionValue": "Archive option “{{p0}}”",
     "newOption": "New option",
-    "addOption": "Add option"
+    "addOption": "Add option",
+    "changeColor": "Change color for “{{p0}}”",
+    "color": "Color",
+    "noColor": "No color",
+    "optionColorSaved": "Color of “{{p0}}” saved."
   },
   "fieldValueDisplay": {
     "valueUnavailable": "Value unavailable",
@@ -243,5 +248,11 @@
     "selectionUnavailableRefreshThePageAndTryAgain": "Selection unavailable. Refresh the page and try again.",
     "chooseYesNoOrNotSet": "Choose Yes, No, or Not set.",
     "valueArchived": "{{p0}} (archived)"
+  },
+  "booleanControl": {
+    "notSet": "Not set",
+    "checked": "Checked",
+    "unchecked": "Unchecked",
+    "clearHint": "Clear to Not set; this is different from unchecked."
   }
 }

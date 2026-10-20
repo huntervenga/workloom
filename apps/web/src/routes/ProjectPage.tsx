@@ -1,3 +1,4 @@
+import { ProjectDateRange } from '../features/projects/ProjectDateRange';
 import { useColumnAggregates } from '../features/generic-reports/ColumnAggregates';
 import { LinkedProjectTasks } from '../features/project-placements/LinkedProjectTasks';
 import { PlacementCommandFeedback } from '../features/project-placements/PlacementCommandFeedback';
@@ -267,6 +268,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const fieldDefinitions = useTaskFieldsQuery(actorId, workspace.id, project.id);
   const projectColumns = useProjectColumnsQuery(actorId, workspace.id, project.id);
   const renameSectionMutation = useUpdateSectionMutation(actorId, workspace.id);
+  const [fieldManagerInitialId, setFieldManagerInitialId] = useState<string | null>(null);
+  const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
   const [quickAddSection, setQuickAddSection] = useState<string | null | undefined>(undefined);
@@ -398,7 +401,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const reconciledColumns = useMemo(() => reconcilePersonalColumns(personalColumns.query.data?.columns ?? null,
     fieldDefinitions.isSuccess ? fieldDefinitions.data : [], projectColumns.isSuccess ? projectColumns.data : { workspaceId: workspace.id, projectId: project.id, revision: 1, columns: [] }, timeAvailable),
     [personalColumns.query.data?.columns, fieldDefinitions.data, fieldDefinitions.isSuccess, projectColumns.data, projectColumns.isSuccess, workspace.id, project.id, timeAvailable]);
-  const ordinaryAggregates = useColumnAggregates({ actorId, workspaceId: workspace.id, projectId: project.id, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], grouping, filters: { ...filters, search }, writable, enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && projectColumns.isSuccess && members.isSuccess && !personalColumns.denied });
+  const ordinaryAggregates = useColumnAggregates({ actorId, workspaceId: workspace.id, projectId: project.id, projectDateRange: project.dateRange ?? null, projectRevision: project.revision, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], grouping, filters: { ...filters, search }, writable, enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && projectColumns.isSuccess && members.isSuccess && !personalColumns.denied });
   const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.map(tableColumnId), [reconciledColumns]);
   const fieldColumns: FieldColumn[] = reconciledColumns.effectiveVisibleRefs.flatMap(ref => {
     if (ref.kind !== 'field' || !fieldDefinitions.isSuccess || !projectColumns.isSuccess) return [];
@@ -429,6 +432,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const customColumns: TaskTableCustomColumn[] = fieldColumns.map(({ field, width }) => ({
     id: field.id,
     label: field.name,
+    onEdit: canManageFields ? () => { setFieldManagerInitialId(field.id); setFieldManagerOpen(true); } : undefined,
     width,
     // An unloaded value is not an unset one: `null` is shown, and offered for a choice, only after a known read.
     renderCell: (task) => {
@@ -1076,6 +1080,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           <BackToProjects href={projectsHref} />
           <div className="flex min-w-0 items-center gap-2">
             <h1 title={project.name} className="min-w-0 truncate text-xl font-semibold tracking-tight text-ink">{project.name}</h1>
+            <ProjectDateRange actorId={actorId} workspaceId={workspace.id} project={project} writable={canEdit && project.archivedAt === null}/>
             {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
           </div>
         </div>
@@ -1085,7 +1090,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
-            <FieldManagerDialog triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
+            <FieldManagerDialog initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
         </ProjectActions>
       </header>
       <PlacementCommandFeedback commands={placementCommands} actorId={actorId} workspaceId={workspace.id} />
@@ -1270,7 +1275,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             columnIds={visibleColumnIds}
             customColumns={[...timeColumns, ...customColumns]}
             showLegacySummary={timeAvailable}
-            aggregateFooter={ordinaryAggregates.footer}
+            renderColumnAggregate={ordinaryAggregates.renderColumn}
+            renderGroupMetadata={ordinaryAggregates.renderGroupMetadata}
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
@@ -1375,6 +1381,8 @@ interface TaskListProps {
   onCreateSection?: ComponentProps<typeof TaskTable>['onCreateSection'];
   showLegacySummary?: boolean;
   aggregateFooter?: ComponentProps<typeof TaskTable>['aggregateFooter'];
+  renderColumnAggregate?: ComponentProps<typeof TaskTable>['renderColumnAggregate'];
+  renderGroupMetadata?: ComponentProps<typeof TaskTable>['renderGroupMetadata'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
   onMoveBoardCard: BoardMoveCard;
   moveBlocked: boolean;

@@ -94,5 +94,7 @@ export class UndoStore {
 }
 
 export function isNativeUndoTarget(target: EventTarget | null): boolean {
+  // Saved task-value checkboxes have no native text history; settings checkboxes stay unchanged.
+  if (target instanceof Element && target.matches('input[type="checkbox"][data-project-undo="true"]')) return false;
   return target instanceof Element && !!target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"]');
 }

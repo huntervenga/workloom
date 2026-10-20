@@ -35,7 +35,7 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
     if (held || !restoreFocus.current) return;
     restoreFocus.current = false;
     const active = document.activeElement;
-    if (active === null || active === document.body) anchor?.querySelector<HTMLElement>('button:not([disabled])')?.focus({ preventScroll: true });
+    if (active === null || active === document.body) anchor?.querySelector<HTMLElement>('input[type=checkbox]:not([disabled]), button:not([disabled])')?.focus({ preventScroll: true });
   }, [held, anchor]);
   useUnsavedChangesWarning((session !== undefined && isSessionDirty(session)) || held);
   const setSession = (next: FieldEditSession) => drafts.set(task.id, { ...drafts.getTask(task.id), [field.id.toLowerCase()]: next });

@@ -22,6 +22,7 @@ export function createGenericReportRepository(tx: WorkloomExecutor, workspaceId:
       const rows=await tx.select({membershipId:memberships.id,displayName:users.displayName,avatarUrl:users.avatarUrl}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).where(and(eq(memberships.workspaceId,workspaceId),eq(memberships.state,'active'))).orderBy(asc(users.displayName),asc(memberships.id)).limit(101);
       if(rows.length>100)throw new DomainError('DOMAIN_VALIDATION_FAILED','The workspace report catalogue supports at most 100 active people.');return rows;
     },
+    async workspaceCapacities(inputs,manager){const stored=await createLeaveRepository(tx,workspaceId).source();return inputs.map(input=>buildLeaveAvailability(stored,input,manager,s=>createHash('sha256').update(s).digest('hex')));},
     async workspaceCapacity(input,manager){return buildLeaveAvailability(await createLeaveRepository(tx,workspaceId).source(),input,manager,s=>createHash('sha256').update(s).digest('hex'));},
     async list(projectId) { return (await tx.select().from(genericReportDefinitions).where(and(eq(genericReportDefinitions.workspaceId, workspaceId), eq(genericReportDefinitions.projectId, projectId))).orderBy(asc(genericReportDefinitions.createdAt), asc(genericReportDefinitions.id))).map(definition); },
     async find(reportId) { const [row] = await tx.select().from(genericReportDefinitions).where(and(eq(genericReportDefinitions.workspaceId, workspaceId), eq(genericReportDefinitions.id, reportId))).limit(1); return row ? definition(row) : null; },
@@ -42,7 +43,7 @@ export function createGenericReportRepository(tx: WorkloomExecutor, workspaceId:
         if(rows.length>100)throw new DomainError('DOMAIN_VALIDATION_FAILED','Choose at most 100 capacity people.');
       }
     },
-    async source(config) {
+    async source(config,extraFieldIds=[]) {
       const [head] = await tx.select({ seq: workspaces.changeSeq, epoch: workspaces.permissionEpoch }).from(workspaces).where(eq(workspaces.id, workspaceId)); if (!head) throw notFoundError();
       // One target-project placement at most (SQL unique constraint), canonical task ID is the identity.
       const rows = await tx.select({ id: tasks.id, projectId: tasks.projectId, title: tasks.title, revision: tasks.revision, parentTaskId: tasks.parentTaskId, homeSectionId: tasks.sectionId, linkedSectionId: taskProjectPlacements.sectionId, responsibleMembershipId: tasks.responsibleMembershipId, dueDate: tasks.dueDate, statusGroup: taskStatuses.group }).from(tasks)
@@ -51,7 +52,7 @@ export function createGenericReportRepository(tx: WorkloomExecutor, workspaceId:
         .leftJoin(taskProjectPlacements, and(eq(taskProjectPlacements.workspaceId, workspaceId), eq(taskProjectPlacements.taskId, tasks.id), eq(taskProjectPlacements.projectId, config.projectId), isNull(taskProjectPlacements.archivedAt)))
         .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.visibility, 'workspace'), isNull(tasks.archivedAt), or(eq(tasks.projectId, config.projectId), isNotNull(taskProjectPlacements.id)))).orderBy(asc(tasks.id)).limit(5001);
       if (rows.length > 5000) throw new DomainError('DOMAIN_VALIDATION_FAILED', 'This project exceeds the 5000-task report scope limit; no partial totals were calculated.');
-      const ids = rows.map(r => r.id), selected = usedFieldIds(config), values: GenericReportSource['values'] = [], tags: { taskId: string; tagId: string }[] = [];
+      const ids = rows.map(r => r.id), selected = [...new Set([...usedFieldIds(config),...extraFieldIds])], values: GenericReportSource['values'] = [], tags: { taskId: string; tagId: string }[] = [];
       for (let start = 0; start < ids.length; start += 1000) {
         const chunk = ids.slice(start, start + 1000);
         tags.push(...await tx.select({ taskId: taskTags.taskId, tagId: taskTags.tagId }).from(taskTags).where(and(eq(taskTags.workspaceId, workspaceId), inArray(taskTags.taskId, chunk))));
@@ -64,7 +65,7 @@ export function createGenericReportRepository(tx: WorkloomExecutor, workspaceId:
     async listSnapshots(reportId) { return (await tx.select({ header: genericReportInitialSnapshots.header }).from(genericReportInitialSnapshots).where(and(eq(genericReportInitialSnapshots.workspaceId, workspaceId), eq(genericReportInitialSnapshots.reportId, reportId))).orderBy(asc(genericReportInitialSnapshots.createdAt), asc(genericReportInitialSnapshots.id))).map(r => genericInitialSnapshotSchema.parse(r.header)); },
     async findSnapshot(reportId, snapshotId) { const [row] = await tx.select().from(genericReportInitialSnapshots).where(and(eq(genericReportInitialSnapshots.workspaceId, workspaceId), eq(genericReportInitialSnapshots.reportId, reportId), eq(genericReportInitialSnapshots.id, snapshotId))).limit(1); return row ? { header: genericInitialSnapshotSchema.parse(row.header), rows: row.rows.map(r => genericReportRowSchema.parse(r)), values: row.values.map(v => taskFieldValueSchema.parse(v)) } : null; },
     async insertSnapshot(value) { await tx.insert(genericReportInitialSnapshots).values({ id: value.header.id, workspaceId, projectId: value.header.projectId, reportId: value.header.reportId, definitionRevision: value.header.definitionRevision, header: value.header, rows: value.rows, values: value.values, createdAt: new Date(value.header.capturedAt) }); },
-    async settings(projectId) { const [row] = await tx.select().from(genericReportColumnSettings).where(and(eq(genericReportColumnSettings.workspaceId, workspaceId), eq(genericReportColumnSettings.projectId, projectId))).limit(1); return genericAggregateSettingsSchema.parse(row ?? { workspaceId, projectId, revision: 0, measures: [] }); },
-    async saveSettings(value) { await tx.insert(genericReportColumnSettings).values(value).onConflictDoUpdate({ target: [genericReportColumnSettings.workspaceId, genericReportColumnSettings.projectId], set: { revision: value.revision, measures: value.measures } }); },
+    async settings(projectId) { const [row] = await tx.select().from(genericReportColumnSettings).where(and(eq(genericReportColumnSettings.workspaceId, workspaceId), eq(genericReportColumnSettings.projectId, projectId))).limit(1); if(!row)return{workspaceId,projectId,revision:0,measures:[]};const{headerWidgets,...legacy}=row;return genericAggregateSettingsSchema.parse({...legacy,...(headerWidgets===null?{}:{headerWidgets})}); },
+    async saveSettings(value) { await tx.insert(genericReportColumnSettings).values({...value,headerWidgets:value.headerWidgets??null}).onConflictDoUpdate({ target: [genericReportColumnSettings.workspaceId, genericReportColumnSettings.projectId], set: { revision: value.revision, measures: value.measures,headerWidgets:value.headerWidgets??null } }); },
   };
 }

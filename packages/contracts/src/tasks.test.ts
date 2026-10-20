@@ -511,3 +511,8 @@ describe('atomic Board lane move input', () => {
     ]) expect(moveTaskInputSchema.safeParse({ ...legacy, ...extra }).success).toBe(false);
   });
 });
+
+
+describe('optional project calendar range',()=>{
+ it('accepts range set and clear without adding defaults to legacy input',()=>{expect(updateProjectInputSchema.parse({expectedRevision:1,name:'P'})).toEqual({expectedRevision:1,name:'P'});expect(updateProjectInputSchema.parse({expectedRevision:1,dateRange:null})).toEqual({expectedRevision:1,dateRange:null});expect(updateProjectInputSchema.safeParse({expectedRevision:1,dateRange:{from:'2026-10-01',to:'2026-10-31'}}).success).toBe(true);for(const dateRange of [{from:'2026-10-31',to:'2026-10-01'},{from:'2026-02-30',to:'2026-03-01'},{from:'1800-01-01',to:'2026-10-01'}])expect(updateProjectInputSchema.safeParse({expectedRevision:1,dateRange}).success).toBe(false);});
+});

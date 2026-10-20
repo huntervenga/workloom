@@ -32,3 +32,9 @@ describe('dashboard source control', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('at least one report source'); expect(apply).not.toHaveBeenCalled();
   });
 });
+
+it('uses the trusted workspace date and week start for an explicit current-week action, preserving sources and people', async()=>{
+ const data=discovery(),base=defaultDashboardInput(data);if(!base)throw Error('fixture');const apply=vi.fn(),user=userEvent.setup();
+ render(<DashboardFilters discovery={data} input={base} weekStart={7} busy={false} onApply={apply} onReset={()=>undefined} sourcesOpen={false} onSourcesOpenChange={()=>undefined}/>);
+ await user.click(screen.getByRole('button',{name:'This week'}));expect(apply).toHaveBeenCalledWith({...base,range:{from:'2026-10-18',to:'2026-10-24'}});expect(base.range).not.toEqual({from:'2026-10-18',to:'2026-10-24'});
+});

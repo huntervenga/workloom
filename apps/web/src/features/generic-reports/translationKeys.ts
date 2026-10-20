@@ -3,6 +3,7 @@ import type { TranslationKey } from '../../i18n';
 /** Literal catalog keys, checked exhaustively against the public response/input unions. */
 export const operationLabels = {
   sum: 'genericReports.operation.sum', avg: 'genericReports.operation.avg',
+  min: 'genericReports.operation.min', max: 'genericReports.operation.max',
   count_values: 'genericReports.operation.count_values', count_tasks: 'genericReports.operation.count_tasks',
 } satisfies Record<GenericReportMeasure['operation'], TranslationKey>;
 export const groupLabels = {

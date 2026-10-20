@@ -1,5 +1,5 @@
 import type {LeaveSettingsDto,LeaveProfileDto,LeaveRequestDto,LeaveAdjustmentDto} from '@workloom/contracts';
-import type { GenericReportConfig, GenericReportDefinitionDto, GenericInitialSnapshotDto, GenericReportRowDto, GenericReportMeasure, TaskFieldValueDto } from '@workloom/contracts';
+import type { GenericReportConfig, GenericReportDefinitionDto, GenericInitialSnapshotDto, GenericReportRowDto, GenericReportMeasure, GenericHeaderWidgetRuleDto, TaskFieldValueDto } from '@workloom/contracts';
 import type { ColumnChoice, CutoffWorkerOutcome } from '@workloom/contracts';
 /**
  * Drizzle description of the P0, P1a and P1b schema. The executable source of truth is the
@@ -195,6 +195,8 @@ export const projects = pgTable(
     id: uuid('id').primaryKey(),
     workspaceId: uuid('workspace_id').notNull(),
     name: text('name').notNull(),
+    dateRangeFrom: date('date_range_from',{mode:'string'}),
+    dateRangeTo: date('date_range_to',{mode:'string'}),
     revision: integer('revision').notNull().default(1),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -203,6 +205,7 @@ export const projects = pgTable(
   (table) => [
     foreignKey({ name: 'projects_workspace_fk', columns: [table.workspaceId], foreignColumns: [workspaces.id] }),
     unique('projects_workspace_id_id_unique').on(table.workspaceId, table.id),
+    check('projects_date_range_check',sql`(${table.dateRangeFrom} IS NULL AND ${table.dateRangeTo} IS NULL) OR (${table.dateRangeFrom} IS NOT NULL AND ${table.dateRangeTo} IS NOT NULL AND ${table.dateRangeFrom} <= ${table.dateRangeTo} AND ${table.dateRangeFrom} >= DATE '1900-01-01' AND ${table.dateRangeTo} <= DATE '2200-12-31')`),
     check('projects_name_length', sql`char_length(btrim(name)) between 1 and 160`),
     check('projects_revision_positive', sql`revision >= 1`),
   ],
@@ -1588,10 +1591,12 @@ export const genericReportInitialSnapshots = pgTable('generic_report_initial_sna
 export const genericReportColumnSettings = pgTable('generic_report_column_settings', {
  workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),revision:integer('revision').notNull(),
  measures:jsonb('measures').$type<GenericReportMeasure[]>().notNull(),
+ headerWidgets:jsonb('header_widgets').$type<GenericHeaderWidgetRuleDto[]>(),
 },t=>[
  primaryKey({columns:[t.workspaceId,t.projectId]}),
  foreignKey({name:'generic_report_columns_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),
  check('generic_report_columns_revision_positive',sql`${t.revision}>0`),check('generic_report_columns_measures',sql`jsonb_typeof(${t.measures})='array' and jsonb_array_length(${t.measures})<=12`),
+ check('generic_report_columns_header_widgets',sql`${t.headerWidgets} is null or (jsonb_typeof(${t.headerWidgets})='array' and jsonb_array_length(${t.headerWidgets})<=100)`),
 ]);
 
 

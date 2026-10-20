@@ -65,7 +65,7 @@ describe('top cards', () => {
     const source = result();
     const ui = render(view({ ...source, capacity: capacity(true) }));
     const card = screen.getByRole('article', { name: 'Available capacity' });
-    expect(within(card).getByText('0m')).toBeVisible();
+    expect(within(card).getByText('—')).toBeVisible();
     expect(card).toHaveTextContent('2026-10-01 through 2026-10-31 (inclusive)');
     expect(card).toHaveTextContent('Scheduled 40h · holidays 8h · time off 32h');
     expect(card).toHaveTextContent('Schedule unknown for 2 members');
@@ -162,4 +162,15 @@ describe('capacity context alongside person totals',()=>{
   fireEvent.click(screen.getByRole('button',{name:'Use selected dates'}));expect(align).toHaveBeenCalledOnce();
   expect(base.config.filters.dateRange).toBeNull();
  });
+});
+
+it('shows the authoritative known subtotal without hiding a configured person because a peer is unknown',()=>{
+ const source=byAssignee([]),person=firstMember(),cal=capacity(true);
+ cal.members=[{membershipId:person.id,displayName:person.displayName,scheduleKnown:true,scheduledMinutes:2400,holidayMinutes:0,absenceMinutes:480,availableMinutes:1920},{membershipId:'99999999-9999-4999-8999-999999999999',displayName:'Unknown peer',scheduleKnown:false,scheduledMinutes:null,holidayMinutes:null,absenceMinutes:null,availableMinutes:null}];cal.totals={scheduledMinutes:2400,holidayMinutes:0,absenceMinutes:480,availableMinutes:1920,unconfiguredMembers:1};
+ render(view({...source,capacity:cal}));const card=screen.getByRole('article',{name:'Available capacity'});expect(card).toHaveTextContent('32h');expect(card).toHaveTextContent('Known schedules only · 1 of 2 people');expect(card).toHaveTextContent('Recorded / available: —');
+ expect(screen.getByRole('row',{name:new RegExp(`${person.displayName} · Available: 32h`)})).toBeVisible();
+});
+it('uses stored category color for its swatch and exact-share bar, preserving readable theme text',()=>{
+ const source=byCategory([sum('actual',fact.id,amount(60))],[group(optionId,[sum('actual',fact.id,amount(60))])]);source.fields=source.fields.map(f=>f.id===category.id?{...f,options:category.options.map(o=>({...o,color:'#db2777'}))}:f);
+ const {container}=render(view(source));const item=container.querySelector(`[data-report-category-option="${optionId}"]`);expect(item?.querySelector('[data-category-swatch]')).toHaveStyle({backgroundColor:'#db2777'});expect(item?.querySelector('[data-category-bar]')).toHaveStyle({backgroundColor:'#db2777',width:'100%'});
 });

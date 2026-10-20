@@ -107,3 +107,24 @@ describe('time off workspace', () => {
   });
 
 });
+
+it('opens working schedules from an owner report link without writing a profile', async()=>{
+ const {calls}=installFakeApi(routes()); renderApp(`${uiPath}?tab=people#working-hours`);
+ const region=await screen.findByRole('region',{name:'People & schedules'});
+ expect(within(region).getByText('Working hours by effective date')).toBeVisible(); expect(region.querySelector('#working-hours')).not.toBeNull(); expect(writes(calls)).toHaveLength(0);
+});
+it('ignores a privileged schedule deep link when current capabilities are member-only', async()=>{
+ const data=overview();data.capabilities={canManage:false,canApprove:false,canRequest:true};
+ const {calls}=installFakeApi(routes({[`GET ${prefix}/overview`]:()=>ok(data)}));renderApp(`${uiPath}?tab=people#working-hours`);
+ await screen.findByRole('table',{name:'Team calendar'});expect(screen.queryByRole('region',{name:'People & schedules'})).not.toBeInTheDocument();expect(writes(calls)).toHaveLength(0);
+});
+
+it('selects only an already-authorized person from a schedule deep link and never writes',async()=>{
+ const data=overview(),other=data.members.find(member=>member.id!==MEMBER);if(!other)throw Error('fixture');data.profiles.push(profile(other.id));
+ const {calls}=installFakeApi(routes({[`GET ${prefix}/overview`]:()=>ok(data)}));renderApp(`${uiPath}?tab=people&person=${other.id}#working-hours`);
+ const region=await screen.findByRole('region',{name:'People & schedules'});expect(within(region).getByRole('combobox',{name:'Person settings'})).toHaveTextContent(other.displayName);expect(writes(calls)).toHaveLength(0);
+});
+it('falls back to own profile for a foreign person query',async()=>{
+ const data=overview(),own=data.members.find(member=>member.id===MEMBER);if(!own)throw Error('fixture');const {calls}=installFakeApi(routes());renderApp(`${uiPath}?tab=people&person=99999999-9999-4999-8999-999999999999#working-hours`);
+ const region=await screen.findByRole('region',{name:'People & schedules'});expect(within(region).getByRole('combobox',{name:'Person settings'})).toHaveTextContent(own.displayName);expect(writes(calls)).toHaveLength(0);
+});

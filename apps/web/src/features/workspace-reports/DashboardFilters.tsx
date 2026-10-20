@@ -1,3 +1,4 @@
+import { Temporal } from 'temporal-polyfill';
 import { useState } from 'react';
 import { workspaceReportQueryInputSchema, type WorkspaceReportQueryInput, type WorkspaceReportSourcesDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
@@ -5,7 +6,7 @@ import { useTranslation } from '../../i18n';
 import { defaultSourceBinding } from './state';
 import { ChoicePicker } from '../../shared/ChoicePicker';
 
-export function DashboardFilters({ discovery, input, busy, onApply, onReset, sourcesOpen, onSourcesOpenChange }: { discovery: WorkspaceReportSourcesDto; input: WorkspaceReportQueryInput; busy: boolean; onApply: (input: WorkspaceReportQueryInput) => void; onReset: () => void; sourcesOpen: boolean; onSourcesOpenChange: (open: boolean) => void }) {
+export function DashboardFilters({ discovery, input, busy, onApply, onReset, sourcesOpen, onSourcesOpenChange, weekStart = 1 }: { discovery: WorkspaceReportSourcesDto; weekStart?: number; input: WorkspaceReportQueryInput; busy: boolean; onApply: (input: WorkspaceReportQueryInput) => void; onReset: () => void; sourcesOpen: boolean; onSourcesOpenChange: (open: boolean) => void }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(input);
   const [invalid, setInvalid] = useState(false);
@@ -19,6 +20,7 @@ export function DashboardFilters({ discovery, input, busy, onApply, onReset, sou
       <label className="grid w-40 gap-1 text-xs text-muted">{t('workspaceReports.from')}<TextInput type="date" value={draft.range.from} onChange={event => update({ range: { ...draft.range, from: event.target.value } })}/></label>
       <label className="grid w-40 gap-1 text-xs text-muted">{t('workspaceReports.to')}<TextInput type="date" value={draft.range.to} onChange={event => update({ range: { ...draft.range, to: event.target.value } })}/></label>
       <label className="grid min-w-32 gap-1 text-xs text-muted">{t('workspaceReports.period')}<ChoicePicker compact label={t('workspaceReports.period')} value={draft.bucket} options={[{ value: 'week', label: t('workspaceReports.week') }, { value: 'month', label: t('workspaceReports.month') }]} onValueChange={value => update({ bucket: value === 'month' ? 'month' : 'week' })}/></label>
+      <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => { const today = Temporal.PlainDate.from(discovery.today), start = today.subtract({ days: (today.dayOfWeek - weekStart + 7) % 7 }); const next = { ...draft, range: { from: start.toString(), to: start.add({ days: 6 }).toString() } }; setDraft(next); const parsed = workspaceReportQueryInputSchema.safeParse(next); setInvalid(!parsed.success); if (parsed.success) onApply(parsed.data); }}>{t('workspaceReports.thisWeek')}</Button>
       <Button type="submit" variant="primary" size="sm" disabled={busy}>{t('workspaceReports.apply')}</Button><Button type="button" variant="ghost" size="sm" onClick={onReset}>{t('workspaceReports.reset')}</Button>
     </div>
     {invalid ? <p role="alert" className="text-sm text-danger">{t('workspaceReports.invalid')}</p> : null}

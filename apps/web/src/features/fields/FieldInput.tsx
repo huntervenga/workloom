@@ -5,6 +5,7 @@ import { UserRound } from 'lucide-react';
 import { useId, type FocusEvent, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { UserAvatar } from '../../shared/UserAvatar';
+import { BooleanFieldControl } from './BooleanFieldControl';
 import {
   NOT_SET,
   clearedFieldDraft,
@@ -165,22 +166,8 @@ export function FieldInput({
       break;
     }
     case 'boolean':
-      // '' is the picker value for an explicit null; false stays its own choice.
-      control = (
-        <ChoicePicker
-          id={inputId}
-          label={field.name}
-          value={draft.value === null ? '' : String(draft.value)}
-          options={[
-            { value: '', label: NOT_SET() },
-            { value: 'true', label: t('fields.fieldInput.yes') },
-            { value: 'false', label: t('fields.fieldInput.no') },
-          ]}
-          disabled={disabled}
-          {...linkage()}
-          onValueChange={(value) => choose({ type: 'boolean', value: value === '' ? null : value === 'true' })}
-        />
-      );
+      control = <BooleanFieldControl id={inputId} value={draft.value} label={field.name} fieldName={field.name} disabled={disabled}
+        invalid={Boolean(error)} describedBy={describedBy()} onChange={value => choose({ type: 'boolean', value })}/>;
       break;
     case 'single_select': {
       const current = draft.value;

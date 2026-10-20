@@ -36,6 +36,7 @@ export interface TaskTableCustomColumn {
   /** Column width in pixels. */
   width: number;
   renderCell: (task: TaskDto) => ReactNode;
+  onEdit?: (() => void) | undefined;
 }
 
 /** `draft` is the one unsent input row; submitted rows wait as `pending` or `uncertain`. */
@@ -65,6 +66,9 @@ export interface TaskTableQuickAdd {
 export interface TaskTableProps {
   showLegacySummary?: boolean;
   aggregateFooter?: ReactNode;
+  /** Authoritative full-scope totals, aligned with the same visible columns as the task rows. */
+  renderColumnAggregate?: ((columnId: string, group?: TableTaskGroup) => ReactNode) | undefined;
+  renderGroupMetadata?: ((group: TableTaskGroup) => ReactNode) | undefined;
   /** A trailing, fixed-width header control for adding and choosing columns. */
   columnMenu?: ReactNode;
   /** Starts the ordinary section composer at the bottom of the table. */
@@ -704,6 +708,7 @@ function GroupHeader({
   columnCount,
   onCreateTask,
   onRenameSection,
+  metadata,
 }: {
   /** Assignee group whose header is a group-end drop target; undefined when the header accepts no drop. */
   dropMembershipId: string | undefined;
@@ -719,6 +724,7 @@ function GroupHeader({
   columnCount: number;
   onCreateTask: (sectionId?: string | null) => void;
   onRenameSection: ((section: SectionDto) => void) | undefined;
+  metadata?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { section } = group;
@@ -756,7 +762,8 @@ function GroupHeader({
             <span className="sr-only">, {countText}</span>
           </span>
           {archived ? <Badge tone="muted">{t('taskTable.taskTable.archivedSection')}</Badge> : null}
-          <div className="ml-auto flex shrink-0 items-center gap-1">
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            {metadata}
             {writable && section !== null && !archived && onRenameSection !== undefined ? (
               <button
                 type="button"
@@ -847,7 +854,7 @@ export function TaskTable({
   columnPreset = 'expanded',
   columnIds,
   onEditTaskField, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
-  showLegacySummary = true, aggregateFooter, columnMenu, onCreateSection,
+  showLegacySummary = true, aggregateFooter, renderColumnAggregate, renderGroupMetadata, columnMenu, onCreateSection,
   onMoveTask, moveBlocked = false, acquireDragProtection,
   grouping = 'section',
   sortMode = 'manual',
@@ -869,7 +876,7 @@ export function TaskTable({
     { id: 'priority', label: t('taskTable.taskTable.priority'), width: 96 },
     { id: 'estimate', label: t('taskTable.taskTable.teamEstimate'), width: 128 },
   ];
-  const byColumnId = new Map([...builtinColumns, ...customColumns].map(column => [column.id, column]));
+  const byColumnId = new Map<string, Pick<TaskTableCustomColumn, 'id' | 'label' | 'width' | 'onEdit'>>([...builtinColumns, ...customColumns].map(column => [column.id, column]));
   const defaultIds = ['title', 'status', 'responsible', ...(expandedColumns ? ['participants'] : []), 'dueDate', ...(expandedColumns ? ['tags', 'priority'] : []), ...customColumns.map(column => column.id), 'estimate'];
   const orderedIds = columnIds ? ['title', ...columnIds.filter(id => id !== 'title')] : defaultIds;
   const columns = orderedIds.flatMap(id => { const column = byColumnId.get(id); return column ? [column] : []; });
@@ -1117,7 +1124,7 @@ export function TaskTable({
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? titleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
-        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span></span></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
+        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg"><Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root> : null}</span></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
           const collapsed = collapsedGroups.has(group.key);
@@ -1148,6 +1155,7 @@ export function TaskTable({
                   onCreateTask(sectionId);
                 }}
                 onRenameSection={onRenameSection}
+                metadata={renderGroupMetadata?.(group)}
               />
               {collapsed ? null : emptyRow
                 ? <tr data-task-group-drop={group.kind === 'assignee' ? group.membershipId ?? '' : undefined} data-task-drop={groupEnd ? 'after' : undefined} className={cn('h-10 border-t border-line', groupEnd && 'shadow-[inset_0_-2px_0_var(--color-accent)]')}><td colSpan={columnCount} className="h-10 py-0 pr-3 pl-[42px] text-sm text-muted" style={dropCellStyle(groupEnd ? 'after' : undefined)}>{group.kind === 'assignee' && moveEnabled ? t('taskTable.move.emptyGroup', { name: groupTitle(group) }) : partial ? t('taskTable.taskTable.noLoadedTasksInThisSection') : t('taskTable.taskTable.noTasksYet')}</td></tr>
@@ -1155,6 +1163,7 @@ export function TaskTable({
               {/* Asana-style: the quick row, or a persistent Add task row, closes every expanded section. */}
               {grouping !== 'section' || collapsed ? null : anchored === null && quickAdd?.sectionId === group.sectionId ? quickRows(group, 0)
                 : acceptsNewTasks(group, writable) ? <AddTaskRow sectionId={group.sectionId} label={addTaskLabel(group)} columnCount={columnCount} titleInset={titleInset} onCreate={() => onCreateTask(group.sectionId)} /> : null}
+              {!collapsed && renderColumnAggregate ? <tr data-task-group-aggregates={group.key} className="h-8 border-t border-line bg-canvas/60">{columns.map(column => <td key={column.id} className={cn('h-8 px-3 text-right text-xs', columnLine(column.id), column.id === 'title' && 'sticky left-0 z-[1] bg-canvas text-left')}>{renderColumnAggregate(column.id, group)}</td>)}{trailingColumn ? <td /> : null}</tr> : null}
             </tbody>
           );
         })}
@@ -1163,6 +1172,7 @@ export function TaskTable({
         {writable && onCreateSection && !sectionComposer ? <tbody><tr className="h-11 border-t border-line"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] px-3"><button type="button" data-add-section-row="" onClick={onCreateSection} className="flex h-10 min-w-0 items-center gap-1 rounded text-sm font-medium text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"><Plus size={16} aria-hidden="true" /><span>{t('taskTable.sections.add')}</span></button></div></td></tr></tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
           {showLegacySummary ? <SummaryRow summary={summary} partial={partial} columnCount={columnCount} /> : null}
+          {renderColumnAggregate ? <tr data-task-project-aggregates="" className="h-9 border-t border-line-strong bg-surface">{columns.map(column => <td key={column.id} className={cn('h-9 px-3 text-right text-xs', columnLine(column.id), column.id === 'title' && 'sticky left-0 z-[1] bg-surface text-left')}>{renderColumnAggregate(column.id)}</td>)}{trailingColumn ? <td /> : null}</tr> : null}
           {aggregateFooter ? <tr className="border-t border-line-strong bg-surface"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] px-3">{aggregateFooter}</div></td></tr> : null}
         </tfoot>
       </table>

@@ -562,3 +562,31 @@ describe('ordinary inline scalar safety', () => {
     expect(ui.writes()).toHaveLength(0); expect(ui.onMoreDetails).not.toHaveBeenCalled();
   });
 });
+
+it('does not retain a Boolean focus draft that masks a later Undo receipt while focus remains in the checkbox', async () => {
+  const definition = { ...field('Approved', 'boolean'), projectId: task.projectId };
+  installFakeApi({ [`PUT ${valuePath}`]: echo(definition, 1) });
+  const exposed = {} as Exposed;
+  let loadValue: (value: TaskFieldValueDto) => void = () => { throw Error('Harness not mounted'); };
+  function Harness() {
+    const [value, setValue] = useState<TaskFieldValueDto | null>(null);
+    loadValue = setValue;
+    const mutation = useSetTaskFieldValueMutation(anna.id, alpha.id);
+    const owner = useFieldValueDrafts(anna.id, alpha.id, task.projectId, mutation);
+    exposed.drafts = owner.current; exposed.mutation = mutation;
+    return <InlineFieldValueCell actorId={anna.id} workspaceId={alpha.id} task={task} field={definition} value={value} members={[]} writable mutation={mutation} drafts={owner.current} onMoreDetails={() => undefined}/>;
+  }
+  const { user } = renderFieldUi(<Harness/>);
+  let checkbox = screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` });
+  await user.click(checkbox);
+  await waitFor(() => expect(exposed.mutation.data?.value).toEqual({ type: 'boolean', value: true }));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` })).toBeEnabled());
+  checkbox = screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` });
+  checkbox.focus();
+  expect(checkbox).toHaveFocus();
+  // The server supplies the next head from Undo/another tab; no new local editor action occurs.
+  act(() => loadValue(row(definition, { type: 'boolean', value: null }, 2)));
+  expect(checkbox).toHaveFocus();
+  expect(checkbox).toBePartiallyChecked();
+  expect(exposed.drafts.getTask(task.id)).toEqual({});
+});

@@ -295,3 +295,19 @@ describe('configuration and bounds', () => {
     expect(() => report(source([]), config(), null, 0, 0)).toThrow('report page is invalid');
   });
 });
+
+
+describe('generic MIN/MAX aggregate operators',()=>{
+ it('returns exact extrema with negative decimals, zero, explicit null and missing rows',()=>{
+  const a=task(901),b=task(902),c=task(903),d=task(904),e=task(905);
+  const result=report(source([a,b,c,d,e],[value(a,numeric,-0.25),value(b,numeric,0),value(c,numeric,2.5),value(d,numeric,null)]),config({comparison:null,measures:[{key:'minimum',operation:'min',fieldId:numeric.id},{key:'maximum',operation:'max',fieldId:numeric.id}]}),null,0,1);
+  expect(result.rows).toHaveLength(1);expect(measure(result,'minimum').value).toEqual(exact('-1','4','-0.25'));expect(measure(result,'maximum').value).toEqual(exact('5','2','2.5'));expect(measure(result,'minimum').coverage).toEqual({tasks:5,filled:3,missing:1,null:1,zero:1});
+ });
+ it('keeps duration extrema in minutes and all-missing extrema unknown',()=>{
+  const a=task(910),b=task(911),c=task(912);const selected=config({comparison:null,measures:[{key:'minimum',operation:'min',fieldId:plan.id},{key:'maximum',operation:'max',fieldId:plan.id}]});
+  const result=report(source([a,b,c],[value(a,plan,120),value(b,plan,0),value(c,plan,null)]),selected);expect(measure(result,'minimum')).toMatchObject({unit:'minutes',value:exact('0')});expect(measure(result,'maximum').value).toEqual(exact('120'));const missing=report(source([a,b]),selected);expect(measure(missing,'minimum').value).toBeNull();expect(measure(missing,'maximum').value).toBeNull();
+ });
+ it('computes extrema separately over complete section and assignee groups',()=>{
+  const a=task(920,{sectionId:id(40)}),b=task(921,{sectionId:id(40)}),c=task(922,{sectionId:id(41),responsibleMembershipId:personB}),input=source([a,b,c],[value(a,numeric,10),value(b,numeric,20),value(c,numeric,-50)]);const selected=config({comparison:null,measures:[{key:'minimum',operation:'min',fieldId:numeric.id},{key:'maximum',operation:'max',fieldId:numeric.id}],groupBy:{kind:'section'}});const sections=report(input,selected,null,0,1);expect(sections.groups.find(g=>g.key===id(40))?.measures.map(m=>m.value?.decimal)).toEqual(['10','20']);expect(sections.groups.find(g=>g.key===id(41))?.measures.map(m=>m.value?.decimal)).toEqual(['-50','-50']);const people=report(input,{...selected,groupBy:{kind:'assignee'}},null,0,1);expect(people.groups.find(g=>g.key===personA)?.measures.map(m=>m.value?.decimal)).toEqual(['10','20']);
+ });
+});

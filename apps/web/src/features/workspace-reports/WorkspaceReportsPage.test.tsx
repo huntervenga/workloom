@@ -15,7 +15,7 @@ describe('workspace Reports page', () => {
     installFakeApi(routes({ [`GET /api/v1/workspaces/${alpha.id}`]: () => ok({ ...alpha, role }), [`GET ${path}/sources`]: () => ok(discovery()), [`POST ${path}/query`]: () => ok(data) }));
     renderApp(selectedPath()); const card = await screen.findByRole('article', { name: 'Available capacity' });
     expect(card).toHaveTextContent('—');
-    if (role === 'owner') expect(within(card).getByRole('link', { name: 'Set up working schedules' })).toHaveAttribute('href', `/w/${alpha.id}/time-off`);
+    if (role === 'owner') expect(within(card).getByRole('link', { name: 'Set up working schedules' })).toHaveAttribute('href', `/w/${alpha.id}/time-off?tab=people#working-hours`);
     else { expect(card).toHaveTextContent('Ask a workspace administrator'); expect(within(card).queryByRole('link', { name: 'Set up working schedules' })).not.toBeInTheDocument(); }
   });
   it('opens from workspace navigation, builds one dashboard and changes people/range/buckets by read-only requests', async () => {

@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { FieldValueDisplay } from './FieldValueDisplay';
+import { BooleanFieldControl } from './BooleanFieldControl';
 import { clearedFieldDraft, draftFromFieldValue, NOT_SET, optionsByPosition, referenceLabels, sameId, type FieldDraft } from './valueDraft';
 
 /** The same fixed-height, non-modal value editor in a row, a selection, or the task pane. */
@@ -28,8 +29,8 @@ export function FieldCellControl({ field, value, members, label, disabled, draft
     const retained = storedId && !active.some(option => sameId(option.id, storedId)) ? referenceLabels(field, [storedId], members) : [];
     options = [{ value: '', label: NOT_SET() }, ...retained.map(option => ({ value: option.id.toLowerCase(), label: option.label, color: option.color ?? undefined, disabled: true })), ...active.map(option => ({ value: option.id.toLowerCase(), label: option.name, color: option.color ?? undefined }))];
   } else if (current.type === 'boolean') {
-    chosen = current.value === null ? '\u0000none' : String(current.value);
-    options = [{ value: '', label: NOT_SET() }, { value: 'true', label: t('fields.fieldInput.yes') }, { value: 'false', label: t('fields.fieldInput.no') }];
+    return <BooleanFieldControl value={current.value} label={label} fieldName={field.name} disabled={disabled} invalid={Boolean(error)} onCancel={() => onCancel(true)}
+      onChange={value => pick({ type: 'boolean', value })}/>;
   } else if (current.type === 'multi_select' || current.type === 'person') {
     const ids = current.value ?? [];
     placeholder = referenceLabels(field, ids, members).map(option => option.label).join(', ');
@@ -47,7 +48,6 @@ export function FieldCellControl({ field, value, members, label, disabled, draft
       className="border-transparent! bg-transparent! px-1.5 shadow-none! hover:bg-canvas!"
       onValueChange={choice => {
         if (current.type === 'single_select') pick({ type: current.type, value: choice === '' ? null : field.options.find(option => sameId(option.id, choice))?.id ?? choice });
-        else if (current.type === 'boolean') pick({ type: current.type, value: choice === '' ? null : choice === 'true' });
         else if (current.type === 'person' || current.type === 'multi_select') {
           const values = current.value ?? [];
           const canonical = current.type === 'person' ? members.find(member => sameId(member.id, choice))?.id : field.options.find(option => sameId(option.id, choice))?.id;

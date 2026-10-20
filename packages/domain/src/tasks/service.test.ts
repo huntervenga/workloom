@@ -2050,3 +2050,8 @@ describe('captured move undo', () => {
     await expectRejectedWithoutWrites(s, 'foreign reorder', () => s.app.restoreMoveTask(s.owner(), source.id, current), 'REVISION_CONFLICT');
   });
 });
+
+
+describe('optional project range command compatibility',()=>{
+ it('sets, preserves and clears an optional range with exact legacy replay and ordinary revision checks',async()=>{const s=await setup(),oldCtx=s.owner(),oldInput={expectedRevision:1,name:'Renamed'},old=await s.app.updateProject(oldCtx,s.project.id,oldInput);expect(old).not.toHaveProperty('dateRange');const range={from:'2026-10-01',to:'2026-10-31'},dated=await s.app.updateProject(s.owner(),s.project.id,{expectedRevision:2,dateRange:range});expect(dated.dateRange).toEqual(range);expect(s.events.at(-1)?.diff).toMatchObject({dateRange:expect.anything()});expect(await s.app.updateProject(oldCtx,s.project.id,oldInput)).toEqual(old);const retained=await s.app.updateProject(s.owner(),s.project.id,{expectedRevision:3,name:'Still dated'});expect(retained.dateRange).toEqual(range);await expect(s.app.updateProject(s.owner(),s.project.id,{expectedRevision:1,dateRange:null})).rejects.toMatchObject({code:'REVISION_CONFLICT'});await expect(s.app.updateProject(s.ctx(users.viewer,s.key()),s.project.id,{expectedRevision:4,dateRange:null})).rejects.toMatchObject({code:'CAPABILITY_REQUIRED'});expect((await s.app.updateProject(s.owner(),s.project.id,{expectedRevision:4,dateRange:null})).dateRange).toBeNull();});
+});

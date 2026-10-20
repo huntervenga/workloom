@@ -5,6 +5,7 @@ import { DomainError, notFoundError } from '../errors.js';
 import { canonicalJson } from '../tasks/service.js';
 import { createTaskFieldInScope } from '../fields/service.js';
 import { isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
+import {queryHeaderWidgets,validateHeaderWidgets} from './header-widgets.js';
 import {workspaceReportSources,queryWorkspaceReport} from './workspace-service.js';
 import { calculateGenericReport, usedFieldIds, validateGenericConfig } from './engine.js';
 import type { CommittedPlanningRejection } from '../planning/ports.js';
@@ -22,6 +23,7 @@ export interface GenericReportApplication {
   capture(context: CommandContext, reportId: string, input: C.CaptureGenericInitialInput): Promise<C.GenericInitialSnapshotDto>;
   listSnapshots(context: CommandContext, reportId: string): Promise<C.GenericInitialSnapshotDto[]>;
   getSnapshot(context: CommandContext, reportId: string, snapshotId: string): Promise<C.GenericInitialSnapshotDto>;
+  headerWidgets(context: CommandContext, projectId: string, input: C.QueryGenericHeaderWidgetsInput): Promise<C.GenericHeaderWidgetsResultDto>;
   getSettings(context: CommandContext, projectId: string): Promise<C.GenericAggregateSettingsDto>;
   setSettings(context: CommandContext, projectId: string, input: C.SetGenericAggregateSettingsInput): Promise<C.GenericAggregateSettingsDto>;
   template(context: CommandContext, projectId: string, input: C.PlanFactTemplateInput): Promise<C.PlanFactTemplateResultDto>;
@@ -122,13 +124,15 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
     },
     listSnapshots(ctx, reportId) { const rid = id(reportId); return deps.read(normalize(ctx), 'reports.read', async scope => { await report(scope, rid); return scope.reports.listSnapshots(rid); }); },
     getSnapshot(ctx, reportId, snapshotId) { const rid = id(reportId), sid = id(snapshotId); return deps.read(normalize(ctx), 'reports.read', async scope => { const current = await report(scope, rid), value = found(await scope.reports.findSnapshot(rid, sid)); if (value.header.projectId !== current.projectId || value.header.workspaceId !== scope.context.workspaceId) throw notFoundError(); return value.header; }); },
+    headerWidgets(ctx, projectId, input) { const pid=id(projectId),parsed=parse(C.queryGenericHeaderWidgetsInputSchema,input);return deps.read(normalize(ctx),'reports.read',async scope=>{await project(scope,pid);return queryHeaderWidgets(scope,pid,parsed,deps.digest);}); },
     getSettings(ctx, projectId) { const pid = id(projectId); return deps.read(normalize(ctx), 'reports.read', async scope => { await project(scope, pid); return scope.reports.settings(pid); }); },
     setSettings(ctx, projectId, input) {
       const pid = id(projectId), parsed = parse(C.setGenericAggregateSettingsInputSchema, input);
       return mutate(ctx, 'generic_report.settings', pid, parsed, C.genericAggregateSettingsSchema, async scope => {
         await project(scope, pid, true); const current = await scope.reports.settings(pid); revision(current.revision, parsed.expectedRevision);
         if (parsed.measures.length) validateGenericConfig({ projectId: pid, hierarchy: 'all_tasks', measures: parsed.measures, comparison: null, groupBy: { kind: 'none' }, filters: { statusGroups: [], tagIds: [], assignee: { kind: 'all' }, dateRange: null } }, await scope.repository.listFields(scope.context.workspaceId, pid));
-        const next = { ...current, revision: current.revision + 1, measures: parsed.measures }; await scope.reports.saveSettings(next);
+        if(parsed.headerWidgets!==undefined)await validateHeaderWidgets(scope,pid,parsed.headerWidgets,await scope.repository.listFields(scope.context.workspaceId,pid));
+        const next = { ...current, revision: current.revision + 1, measures: parsed.measures,...(parsed.headerWidgets===undefined?{}:{headerWidgets:parsed.headerWidgets}) }; await scope.reports.saveSettings(next);
         await scope.recordChange({ entityType: 'generic_report_columns', entityId: pid, action: 'updated', entityRevision: next.revision, diff: { projectId: pid, revision: next.revision }, outbox: { type: 'generic_report_columns.updated', payload: { projectId: pid, revision: next.revision } } }); return next;
       });
     },

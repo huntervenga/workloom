@@ -205,5 +205,7 @@
   "ganttAbsenceHint": "{{person}} · unavailable: {{dates}} · {{hours}}h in this view",
   "approvedTimeOff": "Approved time off",
   "recordedAbsence": "Recorded absence",
-  "recordedBalanceDays": "{{days}} recorded balance days"
+  "recordedBalanceDays": "{{days}} recorded balance days",
+  "scheduleHint": "Daily working hours define scheduled capacity before holidays and time off. For a temporary change, add a period on its start date and another to restore the usual hours.",
+  "weeklyScheduledHours": "Weekly scheduled hours: {{hours}}h"
 }

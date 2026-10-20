@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import type { GenericReportResultDto, MembershipDto, SectionDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { useTranslation } from '../../i18n';
@@ -9,7 +10,7 @@ import { useAggregates } from './queries';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 
 /** One dashboard, independent complete server aggregates. Secondary queries never gain private capacity permissions. */
-export function ReportDashboardPanels({ actorId, workspaceId, projectId, result, members, sections, fields, disabled, onChoosePeriod, onPersonSelect }: { actorId: string; workspaceId: string; projectId: string; result: GenericReportResultDto; members: readonly MembershipDto[]; sections: readonly SectionDto[]; fields: readonly TaskFieldDefinitionDto[]; disabled: boolean; onChoosePeriod?: () => void; onPersonSelect: (membershipId: string | null) => void }) {
+export function ReportDashboardPanels({ actorId, workspaceId, projectId, result, members, sections, fields, disabled, onChoosePeriod, onPersonSelect, capacityAction }: { actorId: string; workspaceId: string; projectId: string; result: GenericReportResultDto; members: readonly MembershipDto[]; sections: readonly SectionDto[]; fields: readonly TaskFieldDefinitionDto[]; disabled: boolean; capacityAction?: ReactNode; onChoosePeriod?: () => void; onPersonSelect: (membershipId: string | null) => void }) {
   const { t } = useTranslation();
   const categories = fields.filter(field => field.type === 'single_select' && field.archivedAt === null);
   const [chosenCategoryId, setCategoryId] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export function ReportDashboardPanels({ actorId, workspaceId, projectId, result,
   const summary = displayPeople ?? result;
   const error = (value: unknown, retry: () => void) => <QueryErrorState error={value} subject="fields" headingLevel={3} onRetry={retry}/>;
   return <section aria-label={t('genericReports.dashboard.unifiedTitle')} className="min-w-0 space-y-4">
-    <ReportDashboard result={summary} members={members} sections={sections} summaryOnly {...(onChoosePeriod && !disabled ? { onChoosePeriod } : {})}/>
+    <ReportDashboard capacityAction={capacityAction} result={summary} members={members} sections={sections} summaryOnly {...(onChoosePeriod && !disabled ? { onChoosePeriod } : {})}/>
     {augmented.limited ? <p role="status" className="text-xs text-muted">{t('genericReports.dashboard.measureLimit')}</p> : null}
     <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]">
       {result.config.comparison ? <div className="min-w-0">{needsPeople && people.isError ? error(people.error, () => void people.refetch()) : displayPeople ? <ReportDashboard result={displayPeople} members={members} sections={sections} hideSummary {...(!disabled ? { onPersonSelect } : {})}/> : <p role="status" className="text-xs text-muted">{t('genericReports.calculating')}</p>}</div> : null}

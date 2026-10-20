@@ -27,7 +27,7 @@ export const fieldTypeLabels: Record<TaskFieldType, string> = {
   get single_select() { return t('fields.fieldDefinitionForm.singleSelect'); },
   get multi_select() { return t('fields.fieldDefinitionForm.multiSelect'); },
   get person() { return t('fields.fieldDefinitionForm.people'); },
-  get boolean() { return t('fields.fieldDefinitionForm.yesOrNo'); },
+  get boolean() { return t('fields.fieldDefinitionForm.boolean'); },
   get url() { return t('fields.fieldDefinitionForm.link'); },
 };
 

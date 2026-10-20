@@ -220,12 +220,13 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const next: ProjectDto = {
           ...project,
           name: parsed.name ?? project.name,
+          ...(parsed.dateRange===undefined?{}:{dateRange:parsed.dateRange}),
           archivedAt: nextArchivedAt(project.archivedAt, parsed.archived, now),
           revision: project.revision + 1,
           updatedAt: now,
         };
         await scope.repository.saveProject(next);
-        await record(scope, 'project', id, 'updated', next.revision, changedFields(project, next, ['name', 'archivedAt']), {});
+        await record(scope, 'project', id, 'updated', next.revision, changedFields(project, next, ['name', 'archivedAt', 'dateRange']), {});
         return next;
       });
     },

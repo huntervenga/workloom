@@ -219,3 +219,62 @@ it('archives a field without deleting its identity or history and restores it fr
   expect(calls.some(call => call.method === 'DELETE')).toBe(false);
   expect(stored.historyEnabled).toBe(true);
 });
+
+describe('field header shortcuts and option colors', () => {
+  it('opens the requested field directly and edits colors by stable option ID and current revision', async () => {
+    let current = { ...field('ReportType', 'single_select'), options: [{ id: OPTION_ID, name: 'Bugfix', color: null as string | null, position: 0, revision: 1, archivedAt: null }] };
+    const other = field('Other field', 'text', OTHER_FIELD_ID);
+    const { calls } = installFakeApi({
+      ['GET ' + fieldsPath]: () => ok([other, current]),
+      ['GET ' + columnsPath]: () => ok(columns([other, current])),
+      ['PATCH ' + fieldsPath + '/' + FIELD_ID + '/options/' + OPTION_ID]: request => {
+        const input = request.body as { expectedRevision: number; color: string | null };
+        expect(input.expectedRevision).toBe(current.revision);
+        current = { ...current, revision: current.revision + 1, options: current.options.map(option => ({ ...option, color: input.color, revision: option.revision + 1 })) };
+        return ok(current);
+      },
+    });
+    const { user } = renderFieldUi(<FieldManagerDialog actorId={anna.id} workspaceId={alpha.id} projectId={PROJECT_ID} canManage initialFieldId={FIELD_ID}/>);
+    let dialog = await open(user);
+    await within(dialog).findByRole('region', { name: 'Options' });
+    expect(within(dialog).getByLabelText('Column name')).toHaveValue('ReportType');
+    await user.click(within(dialog).getByRole('button', { name: 'Change color for “Bugfix”' }));
+    await user.click(within(dialog).getByRole('radio', { name: 'Purple' }));
+    await waitFor(() => expect(current.options[0]?.color).toBe('#8b5cf6'));
+    await waitFor(() => expect(within(dialog).getByRole('radio', { name: 'Purple' })).toBeChecked());
+    await user.click(within(dialog).getByRole('button', { name: 'No color' }));
+    await waitFor(() => expect(current.options[0]?.color).toBeNull());
+    expect(calls.filter(call => call.method === 'PATCH').map(call => call.body)).toEqual([
+      { expectedRevision: 1, color: '#8b5cf6' }, { expectedRevision: 2, color: null },
+    ]);
+    expect(current.options[0]?.id).toBe(OPTION_ID);
+    await close(user);
+    dialog = await open(user);
+    await user.click(await within(dialog).findByRole('button', { name: 'Change color for “Bugfix”' }));
+    expect(within(dialog).getByRole('button', { name: 'No color' })).toBeDisabled();
+  });
+
+  it('retains an unknown option color command through reopening and retries the identical payload', async () => {
+    const gate = heldResponse();
+    const select = { ...field('ReportType', 'single_select'), options: [{ id: OPTION_ID, name: 'Bugfix', color: null, position: 0, revision: 1, archivedAt: null }] };
+    let attempts = 0;
+    const { calls } = installFakeApi({
+      ['GET ' + fieldsPath]: () => ok([select]),
+      ['GET ' + columnsPath]: () => ok(columns([select])),
+      ['PATCH ' + fieldsPath + '/' + FIELD_ID + '/options/' + OPTION_ID]: () => { attempts++; return attempts === 1 ? gate.promise : ok({ ...select, revision: 2, options: [{ ...select.options[0], color: '#ef4444' }] }); },
+    });
+    const { user } = renderFieldUi(<FieldManagerDialog actorId={anna.id} workspaceId={alpha.id} projectId={PROJECT_ID} canManage initialFieldId={FIELD_ID}/>);
+    let dialog = await open(user);
+    await user.click(await within(dialog).findByRole('button', { name: 'Change color for “Bugfix”' }));
+    await user.click(within(dialog).getByRole('radio', { name: 'Red' }));
+    await waitFor(() => expect(attempts).toBe(1));
+    await close(user); await act(async () => gate.lose()); dialog = await open(user);
+    const retry = await within(dialog).findByRole('button', { name: 'Retry submission' });
+    expect(within(dialog).getByRole('radio', { name: 'Red' })).toBeChecked();
+    expect(within(dialog).getByRole('radio', { name: 'Blue' })).toBeDisabled();
+    await user.click(retry);
+    await waitFor(() => expect(attempts).toBe(2));
+    expectExactRetry(calls.filter(call => call.method === 'PATCH'));
+    expect(calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: 1, color: '#ef4444' });
+  });
+});

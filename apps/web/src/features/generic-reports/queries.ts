@@ -1,6 +1,6 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ProjectDto, WorkspaceDto, CaptureGenericInitialInput, CreateGenericReportInput, PlanFactTemplateInput, QueryGenericAggregatesInput, QueryGenericReportInput, SetGenericAggregateSettingsInput, UpdateGenericReportInput } from '@workloom/contracts';
+import type { QueryGenericHeaderWidgetsInput, ProjectDto, WorkspaceDto, CaptureGenericInitialInput, CreateGenericReportInput, PlanFactTemplateInput, QueryGenericAggregatesInput, QueryGenericReportInput, SetGenericAggregateSettingsInput, UpdateGenericReportInput } from '@workloom/contracts';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import { queryKeys } from '../../lib/queryKeys';
 import * as api from './api';
@@ -40,3 +40,5 @@ export function useCurrentReportAccess(actorId: string, workspaceId: string, pro
     return workspace.data?.role ?? 'blocked';
   }, () => 'blocked');
 }
+
+export function useHeaderWidgetResults(actorId: string, workspaceId: string, projectId: string, input: QueryGenericHeaderWidgetsInput, enabled: boolean, projectRevision?: number) { return useQuery({ queryKey: [...reportKeys.root(actorId, workspaceId), 'header-widgets', projectId, input, projectRevision], queryFn: ({ signal }) => api.queryHeaderWidgets(workspaceId, projectId, input, signal), enabled, staleTime: 0, retry: false }); }
