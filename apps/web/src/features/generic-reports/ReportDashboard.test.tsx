@@ -174,3 +174,15 @@ it('uses stored category color for its swatch and exact-share bar, preserving re
  const source=byCategory([sum('actual',fact.id,amount(60))],[group(optionId,[sum('actual',fact.id,amount(60))])]);source.fields=source.fields.map(f=>f.id===category.id?{...f,options:category.options.map(o=>({...o,color:'#db2777'}))}:f);
  const {container}=render(view(source));const item=container.querySelector(`[data-report-category-option="${optionId}"]`);expect(item?.querySelector('[data-category-swatch]')).toHaveStyle({backgroundColor:'#db2777'});expect(item?.querySelector('[data-category-bar]')).toHaveStyle({backgroundColor:'#db2777',width:'100%'});
 });
+
+
+it('keeps period guidance and its action visible beside full-scope values in the compact overview',()=>{
+ const source=result(),choose=vi.fn();render(view(source,{onChoosePeriod:choose}));
+ const available=screen.getByRole('article',{name:'Available capacity'});expect(available).toHaveTextContent('Choose a date range');expect(within(available).getByText('—')).toBeVisible();
+ fireEvent.click(within(available).getByRole('button',{name:'Show this week'}));expect(choose).toHaveBeenCalledOnce();
+ const planned=screen.getByRole('article',{name:'Plan · Budget'});expect(planned).toHaveTextContent('18h 51m');expect(planned).toHaveTextContent('All tasks in scope');expect(planned).toHaveTextContent('60/63 filled');expect(planned).toHaveTextContent('Paired subset: 14h 30m');
+});
+it('retains unknown-capacity explanation and a working-hours link after compacting the header',()=>{
+ const source=result(),choose=vi.fn();render(<MemoryRouter><ReportDashboard result={{...source,capacity:capacity(false)}} members={alphaMembers} sections={[]} onChoosePeriod={choose} capacityAction={<a href="/schedules">Set up working hours</a>}/></MemoryRouter>);
+ const card=screen.getByRole('article',{name:'Available capacity'});expect(within(card).getByText('—')).toBeVisible();expect(within(card).getByRole('status')).toHaveTextContent('Time off settings are not configured');expect(card).toHaveTextContent('2026-10-01 through 2026-10-31');expect(within(card).getByRole('link',{name:'Set up working hours'})).toBeVisible();fireEvent.click(within(card).getByRole('button',{name:'Show this week'}));expect(choose).toHaveBeenCalledOnce();
+});

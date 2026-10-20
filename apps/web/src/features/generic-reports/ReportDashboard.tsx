@@ -26,13 +26,20 @@ function percentDigits({ basisPoints }: Share): string {
 const percentText = (value: Share) => `${value.exact ? '' : '≈'}${percentDigits(value)}`;
 const wholeMinutes = (minutes: number): GenericReportNumberDto => ({ numerator: String(minutes), denominator: '1', decimal: String(minutes) });
 
+/** Keep the headline and its value on one baseline; explanatory scope stays visible below. */
+function MetricHeader({ title, value }: { title: string; value: string }) {
+  return <header className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+    <h3 title={title} className="min-w-0 flex-1 basis-32 truncate text-sm font-medium">{title}</h3>
+    <p className="max-w-full break-words text-xl font-semibold tabular-nums">{value}</p>
+  </header>;
+}
+
 /** Headline is the full-scope SUM measure; the paired comparison value is shown only as a labelled subset. */
 function TotalCard({ title, measure, unit, comparison, paired }: { title: string; measure: GenericMeasureResultDto | undefined; unit: Unit; comparison: GenericComparisonDto | null; paired: GenericReportNumberDto | null }) {
   const { t } = useTranslation();
-  return <article aria-label={title} className="min-w-0 space-y-1 rounded-xl border border-line bg-surface p-4">
-    <h3 className="truncate text-sm font-medium">{title}</h3>
+  return <article aria-label={title} className="min-w-0 space-y-1 rounded-xl border border-line bg-surface p-3">
+    <MetricHeader title={title} value={reportNumber(measure?.value ?? null, measure?.unit ?? unit, true)}/>
     <p className="text-xs text-muted">{t('genericReports.dashboard.fullScope')}</p>
-    <p className="text-xl font-semibold tabular-nums">{reportNumber(measure?.value ?? null, measure?.unit ?? unit, true)}</p>
     <p className="text-xs text-muted">{measure ? t('genericReports.coverage', { filled: measure.coverage.filled, tasks: measure.coverage.tasks, missing: measure.coverage.missing, nulls: measure.coverage.null, zero: measure.coverage.zero }) : t('genericReports.dashboard.noFullSum')}</p>
     {comparison ? <p className="text-xs text-muted">{t('genericReports.dashboard.pairedValue', { value: reportNumber(paired, unit, true), paired: comparison.pairedTasks, eligible: comparison.eligibleTasks })}</p> : null}
   </article>;
@@ -57,10 +64,9 @@ function CapacityCard({ capacity, result, onChoosePeriod, capacityAction }: { ca
   const ratio = recordedCapacityRatio(result), known = capacitySummary(capacity);
   const date = result.config.filters.dateRange, datesAligned = !!date && date.from === capacity.startDate && date.to === capacity.endDate;
   const duration = (minutes: number) => reportNumber(wholeMinutes(minutes), 'minutes', true);
-  return <article aria-label={title} className="min-w-0 space-y-1 rounded-xl border border-line bg-surface p-4">
-    <h3 className="truncate text-sm font-medium">{title}</h3>
+  return <article aria-label={title} className="min-w-0 space-y-1 rounded-xl border border-line bg-surface p-3">
+    <MetricHeader title={title} value={known.availableMinutes === null ? '—' : duration(known.availableMinutes)}/>
     <p className="text-xs text-muted">{t('genericReports.dashboard.capacityRange', { from: capacity.startDate, to: capacity.endDate })}</p>
-    <p className="text-xl font-semibold tabular-nums">{known.availableMinutes === null ? '—' : duration(known.availableMinutes)}</p>
     {known.partial ? <p className="text-xs text-muted">{t('genericReports.dashboard.capacityHelp.partial', { known: known.knownMembers, total: known.totalMembers })}</p> : null}
     {settingsConfigured ? <p className="text-xs text-muted">{t('genericReports.dashboard.capacityBreakdown', { scheduled: duration(totals.scheduledMinutes), holidays: duration(totals.holidayMinutes), absence: duration(totals.absenceMinutes) })}</p> : <p role="status" className="text-xs text-muted">{t('genericReports.dashboard.capacityUnconfigured')}</p>}
     {settingsConfigured && totals.unconfiguredMembers > 0 ? <p className="text-xs text-muted">{t('genericReports.dashboard.capacityUnknownMembers', { members: totals.unconfiguredMembers })}</p> : null}
@@ -88,7 +94,7 @@ export function ReportDashboard({ result, members, sections, hideSummary = false
   const categoryTitle = groupBy.kind === 'category' ? t('genericReports.dashboard.categoryTitle', { field: fieldName(groupBy.fieldId) }) : '';
   return <section aria-label={t('genericReports.dashboard.title')} className="min-w-0 space-y-4">
     {!hideSummary && (comparison || result.capacity) ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {result.capacity ? <CapacityCard capacityAction={capacityAction} capacity={result.capacity} result={result} {...(onChoosePeriod ? {onChoosePeriod} : {})}/> : comparison ? <article aria-label={t('genericReports.dashboard.capacityTitle')} className="min-w-0 space-y-2 rounded-xl border border-line bg-surface p-4"><h3 className="text-sm font-medium">{t('genericReports.dashboard.capacityTitle')}</h3><p className="text-xl font-semibold">—</p><p className="text-xs text-muted">{t(result.config.filters.assignee.kind==='unassigned'?'genericReports.dashboard.capacityUnassigned':'genericReports.dashboard.capacityNeedsPeriod')}</p>{onChoosePeriod && result.config.filters.assignee.kind !== 'unassigned' ? <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={onChoosePeriod}>{t(result.config.filters.dateRange?'genericReports.dashboard.useSelectedDates':'genericReports.dashboard.showThisWeek')}</button> : null}</article> : null}
+      {result.capacity ? <CapacityCard capacityAction={capacityAction} capacity={result.capacity} result={result} {...(onChoosePeriod ? {onChoosePeriod} : {})}/> : comparison ? <article aria-label={t('genericReports.dashboard.capacityTitle')} className="min-w-0 space-y-1 rounded-xl border border-line bg-surface p-3"><MetricHeader title={t('genericReports.dashboard.capacityTitle')} value="—"/><p className="text-xs text-muted">{t(result.config.filters.assignee.kind==='unassigned'?'genericReports.dashboard.capacityUnassigned':'genericReports.dashboard.capacityNeedsPeriod')}</p>{onChoosePeriod && result.config.filters.assignee.kind !== 'unassigned' ? <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={onChoosePeriod}>{t(result.config.filters.dateRange?'genericReports.dashboard.useSelectedDates':'genericReports.dashboard.showThisWeek')}</button> : null}</article> : null}
       {comparison ? <TotalCard title={t('genericReports.dashboard.planTitle', { name: planName })} measure={fullSum(comparison.planFieldId)} unit={planUnit} comparison={result.comparison} paired={result.comparison?.plan ?? null}/> : null}
       {comparison ? <TotalCard title={t('genericReports.dashboard.factTitle', { name: factName })} measure={fullSum(comparison.factFieldId)} unit={factUnit} comparison={result.comparison} paired={result.comparison?.fact ?? null}/> : null}
     </div> : null}
