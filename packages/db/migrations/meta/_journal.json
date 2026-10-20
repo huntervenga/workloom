@@ -169,6 +169,13 @@
       "when": 1792475500000,
       "tag": "0023_project_date_range",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792480000000,
+      "tag": "0024_project_planning_checks",
+      "breakpoints": true
     }
   ]
 }

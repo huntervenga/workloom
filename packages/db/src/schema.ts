@@ -1,3 +1,4 @@
+import type {PlanningCheckConfigDto,PlanningCheckSettingsDto,PlanningCheckCheckpointDto} from '@workloom/contracts';
 import type {LeaveSettingsDto,LeaveProfileDto,LeaveRequestDto,LeaveAdjustmentDto} from '@workloom/contracts';
 import type { GenericReportConfig, GenericReportDefinitionDto, GenericInitialSnapshotDto, GenericReportRowDto, GenericReportMeasure, GenericHeaderWidgetRuleDto, TaskFieldValueDto } from '@workloom/contracts';
 import type { ColumnChoice, CutoffWorkerOutcome } from '@workloom/contracts';
@@ -823,6 +824,7 @@ export const taskFieldValueHistory = pgTable(
 
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'project_check_settings','project_check_settings_versions','project_check_checkpoints',
   'leave_settings','leave_settings_versions','leave_profiles','leave_profile_versions','leave_requests','leave_request_versions','leave_charge_ledger','leave_adjustments',
   'generic_report_definitions', 'generic_report_definition_versions', 'generic_report_initial_snapshots', 'generic_report_column_settings',
   'task_field_policies', 'task_field_policy_usage',
@@ -1636,3 +1638,15 @@ export const leaveAdjustments = pgTable('leave_adjustments', {
  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),membershipId:uuid('membership_id').notNull(),
  snapshot:jsonb('snapshot').$type<LeaveAdjustmentDto>().notNull(),actorMembershipId:uuid('actor_membership_id').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
 },t=>[foreignKey({columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),foreignKey({columns:[t.workspaceId,t.actorMembershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),check('leave_adjustments_scope',sql`(snapshot->>'id'=id::text and snapshot->>'membershipId'=membership_id::text) is true`)]);
+
+
+/** Configurable soft checks: current settings, immutable versions and explicit neutral checkpoints. */
+export const projectCheckSettings=pgTable('project_check_settings',{
+ workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),revision:integer('revision').notNull(),config:jsonb('config').$type<PlanningCheckConfigDto>().notNull(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull(),
+},t=>[primaryKey({columns:[t.workspaceId,t.projectId]}),foreignKey({name:'project_checks_project_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projects.workspaceId,projects.id]}),check('project_checks_revision_positive',sql`${t.revision}>0`),check('project_checks_config_shape',sql`(jsonb_typeof(${t.config})='object' and jsonb_typeof(${t.config}->'enabled')='boolean' and jsonb_typeof(${t.config}->'rules')='array' and jsonb_array_length(${t.config}->'rules')<=50) is true`)]);
+export const projectCheckSettingsVersions=pgTable('project_check_settings_versions',{
+ workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),revision:integer('revision').notNull(),snapshot:jsonb('snapshot').$type<PlanningCheckSettingsDto>().notNull(),actorUserId:uuid('actor_user_id').notNull().references(()=>users.id),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
+},t=>[primaryKey({columns:[t.workspaceId,t.projectId,t.revision]}),foreignKey({name:'project_check_versions_settings_fk',columns:[t.workspaceId,t.projectId],foreignColumns:[projectCheckSettings.workspaceId,projectCheckSettings.projectId]}),check('project_check_versions_scope',sql`(jsonb_typeof(${t.snapshot})='object' and ${t.snapshot}->>'workspaceId'=${t.workspaceId}::text and ${t.snapshot}->>'projectId'=${t.projectId}::text and (${t.snapshot}->>'revision')::integer=${t.revision} and ${t.revision}>0) is true`)]);
+export const projectCheckCheckpoints=pgTable('project_check_checkpoints',{
+ id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),projectId:uuid('project_id').notNull(),settingsRevision:integer('settings_revision').notNull(),snapshot:jsonb('snapshot').$type<PlanningCheckCheckpointDto>().notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
+},t=>[foreignKey({name:'project_check_checkpoint_version_fk',columns:[t.workspaceId,t.projectId,t.settingsRevision],foreignColumns:[projectCheckSettingsVersions.workspaceId,projectCheckSettingsVersions.projectId,projectCheckSettingsVersions.revision]}),index('project_check_checkpoints_scope_idx').on(t.workspaceId,t.projectId,t.createdAt),check('project_check_checkpoint_scope',sql`(jsonb_typeof(${t.snapshot})='object' and ${t.snapshot}->>'id'=${t.id}::text and ${t.snapshot}->>'workspaceId'=${t.workspaceId}::text and ${t.snapshot}->>'projectId'=${t.projectId}::text and (${t.snapshot}->>'settingsRevision')::integer=${t.settingsRevision} and jsonb_typeof(${t.snapshot}->'assessment')='object' and NOT ((${t.snapshot}->'assessment') ? 'taskFlags')) is true`)]);

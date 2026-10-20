@@ -13,6 +13,7 @@ import { useMembershipsQuery } from '../features/workspace/queries';
 import { useTagsQuery } from '../features/tasks/queries';
 import { useProjectColumnsQuery, useTaskFieldsQuery } from '../features/fields';
 import { emptyReportConfig, ReportConfigEditor, ReportSelect } from '../features/generic-reports/ReportConfigEditor';
+import { PlanningChecksReport } from '../features/planning-checks/PlanningChecksReport';
 import { ReportDashboardPanels } from '../features/generic-reports/ReportDashboardPanels';
 import { ReportQuickFilters, reportScopeCapacityConfig } from '../features/generic-reports/ReportQuickFilters';
 import type { ReportCalendarContext } from '../features/generic-reports/reportCalendar';
@@ -121,6 +122,7 @@ function ReportsContent({ actorId, workspaceId, calendar, project, writable, sel
       <SaveFeedback error={commands.capture.error} uncertainError={commands.capture.uncertain?.error ?? null} subject="fieldValueSave"/>{commands.capture.uncertain ? <Button disabled={!canWrite || commands.capture.pendingCommand !== null} onClick={() => commands.capture.retryUncertain({ onSuccess: snapshot => { setCaptureOpen(false); setCaptureName(''); setSnapshotId(snapshot.id); resetPage(); } })}>{t('genericReports.retry')}</Button> : null}
       </details>
     </> : null}
+    <PlanningChecksReport actorId={actorId} workspaceId={workspaceId} projectId={project.id} projectRevision={project.revision} canManage={canWrite} disabled={edit !== null || held || captureOpen} enabled={!denied && !scopeMismatch}/>
     <details className="rounded-lg border border-line px-3 py-2"><summary className="cursor-pointer text-sm text-muted">{t('genericReports.setupTools')}</summary><div className="pt-2"><PlanFactTemplate actorId={actorId} workspaceId={workspaceId} project={project} writable={canWrite && (access === 'owner' || access === 'admin') && edit === null} columns={columns.isSuccess && !columns.isFetching ? columns.data : undefined} fields={fields.isSuccess && !fields.isFetching ? fields.data : undefined} command={commands.template} onCreated={saved}/></div></details>
   </div>;
 }

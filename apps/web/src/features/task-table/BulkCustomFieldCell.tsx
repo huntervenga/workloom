@@ -6,16 +6,18 @@ import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { CellPopover } from '../tasks/CellPopover';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { FieldCellControl } from '../fields/FieldCellControl';
+import { FieldAdvisoryIndicator, fieldAdvisoryStyle, type FieldAdvisory } from '../fields/FieldAdvisory';
 import { isSessionDirty, newFieldSession, type FieldEditSession } from '../fields/FieldValueForm';
 import type { ObservableFieldValueDraftStore } from '../fields/fieldValueDraftStore';
 import { parseFieldDraft, type FieldDraft } from '../fields/valueDraft';
 import type { InlineBulkEditPort } from '../tasks/InlineTaskEdit';
 
 /** The same typed field input as details; its one value is atomically applied to a captured selection. */
-export function BulkCustomFieldCell({ task, field, value, members, writable, drafts, capture, port, onMoreDetails }: {
+export function BulkCustomFieldCell({ task, field, value, members, writable, drafts, capture, port, onMoreDetails, advisory }: {
   task: TaskDto; field: TaskFieldDefinitionDto; value: TaskFieldValueDto | null;
   members: readonly MembershipDto[]; writable: boolean; drafts: ObservableFieldValueDraftStore;
   onMoreDetails?: () => void;
+  advisory?: FieldAdvisory | null;
   capture: (identity: object, baseField: TaskFieldDefinitionDto, baseValue: TaskFieldValueDto | null) => void; port: (identity: object) => InlineBulkEditPort | undefined;
 }) {
   const { t } = useTranslation();
@@ -79,7 +81,7 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
     setOpen(false);
   };
   const problem = parseError !== null || bulk?.notice || bulk?.error;
-  return <div ref={setAnchor} data-inline-field-cell={`${task.id}:${field.id}`} className="relative flex h-8 min-w-0 flex-1 items-center gap-1" onClick={event => event.stopPropagation()}>
+  return <div ref={setAnchor} data-inline-field-cell={`${task.id}:${field.id}`} style={fieldAdvisoryStyle(advisory)} className="relative flex h-8 min-w-0 flex-1 items-center gap-1" onClick={event => event.stopPropagation()}>
     {session && !bulk && (isSessionDirty(session) || session.stale || session.serverLocked) ? <button type="button" className="h-8 min-w-0 flex-1 truncate px-1.5 text-left" onClick={onMoreDetails} aria-label={t('inlineFields.draftLabel', { field: field.name, title: task.title })}>{t('inlineFields.draft')}</button> : <FieldCellControl field={session?.field ?? field} value={value?.value ?? null} members={members}
       label={t('inlineFields.edit', { field: field.name, title: task.title })}
       disabled={!writable || field.locked || field.archivedAt !== null || held}
@@ -89,6 +91,7 @@ export function BulkCustomFieldCell({ task, field, value, members, writable, dra
         const current = drafts.getTask(task.id)[field.id.toLowerCase()];
         if (current && port(current.identity) && !held && !sending.current) { setSession({ ...current, draft }); setParseError(null); }
       }} onCommit={draft => { begin(); return submit(draft); }} onCancel={close} />}
+    <FieldAdvisoryIndicator advisory={advisory} />
     {bulk ? <span className="sr-only">{t('bulkInline.appliesTo', { count: bulk.count })}</span> : null}
     {problem && !open ? <button type="button" className="size-6 shrink-0 text-amber-700" aria-label={t('inlineFields.showProblem', { field: field.name })} onClick={() => setOpen(true)}>!</button> : null}
     {problem && open ? <CellPopover anchor={anchor}>

@@ -7,6 +7,7 @@ import { CircleAlert, LoaderCircle, Lock } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
 import { FieldCellControl } from './FieldCellControl';
+import { FieldAdvisoryIndicator, fieldAdvisoryStyle, type FieldAdvisory } from './FieldAdvisory';
 import { BooleanFieldControl } from './BooleanFieldControl';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { CellPopover } from '../tasks/CellPopover';
@@ -32,6 +33,8 @@ export interface InlineFieldValueCellProps {
   /** Opens the task's details, where drafts, conflicts and locks are reviewed. */
   onMoreDetails: () => void;
   presentation?: 'pane' | 'cell';
+  /** Presentation of an authoritative advisory; never changes editability or value semantics. */
+  advisory?: FieldAdvisory | null;
 }
 
 const cellButtonClassName = cn('flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1.5 text-left outline-none hover:bg-canvas focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent');
@@ -49,7 +52,7 @@ function unchanged(original: TaskFieldData | null, next: TaskFieldData): boolean
   return original === null ? next.value === null : JSON.stringify(original) === JSON.stringify(next);
 }
 
-export function InlineFieldValueCell({ actorId, workspaceId, task, field, value, members, writable, mutation, drafts, onMoreDetails, presentation = 'cell' }: InlineFieldValueCellProps) {
+export function InlineFieldValueCell({ actorId, workspaceId, task, field, value, members, writable, mutation, drafts, onMoreDetails, presentation = 'cell', advisory }: InlineFieldValueCellProps) {
   const { t } = useTranslation();
   const registry = protectedCommandsFor(useQueryClient());
   useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
@@ -206,8 +209,9 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
   }
 
   return (
-    <div ref={setAnchor} data-inline-field-cell={`${task.id}:${field.id}`} data-presentation={presentation} className="relative flex h-8 min-w-0 flex-1 items-center gap-1" onClick={event => event.stopPropagation()}>
+    <div ref={setAnchor} data-inline-field-cell={`${task.id}:${field.id}`} data-presentation={presentation} style={fieldAdvisoryStyle(advisory)} className="relative flex h-8 min-w-0 flex-1 items-center gap-1" onClick={event => event.stopPropagation()}>
       {control}
+      <FieldAdvisoryIndicator advisory={advisory} />
       {pending ? (
         <>
           <LoaderCircle size={14} aria-hidden="true" className="pointer-events-none absolute right-6 text-muted motion-safe:animate-spin" />

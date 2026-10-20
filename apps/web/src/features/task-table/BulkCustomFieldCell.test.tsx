@@ -108,3 +108,19 @@ it('commits an unchecked Boolean through the captured bulk selection and exposes
   expect(capture).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
+
+
+it('keeps a missing-field advisory informational while a normal Boolean bulk save sends false', async () => {
+  const field = { ...fieldFixture('Approved', 'boolean'), projectId: task.projectId };
+  const value: TaskFieldValueDto = { workspaceId: task.workspaceId, projectId: task.projectId, taskId: task.id, fieldId: field.id, definitionVersionId: field.definitionVersionId, value: { type: 'boolean', value: true }, revision: 1, updatedAt: STAMP };
+  const submit = vi.fn(() => 'sent' as const);
+  const ui = renderFieldUi(<BulkCustomFieldCell task={task} field={field} value={value} members={[]} writable drafts={new ObservableFieldValueDraftStore()} capture={vi.fn()}
+    advisory={{ state: 'missing', severity: 'notice', label: 'Approved needs a value', color: '#93c5fd' }}
+    port={() => ({ count: 2, pending: false, uncertain: false, error: null, notice: null, unsupported: false, submit, retry: vi.fn() })} />);
+  expect(screen.getByRole('img', { name: 'Notice: Approved needs a value' })).toBeInTheDocument();
+  expect(ui.container.querySelector('[data-inline-field-cell]')).toHaveClass('h-8');
+  const checkbox = screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` });
+  expect(checkbox).not.toHaveAttribute('aria-required');
+  await ui.user.click(checkbox);
+  expect(submit).toHaveBeenCalledExactlyOnceWith({ customField: { fieldId: field.id, expectedDefinitionRevision: field.revision, value: { type: 'boolean', value: false } } }, expect.any(Object));
+});

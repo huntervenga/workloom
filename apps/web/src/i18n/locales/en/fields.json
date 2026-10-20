@@ -254,5 +254,16 @@
     "checked": "Checked",
     "unchecked": "Unchecked",
     "clearHint": "Clear to Not set; this is different from unchecked."
+  },
+  "advisory": {
+    "notice": "Notice",
+    "warning": "Warning",
+    "critical": "Needs attention",
+    "label": "{{severity}}: {{message}}"
+  },
+  "planningCheckSettings": {
+    "help": "Highlight missing values with a project check. Checks advise the team and never block task updates.",
+    "configure": "Planning check",
+    "configureField": "Configure planning check for {{field}}"
   }
 }

@@ -1,0 +1,11 @@
+import {act,renderHook,waitFor} from '@testing-library/react';
+import {QueryClientProvider} from '@tanstack/react-query';
+import {afterEach,describe,it,expect,vi} from 'vitest';
+import {createQueryClient} from '../../lib/queryClient';
+import {alpha,anna,installFakeApi,ok} from '../../test/fakeApi';
+import {planningCheckKeys} from './queries';
+import {useApplySchedule} from '../schedule/queries';
+import {task} from '../planning/test/fixtures';
+import {PROJECT_ID} from '../fields/test/fixtures';
+afterEach(()=>vi.unstubAllGlobals());
+describe('Gantt scheduling source invalidation',()=>{it('invalidates checks after an acknowledged date change without waiting for the minute refresh',async()=>{installFakeApi({[`POST /api/v1/workspaces/${alpha.id}/projects/${PROJECT_ID}/schedule-apply`]:()=>ok({projectId:PROJECT_ID,tasks:[{...task,projectId:PROJECT_ID,revision:task.revision+1,startDate:'2026-10-20',dueDate:'2026-10-22'}],asOfChangeSeq:'2'})});const client=createQueryClient({retry:false}),key=[...planningCheckKeys.root(anna.id,alpha.id,PROJECT_ID),'assessment'];client.setQueryData(key,{trusted:true});const onSuccess=vi.fn(),hook=renderHook(()=>useApplySchedule(anna.id,alpha.id,PROJECT_ID,onSuccess),{wrapper:({children})=><QueryClientProvider client={client}>{children}</QueryClientProvider>});act(()=>hook.result.current.mutate({draftId:'synthetic',input:{rows:[{taskId:task.id,expectedRevision:task.revision,startDate:'2026-10-20',dueDate:'2026-10-22'}],previewHash:'a'.repeat(64)}}));await waitFor(()=>expect(onSuccess).toHaveBeenCalledOnce());expect(client.getQueryState(key)?.isInvalidated).toBe(true);client.clear();});});

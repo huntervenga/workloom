@@ -6,6 +6,7 @@ import { alpha, alphaMembers, anna, deferred, failure, installFakeApi, ok, type 
 import { DialogShell } from '../../shared/DialogShell';
 import { task } from '../planning/test/fixtures';
 import { InlineFieldValueCell } from './InlineFieldValueCell';
+import type { FieldAdvisory } from './FieldAdvisory';
 import { newFieldSession, type SetFieldValueMutation } from './FieldValueForm';
 import type { ObservableFieldValueDraftStore } from './fieldValueDraftStore';
 import { useSetTaskFieldValueMutation } from './queries';
@@ -42,7 +43,7 @@ function row(definition: TaskFieldDefinitionDto, value: TaskFieldValueDto['value
 
 interface Exposed { drafts: ObservableFieldValueDraftStore; mutation: SetFieldValueMutation }
 
-function setup(options: { definition?: TaskFieldDefinitionDto; value?: TaskFieldValueDto | null; writable?: boolean; routes?: RouteTable; seed?: (drafts: ObservableFieldValueDraftStore) => void } = {}) {
+function setup(options: { definition?: TaskFieldDefinitionDto; value?: TaskFieldValueDto | null; writable?: boolean; advisory?: FieldAdvisory | null; routes?: RouteTable; seed?: (drafts: ObservableFieldValueDraftStore) => void } = {}) {
   const definition = options.definition ?? stage();
   const api = installFakeApi(options.routes ?? {});
   const onMoreDetails = vi.fn();
@@ -57,7 +58,7 @@ function setup(options: { definition?: TaskFieldDefinitionDto; value?: TaskField
     return (
       <InlineFieldValueCell
         actorId={anna.id} workspaceId={alpha.id} task={task} field={definition} value={options.value ?? null}
-        members={alphaMembers} writable={options.writable ?? true} mutation={mutation} drafts={owner.current} onMoreDetails={onMoreDetails}
+        members={alphaMembers} writable={options.writable ?? true} advisory={options.advisory} mutation={mutation} drafts={owner.current} onMoreDetails={onMoreDetails}
       />
     );
   }
@@ -605,4 +606,26 @@ it('never steals focus from another control when a Boolean save acknowledges and
   expect(outside).toHaveFocus();
   expect(screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` })).toBeChecked();
   expect(ui.exposed.drafts.getTask(task.id)).toEqual({});
+});
+
+
+it('keeps a server-known missing-field notice soft while zero autosaves normally in the same fixed-height cell', async () => {
+  const definition = { ...field('Effort allowance', 'duration'), projectId: task.projectId };
+  const ui = setup({ definition, advisory: { state: 'missing', severity: 'warning', label: 'Effort allowance is missing', color: '#ffffff' }, routes: { [`PUT ${valuePath}`]: echo(definition, 1) } });
+  expect(screen.getByRole('img', { name: 'Warning: Effort allowance is missing' })).toBeInTheDocument();
+  const cell = ui.container.querySelector('[data-inline-field-cell]');
+  expect(cell).toHaveClass('h-8');
+  expect(cell?.querySelector('[aria-required], [aria-invalid]')).toBeNull();
+  const label = `Edit Effort allowance for ${task.title}`;
+  await ui.user.click(screen.getByRole('button', { name: label }));
+  await ui.user.type(screen.getByRole('textbox', { name: label }), '0{Enter}');
+  await waitFor(() => expect(ui.writes()).toHaveLength(1));
+  expect(ui.writes()[0]?.body).toMatchObject({ value: { type: 'duration', value: 0 } });
+  expect(ui.onMoreDetails).not.toHaveBeenCalled();
+});
+
+it('does not infer a warning from a local empty value when assessment is unavailable', () => {
+  const definition = { ...field('Effort allowance', 'duration'), projectId: task.projectId };
+  setup({ definition, advisory: { state: 'unavailable', severity: 'warning', label: 'Effort allowance is missing' } });
+  expect(screen.queryByRole('img')).not.toBeInTheDocument();
 });

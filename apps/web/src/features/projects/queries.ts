@@ -97,10 +97,12 @@ export function invalidateProject(queryClient: QueryClient, actorId: string, wor
 }
 
 export function invalidateSections(queryClient: QueryClient, actorId: string, workspaceId: string, projectId: string) {
+  void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'generic-reports'] });
   return queryClient.invalidateQueries({ queryKey: queryKeys.sections(actorId, workspaceId, projectId), exact: true });
 }
 
 export function invalidateStatuses(queryClient: QueryClient, actorId: string, workspaceId: string, projectId: string) {
+  void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'generic-reports'] });
   return queryClient.invalidateQueries({ queryKey: queryKeys.statuses(actorId, workspaceId, projectId), exact: true });
 }
 

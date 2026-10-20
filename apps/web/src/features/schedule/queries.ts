@@ -49,6 +49,7 @@ export function useApplySchedule(a: string, w: string, p: string, onSuccess: (va
     if (ack.actorId !== null && ack.actorId !== a) return;
     if (ack.actorId === a) recordScheduleUndo(client, a, w, p, snapshots.get(variables), data, variables.input, ack.receipt);
     onSuccess(variables);
+    void client.invalidateQueries({ queryKey: [...queryKeys.workspace(a, w), 'generic-reports'] });
     void client.invalidateQueries({ queryKey: scheduleKeys.root(a, w) });
     void client.invalidateQueries({ queryKey: queryKeys.tasks(a, w) });
     void client.invalidateQueries({ queryKey: [...queryKeys.workspace(a, w), 'dependencies'] });

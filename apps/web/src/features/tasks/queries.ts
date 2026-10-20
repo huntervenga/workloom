@@ -387,6 +387,7 @@ export function storeConfirmedTasks(client: QueryClient, actorId: string, worksp
   // Histories of all returned rows refresh in one predicate pass, cached detail or not.
   void invalidateTaskTimelines(client, actorId, workspaceId, sharedEstimate ? undefined : tasks.map(task => task.id));
   const workspace = queryKeys.workspace(actorId, workspaceId);
+  void client.invalidateQueries({ queryKey: [...workspace, 'generic-reports'] });
   void client.invalidateQueries({ queryKey: [...workspace, 'schedule'] });
   void client.invalidateQueries({ queryKey: [...workspace, 'dependencies'] });
   const prefix = queryKeys.tasks(actorId, workspaceId);

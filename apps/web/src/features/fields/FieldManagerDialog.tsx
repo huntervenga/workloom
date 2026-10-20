@@ -19,6 +19,7 @@ import {
   type FieldFormValue,
 } from './FieldDefinitionForm';
 import { FieldOptionsEditor } from './FieldOptionsEditor';
+import { FieldPlanningCheckSettings } from './FieldPlanningCheckSettings';
 import { ProjectColumnsEditor } from './ProjectColumnsEditor';
 import {
   useCreateTaskFieldMutation,
@@ -67,6 +68,8 @@ export interface FieldManagerDialogProps {
   workspaceId: string;
   projectId: string;
   canManage: boolean;
+  /** Opens the single page-owned project check editor for this ordinary field. */
+  onConfigurePlanningCheck?: (fieldId: string) => void;
 }
 
 /**
@@ -74,7 +77,7 @@ export interface FieldManagerDialogProps {
  * and options of existing ones. Every write hook lives here, outside the dialog content, so closing
  * the dialog keeps a pending or unconfirmed write, its frozen form and the navigation guard.
  */
-export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage, triggerLabel, open: controlledOpen, onOpenChange, showTrigger = true, initialFieldId }: FieldManagerDialogProps) {
+export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage, triggerLabel, open: controlledOpen, onOpenChange, showTrigger = true, initialFieldId, onConfigurePlanningCheck }: FieldManagerDialogProps) {
   const { t } = useTranslation();
   const [localOpen, setLocalOpen] = useState(false);
   const open = controlledOpen ?? localOpen;
@@ -236,6 +239,9 @@ export function FieldManagerDialog({ actorId, workspaceId, projectId, canManage,
                   }}
                 />
                 <FieldPolicyPanel actorId={actorId} workspaceId={workspaceId} field={editedField} mutation={policyMutation}/>
+                {onConfigurePlanningCheck ? <FieldPlanningCheckSettings fieldId={editedField.id} fieldName={editedField.name}
+                  disabled={sentCommand(createField) !== null || sentCommand(updateField) !== null || sentCommand(createOption) !== null || sentCommand(updateOption) !== null || sentCommand(updateColumns) !== null || sentCommand(policyMutation) !== null}
+                  onConfigure={onConfigurePlanningCheck} /> : null}
               </section>
             ) : null}
 

@@ -1,5 +1,5 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../../lib/queryKeys';
 import { alpha, anna, created, failure, installFakeApi, ok } from '../../test/fakeApi';
 import { FieldManagerDialog } from './FieldManagerDialog';
@@ -277,4 +277,19 @@ describe('field header shortcuts and option colors', () => {
     expectExactRetry(calls.filter(call => call.method === 'PATCH'));
     expect(calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: 1, color: '#ef4444' });
   });
+});
+
+
+it('offers the selected ordinary field in the shared project check editor without writing or discarding the field form', async () => {
+  const definition = field('Effort allowance', 'duration');
+  const { calls } = installFakeApi({ ['GET ' + fieldsPath]: () => ok([definition]), ['GET ' + columnsPath]: () => ok(columns([definition])) });
+  const configure = vi.fn();
+  const ui = renderFieldUi(<FieldManagerDialog actorId={anna.id} workspaceId={alpha.id} projectId={PROJECT_ID} canManage open initialFieldId={definition.id} onConfigurePlanningCheck={configure} />);
+  const dialog = await screen.findByRole('dialog', { name: 'Project columns' });
+  const name = await within(dialog).findByLabelText('Column name');
+  await ui.user.clear(name); await ui.user.type(name, 'Unsubmitted rename');
+  await ui.user.click(within(dialog).getByRole('button', { name: 'Configure planning check for Effort allowance' }));
+  expect(configure).toHaveBeenCalledExactlyOnceWith(definition.id);
+  expect(name).toHaveValue('Unsubmitted rename');
+  expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0);
 });

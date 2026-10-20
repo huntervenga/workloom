@@ -1,0 +1,11 @@
+import {render,screen,fireEvent} from '@testing-library/react';
+import {describe,it,expect,vi} from 'vitest';
+import {PlanningCheckGroupSignals} from './PlanningCheckGroupSignals';
+import {assessment,config,groupResult} from './testFixtures';
+function ui(row=groupResult){const onReview=vi.fn();render(<PlanningCheckGroupSignals group={row.group} assessment={{...assessment,groups:[row]}} config={config} writable={false} onConfigure={()=>undefined} onReview={onReview}/>);return onReview;}
+describe('authoritative group planning signals',()=>{
+ it('shows the full exact planned/target/ratio with text and theme-safe tint',()=>{const onReview=ui();const button=screen.getByRole('button',{name:/Computed working capacity/});expect(button).toHaveTextContent('Overcapacity45h / 40h112.5%');fireEvent.click(button);expect(onReview).toHaveBeenCalledWith(groupResult.ruleId);});
+ it('keeps unknown and zero targets neutral without manufacturing a percentage',()=>{ui({...groupResult,state:'unavailable',reason:'schedule_unknown',target:null,ratio:null,direction:null,appearance:null});expect(screen.getByRole('button',{name:/Working schedule unknown/})).toHaveTextContent('—');expect(screen.queryByText('112.5%')).toBeNull();});
+ it('does not call a disabled balance within target, and labels manual targets separately',()=>{ui({...groupResult,state:'disabled',reason:'disabled',direction:null,appearance:null});expect(screen.queryByText('Within target')).toBeNull();});
+ it('keeps per-rule missing counts distinct and explains project-wide issue review',()=>{ui({...groupResult,targetBasis:'configured_manual'});expect(screen.getByRole('button',{name:/Manual planning target/})).toBeVisible();expect(screen.getByRole('button',{name:'Estimate reminder · 1'})).toHaveAttribute('title','Estimate reminder: 1 matching tasks in this group. Open all matching tasks in this project.');});
+});

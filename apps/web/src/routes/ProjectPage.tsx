@@ -1,3 +1,4 @@
+import { useProjectPlanningChecks } from '../features/planning-checks/useProjectPlanningChecks';
 import { ProjectDateRange } from '../features/projects/ProjectDateRange';
 import { useColumnAggregates } from '../features/generic-reports/ColumnAggregates';
 import { LinkedProjectTasks } from '../features/project-placements/LinkedProjectTasks';
@@ -402,6 +403,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     fieldDefinitions.isSuccess ? fieldDefinitions.data : [], projectColumns.isSuccess ? projectColumns.data : { workspaceId: workspace.id, projectId: project.id, revision: 1, columns: [] }, timeAvailable),
     [personalColumns.query.data?.columns, fieldDefinitions.data, fieldDefinitions.isSuccess, projectColumns.data, projectColumns.isSuccess, workspace.id, project.id, timeAvailable]);
   const ordinaryAggregates = useColumnAggregates({ actorId, workspaceId: workspace.id, projectId: project.id, projectDateRange: project.dateRange ?? null, projectRevision: project.revision, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], grouping, filters: { ...filters, search }, writable, enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && projectColumns.isSuccess && members.isSuccess && !personalColumns.denied });
+  const planningChecks = useProjectPlanningChecks({ actorId, workspaceId: workspace.id, projectId: project.id, projectRevision: project.revision, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], tags: tags.data ?? [], enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && members.isSuccess && !personalColumns.denied, writable: canManageFields, requestedOpen: searchParams.get('checks') === '1', requestedFieldId: searchParams.get('checkField') ?? undefined, onOpenTask: id => openTask(id) });
   const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.map(tableColumnId), [reconciledColumns]);
   const fieldColumns: FieldColumn[] = reconciledColumns.effectiveVisibleRefs.flatMap(ref => {
     if (ref.kind !== 'field' || !fieldDefinitions.isSuccess || !projectColumns.isSuccess) return [];
@@ -433,17 +435,19 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     id: field.id,
     label: field.name,
     onEdit: canManageFields ? () => { setFieldManagerInitialId(field.id); setFieldManagerOpen(true); } : undefined,
+    onConfigureCheck: planningChecks.configureField ? () => planningChecks.configureField?.(field.id) : undefined,
     width,
     // An unloaded value is not an unset one: `null` is shown, and offered for a choice, only after a known read.
     renderCell: (task) => {
       if (fieldValues.isError) return <ValueUnavailableCell />;
       if (fieldValues.isPending) return <ValueLoadingCell />;
       const blocked = customBlockedByBulk(task, field.id);
-      if (blocked) return <BulkCustomFieldCell task={task} field={field} value={valueByKey.get(fieldValueKey(task.id, field.id)) ?? null} members={members.data ?? []}
+      if (blocked) return <BulkCustomFieldCell advisory={planningChecks.fieldAdvisory(task, field)} task={task} field={field} value={valueByKey.get(fieldValueKey(task.id, field.id)) ?? null} members={members.data ?? []}
         writable={writable && canEditTaskInline(task)} drafts={fieldValueDrafts.current} onMoreDetails={() => openTask(task.id)}
         capture={(claim, baseField, baseValue) => bulkInline.captureCustom(task, baseField, baseValue, claim)} port={claim => bulkInline.port(claim)} />;
       const cell = (
         <InlineFieldValueCell
+          advisory={planningChecks.fieldAdvisory(task, field)}
           actorId={actorId}
           workspaceId={workspace.id}
           task={task}
@@ -1090,9 +1094,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
-            <FieldManagerDialog initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
+            <FieldManagerDialog onConfigurePlanningCheck={planningChecks.configureField} initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
         </ProjectActions>
       </header>
+      {planningChecks.dialogs}
       <PlacementCommandFeedback commands={placementCommands} actorId={actorId} workspaceId={workspace.id} />
 
       {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <TaskFeedbackLayer><div role="status" className="fixed right-3 top-20 z-[60] max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm shadow-lg">
@@ -1190,7 +1195,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
                 {t('projects.projectPage.openSubmission')}</Button>
             </div>
           ) : null}
-          {!timeAvailable && tableMode ? ordinaryAggregates.panel : null}
+          {!timeAvailable && tableMode ? <>{planningChecks.control}{ordinaryAggregates.panel}</> : null}
           {timeAvailable ? <><p className="text-xs text-muted">{t('genericReports.legacyColumns')} <Button size="sm" variant="ghost" onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.delete('legacyTime'); next.delete('week'); next.delete('worker'); return next; })}>{t('genericReports.ordinaryMode')}</Button></p>{tableMode ? taskTime.controls : taskTime.notices}</> : null}
           <div className="flex min-w-0 flex-wrap items-center gap-2 empty:hidden">
             {showTaskFilters ? <div className="min-w-0 max-w-full shrink grow basis-full"><TaskFilters value={filters} onChange={changeFilters} statuses={statuses.data} members={members.data} tags={tags.data ?? []} /></div> : null}
@@ -1276,7 +1281,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             customColumns={[...timeColumns, ...customColumns]}
             showLegacySummary={timeAvailable}
             renderColumnAggregate={ordinaryAggregates.renderColumn}
-            renderGroupMetadata={ordinaryAggregates.renderGroupMetadata}
+            renderGroupMetadata={group => <>{planningChecks.renderGroup(group)}{ordinaryAggregates.renderGroupMetadata(group)}</>}
+            renderTaskIndicator={planningChecks.renderTaskIndicator}
             writable={writable}
             onOpenTask={openTask}
             onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
@@ -1383,6 +1389,7 @@ interface TaskListProps {
   aggregateFooter?: ComponentProps<typeof TaskTable>['aggregateFooter'];
   renderColumnAggregate?: ComponentProps<typeof TaskTable>['renderColumnAggregate'];
   renderGroupMetadata?: ComponentProps<typeof TaskTable>['renderGroupMetadata'];
+  renderTaskIndicator?: ComponentProps<typeof TaskTable>['renderTaskIndicator'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
   onMoveBoardCard: BoardMoveCard;
   moveBlocked: boolean;

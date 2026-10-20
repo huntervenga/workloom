@@ -37,6 +37,7 @@ export interface TaskTableCustomColumn {
   width: number;
   renderCell: (task: TaskDto) => ReactNode;
   onEdit?: (() => void) | undefined;
+  onConfigureCheck?: (() => void) | undefined;
 }
 
 /** `draft` is the one unsent input row; submitted rows wait as `pending` or `uncertain`. */
@@ -69,6 +70,7 @@ export interface TaskTableProps {
   /** Authoritative full-scope totals, aligned with the same visible columns as the task rows. */
   renderColumnAggregate?: ((columnId: string, group?: TableTaskGroup) => ReactNode) | undefined;
   renderGroupMetadata?: ((group: TableTaskGroup) => ReactNode) | undefined;
+  renderTaskIndicator?: ((task: TaskDto) => ReactNode) | undefined;
   /** A trailing, fixed-width header control for adding and choosing columns. */
   columnMenu?: ReactNode;
   /** Starts the ordinary section composer at the bottom of the table. */
@@ -463,6 +465,7 @@ interface RowContext {
   onEditTaskField: TaskTableProps['onEditTaskField'];
   renderTaskFieldEditor: TaskTableProps['renderTaskFieldEditor'];
   renderCompletionAction: TaskTableProps['renderCompletionAction'];
+  renderTaskIndicator: TaskTableProps['renderTaskIndicator'];
   draftTaskIds: ReadonlySet<string>;
   /** Grid line classes of a visible column, shared by its header and body cells. */
   columnLine: (id: string) => string | undefined;
@@ -603,6 +606,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
               </button>
             ) : <span aria-hidden="true" className="size-6 shrink-0" />}
             {ctx.renderCompletionAction?.(task)}
+            {ctx.renderTaskIndicator?.(task)}
             {node.depth > 0 ? <span className="sr-only">{t('taskTable.taskTable.subtask2')}</span> : null}
             {editingTitle ? <><div className="min-w-0 flex-1">{titleEditor}</div><span className="flex max-w-[35%] min-w-0 items-center gap-1 overflow-hidden">{meta}</span></> : <>
               {/* Clicking the visible name renames in place (Asana-style); read-only rows open details. */}
@@ -854,7 +858,7 @@ export function TaskTable({
   columnPreset = 'expanded',
   columnIds,
   onEditTaskField, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
-  showLegacySummary = true, aggregateFooter, renderColumnAggregate, renderGroupMetadata, columnMenu, onCreateSection,
+  showLegacySummary = true, aggregateFooter, renderColumnAggregate, renderGroupMetadata, renderTaskIndicator, columnMenu, onCreateSection,
   onMoveTask, moveBlocked = false, acquireDragProtection,
   grouping = 'section',
   sortMode = 'manual',
@@ -876,7 +880,7 @@ export function TaskTable({
     { id: 'priority', label: t('taskTable.taskTable.priority'), width: 96 },
     { id: 'estimate', label: t('taskTable.taskTable.teamEstimate'), width: 128 },
   ];
-  const byColumnId = new Map<string, Pick<TaskTableCustomColumn, 'id' | 'label' | 'width' | 'onEdit'>>([...builtinColumns, ...customColumns].map(column => [column.id, column]));
+  const byColumnId = new Map<string, Pick<TaskTableCustomColumn, 'id' | 'label' | 'width' | 'onEdit' | 'onConfigureCheck'>>([...builtinColumns, ...customColumns].map(column => [column.id, column]));
   const defaultIds = ['title', 'status', 'responsible', ...(expandedColumns ? ['participants'] : []), 'dueDate', ...(expandedColumns ? ['tags', 'priority'] : []), ...customColumns.map(column => column.id), 'estimate'];
   const orderedIds = columnIds ? ['title', ...columnIds.filter(id => id !== 'title')] : defaultIds;
   const columns = orderedIds.flatMap(id => { const column = byColumnId.get(id); return column ? [column] : []; });
@@ -1056,7 +1060,7 @@ export function TaskTable({
     columnIds: visibleIds,
     trailingColumn,
     onEditTaskField: writable ? onEditTaskField : undefined,
-    renderTaskFieldEditor, renderCompletionAction, draftTaskIds,
+    renderTaskFieldEditor, renderCompletionAction, renderTaskIndicator, draftTaskIds,
     columnLine,
     activeFieldEditor: activeFieldEditor && taskById.has(activeFieldEditor.taskId) ? activeFieldEditor : undefined,
   };
@@ -1124,7 +1128,7 @@ export function TaskTable({
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? titleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
-        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg"><Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root> : null}</span></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
+        <thead className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
           const collapsed = collapsedGroups.has(group.key);
