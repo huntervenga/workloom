@@ -19,6 +19,7 @@ describe('table aggregate settings preserve independent configuration', () => {
   expect(next).toEqual([...measures,{key:'col_90000000000040008000000000000001_2',operation:'max',fieldId}]);
   expect(setGenericAggregateSettingsInputSchema.parse({expectedRevision:1,measures:next}).measures).toEqual(next);
  });
+ it('editing an independent summary preserves its explicit selected-person project scope',()=>{const group={kind:'section' as const,sectionId:null},taskScope={kind:'selected_person_project' as const,membershipId:fieldId};const rules:GenericHeaderWidgetRuleDto[]=[{group,taskScope,widgets:[{key:'fact',kind:'personal_effort',fieldId,membershipId:fieldId}]}];expect(replaceHeaderWidgets(rules,group,[{key:'fact',kind:'personal_effort',fieldId,membershipId:fieldId}])[0]?.taskScope).toEqual(taskScope);});
  it('matches header summaries only by explicit section or membership IDs and preserves other groups', () => {
   const group = {kind:'section' as const,sectionId:fieldId};
   const rules:GenericHeaderWidgetRuleDto[] = [{group,widgets:[{key:'a',kind:'measure',measure:{key:'sum',operation:'sum',fieldId}}]},{group:{kind:'assignee',membershipId:fieldId},widgets:[{key:'b',kind:'capacity',membershipId:fieldId,range:{kind:'this_week'}}]}];

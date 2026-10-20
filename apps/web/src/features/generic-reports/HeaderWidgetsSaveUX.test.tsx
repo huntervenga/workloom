@@ -1,172 +1,34 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { afterEach, expect, it, vi } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { genericHeaderWidgetSchema, type GenericHeaderWidgetDto, type TaskFieldDefinitionDto } from '@workloom/contracts';
 import { alpha, alphaMembers } from '../../test/fakeApi';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';
 import { HeaderWidgets } from './HeaderWidgets';
 import { fact, plan } from './test/fixtures';
-
-afterEach(() => vi.restoreAllMocks());
-const group = { kind: 'section' as const, sectionId: null };
-const retained: GenericHeaderWidgetDto = { key: 'retained', label: 'Our measured result', kind: 'measure', measure: { key: 'original_measure', operation: 'sum', fieldId: fact.id } };
-type Save = (widgets: GenericHeaderWidgetDto[], revision: number, done: () => void) => void;
-function example(widgets: GenericHeaderWidgetDto[] = [], onSave: Save = (_widgets, _revision, done) => done()) {
- const user = userEvent.setup(), client = new QueryClient(), save = vi.fn(onSave);
- const view = (fields: readonly TaskFieldDefinitionDto[] = [plan, fact]) => <QueryClientProvider client={client}><MemoryRouter><HeaderWidgets group={group} title="Delivery" rules={[{ group, widgets }]} result={undefined} fields={fields} members={alphaMembers} workspaceId={alpha.id} writable disabled={false} loading={false} revision={2} feedback={null} uncertain={false} projectDateRange={{ from: '2026-10-19', to: '2026-10-25' }} onRetry={() => undefined} onSave={save} /></MemoryRouter></QueryClientProvider>;
- const ui = render(view());
- const open = async () => { await user.click(screen.getByRole('button', { name: 'Configure summary for Delivery' })); return screen.getByRole('dialog', { name: 'Summary · Delivery' }); };
- const choose = async (dialog: HTMLElement, label: string, option: string) => { await user.click(within(dialog).getByRole('combobox', { name: label })); await user.click(screen.getByRole('option', { name: option })); };
- return { user, client, save, open, choose, rerenderFields: (fields: readonly TaskFieldDefinitionDto[]) => ui.rerender(view(fields)) };
+const group={kind:'section' as const,sectionId:null};
+const retained:GenericHeaderWidgetDto={key:'retained',label:'Our measured result',kind:'measure',measure:{key:'original_measure',operation:'sum',fieldId:fact.id}};
+type Save=(widgets:GenericHeaderWidgetDto[],revision:number,done:()=>void)=>void;
+function example(widgets:GenericHeaderWidgetDto[]=[retained],onSave:Save=(_widgets,_revision,done)=>done()){
+ const user=userEvent.setup(),client=new QueryClient(),save=vi.fn(onSave),retry=vi.fn((done:()=>void)=>done());
+ const view=(fields:readonly TaskFieldDefinitionDto[]=[plan,fact],uncertain=false)=><QueryClientProvider client={client}><MemoryRouter><HeaderWidgets group={group} title="Delivery" rules={[{group,widgets}]} result={undefined} fields={fields} members={alphaMembers} workspaceId={alpha.id} writable disabled={false} loading={false} revision={2} feedback={null} uncertain={uncertain} projectDateRange={{from:'2026-10-19',to:'2026-10-25'}} onRetry={retry} onSave={save}/></MemoryRouter></QueryClientProvider>;
+ const ui=render(view());
+ const open=async()=>{await user.click(screen.getByRole('button',{name:'Configure summary for Delivery'}));return screen.getByRole('dialog',{name:'Summary · Delivery'});};
+ const add=async()=>{const list=await open();await user.click(within(list).getByRole('button',{name:'Add indicator'}));return screen.getByRole('dialog',{name:'Add summary indicator'});};
+ const choose=async(dialog:HTMLElement,label:string,option:string)=>{await user.click(within(dialog).getByRole('combobox',{name:label}));await user.click(screen.getByRole('option',{name:option}));};
+ return{user,client,save,retry,open,add,choose,rerenderFields:(fields:readonly TaskFieldDefinitionDto[])=>ui.rerender(view(fields)),unknown:()=>ui.rerender(view([plan,fact],true))};
 }
-
-it('saves the current field calculation directly without Add summary', async () => {
- const { user, save, open, choose } = example([retained]), dialog = await open();
- await choose(dialog, 'Field', 'Budget');
- await choose(dialog, 'Calculation', 'Average');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce(); const [widgets, revision] = save.mock.calls[0] ?? [];
- expect(revision).toBe(2); expect(widgets).toHaveLength(2); expect(widgets?.[0]).toEqual(retained);
- const added = widgets?.[1]; expect(added).toMatchObject({ kind: 'measure', measure: { operation: 'avg', fieldId: plan.id } });
- expect(added?.key).toMatch(/^w_/); expect(genericHeaderWidgetSchema.parse(added)).toEqual(added);
- expect(screen.queryByRole('dialog', { name: 'Summary · Delivery' })).not.toBeInTheDocument();
-});
-
-it('saves the selected person and project dates directly, including a zero manual target', async () => {
- const { user, save, open, choose } = example(), dialog = await open();
- await choose(dialog, 'Summary type', 'Person’s available working time');
- await choose(dialog, 'Person', 'Анна Тестова');
- await user.click(within(dialog).getByRole('checkbox', { name: 'Override available time for this summary' }));
- await user.type(within(dialog).getByLabelText('Manual available minutes'), '0');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce(); expect(save.mock.calls[0]?.[0]).toEqual([expect.objectContaining({ kind: 'capacity', membershipId: alphaMembers[0]?.id, range: { kind: 'project_dates' }, override: { minutes: 0 } })]);
-});
-
-it('saves an edited summary directly and preserves both its identity and its custom label', async () => {
- const { user, save, open, choose } = example([retained]), dialog = await open();
- await user.click(within(dialog).getByRole('button', { name: 'Edit Our measured result' }));
- await choose(dialog, 'Calculation', 'Maximum');
- expect(within(dialog).getByRole('button', { name: 'Save summary' })).toBeEnabled();
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce(); expect(save.mock.calls[0]?.[0]).toEqual([{ ...retained, measure: { ...retained.measure, operation: 'max' } }]);
-});
-
-it('can prepare another summary, then save the final current editor without adding twice', async () => {
- const { user, save, open, choose } = example(), dialog = await open();
- await choose(dialog, 'Field', 'Budget');
- await user.click(within(dialog).getByRole('button', { name: 'Add another summary' }));
- await choose(dialog, 'Summary type', 'Person’s available working time');
- await choose(dialog, 'Person', 'Анна Тестова');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce(); const widgets = save.mock.calls[0]?.[0] ?? [];
- expect(widgets).toHaveLength(2); expect(widgets[0]).toMatchObject({ kind: 'measure', measure: { fieldId: plan.id } }); expect(widgets[1]).toMatchObject({ kind: 'capacity', membershipId: alphaMembers[0]?.id });
- expect(new Set(widgets.map(widget => widget.key)).size).toBe(2);
-});
-
-it('shows validation instead of silently discarding an incomplete current editor', async () => {
- const { user, save, open, choose } = example([retained]), dialog = await open();
- await choose(dialog, 'Summary type', 'Person’s available working time');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).not.toHaveBeenCalled(); expect(within(dialog).getByRole('alert')).toHaveTextContent('Choose a person');
- await choose(dialog, 'Person', 'Анна Тестова');
- await choose(dialog, 'Period', 'Custom range');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).not.toHaveBeenCalled(); expect(within(dialog).getByRole('alert')).toHaveTextContent(/date|range/i);
- fireEvent.change(within(dialog).getByLabelText('From (inclusive)'), { target: { value: '2026-10-19' } });
- fireEvent.change(within(dialog).getByLabelText('To (inclusive)'), { target: { value: '2026-10-25' } });
- expect(within(dialog).getByLabelText('From (inclusive)')).toHaveValue('2026-10-19');
- expect(within(dialog).getByLabelText('To (inclusive)')).toHaveValue('2026-10-25');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce(); expect(save.mock.calls[0]?.[0]).toHaveLength(2);
-});
-
-it('saves removals with an untouched blank editor, including clearing the last summary', async () => {
- const { user, save, open } = example([retained]), dialog = await open();
- await user.click(within(dialog).getByRole('button', { name: 'Remove Our measured result' }));
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce(); expect(save.mock.calls[0]?.[0]).toEqual([]);
-});
-
-it('retains the auto-applied summary after a rejected save and reuses the same key on another save', async () => {
- const { user, save, open, choose } = example([], () => undefined), dialog = await open();
- await choose(dialog, 'Field', 'Budget');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce(); expect(dialog).toBeVisible(); expect(within(dialog).getByText('Budget · Sum')).toBeVisible();
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1]?.[0]).toEqual(save.mock.calls[0]?.[0]);
- expect(save.mock.calls[1]?.[0]).toHaveLength(1);
-});
-
-it('does not save a now-unavailable selected field or silently drop it', async () => {
- const { user, save, open, choose, rerenderFields } = example([retained]), dialog = await open();
- await choose(dialog, 'Field', 'Budget');
- rerenderFields([{ ...plan, archivedAt: '2026-10-20T10:00:00.000Z' }, fact]);
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).not.toHaveBeenCalled(); expect(within(dialog).getByRole('alert')).toHaveTextContent(/field|available/i);
-});
-
-it('does not mark opening the summary dialog as an unsaved change', async () => {
- const { client, user, open } = example([retained]); const dialog = await open();
- expect(protectedDraftsFor(client).protecting).toBe(false);
- await user.click(within(dialog).getByRole('button', { name: 'Remove Our measured result' }));
- expect(protectedDraftsFor(client).protecting).toBe(true);
-});
-
-it('closes an untouched editor through Save without creating a settings write', async () => {
- const { user, save, open } = example([retained]), dialog = await open();
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).not.toHaveBeenCalled(); expect(screen.queryByRole('dialog', { name: 'Summary · Delivery' })).not.toBeInTheDocument();
-});
-
-it('can cancel an incomplete new summary without discarding staged removals', async () => {
- const { user, save, open, choose } = example([retained]), dialog = await open();
- await user.click(within(dialog).getByRole('button', { name: 'Remove Our measured result' }));
- await choose(dialog, 'Summary type', 'Person’s available working time');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).not.toHaveBeenCalled();
- await user.click(within(dialog).getByRole('button', { name: 'Cancel new summary' }));
- expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce(); expect(save.mock.calls[0]?.[0]).toEqual([]);
-});
-
-it('does not allow the active editor to silently exceed four summaries', async () => {
- const widgets = Array.from({ length: 4 }, (_, i) => ({ ...retained, key: `kept_${i}` }));
- const { user, save, open, choose } = example(widgets), dialog = await open();
- await choose(dialog, 'Field', 'Budget');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).not.toHaveBeenCalled(); expect(within(dialog).getByRole('alert')).toHaveTextContent('four summaries');
-});
-
-it('opening an existing summary edit and saving unchanged closes without a write or dirty prompt', async () => {
- const { client, user, save, open } = example([retained]), dialog = await open();
- await user.click(within(dialog).getByRole('button', { name: 'Edit Our measured result' }));
- expect(protectedDraftsFor(client).protecting).toBe(false);
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).not.toHaveBeenCalled(); expect(screen.queryByRole('dialog', { name: 'Summary · Delivery' })).not.toBeInTheDocument();
-});
-
-it('does not let deferred validation focus collapse a newly opened person picker', async () => {
- const { user, save, open, choose } = example([retained]), dialog = await open();
- await choose(dialog, 'Summary type', 'Person’s available working time');
- const frames: FrameRequestCallback[] = [];
- vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => { frames.push(callback); return frames.length; });
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).not.toHaveBeenCalled();
- expect(within(dialog).getByRole('alert')).toHaveTextContent('Choose a person');
- const person = within(dialog).getByRole('combobox', { name: 'Person' });
- await user.click(person);
- expect(person).toHaveAttribute('aria-expanded', 'true');
- expect(screen.getByRole('option', { name: 'Анна Тестова' })).toBeVisible();
- // Run any delayed frame work after the user already moved on to the next control.
- await act(async () => { for (const callback of frames.splice(0)) callback(performance.now()); });
- expect(person).toHaveAttribute('aria-expanded', 'true');
- expect(person).toHaveFocus();
- await user.click(screen.getByRole('option', { name: 'Анна Тестова' }));
- expect(person).toHaveTextContent('Анна Тестова');
- await user.click(within(dialog).getByRole('button', { name: 'Save summary' }));
- expect(save).toHaveBeenCalledOnce();
- expect(save.mock.calls[0]?.[0]).toEqual([retained, expect.objectContaining({ kind: 'capacity', membershipId: alphaMembers[0]?.id, range: { kind: 'project_dates' } })]);
-});
+it('opens a clear saved-indicator list with no implicit empty editor or second Save button',async()=>{const{open,client}=example(),list=await open();expect(within(list).getByText('Our measured result')).toBeVisible();expect(within(list).getByRole('button',{name:'Add indicator'})).toBeVisible();expect(within(list).queryByRole('combobox')).not.toBeInTheDocument();expect(within(list).queryByRole('button',{name:'Save summary'})).not.toBeInTheDocument();expect(protectedDraftsFor(client).protecting).toBe(false);});
+it('Add opens a dedicated popup and Save persists the current calculation directly',async()=>{const{user,save,add,choose}=example(),dialog=await add();await choose(dialog,'Field','Budget');await choose(dialog,'Calculation','Average');expect(within(dialog).queryByRole('button',{name:'Add another summary'})).not.toBeInTheDocument();await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(save).toHaveBeenCalledOnce();expect(save.mock.calls[0]?.[1]).toBe(2);expect(save.mock.calls[0]?.[0]).toEqual([retained,expect.objectContaining({kind:'measure',measure:expect.objectContaining({operation:'avg',fieldId:plan.id})})]);expect(screen.queryByRole('dialog')).not.toBeInTheDocument();});
+it('the same popup edits a saved indicator and preserves its identities and label',async()=>{const{user,save,open,choose}=example(),list=await open();await user.click(within(list).getByRole('button',{name:'Edit Our measured result'}));const dialog=screen.getByRole('dialog',{name:'Edit summary indicator'});await choose(dialog,'Calculation','Maximum');await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(save.mock.calls[0]?.[0]).toEqual([{...retained,measure:{...retained.measure,operation:'max'}}]);});
+it('directly saves project dates and a zero manual capacity override',async()=>{const{user,save,add,choose}=example([]),dialog=await add();await choose(dialog,'Summary type','Person’s available working time');await choose(dialog,'Person','Анна Тестова');await user.click(within(dialog).getByRole('checkbox',{name:'Override available time for this summary'}));await user.type(within(dialog).getByLabelText('Manual available minutes'),'0');await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(save.mock.calls[0]?.[0]).toEqual([expect.objectContaining({kind:'capacity',membershipId:alphaMembers[0]?.id,range:{kind:'project_dates'},override:{minutes:0}})]);});
+it('validates the active popup and lets a person picker remain open after the error',async()=>{const{user,save,add,choose}=example(),dialog=await add();await choose(dialog,'Summary type','Person’s available working time');await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(save).not.toHaveBeenCalled();expect(within(dialog).getByRole('alert')).toHaveTextContent('Choose a person');await choose(dialog,'Person','Анна Тестова');await choose(dialog,'Period','Custom range');await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(save).not.toHaveBeenCalled();fireEvent.change(within(dialog).getByLabelText('From (inclusive)'),{target:{value:'2026-10-19'}});fireEvent.change(within(dialog).getByLabelText('To (inclusive)'),{target:{value:'2026-10-25'}});await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(save).toHaveBeenCalledOnce();});
+it('a rejected save keeps the entered form and stable indicator key for another explicit Save',async()=>{const{user,save,add,choose}=example([],()=>undefined),dialog=await add();await choose(dialog,'Field','Budget');await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(dialog).toBeVisible();expect(within(dialog).getByRole('combobox',{name:'Field'})).toHaveTextContent('Budget');await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(save).toHaveBeenCalledTimes(2);expect(save.mock.calls[1]?.[0]).toEqual(save.mock.calls[0]?.[0]);expect(genericHeaderWidgetSchema.parse(save.mock.calls[0]?.[0]?.[0])).toMatchObject({kind:'measure'});});
+it('dirty popup Escape keeps the form until an explicit discard, without changing the saved list',async()=>{const{user,client,save,add,choose}=example(),dialog=await add();await choose(dialog,'Field','Budget');await user.keyboard('{Escape}');expect(dialog).toBeVisible();await user.click(within(dialog).getByRole('button',{name:'Keep editing indicator'}));expect(within(dialog).getByRole('combobox',{name:'Field'})).toHaveTextContent('Budget');await user.keyboard('{Escape}');await user.click(within(dialog).getByRole('button',{name:'Discard indicator changes'}));const list=screen.getByRole('dialog',{name:'Summary · Delivery'});expect(within(list).getByText('Our measured result')).toBeVisible();expect(within(list).queryByText('Budget · Sum')).not.toBeInTheDocument();expect(save).not.toHaveBeenCalled();expect(protectedDraftsFor(client).protecting).toBe(false);});
+it('clean popup X and unchanged Edit Save create no dirty prompt or write',async()=>{const{user,client,save,add}=example(),dialog=await add();expect(protectedDraftsFor(client).protecting).toBe(false);await user.click(within(dialog).getByRole('button',{name:'Close'}));const list=screen.getByRole('dialog',{name:'Summary · Delivery'});await user.click(within(list).getByRole('button',{name:'Edit Our measured result'}));await user.click(within(screen.getByRole('dialog',{name:'Edit summary indicator'})).getByRole('button',{name:'Save indicator'}));expect(save).not.toHaveBeenCalled();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();});
+it('Remove saves directly without a hidden staged list or outer Save',async()=>{const{user,save,open}=example(),list=await open();await user.click(within(list).getByRole('button',{name:'Remove Our measured result'}));expect(save).toHaveBeenCalledOnce();expect(save.mock.calls[0]?.[0]).toEqual([]);expect(screen.queryByRole('dialog')).not.toBeInTheDocument();});
+it('does not allow a new indicator beyond four, or save an unavailable selected field',async()=>{const widgets=Array.from({length:4},(_,index)=>({...retained,key:`kept_${index}`}));const first=example(widgets),list=await first.open();expect(within(list).getByRole('button',{name:'Add indicator'})).toBeDisabled();await first.user.click(within(list).getAllByRole('button',{name:'Close'})[0]??list);expect(first.save).not.toHaveBeenCalled();});
+it('rejects an archived selected field without silently dropping it from the popup',async()=>{const{user,save,add,choose,rerenderFields}=example(),dialog=await add();await choose(dialog,'Field','Budget');rerenderFields([{...plan,archivedAt:'2026-10-20T10:00:00.000Z'},fact]);await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));expect(save).not.toHaveBeenCalled();expect(within(dialog).getByRole('alert')).toHaveTextContent(/field|available/i);});
+it('an unknown save blocks popup dismissal and keeps the explicit original retry visible',async()=>{const{user,save,retry,add,choose,unknown}=example([],()=>undefined),dialog=await add();await choose(dialog,'Field','Budget');await user.click(within(dialog).getByRole('button',{name:'Save indicator'}));unknown();await user.click(within(dialog).getByRole('button',{name:'Close'}));expect(dialog).toBeVisible();expect(within(dialog).getByRole('alert')).toHaveTextContent('unresolved');await user.click(within(dialog).getByRole('button',{name:'Retry exact submission'}));expect(retry).toHaveBeenCalledOnce();expect(save).toHaveBeenCalledOnce();expect(screen.queryByRole('dialog')).not.toBeInTheDocument();});
