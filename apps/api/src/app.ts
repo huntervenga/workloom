@@ -1,3 +1,6 @@
+import type { DuplicationApplication } from '@workloom/domain';
+import { createDuplicationApplication } from '@workloom/db';
+import { registerDuplicationRoutes } from './http/duplication-routes.js';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 
@@ -69,6 +72,7 @@ import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, replyWebNavigation, resolveWebDist } from './http/static-web.js';
 
 export interface AppDependencies {
+  readonly duplicationApplication?: DuplicationApplication;
   readonly leaveApplication?: LeaveApplication;
   readonly genericReportApplication?: GenericReportApplication;
   readonly planningCheckApplication?: PlanningCheckApplication;
@@ -180,6 +184,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   // Reuses the same pool; no additional connection is opened.
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
+  const duplicationApplication = dependencies.duplicationApplication ?? (database === undefined ? undefined : createDuplicationApplication(database));
   const taskRowApplication = dependencies.taskRowApplication ?? (database === undefined ? undefined : createTaskRowApplication(database));
   const workspaceCreateApplication =
     dependencies.workspaceCreateApplication ?? (database === undefined ? undefined : createWorkspaceCreateApplication(database));
@@ -330,6 +335,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (taskApplication !== undefined) {
     registerTaskRoutes(app, { identity, tasks: taskApplication });
   }
+  if (duplicationApplication !== undefined) registerDuplicationRoutes(app, { identity, duplication: duplicationApplication });
   if (taskRowApplication !== undefined) {
     registerTaskRowRoutes(app, { identity, rows: taskRowApplication });
   }

@@ -22,14 +22,16 @@ export interface TimeOffAcknowledgements {
 }
 export function useTimeOffCommands(actorId: string, workspaceId: string, acknowledgements: TimeOffAcknowledgements = {}) {
   const client = useQueryClient();
-  const invalidate = () => { void client.invalidateQueries({ queryKey: timeOffKeys.root(actorId, workspaceId) }); void client.invalidateQueries({ queryKey: reportKeys.root(actorId, workspaceId) }); };
+  // Keep the confirmed command protected until active calendar reads settle. Otherwise a
+  // background catch-up can replace that read, then revert to pre-write availability on focus.
+  const invalidate = () => { const current = client.invalidateQueries({ queryKey: timeOffKeys.root(actorId, workspaceId) }); void client.invalidateQueries({ queryKey: reportKeys.root(actorId, workspaceId) }); return current; };
   const template = useIdempotentMutation({ prepare: ({ input }: IdempotentVariables & { input: ApplyLeaveTemplateInput }) => api.applyTemplateRequest(workspaceId, input), onSuccess: invalidate });
-  const settings = useIdempotentMutation({ prepare: ({ input }: IdempotentVariables & { input: PutLeaveSettingsInput }) => api.saveSettingsRequest(workspaceId, input), onSuccess: saved => { invalidate(); acknowledgements.onSettings?.(saved); } });
-  const profile = useIdempotentMutation({ prepare: ({ membershipId, input }: IdempotentVariables & { membershipId: string; input: PutLeaveProfileInput }) => api.saveProfileRequest(workspaceId, membershipId, input), onSuccess: saved => { invalidate(); acknowledgements.onProfile?.(saved); } });
-  const create = useIdempotentMutation({ prepare: ({ input }: IdempotentVariables & { input: CreateLeaveRequestInput }) => api.createRequest(workspaceId, input), onSuccess: saved => { invalidate(); acknowledgements.onRequest?.(saved); acknowledgements.onCreated?.(); } });
-  const update = useIdempotentMutation({ prepare: ({ requestId, input }: IdempotentVariables & { requestId: string; input: UpdateLeaveRequestInput }) => api.updateRequest(workspaceId, requestId, input), onSuccess: saved => { invalidate(); acknowledgements.onRequest?.(saved); } });
-  const decision = useIdempotentMutation({ prepare: ({ requestId, input }: IdempotentVariables & { requestId: string; input: DecideLeaveRequestInput }) => api.decideRequest(workspaceId, requestId, input), onSuccess: saved => { invalidate(); acknowledgements.onRequest?.(saved); } });
-  const bulk = useIdempotentMutation({ prepare: ({ input }: IdempotentVariables & { input: BulkLeaveRequestInput }) => api.bulkRequest(workspaceId, input), onSuccess: saved => { invalidate(); for (const request of saved) acknowledgements.onRequest?.(request); acknowledgements.onCreated?.(); } });
+  const settings = useIdempotentMutation({ prepare: ({ input }: IdempotentVariables & { input: PutLeaveSettingsInput }) => api.saveSettingsRequest(workspaceId, input), onSuccess: async saved => { await invalidate(); acknowledgements.onSettings?.(saved); } });
+  const profile = useIdempotentMutation({ prepare: ({ membershipId, input }: IdempotentVariables & { membershipId: string; input: PutLeaveProfileInput }) => api.saveProfileRequest(workspaceId, membershipId, input), onSuccess: async saved => { await invalidate(); acknowledgements.onProfile?.(saved); } });
+  const create = useIdempotentMutation({ prepare: ({ input }: IdempotentVariables & { input: CreateLeaveRequestInput }) => api.createRequest(workspaceId, input), onSuccess: async saved => { await invalidate(); acknowledgements.onRequest?.(saved); acknowledgements.onCreated?.(); } });
+  const update = useIdempotentMutation({ prepare: ({ requestId, input }: IdempotentVariables & { requestId: string; input: UpdateLeaveRequestInput }) => api.updateRequest(workspaceId, requestId, input), onSuccess: async saved => { await invalidate(); acknowledgements.onRequest?.(saved); } });
+  const decision = useIdempotentMutation({ prepare: ({ requestId, input }: IdempotentVariables & { requestId: string; input: DecideLeaveRequestInput }) => api.decideRequest(workspaceId, requestId, input), onSuccess: async saved => { await invalidate(); acknowledgements.onRequest?.(saved); } });
+  const bulk = useIdempotentMutation({ prepare: ({ input }: IdempotentVariables & { input: BulkLeaveRequestInput }) => api.bulkRequest(workspaceId, input), onSuccess: async saved => { await invalidate(); for (const request of saved) acknowledgements.onRequest?.(request); acknowledgements.onCreated?.(); } });
   const adjustment = useIdempotentMutation({ prepare: ({ input }: IdempotentVariables & { input: CreateLeaveAdjustmentInput }) => api.adjustmentRequest(workspaceId, input), onSuccess: invalidate });
   return { template, settings, profile, create, update, decision, bulk, adjustment };
 }

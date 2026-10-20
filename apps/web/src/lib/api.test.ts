@@ -196,3 +196,17 @@ describe('safe required-before-completion feedback',()=>{
 it.each([400,409,500])('never classifies status %s as a confirmed required-field completion refusal',async status=>{
  stubFetch(json(status,{error:{code:'DOMAIN_VALIDATION_FAILED',message:leakyMessage,retryable:false,details:{policyReason:'completion_fields_required'}},meta:{requestId:'status-guard'}}));expect((await captureError(apiGet('/completion-status',workspaceResponseSchema))).completionFieldsRequired).toBe(false);
 });
+
+
+describe('bounded duplication error classification',()=>{
+ it('keeps only an allowlisted duplication reason on an actual validation rejection',async()=>{
+  stubFetch(json(422,{error:{code:'DOMAIN_VALIDATION_FAILED',message:leakyMessage,retryable:false,details:{duplicationReason:'too_many_tasks',title:leakyMessage}},meta:{requestId:'req_copy'}}));
+  const error=await captureError(apiGet('/api/v1/workspaces',workspaceResponseSchema));
+  expect(error.duplicationReason).toBe('too_many_tasks');expect(error.completionFieldsRequired).toBe(false);
+  expect(JSON.stringify({...error,message:error.message})).not.toMatch(/hunter2|s3cret|select|title/);
+ });
+ for(const[status,code,reason]of[[422,'DOMAIN_VALIDATION_FAILED',leakyMessage],[422,'DOMAIN_VALIDATION_FAILED',{value:'too_many_tasks',secret:leakyMessage}],[422,'FIELD_LOCKED','too_many_tasks'],[403,'DOMAIN_VALIDATION_FAILED','too_many_tasks'],[500,'DOMAIN_VALIDATION_FAILED','too_many_tasks']]as const)it(`discards unknown or unrelated duplication details (${status}, ${code}, ${typeof reason})`,async()=>{
+  stubFetch(json(status,{error:{code,message:leakyMessage,retryable:false,details:{duplicationReason:reason}},meta:{requestId:'req_copy'}}));
+  const error=await captureError(apiGet('/api/v1/workspaces',workspaceResponseSchema));expect(error.duplicationReason).toBeNull();expect(JSON.stringify({...error,message:error.message})).not.toMatch(/hunter2|s3cret|select/);
+ });
+});

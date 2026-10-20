@@ -285,6 +285,23 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
         }
         break;
       }
+      case 'duplication': {
+        if(intent.command==='task.duplicate') {
+          const source=await repo.tasks.findTask(ws,intent.target.sourceId);
+          const parent=source?.parentTaskId?await repo.tasks.findTask(ws,source.parentTaskId):null;
+          if(parent?.meetingId&&source?.workPackageId===parent.workPackageId)throw rule('Meeting preparation needs an explicit separate work package.');
+        }
+        // New identities have no old baseline/value locks. Existing definition and deadline rules still apply.
+        for(const selected of intent.fieldPolicyCandidates) {
+          const definition=await repo.fields.findField(ws,selected.fieldId);
+          if(definition?.projectId===intent.target.projectId&&definition.locked)return {__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[...new Set(newlyFrozen)].sort()}};
+        }
+        for(const selected of intent.fieldPolicyCandidates) {
+          policyReason=await policyCheck(selected.fieldId,null,selected.value,selected.expectedDefinitionRevision,0);
+          if(policyReason)break;
+        }
+        break;
+      }
       case 'task_row': {
         // Ordinary new-task metadata plus first values: no protected task, package, value or fact exists yet.
         // The composer guards an existing protected commitment separately before it creates anything.

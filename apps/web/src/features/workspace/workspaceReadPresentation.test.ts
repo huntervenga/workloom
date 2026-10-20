@@ -1,0 +1,67 @@
+import { QueryClient, QueryObserver, onlineManager } from '@tanstack/react-query';
+import { afterEach, describe, expect, it } from 'vitest';
+import type { WorkspaceChangeHeadDto } from '@workloom/contracts';
+import { queryKeys } from '../../lib/queryKeys';
+import { WorkspaceHeadRechecks } from '../../lib/workspaceHeadRechecks';
+import { workspaceReadPresentationFor, type WorkspacePresentationProof } from './workspaceReadPresentation';
+import { refreshWorkspaceLiveQueries } from './workspaceLiveQueries';
+const actor='11111111-1111-4111-8111-111111111111',ws='22222222-2222-4222-8222-222222222222',project='33333333-3333-4333-8333-333333333333',member='44444444-4444-4444-8444-444444444444';
+const applied:WorkspaceChangeHeadDto={actorUserId:actor,workspaceId:ws,membershipId:member,membershipRevision:1,role:'owner',permissionEpoch:'1',changeSeq:'10'},target={...applied,changeSeq:'11'};
+function held<T>(){let resolve:(value:T)=>void=()=>undefined,reject:(error:Error)=>void=()=>undefined;const promise=new Promise<T>((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};}
+async function settle(){for(let i=0;i<30;i++)await Promise.resolve();}
+const cleanup:(()=>void)[]=[];afterEach(()=>{onlineManager.setOnline(true);cleanup.splice(0).forEach(done=>done());});
+function fixture(){
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}}),store=workspaceReadPresentationFor(client),abort=new AbortController(),safety={safe:true};
+ const workspace={id:ws,name:'Workspace',role:'owner',timezone:'UTC'},projectData={id:project,workspaceId:ws,name:'Project',revision:2,archivedAt:null},members=[{id:member,workspaceId:ws,userId:actor,displayName:'Owner',role:'owner'}];
+ client.setQueryData(queryKeys.me,{actor:{id:actor}});client.setQueryData(queryKeys.workspaceChangeHead(actor,ws),target);
+ const gates=[held<unknown>(),held<unknown>(),held<unknown>()],data=[workspace,projectData,members],keys=[queryKeys.workspace(actor,ws),queryKeys.project(actor,ws,project),queryKeys.memberships(actor,ws)];
+ keys.forEach((key,index)=>{client.setQueryData(key,data[index]);const observer=new QueryObserver(client,{queryKey:key,queryFn:({signal})=>{void signal;return gates[index]?.promise??Promise.resolve(data[index]);},staleTime:Infinity});cleanup.push(observer.subscribe(()=>undefined));});
+ cleanup.push(()=>{abort.abort();client.clear();});
+ const allows=()=>store.allows(actor,ws,project),proof:WorkspacePresentationProof={appliedHead:applied,targetHead:target};
+ const start=(given:WorkspacePresentationProof|undefined=proof)=>refreshWorkspaceLiveQueries(client,actor,ws,abort.signal,()=>safety.safe,given);
+ const release=()=>gates.forEach((gate,index)=>gate.resolve(data[index]));
+ return{client,store,abort,safety,keys,gates,data,workspace,projectData,allows,proof,start,release};
+}
+describe('owned same-authority analytical read presentation',()=>{
+ it('retains presentation continuously through owned invalidation and held metadata while strict authority stays blocked',async()=>{
+  const f=fixture(),seen:boolean[]=[];const unsub=f.store.subscribe(()=>seen.push(f.allows()));const pass=f.start();await settle();expect(f.allows()).toBe(true);expect(seen).not.toContain(false);
+  expect(f.client.getQueryState(queryKeys.workspace(actor,ws))).toMatchObject({isInvalidated:true,fetchStatus:'fetching'});expect(f.client.getQueryState(queryKeys.project(actor,ws,project))).toMatchObject({isInvalidated:true,fetchStatus:'fetching'});
+  f.release();expect((await pass).complete).toBe(true);expect(f.allows()).toBe(false);unsub();
+ });
+ it.each(['no_applied','permission','role','membership','revision','actor','workspace'] as const)('never grants presentation for %s proof',async mode=>{
+  const f=fixture(),proof=structuredClone(f.proof);if(mode==='no_applied')proof.appliedHead=null;else if(mode==='permission')proof.targetHead.permissionEpoch='2';else if(mode==='role')proof.targetHead.role='viewer';else if(mode==='membership')proof.targetHead.membershipId='55555555-5555-4555-8555-555555555555';else if(mode==='revision')proof.targetHead.membershipRevision=2;else if(mode==='actor')proof.targetHead.actorUserId='55555555-5555-4555-8555-555555555555';else proof.targetHead.workspaceId='55555555-5555-4555-8555-555555555555';
+  const pass=f.start(proof);await settle();expect(f.allows()).toBe(false);f.release();await pass;
+ });
+ it('does not mint from invalidated authority even when pre-head work is cancelled',async()=>{const f=fixture();await f.client.invalidateQueries({queryKey:queryKeys.project(actor,ws,project),exact:true,refetchType:'none'});const pass=f.start();await settle();expect(f.allows()).toBe(false);f.release();await pass;});
+ it('revokes on abort and does not leak across actor/workspace/project identity',async()=>{const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);expect(f.store.allows('other',ws,project)).toBe(false);expect(f.store.allows(actor,'other',project)).toBe(false);expect(f.store.allows(actor,ws,'other')).toBe(false);f.abort.abort();expect(f.allows()).toBe(false);f.release();await pass;});
+ it.each(['project_revision','project_archive','workspace_calendar','identity','permission_head']as const)('revokes immediately on %s',async mode=>{
+  const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);if(mode==='project_revision')f.client.setQueryData(queryKeys.project(actor,ws,project),{...f.projectData,revision:3});else if(mode==='project_archive')f.client.setQueryData(queryKeys.project(actor,ws,project),{...f.projectData,archivedAt:'2026-10-20T00:00:00Z'});else if(mode==='workspace_calendar')f.client.setQueryData(queryKeys.workspace(actor,ws),{...f.workspace,timezone:'Asia/Tokyo'});else if(mode==='identity')f.client.setQueryData(queryKeys.me,{actor:{id:'other'}});else f.client.setQueryData(queryKeys.workspaceChangeHead(actor,ws),{...target,permissionEpoch:'2'});expect(f.allows()).toBe(false);f.release();await pass;
+ });
+ it('revokes when an authority response fails despite cached data remaining',async()=>{const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);f.gates[0]?.reject(new Error('503'));await settle();expect(f.allows()).toBe(false);expect(f.client.getQueryState(queryKeys.workspace(actor,ws))?.data).toEqual(f.workspace);f.release();expect((await pass).complete).toBe(false);});
+ it.each(['access','identity','root']as const)('explicit %s recovery revokes before reading',async mode=>{const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);const recheck=new WorkspaceHeadRechecks(f.client,actor,ws,()=>false);if(mode==='access')recheck.access();else if(mode==='identity')recheck.identity();else void recheck.rootRefetch(async()=>undefined);expect(f.allows()).toBe(false);f.release();await pass;recheck.stop();});
+ it('revokes for an external successor flight without cancelling that successor on owned abort',async()=>{
+  const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);const next=held<unknown>(),query=f.client.getQueryCache().find({queryKey:queryKeys.project(actor,ws,project),exact:true});if(!query)throw Error('Missing query');query.setOptions({...query.options,queryFn:()=>next.promise});const external=f.client.refetchQueries({queryKey:queryKeys.project(actor,ws,project),exact:true},{cancelRefetch:true});await settle();expect(f.allows()).toBe(false);f.abort.abort();expect(query.state.fetchStatus).toBe('fetching');next.resolve(f.projectData);f.release();await external;await pass;
+ });
+ it('does not mint when a captured authority key was removed',async()=>{const f=fixture();f.client.removeQueries({queryKey:queryKeys.memberships(actor,ws),exact:true});const pass=f.start();await settle();expect(f.allows()).toBe(false);f.release();await pass;});
+});
+it('does not turn cancellation of an already fetching authority read into a clean-cache presentation grant',async()=>{const f=fixture();const old=f.client.refetchQueries({queryKey:queryKeys.project(actor,ws,project),exact:true});await settle();expect(f.client.getQueryState(queryKeys.project(actor,ws,project))?.fetchStatus).toBe('fetching');const pass=f.start();await settle();expect(f.allows()).toBe(false);f.release();await old;await pass;});
+it('revokes on a non-owned explicit metadata invalidation after one owned answer settled',async()=>{const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);f.gates[0]?.resolve(f.workspace);await settle();expect(f.allows()).toBe(true);await f.client.invalidateQueries({queryKey:queryKeys.workspace(actor,ws),exact:true,refetchType:'none'});expect(f.allows()).toBe(false);f.release();await pass;});
+it('revokes when an authority key is removed and recreated with identical data',async()=>{const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);f.client.removeQueries({queryKey:queryKeys.project(actor,ws,project),exact:true});f.client.setQueryData(queryKeys.project(actor,ws,project),f.projectData);expect(f.allows()).toBe(false);f.release();await pass;});
+it('never restores a revoked unsafe generation when safety later returns',async()=>{const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);f.safety.safe=false;f.gates[0]?.resolve(f.workspace);await settle();expect(f.allows()).toBe(false);f.safety.safe=true;expect(f.allows()).toBe(false);f.release();await pass;});
+it('never grants without a controller applied-head proof even with matching cached head',async()=>{const f=fixture(),pass=refreshWorkspaceLiveQueries(f.client,actor,ws,f.abort.signal,()=>true);await settle();expect(f.allows()).toBe(false);f.release();await pass;});
+it('does not accept a stale proof for a different latest server head sequence',async()=>{const f=fixture();f.client.setQueryData(queryKeys.workspaceChangeHead(actor,ws),{...target,changeSeq:'12'});const pass=f.start();await settle();expect(f.allows()).toBe(false);f.release();await pass;});
+it('rejects an external invalidation arriving during the pre-refetch cancellation await',async()=>{const f=fixture(),pass=f.start();void f.client.invalidateQueries({queryKey:queryKeys.workspace(actor,ws),exact:true,refetchType:'none'});await settle();expect(f.allows()).toBe(false);f.release();await pass;});
+
+it('revokes at the first retry failure while an authority query still has cached success and the same owned promise',async()=>{
+ const f=fixture(),recovered=held<unknown>(),query=f.client.getQueryCache().find({queryKey:queryKeys.workspace(actor,ws),exact:true});if(!query)throw Error('Missing workspace');let reads=0;query.setOptions({...query.options,retry:1,retryDelay:0,queryFn:()=>++reads===1?Promise.reject(new Error('Retryable authority outage')):recovered.promise});const pass=f.start();await settle();expect(query.state).toMatchObject({status:'success',fetchStatus:'fetching',fetchFailureCount:1,data:f.workspace});expect(f.allows()).toBe(false);recovered.resolve(f.workspace);f.release();await pass;expect(query.state.fetchFailureCount).toBe(0);expect(f.allows()).toBe(false);
+});
+it('revokes at a head retry failure and cannot revive after the later successful head',async()=>{
+ const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);const recovered=held<WorkspaceChangeHeadDto>();let reads=0;const reading=f.client.fetchQuery({queryKey:queryKeys.workspaceChangeHead(actor,ws),queryFn:()=>++reads===1?Promise.reject(new Error('Retryable head outage')):recovered.promise,retry:1,retryDelay:0,staleTime:0});void reading.catch(()=>undefined);await settle();expect(f.client.getQueryState(queryKeys.workspaceChangeHead(actor,ws))).toMatchObject({status:'success',fetchStatus:'fetching',fetchFailureCount:1,data:target});expect(f.allows()).toBe(false);recovered.resolve(target);f.release();await reading;await pass;expect(f.allows()).toBe(false);
+});
+it('revokes when an owned authority flight pauses offline without any failed attempt',async()=>{
+ const f=fixture();f.client.mount();cleanup.push(()=>f.client.unmount());onlineManager.setOnline(false);const pass=f.start();await settle();expect(f.client.getQueryState(queryKeys.workspace(actor,ws))).toMatchObject({status:'success',fetchStatus:'paused',fetchFailureCount:0});expect(f.allows()).toBe(false);onlineManager.setOnline(true);f.release();await pass;expect(f.allows()).toBe(false);
+});
+it('revokes when the head flight pauses offline and does not revive after resume',async()=>{
+ const f=fixture();f.client.mount();cleanup.push(()=>f.client.unmount());const pass=f.start();await settle();expect(f.allows()).toBe(true);onlineManager.setOnline(false);const reading=f.client.fetchQuery({queryKey:queryKeys.workspaceChangeHead(actor,ws),queryFn:async()=>target,retry:false,staleTime:0});void reading.catch(()=>undefined);await settle();expect(f.client.getQueryState(queryKeys.workspaceChangeHead(actor,ws))).toMatchObject({status:'success',fetchStatus:'paused',fetchFailureCount:0});expect(f.allows()).toBe(false);onlineManager.setOnline(true);f.release();await reading;await pass;expect(f.allows()).toBe(false);
+});
+it('revokes immediately when the validated head itself is invalidated',async()=>{const f=fixture(),pass=f.start();await settle();expect(f.allows()).toBe(true);await f.client.invalidateQueries({queryKey:queryKeys.workspaceChangeHead(actor,ws),exact:true,refetchType:'none'});expect(f.allows()).toBe(false);f.client.setQueryData(queryKeys.workspaceChangeHead(actor,ws),target);expect(f.allows()).toBe(false);f.release();await pass;});

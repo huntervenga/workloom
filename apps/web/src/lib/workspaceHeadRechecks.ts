@@ -1,6 +1,7 @@
 import { CancelledError, type Query, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { membershipListResponseSchema, meResponseSchema, workspaceResponseSchema, type MeDto } from '@workloom/contracts';
 import { ApiError, apiGet, type ResponseParser } from './api';
+import { revokeWorkspaceReadPresentation } from '../features/workspace/workspaceReadPresentation';
 import { queryKeys } from './queryKeys';
 
 const ownedReads = new WeakMap<object, () => boolean>();
@@ -30,6 +31,7 @@ export class WorkspaceHeadRechecks {
   stop(): void { this.stopped = true; this.cancel(); }
 
   access = (): void => {
+    revokeWorkspaceReadPresentation(this.client, this.actorId, this.workspaceId);
     void this.start('access', [queryKeys.workspace(this.actorId, this.workspaceId), queryKeys.memberships(this.actorId, this.workspaceId)], generation =>
       Promise.allSettled([
         this.read(generation, queryKeys.workspace(this.actorId, this.workspaceId), `/api/v1/workspaces/${encodeURIComponent(this.workspaceId)}`, workspaceResponseSchema,
@@ -39,7 +41,9 @@ export class WorkspaceHeadRechecks {
       ]));
   };
   identity = (): void => { void this.verifyIdentity(); };
-  verifyIdentity = (): Promise<MeDto | null> => this.start('identity', [queryKeys.me], async (generation, signal) => {
+  verifyIdentity = (): Promise<MeDto | null> => {
+    revokeWorkspaceReadPresentation(this.client, this.actorId, this.workspaceId);
+    return this.start('identity', [queryKeys.me], async (generation, signal) => {
     // An unsuccessful advisory identity recheck must not replace the denied workspace's
     // neutral recovery UI with a global identity error. Publish only a current validated answer.
     this.guard(generation);
@@ -49,12 +53,15 @@ export class WorkspaceHeadRechecks {
       this.client.setQueryData(queryKeys.me, answer.data);
       return answer.data;
     } catch (error) { this.guard(generation); throw error; }
-  });
+    });
+  };
 
   isCurrent = (): boolean => this.current(this.generation);
 
   /** Manual recovery uses the observer's real refetch, with the same owned error-delivery guard. */
-  rootRefetch = <T>(refetch: () => Promise<T>): Promise<T | null> => this.start('access',
+  rootRefetch = <T>(refetch: () => Promise<T>): Promise<T | null> => {
+    revokeWorkspaceReadPresentation(this.client, this.actorId, this.workspaceId);
+    return this.start('access',
     [queryKeys.workspace(this.actorId, this.workspaceId)], async generation => {
       const query = this.client.getQueryCache().find({ queryKey: queryKeys.workspace(this.actorId, this.workspaceId), exact: true });
       const current = () => this.current(generation);
@@ -62,6 +69,7 @@ export class WorkspaceHeadRechecks {
       try { return await refetch(); }
       finally { if (query && ownedReads.get(query) === current) ownedReads.delete(query); }
     });
+  };
 
   private current(generation: number): boolean {
     const actor = this.client.getQueryData<MeDto>(queryKeys.me)?.actor.id;

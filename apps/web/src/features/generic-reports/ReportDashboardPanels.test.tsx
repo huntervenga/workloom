@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ReportDashboardPanels } from './ReportDashboardPanels';
 import { renderFieldUi, field } from '../fields/test/fixtures';
-import { alpha, anna, alphaMembers, installFakeApi, ok } from '../../test/fakeApi';
+import { alpha, anna, alphaMembers, installFakeApi, failure, ok } from '../../test/fakeApi';
 import { definition, result, rootPath, PROJECT_ID } from './test/fixtures';
 import type { GenericReportConfig } from '@workloom/contracts';
 describe('authoritative secondary report breakdowns',()=>{
@@ -36,3 +36,5 @@ it('unifies full Plan and Actual, working capacity including a person without ta
  expect(screen.getByRole('row',{name:`${idle.displayName} · Available: 40h · Plan: — · Actual: —`})).toHaveTextContent('0 tasks');
  expect(screen.getByRole('region',{name:'Delivery overview'})).toBeVisible();
 });
+
+it('does not reuse cached person groups or cards after a denied people refresh',async()=>{const base=result(),category=field('Focus area','single_select','90000000-0000-4000-8000-000000000033');let denied=false;installFakeApi({[`POST ${rootPath}/projects/${PROJECT_ID}/field-aggregates`]:request=>{const config=(request.body as{config:GenericReportConfig}).config;if(config.groupBy.kind==='assignee'&&denied)return failure(403,'FORBIDDEN','Denied');return ok({...base,config,fields:[...base.fields,category],groups:config.groupBy.kind==='assignee'?[{key:alphaMembers[0]?.id??'unassigned',label:'Person',taskCount:63,measures:base.measures,comparison:base.comparison,initialComparison:null}]:[]});}});const view=renderFieldUi(<ReportDashboardPanels actorId={anna.id} workspaceId={alpha.id} projectId={PROJECT_ID} result={{...base,config:{...base.config,groupBy:{kind:'category',fieldId:category.id}}}} members={alphaMembers} sections={[]} fields={[category]} disabled onPersonSelect={vi.fn()}/>);await screen.findByRole('region',{name:'Work types by person'});denied=true;await view.client.invalidateQueries();await waitFor(()=>expect(screen.queryByRole('region',{name:'Work types by person'})).not.toBeInTheDocument());expect(screen.queryByRole('region',{name:'Plan and actual by primary assignee'})).not.toBeInTheDocument();});

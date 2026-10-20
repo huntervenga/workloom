@@ -114,6 +114,7 @@ export type TaskMutationCommand = 'project.create'|'project.update'|'section.cre
 export type FieldMutationCommand = 'field.create'|'field.update'|'field.option.create'|'field.option.update'|'field.columns.update'|'field.value.set'|'field.policy.set'|'field.value.exception';
 export type PlanningMutationCommand = 'period.create'|'period.update'|'commitment.create'|'commitment.update'|'plan.freeze'|'work.set'|'report.create';
 export type PlanningMutationIntent =
+ | {readonly family:'duplication';readonly command:'task.duplicate'|'section.duplicate';readonly target:{readonly projectId:string;readonly sourceId:string};readonly input:unknown;readonly fieldPolicyCandidates:readonly {readonly fieldId:string;readonly expectedDefinitionRevision:number;readonly value:TaskFieldData}[]}
  | {readonly family:'planning_check';readonly command:'planning_check.settings'|'planning_check.capture';readonly target:{readonly projectId:string};readonly input:unknown}
  | {readonly family:'generic_report';readonly command:'generic_report.create'|'generic_report.update'|'generic_report.capture'|'generic_report.settings'|'generic_report.template';readonly target:{readonly kind:'project'|'report';readonly id:string};readonly input:unknown}
  | {readonly family:'task_placement';readonly command:TaskProjectPlacementCommand;readonly target:{readonly taskId:string;readonly projectId:string};readonly input:unknown}

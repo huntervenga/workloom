@@ -17,7 +17,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useId, useMemo, useRef, useState, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import { visibleTaskRows, type TaskTreeNode } from './taskTree';
@@ -99,6 +99,8 @@ export interface TaskTableProps {
   onCreateChild: (parent: TaskDto) => void;
   /** Starts renaming a section. Shown only when provided and `writable`. */
   onRenameSection?: ((section: SectionDto) => void) | undefined;
+  onDuplicateTask?: ((task: TaskDto) => void) | undefined;
+  onDuplicateSection?: ((section: SectionDto) => void) | undefined;
   /** The actor may create tasks here. Defaults to `false`. */
   writable?: boolean | undefined;
   /**
@@ -460,6 +462,7 @@ interface RowContext {
   onToggle: (taskId: string) => void;
   onOpenTask: (taskId: string) => void;
   onCreateChild: ((parent: TaskDto) => void) | null;
+  onDuplicateTask: ((task: TaskDto) => void) | undefined;
   partial: boolean;
   today: string | undefined;
   customColumns: readonly TaskTableCustomColumn[];
@@ -651,6 +654,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
                   {movable ? <Menu.Item className={menuItemClassName} disabled={ctx.isTaskFieldEditBusy?.(task, 'sectionId')} onSelect={() => { keepMenuFocus.current = true; ctx.onEditTaskField?.(task, 'sectionId'); }}>
                     <FolderInput size={14} aria-hidden="true" />{t('taskTable.rowActions.moveSection')}
                   </Menu.Item> : null}
+                  {ctx.onDuplicateTask && task.archivedAt === null && task.meetingId === null ? <Menu.Item className={menuItemClassName} disabled={ctx.draftTaskIds.has(task.id)} onSelect={() => { keepMenuFocus.current = true; ctx.onDuplicateTask?.(task); }}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</Menu.Item> : null}
                   {canAddChild ? <Menu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onCreateChild?.(task); }}>
                     <Plus size={14} aria-hidden="true" />{t('taskTable.rowActions.addSubtask')}
                   </Menu.Item> : null}
@@ -716,6 +720,7 @@ function GroupHeader({
   columnCount,
   onCreateTask,
   onRenameSection,
+  onDuplicateSection,
   metadata,
 }: {
   /** Assignee group whose header is a group-end drop target; undefined when the header accepts no drop. */
@@ -732,9 +737,11 @@ function GroupHeader({
   columnCount: number;
   onCreateTask: (sectionId?: string | null) => void;
   onRenameSection: ((section: SectionDto) => void) | undefined;
+  onDuplicateSection: ((section: SectionDto) => void) | undefined;
   metadata?: ReactNode;
 }) {
   const { t } = useTranslation();
+  const duplicateFocus = useRef(false);
   const { section } = group;
   const archived = section !== null && section.archivedAt !== null;
   // An expanded group offers its own persistent Add task row at the end instead.
@@ -753,7 +760,7 @@ function GroupHeader({
     <tr data-task-group-header={dropMembershipId} data-task-drop={dropLine ? 'after' : undefined}
       className={cn('h-10 border-t border-line bg-canvas', dropLine && 'shadow-[inset_0_-2px_0_var(--color-accent)]')}>
       <th scope="rowgroup" colSpan={columnCount} className="h-10 p-0 text-left font-normal" style={dropCellStyle(dropLine ? 'after' : undefined)}>
-        <div data-task-group-label="" className="sticky left-0 flex w-[100cqw] min-w-0 items-center gap-2 px-3">
+        <div data-task-group-label="" className="group/section sticky left-0 flex w-[100cqw] min-w-0 items-center gap-2 px-3">
           <button
             type="button"
             data-task-group={group.key}
@@ -782,6 +789,7 @@ function GroupHeader({
                 <Pencil size={14} aria-hidden="true" />
               </button>
             ) : null}
+            {writable && section !== null && !archived && onDuplicateSection ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('duplication.sectionActions',{name:section.name})} className={cn(iconButtonClassName,'size-8 text-muted opacity-0 focus:opacity-100 group-hover/section:opacity-100 data-[state=open]:opacity-100')}><MoreHorizontal size={15} aria-hidden="true"/></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" sideOffset={4} className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg" onCloseAutoFocus={event=>{if(duplicateFocus.current){duplicateFocus.current=false;event.preventDefault();}}}><Menu.Item className={menuItemClassName} onSelect={()=>{duplicateFocus.current=true;onDuplicateSection(section);}}><Copy size={14} aria-hidden="true"/>{t('duplication.sectionAction')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root> : null}
             {canCreate ? (
               <Button
                 variant="ghost"
@@ -853,7 +861,7 @@ export function TaskTable({
   onOpenTask,
   onCreateTask,
   onCreateChild,
-  onRenameSection,
+  onRenameSection, onDuplicateTask, onDuplicateSection,
   writable = false,
   partial = false,
   today,
@@ -1059,6 +1067,7 @@ export function TaskTable({
     onToggle,
     onOpenTask,
     onCreateChild: writable ? onCreateChild : null,
+    onDuplicateTask: writable ? onDuplicateTask : undefined,
     partial,
     today,
     customColumns,
@@ -1096,7 +1105,7 @@ export function TaskTable({
   // Match the real root title: cell inset, selection gutter, disclosure, completion and title padding.
   const titleInset = 12 + (selectRow ? 40 : 0) + 28 + (renderCompletionAction ? 32 : 0) + 4;
   // Confirmed rows the list has not loaded yet stay in place, read-only, so the next input never jumps.
-  const confirmedCtx: RowContext = { ...ctx, onEditTaskField: undefined, renderTaskFieldEditor: undefined, activeFieldEditor: undefined, onCreateChild: null, move: null, renderCompletionAction: () => <span aria-hidden="true" className="size-7 shrink-0" /> };
+  const confirmedCtx: RowContext = { ...ctx, onEditTaskField: undefined, renderTaskFieldEditor: undefined, activeFieldEditor: undefined, onCreateChild: null, onDuplicateTask: undefined, move: null, renderCompletionAction: () => <span aria-hidden="true" className="size-7 shrink-0" /> };
   const quickRows = (group: TableTaskGroup | null, depth: number): ReactNode => quickAdd ? <>
     {group === null ? null : (quickAdd.confirmedTasks ?? []).filter(task => !taskById.has(task.id)).map(task => <TaskRow key={task.id} node={{ task, depth, children: [], detachedReason: null }} group={group} ctx={confirmedCtx} />)}
     {quickAdd.render ? quickAdd.render(draftRow(depth)) : quickAddRow(quickAdd.content)}
@@ -1165,6 +1174,7 @@ export function TaskTable({
                   onCreateTask(sectionId);
                 }}
                 onRenameSection={onRenameSection}
+                onDuplicateSection={onDuplicateSection}
                 metadata={renderGroupMetadata?.(group)}
               />
               {collapsed ? null : emptyRow

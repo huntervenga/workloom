@@ -35,6 +35,7 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
     default:return never(i);
    }
   case 'import':return i.command==='import.csv.stage'?none:projects(i.target.projectId);
+  case 'duplication':return projects((await repo.tasks.findProject(ws,i.target.projectId))?.id);
   case 'schedule':return projects(i.target.projectId,...i.target.affectedProjectIds);
   case 'task':
    switch(i.command){

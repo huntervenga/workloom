@@ -1,3 +1,4 @@
+import { useDuplication } from '../features/duplication/useDuplication';
 import { useProjectPlanningChecks } from '../features/planning-checks/useProjectPlanningChecks';
 import { ProjectDateRange } from '../features/projects/ProjectDateRange';
 import { useColumnAggregates } from '../features/generic-reports/ColumnAggregates';
@@ -404,6 +405,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     [personalColumns.query.data?.columns, fieldDefinitions.data, fieldDefinitions.isSuccess, projectColumns.data, projectColumns.isSuccess, workspace.id, project.id, timeAvailable]);
   const ordinaryAggregates = useColumnAggregates({ actorId, workspaceId: workspace.id, projectId: project.id, projectDateRange: project.dateRange ?? null, projectRevision: project.revision, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], grouping, filters: { ...filters, search }, writable, enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && projectColumns.isSuccess && members.isSuccess && !personalColumns.denied });
   const planningChecks = useProjectPlanningChecks({ actorId, workspaceId: workspace.id, projectId: project.id, projectRevision: project.revision, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], tags: tags.data ?? [], enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && members.isSuccess && !personalColumns.denied, writable: canManageFields, requestedOpen: searchParams.get('checks') === '1', requestedFieldId: searchParams.get('checkField') ?? undefined, onOpenTask: id => openTask(id) });
+  const duplication = useDuplication({ actorId, workspaceId: workspace.id, projectId: project.id, fields: fieldDefinitions.data ?? [], members: members.data ?? [], writable, onDuplicated: result => { setAnnouncement(message(result.kind === 'task' ? 'duplication.createdTask' : 'duplication.createdSection')); if (result.rootTaskId !== null) openTask(result.rootTaskId); } });
   const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.map(tableColumnId), [reconciledColumns]);
   const fieldColumns: FieldColumn[] = reconciledColumns.effectiveVisibleRefs.flatMap(ref => {
     if (ref.kind !== 'field' || !fieldDefinitions.isSuccess || !projectColumns.isSuccess) return [];
@@ -1290,6 +1292,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
             onCreateChild={startChildInline}
             onRenameSection={writable ? renameSection : undefined}
+            onDuplicateTask={writable ? duplication.openTask : undefined}
+            onDuplicateSection={writable ? duplication.openSection : undefined}
           />}
           {!importMode && !graphMode ? <LinkedProjectTasks actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
           <ProjectUndoSurface actorId={actorId} workspaceId={workspace.id} projectId={project.id} writable={writable} />
@@ -1320,6 +1324,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             creating={creating}
             onClose={closeDrawer}
             onOpenTask={openTask}
+            onDuplicateTask={writable ? duplication.openTask : undefined}
             onCreateChild={parent => startCreate({ sectionId: parent.sectionId, parent })}
             onResumeCreate={() => startCreate({ sectionId: null, parent: null })}
             loadedSubtasks={loadedSubtasks}
@@ -1335,6 +1340,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onAnnounce={setAnnouncement}
           />
           {taskTime.dialogs}
+          {duplication.dialog}
           <RenameSectionDialog
             actorId={actorId}
             workspaceId={workspace.id}
@@ -1402,6 +1408,8 @@ interface TaskListProps {
   onCreateTask: (sectionId?: string | null) => void;
   onCreateChild: (parent: TaskDto) => void;
   onRenameSection: ((section: SectionDto) => void) | undefined;
+  onDuplicateTask?: ComponentProps<typeof TaskTable>['onDuplicateTask'];
+  onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
 function TaskList({ query, filtered, project, workspace, boardMode, ...table }: TaskListProps) {

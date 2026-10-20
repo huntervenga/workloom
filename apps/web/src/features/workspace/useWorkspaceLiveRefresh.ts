@@ -48,7 +48,7 @@ export function useWorkspaceLiveRefresh(actorId: string, workspaceId: string | n
           });
         } finally { signal.removeEventListener('abort', cancel); }
       },
-      refresh: (signal, safe) => refreshWorkspaceLiveQueries(client, actorId, workspaceId, signal, safe),
+      refresh: (signal, safe, proof) => refreshWorkspaceLiveQueries(client, actorId, workspaceId, signal, safe, proof),
       protected: () => isWorkspaceRefreshProtected(client, composing),
       recheckAccess,
       rejectedHead: error => {

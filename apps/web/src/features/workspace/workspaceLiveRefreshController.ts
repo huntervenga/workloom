@@ -1,13 +1,14 @@
 import type { WorkspaceChangeHeadDto } from '@workloom/contracts';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { sameWorkspaceHead, workspaceAccessChanged } from './workspaceChangeHead';
+import type { WorkspacePresentationProof } from './workspaceReadPresentation';
 import type { WorkspaceRefreshResult } from './workspaceLiveQueries';
 
 export const WORKSPACE_HEAD_POLL_MS = 5_000;
 
 interface RefreshDependencies {
   readHead: (signal: AbortSignal, previous: WorkspaceChangeHeadDto | null) => Promise<WorkspaceChangeHeadDto>;
-  refresh: (signal: AbortSignal, safe: () => boolean) => Promise<WorkspaceRefreshResult>;
+  refresh: (signal: AbortSignal, safe: () => boolean, proof: WorkspacePresentationProof) => Promise<WorkspaceRefreshResult>;
   protected: () => boolean;
   recheckAccess: () => void;
   rejectedHead: (error: unknown) => void;
@@ -129,7 +130,7 @@ export class WorkspaceLiveRefreshController {
     void (async () => {
       let again = false;
       try {
-        const result = await this.dependencies.refresh(request.signal, this.safe);
+        const result = await this.dependencies.refresh(request.signal, this.safe, { appliedHead: this.appliedHead, targetHead: target });
         if (!this.running || request.signal.aborted || this.denied) return;
         if (result.complete) {
           this.appliedHead = target;

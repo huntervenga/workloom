@@ -204,3 +204,6 @@ export * from "./planning-checks/ports.js";
 export * from "./planning-checks/service.js";
 export * from "./planning-checks/engine.js";
 export * from "./planning-checks/math.js";
+
+export * from './duplication/ports.js';
+export * from './duplication/service.js';

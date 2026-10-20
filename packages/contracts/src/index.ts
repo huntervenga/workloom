@@ -53,3 +53,5 @@ export * from './leave-api.js';
 export * from './workspace-reports.js';
 
 export * from "./planning-checks.js";
+
+export * from './duplication.js';

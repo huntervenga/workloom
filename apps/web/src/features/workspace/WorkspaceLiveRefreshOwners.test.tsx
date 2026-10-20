@@ -1,4 +1,4 @@
-import { projectRowSchema, type TaskDto } from '@workloom/contracts';
+import { planningCheckSettingsSchema, projectRowSchema, type TaskDto } from '@workloom/contracts';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
@@ -19,6 +19,10 @@ beforeAll(async () => { await import('../../routes/ProjectPage'); });
 function tableRoutes(currentTask: () => TaskDto = () => task): RouteTable {
   return {
     ...legacyTableRoutes(),
+    // This owner-race fixture is an unconfigured project. Model its ordinary analytical reads
+    // explicitly: a missing unrelated settings route would trigger a genuine 404 access recheck
+    // and consume the numbered root response reserved for the tested metadata race.
+    [`GET ${rootPath}/projects/${task.projectId}/planning-checks/settings`]: () => ok(planningCheckSettingsSchema.parse({ workspaceId: alpha.id, projectId: task.projectId, revision: 0, config: { enabled: false, rules: [] } })),
     [`GET ${rootPath}/projects/${task.projectId}/rows`]: () => {
       const canonicalTask = currentTask();
       return ok([projectRowSchema.parse({

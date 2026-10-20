@@ -1,0 +1,73 @@
+{
+  "taskAction": "Duplicate task",
+  "sectionAction": "Duplicate section",
+  "sectionActions": "Section actions for {{name}}",
+  "taskTitle": "Task name",
+  "sectionName": "Section name",
+  "copyName": "{{name}} (copy)",
+  "help": "Choose what to copy. The original stays unchanged.",
+  "taskReset": "New tasks start in To do. Comments, history, dependencies and recorded work are not copied.",
+  "options": {
+    "description": "Description",
+    "assignee": "Assignee",
+    "dates": "Start and due dates",
+    "tags": "Tags",
+    "priority": "Priority",
+    "participants": "Participants",
+    "subtasks": "Subtasks"
+  },
+  "includeTasks": "Copy tasks",
+  "includeSettings": "Copy section summaries and planning checks",
+  "settingsPermission": "Only owners and administrators can copy section settings.",
+  "customFields": "Custom field values",
+  "customFieldsHelp": "Fields start empty unless selected. Copied values, including actual hours, can affect reports.",
+  "noFields": "No custom fields in this project.",
+  "previewing": "Checking the copy…",
+  "previewFailed": "The copy could not be checked. Review the options and try again.",
+  "refreshPreview": "Refresh preview",
+  "previewCount": {
+    "one": "{{count}} task will be created",
+    "other": "{{count}} tasks will be created"
+  },
+  "previewValues": {
+    "one": "{{count}} custom value will be copied",
+    "other": "{{count}} custom values will be copied"
+  },
+  "copiedSettings": "Section settings to copy",
+  "sharedReferences": "People, periods and manual availability overrides keep their current selections.",
+  "summaryCount": {
+    "one": "{{count}} summary",
+    "other": "{{count}} summaries"
+  },
+  "checkCount": {
+    "one": "{{count}} planning check",
+    "other": "{{count}} planning checks"
+  },
+  "available": "Available working time",
+  "checkingAccess": "Editing is paused while your current access is checked.",
+  "otherSave": "Wait for the current save to finish before duplicating.",
+  "pending": "Creating the copy…",
+  "retrySame": "Retry the same copy",
+  "closeHeld": "This copy has not been confirmed. Retry the same copy before closing.",
+  "cancel": "Cancel",
+  "createdTask": "Task duplicated",
+  "createdSection": "Section duplicated",
+  "taskActions": "More task actions",
+  "errors": {
+    "permission": "You do not have permission to duplicate this selection. Ask an owner or administrator.",
+    "sourceUnavailable": "The original is unavailable or no longer visible. Close this dialog and reopen it from the project.",
+    "stale": "The original changed. Refresh the preview before duplicating.",
+    "lockedField": "A selected field is locked. Deselect it or ask an administrator to change its rules.",
+    "meeting": "Meetings and their shared work cannot be duplicated as ordinary tasks. For a section, turn off Copy tasks or choose a section without meetings.",
+    "linked": "Linked tasks cannot be copied here. Open a task in its home project, or choose a section without linked tasks.",
+    "limit": "A copy can contain at most 100 tasks. Turn off Subtasks, copy a smaller section, or turn off Copy tasks.",
+    "projectLimit": "This project is too large to check safely for duplication. Choose a smaller project.",
+    "fieldUnavailable": "A selected custom field is no longer available. Deselect it and refresh the preview.",
+    "todoMissing": "This project needs an active To do status before tasks can be duplicated. Ask an administrator to add one.",
+    "archived": "Archived tasks and sections cannot be duplicated. Restore the original first.",
+    "hierarchy": "This task hierarchy cannot be copied safely. Try without subtasks or review the original hierarchy.",
+    "sectionOrder": "There is no room to add another section at this position. Change the section order and try again."
+  },
+  "thisWeek": "This week",
+  "manualReference": "Manual override: {{minutes}} minutes"
+}

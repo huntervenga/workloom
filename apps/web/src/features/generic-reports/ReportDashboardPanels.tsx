@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { GenericReportResultDto, MembershipDto, SectionDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { useTranslation } from '../../i18n';
 import { ReportSelect } from './ReportConfigEditor';
+import { ReportPersonWorkTypes } from './ReportPersonWorkTypes';
 import { ReportDashboard } from './ReportDashboard';
 import { ReportDeliveryOverview } from './ReportDeliveryOverview';
 import { dashboardSums } from './dashboardConfig';
@@ -24,7 +25,7 @@ export function ReportDashboardPanels({ actorId, workspaceId, projectId, result,
   const needsCategory = categoryId !== '' && (!(result.config.groupBy.kind === 'category' && result.config.groupBy.fieldId === categoryId) || needsSums);
   const category = useAggregates(actorId, workspaceId, projectId, { config: { ...augmented.config, groupBy: { kind: 'category', fieldId: categoryId } }, offset: 0, limit: 1 }, needsCategory);
   const status = useAggregates(actorId, workspaceId, projectId, { config: { ...taskConfig, groupBy: { kind: 'status' } }, offset: 0, limit: 1 }, result.config.groupBy.kind !== 'status');
-  const personResult = needsPeople ? people.data : result.config.groupBy.kind === 'assignee' ? result : undefined;
+  const personResult = needsPeople ? people.isError ? undefined : people.data : result.config.groupBy.kind === 'assignee' ? result : undefined;
   const displayPeople = personResult ? { ...personResult, ...(result.capacity ? { capacity: result.capacity } : {}) } : undefined;
   const categoryResult = needsCategory ? category.data : result.config.groupBy.kind === 'category' && result.config.groupBy.fieldId === categoryId ? result : undefined;
   const delivery = result.config.groupBy.kind === 'status' ? result : status.data;
@@ -38,5 +39,6 @@ export function ReportDashboardPanels({ actorId, workspaceId, projectId, result,
       <div className="min-w-0 space-y-4"><section aria-label={t('genericReports.categoryBreakdown')} className="space-y-3"><div className="max-w-72"><ReportSelect label={t('genericReports.categoryBreakdown')} value={categoryId} disabled={disabled} onChange={setCategoryId}><option value="">{t('genericReports.chooseCategoryBreakdown')}</option>{categories.map(field => <option key={field.id} value={field.id}>{field.name}</option>)}</ReportSelect></div>{categoryId ? needsCategory && category.isError ? error(category.error, () => void category.refetch()) : categoryResult ? <ReportDashboard result={categoryResult} members={members} sections={sections} hideSummary/> : <p role="status" className="text-xs text-muted">{t('genericReports.calculating')}</p> : <p className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">{t('genericReports.dashboard.categorySetup')}</p>}</section>
       {status.isError && !delivery ? error(status.error, () => void status.refetch()) : delivery ? <ReportDeliveryOverview result={delivery}/> : null}</div>
     </div>
+    {displayPeople ? <ReportPersonWorkTypes actorId={actorId} workspaceId={workspaceId} projectId={projectId} result={displayPeople} categoryId={categoryId} members={members} sections={sections} fields={fields} disabled={disabled}/> : null}
   </section>;
 }

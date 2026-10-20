@@ -242,24 +242,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
     async createSection(context: CommandContext, projectId: string, input: CreateSectionInput): Promise<SectionDto> {
       const id = parsePathId(projectId);
       const parsed = parseInput<CreateSectionInput>(createSectionInputSchema, input);
-      return mutate(context, 'task.edit', 'section.create', id, parsed, sectionSchema, async (scope, ws) => {
-        const repo = scope.repository;
-        await requireOpenProject(repo, ws, id);
-        const position =
-          parsed.position ?? nextPosition((await repo.listSections(ws, id)).map((section) => section.position));
-        const section: SectionDto = {
-          id: newId(),
-          workspaceId: ws,
-          projectId: id,
-          name: parsed.name,
-          position,
-          revision: 1,
-          archivedAt: null,
-        };
-        await repo.insertSection(section);
-        await record(scope, 'section', section.id, 'created', 1, { name: section.name, position }, { projectId: id });
-        return section;
-      });
+      return mutate(context, 'task.edit', 'section.create', id, parsed, sectionSchema, scope => createSectionInScope(scope, id, parsed, { newId }));
     },
 
     async updateSection(context: CommandContext, sectionId: string, input: UpdateSectionInput): Promise<SectionDto> {
@@ -1357,4 +1340,15 @@ async function writeMoveRestore(
 /** Only fields used by a completion rule; omitted keys retain the current task values. */
 function completionScope(value:{parentTaskId?:string|null|undefined;responsibleMembershipId?:string|null|undefined;dueDate?:string|null|undefined;tagIds?:readonly string[]|undefined}){
  return{...(value.parentTaskId===undefined?{}:{parentTaskId:value.parentTaskId}),...(value.responsibleMembershipId===undefined?{}:{responsibleMembershipId:value.responsibleMembershipId}),...(value.dueDate===undefined?{}:{dueDate:value.dueDate}),...(value.tagIds===undefined?{}:{tagIds:value.tagIds})};
+}
+
+/** Shared validated section creator; caller owns the mandatory guard and the outer receipt. */
+export async function createSectionInScope(scope: TaskWriteScope, projectId: string, input: CreateSectionInput, tools: Pick<TaskApplicationDependencies['tools'], 'newId'>): Promise<SectionDto> {
+  const parsed = parseInput<CreateSectionInput>(createSectionInputSchema, input), ws = scope.context.workspaceId;
+  await requireOpenProject(scope.repository, ws, projectId);
+  const position = parsed.position ?? nextPosition((await scope.repository.listSections(ws, projectId)).map(section => section.position));
+  const section: SectionDto = { id: idSchema.parse(tools.newId()), workspaceId: ws, projectId, name: parsed.name, position, revision: 1, archivedAt: null };
+  await scope.repository.insertSection(section);
+  await record(scope, 'section', section.id, 'created', 1, { name: section.name, position }, { projectId });
+  return section;
 }

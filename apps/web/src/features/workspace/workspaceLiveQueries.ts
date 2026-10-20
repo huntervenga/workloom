@@ -1,4 +1,5 @@
 import type { Query, QueryClient, QueryKey } from '@tanstack/react-query';
+import { workspaceReadPresentationFor, type WorkspacePresentationProof } from './workspaceReadPresentation';
 import { queryKeys } from '../../lib/queryKeys';
 
 /** Audited mutable readers. Unknown future branches require a deliberate classification. */
@@ -39,6 +40,7 @@ export async function refreshWorkspaceLiveQueries(
   workspaceId: string,
   signal: AbortSignal,
   safe: () => boolean,
+  presentationProof?: WorkspacePresentationProof,
 ): Promise<WorkspaceRefreshResult> {
   const cache = client.getQueryCache();
   const eligible = (query: Query) => isWorkspaceLiveKey(query.queryKey, actorId, workspaceId);
@@ -51,6 +53,7 @@ export async function refreshWorkspaceLiveQueries(
   const owned = new Map<Query, Promise<unknown>>();
   let followUp = false;
   let cancelled = false;
+  let presentation: ReturnType<ReturnType<typeof workspaceReadPresentationFor>['begin']> | undefined;
   const unsubscribe = cache.subscribe(event => {
     if (!eligible(event.query)) return;
     if (event.type === 'removed' && captured.has(event.query)) cancelled = true;
@@ -66,17 +69,21 @@ export async function refreshWorkspaceLiveQueries(
   signal.addEventListener('abort', cancelOwned, { once: true });
   try {
     if (signal.aborted || !safe()) return { complete: false, followUp: false };
+    presentation = workspaceReadPresentationFor(client).begin(actorId, workspaceId, initialized, presentationProof, signal, safe);
     await Promise.all(initialized.map(query => query.cancel({ revert: true })));
     if (signal.aborted || !safe()) return { complete: false, followUp: false };
-    await client.invalidateQueries({ predicate: eligible, refetchType: 'none' });
+    // Invalidate and bind exact owned flights in one turn; no presentation grant spans an await gap.
+    const invalidation = presentation.invalidate(() => client.invalidateQueries({ predicate: eligible, refetchType: 'none' }));
+    // Unleased initial/access-recovery passes retain their existing cancellation/render boundary.
+    if (!presentation.retaining()) await invalidation;
     if (signal.aborted || !safe()) return { complete: false, followUp: false };
     const counts = new Map(initialized.map(query => [query, query.state.dataUpdateCount]));
     const flights = initialized.map(query => {
       const previous = query.promise;
-      const answer = client.refetchQueries(
+      const answer = presentation?.start(query, () => client.refetchQueries(
         { predicate: candidate => candidate === query, type: 'active' },
         { throwOnError: true, cancelRefetch: true },
-      );
+      ));
       const flight = query.promise;
       if (!flight || flight === previous) return answer;
       owned.set(query, flight);
@@ -85,7 +92,9 @@ export async function refreshWorkspaceLiveQueries(
       // The wrapper resolves immediately for a paused flight; wait for the actual owned promise too.
       return Promise.all([answer, flight]);
     });
+    presentation.seal();
     if (signal.aborted) cancelOwned();
+    await invalidation;
     const answers = await Promise.allSettled(flights);
     // Safety can flip without an abort event while owned flights settle; recheck it after they do.
     const complete = !awaitingInitialRead && !signal.aborted && !cancelled && safe() &&
@@ -94,6 +103,7 @@ export async function refreshWorkspaceLiveQueries(
         query.state.fetchStatus === 'idle' && query.state.dataUpdateCount > (counts.get(query) ?? 0));
     return { complete, followUp };
   } finally {
+    presentation?.end();
     signal.removeEventListener('abort', cancelOwned);
     unsubscribe();
   }
