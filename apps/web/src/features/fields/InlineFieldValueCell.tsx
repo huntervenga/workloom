@@ -89,13 +89,16 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
   const feedbackError = (pending ? null : uncertainHere?.error) ?? ownError;
   const editable = writable && !field.locked && field.archivedAt === null;
 
+  // A successful ACK briefly exposes the submitted review control before the page retires it.
+  // Wait for the actual editor, rather than focus a review button that the next render removes.
+  const retiringAcknowledgement = review?.submitted === true && incoming !== null && incoming.revision > (review.value?.revision ?? 0) && ownError === null;
   // A disabled trigger drops focus while sending; give it back only if nothing else took it.
   useEffect(() => {
-    if (pending || !restoreFocus.current) return;
+    if (pending || retiringAcknowledgement || !restoreFocus.current) return;
     restoreFocus.current = false;
     const active = document.activeElement;
     if (active === null || active === document.body) anchor?.querySelector<HTMLElement>('input[type="checkbox"]:not([disabled]), button:not([disabled])')?.focus({ preventScroll: true });
-  }, [pending, anchor]);
+  }, [pending, anchor, retiringAcknowledgement]);
 
   const handleError = (error: Error) => {
     if (!(error instanceof ApiError) || error.kind !== 'conflict') return;

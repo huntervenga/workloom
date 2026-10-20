@@ -2,7 +2,7 @@ import type { TaskFieldDefinitionDto, TaskFieldValueDto } from '@workloom/contra
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { alpha, alphaMembers, anna, failure, installFakeApi, ok, type FakeRequest, type RouteTable } from '../../test/fakeApi';
+import { alpha, alphaMembers, anna, deferred, failure, installFakeApi, ok, type FakeRequest, type RouteTable } from '../../test/fakeApi';
 import { DialogShell } from '../../shared/DialogShell';
 import { task } from '../planning/test/fixtures';
 import { InlineFieldValueCell } from './InlineFieldValueCell';
@@ -582,11 +582,27 @@ it('does not retain a Boolean focus draft that masks a later Undo receipt while 
   await waitFor(() => expect(exposed.mutation.data?.value).toEqual({ type: 'boolean', value: true }));
   await waitFor(() => expect(screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` })).toBeEnabled());
   checkbox = screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` });
-  checkbox.focus();
-  expect(checkbox).toHaveFocus();
+  await waitFor(() => expect(checkbox).toHaveFocus());
   // The server supplies the next head from Undo/another tab; no new local editor action occurs.
   act(() => loadValue(row(definition, { type: 'boolean', value: null }, 2)));
   expect(checkbox).toHaveFocus();
   expect(checkbox).toBePartiallyChecked();
   expect(exposed.drafts.getTask(task.id)).toEqual({});
+});
+
+
+it('never steals focus from another control when a Boolean save acknowledges and retires its submitted session', async () => {
+  const definition = { ...field('Approved', 'boolean'), projectId: task.projectId };
+  const gate = deferred<Response>();
+  const ui = setup({ definition, routes: { [`PUT ${valuePath}`]: () => gate.promise } });
+  await ui.user.click(screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` }));
+  await waitFor(() => expect(ui.writes()).toHaveLength(1));
+  const outside = document.createElement('input');
+  outside.setAttribute('aria-label', 'Another cell');
+  ui.container.appendChild(outside); outside.focus();
+  await act(async () => gate.resolve(ok(row(definition, { type: 'boolean', value: true }, 1))));
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` })).toBeEnabled());
+  expect(outside).toHaveFocus();
+  expect(screen.getByRole('checkbox', { name: `Edit Approved for ${task.title}` })).toBeChecked();
+  expect(ui.exposed.drafts.getTask(task.id)).toEqual({});
 });
