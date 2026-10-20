@@ -1,5 +1,7 @@
 # Project и workspace: менеджерский дашборд
 
+**Historical checkpoint:** this accepted slice was superseded locally by `b0efabd`; see [99: table summaries, section widgets and field controls](99-table-summaries-section-widgets-and-field-controls.md). Its original proof and limits below remain unchanged.
+
 **ПРИНЯТО И АКТИВИРОВАНО ЛОКАЛЬНО.** Product `1677d7d` (`1677d7dbc5736bd1ad4443d15b4fd47871aaf1f8`): реализация `ea29f39` и type-only follow-up. Candidate D: `build-561954c8-b4e8-4fd3-914c-ab49eaa59439`; 1482 source / 1090 compiled, source digest `c0ce2c9b38655958c187c7f26f00ed38a91721f13e8cae812b6298c384199780`. Локальная активация завершена **20 октября 2026, 01:21:33 Asia/Nicosia** (`2026-10-19T22:21:33.121Z`). Это отдельный docs-only follow-up после проверенного product snapshot. Предыдущий принятый продукт — `58ed0c9`, [95](95-manager-calendar-board-and-reports.md). Контракт — [97](97-workspace-manager-dashboard-contract.md); реализована первая ограниченная часть направления [96](96-workspace-report-trends.md), не все будущие источники времени.
 
 ## Как открыть и что увидеть
