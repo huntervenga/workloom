@@ -1,6 +1,6 @@
 # Связанные сводки секций и персональное время общих активностей
 
-**Реализация в исходниках, общая приёмка ещё НЕ ВЫПОЛНЕНА.** Документ описывает текущий код следующего среза. Это не утверждение о работающем main, применённых миграциях или production. Последний принятый локальный срез остаётся в [103](103-refresh-duplication-and-person-reports.md). [102](102-shared-activities-and-summary-templates.md) сохраняется как историческое предложение: его текст не является доказательством реализации или проверки.
+**Принят локально: product `58cd331431d0e3ed53e53929caec8ed90ebddee0`, активен на `http://127.0.0.1:4310/app` с 20 октября 2026, 20:30 Asia/Nicosia (17:30 UTC).** Final G прошёл все 9 gates: unit 289/24, PostgreSQL 49/7, web 421/57, global, проверку upgrade и 14 private native случаев без skips/flaky/unexpected. Управляемая локальная активация и private cleanup завершились успешно. **Main Auth UI, новый вход через provider, старые вкладки и production НЕ ПРОВЕРЕНЫ.** Это docs-only follow-up после проверенного product/source/build snapshot. [103](103-refresh-duplication-and-person-reports.md) — предыдущий принятый срез. [102](102-shared-activities-and-summary-templates.md) остаётся неизменённым историческим предложением; фактическая ограниченная реализация и приёмка описаны здесь.
 
 План и факт остаются обычными пользовательскими `duration`-полями, выбранными по ID. Их названия не имеют системного значения. Обязательной недели нет. Связанная сводка и общий созвон — два независимых инструмента; для подсчёта личного времени не нужно дублировать задачу каждому участнику.
 
@@ -69,8 +69,52 @@
 - Не создаются автоматические шаблоны, демонстрационные созвоны или преобразования существующих задач/данных. Поля, roster, связи и report sources задаются пользователем. Production/deploy в эту документационную задачу не входят.
 - Одновременно допускается до 100 текущих участников активности, до 1 000 исторических участников; сверхполный scope не обрезается до «успешного» частичного итога. Изменения защищены текущими правами, версиями и идемпотентными командами.
 
-## Предварительные проверки
+## Итоговая приёмка G
 
-На момент составления документа root сообщил отдельные source-проверки: шаблоны **24 теста / 2 файла**, backend/calculator **82/5**, API **5/1**, core UI **43/7**, новая модель UI **7/1**, report UI **117/16**. Эти перекрывающиеся наборы не суммируются в единый итог приёмки.
+Принят один согласованный кандидат, а не сумма разных промежуточных результатов. Product `58cd331431d0e3ed53e53929caec8ed90ebddee0`: **1 645 исходных файлов**, source digest `4d3a47166759d2fdfe20bcee9d3d7f6b5c7b8e45dda99e1ec1d97ef50671bcb0`; **1 211 compiled artifacts**, build manifest SHA256 `446780642bccfc09957ed3e080fcb7693dfa6a636a76b10d0ef7a57252512314`.
 
-Для шаблонов написаны **7 PostgreSQL-сценариев**, для shared activities/effort — **9**; они **ещё не запускались** в окончательном private PG. Финальные общий build/global, согласованный PostgreSQL-прогон, native browser, main Auth/старые вкладки, локальная активация и production **НЕ ПРОВЕРЕНЫ** для этого среза. Проверки прошлого продукта [103](103-refresh-duplication-and-person-reports.md) их не заменяют. Итоговая приёмка будет добавлена отдельным обновлением после фактических gates.
+| Gate | Фактический результат |
+| --- | --- |
+| Global | PASS, exit 0; lint, boundaries/localization и настроенные typechecks. |
+| Unit focus | **289 тестов / 24 файла PASS**, без failed/skipped. |
+| PostgreSQL focus | **49/7 PASS**, 30.44 секунды, без failed/skipped. |
+| Web focus | **421/57 PASS**, без failed/skipped. |
+| Upgrade | **97 → 105 таблиц, 25 → 27 ledger**, старые данные/схема/префикс сохранены; повторное применение идемпотентно. |
+| Native shared | **4 PASS**: связанные сводки и shared activity, light/dark, арифметика и retry. |
+| Native Reports | **4 PASS**. |
+| Native settings | **4 PASS**. |
+| Native duplication | **2 PASS**. |
+
+Итого **9/9 gates**, **14 native случаев в шести spec-файлах**, без skipped/unexpected/flaky. Это bounded acceptance новых функций и выбранных регрессий, а не повтор всех тестов репозитория. Ранние перекрывающиеся source-наборы (шаблоны 24/2, backend/calculator 82/5, API 5/1, core UI 43/7, модель UI 7/1, report UI 117/16) остаются историческими подмножествами и отдельно не суммируются.
+
+Все результаты привязаны к `/private/tmp/workloom-shared-20261020/shared/build-b0abd56e-7d41-4a17-8fec-5ed555ab8e1c`. Release `/private/tmp/workloom-shared-20261020/releases/release-d46f6b48-cc6c-4eec-b96f-f305a9dc1d3f.json`, SHA256 `d7ed5c25df6d8f6e0f44ad6aaf175110556fec0d5f1e6182fa921a41be68dcc8`, связывает исходники, сборку, все девять receipt hashes и четыре native report hashes. Финальный inspect подтвердил ready=true и missing=[]; непрошедшие gates не заменялись результатами C/E/F. Upgrade helper SHA256 `ec4470076a2d18e42a170b519d884572dec563c44e9d3daf71af435302045b14`; review точного G bound source — `2efb4e11ab0d9adcf5ce36c371309d87202ce20a40f1846c7584799aaa8b1488`.
+
+## Локальная активация и границы проверки
+
+Активация **PASS**, завершена `2026-10-20T17:30:13.566Z`. Авторитетный receipt: `/Volumes/PavelData/ai/workloom/.local/backups/shared-08cf6bf5-96c7-421d-b221-dca5a0913bac/result.json`, SHA256 `9bfbeaf1aa593f0b896ee87be17ec8b86bd66e796a82739d594593dbbf02418f`.
+
+Применены только additive `0025_summary_templates` и `0026_shared_activities`: все прежние **97 таблиц**, их rows/schema/functions и **25 ledger entries** сохранены; добавлены **восемь пустых таблиц**, итог **105/27**. Старые задачи, поля, настройки, attendance и demo не заполнялись и не преобразовывались. Domain-data writes и восстановление БД не выполнялись. Обновлены пять компонентов API/web/contracts/db/domain; только API перезапущен **30606 → 27316**, PG/Vite/env неизменны, worker OFF. Проверены bytes/MIME **436 прежних non-HTML ресурсов**, **464 merged resources** и два HTML entrypoint из 438 старых ресурсов.
+
+Readiness вернул HTTP 200 с `status=ok`, `database=ok`, `schema=ok`. Auth ingress подтвердил `authMode=shared`, реальный `https://auth.pavelignatov.com`, локальный app origin и отсутствие fake provider в свежем frontend. Redirect/login probe не выполнялся: корректная конфигурация Auth не доказывает вход пользователя.
+
+Private QA остановлен штатным guarded cleanup, cleanup=true; все три private-порта свободны и runtime state очищен. Receipt `/private/tmp/workloom-shared-20261020/shared-runtime-stopped-163b655c-3507-4c3a-b69f-11fc9844843c.json`, SHA256 `04e74beb7c56dc202f75fed55f5e6d4c1c14b34c0459b1191368f03bbc9e3beb`. Main runtime этим cleanup не менялся.
+
+**Main authenticated UI НЕ ПРОВЕРЕН.** Попытка helper открыть новую собственную вкладку закончилась через 20 секунд без ownership state/подтверждённого нового tab ID; взаимодействия с main-меню не было. Нельзя выводить владение вкладкой по догадке и продолжать через чужую вкладку. CUA getState также завершился trusted Node process unexpected exit/kernel reset. Старые вкладки не навигировались и не перезагружались. Не создавались main demo, tasks, fields, configs или attendance. Fresh provider login, unreloaded old-tab writes/upgrade и production также **НЕ ПРОВЕРЕНЫ**; private fake Auth их не заменяет.
+
+Root лично просмотрел только **G linked templates light** и **G shared call effort dark**. Ранее просмотренные C/E screenshots относятся к тем кандидатам; наличие других снимков не означает их личную визуальную приёмку.
+
+## Сохранённые промежуточные RED и исправления
+
+| Кандидат | Что произошло и как учитывается |
+| --- | --- |
+| A | Review выявил nested-close P2; работа остановлена до тестов. Это не выполненная native-проверка. |
+| B | Integration **46 PASS / 3 FAIL**: доменная UUID-ошибка и два test-oracle случая. Функциональная правка и test-only исправления разделены; исходный RED сохранён. |
+| C | PG49 PASS, web417/56 PASS, строгий private upgrade97→105 PASS, settings native4 PASS и duplication2 PASS. При этом unit migration quoted-scanner RED, global type-import RED, create membership-read race дал templates2 PASS / shared call1 FAIL /1 NOT RUN; native capacity ожидал старый текст и также был RED. C не принят целиком. |
+| D | Build RED: неподдерживаемое `exact` в новом RTL-тесте. Исправлены только тестовые типы, без изменения продукта/порогов/TypeScript policy. |
+| E | Build PASS, shared native4 PASS, light/dark арифметика и retry; global localization **13 RED**. Это не complete acceptance. |
+| F | Build PASS, затем global RED на строгих типах трёх domain-тестов. Тесты исправлены без изменения продуктовой логики/политик. Пятифайловая localization-правка была audit-only, её семантика проверена. |
+| G | Новый связанный source/build; все девять фактических gates PASS, затем отдельная управляемая main-активация. Только этот результат является итоговой приёмкой. |
+
+Первый upgrade gate C также был **RED**: строгая проверка ledger prefix сравнивала SQL-driver Result с обычным Array и различала их прототипы. Bounded harness-only нормализация сохранила все SQL-значения, типы, порядок и assertions; функциональная логика и SQL-проверки не ослаблялись. После независимого review свежий upgrade C прошёл PASS; первый RED остаётся в `/private/tmp/workloom-shared-20261020/shared/build-709440f2-a565-491e-b9f9-485836ce847a/upgrade-9c5a8a15-e060-41c1-bdcc-5213e908715a/upgrade.log`.
+
+Существующее React warning отдельно отнесено review к прежнему принятому baseline P2; оно не объявляется ни новой регрессией, ни исправленным этим срезом. Перекрывающиеся source tests и частичные проходы не превращаются задним числом в успешную общую приёмку. Raw receipts/исходные логи сохраняются в исходных private QA каталогах; эта документация их не переписывает. [102](102-shared-activities-and-summary-templates.md) остаётся историческим предложением, а ограничения текущей реализации выше сохраняются и после активации.
