@@ -12,7 +12,7 @@ Native imported data includes project name, section order, root/child manual ord
 
 Source timestamps, source URLs, followers, original field definitions/raw values and other project memberships are retained in each staged row's `Asana source provenance` JSON and in owner-private original exports. They do **not** become invented Workloom history, historical completion timestamps, collaborators/participants or duplicate projects. Workloom creation/update times honestly describe the import. Comments, change history and attachments cannot be reconstructed when they are absent from these exports; summaries report them as `not_exported`, not as a claim that the source had none.
 
-The global source namespace is `asana:<source workspace GID>`. This avoids silently duplicating a source task that appeared in multiple Asana projects. The existing bounded importer currently rejects references owned by a different target project; later importing another project that shares a task needs an explicit placement-aware follow-up. This operator imports only the selected current project.
+The global source namespace is `asana:<source workspace GID>`. This avoids silently duplicating a source task that appeared in multiple Asana projects. This original explicit operator still rejects cross-project references and retains its historical journal/receipt behavior. For subsequent projects, use the [reusable two-file adapter](108-reusable-asana-import.md), which adds checked canonical-task reuse, project placements and project-local field values. Resume this first imported project with its original explicit operator rather than creating a second journal.
 
 ## Private configuration
 

@@ -26,6 +26,7 @@ import { TaskBoard, type BoardMoveCard } from '../features/task-board';
 import { PersonalColumnsDialog } from '../features/task-table/PersonalColumnsDialog';
 import { reconcilePersonalColumns, tableColumnId } from '../features/task-table/personalColumns';
 import { usePersonalTablePreference } from '../features/task-table/usePersonalTablePreference';
+import { useTableExpansionState } from '../features/task-table/useTableExpansionState';
 import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/task-comments';
 import { ProjectActions } from '../features/projects/ProjectActions';
 import { QuickTaskAdd, QuickTaskDraftPreview, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
@@ -314,25 +315,6 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     for (const dispose of inlineLeases.current) dispose();
   }, []);
   const [grouping, setGrouping] = useState<TaskGroupingMode>('section');
-  const [collapsedTaskIds, setCollapsedTaskIds] = useState<ReadonlySet<string>>(() => new Set());
-  const changeTaskCollapsed = useCallback((taskId: string, collapsed: boolean) => {
-    invalidateInlineSave();
-    setCollapsedTaskIds(before => {
-      const next = new Set(before);
-      if (collapsed) next.add(taskId); else next.delete(taskId);
-      return next;
-    });
-  }, [invalidateInlineSave]);
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<ReadonlySet<string>>(() => new Set());
-  const changeGroupCollapsed = useCallback((key: string, collapsed: boolean) => {
-    invalidateInlineSave();
-    setCollapsedGroupKeys(before => {
-      if (before.has(key) === collapsed) return before;
-      const next = new Set(before);
-      if (collapsed) next.add(key); else next.delete(key);
-      return next;
-    });
-  }, [invalidateInlineSave]);
   const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean }; titleCaret?: number | undefined } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
   // Completion, status, participant, tag and archived are validated URL state; search text stays in memory.
@@ -381,6 +363,18 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const shownTasks = useMemo(() =>
     tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [],
     [tasks.data, tasks.isError, tasks.isFetchNextPageError]);
+  const loadedTaskIds = useMemo(() => shownTasks.map(task => task.id), [shownTasks]);
+  const { collapsedTaskIds, expandedTaskIds, collapsedGroupKeys, setTaskCollapsed, setGroupCollapsed } = useTableExpansionState(
+    { actorId, workspaceId: workspace.id, projectId: project.id }, loadedTaskIds,
+  );
+  const changeTaskCollapsed = useCallback((taskId: string, collapsed: boolean) => {
+    invalidateInlineSave();
+    setTaskCollapsed(taskId, collapsed);
+  }, [invalidateInlineSave, setTaskCollapsed]);
+  const changeGroupCollapsed = useCallback((key: string, collapsed: boolean) => {
+    invalidateInlineSave();
+    setGroupCollapsed(key, collapsed);
+  }, [invalidateInlineSave, setGroupCollapsed]);
   const loadedPackages = useMemo(() => summarizeWorkPackages(shownTasks), [shownTasks]);
   // Use the same root hierarchy as the table: a child can belong to another section's group.
   const sectionGroups = useMemo(() => buildTaskGroups(shownTasks, sections.data ?? [], locale), [shownTasks, sections.data, locale]);
@@ -719,13 +713,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'graph'); return next; });
   };
   const expandQuickSection = (sectionId: string | null) => {
-    setCollapsedGroupKeys(before => {
-      const next = new Set(before);
-      for (const group of sectionGroups) if (group.sectionId === sectionId) next.delete(group.key);
-      // A filtered empty No section group may reappear only after creation.
-      if (sectionId === null) next.delete('no-section');
-      return next;
-    });
+    for (const group of sectionGroups) if (group.sectionId === sectionId) setGroupCollapsed(group.key, false);
+    // A filtered empty No section group may reappear only after creation.
+    if (sectionId === null) setGroupCollapsed('no-section', false);
   };
   const startCreate = (request: CreateRequest) => {
     invalidateInlineSave();
@@ -1302,7 +1292,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onDuplicateTask={writable ? duplication.openTask : undefined}
             onDuplicateSection={writable ? duplication.openSection : undefined}
           />}
-          {!importMode && !graphMode ? <LinkedProjectTasks actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
+          {!importMode && !graphMode ? <LinkedProjectTasks customFields={fieldColumns} expansion={{ expandedTaskIds, collapsedGroupKeys, setTaskCollapsed: changeTaskCollapsed, setGroupCollapsed: changeGroupCollapsed }} actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
           <ProjectUndoSurface actorId={actorId} workspaceId={workspace.id} projectId={project.id} writable={writable} />
           <TaskDrawer
             sharedActivityController={sharedActivityController}

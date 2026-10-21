@@ -1,8 +1,10 @@
 import { MemoryRouter } from 'react-router';
-import { screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { alphaMembers, anna, installFakeApi, ok } from '../../test/fakeApi';
-import { renderFieldUi } from '../fields/test/fixtures';
+import { field, renderFieldUi, STAMP } from '../fields/test/fixtures';
+import type { TaskFieldDefinitionDto } from '@workloom/contracts';
+import { useTableExpansionState, tableExpansionStorageKey, type TableExpansionControls } from '../task-table/useTableExpansionState';
 import { emptyTaskFilters } from '../tasks/TaskFilters';
 import { useTaskCommands } from '../tasks/useTaskCommands';
 import { LinkedProjectTasks } from './LinkedProjectTasks';
@@ -10,13 +12,64 @@ import { usePlacementCommands } from './queries';
 import { homeDone, homeStatus, placement, row, target, targetSection, task } from './testFixtures';
 const root = `/api/v1/workspaces/${task.workspaceId}`;
 const cleanups: (() => void)[] = [];
-afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); vi.unstubAllGlobals(); });
-function Harness({ view = 'table', onOpen = () => undefined }: { view?: 'table' | 'board' | 'timeline'; onOpen?: (id: string) => void }) {
+beforeEach(() => { localStorage.clear(); });
+afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); vi.unstubAllGlobals(); localStorage.clear(); });
+function Harness({ view = 'table', onOpen = () => undefined, expansion, customFields }: { view?: 'table' | 'board' | 'timeline'; onOpen?: (id: string) => void; expansion?: TableExpansionControls; customFields?: readonly { field: TaskFieldDefinitionDto; width: number }[] }) {
   const commands = useTaskCommands(anna.id, task.workspaceId, true);
   const placementCommands = usePlacementCommands(anna.id, task.workspaceId);
-  return <LinkedProjectTasks actorId={anna.id} project={target} sections={[targetSection]} members={alphaMembers} filters={emptyTaskFilters} writable commands={commands} placementCommands={placementCommands} view={view} onOpenTask={onOpen} windowStart="2026-10-19" windowSize={28} sortByDue={false} />;
+  return <LinkedProjectTasks {...(expansion ? { expansion } : {})} {...(customFields ? { customFields } : {})} actorId={anna.id} project={target} sections={[targetSection]} members={alphaMembers} filters={emptyTaskFilters} writable commands={commands} placementCommands={placementCommands} view={view} onOpenTask={onOpen} windowStart="2026-10-19" windowSize={28} sortByDue={false} />;
 }
 describe('linked table, Board and Timeline adapters', () => {
+  it('starts linked children collapsed and restores parent/section choices after remount without domain writes', async () => {
+    const childId = 'f2000000-0000-4000-8000-000000000099';
+    const childRow = { ...row, placement: { ...placement, id: 'e1000000-0000-4000-8000-000000000099', taskId: childId, position: 41 },
+      canonicalTask: { ...task, id: childId, title: 'Linked nested child', parentTaskId: task.id } };
+    const rootRow = { ...row, placement: { ...placement, sectionId: targetSection.id } };
+    const api = installFakeApi({ [`GET ${root}/projects/${target.id}/rows`]: () => ok([rootRow, childRow]) });
+    const renderLinked = () => renderFieldUi(<MemoryRouter basename="/app" initialEntries={['/app/']}><Harness /></MemoryRouter>);
+    const ui = renderLinked();
+    await screen.findByRole('button', { name: task.title });
+    expect(screen.queryByRole('button', { name: 'Linked nested child' })).not.toBeInTheDocument();
+    await ui.user.click(screen.getByRole('button', { name: `Expand subtasks of “${task.title}”` }));
+    expect(screen.getByRole('button', { name: 'Linked nested child' })).toBeVisible();
+    await ui.user.click(screen.getByRole('button', { name: 'Collapse section “Target section”' }));
+    ui.unmount(); ui.client.clear();
+    const restored = renderLinked(); cleanups.push(() => { restored.unmount(); restored.client.clear(); });
+    await restored.user.click(await screen.findByRole('button', { name: 'Expand section “Target section”' }));
+    expect(screen.getByRole('button', { name: 'Linked nested child' })).toBeVisible();
+    expect(api.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+  });
+  it('uses the shared page controller so native and linked expansion choices cannot overwrite each other', async () => {
+    const nativeId = 'f2000000-0000-4000-8000-000000000088', childId = 'f2000000-0000-4000-8000-000000000099';
+    const childRow = { ...row, placement: { ...placement, id: 'e1000000-0000-4000-8000-000000000099', taskId: childId, position: 41 }, canonicalTask: { ...task, id: childId, title: 'Shared linked child', parentTaskId: task.id } };
+    function SharedPage() {
+      const state = useTableExpansionState({ actorId: anna.id, workspaceId: task.workspaceId, projectId: target.id }, [nativeId]);
+      return <><button onClick={() => state.setTaskCollapsed(nativeId, false)}>Expand native task</button><Harness expansion={state} /></>;
+    }
+    installFakeApi({ [`GET ${root}/projects/${target.id}/rows`]: () => ok([row, childRow]) });
+    const ui = renderFieldUi(<MemoryRouter><SharedPage /></MemoryRouter>); cleanups.push(() => { ui.unmount(); ui.client.clear(); });
+    await ui.user.click(screen.getByRole('button', { name: 'Expand native task' }));
+    await ui.user.click(await screen.findByRole('button', { name: `Expand subtasks of “${task.title}”` }));
+    expect(screen.getByRole('button', { name: 'Shared linked child' })).toBeVisible();
+    const stored = JSON.parse(localStorage.getItem(tableExpansionStorageKey({ actorId: anna.id, workspaceId: task.workspaceId, projectId: target.id })) ?? '{}') as { expandedTaskIds: string[] };
+    expect(stored.expandedTaskIds).toEqual([nativeId, task.id]);
+  });
+  it('shows target-project ordinary fields for linked tasks, preserving zero and missing values', async () => {
+    const estimate = { ...field('Hours Est', 'duration'), projectId: target.id };
+    const fact = { ...field('Hours Fact', 'duration', '90000000-0000-4000-8000-000000000002'), projectId: target.id };
+    const api = installFakeApi({ [`GET ${root}/projects/${target.id}/rows`]: () => ok([row]),
+      [`GET ${root}/projects/${target.id}/field-values`]: () => ok([{ workspaceId: task.workspaceId, projectId: target.id, taskId: task.id, fieldId: estimate.id, definitionVersionId: estimate.definitionVersionId, revision: 1, value: { type: 'duration', value: 0 }, updatedAt: STAMP }]) });
+    const ui = renderFieldUi(<MemoryRouter><Harness customFields={[{ field: estimate, width: 160 }, { field: fact, width: 160 }]} /></MemoryRouter>); cleanups.push(() => { ui.unmount(); ui.client.clear(); });
+    await screen.findByRole('columnheader', { name: 'Hours Est' });
+    const taskRow = (await screen.findByRole('button', { name: task.title })).closest('tr');
+    if (!taskRow) throw new Error('Missing linked task row');
+    await waitFor(() => expect(within(taskRow).getAllByRole('cell')[5]).toHaveTextContent('0m'));
+    expect(within(taskRow).getAllByRole('cell')[6]).toHaveTextContent('Not set');
+    const reads = api.calls.filter(call => call.path.endsWith('/field-values'));
+    expect(reads).toHaveLength(1); expect(reads[0]?.path).toBe(`${root}/projects/${target.id}/field-values`);
+    expect(reads[0]?.searchParams.get('taskIds')).toBe(task.id);
+    expect(api.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
+  });
   it('edits the target placement section without sending a canonical task move or accounting write', async () => {
     const api = installFakeApi({ [`GET ${root}/projects/${target.id}/rows`]: () => ok([row]), [`PATCH ${root}/task-project-placements/${placement.id}`]: () => ok({ ...placement, sectionId: targetSection.id, revision: 8 }) });
     const ui = renderFieldUi(<MemoryRouter basename="/app" initialEntries={['/app/']}><Harness /></MemoryRouter>); cleanups.push(() => { ui.unmount(); ui.client.clear(); });
@@ -93,7 +146,7 @@ describe('linked table, Board and Timeline adapters', () => {
     await ui.user.click(await screen.findByRole('button', { name: task.title }));
     expect(open).toHaveBeenCalledWith(task.id);
     expect(document.querySelector('[data-gantt-movable]')).not.toBeInTheDocument();
-    expect(screen.getByText(/Task details are shared; fields and hours stay in the home project/)).toBeInTheDocument();
+    expect(screen.getByText(/Task details and status are shared. Custom fields belong to each project/)).toBeInTheDocument();
     expect(api.calls.some(call => /task-time-summary|planning|schedule/.test(call.path))).toBe(false);
     expect(api.calls.filter(call => call.method !== 'GET')).toHaveLength(0);
   });

@@ -61,13 +61,15 @@ export function timelineStatement(workspaceId: string, taskId: string, after: Ta
     (select 'field', a.id, ${head}, jsonb_build_object(
         'ownerException', case when a.action = 'owner_exception' then jsonb_build_object('policyRevision',a.diff->'ownerException'->'policyRevision','reason',a.diff->'ownerException'->'reason') end,
         'historyCaptured', case when jsonb_typeof(a.diff->'historyCaptured') = 'boolean' then a.diff->'historyCaptured' end,
-        'fieldId', f.id, 'fieldName', f.name, 'fieldType', f.type, 'projectId', t.project_id,
+        'fieldId', f.id, 'fieldName', f.name, 'fieldType', f.type, 'projectId', f.project_id,
         'history', h.id is not null, 'historyFieldId', h.field_id, 'historyProjectId', h.project_id,
         'before', h.before, 'after', h.after, 'definition', dv.snapshot)
       from t join audit_events a on a.workspace_id = ${workspaceId}::uuid and a.entity_type = 'task_field_value' and a.entity_id = t.id
         and a.action in ('created', 'updated', 'owner_exception') ${keyset}
-      left join task_field_definitions f on f.workspace_id = a.workspace_id and f.project_id = t.project_id and f.id = ${uuidOf(sql`a.diff->>'fieldId'`)}
-      left join task_field_value_history h on h.workspace_id = a.workspace_id and h.project_id = t.project_id and h.field_id = f.id and h.task_id = t.id and h.change_seq = a.change_seq and h.event_ordinal = a.event_ordinal
+      left join task_field_definitions f on f.workspace_id = a.workspace_id and f.id = ${uuidOf(sql`a.diff->>'fieldId'`)}
+        and (f.project_id = t.project_id or exists (select 1 from task_project_placements fp
+          where fp.workspace_id = f.workspace_id and fp.task_id = t.id and fp.project_id = f.project_id and fp.archived_at is null))
+      left join task_field_value_history h on h.workspace_id = a.workspace_id and h.project_id = f.project_id and h.field_id = f.id and h.task_id = t.id and h.change_seq = a.change_seq and h.event_ordinal = a.event_ordinal
       left join task_field_definition_versions dv on dv.workspace_id = h.workspace_id and dv.project_id = h.project_id and dv.field_id = h.field_id and dv.id = h.definition_version_id
       ${actor} ${order(take)})
     union all

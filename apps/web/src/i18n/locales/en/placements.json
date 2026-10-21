@@ -21,7 +21,7 @@
   "loadingRows": "Loading linked tasks\u2026",
   "rowsFailed": "Linked tasks could not be fully loaded.",
   "linkedTasks": "Tasks linked from other projects",
-  "accountingHint": "Task details are shared; fields and hours stay in the home project.",
+  "accountingHint": "Task details and status are shared. Custom fields belong to each project.",
   "loadMore": "Load more project rows",
   "homeHierarchy": "Hierarchy stays in the home project.",
   "placement": "In this project",

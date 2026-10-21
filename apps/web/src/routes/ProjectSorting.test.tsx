@@ -1,3 +1,4 @@
+import { tableExpansionStorageKey } from '../features/task-table/useTableExpansionState';
 import type * as ChoicePickerModule from '../shared/ChoicePicker';
 import type { ComponentProps } from 'react';
 import type { UserEvent } from '@testing-library/user-event';
@@ -11,7 +12,7 @@ import { beforeAll, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../app/AppRoutes';
 import { SessionProvider } from '../app/session';
 import { createQueryClient } from '../lib/queryClient';
-import { alpha, alphaMembers, created, deferred, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
+import { alpha, alphaMembers, anna, created, deferred, installFakeApi, json, ok, renderApp, type RouteTable } from '../test/fakeApi';
 import { lostResponse } from '../features/planning/test/fixtures';
 import { chooseFilter } from '../features/tasks/test/filterPickers';
 import { MEMBER_ID, PERIOD_A, PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
@@ -67,6 +68,7 @@ it('applies server due paging, preserves grouped hierarchy and Manual positions,
   const { calls } = installFakeApi(routes()); const ui = app(legacyTablePath(`${tablePath}?week=${PERIOD_A}&worker=${MEMBER_ID}&other=kept#anchor`));
   try {
     await screen.findByRole('button', { name: parent.title }); expect(sort()).toHaveTextContent('Manual');
+    await ui.user.click(screen.getByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
     expect(rowOrder()).toEqual([`Select task: ${parent.title}`, `Select task: ${child.title}`, `Select task: ${peer.title}`]);
     await tableChoice(ui.user, sort(), 'due_asc');
     await waitFor(() => expect(rowOrder()).toEqual([`Select task: ${peer.title}`, `Select task: ${parent.title}`, `Select task: ${child.title}`]));
@@ -111,7 +113,8 @@ it.each(['sort=unknown', 'sort=manual', 'sort=due_asc&sort=due_asc', 'sort='])('
   } finally { ui.unmount(); ui.router.dispose(); ui.client.clear(); }
 });
 
-it('keeps a child draft exactly once when a due first page precedes its parent and the next page rejoins the canonical tree', async () => {
+it('keeps a child draft exactly once when a due first page precedes its previously expanded parent and the next page rejoins the canonical tree', async () => {
+  localStorage.setItem(tableExpansionStorageKey({ actorId: anna.id, workspaceId: alpha.id, projectId: PROJECT_ID }), JSON.stringify({ version: 1, expandedTaskIds: [parent.id], collapsedGroupKeys: [] }));
   const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.get('sort') !== 'due_asc' ? page([parent]) : request.searchParams.has('cursor') ? page([parent], 'another-due-page') : page([child], 'due-parent-page') }));
   const { user } = renderApp(legacyTablePath(tablePath)); await screen.findByRole('button', { name: parent.title }); await tableChoice(user, sort(), 'due_asc');
   await user.click(await screen.findByRole('button', { name: child.title }));
@@ -199,6 +202,7 @@ it('retains descendant collapse through a cold pending sort query and a Board ro
   const due = deferred<Response>();
   installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.get('sort') === 'due_asc' ? due.promise : page([parent, child, peer]) }));
   const { user } = renderApp(tablePath); await screen.findByRole('table');
+  await user.click(screen.getByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
   await user.click(screen.getByRole('button', { name: `Collapse subtasks of “${parent.title}”` }));
   expect(screen.queryByRole('button', { name: `Select task: ${child.title}` })).not.toBeInTheDocument();
   await tableChoice(user, sort(), 'due_asc'); await act(async () => due.resolve(page([child, peer, parent])));
@@ -219,6 +223,7 @@ it('retains the original blur-submitted child command when descendant disclosure
     [`PATCH ${rootPath}/tasks/${child.id}`]: () => gate.promise,
   }));
   const { user } = renderApp(tablePath);
+  await user.click(await screen.findByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
   await user.click(await screen.findByRole('button', { name: child.title }));
   fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Child saved under collapsed parent' } });
   await user.click(screen.getByRole('button', { name: `Collapse subtasks of “${parent.title}”` }));

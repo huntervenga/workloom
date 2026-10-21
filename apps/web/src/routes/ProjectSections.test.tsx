@@ -78,7 +78,7 @@ describe('page-owned section collapse', () => {
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it('uses stable group keys when a section is renamed or reordered and resets on a fresh project-page mount', async () => {
+  it('uses stable group keys when a section is renamed or reordered and restores collapse on a fresh project-page mount', async () => {
     let currentSections = sections;
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/projects/${PROJECT_ID}/sections`]: () => ok(currentSections) }));
     const ui = renderApp(tablePath);
@@ -89,7 +89,11 @@ describe('page-owned section collapse', () => {
     expect(screen.queryByRole('button', { name: parent.title })).not.toBeInTheDocument();
     ui.unmount();
     renderApp(tablePath);
-    await screen.findByRole('button', { name: parent.title }); expect(collapse('Renamed section')).toHaveAttribute('aria-expanded', 'true');
+    expect(await screen.findByRole('button', { name: 'Expand section “Renamed section”' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: parent.title })).not.toBeInTheDocument();
+    const restoredUser = userEvent.setup({ pointerEventsCheck: 0 });
+    await restoredUser.click(expand('Renamed section'));
+    expect(await screen.findByRole('button', { name: parent.title })).toBeVisible();
     expect(writes(calls)).toHaveLength(0);
   });
 
@@ -102,6 +106,7 @@ describe('page-owned section collapse', () => {
       [`PATCH ${rootPath}/tasks/${child.id}`]: () => gate.promise,
     }));
     const { user } = renderApp(tablePath);
+    await user.click(await screen.findByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
     await user.click(await screen.findByRole('button', { name: child.title }));
     fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Autosaved child rename' } });
     await user.click(collapse());
@@ -122,6 +127,7 @@ describe('page-owned section collapse', () => {
     const first = lostResponse(); let attempts = 0; let current = child;
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([parent, current, other]), [`PATCH ${rootPath}/tasks/${child.id}`]: () => ++attempts === 1 ? first.promise : ok(current = { ...child, statusId: NEXT_STATUS, revision: 2 }) }));
     const { user } = renderApp(tablePath);
+    await user.click(await screen.findByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
     await user.click(await screen.findByRole('button', { name: `Edit status for ${child.title}` }));
     await user.click(within(screen.getByRole('listbox', { name: 'Status' })).getByRole('option', { name: 'Stored progress' }));
     await waitFor(() => expect(attempts).toBe(1)); await user.click(collapse());
@@ -209,6 +215,7 @@ describe('page-owned section collapse', () => {
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([parent, current, other]), [`PATCH ${rootPath}/tasks/${child.id}`]: () => gate.promise, [`POST ${rootPath}/tasks`]: () => gate.promise }));
     const { user } = renderApp(tablePath);
     if (kind === 'inline') {
+      await user.click(await screen.findByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
       await user.click(await screen.findByRole('button', { name: child.title }));
       fireEvent.change(screen.getByLabelText('Task name'), { target: { value: 'Confirmed hidden title' } });
       await user.keyboard('{Control>}{Enter}{/Control}');

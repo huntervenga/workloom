@@ -175,7 +175,7 @@ describe('assignee move and atomic bulk meeting policy', () => {
 
 function bulkGuardFields(findField: PlanningRepository['fields']['findField']): PlanningRepository['fields'] {
   const unused = async (): Promise<never> => { throw new Error('Unexpected field repository call in planning guard fixture.'); };
-  return { policies:{find:async()=>null,save:unused,count:async()=>0,insertUsage:unused}, tasks: repository().tasks, findField, listFields: unused, insertField: unused, saveField: unused,
+  return { hasActivePlacement: unused, policies:{find:async()=>null,save:unused,count:async()=>0,insertUsage:unused}, tasks: repository().tasks, findField, listFields: unused, insertField: unused, saveField: unused,
     insertDefinitionVersion: unused, findOption: unused, insertOption: unused, saveOption: unused,
     findProjectColumns: unused, saveProjectColumns: unused, findValue: unused, listTaskValues: unused,
     listProjectValues: unused, saveValue: unused, insertValueHistory: unused, listValueHistory: unused };

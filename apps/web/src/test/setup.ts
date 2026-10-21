@@ -9,6 +9,8 @@ configure({ asyncUtilTimeout: 3_000 });
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  // Each testcase represents a separate browser; reloads inside one case retain preferences.
+  try { window.localStorage.clear(); } catch { /* A testcase can deliberately disable storage. */ }
 });
 
 // jsdom lacks a few layout APIs that Radix primitives touch.

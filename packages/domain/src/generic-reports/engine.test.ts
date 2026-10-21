@@ -165,11 +165,15 @@ describe('canonical scope, groups and filters', () => {
     const all = report(input); expect(all.totalTasks).toBe(2); expect(measure(all, 'p').value).toEqual(exact('30'));
     const roots = report(input, config({ hierarchy: 'root_tasks' })); expect(roots.totalTasks).toBe(1); expect(measure(roots, 'p').value).toEqual(exact('10'));
   });
-  it('marks linked-home project custom values missing instead of exposing them', () => {
+  it('includes selected-project values on linked tasks without reading their home-project values', () => {
     const home = task(100), linked = task(101, { projectId: otherProject });
-    const result = report(source([home, linked], [value(home, plan, 10), value(linked, plan, 999)]));
-    expect(measure(result, 'p').value).toEqual(exact('10'));
-    expect(row(result, linked.id)).toMatchObject({ placement: 'linked', values: expect.arrayContaining([{ fieldId: plan.id, state: 'missing', value: null, valueRevision: null, definitionVersionId: null }]) });
+    const otherPlan = { ...plan, projectId: otherProject };
+    const hidden = report(source([home, linked], [value(home, plan, 10), value(linked, otherPlan, 999)]));
+    expect(measure(hidden, 'p').value).toEqual(exact('10'));
+    expect(row(hidden, linked.id)).toMatchObject({ placement: 'linked', values: expect.arrayContaining([{ fieldId: plan.id, state: 'missing', value: null, valueRevision: null, definitionVersionId: null }]) });
+    const selected = report(source([home, linked], [value(home, plan, 10), value(linked, plan, 20)]));
+    expect(measure(selected, 'p').value).toEqual(exact('30'));
+    expect(row(selected, linked.id)).toMatchObject({ placement: 'linked', values: expect.arrayContaining([{ fieldId: plan.id, state: 'value', value: 20, valueRevision: 1, definitionVersionId: plan.definitionVersionId }]) });
   });
   it('requires ALL selected tags and honors current status and assignee together', () => {
     const a = task(100, { tagIds: [id(50), id(51)] }), b = task(101, { tagIds: [id(50)] }), c = task(102, { tagIds: [id(50), id(51)], responsibleMembershipId: personB });

@@ -127,6 +127,14 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
         if (existing.payloadHash !== payloadHash) {
           throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This Idempotency-Key was already used for a different request.');
         }
+        // A linked field's placement is a current read boundary, even for an exact receipt replay.
+        // Do not reapply locks, policy budgets or revisions: successful replay still returns its original result.
+        if (command === 'field.value.set' || command === 'field.value.exception') {
+          const valueTarget = target as { taskId: string; fieldId: string };
+          const task = requireFound(await scope.repository.tasks.findTask(workspaceId, valueTarget.taskId));
+          const field = requireFound(await scope.repository.findField(workspaceId, valueTarget.fieldId));
+          await requireTaskProjectPlacement(scope.repository, workspaceId, task, field.projectId, 'fieldId');
+        }
         if (isCommittedPlanningRejection(existing.result)) return existing.result;
         const stored = resultSchema.safeParse(existing.result);
         if (!stored.success) throw new Error('Stored idempotent result does not match its contract.');
@@ -192,7 +200,7 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
     async getPolicyState(context,taskId,fieldId) {
       const tid=parsePathId(taskId),fid=parsePathId(fieldId),ctx=await authorizeRead(context),ws=ctx.workspaceId;
       const task=requireFound(await reader.tasks.findTask(ws,tid)),field=requireFound(await reader.findField(ws,fid));
-      if(!sameId(task.projectId,field.projectId))throw ruleError('The field belongs to another project.','fieldId');
+      await requireTaskProjectPlacement(reader,ws,task,field.projectId,'fieldId');
       const policy=(await reader.policies.find(ws,fid))??emptyFieldPolicy(field);
       return {policy,currentActorChangesUsed:await reader.policies.count(ws,tid,fid,ctx.actor.userId)};
     },
@@ -409,8 +417,13 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
     async listTaskValues(context: CommandContext, taskId: string): Promise<TaskFieldValueDto[]> {
       const id = parsePathId(taskId);
       const ctx = await authorizeRead(context);
-      requireFound(await reader.tasks.findTask(ctx.workspaceId, id));
-      return reader.listTaskValues(ctx.workspaceId, id);
+      const task = requireFound(await reader.tasks.findTask(ctx.workspaceId, id));
+      const values = await reader.listTaskValues(ctx.workspaceId, id);
+      const allowed = new Map<string, boolean>([[task.projectId, true]]);
+      for (const projectId of new Set(values.map(value => value.projectId))) {
+        if (!allowed.has(projectId)) allowed.set(projectId, await reader.hasActivePlacement(ctx.workspaceId, id, projectId));
+      }
+      return values.filter(value => allowed.get(value.projectId) === true);
     },
 
     async listProjectValues(
@@ -426,9 +439,7 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
       // Every requested task must exist before any project check, so no partial result leaks.
       const tasks: TaskDto[] = [];
       for (const taskId of query.taskIds) tasks.push(requireFound(await reader.tasks.findTask(ws, taskId)));
-      if (tasks.some((task) => !sameId(task.projectId, id))) {
-        throw ruleError('A requested task belongs to another project.', 'taskIds');
-      }
+      for (const task of tasks) await requireTaskProjectPlacement(reader, ws, task, id, 'taskIds');
       return reader.listProjectValues(ws, id, query.taskIds);
     },
 
@@ -458,7 +469,7 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
       const ws = ctx.workspaceId;
       const task = requireFound(await reader.tasks.findTask(ws, tid));
       const field = requireFound(await reader.findField(ws, fid));
-      if (!sameId(field.projectId, task.projectId)) throw ruleError('The field belongs to another project.', 'fieldId');
+      await requireTaskProjectPlacement(reader, ws, task, field.projectId, 'fieldId');
 
       const permissionEpoch = await reader.tasks.permissionEpoch(ws);
       const binding = { version: 1, workspaceId: ws, actorUserId: ctx.actor.userId, permissionEpoch, taskId: tid, fieldId: fid } as const;
@@ -560,6 +571,14 @@ function expectRevision(current: number, expected: number, field = 'expectedRevi
 
 // ---------------------------------------------------------------------------------------------
 // Rules (all inside the write transaction, under the workspace barrier)
+
+/** A field belongs to the requested project, while the task keeps its accounting home. */
+async function requireTaskProjectPlacement(repo: TaskFieldRepository, ws: string, task: TaskDto, projectId: string, path: string): Promise<void> {
+  if (sameId(task.projectId, projectId)) return;
+  if (!await repo.hasActivePlacement(ws, task.id, projectId)) {
+    throw ruleError('The task belongs to another project without an active placement.', path);
+  }
+}
 
 async function requireOpenProject(repo: TaskRepository, ws: string, projectId: string): Promise<ProjectDto> {
   const project = requireFound(await repo.findProject(ws, projectId));
@@ -744,7 +763,7 @@ export async function preflightTaskFieldValueInScope(scope:Pick<TaskFieldWriteSc
         const repo = scope.repository;
         const task = requireFound(await repo.tasks.findTask(ws, tid));
         const field = requireFound(await repo.findField(ws, fid));
-        if (!sameId(field.projectId, task.projectId)) throw ruleError('The field belongs to another project.', 'fieldId');
+        await requireTaskProjectPlacement(repo, ws, task, field.projectId, 'fieldId');
         // A lock blocks every new value command, even an identical value; only a replay passes.
         if (field.locked) {
           throw new DomainError('FIELD_LOCKED', 'The field is locked. Unlock it before changing values.', {
@@ -756,6 +775,7 @@ export async function preflightTaskFieldValueInScope(scope:Pick<TaskFieldWriteSc
         expectRevision(current?.revision ?? 0, parsed.expectedRevision);
 
         await requireOpenProject(repo.tasks, ws, task.projectId);
+        if (!sameId(field.projectId, task.projectId)) await requireOpenProject(repo.tasks, ws, field.projectId);
         if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before editing.', 'taskId');
         if (field.archivedAt !== null) throw ruleError('The field is archived.', 'fieldId');
         if (parsed.value.type !== field.type) throw ruleError('The value type does not match the field type.', 'value.type');
@@ -781,7 +801,7 @@ export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:
 
         const next: TaskFieldValueDto = {
           workspaceId: ws,
-          projectId: task.projectId,
+          projectId: field.projectId,
           taskId: tid,
           fieldId: fid,
           definitionVersionId: field.definitionVersionId,
@@ -790,13 +810,14 @@ export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:
           updatedAt: now,
         };
         await repo.saveValue(next);
-        if(policy.activatedAt!==null)await repo.policies.insertUsage({workspaceId:ws,projectId:task.projectId,taskId:tid,fieldId:fid,
+        if(policy.activatedAt!==null)await repo.policies.insertUsage({workspaceId:ws,projectId:field.projectId,taskId:tid,fieldId:fid,
           actorUserId:scope.context.actor.userId,valueRevision:next.revision,policyRevision:policy.revision,exception:exception!==undefined,recordedAt:now});
 
         // Audit and outbox carry metadata only; complete values live solely in value history.
         const metadata = {
           taskId: tid,
           fieldId: fid,
+          ...(sameId(field.projectId, task.projectId) ? {} : { projectId: field.projectId }),
           type: field.type,
           valueRevision: next.revision,
           definitionRevision: field.revision,
@@ -809,14 +830,14 @@ export async function setTaskFieldValueInScope(scope:TaskFieldWriteScope,taskId:
           next.revision,
           // Audit-only flag: lets the timeline tell an opt-out from a legacy uncaptured row. Outbox stays unchanged.
           { ...metadata, historyCaptured: field.historyEnabled, ...(exception?{ownerException:{policyRevision:policy.revision,reason:exception.reason}}:{}) },
-          { projectId: task.projectId, ...metadata },
+          { projectId: field.projectId, ...metadata },
           exception?.reason,
         );
         if (field.historyEnabled) {
           await repo.insertValueHistory({
             id: newId(),
             workspaceId: ws,
-            projectId: task.projectId,
+            projectId: field.projectId,
             taskId: tid,
             fieldId: fid,
             valueRevision: next.revision,

@@ -67,6 +67,8 @@ export interface TaskFieldRepository {
   readonly policies: TaskFieldPolicyRepository;
   /** Access, project and task lookups, permission epoch and idempotency records. */
   readonly tasks: TaskRepository;
+  /** True only for a retained, currently active placement in the requested project. */
+  hasActivePlacement(workspaceId: string, taskId: string, projectId: string): Promise<boolean>;
 
   /** The current definition with its whole option catalog (active and archived). */
   findField(workspaceId: string, fieldId: string): Promise<TaskFieldDefinitionDto | null>;

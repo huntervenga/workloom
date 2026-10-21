@@ -1,0 +1,60 @@
+// Actual domain-command integration on an owned throwaway child PostgreSQL database only.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createDatabase,createSharedAuthStore,createTaskApplication,createTaskFieldApplication,runMigrations} from '@workloom/db';
+import {createThrowawayDatabase} from '../tests/integration/support/test-database.ts';
+import {prepareAsanaPlan,executeAsanaImport,parseSourceCsv} from './import-asana-project.mjs';
+import {importAsanaFiles} from './asana-import-files.mjs';
+import {syntheticSource} from './import-asana-project.test-fixture.mjs';
+const clone=value=>JSON.parse(JSON.stringify(value));
+const encode=rows=>rows.map(row=>row.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n')+'\r\n';
+function secondPair(first){
+ const input=JSON.parse(first.jsonText),shared=[input.data[0],input.data[1],input.data[48],input.data[97]],parent=clone(input.data[2]),extra=clone(input.data[4]);
+ const project={gid:'201',name:'Synthetic older board'},section={gid:'4000',name:'Delivery'};
+ parent.gid='9000';parent.name='New milestone';parent.resource_subtype='milestone';parent.subtasks=[];extra.gid='9001';extra.name='New root';extra.tags=[{gid:'602',name:'New source tag'}];extra.subtasks=[];
+ const child=clone(input.data[3]);child.gid='9002';child.name='New child';child.parent={gid:parent.gid,name:parent.name};child.memberships=[];child.subtasks=[];parent.subtasks=[child];
+ const roots=[shared[0],parent,shared[1],shared[2],shared[3],extra],flat=[];
+ for(const t of roots){t.projects=[...(t.projects??[]),project];t.memberships=[{project,section}];}
+ const walk=items=>{for(const t of items){flat.push(t);walk(t.subtasks??[]);}};walk(roots);
+ const csv=parseSourceCsv(first.csvText),rows=flat.map(t=>[t.gid,t.created_at,t.completed_at??'',t.modified_at,t.name,t.memberships[0]?.section.name??'',t.assignee?.name??'',t.assignee?'owner@example.test':'',t.start_on??'',t.due_on??'',t.tags.map(x=>x.name).join(','),t.notes,project.name,t.parent?.name??'',t.gid==='9001'?'External label, no exported ID':t.gid===shared[3].gid?shared[0].name:'',t.gid===shared[0].gid?shared[3].name:'',...t.custom_fields.map(f=>f.resource_subtype==='enum'?f.enum_value?.name??'':f.number_value??'')]);
+ return {jsonText:JSON.stringify({data:roots}),csvText:encode([csv.headers,...rows]),roots,flat};
+}
+test('two-file import preserves canonical shared trees, target fields, reports and exact crash/resume receipts',{timeout:180000},async()=>{
+ const target=await createThrowawayDatabase('asana_files'),dir=mkdtempSync(join(tmpdir(),'asana-files-'));let db;
+ try{
+  await runMigrations(target.url,{requireLoopback:true});db=createDatabase(target.url,{requireLoopback:true});const identity=await createSharedAuthStore(db).provisionIdentity({issuer:'https://auth.example.test',subject:randomUUID(),displayName:'Two file import owner',workspaceName:'Two file import fixture',timezone:'UTC'}),[member]=await db.sql`select id from memberships where workspace_id=${identity.workspaceId} and user_id=${identity.user.id}`;
+  const source=syntheticSource(identity.workspaceId,member.id),first=join(dir,'first'),second=join(dir,'second');mkdirSync(first,{mode:0o700});mkdirSync(second,{mode:0o700});
+  source.mapping.ownerUserId=identity.user.id;writeFileSync(join(first,'mapping.json'),JSON.stringify(source.mapping),{mode:0o600});const original=prepareAsanaPlan({...source,workspaceId:identity.workspaceId}),firstResult=await executeAsanaImport(original,{databaseUrl:target.url,ownerUserId:identity.user.id,journalDir:first,testMode:true});
+  const originalSnapshot=await db.sql`select to_jsonb(t) value from tasks t where project_id=${firstResult.projectId} order by id`,originalValues=await db.sql`select to_jsonb(v) value from task_field_values v where project_id=${firstResult.projectId} order by task_id,field_id`,originalRefs=await db.sql`select to_jsonb(r) value from external_import_references r order by external_id`;
+  const pair=secondPair(source),jsonPath=join(dir,'unrelated-name.data'),csvPath=join(dir,'other-input.data');writeFileSync(jsonPath,pair.jsonText);writeFileSync(csvPath,pair.csvText);
+  const options={mode:'plan',workspaceId:identity.workspaceId,jsonPath,csvPath,profileRoot:dir,journalDir:second,databaseUrl:target.url,testMode:true,unsupportedSubtypePolicy:'preserve_as_task',unresolvedDependencyPolicy:'preserve',projectDates:{from:'2026-10-12',to:'2026-10-18'},report:{name:'Configured ordinary report',hierarchy:'root_tasks'}};
+  const plan=await importAsanaFiles(options);assert.equal(plan.summary.tasks,14);assert.equal(plan.summary.createTasks,3);assert.equal(plan.summary.reuseTasks,11);assert.equal(plan.summary.provenanceOnly.milestonesPreservedAsOrdinaryTasks,1);assert.equal(plan.summary.provenanceOnly.unresolvedExternalDependencies,1);
+  const snapshot=()=>db.sql`select (select count(*) from projects)::int projects,(select count(*) from tasks)::int tasks,(select count(*) from task_project_placements)::int placements,(select count(*) from external_import_references)::int refs,(select count(*) from task_field_values)::int values,(select count(*) from command_idempotency)::int receipts`;
+  const noFabrication=()=>db.sql`select (select count(*) from work_logs)::int worklogs,(select count(*) from plan_baselines)::int baselines,(select count(*) from package_freeze_observations)::int observations,(select count(*) from meetings)::int meetings,(select count(*) from meeting_attendances)::int attendances,(select count(*) from shared_activities)::int activities,(select count(*) from task_comments)::int comments,(select count(*) from leave_profiles)::int leave_profiles`;
+  const sourceOnlyBefore=await noFabrication();
+  const beforeInvalid=await snapshot();await assert.rejects(importAsanaFiles({...options,projectDates:{from:'2026-10-18',to:'2026-10-12'}}));assert.deepEqual(await snapshot(),beforeInvalid);
+  const bad=JSON.parse(pair.jsonText),badCsv=parseSourceCsv(pair.csvText),oldName=bad.data[0].name;bad.data[0].name+=' changed';for(const row of badCsv.rows){if(row['Task ID']===bad.data[0].gid)row.Name=bad.data[0].name;for(const key of ['Blocked By (Dependencies)','Blocking (Dependencies)'])if(row[key]===oldName)row[key]=bad.data[0].name;}
+  const conflictJson=join(dir,'conflict.json'),conflictCsv=join(dir,'conflict.csv');writeFileSync(conflictJson,JSON.stringify(bad));writeFileSync(conflictCsv,encode([badCsv.headers,...badCsv.rows.map(row=>badCsv.headers.map(h=>row[h]))]));await assert.rejects(importAsanaFiles({...options,mode:'apply',jsonPath:conflictJson,csvPath:conflictCsv,journalDir:join(dir,'conflict-journal')}),/Shared canonical task differs/);assert.deepEqual(await snapshot(),beforeInvalid);
+  const mixed=JSON.parse(pair.jsonText),mixedCsv=parseSourceCsv(pair.csvText),existingParent=mixed.data.find(t=>t.gid==='1048'),fresh=clone(mixed.data[1].subtasks[0]);fresh.gid='9003';fresh.name='New child under existing parent';fresh.parent={gid:existingParent.gid,name:existingParent.name};existingParent.subtasks.push(fresh);const freshRow={...mixedCsv.rows.find(row=>row['Task ID']==='9002'),'Task ID':'9003',Name:fresh.name,'Parent task':existingParent.name},index=mixedCsv.rows.findIndex(row=>row['Task ID']==='1104');mixedCsv.rows.splice(index,0,freshRow);const mixedJson=join(dir,'mixed.json'),mixedCsvPath=join(dir,'mixed.csv');writeFileSync(mixedJson,JSON.stringify(mixed));writeFileSync(mixedCsvPath,encode([mixedCsv.headers,...mixedCsv.rows.map(row=>mixedCsv.headers.map(h=>row[h]))]));await assert.rejects(importAsanaFiles({...options,mode:'apply',jsonPath:mixedJson,csvPath:mixedCsvPath,journalDir:join(dir,'mixed-journal')}),/new child of an existing task/i);assert.deepEqual(await snapshot(),beforeInvalid);
+  await assert.rejects(importAsanaFiles({...options,mode:'apply',afterStep:async name=>{if(name==='project.create')throw new Error('Lost response at project.create');}}),/Lost response/);
+  const afterEarlyCreate=await snapshot();assert.equal(afterEarlyCreate[0].projects,2);
+  const alternate={...options,mode:'apply',journalDir:join(dir,'early-alternate-journal'),report:{...options.report,name:'Different report options'}};
+  await assert.rejects(importAsanaFiles(alternate),/import claim.*original journal/i);assert.deepEqual(await snapshot(),afterEarlyCreate);
+  await assert.rejects(importAsanaFiles({...alternate,mode:'plan'}),/import claim.*original journal/i);assert.deepEqual(await snapshot(),afterEarlyCreate);
+  for(const step of ['apply.0','attach.1000','value.1000.702'])await assert.rejects(importAsanaFiles({...options,mode:'apply',afterStep:async name=>{if(name===step)throw new Error('Lost response at '+step);}}),/Lost response/);
+  const result=await importAsanaFiles({...options,mode:'apply'});assert.equal(result.status,'verified');assert.equal(result.verification.taskCount,14);assert.equal(result.verification.createdTasks,3);assert.equal(result.verification.reusedTasks,11);assert.deepEqual(result.verification.differences,[]);assert.ok(result.reportId);
+  assert.deepEqual(await db.sql`select to_jsonb(t) value from tasks t where project_id=${firstResult.projectId} order by id`,originalSnapshot);assert.deepEqual(await db.sql`select to_jsonb(v) value from task_field_values v where project_id=${firstResult.projectId} order by task_id,field_id`,originalValues);
+  const refs=await db.sql`select to_jsonb(r) value from external_import_references r where project_id=${firstResult.projectId} order by external_id`;assert.deepEqual(refs,originalRefs);const counts=(await snapshot())[0];assert.equal(counts.projects,2);assert.equal(counts.tasks,108);assert.equal(counts.refs,108);assert.equal(counts.placements,119);
+  const beforeRepeat=await snapshot(),again=await importAsanaFiles({...options,mode:'apply'});assert.equal(again.projectId,result.projectId);assert.equal(again.reportId,result.reportId);assert.deepEqual(await snapshot(),beforeRepeat);
+  await assert.rejects(importAsanaFiles({...options,mode:'apply',journalDir:join(dir,'wrong-journal')}),/already imported|import claim/);assert.deepEqual(await snapshot(),beforeRepeat);
+  assert.deepEqual(await noFabrication(),sourceOnlyBefore);
+  const oldReplay=await executeAsanaImport(original,{databaseUrl:target.url,ownerUserId:identity.user.id,journalDir:first,testMode:true});assert.equal(oldReplay.projectId,firstResult.projectId);
+  const tasks=createTaskApplication(db),fields=createTaskFieldApplication(db),ctx={workspaceId:identity.workspaceId,actor:{userId:identity.user.id,displayName:'Owner',kind:'real'},source:'import',requestId:'test'};
+  const journal=JSON.parse(readFileSync(join(second,'journal.json'),'utf8')),shared=journal.shared.bindings['1000'],field=journal.steps['field.701'].result;const firstJournal=JSON.parse(readFileSync(join(first,'journal.json'),'utf8')),homeField=firstJournal.steps['field.701'].result;await fields.setTaskValue({...ctx,idempotencyKey:randomUUID()},shared.taskId,homeField.id,{expectedDefinitionRevision:homeField.revision,expectedRevision:0,value:{type:'duration',value:1}});const beforeChanged=await snapshot();await assert.rejects(importAsanaFiles({...options,mode:'apply'}),/shared canonical task or existing home field changed/i);assert.deepEqual(await snapshot(),beforeChanged);const [placement]=await tasks.placements.listTaskPlacements(ctx,shared.taskId).then(list=>list.filter(p=>p.projectId===result.projectId));await tasks.placements.detachTaskProjectPlacement({...ctx,idempotencyKey:randomUUID()},placement.id,{expectedRevision:placement.revision});await assert.rejects(fields.setTaskValue({...ctx,idempotencyKey:randomUUID()},shared.taskId,field.id,{expectedDefinitionRevision:field.revision,expectedRevision:0,value:{type:'duration',value:1}}));
+
+ }finally{try{await db?.close();}finally{await target.drop();rmSync(dir,{recursive:true,force:true});}}
+});

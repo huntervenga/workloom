@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   taskFieldPolicySchema,
   taskFieldDataSchema,
@@ -28,6 +28,7 @@ import {
   taskFieldValueHistory,
   taskFieldPolicies, taskFieldPolicyUsage,
   taskFieldValues,
+  taskProjectPlacements,
 } from '../schema.js';
 import { createTaskRepository } from './task-repository.js';
 
@@ -247,6 +248,13 @@ export function createTaskFieldRepository(source: Database | WorkloomExecutor): 
       async insertUsage(usage) {await db.insert(taskFieldPolicyUsage).values({...usage,recordedAt:new Date(usage.recordedAt)});},
     },
     tasks: createTaskRepository(db),
+    async hasActivePlacement(workspaceId, taskId, projectId) {
+      if (!isUuid(workspaceId) || !isUuid(taskId) || !isUuid(projectId)) return false;
+      const [row] = await db.select({ id: taskProjectPlacements.id }).from(taskProjectPlacements)
+        .where(and(eq(taskProjectPlacements.workspaceId, workspaceId), eq(taskProjectPlacements.taskId, taskId),
+          eq(taskProjectPlacements.projectId, projectId), isNull(taskProjectPlacements.archivedAt))).limit(1);
+      return row !== undefined;
+    },
 
     async findField(workspaceId, fieldId) {
       if (!isUuid(workspaceId) || !isUuid(fieldId)) {

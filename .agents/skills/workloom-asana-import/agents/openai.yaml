@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workloom Asana Import"
+  short_description: "Import paired Asana JSON and CSV into Workloom"
+  default_prompt: "Use $workloom-asana-import to import these Asana JSON and CSV files into my Workloom workspace."

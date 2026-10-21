@@ -86,7 +86,13 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
     case 'field.update':case 'field.option.create':return projects(await fieldProject(text(i.target,'field')));
     case 'field.option.update':return projects(await fieldProject(text(record(i.target,'option target')['fieldId'],'field')));
     case 'field.columns.update':return projects((await repo.tasks.findProject(ws,text(i.target,'project')))?.id);
-    case 'field.value.set':case 'field.value.exception':{const t=record(i.target,'value target');return projects(await taskProject(text(t['taskId'],'task')),await fieldProject(text(t['fieldId'],'field')));}
+    case 'field.value.set':case 'field.value.exception':{
+     const t=record(i.target,'value target'),taskId=text(t['taskId'],'task'),fieldId=text(t['fieldId'],'field');
+     const task=await repo.tasks.findTask(ws,taskId),field=await repo.fields.findField(ws,fieldId);
+     if(task&&field&&task.projectId!==field.projectId&&!await repo.fields.hasActivePlacement(ws,taskId,field.projectId))
+      throw new DomainError('DOMAIN_VALIDATION_FAILED','The task belongs to another project without an active placement.');
+     return projects(task?.projectId,field?.projectId);
+    }
     default:return never(i);
    }
   case 'planning':

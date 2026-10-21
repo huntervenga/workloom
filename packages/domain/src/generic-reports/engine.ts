@@ -152,8 +152,8 @@ export function calculateGenericReport(source: GenericReportSource, config: Gene
   const byValue = new Map(source.values.map(value => [valueKey(value.taskId, value.fieldId), value]));
   const originals = new Map(initial?.rows.map(row => [normalizeId(row.taskId), row]) ?? []);
   const readValue = (task: GenericSourceTask, fieldId: string): TaskFieldValueDto | undefined => {
-    // Custom fields are home-project scoped. A linked row never exposes another project's values.
-    if (!sameId(task.projectId, config.projectId)) return undefined;
+    // The repository authorizes active placements. Only values owned by the selected
+    // project's own field definitions are visible, including its linked-task values.
     const value = byValue.get(valueKey(task.id, fieldId));
     return value && sameId(value.projectId, config.projectId) ? value : undefined;
   };

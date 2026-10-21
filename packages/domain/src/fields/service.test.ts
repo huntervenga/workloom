@@ -43,6 +43,7 @@ const members = { owner: uuid(21), member: uuid(22), viewer: uuid(23), colleague
 const T0 = '2026-10-01T00:00:00.000Z';
 
 interface State {
+  placements:Set<string>;
   policies:Map<string,TaskFieldPolicyDto>;
   usage:TaskFieldPolicyUsage[];
   projects: Map<string, ProjectDto>;
@@ -58,6 +59,7 @@ interface State {
 
 function cloneState(state: State): State {
   return {
+    placements:new Set(state.placements),
     policies:new Map(state.policies), usage:[...state.usage],
     projects: new Map(state.projects),
     tasks: new Map(state.tasks),
@@ -133,6 +135,7 @@ function harness() {
 
   const db = {
     state: cloneState({
+      placements:new Set(),
       policies:new Map(),usage:[],
       projects: new Map([P, Q].map((id) => [id, project(id)])).set(ARCHIVED_P, project(ARCHIVED_P, T0)),
       tasks: new Map([
@@ -230,6 +233,7 @@ function harness() {
       insertUsage:async u=>{db.state.usage.push(u);},
     },
     tasks: taskRepository,
+    hasActivePlacement:async(ws,tid,pid)=>ws===WS&&db.state.placements.has(tid+'|'+pid),
     async findField(ws, id) {
       const row = scoped(db.state.fields.get(id), ws);
       return row === null ? null : joinField(row);
@@ -834,5 +838,56 @@ describe('exception activation boundary',()=>{
     const h=harness(),f=await h.createField({name:'No rules',type:'text'});
     expect((await errorOf(h.app.setTaskValueException(h.owner(),tasks.a,f.id,{expectedRevision:0,expectedDefinitionRevision:1,expectedPolicyRevision:0,value:{type:'text',value:'not an exception'},reason:'Owner request'}))).code).toBe('DOMAIN_VALIDATION_FAILED');
     expect(h.db.state.policies.size).toBe(0);expect(h.db.state.usage).toHaveLength(0);expect(h.db.state.values.size).toBe(0);
+  });
+});
+
+
+describe('ordinary custom fields on active linked project placements', () => {
+  it('keeps home data unchanged while target values, history, policy usage and outbox use the field project', async () => {
+    const h = harness(), home = await h.createField({name:'Home hours',type:'duration'}), linked = await h.createField({name:'Target hours',type:'duration',projectId:Q});
+    await h.setValue(tasks.a, home.id, {type:'duration',value:60}, 0);
+    const canonical = h.db.state.tasks.get(tasks.a);
+    h.db.state.placements.add(tasks.a+'|'+Q);
+    await h.app.setPolicy(h.owner(), linked.id, {expectedRevision:0,lockAt:null,maxChangesPerActor:1});
+    const value = await h.setValue(tasks.a, linked.id, {type:'duration',value:120}, 0);
+    expect(value.projectId).toBe(Q);
+    expect(h.db.state.tasks.get(tasks.a)).toEqual(canonical);
+    expect((await h.app.listProjectValues(h.owner(),P,{taskIds:[tasks.a]})).map(v=>v.value)).toEqual([{type:'duration',value:60}]);
+    expect(await h.app.listProjectValues(h.owner(),Q,{taskIds:[tasks.a]})).toEqual([value]);
+    expect((await h.app.listValueHistory(h.owner(),tasks.a,linked.id,{limit:10})).items[0]).toMatchObject({projectId:Q,definition:{projectId:Q},after:{type:'duration',value:120}});
+    expect(h.db.state.usage[0]).toMatchObject({projectId:Q,taskId:tasks.a,fieldId:linked.id});
+    expect(h.events.at(-1)?.event).toMatchObject({diff:{projectId:Q},outbox:{payload:{projectId:Q}}});
+    expect((await h.app.getPolicyState(h.owner(),tasks.a,linked.id)).currentActorChangesUsed).toBe(1);
+    expect((await errorOf(h.setValue(tasks.a,linked.id,{type:'duration',value:180},1))).code).toBe('FIELD_LOCKED');
+  });
+
+  it('rejects a missing or detached placement for value, project batch, history and policy reads, retaining stored history', async () => {
+    const h=harness(), f=await h.createField({name:'Linked notes',type:'text',projectId:Q});
+    expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'invalid'},0))).code).toBe('DOMAIN_VALIDATION_FAILED');
+    h.db.state.placements.add(tasks.a+'|'+Q);
+    const context=h.owner();
+    await h.setValue(tasks.a,f.id,{type:'text',value:'retained'},0,1,context);
+    h.db.state.placements.delete(tasks.a+'|'+Q);
+    expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'detached'},1))).code).toBe('DOMAIN_VALIDATION_FAILED');
+    expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'retained'},0,1,context))).code).toBe('DOMAIN_VALIDATION_FAILED');
+    expect((await errorOf(h.app.listProjectValues(h.owner(),Q,{taskIds:[tasks.a]}))).code).toBe('DOMAIN_VALIDATION_FAILED');
+    expect((await errorOf(h.app.listValueHistory(h.owner(),tasks.a,f.id,{limit:10}))).code).toBe('DOMAIN_VALIDATION_FAILED');
+    expect((await errorOf(h.app.getPolicyState(h.owner(),tasks.a,f.id))).code).toBe('DOMAIN_VALIDATION_FAILED');
+    expect(await h.app.listTaskValues(h.owner(),tasks.a)).toEqual([]);
+    expect(h.db.state.history).toHaveLength(1);expect(h.db.state.values.size).toBe(1);
+  });
+
+  it('enforces both home and target project archival and preserves ordinary field locks', async () => {
+    const h=harness(),f=await h.createField({name:'Linked locked',type:'text',projectId:Q});
+    h.db.state.placements.add(tasks.a+'|'+Q);
+    for(const projectId of [P,Q]) {
+      const current=h.db.state.projects.get(projectId);if(!current)throw new Error('Fixture project required.');
+      h.db.state.projects.set(projectId,{...current,archivedAt:T0});
+      expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'blocked'},0))).code).toBe('DOMAIN_VALIDATION_FAILED');
+      h.db.state.projects.set(projectId,current);
+    }
+    const locked=await h.app.updateField(h.owner(),f.id,{expectedRevision:1,locked:true});
+    expect((await errorOf(h.setValue(tasks.a,f.id,{type:'text',value:'blocked'},0,locked.revision))).code).toBe('FIELD_LOCKED');
+    expect(h.db.state.values.size).toBe(0);
   });
 });

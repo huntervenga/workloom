@@ -712,8 +712,8 @@ export const taskFieldValues = pgTable(
     primaryKey({ name: 'task_field_values_pk', columns: [table.workspaceId, table.taskId, table.fieldId] }),
     foreignKey({
       name: 'task_field_values_task_fk',
-      columns: [table.workspaceId, table.projectId, table.taskId],
-      foreignColumns: [tasks.workspaceId, tasks.projectId, tasks.id],
+      columns: [table.workspaceId, table.taskId, table.projectId],
+      foreignColumns: [taskProjectPlacements.workspaceId, taskProjectPlacements.taskId, taskProjectPlacements.projectId],
     }),
     foreignKey({
       name: 'task_field_values_field_type_fk',
@@ -788,8 +788,8 @@ export const taskFieldValueHistory = pgTable(
   (table) => [
     foreignKey({
       name: 'task_field_value_history_task_fk',
-      columns: [table.workspaceId, table.projectId, table.taskId],
-      foreignColumns: [tasks.workspaceId, tasks.projectId, tasks.id],
+      columns: [table.workspaceId, table.taskId, table.projectId],
+      foreignColumns: [taskProjectPlacements.workspaceId, taskProjectPlacements.taskId, taskProjectPlacements.projectId],
     }),
     foreignKey({
       name: 'task_field_value_history_field_fk',
@@ -1575,7 +1575,7 @@ export const taskFieldPolicyUsage = pgTable('task_field_policy_usage', {
   exception:boolean('exception').notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
 },t=>[
   primaryKey({name:'task_field_policy_usage_pk',columns:[t.workspaceId,t.taskId,t.fieldId,t.valueRevision]}),
-  foreignKey({name:'task_field_policy_usage_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+  foreignKey({name:'task_field_policy_usage_task_fk',columns:[t.workspaceId,t.taskId,t.projectId],foreignColumns:[taskProjectPlacements.workspaceId,taskProjectPlacements.taskId,taskProjectPlacements.projectId]}),
   foreignKey({name:'task_field_policy_usage_field_fk',columns:[t.workspaceId,t.projectId,t.fieldId],foreignColumns:[taskFieldDefinitions.workspaceId,taskFieldDefinitions.projectId,taskFieldDefinitions.id]}),
   index('task_field_policy_usage_actor_idx').on(t.workspaceId,t.taskId,t.fieldId,t.actorUserId),
   check('task_field_policy_usage_revisions_positive',sql`value_revision >= 1 and policy_revision >= 1`),
