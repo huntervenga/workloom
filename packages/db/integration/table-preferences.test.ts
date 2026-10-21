@@ -8,16 +8,14 @@ import { taskTableBuiltinColumnSchema, updatePersonalTablePreferenceInputSchema,
 import type { CommandContext } from '@workloom/domain';
 import type { WorkloomExecutor } from '../src/client.js';
 import { FIXTURE_MEMBERSHIP_IDS as M, FIXTURE_USER_IDS as U, FIXTURE_WORKSPACE_IDS as W } from '../src/fixtures.js';
-import { MIGRATIONS_FOLDER, runMigrations } from '../src/migrations.js';
+import { MIGRATIONS_FOLDER, readExpectedMigrations, runMigrations } from '../src/migrations.js';
 import { createReadinessProbe } from '../src/readiness.js';
-import { seedDemoData } from '../src/seed/demo-seed.js';
-import { createTaskApplication } from '../src/tasks/task-application.js';
-import { createTaskFieldApplication } from '../src/fields/task-field-application.js';
 import { createPlanningApplication } from '../src/planning/planning-application.js';
 import { createRecurrenceApplication } from '../src/recurrence/recurrence-application.js';
 import { createPersonalTablePreferenceApplication } from '../src/table-preferences/application.js';
 import { createPersonalTablePreferenceRepository } from '../src/table-preferences/repository.js';
 import { createThrowawayDatabase, type ThrowawayDatabase } from './support.js';
+import { createLegacyProject, createLegacyTask, createLegacyTextField, legacyActor, seedLegacyIdentities, snapshotLegacyRows } from './legacy-fixtures.js';
 const id = (n: number) => `ce000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const context = (userId: string = U.viewer, key = randomUUID(), workspaceId: string = W.team): CommandContext => ({ workspaceId, actor: { userId, displayName: 'Untrusted label', kind: 'fixture' }, source: 'web', requestId: 'personal-columns-pg', idempotencyKey: key });
 const title: ColumnChoice = { column: { kind: 'builtin', key: 'title' }, visible: true };
@@ -46,26 +44,24 @@ describe('own personal columns on an isolated PostgreSQL database', () => {
       for (const entry of journal.entries) copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(prior, `${entry.tag}.sql`));
       await runMigrations(target.url, { requireLoopback: true, migrationsFolder: prior });
     } finally { rmSync(prior, { recursive: true, force: true }); }
-    await seedDemoData(target.database);
-    const tasks = createTaskApplication(target.database), fields = createTaskFieldApplication(target.database);
-    const project = await tasks.createProject(context(U.owner), { name: 'Personal columns fixture' }); projectId = project.id;
-    otherProjectId = (await tasks.createProject(context(U.owner), { name: 'Other team project' })).id;
-    const outside = await tasks.createProject(context(U.outsider, randomUUID(), W.outside), { name: 'Outside columns project' });
-    const status = (await tasks.listStatuses(context(U.owner), projectId)).find(row => row.group === 'todo'); if (!status) throw new Error('Synthetic status required.'); statusId = status.id;
-    await tasks.createTask(context(U.owner), { projectId, statusId, title: 'Existing unchanged task' });
-    const createField = (pid: string, name: string, ctx = context(U.owner)) => fields.createField(ctx, { projectId: pid, name, type: 'text', historyEnabled: true, locked: false, options: [] });
-    const archived = await createField(projectId, 'Archived personal choice'); archivedField = archived.id;
-    await fields.updateField(context(U.owner), archivedField, { expectedRevision: archived.revision, archived: true });
-    activeField = (await createField(projectId, 'Active personal choice')).id;
-    foreignProjectField = (await createField(otherProjectId, 'Other project field')).id;
-    foreignWorkspaceField = (await createField(outside.id, 'Outside field', context(U.outsider, randomUUID(), W.outside))).id;
-    const oldRows = await snapshot(target), oldHistory = await target.database.sql`select * from drizzle.__drizzle_migrations order by created_at`, pendingNotReady = !(await createReadinessProbe(target.database).check()).ready;
+    await seedLegacyIdentities(target.database.sql);
+    const owner = legacyActor(W.team, U.owner), outsider = legacyActor(W.outside, U.outsider);
+    const project = await createLegacyProject(target.database.sql, owner, 'Personal columns fixture'); projectId = project.id;
+    otherProjectId = (await createLegacyProject(target.database.sql, owner, 'Other team project')).id;
+    const outside = await createLegacyProject(target.database.sql, outsider, 'Outside columns project');
+    statusId = project.todoStatusId;
+    await createLegacyTask(target.database.sql, owner, { projectId, statusId, title: 'Existing unchanged task' });
+    archivedField = (await createLegacyTextField(target.database.sql, owner, projectId, 'Archived personal choice', true)).id;
+    activeField = (await createLegacyTextField(target.database.sql, owner, projectId, 'Active personal choice')).id;
+    foreignProjectField = (await createLegacyTextField(target.database.sql, owner, otherProjectId, 'Other project field')).id;
+    foreignWorkspaceField = (await createLegacyTextField(target.database.sql, outsider, outside.id, 'Outside field')).id;
+    const oldRows = await snapshotLegacyRows(target.database.sql), oldHistory = await target.database.sql`select * from drizzle.__drizzle_migrations order by created_at`, pendingNotReady = !(await createReadinessProbe(target.database).check()).ready;
     const result = await runMigrations(target.url, { requireLoopback: true }), afterHistory = await target.database.sql`select * from drizzle.__drizzle_migrations order by created_at`;
-    upgrade = { applied: result.appliedNow, oldRowsUnchanged: JSON.stringify(await snapshot(target, Object.keys(oldRows))) === JSON.stringify(oldRows), oldHistoryUnchanged: JSON.stringify(afterHistory.slice(0, oldHistory.length)) === JSON.stringify(oldHistory), pendingNotReady, ready: (await createReadinessProbe(target.database).check()).ready };
+    upgrade = { applied: result.appliedNow, oldRowsUnchanged: JSON.stringify(await snapshotLegacyRows(target.database.sql, oldRows)) === JSON.stringify(oldRows), oldHistoryUnchanged: JSON.stringify(afterHistory.slice(0, oldHistory.length)) === JSON.stringify(oldHistory), pendingNotReady, ready: (await createReadinessProbe(target.database).check()).ready };
   }, 60_000);
   afterAll(async () => { await target?.drop(); });
 
-  it('upgrades populated pre-0012 data/history without backfill and gates readiness', () => { expect(upgrade).toEqual({ applied: ['0012_personal_table_preferences', '0013_planning_cutoff_automation'], oldRowsUnchanged: true, oldHistoryUnchanged: true, pendingNotReady: true, ready: true }); });
+  it('upgrades populated pre-0012 data/history without backfill and gates readiness', () => { expect(upgrade).toEqual({ applied: readExpectedMigrations().slice(readExpectedMigrations().findIndex(migration => migration.tag === '0012_personal_table_preferences')).map(migration => migration.tag), oldRowsUnchanged: true, oldHistoryUnchanged: true, pendingNotReady: true, ready: true }); });
 
   it('returns own revision-zero/default state without any GET writes or row synthesis', async () => {
     const before = await snapshot(target);

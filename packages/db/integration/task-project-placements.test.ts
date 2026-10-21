@@ -7,10 +7,10 @@ import {afterAll,beforeAll,describe,expect,it} from 'vitest';
 import type {CommandContext} from '@workloom/domain';
 import {FIXTURE_MEMBERSHIP_IDS as M,FIXTURE_USER_IDS as U,FIXTURE_WORKSPACE_IDS as W} from '../src/fixtures.js';
 import {MIGRATIONS_FOLDER,runMigrations} from '../src/migrations.js';
-import {seedDemoData} from '../src/seed/demo-seed.js';
 import {createTaskApplication} from '../src/tasks/task-application.js';
 import {createPlanningApplication} from '../src/planning/planning-application.js';
 import {createThrowawayDatabase,type ThrowawayDatabase} from './support.js';
+import {createLegacyProject,createLegacyTask,legacyActor,seedLegacyIdentities,snapshotLegacyRows} from './legacy-fixtures.js';
 const ctx=(userId:string=U.owner,key=randomUUID(),workspaceId:string=W.team):CommandContext=>({workspaceId,actor:{userId,displayName:'Synthetic placement',kind:'fixture'},source:'web',requestId:'placement-pg',idempotencyKey:key});
 function required<T>(value:T|null|undefined):T {if(value===null||value===undefined)throw new Error('Missing placement fixture.');return value;}
 async function snapshot(target:ThrowawayDatabase,tables?:readonly string[]):Promise<Record<string,string>>{
@@ -23,10 +23,10 @@ describe('task project placements on owned disposable PostgreSQL',()=>{
  beforeAll(async()=>{
   target=await createThrowawayDatabase('placements');const prior=mkdtempSync(join(tmpdir(),'workloom-placements-prior-'));
   try{const journal=JSON.parse(readFileSync(join(MIGRATIONS_FOLDER,'meta','_journal.json'),'utf8')) as {entries:{tag:string}[]};journal.entries=journal.entries.slice(0,journal.entries.findIndex(e=>e.tag==='0017_task_project_placements'));mkdirSync(join(prior,'meta'));writeFileSync(join(prior,'meta','_journal.json'),JSON.stringify(journal));for(const entry of journal.entries)copyFileSync(join(MIGRATIONS_FOLDER,`${entry.tag}.sql`),join(prior,`${entry.tag}.sql`));await runMigrations(target.url,{requireLoopback:true,migrationsFolder:prior});}finally{rmSync(prior,{recursive:true,force:true});}
-  await seedDemoData(target.database);const legacy=createTaskApplication(target.database),legacyProject=await legacy.createProject(ctx(),{name:'Existing project before placement migration'}),legacyStatus=required((await legacy.listStatuses(ctx(),legacyProject.id))[0]);await legacy.createTask(ctx(),{projectId:legacyProject.id,statusId:legacyStatus.id,title:'Existing canonical task before additive migration',position:7});const old=await snapshot(target),history=await target.database.sql`select * from drizzle.__drizzle_migrations order by created_at`;
+  await seedLegacyIdentities(target.database.sql);const owner=legacyActor(W.team,U.owner),legacyProject=await createLegacyProject(target.database.sql,owner,'Existing project before placement migration');await createLegacyTask(target.database.sql,owner,{projectId:legacyProject.id,statusId:legacyProject.todoStatusId,title:'Existing canonical task before additive migration',position:7});const old=await snapshotLegacyRows(target.database.sql),history=await target.database.sql`select * from drizzle.__drizzle_migrations order by created_at`;
   await runMigrations(target.url,{requireLoopback:true});const newHistory=await target.database.sql`select * from drizzle.__drizzle_migrations order by created_at`;
   const [counts]=await target.database.sql<{tasks:number;homes:number}[]>`select (select count(*)::int from tasks) as tasks,(select count(*)::int from task_project_placements where project_id=home_project_id and id=task_id and archived_at is null) as homes`;
-  upgrade={rows:JSON.stringify(await snapshot(target,Object.keys(old)))===JSON.stringify(old),history:JSON.stringify(newHistory.slice(0,history.length))===JSON.stringify(history),homeCount:required(counts).tasks===required(counts).homes};
+  upgrade={rows:JSON.stringify(await snapshotLegacyRows(target.database.sql,old))===JSON.stringify(old),history:JSON.stringify(newHistory.slice(0,history.length))===JSON.stringify(history),homeCount:required(counts).tasks===required(counts).homes};
  },60_000);
  afterAll(async()=>{await target?.drop();},30_000);
  async function fixture(){const app=tasks(),home=await app.createProject(ctx(),{name:`Home ${randomUUID()}`}),other=await app.createProject(ctx(),{name:`Other ${randomUUID()}`}),status=required((await app.listStatuses(ctx(),home.id)).find(s=>s.group==='todo')),task=await app.createTask(ctx(),{projectId:home.id,statusId:status.id,title:'Canonical one task',estimateMinutes:240,participantMembershipIds:[M.teamOwner]});return {app,home,other,status,task};}

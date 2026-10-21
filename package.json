@@ -32,7 +32,10 @@
     "db:migrate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:migrate --workspace @workloom/db",
     "db:queue:migrate": "node --env-file-if-exists=.env scripts/with-env.mjs run db:queue:migrate --workspace @workloom/db",
     "db:seed:demo": "node --env-file-if-exists=.env scripts/with-env.mjs run db:seed:demo --workspace @workloom/db",
-    "check:localization": "node scripts/check-localization.mjs"
+    "check:localization": "node scripts/check-localization.mjs",
+    "db:test:up": "node scripts/local-test-postgres.mjs up",
+    "db:test:down": "node scripts/local-test-postgres.mjs down",
+    "db:test:status": "node scripts/local-test-postgres.mjs status"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",

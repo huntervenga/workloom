@@ -1,12 +1,21 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { inspectMigrationState, MigrationStateError, runMigrations } from '../src/migrations.js';
+import { inspectMigrationState, MigrationStateError, readExpectedMigrations, runMigrations } from '../src/migrations.js';
 import { createReadinessProbe } from '../src/readiness.js';
 import { REQUIRED_TABLES } from '../src/schema.js';
 import { createThrowawayDatabase, type ThrowawayDatabase } from './support.js';
 
 describe('migrations on real PostgreSQL', () => {
   let target: ThrowawayDatabase;
+  const expectedMigrations = readExpectedMigrations();
+  async function expectExactLedger(): Promise<void> {
+    const rows = await target.database.sql<{ hash: string; created_at: string }[]>`
+      select hash, created_at::text from drizzle.__drizzle_migrations order by created_at, id
+    `;
+    expect(Array.from(rows, row => ({ hash: row.hash, createdAt: Number(row.created_at) }))).toEqual(
+      expectedMigrations.map(migration => ({ hash: migration.hash, createdAt: migration.createdAt })),
+    );
+  }
 
   beforeAll(async () => {
     target = await createThrowawayDatabase('migrations');
@@ -25,7 +34,8 @@ describe('migrations on real PostgreSQL', () => {
 
   it('applies the schema to an empty database', async () => {
     const result = await runMigrations(target.url, { requireLoopback: true });
-    expect(result.appliedNow).toEqual(['0000_p0_identity_workspaces']);
+    expect(result.appliedNow).toEqual(expectedMigrations.map(migration => migration.tag));
+    await expectExactLedger();
     expect(result.state.status).toBe('current');
     expect(result.target).not.toContain('@');
 
@@ -38,7 +48,8 @@ describe('migrations on real PostgreSQL', () => {
   it('detects that nothing is pending on a repeated run', async () => {
     const again = await runMigrations(target.url, { requireLoopback: true });
     expect(again.appliedNow).toEqual([]);
-    expect(again.state).toMatchObject({ status: 'current', appliedCount: 1, expectedCount: 1 });
+    expect(again.state).toMatchObject({ status: 'current', appliedCount: expectedMigrations.length, expectedCount: expectedMigrations.length });
+    await expectExactLedger();
   });
 
   it('serializes concurrent runs without duplicating history', async () => {
@@ -47,8 +58,7 @@ describe('migrations on real PostgreSQL', () => {
       runMigrations(target.url, { requireLoopback: true }),
     ]);
     expect(results.every((result) => result.appliedNow.length === 0)).toBe(true);
-    const [row] = await target.database.sql<{ count: string }[]>`select count(*) from drizzle.__drizzle_migrations`;
-    expect(Number(row?.count)).toBe(1);
+    await expectExactLedger();
   });
 
   it('is ready only with the exact migration history and required tables', async () => {
