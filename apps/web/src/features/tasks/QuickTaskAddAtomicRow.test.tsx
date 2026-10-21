@@ -63,8 +63,13 @@ type Ui = ReturnType<typeof atomicRow>;
 async function stageFlagNo(ui: Ui) {
   await ui.user.click(screen.getByRole('button', { name: 'Flag for the new task' }));
   const dialog = await screen.findByRole('dialog', { name: 'Flag for the new task' });
-  await ui.user.click(within(dialog).getByRole('combobox', { name: 'Flag' }));
-  await ui.user.click(screen.getByRole('option', { name: 'No' }));
+  const checkbox = within(dialog).getByRole('checkbox', { name: 'Flag' });
+  expect(checkbox).toBePartiallyChecked();
+  await ui.user.click(checkbox);
+  expect(checkbox).toBeChecked();
+  await ui.user.click(checkbox);
+  expect(checkbox).not.toBeChecked();
+  expect(checkbox).not.toBePartiallyChecked();
   await ui.user.click(within(dialog).getByRole('button', { name: 'Done' }));
 }
 

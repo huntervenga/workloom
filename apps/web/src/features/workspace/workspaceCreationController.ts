@@ -1,3 +1,4 @@
+import { workspaceHref, type WorkspaceAddress } from './workspaceRouting';
 import type { QueryClient } from '@tanstack/react-query';
 import type { MeDto, WorkspaceDto } from '@workloom/contracts';
 import { isUncertainOutcome } from '../../lib/api';
@@ -59,8 +60,8 @@ export class CreationIdentityChangedError extends Error {
 }
 
 /** Where a newly created workspace opens: its empty projects page. */
-export function createdWorkspacePath(workspaceId: string): string {
-  return `/w/${workspaceId}/projects`;
+export function createdWorkspacePath(workspaceId: string | WorkspaceAddress): string {
+  return workspaceHref(workspaceId, '/projects');
 }
 
 export function isKnownTimezone(timezone: string): boolean {
@@ -252,7 +253,7 @@ export class WorkspaceCreationController {
     // list changes, so the home page never sees the new workspace without its projects target.
     this.update({ open: false, draft: this.emptyDraft(), phase: 'editing', sent: null, error: null, problems: null, created: workspace.id });
     this.publish(workspace);
-    navigate?.(createdWorkspacePath(workspace.id));
+    navigate?.(createdWorkspacePath(workspace));
   }
 
   /** The app has opened the created workspace; later visits to home use its normal target again. */

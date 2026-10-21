@@ -1,3 +1,4 @@
+import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { CutoffPanel, CutoffRecovery, useCutoffWorkspace } from '../features/cutoff';
 import { useTaskCommentsWorkspace, CommentCommandRecovery } from '../features/task-comments';
 import { message, useTranslation, type TranslationMessage } from '../i18n';
@@ -20,7 +21,7 @@ import type { PeriodCommitmentDto, ProjectDto, WorkspaceDto } from '@workloom/co
 import { Button, Skeleton, StateCard } from '@workloom/ui';
 import { ArrowLeft, CalendarDays, Lock, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { useParams } from 'react-router';
 import { useCurrentSearchParams } from '../lib/useCurrentSearchParams';
 import { useTaskFieldsQuery } from '../features/fields';
 import { CommitmentDialog, commitmentSession, type CommitmentSession } from '../features/planning/CommitmentDialog';

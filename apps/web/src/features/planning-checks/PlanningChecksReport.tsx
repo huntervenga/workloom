@@ -1,7 +1,8 @@
+import { WorkspaceLink as Link, useWorkspaceNavigate as useNavigate } from '../workspace/WorkspaceNavigation';
 import type { GenericReportNumberDto, PlanningCheckAssessmentDto, PlanningCheckCheckpointDto, PlanningCheckCheckpointHeaderDto, PlanningCheckConfigDto, PlanningCheckCountsDto, PlanningCheckGroupResultDto, PlanningCheckRuleResultDto } from '@workloom/contracts';
 import { reportNumber } from '../generic-reports/reportFormatting';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+
 import { Button, TextInput } from '@workloom/ui';
 import { t, useTranslation } from '../../i18n';
 import { ApiError, isAccessDenied } from '../../lib/api';

@@ -1,5 +1,6 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router';
+
 import type { GenericHeaderWidgetDto, GenericReportMeasure, MembershipDto, SummaryTemplateWidgetDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useTranslation } from '../../i18n';

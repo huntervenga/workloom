@@ -1,7 +1,8 @@
+import { useWorkspaceNavigate as useNavigate } from '../workspace/WorkspaceNavigation';
 import { useTranslation } from '../../i18n';
 import type { PlanningPeriodDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
-import { useNavigate } from 'react-router';
+
 import { isAccessDenied } from '../../lib/api';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';

@@ -1,8 +1,9 @@
+import { WorkspaceLink as Link, useWorkspaceNavigate as useNavigate } from '../workspace/WorkspaceNavigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { acceptTeamInvitationResultSchema } from '@workloom/contracts';
 import { Button, Logomark } from '@workloom/ui';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router';
+import { useLocation } from 'react-router';
 import { useOptionalSession } from '../../app/session';
 import { loginHref } from '../auth/authApi';
 import { useMeQuery } from '../identity/identity';

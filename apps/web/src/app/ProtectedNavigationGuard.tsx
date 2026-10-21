@@ -1,3 +1,6 @@
+import type { MeDto, WorkspaceDto } from '@workloom/contracts';
+import { queryKeys } from '../lib/queryKeys';
+import { canonicalWorkspacePath } from '../features/workspace/workspaceRouting';
 import { t, useTranslation } from '../i18n';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@workloom/ui';
@@ -26,8 +29,14 @@ export function ProtectedNavigationGuard() {
 
   // Read at navigation time, not from render, so a command started a moment ago counts.
   const shouldBlock = useCallback<BlockerFunction>(
-    ({ currentLocation, nextLocation }) => (registry.protecting || drafts.protecting) && currentLocation.pathname !== nextLocation.pathname,
-    [registry,drafts],
+    ({ currentLocation, nextLocation }) => {
+      if (!registry.protecting && !drafts.protecting) return false;
+      const actorId = client.getQueryData<MeDto>(queryKeys.me)?.actor.id;
+      const addressState = actorId ? client.getQueryState<WorkspaceDto[]>(queryKeys.workspaces(actorId)) : undefined;
+      const list = addressState?.status === 'success' ? addressState.data ?? [] : [];
+      return canonicalWorkspacePath(currentLocation.pathname, list) !== canonicalWorkspacePath(nextLocation.pathname, list);
+    },
+    [registry,drafts,client],
   );
   const blocker = useBlocker(shouldBlock);
   useUnsavedChangesWarning(protecting||dirty);

@@ -44,6 +44,8 @@
 
 | Документ | Для чего читать |
 | --- | --- |
+| [107 Локальный перенос снимка Asana](107-local-asana-snapshot-operator.md) | Owner-operated перенос выбранного проекта через domain commands; сопоставление людей, provenance, проверка сохранности и ограничения экспортов |
+| [106 Короткий адрес компании](106-company-addresses.md) | Настройка owner, устойчивые UUID и прежние slug-ссылки, границы доступа и проверки |
 | [104 Связанные сводки и личное время созвонов](104-linked-section-templates-and-shared-effort.md) | Принят локально `58cd331`: linked templates, отдельный roster/attendance, Personal effort; final G 9 gates и additive 0025/0026; main Auth UI отдельно не проверен |
 | [103 Независимое копирование и отчёты людей](103-refresh-duplication-and-person-reports.md) | Предыдущий принятый a46ceac: independent copies, refresh stability, person Reports; исторические I 21 gates и main read-only previews |
 | [101 UX настроек и completion requirements](101-planning-settings-ux-and-completion-requirements.md) | Предыдущий локально принятый 9860ac5: прямой Save Summary, закрытие Checks, sticky-заголовки, правила демо, 18 gates и main owner UI proof |

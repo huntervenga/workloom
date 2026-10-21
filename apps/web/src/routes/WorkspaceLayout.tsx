@@ -1,12 +1,16 @@
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../lib/queryKeys';
 import { t, useTranslation } from '../i18n';
 import type { WorkspaceDto } from '@workloom/contracts';
 import { Button, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, Lock } from 'lucide-react';
-import { Link, Outlet, useOutletContext, useParams } from 'react-router';
+import { useEffect } from 'react';
+import { Link, Outlet, useOutletContext, useLocation, useNavigate } from 'react-router';
+import { useWorkspaceRoute } from '../features/workspace/WorkspaceNavigation';
+import { canonicalWorkspacePath } from '../features/workspace/workspaceRouting';
 import { useMe } from '../features/identity/identity';
 import { useWorkspaceQuery } from '../features/workspace/queries';
 import { describeError } from '../lib/errors';
-import { isUuid } from '../lib/format';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { PageSkeleton } from '../shared/PageSkeleton';
 import { QueryErrorState } from '../shared/QueryErrorState';
@@ -22,11 +26,24 @@ export function useWorkspaceContext(): WorkspaceOutletContext {
 
 export function WorkspaceLayout() {
   useTranslation();
-  const { workspaceId = '' } = useParams();
   const actorId = useMe().actor.id;
-  const workspace = useWorkspaceQuery(actorId, workspaceId);
+  const client = useQueryClient();
+  const route = useWorkspaceRoute(actorId);
+  const workspace = useWorkspaceQuery(actorId, route.workspaceId);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const current = workspace.isSuccess && !workspace.headDenial ? workspace.data : null;
+  useEffect(() => {
+    if (!current) return;
+    client.setQueryData<WorkspaceDto[]>(queryKeys.workspaces(actorId), list => list?.map(item => item.id === current.id && (item.slugRevision ?? 0) < (current.slugRevision ?? 0) ? current : item));
+    const path = location.pathname + location.search + location.hash;
+    const canonical = canonicalWorkspacePath(path, [current]);
+    if (canonical !== path) void navigate(canonical, { replace: true });
+  }, [actorId, client, current, location.pathname, location.search, location.hash, navigate]);
 
-  if (!isUuid(workspaceId)) return <WorkspaceUnavailable />;
+  if (route.pending) return <PageSkeleton label={t('routes.loadingWorkspace')} />;
+  if (route.error) return <QueryErrorState error={route.error} subject="workspaces" headingLevel={1} retrying={route.isFetching} onRetry={() => void route.refetch()} />;
+  if (!route.workspaceId) return <WorkspaceUnavailable />;
   if (workspace.headDenial) return <WorkspaceUnavailable retrying={workspace.isFetching || workspace.recoveringHeadAccess} onRetry={() => void workspace.refetch()} />;
   if (workspace.isPending) return <PageSkeleton label={t('routes.loadingWorkspace')} />;
 

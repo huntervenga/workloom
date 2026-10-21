@@ -14,7 +14,7 @@ import { requireTestDatabaseUrl } from './support/test-database-url.js';
 requireTestDatabaseUrl();
 const migrations = fileURLToPath(new URL('../../packages/db/migrations/', import.meta.url));
 
-it('preserves0014→0015 legacy rows, then adds0016 before the current workspace command', async () => {
+it('preserves0014→0015 legacy rows, then upgrades the isolated fixture before the current workspace command', async () => {
   const folder = await mkdtemp(join(tmpdir(), 'workloom-workspace-upgrade-'));
   let target: ThrowawayDatabase | undefined;
   let db: Database | undefined;
@@ -43,11 +43,16 @@ it('preserves0014→0015 legacy rows, then adds0016 before the current workspace
     const tables = await db.sql<{ name: string }[]>`select tablename as name from pg_tables where schemaname='public' order by tablename`;
     expect(tables).toHaveLength(63);
     const sql = db.sql;
+    // Freeze the historical column set before applying any later schema; new columns must
+    // not make a legacy-row preservation comparison read today's ORM shape.
+    const preservedColumns = await sql<{table_name:string;column_name:string}[]>`select table_name::text,column_name::text from information_schema.columns where table_schema='public' order by table_name,ordinal_position`;
+    const quotedIdentifier=(value:string)=>`"${value.replaceAll('"','""')}"`;
+
     async function legacyRows() {
       const result: Record<string, string[]> = {};
       for (const { name } of tables) {
         const quoted = `"${name.replaceAll('"', '""')}"`;
-        const values = await sql.unsafe<{ row: unknown }[]>(`select ${name === 'users' ? "to_jsonb(t) - 'avatar_url'" : 'to_jsonb(t)'} as row from public.${quoted} t`);
+        const values = await sql.unsafe<{ row: unknown }[]>(`select to_jsonb(t) as row from (select ${preservedColumns.filter(c=>c.table_name===name).map(c=>quotedIdentifier(c.column_name)).join(',')} from public.${quoted}) t`);
         result[name] = values.map(value => JSON.stringify(value.row)).sort();
       }
       return result;
@@ -70,21 +75,16 @@ it('preserves0014→0015 legacy rows, then adds0016 before the current workspace
     expect(afterReceipts.slice(0, receipts.length)).toEqual(receipts);
     expect(afterReceipts).toHaveLength(receipts.length + 1);
     expect(await db.sql`select * from workspace_creation_receipts`).toHaveLength(0);
-    // Phase two explicitly adds0016 before exercising the CURRENT workspace application.
-    // The0014→0015 preservation/ledger assertions above remain independent of the avatar migration.
-    const currentPrefix = journal.entries.filter(entry => entry.idx <= 16);
-    expect(currentPrefix).toHaveLength(17);
-    const avatarAddition = currentPrefix.find(entry => entry.idx === 16);
-    if (!avatarAddition) throw new Error('Expected the additive profile photo migration.');
-    expect(avatarAddition.tag).toBe('0016_user_profile_photos');
-    await copyFile(join(migrations, `${avatarAddition.tag}.sql`), join(folder, `${avatarAddition.tag}.sql`));
-    await writeFile(join(folder, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: currentPrefix }));
-    expect((await runMigrations(target.url, { requireLoopback: true, migrationsFolder: folder })).appliedNow).toEqual([avatarAddition.tag]);
+    // Historical0014→0015 proof is complete. Today's command needs the full current schema.
+    const currentPrefix=journal.entries;expect(currentPrefix).toHaveLength(29);
+    const later=currentPrefix.filter(entry=>entry.idx>15);
+    for(const entry of later)await copyFile(join(migrations,`${entry.tag}.sql`),join(folder,`${entry.tag}.sql`));
+    await writeFile(join(folder,'meta/_journal.json'),JSON.stringify({...journal,entries:currentPrefix}));
+    expect((await runMigrations(target.url,{requireLoopback:true,migrationsFolder:folder})).appliedNow).toEqual(later.map(entry=>entry.tag));
     expect(await legacyRows()).toEqual(before);
-    expect(await db.sql`select count(avatar_url)::int as avatars from users`).toEqual([{ avatars: 0 }]);
-    const avatarReceipts = await db.sql`select * from drizzle.__drizzle_migrations order by id`;
-    expect(avatarReceipts.slice(0, afterReceipts.length)).toEqual(afterReceipts);
-    expect(avatarReceipts).toHaveLength(afterReceipts.length + 1);
+    expect(await db.sql`select count(avatar_url)::int as avatars from users`).toEqual([{avatars:0}]);
+    const currentReceipts=await db.sql`select * from drizzle.__drizzle_migrations order by id`;
+    expect(currentReceipts.slice(0,afterReceipts.length)).toEqual(afterReceipts);expect(currentReceipts).toHaveLength(currentPrefix.length);
     const created = await createWorkspaceCreateApplication(db).createWorkspace({
       actor: { userId: principal.userId, displayName: 'Existing real user', kind: 'real' },
       source: 'web', requestId: randomUUID(), idempotencyKey: randomUUID(),

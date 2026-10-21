@@ -1,9 +1,10 @@
+import { WorkspaceLink as Link } from '../../features/workspace/WorkspaceNavigation';
 import { t, useTranslation } from '../../i18n';
 import { useIsFetching, useQueryClient } from '@tanstack/react-query';
 import { Badge, Button } from '@workloom/ui';
 import { FlaskConical, RefreshCw } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Link, useMatch } from 'react-router';
+import { useMatch } from 'react-router';
 import { LanguageSelector } from './LanguageSelector';
 import { ThemeToggle } from '../../features/theme/ThemeToggle';
 import { isActorKey, queryKeys } from '../../lib/queryKeys';

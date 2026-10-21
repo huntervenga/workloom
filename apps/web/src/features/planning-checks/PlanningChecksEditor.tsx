@@ -1,3 +1,4 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button } from '@workloom/ui';
 import { planningCheckConfigSchema, planningCheckRuleSchema, type GenericHeaderWidgetGroupDto, type MembershipDto, type PlanningCheckConfigDto, type PlanningCheckRuleDto, type PlanningCheckSettingsDto, type SectionDto, type TagDto, type TaskFieldDefinitionDto } from '@workloom/contracts';
@@ -10,7 +11,7 @@ import { usePlanningCheckCommands } from './queries';
 import { checkKind, sameCheckGroup } from './presentation';
 import { newPlanningRule, PlanningCheckRuleForm, type CheckFocus } from './PlanningCheckRuleForm';
 import { ReportSelect } from '../generic-reports/ReportConfigEditor';
-import { Link } from 'react-router';
+
 import type { SummaryTemplateWorkspace } from '../summary-templates/queries';
 import { SummaryTemplateControls } from '../summary-templates/SummaryTemplateControls';
 

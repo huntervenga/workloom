@@ -1,3 +1,4 @@
+import { WorkspaceLink } from '../workspace/WorkspaceNavigation';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@workloom/ui';
 import { useId, useState } from 'react';
@@ -55,6 +56,6 @@ function CurrentTaskLink({ actorId, source, taskId }: { actorId: string; source:
   if (task.data.id !== taskId || task.data.workspaceId !== source.workspaceId) return <li className="text-xs text-muted">{t('planning.reportTasks.unavailable')}</li>;
   return <li className="space-y-1 text-sm [overflow-wrap:anywhere]">
     <p className="text-xs text-muted">{t('planning.reportTasks.currentTitle')}</p>
-    <a href={currentReportTaskHref(task.data, source)} target="_blank" rel="noopener" className="inline-block rounded font-medium text-accent-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">{task.data.title}<span className="mt-0.5 block text-xs font-normal">{t('planning.reportTasks.openNewTab')}</span></a>
+    <WorkspaceLink to={currentReportTaskHref(task.data, source)} target="_blank" rel="noopener" className="inline-block rounded font-medium text-accent-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">{task.data.title}<span className="mt-0.5 block text-xs font-normal">{t('planning.reportTasks.openNewTab')}</span></WorkspaceLink>
   </li>;
 }

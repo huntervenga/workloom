@@ -12,7 +12,7 @@ const page = (rows: TaskDto[]) => json(200, { data: rows, meta: { requestId: 'pr
 const preferencePath = `${rootPath}/projects/${PROJECT_ID}/table-preferences/me`;
 const preferences = (visible = true) => ({ workspaceId: alpha.id, projectId: PROJECT_ID, membershipId: MEMBER_ID, revision: 1, columns: [{ column: { kind: 'builtin', key: 'title' }, visible: true }, { column: { kind: 'builtin', key: 'priority' }, visible }] });
 function routes(extra: RouteTable = {}): RouteTable {
-  return { ...tableRoutes(), [`GET ${preferencePath}`]: () => ok(preferences()), [`GET ${rootPath}/tasks`]: () => page([base]), [`GET ${rootPath}/tasks/${base.id}`]: () => ok(base), ...extra };
+  return { ...tableRoutes(), [`GET ${rootPath}/projects/${PROJECT_ID}/planning-checks/settings`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, config: { enabled: false, rules: [] } }), [`GET ${preferencePath}`]: () => ok(preferences()), [`GET ${rootPath}/tasks`]: () => page([base]), [`GET ${rootPath}/tasks/${base.id}`]: () => ok(base), ...extra };
 }
 const labels: Record<TaskPriority, string> = { none: 'No priority', low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' };
 const edit = () => screen.findByRole('button', { name: `Edit priority for ${base.title}` });

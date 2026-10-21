@@ -1,3 +1,4 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { useTranslation , type TranslationKey } from '../../i18n';
 import { TaskDiscussion, type TaskCommentsWorkspace } from '../task-comments';
 import { DependencyPanel } from '../dependencies/DependencyPanel';
@@ -13,7 +14,7 @@ import { RecategorizeDialog, recategorizeSession } from '../work-categories/Reca
 import type { AttendanceDto, AttendancePostingInput, MeetingDto, MembershipDto, ProjectDto, TaskDto, UpdateMeetingInput, WorkspaceDto } from '@workloom/contracts';
 import { Badge, Button, TextInput, inputClassName } from '@workloom/ui';
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode, type SetStateAction } from 'react';
-import { Link } from 'react-router';
+
 import { isAccessDenied } from '../../lib/api';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { DialogShell } from '../../shared/DialogShell';

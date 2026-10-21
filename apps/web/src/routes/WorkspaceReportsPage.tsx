@@ -1,5 +1,6 @@
+import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+
 import type { WorkspaceReportQueryInput, WorkspaceReportResultDto, WorkspaceReportSourcesDto } from '@workloom/contracts';
 import { Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
 import { BarChart3, RefreshCw } from 'lucide-react';

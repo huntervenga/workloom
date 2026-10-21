@@ -1,8 +1,9 @@
+import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { useTranslation } from '../i18n';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
 import { ChevronRight, Eye, FolderKanban, Pencil, Plus } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router';
+
 import { orderProjects } from '../features/projects/order';
 import { CreateProjectDialog, RenameProjectDialog } from '../features/projects/ProjectDialogs';
 import { useProjectsQuery } from '../features/projects/queries';

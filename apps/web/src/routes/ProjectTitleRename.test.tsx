@@ -7,7 +7,7 @@ import { PROJECT_ID, rootPath, task, tablePath, tableRoutes } from '../features/
 beforeAll(async () => { await import('./ProjectPage'); });
 const page = (rows: TaskDto[]) => json(200, { data: rows, meta: { requestId: 'rename-fixture', nextCursor: null } });
 const preference = { workspaceId: alpha.id, projectId: PROJECT_ID, membershipId: alphaMembers[0]?.id, revision: 1, columns: [{ column: { kind: 'builtin', key: 'title' }, visible: true }, { column: { kind: 'builtin', key: 'dueDate' }, visible: false }] };
-function routes(extra: RouteTable = {}): RouteTable { return { ...tableRoutes(), [`GET ${rootPath}/tasks`]: () => page([task]), [`GET ${rootPath}/tasks/${task.id}`]: () => ok(task), [`GET ${rootPath}/projects/${PROJECT_ID}/table-preferences/me`]: () => ok(preference), ...extra }; }
+function routes(extra: RouteTable = {}): RouteTable { return { ...tableRoutes(), [`GET ${rootPath}/projects/${PROJECT_ID}/planning-checks/settings`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, config: { enabled: false, rules: [] } }), [`GET ${rootPath}/tasks`]: () => page([task]), [`GET ${rootPath}/tasks/${task.id}`]: () => ok(task), [`GET ${rootPath}/projects/${PROJECT_ID}/table-preferences/me`]: () => ok(preference), ...extra }; }
 function views() { return within(screen.getByRole('navigation', { name: 'Project views' })); }
 /** The visible task name is the rename target; details have their own action. */
 const rename = (title = task.title) => screen.findByRole('button', { name: title });

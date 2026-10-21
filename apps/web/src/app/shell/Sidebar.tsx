@@ -1,8 +1,9 @@
+import { WorkspaceLink as Link, WorkspaceNavLink as NavLink, useCanonicalWorkspaceTo } from '../../features/workspace/WorkspaceNavigation';
 import { t, useTranslation } from '../../i18n';
 import type { MeDto } from '@workloom/contracts';
 import { Logomark, Skeleton, cn } from '@workloom/ui';
 import { BarChart3, CalendarDays, CheckCheck, Folder, FolderKanban, LayoutDashboard, RefreshCw, Users } from 'lucide-react';
-import { Link, NavLink, useLocation } from 'react-router';
+import { useLocation } from 'react-router';
 import { useProjectsQuery } from '../../features/projects/queries';
 import type { WorkspaceRole } from '../../features/workspace/roles';
 import { WorkspaceChooser } from '../../features/workspace/WorkspaceChooser';
@@ -35,6 +36,7 @@ function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string
   useTranslation();
   const projects = useProjectsQuery(actorId, workspaceId);
   const location = useLocation();
+  const canonical = useCanonicalWorkspaceTo();
   const active = projects.data?.projects.filter(project => project.archivedAt === null) ?? [];
   return (
     <nav aria-label={t('shell.activeProjects')}>
@@ -59,7 +61,7 @@ function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string
       ) : (
         <ul data-sidebar-projects="" className="max-h-[min(40dvh,20rem)] space-y-0.5 overflow-y-auto overscroll-contain">
           {active.map(project => {
-            const pathname = `/w/${workspaceId}/projects/${project.id}`;
+            const pathname = canonical(`/w/${workspaceId}/projects/${project.id}`) as string;
             // On this project's own task page the link keeps the current filters, week, person,
             // view and open task, and a plain click changes nothing. Other pages open it clean.
             const here = location.pathname.replace(/\/$/, '').toLowerCase() === pathname.toLowerCase();

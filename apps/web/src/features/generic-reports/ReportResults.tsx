@@ -1,3 +1,4 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { useState, type ReactNode } from 'react';
 import { ReportDashboard } from './ReportDashboard';
 import { hasPersonalEffort } from './effortAttribution';
@@ -7,7 +8,7 @@ import { ReportCapacityResults } from '../time-off/ReportCapacityResults';
 import { operationLabels, groupLabels, comparisonLabels, reasonLabels, cellLabels, statusLabels, cohortLabels } from './translationKeys';
 import { reportGroupLabel } from './groupLabel';
 import type { MembershipDto, SectionDto, TagDto, GenericComparisonDto, GenericCoverageDto, GenericMeasureResultDto, GenericReportCellDto, GenericReportResultDto } from '@workloom/contracts';
-import { Link } from 'react-router';
+
 import { useTranslation } from '../../i18n';
 import { formatEstimate } from '../task-table';
 export function Coverage({ coverage }: { coverage: GenericCoverageDto }) {

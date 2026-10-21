@@ -1,8 +1,9 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { SharedActivityPanel } from '../shared-activities/SharedActivityPanel';
 import { flushBeforeSharedCommand, SharedActivityCommandBlockedError } from '../shared-activities/model';
 import type { SharedActivityWorkspace } from '../shared-activities/queries';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { Link } from 'react-router';
+
 import { PlacementCommandFeedback } from '../project-placements/PlacementCommandFeedback';
 import { useProjectQuery, useSectionsQuery, useStatusesQuery } from '../projects/queries';
 import { TaskProjectsField } from '../project-placements/TaskProjectsField';

@@ -3,12 +3,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button, Logomark, Skeleton } from '@workloom/ui';
 import { LogOut } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { Outlet, useMatch, useNavigate } from 'react-router';
+import { Outlet, useNavigate } from 'react-router';
 import { LoginScreen } from '../../features/auth/LoginScreen';
 import { MeProvider, useMe, useMeQuery } from '../../features/identity/identity';
 import { ThemeToggle } from '../../features/theme/ThemeToggle';
 import { useWorkspaceQuery } from '../../features/workspace/queries';
 import { useWorkspaceLiveRefresh } from '../../features/workspace/useWorkspaceLiveRefresh';
+import { WorkspaceNavigationProvider, useWorkspaceRoute } from '../../features/workspace/WorkspaceNavigation';
 import { WorkspaceCreationProvider } from '../../features/workspace/WorkspaceCreation';
 import { discardWorkspaceData } from '../../lib/cacheScope';
 import { QueryErrorState } from '../../shared/QueryErrorState';
@@ -49,9 +50,9 @@ export function AppShell() {
         <div hidden={covered} inert={covered}>
           <MeProvider me={previous}>
             {/* Above the frame, so a new-workspace draft outlives the mobile menu that opened it. */}
-            <WorkspaceCreationProvider key={previous.actor.id}>
+            <WorkspaceNavigationProvider actorId={previous.actor.id}><WorkspaceCreationProvider key={previous.actor.id}>
               <ShellFrame key={previous.actor.id} sessionActive={!covered} />
-            </WorkspaceCreationProvider>
+            </WorkspaceCreationProvider></WorkspaceNavigationProvider>
           </MeProvider>
         </div>
         {expired ? (
@@ -85,9 +86,9 @@ export function AppShell() {
 
   return (
     <MeProvider me={me.data}>
-      <WorkspaceCreationProvider>
+      <WorkspaceNavigationProvider actorId={me.data.actor.id}><WorkspaceCreationProvider>
         <ShellFrame />
-      </WorkspaceCreationProvider>
+      </WorkspaceCreationProvider></WorkspaceNavigationProvider>
     </MeProvider>
   );
 }
@@ -185,15 +186,16 @@ function useResetOnActorChange(actorId: string | null): void {
 }
 
 /** Leaving a workspace cancels and forgets everything loaded for it. */
-function useDiscardPreviousWorkspace(actorId: string, workspaceId: string | null): void {
+function useDiscardPreviousWorkspace(actorId: string, workspaceId: string | null, resolving = false): void {
   const queryClient = useQueryClient();
   const previous = useRef(workspaceId);
 
   useEffect(() => {
+    if (resolving) return;
     const before = previous.current;
     previous.current = workspaceId;
     if (before !== null && before !== workspaceId) void discardWorkspaceData(queryClient, actorId, before);
-  }, [actorId, workspaceId, queryClient]);
+  }, [actorId, workspaceId, queryClient, resolving]);
 }
 
 /** `sessionActive` is false while a shared frame is kept mounted behind the sign-in gate. */
@@ -201,10 +203,11 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
   useTranslation();
   const me = useMe();
   const actorId = me.actor.id;
-  const workspaceId = useMatch('/w/:workspaceId/*')?.params.workspaceId ?? null;
+  const route = useWorkspaceRoute(actorId);
+  const workspaceId = route.workspaceId;
   const workspace = useWorkspaceQuery(actorId, workspaceId);
   const currentWorkspace = workspace.isSuccess ? workspace.data : null;
-  useDiscardPreviousWorkspace(actorId, workspaceId);
+  useDiscardPreviousWorkspace(actorId, workspaceId, route.pending);
   // A covered frame stays mounted for its drafts but must not keep polling workspace heads.
   useWorkspaceLiveRefresh(actorId, workspaceId, sessionActive && workspace.isSuccess && workspace.headDenial === null);
 

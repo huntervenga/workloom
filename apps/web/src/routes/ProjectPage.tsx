@@ -1,3 +1,4 @@
+import { WorkspaceLink as Link, useWorkspaceNavigate as useNavigate } from '../features/workspace/WorkspaceNavigation';
 import { useSharedActivityWorkspace } from '../features/shared-activities/queries';
 import { CreateSharedActivityDialog } from '../features/shared-activities/CreateSharedActivityDialog';
 import { useDuplication } from '../features/duplication/useDuplication';
@@ -62,7 +63,7 @@ import { explicitTimeContext, type InitialTimeContext } from '../features/tasks/
 import { Badge, Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, Lock, Pencil, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router';
+import { useLocation, useParams } from 'react-router';
 import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
 import {
   FieldManagerDialog,

@@ -1,4 +1,5 @@
-import { Link } from 'react-router';
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
+
 import type { MembershipDto, ProjectDto, ProjectRowDto, SectionDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
 import { useQueryClient } from '@tanstack/react-query';

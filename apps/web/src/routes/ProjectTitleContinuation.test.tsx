@@ -25,6 +25,7 @@ const pendingNotice = 'A task command is waiting for the server response. Its or
 function routes(rows: () => TaskDto[], extra: RouteTable = {}): RouteTable {
   return {
     ...tableRoutes(),
+    [`GET ${rootPath}/projects/${PROJECT_ID}/planning-checks/settings`]: () => ok({ workspaceId: alpha.id, projectId: PROJECT_ID, revision: 1, config: { enabled: false, rules: [] } }),
     [`GET ${rootPath}/tasks`]: () => page(rows()),
     [`GET ${rootPath}/projects/${PROJECT_ID}/sections`]: () => ok(sections),
     [`GET ${rootPath}/projects/${PROJECT_ID}/statuses`]: () => ok([

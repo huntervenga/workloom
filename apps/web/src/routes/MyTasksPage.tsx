@@ -1,8 +1,9 @@
+import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { useMyTasksLens } from '../features/my-tasks/navigation';
 import { Badge, Button, Skeleton, StateCard, TextInput, inputClassName } from '@workloom/ui';
 import { ArrowUpRight, CheckCheck, Inbox, RefreshCw, Search } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router';
+
 import { useTranslation } from '../i18n';
 import { uniqueLoadedMyTasks } from '../features/my-tasks/api';
 import { useMyTasksQuery } from '../features/my-tasks/queries';

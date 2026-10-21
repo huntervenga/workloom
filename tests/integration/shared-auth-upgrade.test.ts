@@ -48,12 +48,17 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
     const tables = await db.sql<{ name: string }[]>`select tablename as name from pg_tables where schemaname='public' order by tablename`;
     expect(tables).toHaveLength(60);
     const sql = db.sql;
+    // Freeze the historical column set before applying any later schema; new columns must
+    // not make a legacy-row preservation comparison read today's ORM shape.
+    const preservedColumns = await sql<{table_name:string;column_name:string}[]>`select table_name::text,column_name::text from information_schema.columns where table_schema='public' order by table_name,ordinal_position`;
+    const quotedIdentifier=(value:string)=>`"${value.replaceAll('"','""')}"`;
+
     async function legacyRows() {
       const rows: Record<string, string[]> = {};
       for (const { name } of tables) {
         // Names come only from pg_catalog; escape identifiers rather than interpolating values as SQL.
         const quoted = `"${name.replaceAll('"', '""')}"`;
-        const values = await sql.unsafe<{ row: unknown }[]>(`select ${name === 'users' ? "to_jsonb(t) - 'avatar_url'" : 'to_jsonb(t)'} as row from public.${quoted} t`);
+        const values = await sql.unsafe<{ row: unknown }[]>(`select to_jsonb(t) as row from (select ${preservedColumns.filter(c=>c.table_name===name).map(c=>quotedIdentifier(c.column_name)).join(',')} from public.${quoted}) t`);
         rows[name] = values.map(value => JSON.stringify(value.row)).sort();
       }
       return rows;
@@ -82,18 +87,18 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
     }
     // The historical0013→0014 preservation oracle above is complete. Explicitly add the
     // remaining current migrations before exercising today's shared Auth application.
-    const currentPrefix = journal.entries.filter(entry => entry.idx <= 16);
-    expect(currentPrefix).toHaveLength(17);
+    const currentPrefix = journal.entries;
+    expect(currentPrefix).toHaveLength(29);
     for (const entry of currentPrefix.filter(entry => entry.idx > 14)) {
       await copyFile(join(migrations, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
     }
     await writeFile(join(folder, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: currentPrefix }));
     expect((await runMigrations(target.url, { requireLoopback: true, migrationsFolder: folder })).appliedNow)
-      .toEqual(['0015_workspace_creation', '0016_user_profile_photos']);
+      .toEqual(currentPrefix.filter(entry=>entry.idx>14).map(entry=>entry.tag));
     expect(await legacyRows()).toEqual(before);
     const currentReceipts = await db.sql`select * from drizzle.__drizzle_migrations order by id`;
     expect(currentReceipts.slice(0, afterReceipts.length)).toEqual(afterReceipts);
-    expect(currentReceipts).toHaveLength(afterReceipts.length + 2);
+    expect(currentReceipts).toHaveLength(currentPrefix.length);
     const principal = await createSharedAuthStore(db).provisionIdentity({ issuer: 'https://auth.example.test', subject: 'upgrade-user', displayName: 'Upgrade user', workspaceName: 'Empty upgraded workspace', timezone: 'UTC' });
     expect(principal.user.kind).toBe('real');
     expect(await db.sql`select id from tasks where workspace_id=${principal.workspaceId}`).toHaveLength(0);

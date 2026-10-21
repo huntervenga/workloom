@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
-import { safeProfilePhotoUrl } from '@workloom/contracts';
+import { safeProfilePhotoUrl, workspaceSlugReferenceSchema } from '@workloom/contracts';
 import type { AccessRepository, Actor, SharedAuthSessionRecord, SharedAuthSessionUpdate, SharedAuthStore } from '@workloom/domain';
 import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTVerifyGetKey } from 'jose';
 
@@ -417,10 +417,22 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
     }
     const match = WORKSPACE_RETURN_TO.exec(pathname);
     if (match === null) return returnTo;
-    const workspaceId = match[1] ?? '';
-    if (!UUID.test(workspaceId)) return APP_HOME;
+    const workspaceRef = match[1] ?? '';
     try {
-      const access = await repository.findWorkspaceAccess(workspaceId.toLowerCase(), userId);
+      let workspaceId = workspaceRef.toLowerCase();
+      if (!UUID.test(workspaceRef)) {
+        let decoded: string;
+        try { decoded = decodeURIComponent(workspaceRef); } catch { return APP_HOME; }
+        const slug = workspaceSlugReferenceSchema.safeParse(decoded);
+        if (!slug.success) return APP_HOME;
+        // Resolve only inside this actor's active workspaces, never a public slug directory.
+        const accessible = await repository.listAccessibleWorkspaces(userId);
+        const found = accessible.find(record => record.membership.state === 'active' && record.membership.userId === userId &&
+          (record.workspace.slug === slug.data || record.workspace.slugAliases?.includes(slug.data)));
+        if (!found) return APP_HOME;
+        workspaceId = found.workspace.id;
+      }
+      const access = await repository.findWorkspaceAccess(workspaceId, userId);
       return access !== null && access.membership.userId === userId && access.membership.state === 'active' ? returnTo : APP_HOME;
     } catch {
       return APP_HOME;

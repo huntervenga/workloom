@@ -1,3 +1,4 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { useTranslation } from '../../i18n';
 import { weeklyPlanningHref } from '../planning/navigation';
 import { fetchRecordedWork } from '../meetings/api';
@@ -8,7 +9,7 @@ import type { CategorizedManualWorkLogDto, RecordedWorkLogDto, MembershipDto, Pa
 import { Button } from '@workloom/ui';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router';
+
 import { useCurrentSearchParams } from '../../lib/useCurrentSearchParams';
 import { ApiError, isAccessDenied } from '../../lib/api';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';

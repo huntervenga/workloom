@@ -1,9 +1,11 @@
+import { workspaceHref } from './workspaceRouting';
+import { useWorkspaceNavigate as useNavigate } from './WorkspaceNavigation';
 import { t, useTranslation } from '../../i18n';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import { Avatar, Button, Skeleton } from '@workloom/ui';
 import { Check, ChevronsUpDown, Plus, RefreshCw } from 'lucide-react';
 import { useId, useRef } from 'react';
-import { useNavigate } from 'react-router';
+
 import { roleLabels } from './roles';
 import { useWorkspacesQuery } from './queries';
 import { useWorkspaceCreation } from './WorkspaceCreation';
@@ -128,7 +130,8 @@ export function WorkspaceChooser({ actorId, workspaceId, onNavigate }: Workspace
             <DropdownMenu.RadioGroup
               value={current?.id ?? ''}
               onValueChange={(id) => {
-                navigate(`/w/${id}`);
+                const selected = workspaces.data.find(workspace => workspace.id === id);
+                if (selected) void navigate(workspaceHref(selected));
                 onNavigate?.();
               }}
             >

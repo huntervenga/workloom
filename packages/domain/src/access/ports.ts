@@ -18,6 +18,9 @@ export interface WorkspaceRecord {
   readonly timezone: string;
   /** ISO weekday the planning week starts on: 1 = Monday … 7 = Sunday. */
   readonly weekStart: number;
+  readonly slug?: string | null;
+  readonly slugRevision?: number;
+  readonly slugAliases?: readonly string[];
 }
 
 export interface MembershipRecord {

@@ -1,10 +1,11 @@
+import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { hasPersonalEffort } from '../features/generic-reports/effortAttribution';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
 import { useState, useSyncExternalStore } from 'react';
 import { protectedDraftsFor } from '../lib/protectedDrafts';
 import { protectedCommandsFor } from '../lib/protectedCommands';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 import { Button, TextInput, buttonClassName } from '@workloom/ui';
 import { createGenericReportInputSchema, type GenericReportConfig, type GenericReportDefinitionDto, type ProjectDto } from '@workloom/contracts';
 import { useTranslation } from '../i18n';

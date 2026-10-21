@@ -1,8 +1,9 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { planningCheckRangeSchema, type MembershipDto, type PlanningCheckBandDto, type PlanningCheckRangeDto, type PlanningCheckRuleDto, type SectionDto, type TagDto, type TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useTranslation } from '../../i18n';
 import { useState } from 'react';
-import { Link } from 'react-router';
+
 import { parseEstimateInput, formatEstimateInput } from '../task-table/estimate';
 import { ReportSelect } from '../generic-reports/ReportConfigEditor';
 

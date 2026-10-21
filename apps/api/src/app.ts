@@ -1,3 +1,6 @@
+import { registerWorkspaceSlugRoutes } from './http/workspace-slug-routes.js';
+import { createWorkspaceSlugApplication } from '@workloom/db';
+import type { WorkspaceSlugApplication } from '@workloom/domain';
 import {registerSharedActivityRoutes} from './http/shared-activity-routes.js';
 import {registerSummaryTemplateRoutes} from './http/summary-template-routes.js';
 import type { DuplicationApplication } from '@workloom/domain';
@@ -77,6 +80,7 @@ import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, replyWebNavigation, resolveWebDist } from './http/static-web.js';
 
 export interface AppDependencies {
+  readonly workspaceSlugApplication?: WorkspaceSlugApplication;
   readonly sharedActivityApplication?: SharedActivityApplication;
   readonly duplicationApplication?: DuplicationApplication;
   readonly leaveApplication?: LeaveApplication;
@@ -190,6 +194,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     throw new Error('createApp needs a database or both accessRepository and readiness.');
   }
   // Reuses the same pool; no additional connection is opened.
+  const workspaceSlugApplication = dependencies.workspaceSlugApplication ?? (database === undefined ? undefined : createWorkspaceSlugApplication(database));
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
   const duplicationApplication = dependencies.duplicationApplication ?? (database === undefined ? undefined : createDuplicationApplication(database));
   const taskRowApplication = dependencies.taskRowApplication ?? (database === undefined ? undefined : createTaskRowApplication(database));
@@ -354,6 +359,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (myTasksApplication !== undefined) {
     registerMyTasksRoutes(app, { identity, myTasks: myTasksApplication });
   }
+  if (workspaceSlugApplication !== undefined) registerWorkspaceSlugRoutes(app, { identity, slugs: workspaceSlugApplication });
   if (taskCommentsApplication !== undefined) registerTaskCommentsRoutes(app, { identity, comments: taskCommentsApplication });
   if (personalTablePreferenceApplication !== undefined) registerPersonalTablePreferenceRoutes(app, { identity, preferences: personalTablePreferenceApplication });
   if (taskFieldApplication !== undefined) {

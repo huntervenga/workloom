@@ -421,7 +421,8 @@ describe('InitialCustomFieldCell', () => {
   it('closes a nested picker on Escape before the editor and keeps Escape away from the row', async () => {
     const user = userEvent.setup();
     const rowKeys = vi.fn<(key: string) => void>();
-    const flag = definition('boolean', 'Approved');
+    // Boolean now uses a checkbox; a single-select exercises the actual nested picker.
+    const flag = { ...definition('single_select', 'Approved'), options: [{ id: '00000000-0000-4000-8000-000000000099', name: 'Approved', color: '#6366f1', position: 0, revision: 1, archivedAt: null }] };
     render(
       <div onKeyDown={(event) => rowKeys(event.key)}>
         <FieldHarness field={flag} onDraft={vi.fn()} />

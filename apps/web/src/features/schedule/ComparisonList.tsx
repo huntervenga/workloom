@@ -1,8 +1,9 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { useTranslation } from '../../i18n';
 import type { ScheduleDependencyComparisonDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
 import { useState } from 'react';
-import { Link } from 'react-router';
+
 export function ComparisonList({ comparisons, names, workspaceId }: { comparisons: readonly ScheduleDependencyComparisonDto[]; names: ReadonlyMap<string, string>; workspaceId: string }) {
   const { t } = useTranslation();
   const [visible, setVisible] = useState(10);

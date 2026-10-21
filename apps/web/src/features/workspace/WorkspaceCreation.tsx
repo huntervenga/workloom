@@ -1,3 +1,4 @@
+import { useWorkspaceNavigate as useNavigate } from './WorkspaceNavigation';
 import { useTranslation } from '../../i18n';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useQueryClient } from '@tanstack/react-query';
@@ -16,7 +17,9 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { useMatch, useNavigate } from 'react-router';
+
+import { useWorkspaceRoute } from './WorkspaceNavigation';
+import { workspaceHref, type WorkspaceAddress } from './workspaceRouting';
 import { useMe } from '../identity/identity';
 import { ApiError } from '../../lib/api';
 import { DialogReturnFocus, DialogShell } from '../../shared/DialogShell';
@@ -45,10 +48,10 @@ const unavailable: WorkspaceCreation = { canCreate: false, show: () => undefined
  * projects, the same target as the create's own navigation, so a navigation held by another
  * owner's guard keeps that target instead of being replaced by the default overview.
  */
-export function homeTarget(workspaceId: string, creation: WorkspaceCreation): string {
+export function homeTarget(workspaceId: string, creation: WorkspaceCreation, workspace?: WorkspaceAddress): string {
   return creation.createdWorkspaceId !== null && creation.createdWorkspaceId.toLowerCase() === workspaceId.toLowerCase()
     ? createdWorkspacePath(workspaceId)
-    : `/w/${workspaceId}`;
+    : workspaceHref(workspace ?? workspaceId);
 }
 
 /**
@@ -89,7 +92,7 @@ export function WorkspaceCreationProvider({ children }: { children: ReactNode })
   useEffect(() => controller.attach((path) => navigateRef.current(path)), [controller]);
   const returnFocus = useRef<HTMLElement | null>(null);
   const created = useSyncExternalStore(controller.subscribe, () => controller.getSnapshot().created, () => controller.getSnapshot().created);
-  const openWorkspaceId = useMatch('/w/:workspaceId/*')?.params.workspaceId ?? null;
+  const openWorkspaceId = useWorkspaceRoute(me.actor.id).workspaceId;
   useEffect(() => {
     if (openWorkspaceId !== null) controller.forgetCreated(openWorkspaceId);
   }, [controller, openWorkspaceId, created]);

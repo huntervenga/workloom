@@ -6,16 +6,16 @@ import { describe, expect, it } from 'vitest';
 import { DialogShell } from '../../shared/DialogShell';
 import { emptyInitialTaskCellsDraft, InitialCustomFieldCell } from './InitialTaskCells';
 
-const field = (type: 'text' | 'boolean'): TaskFieldDefinitionDto => ({
+const field = (type: 'text' | 'single_select'): TaskFieldDefinitionDto => ({
   id: '00000000-0000-4000-8000-000000000010',
   workspaceId: '00000000-0000-4000-8000-000000000001',
   projectId: '00000000-0000-4000-8000-000000000002',
   definitionVersionId: '00000000-0000-4000-8000-000000000003',
   name: 'Draft column', type, revision: 1, historyEnabled: true, locked: false,
-  archivedAt: null, options: [], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+  archivedAt: null, options: type === 'single_select' ? [{ id: '00000000-0000-4000-8000-000000000099', name: 'Chosen option', color: '#6366f1', position: 0, revision: 1, archivedAt: null }] : [], createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 });
 
-function Harness({ type }: { type: 'text' | 'boolean' }) {
+function Harness({ type }: { type: 'text' | 'single_select' }) {
   const [open, setOpen] = useState(true);
   const [draft, setDraft] = useState(emptyInitialTaskCellsDraft);
   return <DialogShell variant="drawer" title="Parent task" description="Synthetic task drawer" open={open} onOpenChange={setOpen}>
@@ -43,7 +43,7 @@ describe('initial custom cell Escape ownership inside the real task drawer shell
 
   it('closes a nested choice, then the editor, then the enclosing drawer on separate Escapes', async () => {
     const user = userEvent.setup();
-    render(<Harness type="boolean" />);
+    render(<Harness type="single_select" />);
     const trigger = await screen.findByRole('button', { name: 'Draft column for the new task' });
     await user.click(trigger);
     const editor = await screen.findByRole('dialog', { name: 'Draft column for the new task' });

@@ -1,8 +1,9 @@
+import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { useTranslation } from '../../i18n';
 import type { ProjectDto, TaskDependencyDto, TaskDto } from '@workloom/contracts';
 import { Badge, Button } from '@workloom/ui';
 import { useState } from 'react';
-import { Link } from 'react-router';
+
 import { isAccessDenied } from '../../lib/api';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { QueryErrorState } from '../../shared/QueryErrorState';

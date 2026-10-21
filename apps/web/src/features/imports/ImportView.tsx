@@ -1,8 +1,9 @@
+import { useWorkspaceNavigate as useNavigate } from '../workspace/WorkspaceNavigation';
 import { useTranslation } from '../../i18n';
 import type { ProjectDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useEffect, useLayoutEffect, useRef } from 'react';
-import { useNavigate } from 'react-router';
+
 import { isAccessDenied } from '../../lib/api';
 import { isUuid } from '../../lib/format';
 import { QueryErrorState } from '../../shared/QueryErrorState';

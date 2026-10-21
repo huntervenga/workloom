@@ -8,6 +8,9 @@ export interface WorkspaceView {
   readonly name: string;
   readonly timezone: string;
   readonly weekStart: number;
+  readonly slug?: string | null;
+  readonly slugRevision?: number;
+  readonly slugAliases?: readonly string[];
   /** Role of the current actor in this workspace. */
   readonly role: WorkspaceRole;
 }
@@ -95,5 +98,8 @@ function toWorkspaceView(record: WorkspaceAccessRecord): WorkspaceView {
     timezone: record.workspace.timezone,
     weekStart: record.workspace.weekStart,
     role: record.membership.role,
+    ...(record.workspace.slug === undefined ? {} : { slug: record.workspace.slug }),
+    ...(record.workspace.slugRevision === undefined ? {} : { slugRevision: record.workspace.slugRevision }),
+    ...(record.workspace.slugAliases === undefined ? {} : { slugAliases: record.workspace.slugAliases }),
   };
 }

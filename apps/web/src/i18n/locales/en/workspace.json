@@ -35,5 +35,20 @@
     "notAllowed": "Your account cannot create workspaces.",
     "signedOut": "Your session has ended. Sign in again, then try again.",
     "rateLimited": "Too many attempts. Wait a moment, then try again."
+  },
+  "slug": {
+    "title": "Company address",
+    "label": "Company short name",
+    "help": "Choose a short address for your workspace. Previous addresses and UUID links will keep working.",
+    "placeholder": "your-company",
+    "format": "3–63 lowercase letters, numbers or hyphens. Reserved names cannot be used.",
+    "save": "Save address",
+    "saving": "Saving…",
+    "saved": "Company address saved.",
+    "unavailable": "This address is unavailable or reserved. Choose another short name.",
+    "conflict": "The address changed in another session. Review the current address and save again.",
+    "uncertain": "The save may have completed. Retry the same save to confirm its result.",
+    "retry": "Retry same save",
+    "failed": "Could not save the address. Your changes are still here."
   }
 }

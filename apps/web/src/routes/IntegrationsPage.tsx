@@ -1,5 +1,6 @@
+import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { useTranslation } from '../i18n';
-import { Link } from 'react-router';
+
 import { buttonClassName } from '@workloom/ui';
 import { CredentialPanel } from '../features/mcp/CredentialPanel';
 import { useDocumentTitle } from '../lib/useDocumentTitle';

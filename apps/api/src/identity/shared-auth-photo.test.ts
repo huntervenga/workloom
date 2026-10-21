@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import type {
   AccessRepository,
+  WorkspaceAccessRecord,
   SharedAuthIdentityInput,
   SharedAuthLoginAttemptInput,
   SharedAuthSessionRecord,
@@ -188,7 +189,7 @@ function setup() {
     clock = Date.parse(record.accessExpiresAt) - 10_000;
   }
 
-  return { store, auth, sign, login, resolve, nearAccessExpiry };
+  return { store, auth, sign, login, resolve, nearAccessExpiry, service, repository };
 }
 
 describe('shared Auth verified profile photo on login', () => {
@@ -380,5 +381,27 @@ describe('authoritative email from the exact shared Auth session', () => {
     await expect(login(await sign(verifiedClaims(), { key: attackerKey }))).rejects.toMatchObject({ statusCode: 401 });
     await expect(login(await sign(verifiedClaims(), { audience: 'wrong-app' }))).rejects.toMatchObject({ statusCode: 401 });
     expect(store.provisioned).toHaveLength(0);
+  });
+});
+
+
+describe('shared Auth company address return target', () => {
+  const workspaceId = 'a0000000-0000-4000-8000-000000000009';
+  function access(): WorkspaceAccessRecord { return {workspace:{id:workspaceId,name:'Company',timezone:'UTC',weekStart:1,slug:'balancy',slugAliases:['balancy','old-balancy'],slugRevision:3},membership:{id:'a0000000-0000-4000-8000-000000000010',workspaceId,userId:USER_ID,displayName:'Ada',role:'owner',state:'active',revision:1}}; }
+  async function callback(target:string, current:WorkspaceAccessRecord|null=access()) {
+    const h=setup(); h.repository.listAccessibleWorkspaces=async()=>[access()]; h.repository.findWorkspaceAccess=async()=>current;
+    const started=await h.service.startLogin(target),state=new URL(started.location).searchParams.get('state')??'';
+    return h.service.completeLogin({attemptToken:cookieValue(started.setCookies,'workloom_auth_attempt'),accessToken:await h.sign({name:'Ada'}),refreshToken:'synthetic-refresh-token',state});
+  }
+  it.each(['balancy','old-balancy','BALANCY',workspaceId])('retains accessible current, former and UUID address %s with query and hash',async ref=>{
+    const target=`/app/w/${ref}/projects?view=gantt#task`;
+    expect((await callback(target)).returnTo).toBe(target);
+  });
+  it.each(['unknown-company','%20balancy%20','balancy%2Fproject','balancy%00','balancy%0A','balancy--team'])('does not repair or expose invalid/inaccessible address %s',async ref=>{
+    expect((await callback(`/app/w/${ref}/projects`)).returnTo).toBe('/app');
+  });
+  it('rechecks current access after actor-scoped alias resolution',async()=>{
+    expect((await callback('/app/w/old-balancy/projects',null)).returnTo).toBe('/app');
+    const revoked=access();expect((await callback('/app/w/balancy/projects',{...revoked,membership:{...revoked.membership,state:'revoked'}})).returnTo).toBe('/app');
   });
 });

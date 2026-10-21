@@ -82,7 +82,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDependencies)
       request,
       reply,
       workspaceListResponseSchema,
-      workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name, role: workspace.role, timezone: workspace.timezone, weekStart: workspace.weekStart })),
+      workspaces.map((workspace) => ({ id: workspace.id, name: workspace.name, role: workspace.role, timezone: workspace.timezone, weekStart: workspace.weekStart, ...(workspace.slug === undefined ? {} : { slug: workspace.slug }), ...(workspace.slugRevision === undefined ? {} : { slugRevision: workspace.slugRevision }), ...(workspace.slugAliases === undefined ? {} : { slugAliases: workspace.slugAliases }) })),
       { list: true },
     );
   });
@@ -97,6 +97,9 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDependencies)
       role: workspace.role,
       timezone: workspace.timezone,
       weekStart: workspace.weekStart,
+      ...(workspace.slug === undefined ? {} : { slug: workspace.slug }),
+      ...(workspace.slugRevision === undefined ? {} : { slugRevision: workspace.slugRevision }),
+      ...(workspace.slugAliases === undefined ? {} : { slugAliases: workspace.slugAliases }),
     });
   });
 

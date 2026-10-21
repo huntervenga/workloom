@@ -1,10 +1,12 @@
+import { CompanyAddressCard } from '../features/workspace/CompanyAddressCard';
+import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { t, useTranslation } from '../i18n';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { MembershipDto } from '@workloom/contracts';
 import { Badge, Skeleton } from '@workloom/ui';
 import { ArrowRight, Clock, FolderKanban, ShieldCheck, Users } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router';
+
 import type { ProjectList } from '../features/projects/api';
 import { orderProjects } from '../features/projects/order';
 import { useProjectsQuery } from '../features/projects/queries';
@@ -40,6 +42,8 @@ export function OverviewPage() {
       </header>
 
       <Link to={`/w/${workspace.id}/integrations`} className="inline-flex rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-accent-ink">{t('routes.integrations')}</Link>
+
+      <CompanyAddressCard actorId={actorId} workspace={workspace} />
 
       <dl className="grid gap-3 sm:grid-cols-3">
         <DetailTile icon={<Clock size={16} aria-hidden="true" />} label={t('routes.timezone')}>

@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { AccessRepository, MembershipRecord, UserRecord, WorkspaceAccessRecord } from '@workloom/domain';
 
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
-import { memberships, users, workspaces, teamPendingMembers } from '../schema.js';
+import { memberships, users, workspaces, teamPendingMembers, workspaceSlugAliases } from '../schema.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -16,6 +16,9 @@ const accessColumns = {
   workspaceName: workspaces.name,
   timezone: workspaces.timezone,
   weekStart: workspaces.weekStart,
+  slug: workspaces.slug,
+  slugRevision: workspaces.slugRevision,
+  slugAliases: sql<string[]>`array(select a.slug from ${workspaceSlugAliases} a where a.workspace_id = ${workspaces.id} order by a.slug)`,
   membershipId: memberships.id,
   userId: memberships.userId,
   displayName: users.displayName,
@@ -33,6 +36,9 @@ type AccessRow = {
   workspaceName: string;
   timezone: string;
   weekStart: number;
+  slug: string | null;
+  slugRevision: number;
+  slugAliases: string[];
   membershipId: string;
   userId: string;
   displayName: string;
@@ -45,7 +51,7 @@ type AccessRow = {
 
 function toAccessRecord(row: AccessRow): WorkspaceAccessRecord {
   return {
-    workspace: { id: row.workspaceId, name: row.workspaceName, timezone: row.timezone, weekStart: row.weekStart },
+    workspace: { id: row.workspaceId, name: row.workspaceName, timezone: row.timezone, weekStart: row.weekStart, slug: row.slug, slugRevision: row.slugRevision, slugAliases: row.slugAliases },
     membership: {
       id: row.membershipId,
       workspaceId: row.workspaceId,

@@ -7,13 +7,17 @@ import { task } from '../planning/test/fixtures';
 import { storeConfirmedTasks } from './queries';
 
 describe('atomic bulk confirmation cache', () => {
-  it('stores three confirmed details with one list, one schedule and one dependency invalidation', async () => {
+  it('stores three confirmed details with one invalidation each for list, reports, schedule and dependencies', async () => {
     const client = new QueryClient();
     const rows = [1, 2, 3].map(index => ({ ...task, id: `task-${index}`, revision: 2 }));
     for (const row of rows) client.setQueryData(queryKeys.task(anna.id, alpha.id, row.id), { ...row, revision: 1 });
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     await storeConfirmedTasks(client, anna.id, alpha.id, rows);
-    expect(invalidate).toHaveBeenCalledTimes(3);
+    expect(invalidate).toHaveBeenCalledTimes(4);
+    const workspace = queryKeys.workspace(anna.id, alpha.id);
+    for (const queryKey of [queryKeys.tasks(anna.id, alpha.id), [...workspace, 'generic-reports'], [...workspace, 'schedule'], [...workspace, 'dependencies']]) {
+      expect(invalidate.mock.calls.filter(([filter]) => JSON.stringify(filter?.queryKey) === JSON.stringify(queryKey))).toHaveLength(1);
+    }
     const listCall = invalidate.mock.calls.find(([filter]) => JSON.stringify(filter?.queryKey) === JSON.stringify(queryKeys.tasks(anna.id, alpha.id)));
     expect(listCall).toBeDefined();
     for (const row of rows) expect(client.getQueryData(queryKeys.task(anna.id, alpha.id, row.id))).toEqual(row);

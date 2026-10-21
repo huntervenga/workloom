@@ -54,5 +54,5 @@ export function HomeRedirect() {
 
   // A workspace just created from this page keeps the create's own projects target, also while
   // another owner's guard holds that navigation.
-  return <Navigate to={homeTarget(first.id, creation)} replace />;
+  return <Navigate to={homeTarget(first.id, creation, first)} replace />;
 }

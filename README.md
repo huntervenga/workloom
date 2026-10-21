@@ -84,6 +84,8 @@ Worker штатно остановлен и сейчас OFF; шесть stale j
 ## Начать здесь
 
 - [Карта документации](docs/README.md)
+- [Короткий адрес компании: настройка owner, UUID-ссылки и прежние адреса](docs/106-company-addresses.md)
+- [Локальный перенос снимка проекта Asana: оператор, сохранность и ограничения экспорта](docs/107-local-asana-snapshot-operator.md)
 - [Продуктовая спецификация](docs/01-product-spec.md)
 - [Архитектура и принятые технические решения](docs/02-architecture.md)
 - [Подробный план реализации P0–P6](docs/06-implementation-plan.md)

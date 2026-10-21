@@ -64,12 +64,14 @@ export const workspaces = pgTable(
     name: text('name').notNull(),
     timezone: text('timezone').notNull(),
     weekStart: smallint('week_start').notNull().default(1),
+    slug: text('slug'),
+    slugRevision: integer('slug_revision').notNull().default(1),
     changeSeq: bigint('change_seq', { mode: 'bigint' }).notNull().default(sql`0`),
     permissionEpoch: bigint('permission_epoch', { mode: 'bigint' }).notNull().default(sql`0`),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  () => [
+  (table) => [
     check('workspaces_name_length', sql`char_length(btrim(name)) between 1 and 200`),
     check(
       'workspaces_timezone_format',
@@ -78,8 +80,22 @@ export const workspaces = pgTable(
     check('workspaces_week_start_iso_weekday', sql`week_start between 1 and 7`),
     check('workspaces_change_seq_nonnegative', sql`change_seq >= 0`),
     check('workspaces_permission_epoch_nonnegative', sql`permission_epoch >= 0`),
+    uniqueIndex('workspaces_slug_unique').on(table.slug),
+    check('workspaces_slug_revision_positive', sql`slug_revision >= 1`),
+    check('workspaces_slug_shape', sql`slug is null or (char_length(slug) between 3 and 63 and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$')`),
   ],
 );
+
+/** A single global namespace retains previous addresses so shared links never change tenants. */
+export const workspaceSlugAliases = pgTable('workspace_slug_aliases', {
+  slug: text('slug').primaryKey(),
+  workspaceId: uuid('workspace_id').notNull().references(() => workspaces.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [
+  unique('workspace_slug_aliases_workspace_slug_unique').on(t.workspaceId, t.slug),
+  index('workspace_slug_aliases_workspace_idx').on(t.workspaceId, t.slug),
+  check('workspace_slug_aliases_shape', sql`char_length(slug) between 3 and 63 and slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+]);
 
 /** One stable membership per (workspace, user); revocation is a state, never a delete. */
 export const memberships = pgTable(
@@ -825,6 +841,7 @@ export const taskFieldValueHistory = pgTable(
 
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'workspace_slug_aliases',
   'shared_activities','shared_activity_versions','shared_activity_contributions','shared_activity_contribution_versions',
   'summary_templates','summary_template_versions','summary_template_bindings','summary_template_binding_versions',
   'project_check_settings','project_check_settings_versions','project_check_checkpoints',
