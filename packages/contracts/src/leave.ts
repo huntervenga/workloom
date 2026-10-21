@@ -132,6 +132,32 @@ export function isLeaveEmploymentStartCorrection(
 export type LeaveChargeDayDto = z.infer<typeof leaveChargeDaySchema>;
 export type LeaveAdjustmentDto = z.infer<typeof leaveAdjustmentSchema>;
 export type LeaveWeeklyMinutes = z.infer<typeof leaveWeeklyMinutesSchema>;
+
+/** An administrator correcting fully elapsed approved dates with a mandatory reason. */
+export interface LeaveHistoricalAbsenceCorrectionContext {
+  canManage: boolean;
+  today: string;
+  reason: string;
+}
+/**
+ * Derives whether an update qualifies as a bounded historical absence correction.
+ * Eligible: manager(scope); before exists; both statuses approved; actual date change;
+ * same membershipId AND typeId; both OLD endDate and NEW endDate strictly before today; reason nonempty.
+ * No bypass flag, DTO field or caller boolean accepted.
+ */
+export function isLeaveHistoricalAbsenceCorrection(
+  before: LeaveRequestDto | undefined,
+  proposed: Pick<LeaveRequestDto, 'membershipId' | 'typeId' | 'startDate' | 'endDate' | 'status'>,
+  context: LeaveHistoricalAbsenceCorrectionContext,
+): boolean {
+  if (!context.canManage || !context.reason.trim()) return false;
+  if (!before) return false;
+  if (before.status !== 'approved' || proposed.status !== 'approved') return false;
+  if (before.membershipId !== proposed.membershipId || before.typeId !== proposed.typeId) return false;
+  if (before.startDate === proposed.startDate && before.endDate === proposed.endDate) return false;
+  if (before.endDate >= context.today || proposed.endDate >= context.today) return false;
+  return true;
+}
 export type PutLeaveSettingsInput = z.infer<typeof putLeaveSettingsInputSchema>;
 export type PutLeaveProfileInput = z.infer<typeof putLeaveProfileInputSchema>;
 export type CreateLeaveRequestInput = z.infer<typeof createLeaveRequestInputSchema>;

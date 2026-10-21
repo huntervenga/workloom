@@ -222,5 +222,7 @@
   "deficitBalance": "Balance on date",
   "previewBalanceWarnings": "Balance details for these dates",
   "previewBalanceWarningHint": "These are conflicts found in this preview. Review the dates and working-day charge; a rejected save may have another cause.",
-  "refreshRecord": "Refresh current record"
+  "refreshRecord": "Refresh current record",
+  "historicalCorrectionWarnings": "Balance warnings from historical correction",
+  "historicalCorrectionHint": "You can save this fully elapsed date correction with your reason. These balances are recalculated from the changed dates; this does not approve additional leave or change the rules for new requests."
 }

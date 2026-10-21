@@ -238,3 +238,167 @@ describe('inline mutation error handling', () => {
   unmount(); client.clear();
  });
 });
+
+describe('historical absence correction advisory', () => {
+ it('shows advisory deficit details for eligible fully elapsed date correction with reason', async () => {
+  // Approved historical request ending before today
+  const historicalRequest: LeaveRequestDto = {
+   ...request,
+   startDate: '2026-10-01',
+   endDate: '2026-10-10', // Strictly before today (2026-10-19)
+   status: 'approved',
+  };
+  const data = overview();
+  data.requests = [historicalRequest];
+  // Preview response with deficits and authoritative today
+  installFakeApi({
+   [`POST ${prefix}/preview`]: () => ok({
+    sourceVersion: 'd'.repeat(64),
+    today: '2026-10-19',
+    chargedDays: [{ date: '2026-10-01', microdays: 1_000_000, scheduledMinutes: 480 }],
+    totalMicrodays: 1_000_000,
+    unavailableMinutes: 480,
+    overlappingRequestIds: [],
+    pausesAccrual: false,
+    balancesBefore: [],
+    balancesAfter: [],
+    deficits: [{
+     membershipId: MEMBER,
+     typeId: VACATION,
+     requestId: request.id,
+     date: '2026-10-05',
+     availableMicrodays: -2_000_000,
+     negativeAllowed: false,
+     negativeApprovalRequired: true,
+    }],
+   }),
+  });
+
+  const user = userEvent.setup();
+  const { container, unmount, client } = mount(data);
+  required(container.querySelector('details')).open = true;
+
+  // Change date to trigger preview (historical correction)
+  await user.clear(screen.getByLabelText('End date (inclusive)'));
+  await user.type(screen.getByLabelText('End date (inclusive)'), '2026-10-08');
+  // Add reason (required for historical correction)
+  await user.type(screen.getByLabelText('Reason / correction note'), 'Correcting dates from HR records');
+  // Click review charge
+  await user.click(screen.getByRole('button', { name: 'Review charge' }));
+
+  // Should show the advisory section with historical correction copy, not blocking warning
+  const advisory = await screen.findByRole('region', { name: /balance warnings from historical correction/i });
+  expect(advisory).toBeVisible();
+  expect(within(advisory).getByText(/recalculated from the changed dates/i)).toBeVisible();
+  // Should show deficit table
+  expect(within(advisory).getByText('2026-10-05')).toBeVisible();
+  expect(within(advisory).getByText(/-2 days/)).toBeVisible();
+  expect(screen.queryByText(/Approval cannot bypass/i)).not.toBeInTheDocument();
+
+  unmount(); client.clear();
+ });
+
+ it('shows ordinary deficit warnings for same-day or future requests', async () => {
+  // Request ending today - not eligible for historical correction
+  const ongoingRequest: LeaveRequestDto = {
+   ...request,
+   startDate: '2026-10-15',
+   endDate: '2026-10-19', // Same as today
+   status: 'approved',
+  };
+  const data = overview();
+  data.requests = [ongoingRequest];
+  installFakeApi({
+   [`POST ${prefix}/preview`]: () => ok({
+    sourceVersion: 'e'.repeat(64),
+    today: '2026-10-19',
+    chargedDays: [],
+    totalMicrodays: 1_000_000,
+    unavailableMinutes: 480,
+    overlappingRequestIds: [],
+    pausesAccrual: false,
+    balancesBefore: [],
+    balancesAfter: [],
+    deficits: [{
+     membershipId: MEMBER,
+     typeId: VACATION,
+     requestId: request.id,
+     date: '2026-10-18',
+     availableMicrodays: -1_000_000,
+     negativeAllowed: false,
+     negativeApprovalRequired: true,
+    }],
+   }),
+  });
+
+  const user = userEvent.setup();
+  const { container, unmount, client } = mount(data);
+  required(container.querySelector('details')).open = true;
+
+  // Change date
+  await user.clear(screen.getByLabelText('End date (inclusive)'));
+  await user.type(screen.getByLabelText('End date (inclusive)'), '2026-10-18');
+  await user.type(screen.getByLabelText('Reason / correction note'), 'Some reason');
+  await user.click(screen.getByRole('button', { name: 'Review charge' }));
+
+  // Should show ordinary deficit details (expandable), NOT historical correction advisory
+  await waitFor(() => expect(screen.queryByRole('region', { name: /balance warnings from historical correction/i })).not.toBeInTheDocument());
+  // Should show the standard expandable details
+  const details = screen.getByText('Balance details for these dates');
+  expect(details).toBeVisible();
+  expect(screen.getByText(/Approval cannot bypass/i)).toBeVisible();
+
+  unmount(); client.clear();
+ });
+
+ it('shows ordinary deficit warnings when reason is missing', async () => {
+  const historicalRequest: LeaveRequestDto = {
+   ...request,
+   startDate: '2026-10-01',
+   endDate: '2026-10-10',
+   status: 'approved',
+  };
+  const data = overview();
+  data.requests = [historicalRequest];
+  installFakeApi({
+   [`POST ${prefix}/preview`]: () => ok({
+    sourceVersion: 'f'.repeat(64),
+    today: '2026-10-19',
+    chargedDays: [],
+    totalMicrodays: 1_000_000,
+    unavailableMinutes: 480,
+    overlappingRequestIds: [],
+    pausesAccrual: false,
+    balancesBefore: [],
+    balancesAfter: [],
+    deficits: [{
+     membershipId: MEMBER,
+     typeId: VACATION,
+     requestId: request.id,
+     date: '2026-10-05',
+     availableMicrodays: -2_000_000,
+     negativeAllowed: false,
+     negativeApprovalRequired: true,
+    }],
+   }),
+  });
+
+  const user = userEvent.setup();
+  const { container, unmount, client } = mount(data);
+  required(container.querySelector('details')).open = true;
+
+  // A whitespace reason is browser-filled but semantically empty.
+  await user.clear(screen.getByLabelText('End date (inclusive)'));
+  await user.type(screen.getByLabelText('End date (inclusive)'), '2026-10-08');
+  await user.type(screen.getByLabelText('Reason / correction note'), '   ');
+  await user.click(screen.getByRole('button', { name: 'Review charge' }));
+
+  // Should show ordinary deficit details, not historical correction advisory
+  await waitFor(() => expect(screen.queryByRole('region', { name: /balance warnings from historical correction/i })).not.toBeInTheDocument());
+  const details = screen.getByText('Balance details for these dates');
+  expect(details).toBeVisible();
+  expect(screen.getByText(/Approval cannot bypass/i)).toBeVisible();
+
+  unmount(); client.clear();
+ });
+});
