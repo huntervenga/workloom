@@ -1,6 +1,6 @@
 # Personal invitations and pending teammates
 
-Implementation candidate; verification and activation are recorded separately. This guide does not claim a completed real-provider registration or production deployment.
+Product `342d91f` is active locally at [Workloom](http://127.0.0.1:4310/app) after the isolated checks and controlled activation below. It replaces `58cd331`. No main invitations or tasks were seeded. Real-provider registration, main authenticated UI, actual old-tab upgrade and production are **NOT CHECKED**.
 
 ## Prepare the board before people register
 
@@ -21,3 +21,15 @@ Owners can invite Admin, Member, or Viewer; admins can invite Member or Viewer. 
 If the registering account already has another membership in this workspace, Workloom refuses an automatic merge rather than rewriting existing task/history identities. Resolve the duplicate with the owner before claiming the pending person.
 
 **Create a general invitation link instead** retains the earlier non-addressed invitation option. Anyone holding that link may accept after sign-in; it does not pre-create a planning person. No email delivery, automatic membership based only on email, or bulk import is introduced by this feature.
+
+## Verification
+
+The isolated candidate matched 1,664 source/stage files. Global checks and the full build passed. Backend unit tests passed **2,333 / 143 files**; the final targeted fixture run passed **23 / 2**. PostgreSQL passed **35 / 8**, followed by the strengthened personal-invitation and populated-upgrade run **10 / 2**; these overlapping scopes are not additive totals. Focused web tests passed **78 / 7**. Private compiled native tests passed **4 / 4 in 8.3 seconds**, without skips or retries. The independent review reported no blocking findings.
+
+Native coverage uses a fake signed Auth provider and a disposable PostgreSQL database: pending-person creation and assignment, matching-email join preserving membership, replacement-link invalidation, wrong-account refusal, and legacy-link continuation with an exact retry after a lost response. Root personally inspected only the sanitized pending-members screenshot. These results do not establish real-provider or production acceptance. Main local activation is recorded separately below.
+
+## Controlled local activation
+
+Activation **PASS at 2026-10-21T14:22:07.684Z** for product `342d91f`. Only additive migration **0027** was applied: one empty table and two nullable invitation columns; total tables **105 → 106**, migration ledger **27 → 28**. Every old table, old column, row and catalog definition was preserved, along with environment, PostgreSQL and Vite. Only the API restarted; the worker remained OFF and the runtime doctor passed. All **512 non-HTML resource bodies** matched their expected SHA and MIME, and both HTML entrypoints were verified.
+
+The activation receipt is kept privately in `.local/backups/personal-invites-01fb3fab-8432-470f-a9be-510e6fdfca04/activation-result.json`. This is local runtime/data-preservation evidence, separate from the private fake-Auth browser tests. It does not certify a real provider login, main authenticated user workflow, actual old-tab upgrade or production deployment. No main invitations or tasks were seeded.
