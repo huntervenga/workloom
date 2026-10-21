@@ -15,6 +15,8 @@ export interface Actor {
   readonly kind: ActorKind;
   /** Current stored profile photo URL; presentation only, never an authorization input. */
   readonly avatarUrl?: string | null;
+  /** Server-verified mailbox from this exact Auth session; never supplied by clients. */
+  readonly verifiedEmail?: string | null;
 }
 
 export interface ActorContext {

@@ -77,7 +77,7 @@ interface StoredTokens {
 type PictureClaim = string | null | undefined;
 
 type VerifiedAccess =
-  | { readonly ok: true; readonly subject: string; readonly name: unknown; readonly picture: PictureClaim; readonly expiresAt: string }
+  | { readonly ok: true; readonly subject: string; readonly name: unknown; readonly picture: PictureClaim; readonly verifiedEmail: string | null; readonly expiresAt: string }
   | { readonly ok: false; readonly reason: 'invalid' | 'unavailable' };
 
 type RefreshOutcome =
@@ -88,7 +88,7 @@ type RefreshOutcome =
   | { readonly kind: 'unknown' };
 
 type SessionOutcome =
-  | { readonly kind: 'active'; readonly userId: string }
+  | { readonly kind: 'active'; readonly userId: string; readonly verifiedEmail: string | null }
   | { readonly kind: 'unauthenticated' }
   | { readonly kind: 'unavailable' };
 
@@ -132,6 +132,20 @@ function pictureFrom(payload: Readonly<Record<string, unknown>>): PictureClaim {
   if (!('picture' in payload)) return undefined;
   if (payload.picture === null) return null;
   return safeProfilePhotoUrl(payload.picture) ?? undefined;
+}
+
+/** Auth VERIFIED_EMAIL v1.1. Only claims from the same verified token may establish a mailbox. */
+export function verifiedEmailFrom(payload: Readonly<Record<string, unknown>>): string | null {
+  if (payload.email_verified !== true || typeof payload.email !== 'string') return null;
+  const email = payload.email.trim().toLowerCase();
+  if (email.length > 254 || /\p{Cc}/u.test(email) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return null;
+  const observed = payload.email_verification_observed_at;
+  if (typeof observed !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(observed) || !Number.isFinite(Date.parse(observed))) return null;
+  const domain = email.slice(email.lastIndexOf('@') + 1);
+  if (payload.email_verification_assertion === 'google_gmail') return domain === 'gmail.com' ? email : null;
+  if (payload.email_verification_assertion !== 'google_workspace' || typeof payload.google_hosted_domain !== 'string') return null;
+  const hosted = payload.google_hosted_domain.trim().toLowerCase();
+  return hosted !== '' && hosted === domain ? email : null;
 }
 
 function workspaceNameFor(displayName: string): string {
@@ -280,6 +294,7 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
         subject: payload.sub.toLowerCase(),
         name: payload.name,
         picture: pictureFrom(payload),
+        verifiedEmail: verifiedEmailFrom(payload),
         expiresAt: expiresAt.toISOString(),
       };
     } catch (error) {
@@ -353,7 +368,12 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
       return { result: { kind: 'unauthenticated' }, update: revoke };
     }
     if (Date.parse(record.accessExpiresAt) - at.getTime() > REFRESH_SKEW_MS) {
-      return { result: { kind: 'active', userId: record.userId } };
+      const current = await verifyAccessToken(tokens.accessToken);
+      if (!current.ok) return current.reason === 'unavailable'
+        ? { result: { kind: 'unavailable' } }
+        : { result: { kind: 'unauthenticated' }, update: revoke };
+      if (current.subject !== tokens.subject) return { result: { kind: 'unauthenticated' }, update: revoke };
+      return { result: { kind: 'active', userId: record.userId, verifiedEmail: current.verifiedEmail } };
     }
 
     onRotationAttempt(Date.parse(record.expiresAt));
@@ -368,7 +388,7 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
     if (fresh.subject !== tokens.subject) return { result: { kind: 'unauthenticated' }, update: revoke };
 
     return {
-      result: { kind: 'active', userId: record.userId },
+      result: { kind: 'active', userId: record.userId, verifiedEmail: fresh.verifiedEmail },
       update: {
         encryptedTokens: encryptTokens(key, sessionHash, {
           issuer: config.issuer,
@@ -486,7 +506,7 @@ export function createSharedAuthService(options: SharedAuthServiceOptions): Shar
 
       const user = await repository.findUser(outcome.userId);
       if (user === null || user.kind !== 'real') throw unauthenticated([clearSession]);
-      return { userId: user.id, displayName: user.displayName, kind: user.kind, avatarUrl: user.avatarUrl ?? null };
+      return { userId: user.id, displayName: user.displayName, kind: user.kind, avatarUrl: user.avatarUrl ?? null, verifiedEmail: outcome.verifiedEmail };
     },
   };
 

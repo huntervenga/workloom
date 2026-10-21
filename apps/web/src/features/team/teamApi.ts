@@ -41,7 +41,7 @@ export async function fetchTeamView(workspaceId: string, signal?: AbortSignal): 
   return (await apiGet(teamPath(workspaceId), teamViewResponseSchema, signal)).data;
 }
 
-export type TeamCommandKind = 'issueInvitation' | 'revokeInvitation' | 'updateMembership' | 'acceptInvitation';
+export type TeamCommandKind = 'issueInvitation' | 'revokeInvitation' | 'updateMembership' | 'acceptInvitation' | 'resumeInvitation';
 
 /**
  * One team command exactly as it is sent: the parsed body, its Idempotency-Key and the actor (and
@@ -147,6 +147,24 @@ export function prepareAcceptInvitation(
   return freezeCommand<AcceptTeamInvitationResult>('acceptInvitation', request, actorId, null, null, idempotencyKey);
 }
 
+/** Cookie-bound continuation; no raw invitation material is in this command. */
+export function prepareResumeInvitation(actorId: string, idempotencyKey: string): TeamCommand<AcceptTeamInvitationResult> {
+  requireUuid(actorId); requireUuid(idempotencyKey);
+  const request: MutationRequest<{ data: AcceptTeamInvitationResult }> = {
+    method: 'POST', path: '/api/v1/auth/invitation-handoff/accept', body: {},
+    responseSchema: acceptTeamInvitationResponseSchema, fingerprint: 'resumeInvitation',
+  };
+  return freezeCommand('resumeInvitation', request, actorId, null, null, idempotencyKey);
+}
+
+/** Stage only on an explicit sign-in-and-join click; never enters query/mutation cache. */
+export async function stageInvitationForSignIn(input: AcceptTeamInvitationInput): Promise<void> {
+  const parsed = acceptTeamInvitationInputSchema.safeParse(input);
+  if (!parsed.success) throw new ApiError({ kind: 'invalid_input', status: null });
+  const result = await apiRequest('/api/v1/auth/invitation-handoff', { method: 'POST', body: parsed.data });
+  if (result.status !== 204) throw new ApiError({ kind: 'invalid_response', status: result.status });
+}
+
 /**
  * Sends a prepared team command once, with the key and actor bound in the frozen command. No other
  * identity or workspace headers are added; the server checks the actor against the session. An
@@ -180,8 +198,10 @@ function freezeCommand<T>(
   targetId: string | null,
   idempotencyKey: string,
 ): TeamCommand<T> {
-  // Every team body is a flat object of primitives, so a shallow freeze makes it immutable.
-  const frozen = Object.freeze({ ...request, body: Object.freeze({ ...(request.body as Record<string, unknown>) }) });
+  // Recipient metadata is nested; freeze it too so retries cannot drift after preparation.
+  const body = { ...(request.body as Record<string, unknown>) };
+  if (isRecord(body['recipient'])) body['recipient'] = Object.freeze({ ...body['recipient'] });
+  const frozen = Object.freeze({ ...request, body: Object.freeze(body) });
   return Object.freeze({ kind, request: frozen, actorId, workspaceId, targetId, idempotencyKey });
 }
 

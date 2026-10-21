@@ -1,10 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { acceptTeamInvitationInputSchema, acceptTeamInvitationResponseSchema, idSchema } from '@workloom/contracts';
+import { DomainError, type TeamApplication } from '@workloom/domain';
 
 import { readCookie } from '../identity/dev-sessions.js';
 import type { IdentityAdapter } from '../identity/identity-adapter.js';
 import { LOGIN_ATTEMPT_COOKIE, SHARED_SESSION_COOKIE, type SharedAuthService } from '../identity/shared-auth.js';
-import { parseInput } from './envelope.js';
+import { parseInput, sendData } from './envelope.js';
+import { readIdempotencyKey } from './task-routes.js';
+import { INVITATION_HANDOFF_COOKIE, type InvitationHandoff } from '../identity/invitation-handoff.js';
 import { HttpError } from './errors.js';
 
 const JSON_TYPE = 'application/json; charset=utf-8';
@@ -92,13 +96,16 @@ export function registerAuthConfigRoute(app: FastifyInstance, authMode: Identity
 }
 
 /** Shared Auth BFF endpoints. Registered only for AUTH_MODE=shared. Tokens are never returned or logged. */
-export function registerSharedAuthRoutes(app: FastifyInstance, deps: { readonly service: SharedAuthService }): void {
-  const { service } = deps;
+export function registerSharedAuthRoutes(app: FastifyInstance, deps: { readonly service: SharedAuthService; readonly invitationHandoff?: InvitationHandoff; readonly team?: TeamApplication }): void {
+  const { service, invitationHandoff, team } = deps;
+  const cookieFrom = (values: readonly string[], name: string) => readCookie(values.map(value => value.split(';')[0]).join('; '), name);
 
   app.get('/api/v1/auth/login', async (request, reply) => {
     const returnTo = parseLoginQuery(request.url, service.appOrigin);
     const login = await service.startLogin(returnTo);
-    return reply.code(302).header('set-cookie', [...login.setCookies]).header('location', login.location).send();
+    const attempt = cookieFrom(login.setCookies, LOGIN_ATTEMPT_COOKIE);
+    const handoffCookie = invitationHandoff && attempt ? invitationHandoff.bindLogin(readCookie(request.headers.cookie, INVITATION_HANDOFF_COOKIE), attempt, returnTo, readCookie(request.headers.cookie, SHARED_SESSION_COOKIE)) : undefined;
+    return reply.code(302).header('set-cookie', [...login.setCookies, ...(handoffCookie ? [handoffCookie] : [])]).header('location', login.location).send();
   });
 
   app.post('/api/v1/auth/session', async (request, reply) => {
@@ -109,6 +116,12 @@ export function registerSharedAuthRoutes(app: FastifyInstance, deps: { readonly 
       accessToken: body.accessToken,
       refreshToken: body.refreshToken,
       state: body.state,
+    }).catch((error: unknown) => {
+      if (invitationHandoff && error instanceof HttpError) throw new HttpError(error.statusCode, error.code, error.message, error.details, {
+        retryable: error.retryable, setCookies: [...(error.setCookies ?? []), invitationHandoff.clearCookie()],
+      });
+      if (invitationHandoff) reply.header('set-cookie', invitationHandoff.clearCookie());
+      throw error;
     });
 
     // Replace a prior local session only after the new one exists.
@@ -120,19 +133,56 @@ export function registerSharedAuthRoutes(app: FastifyInstance, deps: { readonly 
         request.log.warn({ event: 'shared_auth_previous_session_revoke_failed' }, 'previous local session could not be revoked');
       }
     }
+    const session = cookieFrom(result.setCookies, SHARED_SESSION_COOKIE);
+    const resumed = invitationHandoff && session ? invitationHandoff.complete(readCookie(request.headers.cookie, INVITATION_HANDOFF_COOKIE), readCookie(request.headers.cookie, LOGIN_ATTEMPT_COOKIE), session) : undefined;
+    const returnTo = resumed?.ready && result.returnTo === '/app/join' ? '/app/join?resume=1' : result.returnTo;
     request.log.info({ event: 'shared_auth_session_created' }, 'shared Auth session created');
     return reply
       .code(200)
-      .header('set-cookie', [...result.setCookies])
+      .header('set-cookie', [...result.setCookies, ...(resumed ? [resumed.cookie] : [])])
       .type(JSON_TYPE)
-      .send({ data: { returnTo: result.returnTo }, meta: { requestId: request.id } });
+      .send({ data: { returnTo }, meta: { requestId: request.id } });
   });
+
+
+  if (invitationHandoff && team) {
+    app.post('/api/v1/auth/invitation-handoff', async (request, reply) => {
+      assertCanonicalOrigin(request, service.appOrigin);
+      parseInput(z.object({}).strict(), request.query);
+      const input = parseInput(acceptTeamInvitationInputSchema, request.body);
+      // Validation errors are controlled and contain no raw invitation secret.
+      let cookie: string;
+      try { cookie = invitationHandoff.stage(input); } catch { throw new HttpError(400, 'VALIDATION_FAILED', 'Invalid invitation.'); }
+      return reply.code(204).header('set-cookie', cookie).send();
+    });
+    app.post('/api/v1/auth/invitation-handoff/clear', async (request, reply) => {
+      assertCanonicalOrigin(request, service.appOrigin);
+      parseInput(z.object({}).strict(), request.query);
+      parseInput(z.object({}).strict(), request.body);
+      return reply.code(204).header('set-cookie', invitationHandoff.clearCookie()).send();
+    });
+    app.post('/api/v1/auth/invitation-handoff/accept', async (request, reply) => {
+      assertCanonicalOrigin(request, service.appOrigin);
+      parseInput(z.object({}).strict(), request.query);
+      parseInput(z.object({}).strict(), request.body);
+      const idempotencyKey = readIdempotencyKey(request);
+      const intendedActor = parseInput(idSchema, request.headers['x-workloom-actor-id']);
+      const actor = await service.identity.resolveActor(request);
+      if (actor.kind !== 'real' || actor.userId !== intendedActor) throw new DomainError('REVISION_CONFLICT', 'The signed-in account changed. Reload and retry.');
+      const credential = invitationHandoff.resume(readCookie(request.headers.cookie, INVITATION_HANDOFF_COOKIE), readCookie(request.headers.cookie, SHARED_SESSION_COOKIE));
+      if (!credential) throw new HttpError(404, 'NOT_FOUND', 'Reopen the original invitation link to continue.');
+      const result = await team.acceptInvitation({ actor, source: 'web', requestId: request.id, idempotencyKey }, credential);
+      // Keep the session-bound capability until the client has parsed the result: a lost
+      // response must retain the original command's exact retry after Set-Cookie handling.
+      return sendData(request, reply, acceptTeamInvitationResponseSchema, result);
+    });
+  }
 
   app.post('/api/v1/auth/logout', async (request, reply) => {
     assertCanonicalOrigin(request, service.appOrigin);
     parseInput(logoutBodySchema, request.body);
     await service.logout(readCookie(request.headers.cookie, SHARED_SESSION_COOKIE));
     request.log.info({ event: 'shared_auth_logout' }, 'shared Auth logout');
-    return reply.code(204).header('set-cookie', [...service.clearCookies()]).send();
+    return reply.code(204).header('set-cookie', [...service.clearCookies(), ...(invitationHandoff ? [invitationHandoff.clearCookie()] : [])]).send();
   });
 }

@@ -24,6 +24,14 @@ describe('invitation material', () => {
     expect(JSON.stringify(first.input).includes(secret as string)).toBe(false);
     expect(first.link === second.link).toBe(false);
   });
+  it('adds recipient metadata without ever sending its raw link credential', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => '33333333-3333-4333-8333-333333333333', getRandomValues: (bytes:Uint8Array) => bytes.fill(7), subtle: {digest:async()=>new Uint8Array(32).fill(9).buffer} });
+    const recipient={firstName:'Maya',lastName:'Chen',email:'maya@example.com'};
+    const result=await createInvitationMaterial('member',86400,recipient);
+    expect(result.input.recipient).toEqual(recipient);
+    expect(result.input.recipient).not.toBe(recipient);
+    expect(JSON.stringify(result.input)).not.toContain(new URL(result.link).hash.split('.')[1]);
+  });
   it('has no weak entropy fallback when WebCrypto is unavailable', async () => {
     vi.stubGlobal('crypto', {});
     await expect(createInvitationMaterial('viewer', 604800)).rejects.toThrow();

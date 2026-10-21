@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { AccessRepository, MembershipRecord, UserRecord, WorkspaceAccessRecord } from '@workloom/domain';
 
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
-import { memberships, users, workspaces } from '../schema.js';
+import { memberships, users, workspaces, teamPendingMembers } from '../schema.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -23,6 +23,7 @@ const accessColumns = {
   role: memberships.role,
   state: memberships.state,
   revision: memberships.revision,
+  pending: sql<boolean | null>`case when ${teamPendingMembers.membershipId} is null then null else ${teamPendingMembers.claimedAt} is null end`,
 };
 
 const userColumns = { id: users.id, displayName: users.displayName, kind: users.kind, avatarUrl: users.avatarUrl };
@@ -39,6 +40,7 @@ type AccessRow = {
   role: MembershipRecord['role'];
   state: MembershipRecord['state'];
   revision: number;
+  pending: boolean | null;
 };
 
 function toAccessRecord(row: AccessRow): WorkspaceAccessRecord {
@@ -53,6 +55,7 @@ function toAccessRecord(row: AccessRow): WorkspaceAccessRecord {
       role: row.role,
       state: row.state,
       revision: row.revision,
+      ...(row.pending === null ? {} : { pending: row.pending }),
     },
   };
 }
@@ -63,13 +66,16 @@ function toAccessRecord(row: AccessRow): WorkspaceAccessRecord {
  */
 export function createAccessRepository(source: Database | WorkloomExecutor): AccessRepository {
   const db: WorkloomExecutor = isDatabase(source) ? source.db : source;
+  // A schedulable placeholder is never a principal, even if an internal caller forges an actor.
+  const notPendingPrincipal = sql`not exists (select 1 from ${teamPendingMembers} p where p.placeholder_user_id = ${users.id})`;
 
   function selectAccess() {
     return db
       .select(accessColumns)
       .from(memberships)
       .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
-      .innerJoin(users, eq(users.id, memberships.userId));
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .leftJoin(teamPendingMembers, and(eq(teamPendingMembers.workspaceId, memberships.workspaceId), eq(teamPendingMembers.membershipId, memberships.id)));
   }
 
   return {
@@ -80,7 +86,7 @@ export function createAccessRepository(source: Database | WorkloomExecutor): Acc
       const [row] = await db
         .select(userColumns)
         .from(users)
-        .where(eq(users.id, userId))
+        .where(and(eq(users.id, userId), notPendingPrincipal))
         .limit(1);
       return row ?? null;
     },
@@ -101,7 +107,7 @@ export function createAccessRepository(source: Database | WorkloomExecutor): Acc
         return [];
       }
       const rows = await selectAccess()
-        .where(and(eq(memberships.userId, userId), eq(memberships.state, 'active')))
+        .where(and(eq(memberships.userId, userId), eq(memberships.state, 'active'), notPendingPrincipal))
         .orderBy(asc(workspaces.name), asc(workspaces.id));
       return rows.map(toAccessRecord);
     },
@@ -111,7 +117,7 @@ export function createAccessRepository(source: Database | WorkloomExecutor): Acc
         return null;
       }
       const [row] = await selectAccess()
-        .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.userId, userId)))
+        .where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.userId, userId), notPendingPrincipal))
         .limit(1);
       return row === undefined ? null : toAccessRecord(row);
     },

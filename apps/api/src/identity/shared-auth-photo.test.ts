@@ -13,7 +13,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { SessionKey, type SharedAuthConfig } from '../config.js';
 import { HttpError } from '../http/errors.js';
-import { createSharedAuthService, type AuthFetch, type SharedAuthService } from './shared-auth.js';
+import { createSharedAuthService, verifiedEmailFrom, type AuthFetch, type SharedAuthService } from './shared-auth.js';
 
 const ISSUER = 'https://auth.test';
 const AUDIENCE = 'workloom';
@@ -199,7 +199,7 @@ describe('shared Auth verified profile photo on login', () => {
     expect(store.provisioned).toHaveLength(1);
     expect(store.provisioned[0]?.avatarUrl).toBe(PHOTO);
     expect(store.users.get(USER_ID)?.avatarUrl).toBe(PHOTO);
-    await expect(resolve(sessionToken)).resolves.toEqual({ userId: USER_ID, displayName: 'Ada', kind: 'real', avatarUrl: PHOTO });
+    await expect(resolve(sessionToken)).resolves.toEqual({ userId: USER_ID, displayName: 'Ada', kind: 'real', avatarUrl: PHOTO, verifiedEmail: null });
   });
 
   it('never provisions or syncs a photo from a token with an invalid signature', async () => {
@@ -327,5 +327,58 @@ describe('shared Auth verified profile photo on refresh', () => {
       expect(update !== undefined && 'profileAvatarUrl' in update).toBe(false);
       expect(store.users.get(USER_ID)?.avatarUrl).toBe(PHOTO);
     }
+  });
+});
+
+
+const verifiedClaims = (email = 'ada@company.test'): JWTPayload => ({
+  name: 'Ada', email, email_verified: true, email_verification_assertion: 'google_workspace',
+  email_verification_observed_at: '2026-10-01T00:00:00.000Z', google_hosted_domain: 'company.test',
+});
+describe('authoritative email from the exact shared Auth session', () => {
+  it('uses fresh rotated claims and carries them on the exact current-session actor', async () => {
+    const { auth, sign, login, store, resolve } = setup();
+    auth.claims = verifiedClaims('Ada@Company.Test');
+    const original = await sign(verifiedClaims('stale@company.test'));
+    const { sessionToken } = await login(original);
+    expect(Object.keys(store.provisioned.at(-1) ?? {})).not.toContain('verifiedEmail');
+    expect((await resolve(sessionToken)).verifiedEmail).toBe('ada@company.test');
+    // A second session cannot replace the first token's mailbox proof; no global email cache exists.
+    auth.claims = verifiedClaims('other@company.test');
+    const second = await login();
+    expect((await resolve(second.sessionToken)).verifiedEmail).toBe('other@company.test');
+    expect((await resolve(sessionToken)).verifiedEmail).toBe('ada@company.test');
+  });
+  it('clears eligibility on a refreshed legacy/non-authoritative token without blocking ordinary login', async () => {
+    const { auth, login, store, resolve, nearAccessExpiry } = setup();
+    auth.claims = verifiedClaims();
+    const { sessionToken, sessionHash } = await login();
+    nearAccessExpiry(sessionHash);
+    auth.claims = { name: 'Ada', email: 'ada@company.test', email_verified: true };
+    expect((await resolve(sessionToken)).verifiedEmail).toBeNull();
+    expect(Object.keys(store.updates.at(-1) ?? {})).not.toContain('profileVerifiedEmail');
+    expect(store.updates.at(-1)?.revokedAt).toBeUndefined();
+    auth.claims = verifiedClaims();
+    const next = await login();
+    expect((await resolve(next.sessionToken)).verifiedEmail).toBe('ada@company.test');
+  });
+  it.each([
+    { email_verified: false }, { email_verified: 'true' }, { email_verification_assertion: 'google_non_authoritative' },
+    { google_hosted_domain: 'another.test' }, { google_hosted_domain: '' }, { email_verification_observed_at: null },
+    { email_verification_observed_at: 'not-a-date' }, { email: 'ada@company.test\u0000' },
+    { email_verification_assertion: 'google_gmail', email: 'ada@googlemail.com' },
+  ])('does not accept malformed/non-authoritative mailbox evidence %j', patch => {
+    expect(verifiedEmailFrom({ ...verifiedClaims(), ...patch })).toBeNull();
+  });
+  it('accepts Gmail only with its authoritative assertion and exact gmail.com domain', () => {
+    expect(verifiedEmailFrom({ ...verifiedClaims('ADA@gmail.com'), email_verification_assertion: 'google_gmail', google_hosted_domain: undefined })).toBe('ada@gmail.com');
+    expect(verifiedEmailFrom({ ...verifiedClaims('ada@gmail.com'), google_hosted_domain: 'gmail.com.evil.test' })).toBeNull();
+  });
+  it('does not authenticate forged or wrong-audience signed mailbox claims', async () => {
+    const { auth, sign, login, store } = setup();
+    auth.claims = verifiedClaims();
+    await expect(login(await sign(verifiedClaims(), { key: attackerKey }))).rejects.toMatchObject({ statusCode: 401 });
+    await expect(login(await sign(verifiedClaims(), { audience: 'wrong-app' }))).rejects.toMatchObject({ statusCode: 401 });
+    expect(store.provisioned).toHaveLength(0);
   });
 });

@@ -25,6 +25,7 @@ export interface MembershipRecord {
   readonly workspaceId: string;
   readonly userId: string;
   readonly displayName: string;
+  readonly pending?: boolean;
   /** The member user's current profile photo URL. */
   readonly avatarUrl?: string | null;
   readonly role: WorkspaceRole;

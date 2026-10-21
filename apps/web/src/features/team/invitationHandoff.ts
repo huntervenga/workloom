@@ -28,8 +28,9 @@ export const invitationHandoff = {
     actor = null;
     publish(credential ? 'ready' : 'invalid');
   },
-  /** An anonymous arrival must sign in and reopen the original link, without carrying its credential. */
-  requireSignIn(): void { credential = null; actor = null; publish('sign-in-first'); },
+  /** Keep an anonymous link in memory until an explicit sign-in-and-join stages its HttpOnly handoff. */
+  requireSignIn(): void { actor = null; publish('sign-in-first'); },
+  forSignIn(): InvitationCredential | null { return actor === null ? credential : null; },
   claim(actorId: string): void {
     if (!credential) return;
     const id = actorId.toLowerCase();

@@ -1,15 +1,27 @@
 {
   "join": {
     "title": "Join a workspace",
-    "loading": "Checking your account\u2026",
+    "loading": "Checking your account…",
     "description": "Join this workspace as {{name}}.",
     "existingRole": "If you already belong to this workspace, your existing role stays the same.",
     "invalid": "This invitation link is invalid. Ask the workspace owner for a new link.",
     "reopen": "Open your invitation link again while signed in to accept it.",
     "signInFirst": "Sign in first, then reopen the original invitation link. Invitation credentials are never forwarded to sign-in.",
-    "joining": "Joining\u2026",
+    "joining": "Joining…",
     "accept": "Accept invitation",
-    "back": "Back to workspaces"
+    "back": "Back to workspaces",
+    "personalSignIn": "Sign in or register to join. For a personal invitation, use the same confirmed email the workspace owner invited. Your existing tasks will stay assigned to you.",
+    "signInAndJoin": "Sign in and join",
+    "preparing": "Preparing secure sign-in…",
+    "stageFailed": "Could not prepare this invitation. Try again; your link has not been lost.",
+    "resuming": "Completing your invitation…",
+    "tryAgain": "Try invitation again",
+    "emailUnverified": "Your account needs a confirmed email before it can accept this personal invitation. Sign in again to update verification, or ask the owner to check the address.",
+    "emailMismatch": "This invitation is for a different email. Sign in with the invited account, or ask the owner for a corrected invitation.",
+    "memberConflict": "This account already has a different membership in this workspace. Ask the owner to resolve it before claiming this pending person.",
+    "alreadyClaimed": "This person has already joined. Ask the owner for a new invitation if access needs restoring.",
+    "unavailable": "This invitation is unavailable or has expired. Ask the owner for a new link.",
+    "otherAccount": "Sign in with another account"
   },
   "command": {
     "uncertain": "The result has not been confirmed. Retry this same action to check its outcome.",
@@ -21,7 +33,7 @@
   "invite": "Create invitation",
   "copy": "Copy invitation link",
   "copied": "Link copied",
-  "linkReady": "Invitation ready. Copy the link now; it is kept only in this tab.",
+  "linkReady": "Copy this link to send privately. It is available only in this tab; you can create a replacement later without duplicating the person.",
   "role": "Role",
   "expires": "Expires in",
   "sevenDays": "7 days",
@@ -38,6 +50,22 @@
   "saveRole": "Change role",
   "removedHelp": "To restore access, create a new invitation.",
   "copyFailed": "Clipboard access was unavailable. Allow clipboard access and try again.",
-  "loading": "Loading team access\u2026",
-  "memberRole": "Role for {{name}}"
+  "loading": "Loading team access…",
+  "memberRole": "Role for {{name}}",
+  "personal": {
+    "form": "Add a teammate",
+    "title": "Invite a person",
+    "description": "Add their name and work email now, then assign tasks before they join. They receive access only after signing in with that confirmed email and accepting their personal link. No email is sent.",
+    "firstName": "First name",
+    "lastName": "Last name (optional)",
+    "email": "Work email",
+    "general": "Create a general invitation link instead",
+    "generalTitle": "General invitation link",
+    "generalHelp": "Anyone with this link can join after signing in. It does not add a pending person.",
+    "pending": "Not joined yet",
+    "pendingHelp": "Tasks can be assigned now. This person has no account access until they accept their personal invitation.",
+    "newLink": "Create replacement link",
+    "expiresOn": "Expires {{date}}",
+    "reissueHelp": "Need to send a personal link later? Create a replacement link for the same person. Earlier unaccepted links stop working; their tasks stay assigned."
+  }
 }

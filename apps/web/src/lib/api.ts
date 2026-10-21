@@ -26,6 +26,9 @@ const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
  */
 const duplicationReasons = ['meeting_or_unknown_task_type','archived_task','invalid_task_tree','too_many_tasks','linked_task','archived_source','meeting_parent_requires_added_scope','source_project_too_large','field_unavailable','todo_status_missing','section_order_full'] as const;
 export type DuplicationReason = typeof duplicationReasons[number];
+const invitationReasons = ['email_unverified', 'email_mismatch', 'member_conflict', 'pending_claimed'] as const;
+export type InvitationReason = typeof invitationReasons[number];
+function isInvitationReason(value: unknown): value is InvitationReason { return invitationReasons.some(reason => reason === value); }
 function isDuplicationReason(value:unknown):value is DuplicationReason { return duplicationReasons.some(reason=>reason===value); }
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
@@ -38,8 +41,10 @@ export class ApiError extends Error {
   readonly completionFieldsRequired:boolean;
   /** Bounded duplication rejection classification; no task names, values or raw details. */
   readonly duplicationReason:DuplicationReason|null;
+  /** Fixed invitation classification; never stores recipient addresses or raw server details. */
+  readonly invitationReason: InvitationReason | null;
 
-  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean;duplicationReason?:DuplicationReason|null }) {
+  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean;duplicationReason?:DuplicationReason|null;invitationReason?:InvitationReason|null }) {
     super(`Workloom API request failed: ${init.kind}${init.status === null ? '' : ` (${init.status})`}`);
     this.name = 'ApiError';
     this.kind = init.kind;
@@ -47,6 +52,7 @@ export class ApiError extends Error {
     this.code = init.code ?? null;
     this.requestId = init.requestId ?? null;
     this.completionFieldsRequired = this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&init.completionFieldsRequired===true;
+    this.invitationReason=this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&isInvitationReason(init.invitationReason)?init.invitationReason:null;
     this.duplicationReason=this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&isDuplicationReason(init.duplicationReason)?init.duplicationReason:null;
     this.fieldPolicyReason = this.code === 'FIELD_LOCKED' ? (init.fieldPolicyReason ?? null) : null;
   }
@@ -116,6 +122,7 @@ export async function apiRequest(path: string, options: ApiRequestOptions = {}):
       fieldPolicyReason:envelope.fieldPolicyReason,
       completionFieldsRequired:envelope.completionFieldsRequired,
       duplicationReason:envelope.duplicationReason,
+      invitationReason:envelope.invitationReason,
       requestId: safeToken(envelope.requestId ?? response.headers.get('x-request-id'), SAFE_REQUEST_ID),
     });
   }
@@ -224,15 +231,16 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean;duplicationReason:DuplicationReason|null } {
+function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean;duplicationReason:DuplicationReason|null;invitationReason:InvitationReason|null } {
   const parsed = errorResponseSchema.safeParse(payload);
-  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false,duplicationReason:null };
+  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false,duplicationReason:null,invitationReason:null };
   const envelope: unknown = parsed.data;
   const error = isRecord(envelope) ? envelope['error'] : undefined;
   const meta = isRecord(envelope) ? envelope['meta'] : undefined;
   const details=isRecord(error)?error['details']:null;
   const reason=isRecord(details)?details['policyReason']:null;
   return {
+    invitationReason:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&isRecord(details)&&isInvitationReason(details['invitationReason'])?details['invitationReason']:null,
     duplicationReason:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&isRecord(details)&&isDuplicationReason(details['duplicationReason'])?details['duplicationReason']:null,
     completionFieldsRequired:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&reason==='completion_fields_required',
     fieldPolicyReason:isRecord(error)&&error['code']==='FIELD_LOCKED'&&(reason==='deadline'||reason==='change_limit')?reason:null,

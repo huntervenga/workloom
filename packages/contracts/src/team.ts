@@ -4,9 +4,15 @@ import {envelopeSchema} from './common/envelope.js';
 import {utcTimestampSchema} from './tasks.js';
 import {membershipSchema} from './workspaces.js';
 export const teamInviteRoleSchema=z.enum(['admin','member','viewer']);
-export const teamMembershipSchema=membershipSchema.extend({state:z.enum(['active','revoked']),revision:z.number().int().positive(),revokedAt:utcTimestampSchema.nullable()});
-export const teamInvitationSchema=z.object({id:idSchema,workspaceId:idSchema,role:teamInviteRoleSchema,hashVersion:z.literal(1),createdByUserId:idSchema,createdByMembershipId:idSchema,createdAt:utcTimestampSchema,expiresAt:utcTimestampSchema,revision:z.number().int().positive(),revokedAt:utcTimestampSchema.nullable(),acceptedAt:utcTimestampSchema.nullable(),acceptedByUserId:idSchema.nullable(),acceptedMembershipId:idSchema.nullable()});
-export const issueTeamInvitationInputSchema=z.object({id:idSchema,hashVersion:z.literal(1),secretHash:z.string().regex(/^[a-f0-9]{64}$/),role:teamInviteRoleSchema,expiresInSeconds:z.number().int().min(60).max(604800)}).strict();
+/** Mailbox identity only: trim/case normalization, never Gmail dot/plus alias rewriting. */
+export const teamInvitationRecipientSchema=z.object({
+ firstName:z.string().regex(/^[^\p{Cc}]*$/u).trim().min(1).max(100),lastName:z.string().regex(/^[^\p{Cc}]*$/u).trim().max(100),
+ email:z.string().trim().toLowerCase().email().max(254),
+}).strict().refine(value=>[value.firstName,value.lastName].filter(Boolean).join(' ').length<=200,{message:'Full name must not exceed 200 characters.'});
+export type TeamInvitationRecipient=z.infer<typeof teamInvitationRecipientSchema>;
+export const teamMembershipSchema=membershipSchema.extend({email:z.string().email().optional(),state:z.enum(['active','revoked']),revision:z.number().int().positive(),revokedAt:utcTimestampSchema.nullable()});
+export const teamInvitationSchema=z.object({id:idSchema,workspaceId:idSchema,role:teamInviteRoleSchema,hashVersion:z.literal(1),createdByUserId:idSchema,createdByMembershipId:idSchema,createdAt:utcTimestampSchema,expiresAt:utcTimestampSchema,revision:z.number().int().positive(),revokedAt:utcTimestampSchema.nullable(),acceptedAt:utcTimestampSchema.nullable(),acceptedByUserId:idSchema.nullable(),acceptedMembershipId:idSchema.nullable(),recipient:teamInvitationRecipientSchema.optional(),pendingMembershipId:idSchema.optional()});
+export const issueTeamInvitationInputSchema=z.object({id:idSchema,hashVersion:z.literal(1),secretHash:z.string().regex(/^[a-f0-9]{64}$/),role:teamInviteRoleSchema,expiresInSeconds:z.number().int().min(60).max(604800),recipient:teamInvitationRecipientSchema.optional()}).strict();
 export const revokeTeamInvitationInputSchema=z.object({expectedRevision:z.number().int().positive()}).strict();
 export const updateTeamMembershipInputSchema=z.object({expectedRevision:z.number().int().positive(),role:teamInviteRoleSchema,state:z.enum(['active','revoked'])}).strict();
 export const acceptTeamInvitationInputSchema=z.object({invitationId:idSchema,secret:z.string().regex(/^[A-Za-z0-9_-]{43}$/)}).strict();

@@ -28,17 +28,18 @@ describe('invitation credentials in one tab', () => {
     invitationHandoff.claim(id);
     expect(invitationHandoff.forActor(id)?.secret).toBe(secret);
   });
-  it('clears secrets for anonymous sign-in and route departure, requiring the original link again', () => {
+  it('keeps anonymous credentials only in memory for explicit staging, and clears them on route departure', () => {
     const history = { state: null, replaceState: vi.fn() };
     invitationHandoff.capture(location(), history);
     invitationHandoff.requireSignIn();
-    invitationHandoff.claim(id);
+    expect(invitationHandoff.forSignIn()).toEqual({ invitationId: id, secret });
     expect(invitationHandoff.forActor(id)).toBeNull();
     expect(invitationHandoff.getSnapshot()).toBe('sign-in-first');
     invitationHandoff.capture(location(), history);
     invitationHandoff.claim(id);
     invitationHandoff.clear();
     expect(invitationHandoff.forActor(id)).toBeNull();
+    expect(invitationHandoff.forSignIn()).toBeNull();
   });
   it.each(['/app/auth/callback', '/app/w/workspace', '/', '/app/%2Fjoin', '/app/%256aoin', '/app/%6aoin%ZZ'])('never captures or rewrites an unrelated path %s', pathname => {
     const history = { state: null, replaceState: vi.fn() };

@@ -110,7 +110,7 @@ export function createSharedAuthStore(source: Database): SharedAuthStore {
       hash(input.sessionHash); if (!UUID.test(input.userId)) throw invalid();
       const encryptedTokens = cipher(input.encryptedTokens), accessExpiresAt = instant(input.accessExpiresAt), expiresAt = instant(input.expiresAt);
       await source.db.transaction(async tx => {
-        const [user] = await tx.select({ kind: users.kind }).from(users).where(eq(users.id, input.userId)).for('share');
+        const [user] = await tx.select({ kind: users.kind }).from(users).innerJoin(sharedAuthIdentities, eq(sharedAuthIdentities.userId, users.id)).where(eq(users.id, input.userId)).for('share');
         if (user?.kind !== 'real') throw invalid();
         await tx.insert(sharedAuthSessions).values({ sessionHash: input.sessionHash, userId: input.userId, encryptedTokens, accessExpiresAt, expiresAt });
       });

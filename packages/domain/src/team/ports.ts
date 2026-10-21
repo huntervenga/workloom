@@ -1,4 +1,4 @@
-import type {TeamInvitationDto,TeamMembershipDto,TeamInviteRole} from '@workloom/contracts';
+import type {TeamInvitationDto,TeamMembershipDto,TeamInviteRole,TeamInvitationRecipient} from '@workloom/contracts';
 import type {CommandContext} from '../access/context.js';
 import type {WorkspaceWriteScope,ChangeEventInput} from '../transactions/ports.js';
 import type {TeamAcceptanceContext} from './application.js';
@@ -11,6 +11,9 @@ export interface TeamRepository {
  listMembers():Promise<TeamMembershipDto[]>;
  findMember(id:string):Promise<TeamMembershipDto|null>;
  updateMember(row:TeamMembershipDto,at:Date):Promise<void>;
+ findPendingMember(email:string):Promise<TeamMembershipDto|null>;
+ createPendingMember(recipient:TeamInvitationRecipient,role:TeamInviteRole,at:Date):Promise<TeamMembershipDto>;
+ refreshPendingMember(member:TeamMembershipDto,recipient:TeamInvitationRecipient,role:TeamInviteRole,at:Date):Promise<TeamMembershipDto>;
  bumpPermissionEpoch():Promise<void>;
  receipt(actor:string,command:string,key:string):Promise<{payloadHash:string;result:unknown}|null>;
  saveReceipt(actor:string,command:string,key:string,payloadHash:string,result:unknown,at:Date):Promise<void>;

@@ -210,3 +210,18 @@ describe('bounded duplication error classification',()=>{
   const error=await captureError(apiGet('/api/v1/workspaces',workspaceResponseSchema));expect(error.duplicationReason).toBeNull();expect(JSON.stringify({...error,message:error.message})).not.toMatch(/hunter2|s3cret|select/);
  });
 });
+
+
+describe('personal invitation error privacy', () => {
+  it.each(['email_unverified','email_mismatch','member_conflict','pending_claimed'] as const)('keeps the bounded %s classification without recipient data', async invitationReason => {
+    stubFetch(json(422, {error:{code:'DOMAIN_VALIDATION_FAILED',message:leakyMessage,retryable:false,details:{invitationReason,email:'private@example.com',rawSecret:leakyMessage}},meta:{requestId:'invite'}}));
+    const error = await captureError(apiGet('/invitation',workspaceResponseSchema));
+    expect(error.invitationReason).toBe(invitationReason);
+    expect(JSON.stringify(error)).not.toMatch(/private@example.com|hunter2|s3cret/);
+    expect(error).not.toHaveProperty('details');
+  });
+  it.each([[403,'DOMAIN_VALIDATION_FAILED','email_mismatch'],[500,'DOMAIN_VALIDATION_FAILED','email_mismatch'],[422,'FIELD_LOCKED','email_mismatch'],[422,'DOMAIN_VALIDATION_FAILED','arbitrary']] as const)('rejects unrelated invitation classification (%s,%s,%s)',async(status,code,invitationReason)=>{
+    stubFetch(json(status,{error:{code,message:leakyMessage,retryable:false,details:{invitationReason}},meta:{requestId:'invite'}}));
+    expect((await captureError(apiGet('/invitation',workspaceResponseSchema))).invitationReason).toBeNull();
+  });
+});

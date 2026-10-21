@@ -32,7 +32,7 @@ export interface FakeSharedAuth {
   readonly origin: string;
   readonly identities: { readonly a: FakeSharedAuthIdentity; readonly b: FakeSharedAuthIdentity };
   /** Adds a fresh subject without replacing the provider key/JWKS used by the running API. */
-  registerIdentity(label: string, options?: { readonly picture?: string | null }): RegisteredFakeSharedAuthIdentity;
+  registerIdentity(label: string, options?: { readonly picture?: string | null; readonly email?: string }): RegisteredFakeSharedAuthIdentity;
   stats(): FakeSharedAuthStats;
   close(): Promise<void>;
 }
@@ -321,7 +321,9 @@ export async function startFakeSharedAuth(options: { port: number; appOrigin: st
       const clean = label.trim();
       if (!clean || clean.length > 80 || [...clean].some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) throw new Error('Invalid private test identity label.');
       const picture = options?.picture;
-      const identity: FakeSharedAuthIdentity = { id: randomUUID(), email: QA_EMAIL, name: QA_NAME, ...(picture === undefined ? {} : { picture }) };
+      const email = options?.email ?? QA_EMAIL;
+      if (!/^[a-zA-Z0-9._+-]+@gmail\.com$/.test(email) || email.length > 254) throw new Error('Invalid private test email.');
+      const identity: FakeSharedAuthIdentity = { id: randomUUID(), email, name: QA_NAME, ...(picture === undefined ? {} : { picture }) };
       const buttonName = `Continue as ${clean}`;
       if ([...accounts.values()].some(entry => entry.buttonName === buttonName)) throw new Error('Private test identity label is already registered.');
       identityById.set(identity.id, identity);

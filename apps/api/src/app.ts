@@ -49,6 +49,7 @@ import { createDevSessionStore, type DevSessionStore } from './identity/dev-sess
 import { createDevIdentityAdapter, type IdentityAdapter } from './identity/identity-adapter.js';
 import { createSharedAuthService, type AuthFetch, type SharedAuthService } from './identity/shared-auth.js';
 import { registerAuthConfigRoute, registerSharedAuthRoutes } from './http/auth-routes.js';
+import { createInvitationHandoff } from './identity/invitation-handoff.js';
 import { HttpError, mapError } from './http/errors.js';
 import { registerCutoffRoutes } from './http/cutoff-routes.js';
 import { registerCategoryRoutes } from './http/category-routes.js';
@@ -331,7 +332,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   registerHealthRoutes(app, readiness);
   registerAuthConfigRoute(app, config.authMode);
   if (sharedAuth !== undefined) {
-    registerSharedAuthRoutes(app, { service: sharedAuth });
+    registerSharedAuthRoutes(app, { service: sharedAuth, ...(config.sharedAuth && teamApplication ? { invitationHandoff: createInvitationHandoff(config.sharedAuth, dependencies.clock), team: teamApplication } : {}) });
   }
   registerApiRoutes(app, routeDeps);
   if (identity.mode === 'shared' && workspaceCreateApplication !== undefined) {

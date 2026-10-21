@@ -831,7 +831,7 @@ export const REQUIRED_TABLES = [
   'leave_settings','leave_settings_versions','leave_profiles','leave_profile_versions','leave_requests','leave_request_versions','leave_charge_ledger','leave_adjustments',
   'generic_report_definitions', 'generic_report_definition_versions', 'generic_report_initial_snapshots', 'generic_report_column_settings',
   'task_field_policies', 'task_field_policy_usage',
-  'team_invitations',
+  'team_invitations', 'team_pending_members',
   'shared_auth_identities', 'shared_auth_sessions', 'shared_auth_login_attempts',
   'local_mcp_credentials',
   'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
@@ -1525,7 +1525,10 @@ export const teamInvitations=pgTable('team_invitations',{
  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),secretHash:text('secret_hash').notNull(),hashVersion:integer('hash_version').notNull(),role:workspaceRoleEnum('role').notNull(),
  createdByUserId:uuid('created_by_user_id').notNull(),createdByMembershipId:uuid('created_by_membership_id').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),expiresAt:timestamp('expires_at',{withTimezone:true}).notNull(),revision:integer('revision').notNull().default(1),revokedAt:timestamp('revoked_at',{withTimezone:true}),
  acceptedAt:timestamp('accepted_at',{withTimezone:true}),acceptedByUserId:uuid('accepted_by_user_id'),acceptedMembershipId:uuid('accepted_membership_id'),
+ recipient:jsonb('recipient').$type<{firstName:string;lastName:string;email:string}>(),pendingMembershipId:uuid('pending_membership_id'),
 },t=>[
+ foreignKey({name:'team_invitations_pending_member_fk',columns:[t.workspaceId,t.pendingMembershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),
+ check('team_invitations_recipient_pair',sql`(${t.recipient} is null) = (${t.pendingMembershipId} is null)`),
  foreignKey({name:'team_invitations_workspace_fk',columns:[t.workspaceId],foreignColumns:[workspaces.id]}),
  foreignKey({name:'team_invitations_issuer_fk',columns:[t.workspaceId,t.createdByMembershipId,t.createdByUserId],foreignColumns:[memberships.workspaceId,memberships.id,memberships.userId]}),
  foreignKey({name:'team_invitations_acceptor_fk',columns:[t.workspaceId,t.acceptedMembershipId,t.acceptedByUserId],foreignColumns:[memberships.workspaceId,memberships.id,memberships.userId]}),
@@ -1681,3 +1684,17 @@ export const sharedActivityContributions=pgTable('shared_activity_contributions'
 export const sharedActivityContributionVersions=pgTable('shared_activity_contribution_versions',{
  id:uuid('id').primaryKey(),workspaceId:uuid('workspace_id').notNull(),activityId:uuid('activity_id').notNull(),contributionId:uuid('contribution_id').notNull(),revision:integer('revision').notNull(),document:jsonb('document').$type<SharedActivityHistoryDto>().notNull(),actorUserId:uuid('actor_user_id').notNull().references(()=>users.id),changeSeq:bigint('change_seq',{mode:'bigint'}).notNull(),recordedAt:timestamp('recorded_at',{withTimezone:true}).notNull(),
 },t=>[unique('shared_contribution_version_unique').on(t.workspaceId,t.contributionId,t.revision),foreignKey({name:'shared_contribution_version_fk',columns:[t.workspaceId,t.activityId,t.contributionId],foreignColumns:[sharedActivityContributions.workspaceId,sharedActivityContributions.activityId,sharedActivityContributions.id]}),foreignKey({name:'shared_contribution_version_activity_fk',columns:[t.workspaceId,t.activityId],foreignColumns:[sharedActivities.workspaceId,sharedActivities.id]}),check('shared_contribution_version_identity',sql`(document->>'id'=id::text and document->'contribution'->>'id'=contribution_id::text and document->'contribution'->>'workspaceId'=workspace_id::text and document->'contribution'->>'activityId'=activity_id::text and (document->'contribution'->>'revision')::integer=revision and revision>0 and change_seq>0) is true`)]);
+
+/** Workspace-owned planning identity. Its stable membership survives binding to an actual Auth user. */
+export const teamPendingMembers=pgTable('team_pending_members',{
+ workspaceId:uuid('workspace_id').notNull(),membershipId:uuid('membership_id').notNull(),placeholderUserId:uuid('placeholder_user_id').notNull().references(()=>users.id),
+ firstName:text('first_name').notNull(),lastName:text('last_name').notNull(),email:text('email').notNull(),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull(),claimedAt:timestamp('claimed_at',{withTimezone:true}),claimedByUserId:uuid('claimed_by_user_id').references(()=>users.id),
+},t=>[
+ primaryKey({name:'team_pending_members_pk',columns:[t.workspaceId,t.membershipId]}),
+ unique('team_pending_members_email_unique').on(t.workspaceId,t.email),unique('team_pending_members_placeholder_unique').on(t.placeholderUserId),
+ foreignKey({name:'team_pending_members_membership_fk',columns:[t.workspaceId,t.membershipId],foreignColumns:[memberships.workspaceId,memberships.id]}),
+ check('team_pending_members_name',sql`char_length(btrim(${t.firstName})) between 1 and 100 and char_length(${t.lastName})<=100 and char_length(concat_ws(' ',${t.firstName},nullif(${t.lastName},'')))<=200`),
+ check('team_pending_members_email',sql`${t.email}=lower(btrim(${t.email})) and char_length(${t.email}) between 3 and 254`),
+ check('team_pending_members_claim',sql`(${t.claimedAt} is null)=(${t.claimedByUserId} is null)`),
+]);

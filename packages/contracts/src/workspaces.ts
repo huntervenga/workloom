@@ -22,6 +22,8 @@ export const membershipSchema = z.object({
   workspaceId: idSchema,
   userId: idSchema,
   displayName: z.string(),
+  /** A schedulable invited person has no account/access until the addressed invitation is accepted. */
+  pending: z.boolean().optional(),
   /** The member user's verified profile photo; absent or null renders initials. */
   avatarUrl: profilePhotoUrlSchema.nullable().optional(),
   role: workspaceRoleSchema,
