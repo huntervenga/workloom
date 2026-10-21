@@ -1,3 +1,4 @@
+import { AsanaImportButton } from '../features/asana-import/AsanaImportButton';
 import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { useTranslation } from '../i18n';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
@@ -41,14 +42,17 @@ export function ProjectsPage() {
               : t('routes.projectsDescription')}
           </p>
         </div>
-        {canEdit ? (
-          <CreateProjectDialog
-            actorId={actorId}
-            workspaceId={workspace.id}
-            trigger={createTrigger}
-            onCreated={(project) => setAnnouncement({ kind: 'created', name: project.name })}
-          />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <AsanaImportButton actorId={actorId} workspaceId={workspace.id} isOwner={workspace.role === 'owner'} />
+          {canEdit ? (
+            <CreateProjectDialog
+              actorId={actorId}
+              workspaceId={workspace.id}
+              trigger={createTrigger}
+              onCreated={(project) => setAnnouncement({ kind: 'created', name: project.name })}
+            />
+          ) : null}
+        </div>
       </header>
 
       {canEdit ? null : (

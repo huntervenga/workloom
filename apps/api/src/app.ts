@@ -1,3 +1,4 @@
+import {managedLocalAsanaTarget,registerLocalAsanaImportRoutes,type LocalAsanaImporter} from './http/local-asana-import-routes.js';
 import { registerWorkspaceSlugRoutes } from './http/workspace-slug-routes.js';
 import { createWorkspaceSlugApplication } from '@workloom/db';
 import type { WorkspaceSlugApplication } from '@workloom/domain';
@@ -132,6 +133,8 @@ export interface AppDependencies {
   /** Credential-bound MCP facade; writes require current scopes and the shared barrier check. */
   readonly localCredentialApplication?: LocalCredentialApplication;
   readonly localMcpApplication?: LocalMcpApplication;
+  /** Trusted local test port; registration still requires local/shared managed target. */
+  readonly localAsanaImporter?: LocalAsanaImporter;
   readonly identityAdapter?: IdentityAdapter;
   readonly devSessions?: DevSessionStore;
   /** AUTH_MODE=shared store; without it the store is built from the database (never in-memory). */
@@ -340,6 +343,11 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     registerSharedAuthRoutes(app, { service: sharedAuth, ...(config.sharedAuth && teamApplication ? { invitationHandoff: createInvitationHandoff(config.sharedAuth, dependencies.clock), team: teamApplication } : {}) });
   }
   registerApiRoutes(app, routeDeps);
+  if(managedLocalAsanaTarget(config.appEnv,config.authMode,config.database.url)){
+    let importer=dependencies.localAsanaImporter;
+    if(!importer){const adapterUrl=new URL('../../../scripts/asana-browser-import.mjs',import.meta.url).href;const adapter=await import(adapterUrl) as {createAsanaBrowserImporter:(options:{databaseUrl:string})=>LocalAsanaImporter};importer=adapter.createAsanaBrowserImporter({databaseUrl:config.database.url});}
+    registerLocalAsanaImportRoutes(app,{identity,repository,importer});
+  }
   if (identity.mode === 'shared' && workspaceCreateApplication !== undefined) {
     registerWorkspaceCreateRoutes(app, { identity, workspaces: workspaceCreateApplication });
   }

@@ -4,6 +4,8 @@ Import one matching JSON and CSV export pair into an explicitly selected local W
 
 Use `$workloom-asana-import` with the export pair and target workspace to run this workflow. Its [skill instructions](../.agents/skills/workloom-asana-import/SKILL.md) call this same method; no separate import algorithm is maintained.
 
+For the owner-only local browser workflow, see [Projects → Import from Asana](111-local-asana-upload.md). It calls this same method; the guide records availability and recovery limits separately from activation evidence.
+
 ## Method and CLI
 
 The executable method is exported by `scripts/import-asana-project.mjs`:

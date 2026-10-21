@@ -1,0 +1,29 @@
+import {z} from 'zod';
+import {idSchema} from '@workloom/contracts';
+import {DomainError,getWorkspaceForActor,type AccessRepository} from '@workloom/domain';
+import type {FastifyInstance,FastifyRequest} from 'fastify';
+import type {IdentityAdapter} from '../identity/identity-adapter.js';
+import {parseInput,sendData} from './envelope.js';
+import {HttpError} from './errors.js';
+import {readIdempotencyKey} from './task-routes.js';
+const workspace=z.object({workspaceId:idSchema}).strict(),uploadPath=workspace.extend({uploadId:idSchema}),empty=z.object({}).strict();
+const previewInput=z.object({jsonBase64:z.string().min(1).max(13981016),csvBase64:z.string().min(1).max(13981016),preserveMilestones:z.boolean(),preserveExternalDependencies:z.boolean()}).strict();
+const summary=z.object({projectName:z.string(),tasks:z.number().int().nonnegative(),roots:z.number().int().nonnegative(),subtasks:z.number().int().nonnegative(),sections:z.number().int().nonnegative(),createTasks:z.number().int().nonnegative(),reuseTasks:z.number().int().nonnegative(),completed:z.number().int().nonnegative(),fields:z.array(z.object({name:z.string(),type:z.string()})),warnings:z.array(z.string()),existingProjectId:idSchema.optional()});
+const previewData=z.object({uploadId:idSchema,preview:summary}),appliedData=z.object({projectId:idSchema,reportId:idSchema.nullable(),taskCount:z.number().int().nonnegative(),createdTasks:z.number().int().nonnegative(),reusedTasks:z.number().int().nonnegative()});
+const envelope=<T extends z.ZodType>(data:T)=>z.object({data,meta:z.object({requestId:z.string()})});
+export type LocalAsanaPreview=z.infer<typeof previewData>;
+export interface LocalAsanaImporter {
+ authorize(workspaceId:string,ownerUserId:string):Promise<void>;
+ preview(workspaceId:string,ownerUserId:string,input:z.infer<typeof previewInput>):Promise<LocalAsanaPreview>;
+ apply(workspaceId:string,ownerUserId:string,uploadId:string):Promise<z.infer<typeof appliedData>>;
+}
+export function managedLocalAsanaTarget(appEnv:string,authMode:string,url:string):boolean{try{const target=new URL(url);return appEnv==='local'&&authMode==='shared'&&['postgres:','postgresql:'].includes(target.protocol)&&['127.0.0.1','localhost','[::1]'].includes(target.hostname)&&target.port==='55432'&&target.pathname==='/workloom_dev'&&!target.search&&!target.hash;}catch{return false;}}
+/** Only registered by createApp after the local/shared/managed-target gate. */
+export function registerLocalAsanaImportRoutes(app:FastifyInstance,deps:{identity:IdentityAdapter;repository:AccessRepository;importer:LocalAsanaImporter}):void{
+ const base='/api/v1/workspaces/:workspaceId/dev/asana-import';
+ async function owner(request:FastifyRequest,workspaceId:string,write=false){parseInput(empty,request.query);if(deps.identity.mode!=='shared')throw new DomainError('CAPABILITY_REQUIRED','Only the signed-in workspace owner can import projects.');if(write)readIdempotencyKey(request);const intended=write?parseInput(idSchema,request.headers['x-workloom-actor-id']):undefined,actor=await deps.identity.resolveActor(request);if(actor.kind!=='real')throw new DomainError('CAPABILITY_REQUIRED','Only the signed-in workspace owner can import projects.');if(intended&&intended!==actor.userId.toLowerCase())throw new DomainError('REVISION_CONFLICT','The signed-in account changed. Reload and retry.');const view=await getWorkspaceForActor(deps.repository,{actor,workspaceId});if(view.role!=='owner')throw new DomainError('CAPABILITY_REQUIRED','Only the signed-in workspace owner can import projects.');await operation(()=>deps.importer.authorize(workspaceId,actor.userId));return actor.userId;}
+ async function operation<T>(run:()=>Promise<T>):Promise<T>{try{return await run();}catch(error){const e=error as {code?:unknown;status?:unknown};const messages:Record<string,string>={ASANA_IMPORT_INVALID_FILES:'Check that both exports are from the same project and review the preservation options.',ASANA_IMPORT_MAPPING_REQUIRED:'Member or field mappings need local operator review.',ASANA_IMPORT_REVIEW_REQUIRED:'This snapshot conflicts with an existing import or current data. Resume the original upload or ask the local operator to review it.',ASANA_IMPORT_BUSY:'This import is already running. Wait, then retry the same upload.',ASANA_IMPORT_NOT_FOUND:'This upload or original project is unavailable. Upload the pair again or ask the local operator to review it.',ASANA_IMPORT_FORBIDDEN:'Only the signed-in workspace owner can import projects.'};if(typeof e.code==='string'&&messages[e.code]&&typeof e.status==='number'&&[400,403,404,409,422].includes(e.status))throw new HttpError(e.status,e.code,messages[e.code]??'The import could not finish.');throw new HttpError(422,'ASANA_IMPORT_FAILED','The import could not finish. Retry the same upload or ask the local operator to review it.');}}
+ app.get(base,async(request,reply)=>{const p=parseInput(workspace,request.params);await owner(request,p.workspaceId);return sendData(request,reply,envelope(z.object({enabled:z.literal(true)})),{enabled:true});});
+ app.post(`${base}/preview`,{bodyLimit:28*1024*1024,onRequest:async request=>{const encoding=request.headers['content-encoding'];if(encoding!==undefined&&encoding!=='identity')throw new HttpError(415,'UNSUPPORTED_MEDIA_TYPE','Send uncompressed JSON export bytes encoded as base64.');}},async(request,reply)=>{const p=parseInput(workspace,request.params),actorId=await owner(request,p.workspaceId,true),input=parseInput(previewInput,request.body);return sendData(request,reply,envelope(previewData),await operation(()=>deps.importer.preview(p.workspaceId,actorId,input)));});
+ app.post(`${base}/:uploadId/apply`,async(request,reply)=>{const p=parseInput(uploadPath,request.params),actorId=await owner(request,p.workspaceId,true);parseInput(empty,request.body);return sendData(request,reply,envelope(appliedData),await operation(()=>deps.importer.apply(p.workspaceId,actorId,p.uploadId)));});
+}
