@@ -207,5 +207,9 @@
   "recordedAbsence": "Recorded absence",
   "recordedBalanceDays": "{{days}} recorded balance days",
   "scheduleHint": "Daily working hours define scheduled capacity before holidays and time off. For a temporary change, add a period on its start date and another to restore the usual hours.",
-  "weeklyScheduledHours": "Weekly scheduled hours: {{hours}}h"
+  "weeklyScheduledHours": "Weekly scheduled hours: {{hours}}h",
+  "personHistory": "Time off history",
+  "historyHint": "All dates, leave types and recorded charges for this person. Open an entry to review or correct it.",
+  "noPersonHistory": "No time off recorded for this person.",
+  "saveRequestBeforeSwitch": "Save or discard your request changes below before switching person or view."
 }
