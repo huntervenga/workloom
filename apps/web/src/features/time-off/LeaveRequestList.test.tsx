@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 import type { LeaveOverviewDto, LeaveRequestDto } from '@workloom/contracts';
 import { alpha, anna, installFakeApi, ok } from '../../test/fakeApi';
-import { LeaveRequestList } from './LeaveRequestList';
+import { ApiError } from '../../lib/api';
+import { LeaveRequestList, type RequestMutationError } from './LeaveRequestList';
 import { MEMBER, OTHER, UNPAID, overview, prefix, required, VACATION } from './test/fixtures';
 const request: LeaveRequestDto = { id:'f0000000-0000-4000-8000-000000000001',workspaceId:alpha.id,membershipId:MEMBER,typeId:VACATION,revision:1,startDate:'2026-10-18',endDate:'2026-10-23',status:'approved',note:'Private note',createdBy:MEMBER,createdAt:'2026-10-01T09:00:00.000Z',updatedAt:'2026-10-01T09:00:00.000Z',consumesBalance:true,pausesAccrual:false,capacityUnavailable:true,chargedDays:[],negativeApproved:false };
 function mount(data:LeaveOverviewDto, props:Partial<ComponentProps<typeof LeaveRequestList>> = {}) { const client = new QueryClient({defaultOptions:{queries:{retry:false}}}); const onUpdate=vi.fn().mockResolvedValue(request),onDecision=vi.fn().mockResolvedValue(request); const view=render(<QueryClientProvider client={client}><LeaveRequestList actorId={anna.id} overview={data} disabled={false} onUpdate={onUpdate} onDecision={onDecision} {...props}/></QueryClientProvider>); return {...view,client,onUpdate,onDecision}; }
@@ -37,4 +38,203 @@ describe('leave request history and approval',()=>{
   expect(screen.getByLabelText('Private note (you and administrators)')).toHaveValue('Unsent correction');expect(screen.getByText(/changed elsewhere/)).toBeVisible();await user.click(screen.getByRole('button',{name:'Discard local changes'}));expect(screen.getByLabelText('Private note (you and administrators)')).toHaveValue('Remote saved note');await waitFor(()=>expect(onDirty).toHaveBeenLastCalledWith(false));view.unmount();view.client.clear();
  });
 
+});
+
+describe('inline mutation error handling', () => {
+ it('displays a stale revision error inline with load latest action', async () => {
+  const data = overview();
+  data.requests = [{ ...request, startDate: '2026-11-02', endDate: '2026-11-02' }];
+  const onRetry = vi.fn(), onDismiss = vi.fn();
+  const staleError: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'conflict', status: 409, code: 'REVISION_CONFLICT' }),
+   isUncertain: false,
+   onRetry,
+   onDismiss,
+  };
+  const user = userEvent.setup();
+  const { container, unmount, client } = mount(data, { mutationErrors: { [request.id]: staleError } });
+  required(container.querySelector('details')).open = true;
+  const alert = screen.getByRole('alert');
+  expect(within(alert).getByText(/modified elsewhere/i)).toBeVisible();
+  expect(within(alert).getByRole('button', { name: /refresh current record/i })).toBeVisible();
+  expect(within(alert).getByRole('button', { name: /dismiss/i })).toBeVisible();
+  await user.click(within(alert).getByRole('button', { name: /dismiss/i }));
+  expect(onDismiss).toHaveBeenCalledOnce();
+  unmount(); client.clear();
+ });
+
+ it('displays an uncertain write error inline with retry exact action and no dismiss', async () => {
+  const data = overview();
+  data.requests = [{ ...request, startDate: '2026-11-02', endDate: '2026-11-02' }];
+  const onRetry = vi.fn(), onDismiss = vi.fn();
+  const uncertainError: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'network', status: null }),
+   isUncertain: true,
+   onRetry,
+   onDismiss,
+  };
+  const user = userEvent.setup();
+  const { container, unmount, client } = mount(data, { mutationErrors: { [request.id]: uncertainError } });
+  required(container.querySelector('details')).open = true;
+  const alert = screen.getByRole('alert');
+  expect(within(alert).getByText(/not confirmed/i)).toBeVisible();
+  expect(within(alert).getByRole('button', { name: /retry exact/i })).toBeVisible();
+  // Uncertain outcomes must NOT offer dismiss action
+  expect(within(alert).queryByRole('button', { name: /dismiss/i })).not.toBeInTheDocument();
+  await user.click(within(alert).getByRole('button', { name: /retry exact/i }));
+  expect(onRetry).toHaveBeenCalledOnce();
+  expect(onDismiss).not.toHaveBeenCalled();
+  unmount(); client.clear();
+ });
+
+ it('displays a validation error inline without retry action', async () => {
+  const data = overview();
+  data.requests = [{ ...request, startDate: '2026-11-02', endDate: '2026-11-02' }];
+  const onRetry = vi.fn(), onDismiss = vi.fn();
+  const validationError: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'validation', status: 422, code: 'DOMAIN_VALIDATION_FAILED' }),
+   isUncertain: false,
+   onRetry,
+   onDismiss,
+  };
+  const user = userEvent.setup();
+  const { container, unmount, client } = mount(data, { mutationErrors: { [request.id]: validationError } });
+  required(container.querySelector('details')).open = true;
+  const alert = screen.getByRole('alert');
+  expect(within(alert).queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  expect(within(alert).getByRole('button', { name: /dismiss/i })).toBeVisible();
+  await user.click(within(alert).getByRole('button', { name: /dismiss/i }));
+  expect(onDismiss).toHaveBeenCalledOnce();
+  unmount(); client.clear();
+ });
+
+ it('preserves draft fields when mutation error is displayed', async () => {
+  const data = overview();
+  data.requests = [{ ...request, startDate: '2026-11-02', endDate: '2026-11-02' }];
+  const staleError: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'conflict', status: 409, code: 'REVISION_CONFLICT' }),
+   isUncertain: false,
+   onRetry: vi.fn(),
+   onDismiss: vi.fn(),
+  };
+  const user = userEvent.setup();
+  const { container, unmount, client } = mount(data, { mutationErrors: { [request.id]: staleError } });
+  required(container.querySelector('details')).open = true;
+  await user.clear(screen.getByLabelText('Private note (you and administrators)'));
+  await user.type(screen.getByLabelText('Private note (you and administrators)'), 'My important edit');
+  expect(screen.getByLabelText('Private note (you and administrators)')).toHaveValue('My important edit');
+  expect(screen.getByRole('alert')).toBeVisible();
+  unmount(); client.clear();
+ });
+
+ it('scopes mutation errors to specific requests only', () => {
+  const data = overview();
+  const request2 = { ...request, id: 'f0000000-0000-4000-8000-000000000002', note: 'Second request' };
+  data.requests = [
+   { ...request, startDate: '2026-11-02', endDate: '2026-11-02', note: 'First request' },
+   { ...request2, startDate: '2026-11-03', endDate: '2026-11-03' },
+  ];
+  const errorForFirst: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'conflict', status: 409, code: 'REVISION_CONFLICT' }),
+   isUncertain: false,
+   onRetry: vi.fn(),
+   onDismiss: vi.fn(),
+  };
+  const { container, unmount, client } = mount(data, { mutationErrors: { [request.id]: errorForFirst } });
+  const details = container.querySelectorAll('details');
+  required(details[0]).open = true;
+  required(details[1]).open = true;
+  const firstEditor = within(required(screen.getByText('First request').closest('details')));
+  const secondEditor = within(required(screen.getByText('Second request').closest('details')));
+  expect(firstEditor.getByRole('alert')).toBeVisible();
+  expect(secondEditor.queryByRole('alert')).not.toBeInTheDocument();
+  unmount(); client.clear();
+ });
+
+ it('refreshes conflicting source without discarding the local draft', async () => {
+  const data = overview();
+  data.requests = [{ ...request, startDate: '2026-11-02', endDate: '2026-11-02', revision: 2, note: 'Server updated note' }];
+  const onDismiss = vi.fn(), onRetry = vi.fn();
+  const staleError: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'conflict', status: 409, code: 'REVISION_CONFLICT' }),
+   isUncertain: false,
+   onRetry,
+   onDismiss,
+  };
+  const user = userEvent.setup();
+  const { container, unmount, client } = mount(data, { mutationErrors: { [request.id]: staleError } });
+  required(container.querySelector('details')).open = true;
+  const alert = screen.getByRole('alert');
+  await user.click(within(alert).getByRole('button', { name: /refresh current record/i }));
+  expect(onRetry).toHaveBeenCalledOnce(); expect(onDismiss).not.toHaveBeenCalled();
+  unmount(); client.clear();
+ });
+
+ it('displays PREVIEW_STALE error with refresh preview action, not stale revision text', () => {
+  const data = overview();
+  data.requests = [{ ...request, startDate: '2026-11-02', endDate: '2026-11-02' }];
+  const previewStaleError: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'conflict', status: 409, code: 'PREVIEW_STALE' }),
+   isUncertain: false,
+   onRetry: vi.fn(),
+   onDismiss: vi.fn(),
+  };
+  const { container, unmount, client } = mount(data, { mutationErrors: { [request.id]: previewStaleError } });
+  required(container.querySelector('details')).open = true;
+  const alert = screen.getByRole('alert');
+  // Should show preview stale message, not revision conflict message
+  expect(within(alert).getByText(/server data changed|refresh the preview/i)).toBeVisible();
+  expect(within(alert).queryByText(/modified elsewhere/i)).not.toBeInTheDocument();
+  // Should have refresh preview button
+  expect(within(alert).getByRole('button', { name: /refresh preview/i })).toBeVisible();
+  // Should NOT have load latest button (that's for revision conflicts)
+  expect(within(alert).queryByRole('button', { name: /refresh current record/i })).not.toBeInTheDocument();
+  unmount(); client.clear();
+ });
+
+ it('enables uncertain retry button even when disabled prop is true', () => {
+  const data = overview();
+  data.requests = [{ ...request, startDate: '2026-11-02', endDate: '2026-11-02' }];
+  const onRetry = vi.fn();
+  const uncertainError: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'unavailable', status: 503 }),
+   isUncertain: true,
+   onRetry,
+   onDismiss: vi.fn(),
+  };
+  // Mount with disabled=true (simulating global busy state)
+  const { container, unmount, client } = mount(data, { disabled: true, mutationErrors: { [request.id]: uncertainError } });
+  required(container.querySelector('details')).open = true;
+  const alert = screen.getByRole('alert');
+  // Retry button must be enabled despite disabled=true
+  const retryBtn = within(alert).getByRole('button', { name: /retry exact/i });
+  expect(retryBtn).toBeEnabled();
+  unmount(); client.clear();
+ });
+
+ it('shows safe request ID from error description, not raw server text', () => {
+  const data = overview();
+  data.requests = [{ ...request, startDate: '2026-11-02', endDate: '2026-11-02' }];
+  const errorWithRequestId: RequestMutationError = {
+   requestId: request.id,
+   error: new ApiError({ kind: 'validation', status: 422, code: 'DOMAIN_VALIDATION_FAILED', requestId: 'req_safe_id_12345' }),
+   isUncertain: false,
+   onRetry: vi.fn(),
+   onDismiss: vi.fn(),
+  };
+  const { container, unmount, client } = mount(data, { mutationErrors: { [request.id]: errorWithRequestId } });
+  required(container.querySelector('details')).open = true;
+  const alert = screen.getByRole('alert');
+  // Should show safe request ID
+  expect(within(alert).getByText(/req_safe_id_12345/)).toBeVisible();
+  unmount(); client.clear();
+ });
 });

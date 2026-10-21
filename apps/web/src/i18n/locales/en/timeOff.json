@@ -114,6 +114,10 @@
   "balanceHint": "Future reservations are separate from earned days. Approval also checks projected accrual at each future leave date.",
   "uncertain": "The result is not confirmed. Keep this page open and retry the exact submission.",
   "retryExact": "Retry exact submission",
+  "staleRevisionError": "This request was modified elsewhere. Load the latest version to continue editing.",
+  "previewStaleError": "Server data changed since your last review. Refresh the preview to continue.",
+  "refreshPreview": "Refresh preview",
+  "dismissError": "Dismiss",
   "availabilityFailed": "Availability could not be loaded. This does not mean everyone is available.",
   "availabilityNotConfigured": "Availability is not configured. Set up time off and schedules to see absence bands.",
   "availabilityUnknownPerson": "This assignee’s schedule is not configured.",
@@ -215,5 +219,8 @@
   "employmentCorrectionWarnings": "Balance warnings from recorded absences",
   "employmentCorrectionHint": "You can save the correct employment start with your reason. These balances are recalculated from recorded absences; this does not approve additional leave or change the rules for new requests.",
   "deficitDate": "Date",
-  "deficitBalance": "Balance on date"
+  "deficitBalance": "Balance on date",
+  "previewBalanceWarnings": "Balance details for these dates",
+  "previewBalanceWarningHint": "These are conflicts found in this preview. Review the dates and working-day charge; a rejected save may have another cause.",
+  "refreshRecord": "Refresh current record"
 }
