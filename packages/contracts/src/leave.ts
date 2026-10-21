@@ -117,6 +117,18 @@ export type LeavePolicyVersionDto = z.infer<typeof leavePolicyVersionSchema>;
 export type LeaveSettingsDto = z.infer<typeof leaveSettingsSchema>;
 export type LeaveProfileDto = z.infer<typeof leaveProfileSchema>;
 export type LeaveRequestDto = z.infer<typeof leaveRequestSchema>;
+/** A reasoned hire-date correction cannot smuggle schedule, opening-credit or timezone changes. */
+export function isLeaveEmploymentStartCorrection(
+  before: LeaveProfileDto | undefined,
+  next: Pick<LeaveProfileDto, 'employmentStart' | 'accountingStart' | 'employmentEnd' | 'timezone' | 'openingBalances' | 'schedulePeriods'>,
+): boolean {
+  if (!before || before.employmentStart === next.employmentStart || before.timezone !== next.timezone || before.employmentEnd !== next.employmentEnd) return false;
+  if (next.accountingStart !== before.accountingStart && !(before.accountingStart === before.employmentStart && next.accountingStart === next.employmentStart)) return false;
+  // The balance engine treats a missing opening as zero; existing editors omit zero rows.
+  const openings = (profile: typeof next) => profile.openingBalances.filter(value => value.microdays !== 0).map(value => ({ typeId: value.typeId.toLowerCase(), microdays: value.microdays })).sort((a, b) => a.typeId.localeCompare(b.typeId));
+  const schedules = (profile: typeof next) => profile.schedulePeriods.map(period => ({ effectiveFrom: period.effectiveFrom, weeklyMinutes: period.weeklyMinutes })).sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  return JSON.stringify(openings(before)) === JSON.stringify(openings(next)) && JSON.stringify(schedules(before)) === JSON.stringify(schedules(next));
+}
 export type LeaveChargeDayDto = z.infer<typeof leaveChargeDaySchema>;
 export type LeaveAdjustmentDto = z.infer<typeof leaveAdjustmentSchema>;
 export type LeaveWeeklyMinutes = z.infer<typeof leaveWeeklyMinutesSchema>;

@@ -211,5 +211,9 @@
   "personHistory": "Time off history",
   "historyHint": "All dates, leave types and recorded charges for this person. Open an entry to review or correct it.",
   "noPersonHistory": "No time off recorded for this person.",
-  "saveRequestBeforeSwitch": "Save or discard your request changes below before switching person or view."
+  "saveRequestBeforeSwitch": "Save or discard your request changes below before switching person or view.",
+  "employmentCorrectionWarnings": "Balance warnings from recorded absences",
+  "employmentCorrectionHint": "You can save the correct employment start with your reason. These balances are recalculated from recorded absences; this does not approve additional leave or change the rules for new requests.",
+  "deficitDate": "Date",
+  "deficitBalance": "Balance on date"
 }

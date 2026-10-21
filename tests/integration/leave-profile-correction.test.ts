@@ -1,0 +1,78 @@
+// Factual employment corrections use only this file's owned PostgreSQL child.
+import { randomUUID } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type * as C from '@workloom/contracts';
+import { createDatabase, createLeaveApplication, createSharedAuthStore, runMigrations, type Database } from '@workloom/db';
+import type { CommandContext, LeaveApplication } from '@workloom/domain';
+import { createThrowawayDatabase, type ThrowawayDatabase } from './support/test-database.js';
+import { requireTestDatabaseUrl } from './support/test-database-url.js';
+import { databaseSnapshot } from './support/p1b.js';
+requireTestDatabaseUrl();
+const add = (date: string, days: number) => new Date(Date.parse(date + 'T00:00:00Z') + days * 86400000).toISOString().slice(0, 10);
+const must = <T>(value: T | null | undefined): T => { if (value === null || value === undefined) throw Error('Missing synthetic correction fixture.'); return value; };
+const monday = (date: string) => must(Array.from({ length: 7 }, (_, i) => add(date, i)).find(day => new Date(day + 'T00:00:00Z').getUTCDay() === 1));
+function earned(start: string, through: string): number { let total = 0; for (let year = Number(start.slice(0, 4)); year <= Number(through.slice(0, 4)); year++) { const from = start > `${year}-01-01` ? start : `${year}-01-01`, to = through < `${year}-12-31` ? through : `${year}-12-31`, days = (Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000 + 1, annualDays = (Date.parse(`${year + 1}-01-01T00:00:00Z`) - Date.parse(`${year}-01-01T00:00:00Z`)) / 86400000; total += Math.floor(21_000_000 * days / annualDays); } return total; }
+describe('reasoned factual hire-date corrections', () => {
+  let target: ThrowawayDatabase | undefined, db: Database, leave: LeaveApplication, today: string, year: number;
+  beforeAll(async () => { target = await createThrowawayDatabase('leave_hiredate'); await runMigrations(target.url, { requireLoopback: true }); db = createDatabase(target.url, { requireLoopback: true }); leave = createLeaveApplication(db); const [clock] = await db.sql`select (clock_timestamp() at time zone 'UTC')::date::text as today`; today = String(clock?.today); year = Number(today.slice(0, 4)); }, 60000);
+  afterAll(async () => { await db?.close(); await target?.drop(); }, 30000);
+  async function fixture(historyDays = 10, opening = 0) {
+    const identity = await createSharedAuthStore(db).provisionIdentity({ issuer: 'https://auth.example.test', subject: randomUUID(), displayName: 'Synthetic hire-date owner', workspaceName: 'Synthetic correction', timezone: 'UTC' }), workspaceId = identity.workspaceId, userId = identity.user.id;
+    const [member] = await db.sql`select id from memberships where workspace_id=${workspaceId} and user_id=${userId}`; const membershipId = String(member?.id);
+    const ctx = (key = randomUUID()): CommandContext => ({ workspaceId, actor: { userId, kind: 'real', displayName: 'Synthetic correction owner' }, source: 'import', requestId: randomUUID(), idempotencyKey: key });
+    const settings = await leave.template(ctx(), { expectedRevision: 0, effectiveYear: year - 4, includeCompanyHolidays: false }), policy = must(settings.policyVersions[0]), vacation = must(policy.types.find(type => type.carryover.mode === 'unlimited')), flex = must(policy.types.find(type => type.consumesBalance && type.carryover.mode === 'none'));
+    const profile: C.PutLeaveProfileInput = { expectedRevision: 0, employmentStart: `${year - 4}-01-01`, accountingStart: `${year - 4}-01-01`, employmentEnd: null, timezone: 'UTC', openingBalances: [{ typeId: vacation.id, microdays: opening }, { typeId: flex.id, microdays: 0 }], schedulePeriods: [{ effectiveFrom: `${year - 4}-01-01`, weeklyMinutes: [480, 480, 480, 480, 480, 0, 0] }, { effectiveFrom: `${year - 1}-01-01`, weeklyMinutes: [480, 480, 480, 480, 480, 0, 0] }], reason: '' };
+    const old = await leave.profile(ctx(), membershipId, profile), startDate = monday(`${year - 2}-07-01`), endDate = add(startDate, Math.floor((historyDays - 1) / 5) * 7 + (historyDays - 1) % 5), input = { source: { sha256: 'b'.repeat(64), sheet: 'Vacations' }, rows: [{ membershipId, typeId: vacation.id, startDate, endDate, sourceRows: [2], note: 'Pinned real historical facts' }], reason: 'Synthetic history' }, preview = await leave.previewHistory(ctx(), input), [request] = await leave.importHistory(ctx(), { ...input, expectedSourceVersion: preview.sourceVersion });
+    const correction: C.PutLeaveProfileInput = { ...profile, expectedRevision: 1, employmentStart: `${year - 2}-05-01`, accountingStart: `${year - 2}-05-01`, openingBalances: [], schedulePeriods: [...profile.schedulePeriods].reverse(), reason: 'Replace provisional employment date with verified hire date' };
+    return { workspaceId, membershipId, ctx, old, correction, vacation, request: must(request), historyDays };
+  }
+  async function immutable(f: Awaited<ReturnType<typeof fixture>>) { return { requests: await db.sql`select * from leave_requests where workspace_id=${f.workspaceId} order by id`, versions: await db.sql`select * from leave_request_versions where workspace_id=${f.workspaceId} order by request_id,revision`, ledger: await db.sql`select * from leave_charge_ledger where workspace_id=${f.workspaceId} order by id`, adjustments: await db.sql`select * from leave_adjustments where workspace_id=${f.workspaceId} order by id`, settings: await db.sql`select * from leave_settings where workspace_id=${f.workspaceId}` }; }
+  it('saves the true hire date despite elapsed debt, preserving pinned facts and editor-normalized zero openings', async () => {
+    const f = await fixture(), before = await immutable(f), oldProfileVersions = await db.sql`select * from leave_profile_versions where workspace_id=${f.workspaceId} and membership_id=${f.membershipId} order by revision`, preview = await leave.previewProfile(f.ctx(), f.membershipId, f.correction);
+    expect(preview.deficits.some(deficit => deficit.date < today)).toBe(true); expect(must(preview.balancesAfter.find(balance => balance.typeId === f.vacation.id)).availableMicrodays).toBeGreaterThan(0);
+    const context = f.ctx(), body = { ...f.correction, expectedSourceVersion: preview.sourceVersion }, saved = await leave.profile(context, f.membershipId, body);
+    expect(saved.employmentStart).toBe(f.correction.employmentStart); expect(saved.accountingStart).toBe(f.correction.accountingStart); expect(saved.openingBalances).toEqual([]); expect(saved.schedulePeriods).toEqual(f.correction.schedulePeriods); expect(await immutable(f)).toEqual(before); expect(await db.sql`select * from leave_profile_versions where workspace_id=${f.workspaceId} and membership_id=${f.membershipId} and revision<=${f.old.revision} order by revision`).toEqual(oldProfileVersions);
+    const overview = await leave.overview(f.ctx()), balance = must(overview.balances.find(value => value.typeId === f.vacation.id)); expect(balance.availableMicrodays).toBe(earned(saved.accountingStart, today) - f.historyDays * 1_000_000);
+    const [event] = await db.sql`select reason,diff from audit_events where workspace_id=${f.workspaceId} and entity_type='leave_profile' order by recorded_at desc,event_ordinal desc limit 1`; expect(event?.reason).toBe(f.correction.reason); expect(event?.diff.correction).toBe('employment_start');
+    const snapshot = await databaseSnapshot(db.sql); expect(await leave.profile(context, f.membershipId, body)).toEqual(saved); expect(await databaseSnapshot(db.sql)).toEqual(snapshot);
+  });
+  it('allows current and existing-future debt revealed by truth but still denies additional future leave', async () => {
+    for (const mode of ['current', 'future'] as const) {
+      const f = await fixture(mode === 'current' ? 60 : 10); let existingFuture: C.LeaveRequestDto | null = null;
+      if (mode === 'future') { const startDate = monday(add(today, 7)), endDate = add(startDate, 95); existingFuture = must((await leave.bulk(f.ctx(), { membershipIds: [f.membershipId], typeId: f.vacation.id, startDate, endDate, note: 'Previously approved future reservation', reason: '', approveNegative: false }))[0]); }
+      const pinned = await immutable(f), preview = await leave.previewProfile(f.ctx(), f.membershipId, f.correction), balance = must(preview.balancesAfter.find(value => value.typeId === f.vacation.id));
+      if (mode === 'current') expect(balance.availableMicrodays).toBeLessThan(0); else expect(preview.deficits.some(deficit => deficit.date > today)).toBe(true);
+      await leave.profile(f.ctx(), f.membershipId, { ...f.correction, expectedSourceVersion: preview.sourceVersion }); expect(await immutable(f)).toEqual(pinned);
+      const expandable = existingFuture ?? f.request, expansionEnd = existingFuture ? add(existingFuture.endDate, 7) : monday(add(today, 7)), beforeExpansion = await databaseSnapshot(db.sql);
+      await expect(leave.update(f.ctx(), expandable.id, { expectedRevision: expandable.revision, startDate: expandable.startDate, endDate: expansionEnd, note: expandable.note, reason: 'A hire-date correction does not approve extra absence' })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' }); expect(await databaseSnapshot(db.sql)).toEqual(beforeExpansion);
+      const date = monday(add(today, mode === 'current' ? 7 : 120)), pending = await leave.create(f.ctx(), { membershipId: f.membershipId, typeId: f.vacation.id, startDate: date, endDate: date, note: '', reason: '' }), before = await databaseSnapshot(db.sql);
+      await expect(leave.decide(f.ctx(), pending.id, { expectedRevision: 1, decision: 'approve', reason: '', approveNegative: false })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' }); expect(await databaseSnapshot(db.sql)).toEqual(before);
+    }
+  });
+  it('saves exact validated zero-normalized input across an earlier policy boundary without restoring an invalid type', async () => {
+    const identity = await createSharedAuthStore(db).provisionIdentity({ issuer: 'https://auth.example.test', subject: randomUUID(), displayName: 'Synthetic policy boundary owner', workspaceName: 'Synthetic boundary', timezone: 'UTC' }), workspaceId = identity.workspaceId, userId = identity.user.id;
+    const [membership] = await db.sql`select id from memberships where workspace_id=${workspaceId} and user_id=${userId}`; const membershipId = String(membership?.id), ctx = (): CommandContext => ({ workspaceId, actor: { userId, kind: 'real', displayName: 'Synthetic boundary owner' }, source: 'import', requestId: randomUUID(), idempotencyKey: randomUUID() });
+    const settings = await leave.template(ctx(), { expectedRevision: 0, effectiveYear: year - 4, includeCompanyHolidays: false }), firstPolicy = must(settings.policyVersions[0]), laterType = { ...must(firstPolicy.types[0]), id: randomUUID(), name: 'Later allowance' };
+    await leave.settings(ctx(), { expectedRevision: 1, timezone: settings.timezone, defaultWeeklyMinutes: settings.defaultWeeklyMinutes, policyVersions: [firstPolicy, { ...firstPolicy, effectiveYear: year - 2, types: [...firstPolicy.types, laterType] }], reason: 'Synthetic later policy type' });
+    const profile: C.PutLeaveProfileInput = { expectedRevision: 0, timezone: 'UTC', employmentStart: `${year - 1}-01-01`, accountingStart: `${year - 1}-01-01`, employmentEnd: null, openingBalances: [{ typeId: laterType.id, microdays: 0 }], schedulePeriods: [], reason: '' };
+    await leave.profile(ctx(), membershipId, profile);
+    const correction = { ...profile, expectedRevision: 1, employmentStart: `${year - 3}-01-01`, accountingStart: `${year - 3}-01-01`, openingBalances: [], reason: 'True date is earlier than the new type' }, preview = await leave.previewProfile(ctx(), membershipId, correction), before = await databaseSnapshot(db.sql);
+    const oldVersions = await db.sql`select * from leave_profile_versions where workspace_id=${workspaceId} and membership_id=${membershipId} order by revision`;
+    const saved = await leave.profile(ctx(), membershipId, { ...correction, expectedSourceVersion: preview.sourceVersion }); expect(saved.openingBalances).toEqual([]); expect(saved.employmentStart).toBe(correction.employmentStart);
+    expect(must((await leave.overview(ctx())).profiles[0]).openingBalances).toEqual([]); expect(await db.sql`select * from leave_profile_versions where workspace_id=${workspaceId} and membership_id=${membershipId} and revision=1`).toEqual(oldVersions);
+    const after = await databaseSnapshot(db.sql); for (const table of ['leave_requests','leave_request_versions','leave_charge_ledger','leave_adjustments']) { expect(after.rows[table]).toBe(before.rows[table]); expect(after.rowDigests[table]).toBe(before.rowDigests[table]); }
+  });
+  it('does not waive policy for mixed edits, missing reason, invalid history boundaries or stale preview', async () => {
+    const f = await fixture(), before = await databaseSnapshot(db.sql);
+    const mixed = { ...f.correction, schedulePeriods: [{ effectiveFrom: f.old.employmentStart, weeklyMinutes: [240, 240, 240, 240, 240, 0, 0] as C.LeaveWeeklyMinutes }] }, mixedPreview = await leave.previewProfile(f.ctx(), f.membershipId, mixed);
+    await expect(leave.profile(f.ctx(), f.membershipId, { ...mixed, expectedSourceVersion: mixedPreview.sourceVersion })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' });
+    const preview = await leave.previewProfile(f.ctx(), f.membershipId, f.correction);
+    await expect(leave.profile(f.ctx(), f.membershipId, { ...f.correction, expectedRevision: 2, expectedSourceVersion: preview.sourceVersion })).rejects.toMatchObject({ code: 'REVISION_CONFLICT' });
+    await expect(leave.profile(f.ctx(), f.membershipId, { ...f.correction, reason: '', expectedSourceVersion: preview.sourceVersion })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' });
+    await expect(leave.previewProfile(f.ctx(), f.membershipId, { ...f.correction, employmentStart: `${year - 2}-08-01`, accountingStart: `${year - 2}-08-01` })).rejects.toThrow(); expect(await databaseSnapshot(db.sql)).toEqual(before);
+    await leave.update(f.ctx(), f.request.id, { expectedRevision: 1, startDate: f.request.startDate, endDate: f.request.endDate, note: 'A concurrent reasoned history note correction', reason: 'Synthetic concurrent edit' }); const afterEdit = await databaseSnapshot(db.sql);
+    await expect(leave.profile(f.ctx(), f.membershipId, { ...f.correction, expectedSourceVersion: preview.sourceVersion })).rejects.toMatchObject({ code: 'PREVIEW_STALE' }); expect(await databaseSnapshot(db.sql)).toEqual(afterEdit);
+    const nonzero = await fixture(10, 2_000_000), nonzeroPreview = await leave.previewProfile(nonzero.ctx(), nonzero.membershipId, nonzero.correction), beforeNonzero = await databaseSnapshot(db.sql);
+    await expect(leave.profile(nonzero.ctx(), nonzero.membershipId, { ...nonzero.correction, expectedSourceVersion: nonzeroPreview.sourceVersion })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' }); expect(await databaseSnapshot(db.sql)).toEqual(beforeNonzero);
+  });
+});

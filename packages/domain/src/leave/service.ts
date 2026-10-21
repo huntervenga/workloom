@@ -138,8 +138,13 @@ export function createLeaveService(deps:LeaveDependencies):LeaveApplication {
   if(value.openingBalances.some(b=>b.microdays<0))throw rule('Opening balances cannot introduce debt. Use a reasoned employer-approved balance adjustment for negative balances.');
   if(dateOrdinal(today(scope,s,mid))-dateOrdinal(value.accountingStart)>366*50)throw rule('Use opening balances at an accounting boundary within the last 50 years.');
   const next:C.LeaveProfileDto={workspaceId:scope.context.workspaceId,membershipId:mid,revision:value.expectedRevision+1,timezone:value.timezone,employmentStart:value.employmentStart,employmentEnd:value.employmentEnd,accountingStart:value.accountingStart,openingBalances:value.openingBalances,schedulePeriods:value.schedulePeriods};
-  const updated={...s,profiles:[...s.profiles.filter(p=>p.membershipId!==mid),next]};validateStored(updated);validateChange(scope,s,updated,mid,earliest(next.accountingStart,before?.accountingStart??next.accountingStart));rejectNewDebt(scope,s,updated,mid);
-  await scope.repository.saveProfile(next,scope.access.membership.id,value.reason,scope.barrierAt);await changed(scope,'leave_profile',mid,next.revision,'updated',value.reason);return next;
+  const updated={...s,profiles:[...s.profiles.filter(p=>p.membershipId!==mid),next]};validateStored(updated);
+  const employmentStartCorrection=C.isLeaveEmploymentStartCorrection(before,next);
+  // Record a reasoned true hire date even when it exposes existing leave debt. Persist
+  // the exact validated input; equivalent zero openings/order need no hidden restoration.
+  // Approved charges remain pinned, and additional leave still needs ordinary approval.
+  if(!employmentStartCorrection){validateChange(scope,s,updated,mid,earliest(next.accountingStart,before?.accountingStart??next.accountingStart));rejectNewDebt(scope,s,updated,mid);}
+  await scope.repository.saveProfile(next,scope.access.membership.id,value.reason,scope.barrierAt);await changed(scope,'leave_profile',mid,next.revision,'updated',value.reason,employmentStartCorrection?{correction:'employment_start',before:{employmentStart:before?.employmentStart,accountingStart:before?.accountingStart},after:{employmentStart:next.employmentStart,accountingStart:next.accountingStart}}:{});return next;
  });},
  create(ctx,input){const value=parse(C.createLeaveRequestInputSchema,input);return mutate(ctx,'leave.request_self','leave.request.create',value.membershipId,value,C.leaveRequestSchema,(scope,s)=>selfOrManager(scope,s,value.membershipId),async(scope,s)=>{
   reasonForPast(scope,s,value.startDate,value.reason??'',value.membershipId);return publicRequest(await saveRequest(scope,s,proposed(scope,s,value,deps.newId()),null,value.reason??''));
