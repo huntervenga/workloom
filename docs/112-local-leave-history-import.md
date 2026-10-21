@@ -1,5 +1,7 @@
 # Local historical leave import
 
+The dates and totals in this receipt describe the initial import. The later [2022–2024 append](113-pre-2025-leave-history.md) records the current temporary 2022 profile starts and combined history.
+
 This operator imports reviewed, already-approved past absences into ordinary Workloom time-off records. It is a local migration tool, not a public upload endpoint. **The approved local import reconciled on 21 October 2026 at 18:42:55.311 UTC: 109 approved requests retain all 110 source rows and charge 265 days. Exact replay changed no database state. Independent final readback returned GO at 18:48:20.482 UTC, followed by the database-preservation proof at 18:48:33 UTC. No production deployment or full live-UI acceptance is claimed.**
 
 ## Source and review boundary
