@@ -9,6 +9,7 @@ const overflow = ()=>{throw new DomainError('DOMAIN_VALIDATION_FAILED','Time off
 export function createLeaveRepository(tx:WorkloomExecutor,workspaceId:string):LeaveRepository {
  const receipts=createTaskRepository(tx);
  return {
+ async isRealUser(userId){const [row]=await tx.select({kind:users.kind}).from(users).where(eq(users.id,userId));return row?.kind==='real';},
  async source():Promise<LeaveStoredSource>{
   const [policy]=await tx.select().from(leaveSettings).where(eq(leaveSettings.workspaceId,workspaceId));
   const profiles=await tx.select().from(leaveProfiles).where(eq(leaveProfiles.workspaceId,workspaceId)).orderBy(asc(leaveProfiles.membershipId)).limit(1001);
@@ -17,7 +18,7 @@ export function createLeaveRepository(tx:WorkloomExecutor,workspaceId:string):Le
   const members=await tx.select({id:memberships.id,workspaceId:memberships.workspaceId,userId:memberships.userId,displayName:users.displayName,avatarUrl:users.avatarUrl,role:memberships.role,state:memberships.state,revision:memberships.revision}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).where(eq(memberships.workspaceId,workspaceId)).orderBy(asc(memberships.id)).limit(1001);
   if(profiles.length>1000||requests.length>5000||adjustments.length>5000||members.length>1000)overflow();
   const [head]=await tx.select({seq:workspaces.changeSeq,epoch:workspaces.permissionEpoch}).from(workspaces).where(eq(workspaces.id,workspaceId));
-  return {settings:policy?C.leaveSettingsSchema.parse(policy.snapshot):null,profiles:profiles.map(r=>C.leaveProfileSchema.parse(r.snapshot)),requests:requests.map(r=>C.leaveRequestSchema.parse(r.snapshot)),adjustments:adjustments.map(r=>C.leaveAdjustmentSchema.parse(r.snapshot)),members,head:`${head?.seq??0}:${head?.epoch??0}`};
+  return {settings:policy?C.leaveSettingsSchema.parse(policy.snapshot):null,profiles:profiles.map(r=>C.leaveProfileSchema.parse(r.snapshot)),requests:requests.map(r=>C.leaveStoredRequestSchema.parse(r.snapshot)),adjustments:adjustments.map(r=>C.leaveAdjustmentSchema.parse(r.snapshot)),members,head:`${head?.seq??0}:${head?.epoch??0}`};
  },
  async saveSettings(value,actor,reason,at){
   if(value.revision===1)await tx.insert(leaveSettings).values({workspaceId,revision:value.revision,snapshot:value,updatedAt:at});

@@ -59,6 +59,11 @@ export const leaveProfileSchema = z.strictObject({
 export const leaveChargeDaySchema = z.strictObject({
   date: calendarDateSchema, microdays: leaveMicrodaysSchema, scheduledMinutes: z.number().int().min(0).max(1440),
 });
+/** Server-authored provenance for owner-imported past facts; ordinary request inputs cannot set it. */
+export const leaveHistoricalImportSchema = z.strictObject({
+  sourceFileSha256: z.string().regex(/^[0-9a-f]{64}$/), sheet: z.string().trim().min(1).max(200),
+  sourceRows: z.array(z.number().int().min(1).max(1_048_576)).min(1).max(1000), importedAt: utcTimestampSchema,
+});
 export const leaveRequestSchema = z.strictObject({
   id: idSchema, workspaceId: idSchema, membershipId: idSchema, typeId: idSchema, revision: revisionSchema,
   startDate: calendarDateSchema, endDate: calendarDateSchema,
@@ -69,6 +74,9 @@ export const leaveRequestSchema = z.strictObject({
   consumesBalance: z.boolean(), pausesAccrual: z.boolean(), capacityUnavailable: z.boolean(),
   chargedDays: z.array(leaveChargeDaySchema).max(3660), negativeApproved: z.boolean(),
 });
+/** Internal persisted/domain snapshot. HTTP leave DTOs retain their existing strict shape. */
+export const leaveStoredRequestSchema = leaveRequestSchema.extend({ historicalImport: leaveHistoricalImportSchema.optional() });
+export type LeaveStoredRequestDto = z.infer<typeof leaveStoredRequestSchema>;
 export const leaveAdjustmentSchema = z.strictObject({
   id: idSchema, membershipId: idSchema, typeId: idSchema, effectiveDate: calendarDateSchema,
   deltaMicrodays: signedLeaveMicrodaysSchema, reason: z.string().trim().min(1).max(2000),
@@ -83,6 +91,25 @@ export const putLeaveProfileInputSchema = leaveProfileSchema.omit({ workspaceId:
 export const createLeaveRequestInputSchema = leaveDateRangeSchema.extend({ expectedSourceVersion: z.string().regex(/^[0-9a-f]{64}$/).optional(), membershipId: idSchema, typeId: idSchema, note: z.string().max(4000).default(''), reason: z.string().trim().max(2000).default('') });
 export const updateLeaveRequestInputSchema = leaveDateRangeSchema.extend({ expectedRevision: revisionSchema, expectedSourceVersion: z.string().regex(/^[0-9a-f]{64}$/).optional(), note: z.string().max(4000).default(''), reason: z.string().trim().max(2000).default('') });
 export const decideLeaveRequestInputSchema = z.strictObject({ expectedRevision: revisionSchema, expectedSourceVersion: z.string().regex(/^[0-9a-f]{64}$/).optional(), decision: z.enum(['approve', 'reject', 'cancel']), reason: z.string().trim().max(2000).default(''), approveNegative: z.boolean().default(false) });
+
+const leaveHistoryRowSchema = leaveDateRangeSchema.extend({
+  membershipId: idSchema, typeId: idSchema, note: z.string().max(4000).default(''),
+  sourceRows: z.array(z.number().int().min(1).max(1_048_576)).min(1).max(1000),
+});
+export const previewLeaveHistoryInputSchema = z.strictObject({
+  source: z.strictObject({ sha256: z.string().regex(/^[0-9a-f]{64}$/), sheet: z.string().trim().min(1).max(200) }),
+  rows: z.array(leaveHistoryRowSchema).min(1).max(50), reason: z.string().trim().min(1).max(2000),
+}).superRefine((value, ctx) => {
+  const rows = value.rows.flatMap(row => row.sourceRows);
+  if (new Set(rows).size !== rows.length) ctx.addIssue({ code: 'custom', path: ['rows'], message: 'Every source row must occur exactly once in a history batch.' });
+});
+export const importLeaveHistoryInputSchema = previewLeaveHistoryInputSchema.safeExtend({ expectedSourceVersion: z.string().regex(/^[0-9a-f]{64}$/) });
+export type PreviewLeaveHistoryInput = z.infer<typeof previewLeaveHistoryInputSchema>;
+export type ImportLeaveHistoryInput = z.infer<typeof importLeaveHistoryInputSchema>;
+export interface LeaveHistoryPreviewDto {
+  sourceVersion: string;
+  rows: Array<LeaveChargePreviewDto & { sourceRows: number[]; membershipId: string; typeId: string; startDate: string; endDate: string }>;
+}
 
 export type LeaveTypeDto = z.infer<typeof leaveTypeSchema>;
 export type LeaveHolidayDto = z.infer<typeof leaveHolidaySchema>;

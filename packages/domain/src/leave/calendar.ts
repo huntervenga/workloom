@@ -1,5 +1,5 @@
 import type { LeaveCalculationSource, LeaveHolidayDto, LeavePolicyVersionDto, LeaveProfileDto, LeaveSettingsDto, LeaveTypeDto } from '@workloom/contracts';
-import { leaveSettingsSchema, leaveProfileSchema, leaveRequestSchema, leaveAdjustmentSchema } from '@workloom/contracts';
+import { leaveSettingsSchema, leaveProfileSchema, leaveStoredRequestSchema, leaveAdjustmentSchema } from '@workloom/contracts';
 import { Temporal } from 'temporal-polyfill';
 import { DomainError } from '../errors.js';
 
@@ -47,7 +47,7 @@ export function isAccrualPaused(source: LeaveCalculationSource, membershipId: st
 }
 function unique(values: (string | number)[], message: string): void { if (new Set(values.map((value) => typeof value === 'string' ? value.toLowerCase() : value)).size !== values.length) invalidLeave(message); }
 export function assertLeaveSource(source: LeaveCalculationSource): void {
-  if (!leaveSettingsSchema.safeParse(source.settings).success || source.profiles.some((profile) => !leaveProfileSchema.safeParse(profile).success) || source.requests.some((request) => !leaveRequestSchema.safeParse(request).success) || source.adjustments.some((adjustment) => !leaveAdjustmentSchema.safeParse(adjustment).success)) invalidLeave('Invalid leave source shape.');
+  if (!leaveSettingsSchema.safeParse(source.settings).success || source.profiles.some((profile) => !leaveProfileSchema.safeParse(profile).success) || source.requests.some((request) => !leaveStoredRequestSchema.safeParse(request).success) || source.adjustments.some((adjustment) => !leaveAdjustmentSchema.safeParse(adjustment).success)) invalidLeave('Invalid leave source shape.');
   if (source.profiles.length > 1000 || source.requests.length > 5000 || source.adjustments.length > 5000) invalidLeave('Leave calculation source exceeds its bounded size.');
   const settings = source.settings;
   unique(settings.policyVersions.map((policy) => policy.effectiveYear), 'Leave policy effective years must be unique.');
