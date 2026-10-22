@@ -44,6 +44,11 @@ function server(patch?: (body: { expectedRevision: number; sectionId?: string | 
   return { routes, confirm: (next: Partial<TaskDto>) => { current = { ...current, ...next, revision: current.revision + 1 }; return ok(current); } };
 }
 
+/** Task trees start collapsed, so a test that looks at a child opens its parent first. */
+async function expandChildren(user: ReturnType<typeof renderApp>['user'], parentTitle = root.title) {
+  await user.click(await screen.findByRole('button', { name: `Expand subtasks of “${parentTitle}”` }));
+}
+
 async function moveAction(user: ReturnType<typeof renderApp>['user'], title: string) {
   await user.click(await screen.findByRole('button', { name: `Task actions: ${title}` }));
   return within(await screen.findByRole('menu')).queryByRole('menuitem', { name: 'Move to section…' });
@@ -79,11 +84,12 @@ describe('root task section move', () => {
     await waitFor(() => expect(patches(calls)).toHaveLength(1));
     expect(patches(calls)[0]?.body).toEqual({ expectedRevision: root.revision, sectionId: B });
     await waitFor(() => expect(groupOf(root.title)).toBe(groupBody('Second section')));
+    await waitFor(() => expect(actionsButton(root.title)).toHaveFocus());
+    await expandChildren(user);
     // The child keeps its own section but is shown under its moved parent, marked with that section.
     expect(groupOf(child.title)).toBe(groupBody('Second section'));
     expect(within(screen.getByRole('button', { name: child.title }).closest('tr') as HTMLElement).getByText('Section: First section')).toBeInTheDocument();
     expect(await screen.findByText('Moved “Movable root” to Second section.')).toBeInTheDocument();
-    await waitFor(() => expect(actionsButton(root.title)).toHaveFocus());
     expect(writes(calls)).toHaveLength(1);
   });
 
@@ -121,6 +127,7 @@ describe('root task section move', () => {
     await user.keyboard('{Escape}');
     expect(await moveAction(user, peer.title)).toBeInTheDocument();
     await user.keyboard('{Escape}');
+    await expandChildren(user);
     expect(await moveAction(user, child.title)).toBeNull();
     await user.keyboard('{Escape}');
     expect(await moveAction(user, meeting.title)).toBeNull();

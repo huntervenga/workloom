@@ -155,6 +155,21 @@ describe('personal access tokens, public API and MCP', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('answers a tampered cursor with a validation error, never a 500', async () => {
+    for (const [sort, value] of [['updated', '0000000000'], ['due', '99999999999'], ['created', 'Z:::::::::Z']] as const) {
+      const cursor = Buffer.from(JSON.stringify({ s: sort, v: value, i: '00000000-0000-4000-8000-000000000001' })).toString('base64url');
+      const res = await call(`${ws()}/tasks?sort=${sort}&cursor=${cursor}`, { token: owner.token });
+      expect(res.status, res.text()).toBe(400);
+    }
+  });
+
+  it('lets a tasks:write token see the task it just wrote instead of failing after the commit', async () => {
+    const writer = await issue(h.owner, { name: 'writer only', scopes: ['tasks:write'] });
+    const name = need((await h.owner.tasks.listProjects()).find(p => p.id === projectId)).name;
+    const res = await call(`${ws()}/tasks`, { token: writer.token, method: 'POST', body: { project: name, title: 'Written by a write-only token' } });
+    expect(res.status, res.text()).toBe(201);
+  });
+
   it('rejects missing, malformed, unknown and revoked tokens with 401', async () => {
     for (const token of [undefined, 'nope', 'wlm_pat_short', `wlm_pat_${'A'.repeat(43)}`]) {
       expect((await call(`${PREFIX}/me`, token ? { token } : {})).status).toBe(401);

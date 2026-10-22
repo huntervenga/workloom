@@ -54,15 +54,22 @@ export async function loadPrincipal(tx: WorkloomExecutor, tokenHash: string, at:
   if (!row || row.token.revokedAt !== null || row.token.expiresAt.getTime() <= at.getTime()) throw unauthenticatedError();
   return {
     tokenId: row.token.id, tokenName: row.token.name, userId: row.token.userId, displayName: row.displayName,
-    kind: row.kind === 'real' ? 'real' : 'fixture', scopes: row.token.scopes as ApiTokenScope[],
+    kind: row.kind === 'real' ? 'real' : 'fixture', // Being allowed to change tasks always includes seeing them: the write is answered with the stored task.
+    scopes: withImpliedRead(row.token.scopes as ApiTokenScope[]),
     workspaceIds: row.token.workspaceIds ?? null, expiresAt: row.token.expiresAt,
   };
+}
+
+function withImpliedRead(scopes: readonly ApiTokenScope[]): ApiTokenScope[] {
+  return scopes.includes('tasks:write') && !scopes.includes('read') ? ['read', ...scopes] : [...scopes];
 }
 
 export async function issueApiToken(tx: WorkloomExecutor, userId: string, input: CreateApiTokenInput): Promise<CreatedApiTokenDto> {
   const parsed = createApiTokenInputSchema.safeParse(input);
   if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid token request.');
   const p = parsed.data;
+  // Two simultaneous requests must not both pass the count below.
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${'api-token-issue:' + userId}))`);
   const existing = await tx.select({ id: apiTokens.id }).from(apiTokens).where(and(eq(apiTokens.userId, userId), sql`${apiTokens.revokedAt} is null`, sql`${apiTokens.expiresAt} > now()`)).limit(API_TOKEN_LIMITS.tokensPerUser + 1);
   if (existing.length >= API_TOKEN_LIMITS.tokensPerUser) throw new DomainError('DOMAIN_VALIDATION_FAILED', `At most ${API_TOKEN_LIMITS.tokensPerUser} active tokens per user. Revoke one first.`);
   const generated = generateApiToken();

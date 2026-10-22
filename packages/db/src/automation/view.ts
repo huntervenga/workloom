@@ -68,7 +68,8 @@ function decodeCursor(value: string, sort: PublicTaskListQuery['sort']): Cursor 
     const { s, v, i } = parsed as Record<string, unknown>;
     if (s !== sort || typeof i !== 'string' || !(v === null || typeof v === 'string')) throw invalid();
     if (!/^[0-9a-f-]{36}$/i.test(i)) throw invalid();
-    if (v !== null && !/^[0-9T:.+\-Z ]{8,40}$/.test(v)) throw invalid();
+    // The position is what this server wrote itself: a calendar date, or an ISO instant with milliseconds.
+    if (v !== null && !(sort === 'due' ? /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`)) : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v) && Number.isFinite(Date.parse(v)))) throw invalid();
     return { s: sort, v, i };
   } catch { throw invalid(); }
 }
