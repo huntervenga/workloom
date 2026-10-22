@@ -63,6 +63,8 @@ async function run(automation: AutomationApplication, token: string, name: McpTo
   }
 }
 
+const MCP_MAX_BATCH = 20;
+
 /** A fresh server per HTTP request, exposing only the tools this token's scopes allow. */
 function createServer(automation: AutomationApplication, token: string, scopes: readonly string[], requestId: string): McpServer {
   const server = new McpServer({ name: 'workloom', version: '1.0.0' }, { capabilities: { tools: { listChanged: false } } });
@@ -120,6 +122,10 @@ export function registerMcpHttp(app: FastifyInstance, deps: { automation: Automa
       const mapped = mapError(error);
       return reply.code(mapped.statusCode).header('www-authenticate', 'Bearer realm="workloom", error="invalid_token"').type('application/json')
         .send({ jsonrpc: '2.0', error: { code: -32001, message: mapped.body.error.message }, id: null });
+    }
+    // One request may not fan out into an unbounded number of tool calls.
+    if (Array.isArray(request.body) && request.body.length > MCP_MAX_BATCH) {
+      return reply.code(400).type('application/json').send({ jsonrpc: '2.0', error: { code: -32600, message: `At most ${MCP_MAX_BATCH} messages per request.` }, id: null });
     }
     const handler = createMcpHandler(() => createServer(deps.automation, token, scopes, request.id), { responseMode: 'json' });
     const response = await handler.fetch(toWebRequest(request), { parsedBody: request.body });

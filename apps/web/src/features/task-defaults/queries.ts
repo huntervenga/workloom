@@ -11,10 +11,11 @@ export function useTaskDefaults(actorId: string, workspaceId: string, projectId:
   return useQuery({ queryKey: taskDefaultsKey(actorId, workspaceId, projectId), queryFn: ({ signal }) => fetchTaskDefaults(workspaceId, projectId, signal), enabled: enabled && isUuid(projectId), retry: false });
 }
 
-export function useSaveTaskDefaults(actorId: string, workspaceId: string, projectId: string) {
+/** `onSaved` lives on the hook, not the call: the form is re-keyed when the saved revision arrives, which would drop a per-call callback. */
+export function useSaveTaskDefaults(actorId: string, workspaceId: string, projectId: string, onSaved?: () => void) {
   const client = useQueryClient();
   return useIdempotentMutation({
     prepare: ({ input }: IdempotentVariables & { input: SetTaskDefaultsInput }) => setTaskDefaultsRequest(workspaceId, projectId, input),
-    onSuccess: saved => { client.setQueryData(taskDefaultsKey(actorId, workspaceId, projectId), saved); },
+    onSuccess: saved => { client.setQueryData(taskDefaultsKey(actorId, workspaceId, projectId), saved); onSaved?.(); },
   });
 }

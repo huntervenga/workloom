@@ -39,10 +39,12 @@ function CopyForm({ actorId, workspaceId, project, onClose }: { actorId: string;
   const days = Number(shift);
   const valid = name.trim().length > 0 && Number.isInteger(days) && Math.abs(days) <= 3660;
   const busy = copy.pendingCommand !== null;
+  // An unknown outcome keeps the dialog: closing would forget the key and a fresh submit could copy the project twice.
+  const holding = busy || copy.uncertain !== null;
   const toggle = (key: keyof CopyFlags) => setFlags(current => ({ ...current, [key]: !current[key] }));
   const labels: [keyof CopyFlags, string][] = [['aggregates', t('projectCopy.aggregates')], ['checks', t('projectCopy.checks')], ['defaults', t('projectCopy.defaults')], ['reports', t('projectCopy.reports')], ['workCategory', t('projectCopy.workCategory')]];
 
-  return <DialogShell open variant="wide" onOpenChange={next => { if (!next && !busy) onClose(); }} title={t('projectCopy.title')} description={t('projectCopy.description')}>
+  return <DialogShell open variant="wide" onOpenChange={next => { if (!next && !holding) onClose(); }} title={t('projectCopy.title')} description={t('projectCopy.description')}>
     {result ? <div className="space-y-4">
       <p role="status" className="text-sm text-ink">{t('projectCopy.done', { name: result.name })}</p>
       <ul className="list-disc space-y-1 pl-5 text-sm text-ink-soft">
@@ -73,7 +75,7 @@ function CopyForm({ actorId, workspaceId, project, onClose }: { actorId: string;
         <SaveFeedback error={copy.error} uncertainError={copy.uncertain?.error ?? null} subject="fieldValueSave" />
       </fieldset>
       <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>{t('projectCopy.cancel')}</Button>
+        <Button type="button" variant="ghost" disabled={holding} onClick={onClose}>{t('projectCopy.cancel')}</Button>
         {copy.uncertain ? <Button type="button" onClick={() => copy.retryUncertain()}>{t('projectCopy.retry')}</Button> : null}
         <Button type="submit" variant="primary" disabled={!valid || busy}>{busy ? t('projectCopy.creating') : t('projectCopy.create')}</Button>
       </div>

@@ -7,6 +7,8 @@ import { ApiError, sendMutation } from '../../lib/api';
 import { describeError } from '../../lib/errors';
 import { DialogShell } from '../../shared/DialogShell';
 import { useTaskFieldsQuery } from '../fields/queries';
+import { queryKeys } from '../../lib/queryKeys';
+import { invalidateTasks } from '../tasks/queries';
 import { invalidateProject, useProjectsQuery } from '../projects/queries';
 import { continueTaskRequest } from './api';
 import { carryableFields } from './carryableFields';
@@ -56,7 +58,9 @@ export function BulkContinueDialog({ actorId, workspaceId, tasks, currentProject
     finally {
       setRunning(false);
       for (const projectId of new Set([currentProjectId, target])) void invalidateProject(client, actorId, workspaceId, projectId);
-      void client.invalidateQueries({ queryKey: ['workspace', actorId, workspaceId] });
+      invalidateTasks(client, actorId, workspaceId);
+      void client.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'schedule'] });
+      void client.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'dependencies'] });
       onFinished?.();
     }
   }

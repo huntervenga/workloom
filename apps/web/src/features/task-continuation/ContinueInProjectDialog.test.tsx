@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { alpha, anna, installFakeApi, ok, created, project } from '../../test/fakeApi';
 import { task as baseTask } from '../planning/test/fixtures';
 import { renderFieldUi } from '../fields/test/fixtures';
+import { createQueryClient } from '../../lib/queryClient';
+import { queryKeys } from '../../lib/queryKeys';
 import { ContinueInProjectDialog } from './ContinueInProjectDialog';
 
 const SOURCE = '73000000-0000-4000-8000-000000000003';
@@ -18,13 +20,17 @@ describe('continue in another project', () => {
       [`GET /api/v1/workspaces/${alpha.id}/projects`]: () => ok([project(alpha.id, task.projectId, 'Week 1'), project(alpha.id, OTHER, 'Week 2')]),
       [`POST /api/v1/workspaces/${alpha.id}/tasks/${task.id}/continue`]: request => { body = request.body; return created({ closed: done, continued: { ...task, id: '73000000-0000-4000-8000-000000000009', title: 'Rework billing 3', projectId: OTHER }, dependencyId: '73000000-0000-4000-8000-0000000000aa' }); },
     });
-    const ui = renderFieldUi(<MemoryRouter><ContinueInProjectDialog actorId={anna.id} workspaceId={alpha.id} task={task} currentProjectId={task.projectId} onClose={() => undefined} /></MemoryRouter>);
+    const queryClient = createQueryClient({ retry: false });
+    queryClient.setQueryData(queryKeys.myTasks(anna.id, alpha.id, {}), { pages: [], pageParams: [] });
+    const ui = renderFieldUi(<MemoryRouter><ContinueInProjectDialog actorId={anna.id} workspaceId={alpha.id} task={task} currentProjectId={task.projectId} onClose={() => undefined} /></MemoryRouter>, queryClient);
     expect(await screen.findByLabelText('Name of the new task')).toHaveValue('Rework billing 3');
     await waitFor(() => expect(document.body.textContent).toContain('Week 2'));
     await ui.user.selectOptions(screen.getByLabelText('Continue in project'), OTHER);
     await ui.user.click(screen.getByRole('button', { name: 'Close and continue in Week 2' }));
     await waitFor(() => expect(body).toEqual({ targetProjectId: OTHER, title: 'Rework billing 3', carryFieldIds: [] }));
     expect(await screen.findByText('Done. “Rework billing 3” was created in Week 2.')).toBeInTheDocument();
+    // Every task list of the workspace (and My tasks) is marked stale, not only the project records.
+    expect(queryClient.getQueryState(queryKeys.myTasks(anna.id, alpha.id, {}))?.isInvalidated).toBe(true);
     expect(screen.getByRole('link', { name: 'Open the new task' }).getAttribute('href')).toContain(`/projects/${OTHER}?task=`);
   });
 });

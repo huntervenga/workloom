@@ -121,6 +121,8 @@ export function createSharedAuthStore(source: Database): SharedAuthStore {
         ? { result: undefined, update: { revokedAt: new Date().toISOString() } } : { result: undefined });
     },
     async createLoginAttempt(input) {
+      // Abandoned attempts are never consumed; drop the expired ones here so repeated unauthenticated logins cannot pile up rows.
+      await source.db.delete(sharedAuthLoginAttempts).where(sql`${sharedAuthLoginAttempts.expiresAt} < now()`);
       await source.db.insert(sharedAuthLoginAttempts).values({ stateHash: hash(input.stateHash), browserHash: hash(input.browserHash),
         returnTo: internalReturnTo(input.returnTo), expiresAt: instant(input.expiresAt) });
     },

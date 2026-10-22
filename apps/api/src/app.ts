@@ -7,7 +7,7 @@ import {registerSummaryTemplateRoutes} from './http/summary-template-routes.js';
 import type { DuplicationApplication } from '@workloom/domain';
 import { createDuplicationApplication } from '@workloom/db';
 import { registerDuplicationRoutes } from './http/duplication-routes.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 
 import {
@@ -86,6 +86,7 @@ import { registerTaskRoutes } from './http/task-routes.js';
 import { registerTaskRowRoutes } from './http/task-row-routes.js';
 import { registerWorkspaceCreateRoutes } from './http/workspace-create-routes.js';
 import { registerTeamRoutes } from './http/team-routes.js';
+import { createRateLimiter } from './http/rate-limit.js';
 import { registerInboxRoutes } from './http/inbox-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
 import { registerWorkspaceChangeHeadRoutes } from './http/workspace-change-head-routes.js';
@@ -317,6 +318,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     },
   };
 
+  const tokenLimiter = createRateLimiter({ limit: 300, windowMs: 60_000 });
+  const anonymousLimiter = createRateLimiter({ limit: 600, windowMs: 60_000 });
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
     reply.header('x-content-type-options', 'nosniff');
@@ -329,6 +332,15 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     // Bearer-only surfaces never read cookies, so the browser cross-site guard does not apply to them.
     const path = request.url.split('?', 1)[0] ?? '';
     if (!(path.startsWith(`${PUBLIC_API_PREFIX}/`) || path === MCP_PATH)) assertTrustedOrigin(request, guardOptions);
+    else {
+      // Per token when one is presented, otherwise per address, with a lower ceiling for guessing.
+      const bearer = /^Bearer (wlm_pat_[A-Za-z0-9_-]{43})$/.exec(request.headers.authorization ?? '')?.[1];
+      const decision = bearer ? tokenLimiter.check(createHash('sha256').update(bearer).digest('hex')) : anonymousLimiter.check(request.ip);
+      if (!decision.allowed) {
+        reply.header('retry-after', String(decision.retryAfterSeconds));
+        throw new HttpError(429, 'RATE_LIMITED', 'Too many requests. Wait a moment and try again.', { retryAfterSeconds: decision.retryAfterSeconds }, { retryable: true });
+      }
+    }
   });
 
   app.setErrorHandler((error, request, reply) => {

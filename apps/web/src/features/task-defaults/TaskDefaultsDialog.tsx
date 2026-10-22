@@ -31,21 +31,23 @@ function DefaultsEditor({ actorId, workspaceId, projectId, onClose }: { actorId:
   const fields = useTaskFieldsQuery(actorId, workspaceId, projectId);
   const statuses = useStatusesQuery(actorId, workspaceId, projectId);
   const members = useMembershipsQuery(actorId, workspaceId);
+  // Hosted here, not in the form: closing the dialog must not forget a save whose outcome is unknown.
+  const save = useSaveTaskDefaults(actorId, workspaceId, projectId, onClose);
+  const holding = save.pendingCommand !== null || save.uncertain !== null;
   const ready = defaults.isSuccess && fields.isSuccess && statuses.isSuccess;
-  return <DialogShell open variant="wide" onOpenChange={next => { if (!next) onClose(); }} title={t('taskDefaults.title')} description={t('taskDefaults.description')}>
+  return <DialogShell open variant="wide" onOpenChange={next => { if (!next && !holding) onClose(); }} title={t('taskDefaults.title')} description={t('taskDefaults.description')}>
     {ready ? <Form key={defaults.data.revision} saved={defaults.data} fields={fields.data.filter(field => field.archivedAt === null && !field.locked)} statuses={statuses.data} members={members.data ?? []}
-        actorId={actorId} workspaceId={workspaceId} projectId={projectId} onClose={onClose} />
+        save={save} holding={holding} onClose={onClose} />
       : defaults.isError || fields.isError || statuses.isError ? <p role="alert" className="text-sm text-danger">{t('taskDefaults.loadFailed')}</p>
       : <p role="status" className="text-sm text-muted">{t('taskDefaults.loading')}</p>}
   </DialogShell>;
 }
 
-function Form({ saved, fields, statuses, members, actorId, workspaceId, projectId, onClose }: {
+function Form({ saved, fields, statuses, members, save, holding, onClose }: {
   saved: TaskDefaultsDto; fields: readonly TaskFieldDefinitionDto[]; statuses: readonly TaskStatusDto[]; members: readonly MembershipDto[];
-  actorId: string; workspaceId: string; projectId: string; onClose: () => void;
+  save: ReturnType<typeof useSaveTaskDefaults>; holding: boolean; onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const save = useSaveTaskDefaults(actorId, workspaceId, projectId);
   const config = saved.config;
   const [statusId, setStatusId] = useState(config.statusId ?? '');
   const [priority, setPriority] = useState<string>(config.priority ?? '');
@@ -69,7 +71,7 @@ function Form({ saved, fields, statuses, members, actorId, workspaceId, projectI
       fieldValues.push({ fieldId: field.id, value: parsed.value });
     }
     setProblem(null);
-    save.mutate({ input: { expectedRevision: saved.revision, config: { statusId: statusId || null, priority: (priority || null) as TaskPriority | null, estimateMinutes: parsedEstimate.minutes, fieldValues } } }, { onSuccess: onClose });
+    save.mutate({ input: { expectedRevision: saved.revision, config: { statusId: statusId || null, priority: (priority || null) as TaskPriority | null, estimateMinutes: parsedEstimate.minutes, fieldValues } } });
   }
 
   const selectClass = 'h-9 rounded-md border border-line bg-surface px-2 text-sm text-ink';
@@ -108,8 +110,8 @@ function Form({ saved, fields, statuses, members, actorId, workspaceId, projectI
       <SaveFeedback error={save.error} uncertainError={save.uncertain?.error ?? null} subject="fieldValueSave" />
     </fieldset>
     <div className="flex flex-wrap justify-end gap-2">
-      <Button type="button" variant="ghost" onClick={onClose}>{t('taskDefaults.cancel')}</Button>
-      {save.uncertain ? <Button type="button" onClick={() => save.retryUncertain({ onSuccess: onClose })}>{t('taskDefaults.retrySame')}</Button> : null}
+      <Button type="button" variant="ghost" disabled={holding} onClick={onClose}>{t('taskDefaults.cancel')}</Button>
+      {save.uncertain ? <Button type="button" onClick={() => save.retryUncertain()}>{t('taskDefaults.retrySame')}</Button> : null}
       <Button type="submit" variant="primary" disabled={save.pendingCommand !== null}>{save.pendingCommand !== null ? t('taskDefaults.saving') : t('taskDefaults.save')}</Button>
     </div>
   </form>;

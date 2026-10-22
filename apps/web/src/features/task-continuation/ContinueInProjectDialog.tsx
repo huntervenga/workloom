@@ -6,6 +6,7 @@ import { useTranslation } from '../../i18n';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
+import { storeTask } from '../tasks/queries';
 import { invalidateProject } from '../projects/queries';
 import { useProjectsQuery } from '../projects/queries';
 import { useTaskFieldsQuery } from '../fields/queries';
@@ -31,12 +32,16 @@ export function ContinueInProjectDialog({ actorId, workspaceId, task, currentPro
     onSuccess: saved => {
       setResult(saved);
       for (const projectId of new Set([currentProjectId, saved.continued.projectId])) void invalidateProject(client, actorId, workspaceId, projectId);
-      void client.invalidateQueries({ queryKey: ['workspace', actorId, workspaceId] });
+      // Both tasks changed: refresh every task list, My tasks, reports, schedule and dependencies, not just the project records.
+      storeTask(client, actorId, workspaceId, saved.closed);
+      storeTask(client, actorId, workspaceId, saved.continued);
     },
   });
+  // An unknown outcome keeps the dialog: closing would forget the key and a fresh submit could create a second task.
   const busy = run.pendingCommand !== null;
+  const holding = busy || run.uncertain !== null;
   const targetName = choices.find(project => project.id === target)?.name ?? '';
-  return <DialogShell open variant="wide" onOpenChange={next => { if (!next && !busy) onClose(); }} title={t('taskContinuation.title')} description={t('taskContinuation.description')}>
+  return <DialogShell open variant="wide" onOpenChange={next => { if (!next && !holding) onClose(); }} title={t('taskContinuation.title')} description={t('taskContinuation.description')}>
     {result ? <div className="space-y-4">
       <p role="status" className="text-sm">{t('taskContinuation.done', { title: result.continued.title, project: choices.find(project => project.id === result.continued.projectId)?.name ?? '' })}</p>
       <div className="flex flex-wrap justify-end gap-2">
@@ -65,7 +70,7 @@ export function ContinueInProjectDialog({ actorId, workspaceId, task, currentPro
         <SaveFeedback error={run.error} uncertainError={run.uncertain?.error ?? null} subject="fieldValueSave" />
       </fieldset>
       <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>{t('taskContinuation.cancel')}</Button>
+        <Button type="button" variant="ghost" disabled={holding} onClick={onClose}>{t('taskContinuation.cancel')}</Button>
         {run.uncertain ? <Button type="button" onClick={() => run.retryUncertain()}>{t('taskContinuation.retry')}</Button> : null}
         <Button type="submit" variant="primary" disabled={!target || !title.trim() || busy}>{busy ? t('taskContinuation.working') : targetName ? t('taskContinuation.submit', { project: targetName }) : t('taskContinuation.submitGeneric')}</Button>
       </div>
