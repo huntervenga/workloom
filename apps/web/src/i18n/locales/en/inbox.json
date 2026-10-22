@@ -1,13 +1,17 @@
 {
   "title": "Inbox",
-  "description": "What other people did on your tasks in the last 30 days: assignments and comments.",
+  "description": "What other people did on your tasks and time off in the last 30 days, and time-off requests waiting for your decision.",
   "loading": "Loading your inbox",
   "list": "Inbox items",
   "emptyTitle": "Nothing new",
-  "emptyDescription": "When someone assigns you a task or comments on one of yours, it shows up here.",
+  "emptyDescription": "When someone assigns you a task, comments on one of yours or decides your time off, it shows up here.",
   "new": "New",
   "assigned": "{{actor}} assigned you “{{task}}”",
   "commented": "{{actor}} commented on “{{task}}”",
   "badge": "{{count}} new in your inbox",
-  "nav": "Inbox"
+  "nav": "Inbox",
+  "leaveApproved": "{{actor}} approved your time off ({{start}} – {{end}})",
+  "leaveRejected": "{{actor}} declined your time off ({{start}} – {{end}})",
+  "leaveCancelled": "{{actor}} cancelled your time off ({{start}} – {{end}})",
+  "leavePending": "{{person}} is waiting for your decision on time off ({{start}} – {{end}})"
 }

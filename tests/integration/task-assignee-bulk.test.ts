@@ -115,7 +115,9 @@ describe('atomic assignee ordering and bulk edits on isolated PostgreSQL', () =>
     const root = await current(p);
     await unchanged('DOMAIN_VALIDATION_FAILED', () => tasks.moveTask(ctx(), p.id, { expectedRevision: root.revision, anchorTaskId: c1.id, placement: 'before' }));
     await unchanged('REVISION_CONFLICT', () => tasks.moveTask(ctx(), p.id, { expectedRevision: 999, anchorTaskId: null, placement: 'after', responsibleMembershipId: null }));
-    const archived = await tasks.archiveTask(ctx(), root.id, { expectedRevision: root.revision });
+    // An unrelated archived task as anchor (archiving a parent now takes its subtasks along, so c1 must stay active).
+    const gone = await f.create({ responsibleMembershipId: M.teamMemberA });
+    const archived = await tasks.archiveTask(ctx(), gone.id, { expectedRevision: gone.revision });
     await unchanged('DOMAIN_VALIDATION_FAILED', () => tasks.moveTask(ctx(), c1.id, { expectedRevision: c1now.revision, anchorTaskId: archived.id, placement: 'after' }));
   });
 

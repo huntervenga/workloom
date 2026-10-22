@@ -25,23 +25,23 @@ describe('inbox', () => {
   it('shows an assignment made by someone else, then a comment from someone else, and nothing about own actions', async () => {
     const { project, task } = await newTask(MEMBERS.teamMemberA);
     const first = await inbox(h.member);
-    expect(first.filter(item => item.task.id === task.id).map(item => item.kind)).toEqual(['assigned']);
-    expect(first.find(item => item.task.id === task.id)).toMatchObject({ task: { title: 'Plan the launch', projectId: project.id, projectName: project.name }, excerpt: null });
+    expect(first.filter(item => item.task?.id === task.id).map(item => item.kind)).toEqual(['assigned']);
+    expect(first.find(item => item.task?.id === task.id)).toMatchObject({ task: { title: 'Plan the launch', projectId: project.id, projectName: project.name }, excerpt: null });
     const commented = await h.owner.post(`/tasks/${task.id}/comments`, { body: 'Can you take this before Friday?' });
     expect(commented.status, commented.text()).toBe(201);
     const second = await inbox(h.member);
-    expect(second.filter(item => item.task.id === task.id).map(item => item.kind)).toEqual(['comment', 'assigned']);
+    expect(second.filter(item => item.task?.id === task.id).map(item => item.kind)).toEqual(['comment', 'assigned']);
     expect(second[0]).toMatchObject({ kind: 'comment', excerpt: 'Can you take this before Friday?' });
     // The author's own inbox does not echo what they did themselves.
-    expect((await inbox(h.owner)).some(item => item.task.id === task.id)).toBe(false);
+    expect((await inbox(h.owner)).some(item => item.task?.id === task.id)).toBe(false);
     // Assigning yourself is not news either.
     const own = await newTask(MEMBERS.teamOwner);
-    expect((await inbox(h.owner)).some(item => item.task.id === own.task.id)).toBe(false);
+    expect((await inbox(h.owner)).some(item => item.task?.id === own.task.id)).toBe(false);
   });
 
   it('is empty for someone with no involvement, and never crosses workspaces', async () => {
     const { task } = await newTask(MEMBERS.teamMemberA);
-    expect((await inbox(h.viewer)).some(item => item.task.id === task.id)).toBe(false);
-    expect((await inbox(h.outsider)).some(item => item.task.id === task.id)).toBe(false);
+    expect((await inbox(h.viewer)).some(item => item.task?.id === task.id)).toBe(false);
+    expect((await inbox(h.outsider)).some(item => item.task?.id === task.id)).toBe(false);
   });
 });

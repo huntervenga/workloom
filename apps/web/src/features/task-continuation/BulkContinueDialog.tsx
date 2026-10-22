@@ -19,12 +19,12 @@ type Outcome = { state: 'done' } | { state: 'failed'; message: string };
  * Carries a whole selection into another project, e.g. the unfinished tasks of last week. Every task goes through the same
  * command as the single "Complete and continue", one after another, each with its own key so a retry never duplicates.
  */
-export function BulkContinueDialog({ actorId, workspaceId, tasks, currentProjectId, onClose, onFinished }: { actorId: string; workspaceId: string; tasks: readonly TaskDto[]; currentProjectId: string; onClose: () => void; onFinished?: () => void }) {
+export function BulkContinueDialog({ actorId, workspaceId, tasks, currentProjectId, initialTarget = '', onClose, onFinished }: { actorId: string; workspaceId: string; tasks: readonly TaskDto[]; currentProjectId: string; /** Preselected destination, e.g. the project that was just copied. */ initialTarget?: string; onClose: () => void; onFinished?: () => void }) {
   const { t } = useTranslation();
   const client = useQueryClient();
   const projects = useProjectsQuery(actorId, workspaceId);
   const choices = (projects.data?.projects ?? []).filter(project => project.archivedAt === null && project.id !== currentProjectId);
-  const [target, setTarget] = useState('');
+  const [target, setTarget] = useState(initialTarget);
   const [carried, setCarried] = useState<readonly string[]>([]);
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [running, setRunning] = useState(false);

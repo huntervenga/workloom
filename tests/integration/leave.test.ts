@@ -2,7 +2,7 @@
 import {randomUUID} from 'node:crypto';
 import {afterAll,beforeAll,describe,expect,it} from 'vitest';
 import type * as C from '@workloom/contracts';
-import {createDatabase,createLeaveApplication,createGenericReportApplication,createTaskApplication,runMigrations,seedDemoData,FIXTURE_USER_IDS as U,type Database} from '@workloom/db';
+import {createDatabase,createInboxApplication,createLeaveApplication,createGenericReportApplication,createTaskApplication,runMigrations,seedDemoData,FIXTURE_USER_IDS as U,type Database} from '@workloom/db';
 import type {CommandContext,LeaveApplication} from '@workloom/domain';
 import {createThrowawayDatabase,type ThrowawayDatabase} from './support/test-database.js';
 import {requireTestDatabaseUrl} from './support/test-database-url.js';
@@ -27,6 +27,14 @@ describe('Time off authoritative PostgreSQL lifecycle',()=>{
  const decision=(revision:number,kind:'approve'|'cancel'|'reject'='approve',reason='',approveNegative=false):C.DecideLeaveRequestInput=>({expectedRevision:revision,decision:kind,reason,approveNegative});
  it('adds empty revision/ledger tables and preserves old migration prefix; template applies only through an authorized idempotent command',async()=>{
   expect(await db.sql`select count(*)::int as n from leave_settings`).toEqual([{n:0}]);const f=await fixture(),key=randomUUID();const other=randomUUID();await db.sql`insert into workspaces(id,name,timezone) values(${other},'Empty calendar','UTC')`;await db.sql`insert into memberships(id,workspace_id,user_id,role) values(${randomUUID()},${other},${U.owner},'owner')`;const ctx={...f.ctx(U.owner,key),workspaceId:other},input={expectedRevision:0 as const,effectiveYear:year,includeCompanyHolidays:false};const value=await leave.template(ctx,input),before=await databaseSnapshot(db.sql);expect(await leave.template(ctx,input)).toEqual(value);expect(await databaseSnapshot(db.sql)).toEqual(before);expect(value.policyVersions[0]?.holidays).toEqual([]);await expect(leave.template(f.ctx(U.memberA),input)).rejects.toMatchObject({code:'CAPABILITY_REQUIRED'});
+ });
+ it('puts a time-off decision into the requester inbox and a waiting request into the approver inbox, only while it waits',async()=>{
+  const f=await fixture(),inbox=createInboxApplication(db),pending=await leave.create(f.ctx(U.memberA),{membershipId:f.member,typeId:f.vacation.id,startDate:add(today,20),endDate:add(today,20),note:'',reason:''});
+  expect((await inbox.list(f.ctx(),{limit:50})).filter(i=>i.kind==='leave_pending').map(i=>i.leave?.requestId)).toEqual([pending.id]);
+  expect((await inbox.list(f.ctx(U.memberA),{limit:50})).some(i=>i.kind==='leave_pending')).toBe(false);
+  await leave.decide(f.ctx(),pending.id,decision(pending.revision));
+  expect((await inbox.list(f.ctx(),{limit:50})).some(i=>i.kind==='leave_pending')).toBe(false);
+  expect((await inbox.list(f.ctx(U.memberA),{limit:50})).filter(i=>i.kind==='leave_decided').map(i=>i.leave?.status)).toEqual(['approved']);
  });
  it('authorizes own requests, hides private notes/balances from peers/viewer and rejects foreign workspace/membership',async()=>{
   const f=await fixture();await request(f,add(today,10));const peer=await leave.overview(f.ctx(U.viewer));expect(peer.requests).toEqual([]);expect(peer.balances).toEqual([]);expect(peer.profiles).toEqual([]);const neutral=await leave.availability(f.ctx(U.viewer),{startDate:today,endDate:add(today,30),people:{kind:'all_active'}});expect(JSON.stringify(neutral)).not.toContain('PRIVATE');expect(neutral.inputVersions.requests).toEqual([]);expect(neutral.inputVersions.profiles).toEqual([]);expect(neutral.inputVersions.digest).toMatch(/^[a-f0-9]{64}$/);expect(neutral.members).toHaveLength(3);expect(neutral.members.find(m=>m.membershipId===f.owner)?.scheduleKnown).toBe(false);

@@ -500,6 +500,8 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const task = requireFound(await repo.findTask(ws, id));
         expectRevision(task.revision, parsed.expectedRevision);
         if (task.archivedAt !== null) throw ruleError('The task is already archived.', 'taskId');
+        // Subtasks go with their parent, with the same instant, so a restore can bring back exactly them.
+        for (const child of await descendantsOf(repo, ws, task, task.archivedAt)) await setTaskArchivedAt(scope, child, now, now, 'archived');
         return setTaskArchivedAt(scope, task, now, now, 'archived');
       });
     },
@@ -513,7 +515,15 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         expectRevision(task.revision, parsed.expectedRevision);
         if (task.archivedAt === null) throw ruleError('The task is not archived.', 'taskId');
         await requireOpenProject(repo, ws, task.projectId);
-        return setTaskArchivedAt(scope, task, null, now, 'restored');
+        if (task.parentTaskId !== null) {
+          const parent = await repo.findTask(ws, task.parentTaskId);
+          if (parent && parent.archivedAt !== null) throw ruleError('Restore the parent task first.', 'taskId');
+        }
+        // Only the subtasks that left together with this task come back with it.
+        const leftTogether = task.archivedAt;
+        const restored = await setTaskArchivedAt(scope, task, null, now, 'restored');
+        for (const child of await descendantsOf(repo, ws, task, leftTogether)) await setTaskArchivedAt(scope, child, null, now, 'restored');
+        return restored;
       });
     },
 
@@ -1027,6 +1037,25 @@ async function reloadTask(repo: TaskRepository, ws: string, id: string): Promise
   const task = await repo.findTask(ws, id);
   if (task === null) throw new Error('Task is missing inside its own transaction.');
   return task;
+}
+
+/**
+ * All descendants of `root` in its project whose archive state matches `archivedAt` (null: active ones, a timestamp: those
+ * archived at exactly that instant). Children are visited parent first.
+ */
+async function descendantsOf(repo: TaskRepository, ws: string, root: TaskDto, archivedAt: string | null): Promise<TaskDto[]> {
+  const rows = await listOrderScope(repo, ws, root.projectId);
+  const byParent = new Map<string, TaskDto[]>();
+  for (const row of rows) if (row.parentTaskId !== null) byParent.set(row.parentTaskId, [...(byParent.get(row.parentTaskId) ?? []), row]);
+  const found: TaskDto[] = [];
+  const queue = [root.id];
+  for (let head = 0; head < queue.length; head += 1) {
+    for (const child of byParent.get(queue[head] ?? '') ?? []) {
+      if (child.archivedAt === archivedAt) found.push(child);
+      queue.push(child.id);
+    }
+  }
+  return found;
 }
 
 async function setTaskArchivedAt(

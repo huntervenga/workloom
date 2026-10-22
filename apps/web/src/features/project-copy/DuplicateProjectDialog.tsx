@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { CopyPlus } from 'lucide-react';
-import type { DuplicateProjectResult, ProjectDto } from '@workloom/contracts';
+import type { DuplicateProjectResult, ProjectDto, TaskDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useTranslation } from '../../i18n';
 import { DialogShell } from '../../shared/DialogShell';
@@ -9,23 +9,25 @@ import { SaveFeedback } from '../../shared/SaveFeedback';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import { invalidateProjectList } from '../projects/queries';
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
+import { BulkContinueDialog } from '../task-continuation/BulkContinueDialog';
 import { duplicateProjectRequest } from './api';
 import { hasDateInName, suggestNextProjectName } from './suggestName';
 
 type CopyFlags = { aggregates: boolean; checks: boolean; defaults: boolean; reports: boolean; workCategory: boolean };
 
-export function DuplicateProjectDialog({ actorId, workspaceId, project, canManage }: { actorId: string; workspaceId: string; project: ProjectDto; canManage: boolean }) {
+export function DuplicateProjectDialog({ actorId, workspaceId, project, canManage, unfinished = [] }: { actorId: string; workspaceId: string; project: ProjectDto; canManage: boolean; /** Open top-level tasks of this project, offered for carrying over once the copy exists. */ unfinished?: readonly TaskDto[] }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   if (!canManage) return null;
   return <>
     <Button size="sm" variant="ghost" onClick={() => setOpen(true)}><CopyPlus size={16} aria-hidden="true" />{t('projectCopy.open')}</Button>
-    {open ? <CopyForm actorId={actorId} workspaceId={workspaceId} project={project} onClose={() => setOpen(false)} /> : null}
+    {open ? <CopyForm actorId={actorId} workspaceId={workspaceId} project={project} unfinished={unfinished} onClose={() => setOpen(false)} /> : null}
   </>;
 }
 
-function CopyForm({ actorId, workspaceId, project, onClose }: { actorId: string; workspaceId: string; project: ProjectDto; onClose: () => void }) {
+function CopyForm({ actorId, workspaceId, project, unfinished, onClose }: { actorId: string; workspaceId: string; project: ProjectDto; unfinished: readonly TaskDto[]; onClose: () => void }) {
   const { t } = useTranslation();
+  const [carrying, setCarrying] = useState(false);
   const client = useQueryClient();
   const suggested = suggestNextProjectName(project.name);
   const [name, setName] = useState(suggested === project.name ? `${project.name} (copy)` : suggested);
@@ -44,7 +46,7 @@ function CopyForm({ actorId, workspaceId, project, onClose }: { actorId: string;
   const toggle = (key: keyof CopyFlags) => setFlags(current => ({ ...current, [key]: !current[key] }));
   const labels: [keyof CopyFlags, string][] = [['aggregates', t('projectCopy.aggregates')], ['checks', t('projectCopy.checks')], ['defaults', t('projectCopy.defaults')], ['reports', t('projectCopy.reports')], ['workCategory', t('projectCopy.workCategory')]];
 
-  return <DialogShell open variant="wide" onOpenChange={next => { if (!next && !holding) onClose(); }} title={t('projectCopy.title')} description={t('projectCopy.description')}>
+  return <><DialogShell open variant="wide" onOpenChange={next => { if (!next && !holding) onClose(); }} title={t('projectCopy.title')} description={t('projectCopy.description')}>
     {result ? <div className="space-y-4">
       <p role="status" className="text-sm text-ink">{t('projectCopy.done', { name: result.name })}</p>
       <ul className="list-disc space-y-1 pl-5 text-sm text-ink-soft">
@@ -59,6 +61,7 @@ function CopyForm({ actorId, workspaceId, project, onClose }: { actorId: string;
         <ul className="list-disc pl-5">{result.warnings.map(warning => <li key={warning.part}>{warning.message}</li>)}</ul>
       </div> : null}
       <div className="flex flex-wrap justify-end gap-2">
+        {unfinished.length > 0 ? <Button variant="secondary" onClick={() => setCarrying(true)}>{t('projectCopy.carryOver', { count: unfinished.length })}</Button> : null}
         <Button variant="ghost" onClick={onClose}>{t('projectCopy.close')}</Button>
         <Link className="inline-flex h-9 items-center rounded-md bg-accent px-3 text-sm font-medium text-white hover:bg-accent-strong" to={`/w/${workspaceId}/projects/${result.projectId}`}>{t('projectCopy.openNew')}</Link>
       </div>
@@ -80,5 +83,7 @@ function CopyForm({ actorId, workspaceId, project, onClose }: { actorId: string;
         <Button type="submit" variant="primary" disabled={!valid || busy}>{busy ? t('projectCopy.creating') : t('projectCopy.create')}</Button>
       </div>
     </form>}
-  </DialogShell>;
+  </DialogShell>
+  {carrying && result ? <BulkContinueDialog actorId={actorId} workspaceId={workspaceId} tasks={unfinished} currentProjectId={project.id} initialTarget={result.projectId} onClose={() => setCarrying(false)} /> : null}
+  </>;
 }

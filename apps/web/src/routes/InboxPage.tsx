@@ -1,4 +1,5 @@
-import { Bell, MessageSquare, UserPlus } from 'lucide-react';
+import { Bell, CalendarDays, MessageSquare, UserPlus } from 'lucide-react';
+import type { InboxItemDto } from '@workloom/contracts';
 import { useEffect, useState } from 'react';
 import { Skeleton, StateCard } from '@workloom/ui';
 import { useTranslation } from '../i18n';
@@ -24,25 +25,35 @@ export function InboxPage() {
     if (!newest) return;
     writeSeenAt(actorId, workspace.id, newest);
   }, [actorId, workspace.id, newest]);
+  const describe = (item: InboxItemDto): string => {
+    if (item.kind === 'assigned' && item.task) return t('inbox.assigned', { actor: item.actorName, task: item.task.title });
+    if (item.kind === 'comment' && item.task) return t('inbox.commented', { actor: item.actorName, task: item.task.title });
+    const dates = { start: item.leave?.startDate ?? '', end: item.leave?.endDate ?? '' };
+    if (item.kind === 'leave_pending') return t('inbox.leavePending', { person: item.leave?.personName ?? item.actorName, ...dates });
+    return t(item.leave?.status === 'rejected' ? 'inbox.leaveRejected' : item.leave?.status === 'cancelled' ? 'inbox.leaveCancelled' : 'inbox.leaveApproved', { actor: item.actorName, ...dates });
+  };
   return <div className="space-y-4">
     <header><h1 className="text-2xl font-semibold tracking-tight text-ink">{t('inbox.title')}</h1><p className="mt-1 text-sm text-muted">{t('inbox.description')}</p></header>
     {query.isError ? <QueryErrorState error={query.error} subject="tasks" retrying={query.isFetching} onRetry={() => void query.refetch()} />
       : query.isPending ? <div aria-label={t('inbox.loading')} className="space-y-2 rounded-xl border border-line bg-surface p-4">{[0, 1, 2].map(index => <Skeleton key={index} className="h-10 w-full" />)}</div>
       : items.length === 0 ? <StateCard icon={<Bell size={18} aria-hidden="true" />} title={t('inbox.emptyTitle')} description={t('inbox.emptyDescription')} />
       : <ul aria-label={t('inbox.list')} className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
-        {items.map(item => <li key={item.id}>
-          <Link to={`/w/${workspace.id}/projects/${item.task.projectId}?task=${item.task.id}`} className="flex items-start gap-3 px-4 py-3 hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2">
-            {item.kind === 'assigned' ? <UserPlus size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" /> : <MessageSquare size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" />}
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm text-ink">
-                {unread.has(item.id) ? <span className="mr-2 rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent-ink">{t('inbox.new')}</span> : null}
-                {item.kind === 'assigned' ? t('inbox.assigned', { actor: item.actorName, task: item.task.title }) : t('inbox.commented', { actor: item.actorName, task: item.task.title })}
+        {items.map(item => {
+          const text = describe(item);
+          return <li key={item.id}>
+            <Link to={item.task ? `/w/${workspace.id}/projects/${item.task.projectId}?task=${item.task.id}` : `/w/${workspace.id}/time-off`} className="flex items-start gap-3 px-4 py-3 hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2">
+              {item.kind === 'assigned' ? <UserPlus size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" /> : item.kind === 'comment' ? <MessageSquare size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" /> : <CalendarDays size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" />}
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm text-ink">
+                  {unread.has(item.id) ? <span className="mr-2 rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent-ink">{t('inbox.new')}</span> : null}
+                  {text}
+                </span>
+                {item.excerpt ? <span className="mt-0.5 block truncate text-sm text-muted">{item.excerpt}</span> : null}
+                <span className="mt-0.5 block text-xs text-muted">{item.task ? `${item.task.projectName} · ` : ''}{formatDate(item.at, { dateStyle: 'medium', timeStyle: 'short' })}</span>
               </span>
-              {item.excerpt ? <span className="mt-0.5 block truncate text-sm text-muted">{item.excerpt}</span> : null}
-              <span className="mt-0.5 block text-xs text-muted">{item.task.projectName} · {formatDate(item.at, { dateStyle: 'medium', timeStyle: 'short' })}</span>
-            </span>
-          </Link>
-        </li>)}
+            </Link>
+          </li>;
+        })}
       </ul>}
   </div>;
 }

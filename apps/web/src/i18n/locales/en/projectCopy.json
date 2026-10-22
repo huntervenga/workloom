@@ -25,5 +25,6 @@
   "copiedDefaults": "Defaults for new tasks copied.",
   "warningsTitle": "Some settings could not be copied. The project works without them:",
   "close": "Close",
-  "openNew": "Open the new project"
+  "openNew": "Open the new project",
+  "carryOver": "Carry over {{count}} unfinished tasks…"
 }

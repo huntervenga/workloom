@@ -446,6 +446,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     return capturedBulk && heldFieldTaskId?.toLowerCase() !== task.id.toLowerCase();
   };
   const filtered = hasActiveTaskFilters({ ...filters, includeArchived: false });
+  // Offered after "Create next copy": top-level open tasks, only when the whole project is on screen (no filter, every page loaded).
+  const unfinishedTasks = useMemo(() => {
+    if (filtered || tasks.hasNextPage || !tasks.isSuccess) return [];
+    const groups = new Map((statuses.data ?? []).map(status => [status.id, status.group]));
+    return dedupeTasks(shownTasks).filter(task => task.parentTaskId === null && task.archivedAt === null && task.meetingId === null && (groups.get(task.statusId) === 'todo' || groups.get(task.statusId) === 'in_progress'));
+  }, [filtered, tasks.hasNextPage, tasks.isSuccess, statuses.data, shownTasks]);
   // Subtask totals are only offered once every task of the project is loaded and no filter hides some of them; a partial tree would give a wrong sum.
   const rollupsByField = new Map(fieldColumns.map(({ field }) => [field.id, tasks.hasNextPage || filtered ? new Map<string, TaskFieldData>() : fieldRollups(field, shownTasks, taskId => valueByKey.get(fieldValueKey(taskId, field.id)))]));
   const customColumns: TaskTableCustomColumn[] = fieldColumns.map(({ field, width }) => ({
@@ -1111,7 +1117,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
-            <DuplicateProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} canManage={canManageFields} />
+            <DuplicateProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} canManage={canManageFields} unfinished={unfinishedTasks} />
             <TaskDefaultsDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
             <FieldManagerDialog onConfigurePlanningCheck={planningChecks.configureField} initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />

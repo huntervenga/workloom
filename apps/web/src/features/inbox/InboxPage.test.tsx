@@ -5,7 +5,7 @@ import { alpha, alphaMembers, anna, installFakeApi, json, renderApp, singleActor
 
 const path = `/api/v1/workspaces/${alpha.id}/inbox`;
 const id = (n: number) => `ab000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-const item = (n: number, kind: 'assigned' | 'comment', at: string, excerpt: string | null = null): InboxItemDto => ({ id: id(n), kind, at, actorName: 'Boris', excerpt, task: { id: id(n + 50), title: `Task ${n}`, projectId: id(99), projectName: 'Billing' } });
+const item = (n: number, kind: 'assigned' | 'comment', at: string, excerpt: string | null = null): InboxItemDto => ({ id: id(n), kind, at, actorName: 'Boris', excerpt, task: { id: id(n + 50), title: `Task ${n}`, projectId: id(99), projectName: 'Billing' }, leave: null });
 const page = (items: InboxItemDto[]) => json(200, { data: items, meta: { requestId: 'inbox-test' } });
 
 describe('inbox', () => {
@@ -24,6 +24,18 @@ describe('inbox', () => {
     expect(screen.getAllByText('New')).toHaveLength(1);
     await waitFor(() => expect(screen.queryByLabelText('1 new in your inbox')).not.toBeInTheDocument());
     expect(screen.getByRole('link', { name: /Boris commented/ }).getAttribute('href')).toContain(`/projects/${id(99)}?task=${id(51)}`);
+  });
+
+  it('shows time-off decisions and, for approvers, the requests waiting for them, linking to Time off', async () => {
+    const at = new Date(Date.now() - 3_600_000).toISOString();
+    const leave = (n: number, kind: 'leave_decided' | 'leave_pending', status: 'approved' | 'rejected' | 'pending'): InboxItemDto => ({ id: id(n), kind, at, actorName: 'Carla', excerpt: null, task: null, leave: { requestId: id(n + 70), status, startDate: '2026-11-02', endDate: '2026-11-06', personName: 'Dmitri' } });
+    installFakeApi({ ...singleActorRoutes(anna, [alpha], { [alpha.id]: alphaMembers }), [`GET ${path}`]: () => page([leave(1, 'leave_decided', 'approved'), leave(2, 'leave_decided', 'rejected'), leave(3, 'leave_pending', 'pending')]) });
+    const { user } = renderApp(`/w/${alpha.id}`);
+    await user.click(await screen.findByRole('link', { name: /Inbox/ }));
+    expect(await screen.findByText('Carla approved your time off (2026-11-02 – 2026-11-06)')).toBeInTheDocument();
+    expect(screen.getByText('Carla declined your time off (2026-11-02 – 2026-11-06)')).toBeInTheDocument();
+    expect(screen.getByText('Dmitri is waiting for your decision on time off (2026-11-02 – 2026-11-06)')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Dmitri is waiting/ }).getAttribute('href')).toContain('/time-off');
   });
 
   it('says so when nothing happened', async () => {

@@ -1,7 +1,8 @@
 import { screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
-import { alpha, anna, installFakeApi, created, project } from '../../test/fakeApi';
+import { alpha, anna, installFakeApi, created, ok, project } from '../../test/fakeApi';
+import { task as baseTask } from '../planning/test/fixtures';
 import { renderFieldUi } from '../fields/test/fixtures';
 import { DuplicateProjectDialog } from './DuplicateProjectDialog';
 
@@ -30,6 +31,21 @@ describe('duplicate project dialog', () => {
     expect(screen.getByText('2 planning check(s) copied.')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Saved reports could not be copied.');
     expect(screen.getByRole('link', { name: 'Open the new project' }).getAttribute('href')).toContain(`/projects/${NEW}`);
+  });
+
+  it('offers to carry the unfinished tasks into the new copy, with that project already chosen', async () => {
+    installFakeApi({
+      [`GET /api/v1/workspaces/${alpha.id}/projects`]: () => ok([project(alpha.id, SOURCE, 'Week 1'), project(alpha.id, NEW, 'Week 2')]),
+      [`POST /api/v1/workspaces/${alpha.id}/projects/${SOURCE}/duplicate`]: () => created({ projectId: NEW, name: 'Week 2', copied: { sections: 1, fields: 0, aggregates: false, checkRules: 0, defaults: false, reports: 0, workCategory: false }, warnings: [] }),
+    });
+    const open = [{ ...baseTask, id: '72000000-0000-4000-8000-000000000101', title: 'Unfinished one', workspaceId: alpha.id, projectId: SOURCE }, { ...baseTask, id: '72000000-0000-4000-8000-000000000102', title: 'Unfinished two', workspaceId: alpha.id, projectId: SOURCE }];
+    const ui = renderFieldUi(<MemoryRouter><DuplicateProjectDialog actorId={anna.id} workspaceId={alpha.id} canManage unfinished={open} project={project(alpha.id, SOURCE, 'Week 1')} /></MemoryRouter>);
+    await ui.user.click(screen.getByRole('button', { name: 'Create next copy' }));
+    await ui.user.click(await screen.findByRole('button', { name: 'Create copy' }));
+    await ui.user.click(await screen.findByRole('button', { name: 'Carry over 2 unfinished tasks…' }));
+    expect(await screen.findByRole('heading', { name: 'Continue 2 tasks in another project' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Continue in project')).toHaveValue(NEW));
+    expect(screen.getByText('Unfinished two')).toBeInTheDocument();
   });
 
   it('is absent for people who cannot manage fields', () => {
