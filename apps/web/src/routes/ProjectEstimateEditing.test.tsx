@@ -22,6 +22,8 @@ describe('inline team package estimate', () => {
     const gate = deferred<Response>(); let rows = [base, detail];
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page(rows), [`PATCH ${rootPath}/tasks/${detail.id}`]: () => gate.promise }));
     const { user } = renderApp(legacyTablePath());
+    // Task trees start collapsed.
+    await user.click(await screen.findByRole('button', { name: `Expand subtasks of “${base.title}”` }));
     await user.click(await edit(detail.title));
     const input = screen.getByLabelText('Team estimate (hours)'); expect(input).toHaveFocus(); expect(input).toHaveValue('2:00');
     expect(screen.getByText(helper, { exact: false })).toBeVisible(); expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

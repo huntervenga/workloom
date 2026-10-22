@@ -252,6 +252,8 @@ describe('plain Enter on an unchanged middle subtask title', () => {
       },
     }));
     const { user } = renderApp(tablePath);
+    // Task trees start collapsed.
+    await user.click(await screen.findByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
 
     await enterOnUnchangedTitle(user, subB.title);
     const bRow = rowOf(screen.getByRole('button', { name: subB.title }));

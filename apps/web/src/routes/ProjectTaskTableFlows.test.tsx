@@ -109,6 +109,8 @@ describe('continuing with Enter in the middle of a list', () => {
     const store = { rows: [parent, first, second] };
     const { calls } = installFakeApi(routes(() => store.rows, { [`POST ${rootPath}/tasks`]: insertingCreate(store, ['d2']) }));
     const { user } = renderApp(tablePath);
+    // Task trees start collapsed.
+    await user.click(await screen.findByRole('button', { name: `Expand subtasks of “${parent.title}”` }));
 
     await enterOnUnchangedTitle(user, first.title);
     expect(order()).toEqual([parent.id, first.id, 'draft:draft', second.id]);
