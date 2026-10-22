@@ -68,6 +68,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useLocation, useParams } from 'react-router';
 import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
 import { fieldRollups } from '../features/fields/rollup';
+import { BulkContinueDialog } from '../features/task-continuation/BulkContinueDialog';
 import { ContinueInProjectDialog } from '../features/task-continuation/ContinueInProjectDialog';
 import { DuplicateProjectDialog } from '../features/project-copy/DuplicateProjectDialog';
 import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
@@ -287,6 +288,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const [fieldManagerInitialId, setFieldManagerInitialId] = useState<string | null>(null);
   const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
   const [continueTask, setContinueTask] = useState<TaskDto | null>(null);
+  const [bulkContinueTasks, setBulkContinueTasks] = useState<readonly TaskDto[] | null>(null);
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
   const [quickAddSection, setQuickAddSection] = useState<string | null | undefined>(undefined);
@@ -1116,6 +1118,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </ProjectActions>
       </header>
       {planningChecks.dialogs}
+      {bulkContinueTasks ? <BulkContinueDialog actorId={actorId} workspaceId={workspace.id} tasks={bulkContinueTasks} currentProjectId={project.id} onClose={() => setBulkContinueTasks(null)} onFinished={() => { selectionLedger.current.clear(); setSelectedTaskIds([]); }} /> : null}
       {continueTask ? <ContinueInProjectDialog actorId={actorId} workspaceId={workspace.id} task={continueTask} currentProjectId={project.id} onClose={() => setContinueTask(null)} /> : null}
       <PlacementCommandFeedback commands={placementCommands} actorId={actorId} workspaceId={workspace.id} />
 
@@ -1141,6 +1144,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         members={members.data ?? []} commands={commands} writable={completionWritable}
         blocked={unresolvedTaskCommand(commands) !== null || commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching}
         onClear={() => { selectionLedger.current.clear(); setSelectedTaskIds([]); }}
+        onContinue={() => setBulkContinueTasks(toolbarSelection.tasks)}
         onConfirmed={rows => { for (const row of rows) selectionLedger.current.set(row.id, row); }} /> : null}
       <TaskCompletionFeedback controller={completion} onReview={openTask} />
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />

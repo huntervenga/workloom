@@ -1,0 +1,11 @@
+{
+  "title": "Continue {{count}} tasks in another project",
+  "description": "Each selected task is completed as it stands and its rest starts in the chosen project.",
+  "list": "Selected tasks",
+  "waiting": "Waiting",
+  "done": "Continued",
+  "failed": "Not continued",
+  "summary": "{{done}} of {{total}} tasks continued.",
+  "submit": "Close and continue {{count}} tasks in {{project}}",
+  "retry": "Try the remaining {{count}} again"
+}

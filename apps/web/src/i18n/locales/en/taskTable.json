@@ -231,7 +231,8 @@
     "review": "Review selected tasks",
     "hidden": "{{count}} selected tasks are outside this view.",
     "clearHidden": "Clear hidden selection",
-    "reload": "Refresh selected tasks"
+    "reload": "Refresh selected tasks",
+    "continue": "Continue in another project…"
   },
   "dates": {
     "range": "{{start}} – {{due}}",
