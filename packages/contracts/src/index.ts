@@ -19,6 +19,7 @@ export * from './local-mcp.js';
 export * from './automation.js';
 export * from './task-defaults.js';
 export * from './project-copy.js';
+export * from './task-continuation.js';
 
 export * from './my-tasks.js';
 export { createTaskCommentInputSchema, taskCommentSchema, taskCommentsQuerySchema, taskActivityQuerySchema, taskCommentResponseSchema, taskCommentsResponseSchema, taskActivityKindSchema, taskActivitySchema, taskActivityResponseSchema } from './task-comments.js';

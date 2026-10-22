@@ -1,0 +1,20 @@
+{
+  "title": "Close and continue in another project",
+  "description": "Finish this task as it stands and start the rest of the work in another project.",
+  "explain": "“{{title}}” will be completed with the time already recorded on it. A new task takes up the remaining work.",
+  "project": "Continue in project",
+  "choose": "Choose a project…",
+  "current": "(this project)",
+  "newTitle": "Name of the new task",
+  "rule1": "The new task is blocked by this one, so you can always find where it came from.",
+  "rule2": "Only the name and the project carry over (and the assignee); everything else starts from the project's defaults, with no time recorded.",
+  "rule3": "The finished task keeps its time and stays counted in the period it belongs to.",
+  "cancel": "Cancel",
+  "submit": "Close and continue in {{project}}",
+  "submitGeneric": "Close and continue",
+  "working": "Working…",
+  "retry": "Retry the same request",
+  "done": "Done. “{{title}}” was created in {{project}}.",
+  "close": "Close",
+  "openNew": "Open the new task"
+}

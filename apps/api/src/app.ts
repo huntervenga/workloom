@@ -24,6 +24,7 @@ import {
   createAutomationApplication,
   createTaskDefaultsApplication,
   createProjectCopyApplication,
+  createTaskContinuationApplication,
   type AutomationApplication,
   createPlanningApplication,
   createProjectImportApplication,
@@ -48,7 +49,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { SharedActivityApplication, SummaryTemplateApplication, PlanningCheckApplication, LeaveApplication, GenericReportApplication, TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, TaskDefaultsApplication, ProjectCopyApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
+import type { SharedActivityApplication, SummaryTemplateApplication, PlanningCheckApplication, LeaveApplication, GenericReportApplication, TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, TaskDefaultsApplication, ProjectCopyApplication, TaskContinuationApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { JWTVerifyGetKey } from 'jose';
 
@@ -69,6 +70,7 @@ import { registerDependencyRoutes } from './http/dependency-routes.js';
 import { registerMeetingRoutes } from './http/meeting-routes.js';
 import { registerImportRoutes } from './http/import-routes.js';
 import {registerLocalMcpRoutes} from './http/local-mcp-routes.js';
+import { registerTaskContinuationRoutes } from './http/task-continuation-routes.js';
 import { registerProjectCopyRoutes } from './http/project-copy-routes.js';
 import { registerTaskDefaultsRoutes } from './http/task-defaults-routes.js';
 import { registerApiTokenRoutes } from './http/api-token-routes.js';
@@ -146,6 +148,7 @@ export interface AppDependencies {
   readonly automationApplication?: AutomationApplication;
   readonly taskDefaultsApplication?: TaskDefaultsApplication;
   readonly projectCopyApplication?: ProjectCopyApplication;
+  readonly taskContinuationApplication?: TaskContinuationApplication;
   /** Trusted local test port; registration still requires local/shared managed target. */
   readonly localAsanaImporter?: LocalAsanaImporter;
   readonly identityAdapter?: IdentityAdapter;
@@ -244,6 +247,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.projectImportApplication ?? (database === undefined ? undefined : createProjectImportApplication(database));
   const teamApplication=dependencies.teamApplication??(database===undefined?undefined:createTeamApplication(database));
   const localCredentialApplication=dependencies.localCredentialApplication??(database===undefined?undefined:createLocalCredentialApplication(database,{enableTaskWrites:true}));
+  const taskContinuationApplication=dependencies.taskContinuationApplication??(database===undefined?undefined:createTaskContinuationApplication(database));
   const projectCopyApplication=dependencies.projectCopyApplication??(database===undefined?undefined:createProjectCopyApplication(database));
   const taskDefaultsApplication=dependencies.taskDefaultsApplication??(database===undefined?undefined:createTaskDefaultsApplication(database));
   const automationApplication=dependencies.automationApplication??(database===undefined?undefined:createAutomationApplication(database));
@@ -419,6 +423,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     registerImportRoutes(app, { identity, imports: projectImportApplication });
   }
   if(localCredentialApplication!==undefined&&localMcpApplication!==undefined){registerLocalMcpRoutes(app,{identity,credentials:localCredentialApplication,mcp:localMcpApplication,guards:guardOptions});}
+  if (taskContinuationApplication !== undefined) registerTaskContinuationRoutes(app, { identity, continuation: taskContinuationApplication });
   if (projectCopyApplication !== undefined) registerProjectCopyRoutes(app, { identity, copies: projectCopyApplication });
   if (taskDefaultsApplication !== undefined) registerTaskDefaultsRoutes(app, { identity, defaults: taskDefaultsApplication });
   if (automationApplication !== undefined) {

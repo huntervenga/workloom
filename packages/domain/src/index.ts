@@ -203,6 +203,7 @@ export * from './generic-reports/workspace-engine.js';
 export * from "./planning-checks/ports.js";
 export * from "./task-defaults/service.js";
 export * from "./project-copy/service.js";
+export * from "./task-continuation/service.js";
 export { derivedId, remapSettings, shiftDate, suggestNextProjectName } from "./project-copy/mapping.js";
 export { resolveTaskDefaults } from "./task-defaults/apply.js";
 export * from "./planning-checks/service.js";

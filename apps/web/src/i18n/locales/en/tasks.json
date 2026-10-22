@@ -351,5 +351,13 @@
     "recoveryUnknown": "Tag “{{name}}” from “{{label}}” may or may not have been created.",
     "recoveryRejected": "Tag “{{name}}” from “{{label}}” was not created.",
     "recoveryNotAdded": "Tag “{{name}}” was created in the workspace but not added to “{{label}}”. Open it to select the tag."
+  },
+  "completeButton": {
+    "complete": "Mark complete",
+    "completed": "Completed",
+    "reopenHint": "Click to reopen",
+    "more": "More ways to complete",
+    "completeAndContinue": "Complete and continue in another project…",
+    "continue": "Continue in another project…"
   }
 }

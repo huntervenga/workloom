@@ -145,6 +145,7 @@ export {createLeaveApplication} from './leave/application.js';
 export {createPlanningCheckApplication} from "./planning-checks/application.js";
 export {createTaskDefaultsApplication, createTaskDefaultsRepository} from "./task-defaults/application.js";
 export {createProjectCopyApplication} from "./project-copy/application.js";
+export {createTaskContinuationApplication} from "./task-continuation/application.js";
 
 export { createDuplicationApplication } from './duplication/application.js';
 

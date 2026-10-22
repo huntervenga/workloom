@@ -27,6 +27,7 @@ import type {
   WorkspaceDto,
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
+import { CompleteSplitButton } from './CompleteSplitButton';
 import { Archive, ArchiveRestore, Copy, Lock, MoreHorizontal, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
@@ -119,6 +120,10 @@ export interface TaskDrawerProps {
   /** Reuses the page-owned child composer; existing create sessions keep their original parent. */
   onCreateChild?: ((parent: TaskDto) => void) | undefined;
   onDuplicateTask?: ((task: TaskDto) => void) | undefined;
+  /** "Mark complete" / reopen from the task pane; the page owns the completion pipeline. */
+  onCompleteTask?: ((task: TaskDto, statusId: string, source: HTMLButtonElement | null) => void) | undefined;
+  /** Opens "close and continue in another project" for this task. */
+  onContinueTask?: ((task: TaskDto) => void) | undefined;
   /** Reopens the kept new-task form, e.g. to resolve its unconfirmed create. */
   onResumeCreate: () => void;
   /** Direct children of the open task among the page's loaded tasks; absent without a current list. */
@@ -718,7 +723,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             </>}
             secondaryActions={writable && !archived && !locked ? (
               retained ? <p className="text-xs text-muted">{t('autosave.archive.waitForSave')}</p> : (
-                <div className="flex items-center gap-2"><Button size="sm" aria-disabled={busy || undefined} onClick={runArchive}><Archive size={16} aria-hidden="true" />{t('tasks.taskDrawer.archive')}</Button>{props.onDuplicateTask && latest.meetingId === null ? <Menu.Root modal={false}><Menu.Trigger asChild><Button type="button" size="sm" variant="ghost" disabled={busy} aria-label={t('duplication.taskActions')}><MoreHorizontal size={16} aria-hidden="true"/></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg" onCloseAutoFocus={event=>event.preventDefault()}><Menu.Item className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-ink outline-none data-[highlighted]:bg-canvas" onSelect={()=>props.onDuplicateTask?.(latest)}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root> : null}</div>
+                <div className="flex flex-wrap items-center gap-2">{props.onCompleteTask && props.onContinueTask && latest.meetingId === null ? <CompleteSplitButton task={latest} statuses={props.statuses} busy={busy} onComplete={props.onCompleteTask} onContinue={props.onContinueTask} /> : null}<Button size="sm" aria-disabled={busy || undefined} onClick={runArchive}><Archive size={16} aria-hidden="true" />{t('tasks.taskDrawer.archive')}</Button>{props.onDuplicateTask && latest.meetingId === null ? <Menu.Root modal={false}><Menu.Trigger asChild><Button type="button" size="sm" variant="ghost" disabled={busy} aria-label={t('duplication.taskActions')}><MoreHorizontal size={16} aria-hidden="true"/></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg" onCloseAutoFocus={event=>event.preventDefault()}><Menu.Item className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-ink outline-none data-[highlighted]:bg-canvas" onSelect={()=>props.onDuplicateTask?.(latest)}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root> : null}</div>
               )
             ) : null}
           />

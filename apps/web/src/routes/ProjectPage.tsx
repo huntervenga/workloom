@@ -68,6 +68,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useLocation, useParams } from 'react-router';
 import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
 import { fieldRollups } from '../features/fields/rollup';
+import { ContinueInProjectDialog } from '../features/task-continuation/ContinueInProjectDialog';
 import { DuplicateProjectDialog } from '../features/project-copy/DuplicateProjectDialog';
 import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
 import { CompletedDateBanner } from '../features/projects/CompletedDateBanner';
@@ -284,6 +285,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const renameSectionMutation = useUpdateSectionMutation(actorId, workspace.id);
   const [fieldManagerInitialId, setFieldManagerInitialId] = useState<string | null>(null);
   const [fieldManagerOpen, setFieldManagerOpen] = useState(false);
+  const [continueTask, setContinueTask] = useState<TaskDto | null>(null);
   const [renamingSection, setRenamingSection] = useState<SectionDto | null>(null);
   const [creating, setCreating] = useState<CreateRequest | null>(null);
   const [quickAddSection, setQuickAddSection] = useState<string | null | undefined>(undefined);
@@ -1107,6 +1109,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         </ProjectActions>
       </header>
       {planningChecks.dialogs}
+      {continueTask ? <ContinueInProjectDialog actorId={actorId} workspaceId={workspace.id} task={continueTask} currentProjectId={project.id} onClose={() => setContinueTask(null)} /> : null}
       <PlacementCommandFeedback commands={placementCommands} actorId={actorId} workspaceId={workspace.id} />
 
       {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <TaskFeedbackLayer><div role="status" className="fixed right-3 top-20 z-[60] max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm shadow-lg">
@@ -1308,6 +1311,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           {!importMode && !graphMode ? <LinkedProjectTasks customFields={fieldColumns} expansion={{ expandedTaskIds, collapsedGroupKeys, setTaskCollapsed: changeTaskCollapsed, setGroupCollapsed: changeGroupCollapsed }} actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
           <ProjectUndoSurface actorId={actorId} workspaceId={workspace.id} projectId={project.id} writable={writable} />
           <TaskDrawer
+            onCompleteTask={(chosen, statusId, source) => { if (!bulkInline.complete(chosen, statusId)) completion.choose(chosen, statusId, source); }}
+            onContinueTask={task => setContinueTask(task)}
             newTaskStatusId={taskDefaults.data?.config.statusId ?? null}
             sharedActivityController={sharedActivityController}
             legacyTime={timeAvailable}
