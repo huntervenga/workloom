@@ -1,0 +1,56 @@
+{
+  "open": "Import absences",
+  "title": "Import absences from a spreadsheet",
+  "description": "Record past vacations, sick days and other leave for several people at once. Each row becomes an approved absence with the leave type's usual rules.",
+  "format": "Use a CSV file (export it from Excel or Google Sheets) with the columns Person, Type, Start, End and, if you like, Note. Dates are 2026-07-06 or 06.07.2026. A row with only a start date is one day.",
+  "choose": "Choose a CSV file",
+  "file": "CSV file with absences",
+  "template": "Download a template",
+  "readError": "The file could not be read. Save it as CSV (UTF-8) and try again.",
+  "missingColumns": "The first row must name these columns: {{columns}}.",
+  "col": {
+    "line": "Row",
+    "person": "Person",
+    "type": "Type",
+    "start": "Start",
+    "end": "End",
+    "dates": "Dates",
+    "result": "Result"
+  },
+  "matchTitle": "Match names",
+  "matchHelp": "These names do not match a person or leave type exactly. Choose the right one, or skip those rows.",
+  "matchPerson": "Person “{{name}}”",
+  "matchType": "Leave type “{{name}}”",
+  "skipRows": "Skip these rows",
+  "summary": "{{ready}} ready to import, {{exists}} already recorded, {{invalid}} need attention.",
+  "progress": "{{done}} imported.",
+  "state": {
+    "ready": "Ready",
+    "exists": "Already recorded — skipped",
+    "done": "Imported",
+    "failed": "Could not be imported"
+  },
+  "issue": {
+    "person": "Person not found",
+    "type": "Leave type not found",
+    "startDate": "Start date is not valid",
+    "endDate": "End date is not valid",
+    "order": "End is before start",
+    "duplicate": "Repeated row",
+    "columns": "Missing columns"
+  },
+  "reason": "Reason recorded for past absences",
+  "defaultReason": "Imported from spreadsheet",
+  "note": "Rows already in Time off are skipped, so you can run the same file again. Balances and capacity update as soon as a row is imported.",
+  "close": "Close",
+  "importing": "Importing…",
+  "import": "Import {{count}} absence(s)",
+  "headers": {
+    "person": "person|name|employee|member|who",
+    "type": "type|leave type|kind|category",
+    "start": "start|start date|from|begin|first day",
+    "end": "end|end date|to|until|last day",
+    "note": "note|notes|comment|reason|description"
+  },
+  "templateCsv": "Person,Type,Start,End,Note\nAda Lovelace,Vacation,2026-07-06,2026-07-17,Summer\nAda Lovelace,Sick leave,2026-09-02,2026-09-02,\n"
+}
