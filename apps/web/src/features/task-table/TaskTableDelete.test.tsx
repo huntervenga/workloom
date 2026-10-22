@@ -1,12 +1,13 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import type { TaskDto } from '@workloom/contracts';
 import { TaskTable } from './TaskTable';
 import { makeTask, statuses } from './taskTableFixtures';
 
 describe('Delete task in the row actions', () => {
   const task = makeTask({ id: 't1', title: 'Old plan' });
-  const renderIt = (onDeleteTask: ((task: typeof task) => void) | undefined, writable = true) => render(<TaskTable tasks={[task]} sections={[]} statuses={statuses} members={[]} writable={writable}
+  const renderIt = (onDeleteTask: ((task: TaskDto) => void) | undefined, writable = true) => render(<TaskTable tasks={[task]} sections={[]} statuses={statuses} members={[]} writable={writable}
     onOpenTask={() => undefined} onCreateTask={() => undefined} onCreateChild={() => undefined} onDeleteTask={onDeleteTask} />);
 
   it('offers Delete task and hands the task to the page, which shows the Undo notice', async () => {
