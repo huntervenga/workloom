@@ -21,6 +21,8 @@ import {
   createLocalCredentialApplication,
   createTeamApplication,
   createLocalMcpApplication,
+  createAutomationApplication,
+  type AutomationApplication,
   createPlanningApplication,
   createProjectImportApplication,
   createReadinessProbe,
@@ -65,6 +67,9 @@ import { registerDependencyRoutes } from './http/dependency-routes.js';
 import { registerMeetingRoutes } from './http/meeting-routes.js';
 import { registerImportRoutes } from './http/import-routes.js';
 import {registerLocalMcpRoutes} from './http/local-mcp-routes.js';
+import { registerApiTokenRoutes } from './http/api-token-routes.js';
+import { PUBLIC_API_PREFIX, registerPublicApiRoutes } from './http/public-api-routes.js';
+import { MCP_PATH, registerMcpHttp } from './http/mcp-http.js';
 import { registerPlanningRoutes } from './http/planning-routes.js';
 import { registerRecurrenceRoutes } from './http/recurrence-routes.js';
 import { registerScheduleRoutes } from './http/schedule-routes.js';
@@ -133,6 +138,8 @@ export interface AppDependencies {
   /** Credential-bound MCP facade; writes require current scopes and the shared barrier check. */
   readonly localCredentialApplication?: LocalCredentialApplication;
   readonly localMcpApplication?: LocalMcpApplication;
+  /** Personal access tokens, the public REST API and the remote MCP share this one core. */
+  readonly automationApplication?: AutomationApplication;
   /** Trusted local test port; registration still requires local/shared managed target. */
   readonly localAsanaImporter?: LocalAsanaImporter;
   readonly identityAdapter?: IdentityAdapter;
@@ -231,6 +238,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.projectImportApplication ?? (database === undefined ? undefined : createProjectImportApplication(database));
   const teamApplication=dependencies.teamApplication??(database===undefined?undefined:createTeamApplication(database));
   const localCredentialApplication=dependencies.localCredentialApplication??(database===undefined?undefined:createLocalCredentialApplication(database,{enableTaskWrites:true}));
+  const automationApplication=dependencies.automationApplication??(database===undefined?undefined:createAutomationApplication(database));
   const localMcpApplication=dependencies.localMcpApplication??(database===undefined?undefined:createLocalMcpApplication(database,{enableTaskWrites:true}));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
 
@@ -302,7 +310,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
       reply.header('cache-control', 'no-store');
     }
     assertAllowedHost(request, guardOptions);
-    assertTrustedOrigin(request, guardOptions);
+    // Bearer-only surfaces never read cookies, so the browser cross-site guard does not apply to them.
+    const path = request.url.split('?', 1)[0] ?? '';
+    if (!(path.startsWith(`${PUBLIC_API_PREFIX}/`) || path === MCP_PATH)) assertTrustedOrigin(request, guardOptions);
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -401,6 +411,11 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     registerImportRoutes(app, { identity, imports: projectImportApplication });
   }
   if(localCredentialApplication!==undefined&&localMcpApplication!==undefined){registerLocalMcpRoutes(app,{identity,credentials:localCredentialApplication,mcp:localMcpApplication,guards:guardOptions});}
+  if (automationApplication !== undefined) {
+    registerApiTokenRoutes(app, { identity, automation: automationApplication });
+    registerPublicApiRoutes(app, { automation: automationApplication });
+    registerMcpHttp(app, { automation: automationApplication });
+  }
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);
   }

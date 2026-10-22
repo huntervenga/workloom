@@ -154,12 +154,12 @@ describe('public landing prerender', () => {
     expect(document.querySelectorAll('h1')).toHaveLength(1);
   });
 
-  it('advertises only the public root in crawl resources', () => {
+  it('advertises only the public root and the public docs in crawl resources', () => {
     expect(robots).toContain('Disallow: /app');
     expect(robots).toContain('Disallow: /api');
     expect(robots).toContain(`Sitemap: ${PUBLIC_ORIGIN}/sitemap.xml`);
     const sitemap = new DOMParser().parseFromString(sitemapText, 'application/xml');
-    expect([...sitemap.querySelectorAll('loc')].map(node => node.textContent)).toEqual([`${PUBLIC_ORIGIN}/`]);
+    expect([...sitemap.querySelectorAll('loc')].map(node => node.textContent)).toEqual([`${PUBLIC_ORIGIN}/`, `${PUBLIC_ORIGIN}/docs`]);
   });
 });
 

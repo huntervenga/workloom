@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@fastify/static": "^10.1.6",
+    "@modelcontextprotocol/server": "2.3.1",
     "@workloom/contracts": "*",
     "@workloom/db": "*",
     "@workloom/domain": "*",

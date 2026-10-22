@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#faf9fd" />
+<title>Workloom API and MCP docs</title>
+<meta name="description" content="Create and update Workloom tasks from a terminal, a script or an AI agent: personal access tokens, the REST API and the MCP server." />
+<link rel="canonical" href="https://workloom.pavelignatov.com/docs" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<script src="/theme-init.js"></script>
+<style>
+:root { color-scheme: light; --bg:#faf9fd; --ink:#252036; --muted:#645d78; --surface:#fff; --soft:#f1eef9; --line:#e2dcf0; --accent:#6a45c9; --accent-ink:#4a2e9c; --code-bg:#1b1727; --code-ink:#ece9f4; --ok:#1b7f4b; --warn:#9a5b00; --focus:#7954d7; }
+:root[data-theme="dark"] { color-scheme: dark; --bg:#13111b; --ink:#ece9f4; --muted:#aaa3ba; --surface:#1c1927; --soft:#211d2e; --line:#2f2a40; --accent:#c4aaf5; --accent-ink:#d2bcf7; --code-bg:#0e0c15; --code-ink:#ece9f4; --ok:#6fd39b; --warn:#f0b35a; --focus:#b89cf2; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing:antialiased; }
+a { color:var(--accent-ink); }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline:3px solid var(--focus); outline-offset:3px; border-radius:4px; }
+header.top { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:20px; padding:12px 24px; background:color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+header.top .brand { font-weight:700; letter-spacing:-.03em; text-decoration:none; color:var(--ink); font-size:18px; }
+header.top nav { display:flex; gap:18px; margin-left:auto; font-size:14px; }
+header.top nav a { color:var(--muted); text-decoration:none; }
+header.top nav a:hover { color:var(--ink); }
+.layout { display:grid; grid-template-columns: 240px minmax(0, 1fr); gap:48px; max-width:1180px; margin:0 auto; padding:32px 24px 96px; }
+aside.toc { position:sticky; top:84px; align-self:start; max-height:calc(100dvh - 104px); overflow:auto; font-size:14px; }
+aside.toc p { margin:18px 0 6px; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+aside.toc a { display:block; padding:3px 0; color:var(--muted); text-decoration:none; }
+aside.toc a:hover { color:var(--ink); }
+main { min-width:0; }
+h1 { font-size:42px; line-height:1.12; letter-spacing:-.045em; margin:0 0 12px; }
+h2 { font-size:28px; letter-spacing:-.035em; margin:56px 0 12px; padding-top:8px; border-top:1px solid var(--line); line-height:1.2; }
+h3 { font-size:18px; margin:30px 0 8px; letter-spacing:-.02em; }
+p, li { max-width:75ch; }
+.lead { font-size:18px; color:var(--muted); max-width:62ch; }
+code { font:13.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:var(--soft); padding:.1em .38em; border-radius:5px; }
+pre { position:relative; background:var(--code-bg); color:var(--code-ink); border-radius:12px; padding:16px 18px; overflow:auto; margin:12px 0 20px; }
+pre code { background:none; padding:0; color:inherit; font-size:13px; line-height:1.6; white-space:pre; }
+.copy { position:absolute; top:8px; right:8px; border:1px solid #ffffff33; background:#ffffff14; color:var(--code-ink); border-radius:7px; padding:3px 9px; font:12px/1.4 inherit; cursor:pointer; }
+.copy:hover { background:#ffffff26; }
+table { width:100%; border-collapse:collapse; margin:12px 0 22px; font-size:14.5px; display:block; overflow-x:auto; }
+th, td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { font-size:12px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600; white-space:nowrap; }
+.method { font:600 12px/1 ui-monospace, Menlo, monospace; padding:4px 7px; border-radius:6px; background:var(--soft); color:var(--accent-ink); margin-right:6px; }
+.method.post, .method.patch { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
+.note { border:1px solid var(--line); border-left:4px solid var(--accent); background:var(--surface); border-radius:10px; padding:12px 16px; margin:18px 0; max-width:75ch; }
+.note.warn { border-left-color:var(--warn); }
+.note p { margin:0; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:14px; margin:18px 0; }
+.card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 18px; }
+.card h3 { margin:0 0 4px; font-size:16px; }
+.card p { margin:0; color:var(--muted); font-size:14.5px; }
+details { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:4px 16px; margin:10px 0; }
+summary { cursor:pointer; font-weight:600; padding:10px 0; }
+.tabs { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 0; }
+@media (max-width: 900px) { .layout { grid-template-columns:1fr; gap:0; padding:20px 16px 72px; } aside.toc { position:static; max-height:none; margin-bottom:12px; } h1 { font-size:34px; } header.top { padding:10px 16px; } header.top nav a:not(:last-child) { display:none; } }
+</style>
+</head>
+<body>
+<header class="top"><a class="brand" href="/">Workloom</a><nav aria-label="Primary"><a href="#api">API</a><a href="#mcp">MCP</a><a href="/api/public/v1/openapi.json">OpenAPI</a><a href="/app">Open app</a></nav></header>
+<div class="layout">
+<aside class="toc" aria-label="On this page">
+  <p>Start</p><a href="#overview">Overview</a><a href="#token">Get a token</a><a href="#permissions">Permissions</a><a href="#quickstart">Quickstart</a>
+  <p>REST API</p><a href="#api">Conventions</a><a href="#references">Names and IDs</a><a href="#endpoints">Endpoints</a><a href="#create">Create a task</a><a href="#update">Update a task</a><a href="#list">List and filter</a><a href="#errors">Errors</a><a href="#retries">Retries</a>
+  <p>MCP</p><a href="#mcp">Connect</a><a href="#claude">Claude Code</a><a href="#codex">Codex</a><a href="#other">Other clients</a><a href="#tools">Tools</a>
+  <p>Reference</p><a href="#limits">Limits and security</a>
+</aside>
+<main id="main">
+<h1>Workloom API and MCP</h1>
+<p class="lead">Create tasks, move them between statuses and list your work from a terminal, a CI job or an AI assistant, using a personal token instead of the web app. Everything goes through the same rules and permissions as the interface.</p>
+
+<h2 id="overview">Overview</h2>
+<div class="cards">
+  <div class="card"><h3>One token</h3><p>A personal access token (<code>wlm_pat_…</code>) belongs to you and works across all your workspaces.</p></div>
+  <div class="card"><h3>REST API</h3><p>JSON over HTTPS at <code><span class="origin">https://your-workloom</span>/api/public/v1</code>. Names work wherever an ID does.</p></div>
+  <div class="card"><h3>MCP server</h3><p>The same operations as tools for Claude, Codex and any MCP client at <code><span class="origin">https://your-workloom</span>/mcp</code>.</p></div>
+</div>
+<p>The REST API and the MCP server share one implementation, so a task created by an agent is identical to one created with <code>curl</code> or in the web app, and appears in the audit history with the token that made the change.</p>
+
+<h2 id="token">Get a token</h2>
+<ol>
+  <li>Sign in and open a workspace, then <strong>Integrations → API tokens</strong>.</li>
+  <li>Choose a name (for example “CI” or “Claude on my laptop”), the access, how long it lasts (1–365 days, 90 by default) and, optionally, the workspaces it may reach.</li>
+  <li>Copy the token immediately. It is shown <strong>once</strong>; Workloom stores only a hash and cannot show it again. If you lose it, revoke it and create another.</li>
+</ol>
+<table>
+  <thead><tr><th>Access</th><th>Allows</th></tr></thead>
+  <tbody>
+    <tr><td><code>read</code></td><td>List workspaces, projects, members, tags and tasks; read a task.</td></tr>
+    <tr><td><code>tasks:write</code></td><td>Create and update tasks (status, section, assignee, dates, tags, …). Add <code>read</code> too if you also want to read.</td></tr>
+  </tbody>
+</table>
+<pre><code>export WORKLOOM_URL=<span class="origin">https://your-workloom</span>
+export WORKLOOM_TOKEN=wlm_pat_…        # keep it out of shell history and git</code></pre>
+
+<h2 id="permissions">Permissions</h2>
+<p>A token never has more power than its owner. On <strong>every</strong> request the server checks, in one consistent snapshot:</p>
+<ol>
+  <li>the token exists, is not revoked and has not expired;</li>
+  <li>the token’s access (<code>read</code> / <code>tasks:write</code>) covers the operation;</li>
+  <li>the token is allowed to reach that workspace (if you restricted it);</li>
+  <li>you are <em>currently</em> an active member of the workspace and your role allows the operation.</li>
+</ol>
+<p>If you lose access to a workspace, or your role drops to Viewer, the token stops working there immediately. A workspace you cannot see answers <code>404</code>, exactly like one that does not exist. Writes re-check the token inside the same transaction as the change, so revoking a token wins over any write that has not committed yet. Business rules (required statuses, date checks, locked fields) still apply to API writes.</p>
+
+<h2 id="quickstart">Quickstart</h2>
+<pre><code># who am I, and which workspaces can this token reach?
+curl -s "$WORKLOOM_URL/api/public/v1/me" -H "Authorization: Bearer $WORKLOOM_TOKEN"
+
+# the project’s sections and statuses (workspace by slug or UUID, project by name or UUID)
+curl -s "$WORKLOOM_URL/api/public/v1/workspaces/acme/projects/Platform" -H "Authorization: Bearer $WORKLOOM_TOKEN"
+
+# create a task for me, in the “Backlog” section
+curl -s -X POST "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks" \
+  -H "Authorization: Bearer $WORKLOOM_TOKEN" -H "Content-Type: application/json" \
+  -d '{"project":"Platform","title":"Rotate the staging keys","section":"Backlog","assignee":"me","dueDate":"2026-12-01"}'
+
+# my open tasks in that project
+curl -s "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks?project=Platform&amp;assignee=me&amp;open=true" -H "Authorization: Bearer $WORKLOOM_TOKEN"
+
+# mark a task as done
+curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&gt;" \
+  -H "Authorization: Bearer $WORKLOOM_TOKEN" -H "Content-Type: application/json" -d '{"status":"Done"}'</code></pre>
+
+<h2 id="api">REST API conventions</h2>
+<ul>
+  <li><strong>Base URL:</strong> <code><span class="origin">https://your-workloom</span>/api/public/v1</code>. Machine-readable description: <a href="/api/public/v1/openapi.json">openapi.json</a>.</li>
+  <li><strong>Auth:</strong> <code>Authorization: Bearer wlm_pat_…</code> on every request. No cookies, no CORS; call it from servers and terminals, not from browser pages.</li>
+  <li><strong>JSON</strong> in and out, camelCase fields, dates as <code>YYYY-MM-DD</code>, timestamps in UTC ISO 8601. Unknown fields are rejected, which catches typos.</li>
+  <li><strong>Envelope:</strong> success is <code>{ "data": …, "meta": { "requestId", "nextCursor"? } }</code>; failure is <code>{ "error": { "code", "message", "details"?, "retryable" }, "meta": { "requestId" } }</code>. Quote <code>requestId</code> when reporting a problem.</li>
+</ul>
+
+<h3 id="references">Names and IDs</h3>
+<p>Workspace, project, section, status, tag and person can each be given as a UUID or by exact name (case and extra spaces ignored). The workspace may also be its slug.</p>
+<table>
+  <thead><tr><th>Field</th><th>Accepts</th></tr></thead>
+  <tbody>
+    <tr><td><code>{ws}</code> in the path</td><td>workspace slug or UUID</td></tr>
+    <tr><td><code>project</code>, <code>section</code>, <code>status</code>, <code>tags[]</code></td><td>UUID or exact name. Section and status names are looked up inside the task’s project.</td></tr>
+    <tr><td><code>assignee</code>, <code>participants[]</code></td><td><code>"me"</code>, a member’s display name, a membership UUID or a user UUID. <code>null</code> or <code>"none"</code> clears the assignee.</td></tr>
+  </tbody>
+</table>
+<p>An unknown or ambiguous name is a <code>400 VALIDATION_FAILED</code> with <code>error.details = { field, reason: "not_found" | "ambiguous", candidates[] }</code> so scripts and agents can correct themselves.</p>
+
+<h3 id="endpoints">Endpoints</h3>
+<table>
+  <thead><tr><th>Method and path</th><th>Needs</th><th>Does</th></tr></thead>
+  <tbody>
+    <tr><td><span class="method">GET</span><code>/me</code></td><td>read</td><td>Your user, the token, and reachable workspaces with your role.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces</code></td><td>read</td><td>Workspaces this token can reach.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/projects</code></td><td>read</td><td>Active projects.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/projects/{project}</code></td><td>read</td><td>One project with its sections and statuses.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/members</code></td><td>read</td><td>People tasks can be assigned to.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tags</code></td><td>read</td><td>Tags.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tasks</code></td><td>read</td><td>List and filter tasks (below).</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tasks/{taskId}</code></td><td>read</td><td>One task.</td></tr>
+    <tr><td><span class="method post">POST</span><code>/workspaces/{ws}/tasks</code></td><td>tasks:write</td><td>Create a task.</td></tr>
+    <tr><td><span class="method patch">PATCH</span><code>/workspaces/{ws}/tasks/{taskId}</code></td><td>tasks:write</td><td>Change a task, including its status.</td></tr>
+  </tbody>
+</table>
+<p>A task looks like this everywhere:</p>
+<pre><code>{
+  "id": "6f0c…", "workspaceId": "5eed…", "title": "Rotate the staging keys", "description": "",
+  "project": { "id": "…", "name": "Platform" },
+  "section": { "id": "…", "name": "Backlog" },
+  "status":  { "id": "…", "name": "To do", "group": "todo" },     // group: todo | in_progress | done | cancelled
+  "assignee": { "membershipId": "…", "displayName": "Ada Lovelace" },
+  "participants": [], "priority": "none",                          // none | low | medium | high | urgent
+  "startDate": null, "dueDate": "2026-12-01", "estimateMinutes": null,
+  "tags": [{ "id": "…", "name": "ops" }], "parentTaskId": null,
+  "revision": 1, "archived": false, "createdAt": "…", "updatedAt": "…"
+}</code></pre>
+
+<h3 id="create">Create a task</h3>
+<p><code>POST /workspaces/{ws}/tasks</code> → <code>201</code> with the task. Only <code>project</code> and <code>title</code> are required.</p>
+<table>
+  <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>project</code></td><td>string</td><td><strong>Required.</strong> Name or UUID.</td></tr>
+    <tr><td><code>title</code></td><td>string</td><td><strong>Required.</strong> 1–500 characters.</td></tr>
+    <tr><td><code>section</code></td><td>string | null</td><td>Optional. Defaults to no section.</td></tr>
+    <tr><td><code>status</code></td><td>string</td><td>Optional. Defaults to the project’s first “to do” status.</td></tr>
+    <tr><td><code>assignee</code></td><td>string | null</td><td>Optional. <code>"me"</code>, name or ID.</td></tr>
+    <tr><td><code>participants</code></td><td>string[]</td><td>Optional. Up to 50 people.</td></tr>
+    <tr><td><code>description</code></td><td>string</td><td>Optional. Up to 20 000 characters, plain text.</td></tr>
+    <tr><td><code>startDate</code>, <code>dueDate</code></td><td>YYYY-MM-DD | null</td><td>Optional. Start must not be after due.</td></tr>
+    <tr><td><code>priority</code></td><td>enum</td><td>Optional. <code>none low medium high urgent</code>.</td></tr>
+    <tr><td><code>tags</code></td><td>string[]</td><td>Optional. Existing tags, by name or UUID. Up to 20.</td></tr>
+    <tr><td><code>estimateMinutes</code></td><td>integer | null</td><td>Optional work estimate.</td></tr>
+    <tr><td><code>parentTask</code></td><td>UUID | null</td><td>Optional. Makes this a subtask.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="update">Update a task</h3>
+<p><code>PATCH /workspaces/{ws}/tasks/{taskId}</code> → <code>200</code> with the task. Send only what should change; omitted fields stay as they are, <code>null</code> clears <code>section</code>, <code>assignee</code>, <code>startDate</code>, <code>dueDate</code> and <code>estimateMinutes</code>. Accepts <code>title description status section assignee participants startDate dueDate priority tags estimateMinutes</code>.</p>
+<ul>
+  <li><strong>Change the status:</strong> <code>{"status": "In progress"}</code> (name or UUID of one of the project’s statuses).</li>
+  <li><strong>Move to a section:</strong> <code>{"section": "Backlog"}</code>.</li>
+  <li><strong>Nothing to change?</strong> A request that matches the current state succeeds and returns the task without a new revision, so scripts can run twice safely.</li>
+  <li><strong>Optimistic locking:</strong> add <code>"ifRevision": 4</code> to fail with <code>409 REVISION_CONFLICT</code> if someone changed the task since you read revision 4. Without it, your fields are applied to the latest version (“last write wins”).</li>
+</ul>
+
+<h3 id="list">List and filter tasks</h3>
+<p><code>GET /workspaces/{ws}/tasks</code> — filters combine with AND. For list-valued filters repeat the parameter or separate values with commas. A name that exists in several projects (for example “To do”) matches all of them.</p>
+<table>
+  <thead><tr><th>Parameter</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>project</code></td><td>Only these projects (name or UUID).</td></tr>
+    <tr><td><code>section</code>, <code>status</code>, <code>tag</code></td><td>Names or UUIDs. With many projects, narrow with <code>project</code> first.</td></tr>
+    <tr><td><code>statusGroup</code></td><td><code>todo</code>, <code>in_progress</code>, <code>done</code>, <code>cancelled</code>.</td></tr>
+    <tr><td><code>open</code></td><td><code>true</code> = to do or in progress only.</td></tr>
+    <tr><td><code>assignee</code></td><td><code>me</code>, <code>none</code> (unassigned), a name or ID. Matches the responsible person or a participant.</td></tr>
+    <tr><td><code>q</code></td><td>Text in the title or description.</td></tr>
+    <tr><td><code>dueBefore</code>, <code>dueAfter</code></td><td>Inclusive dates, <code>YYYY-MM-DD</code>.</td></tr>
+    <tr><td><code>includeArchived</code></td><td><code>true</code> to include archived tasks and projects.</td></tr>
+    <tr><td><code>sort</code></td><td><code>updated</code> (default, newest first), <code>created</code> (newest first) or <code>due</code> (earliest first, undated last).</td></tr>
+    <tr><td><code>limit</code>, <code>cursor</code></td><td>Page size 1–200 (default 50). When <code>meta.nextCursor</code> is not null pass it back as <code>cursor</code> with the same filters.</td></tr>
+  </tbody>
+</table>
+<pre><code># everything due this month that is still open, across Platform and Billing
+curl -s -G "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks" -H "Authorization: Bearer $WORKLOOM_TOKEN" \
+  --data-urlencode "project=Platform,Billing" --data-urlencode "open=true" \
+  --data-urlencode "dueBefore=2026-12-31" --data-urlencode "sort=due"</code></pre>
+
+<h3 id="errors">Errors</h3>
+<table>
+  <thead><tr><th>HTTP</th><th><code>error.code</code></th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>400</td><td><code>VALIDATION_FAILED</code></td><td>Bad body or query, an unknown field, or an unknown/ambiguous name (see <code>details</code>).</td></tr>
+    <tr><td>401</td><td><code>UNAUTHENTICATED</code></td><td>Missing, malformed, unknown, expired or revoked token.</td></tr>
+    <tr><td>403</td><td><code>CAPABILITY_REQUIRED</code></td><td>The token’s access or your role does not allow this.</td></tr>
+    <tr><td>404</td><td><code>NOT_FOUND</code></td><td>No such workspace/task, or you cannot access it.</td></tr>
+    <tr><td>409</td><td><code>REVISION_CONFLICT</code>, <code>FIELD_LOCKED</code>, <code>IDEMPOTENCY_KEY_REUSED</code>, …</td><td>The change conflicts with the current state or a workspace rule.</td></tr>
+    <tr><td>422</td><td><code>DOMAIN_VALIDATION_FAILED</code></td><td>A workspace rule rejected the change; the message says which.</td></tr>
+    <tr><td>429 / 503</td><td><code>RATE_LIMITED</code>, <code>TEMPORARILY_UNAVAILABLE</code></td><td>Retry later; <code>error.retryable</code> is true.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="retries">Retries and idempotency</h3>
+<p>Send <code>Idempotency-Key: &lt;unique string, up to 128 printable ASCII characters&gt;</code> on <code>POST</code> (and <code>PATCH</code>) when a request may be retried after a timeout. Repeating the same key with the same body returns the original result instead of creating a second task; the same key with a different body is <code>409 IDEMPOTENCY_KEY_REUSED</code>. Without a key every call is treated as new.</p>
+
+<h2 id="mcp">MCP server</h2>
+<p>Workloom exposes the same operations as <a href="https://modelcontextprotocol.io">Model Context Protocol</a> tools over <strong>Streamable HTTP</strong>. The endpoint is stateless and authenticates every call with your personal token.</p>
+<pre><code>URL:     <span class="origin">https://your-workloom</span>/mcp
+Header:  Authorization: Bearer wlm_pat_…</code></pre>
+<p>Create the token with <code>read</code> for a read-only assistant, or <code>read</code> + <code>tasks:write</code> to let it create and update tasks. The tool list a client sees depends on the token: a read-only token does not even list the write tools.</p>
+
+<h3 id="claude">Claude Code</h3>
+<pre><code>claude mcp add --transport http workloom <span class="origin">https://your-workloom</span>/mcp \
+  --header "Authorization: Bearer $WORKLOOM_TOKEN"</code></pre>
+<p>Then ask: “Show my open Workloom tasks in Platform” or “Create a task in Platform: rotate the staging keys, due Friday, assigned to me”. Use <code>/mcp</code> inside Claude Code to check the connection.</p>
+
+<h3 id="codex">Codex</h3>
+<p>Add this to <code>~/.codex/config.toml</code> and export the token in the environment that starts Codex:</p>
+<pre><code>[mcp_servers.workloom]
+url = "<span class="origin">https://your-workloom</span>/mcp"
+bearer_token_env_var = "WORKLOOM_TOKEN"</code></pre>
+<pre><code>export WORKLOOM_TOKEN=wlm_pat_…
+codex</code></pre>
+
+<h3 id="other">Claude Desktop, Cursor and other clients</h3>
+<p>Clients that support remote servers can use the URL and header above directly. For clients that only start local (stdio) servers, bridge with <code>mcp-remote</code>; this form keeps the token out of the command line:</p>
+<pre><code>{
+  "mcpServers": {
+    "workloom": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "<span class="origin">https://your-workloom</span>/mcp", "--header", "Authorization:${WORKLOOM_AUTH}"],
+      "env": { "WORKLOOM_AUTH": "Bearer wlm_pat_…" }
+    }
+  }
+}</code></pre>
+
+<h3 id="tools">Tools</h3>
+<p>All tools take an optional <code>workspace</code> (slug or UUID). If your token reaches exactly one workspace it can be left out. Write tools take an optional <code>operationKey</code>: reuse the same key when retrying after an unknown outcome and the change is applied once.</p>
+<table>
+  <thead><tr><th>Tool</th><th>Needs</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>whoami</code></td><td>read</td><td>Your user, token access and workspaces.</td></tr>
+    <tr><td><code>list_workspaces</code></td><td>read</td><td>Reachable workspaces.</td></tr>
+    <tr><td><code>list_projects</code></td><td>read</td><td>Active projects.</td></tr>
+    <tr><td><code>get_project</code></td><td>read</td><td>Sections and statuses of a project (name or UUID).</td></tr>
+    <tr><td><code>list_members</code></td><td>read</td><td>People you can assign.</td></tr>
+    <tr><td><code>list_tags</code></td><td>read</td><td>Tags.</td></tr>
+    <tr><td><code>list_tasks</code></td><td>read</td><td>Filter by <code>project[]</code>, <code>section[]</code>, <code>status[]</code>, <code>statusGroup[]</code>, <code>assignee[]</code> (<code>"me"</code>), <code>tag[]</code>, <code>q</code>, <code>dueBefore</code>, <code>dueAfter</code>, <code>open</code>, <code>sort</code>, <code>limit</code>, <code>cursor</code>. Returns <code>tasks</code> and <code>nextCursor</code>.</td></tr>
+    <tr><td><code>get_task</code></td><td>read</td><td>One task by ID.</td></tr>
+    <tr><td><code>create_task</code></td><td>tasks:write</td><td>Same fields as the REST create.</td></tr>
+    <tr><td><code>update_task</code></td><td>tasks:write</td><td><code>taskId</code> and <code>changes</code> (same fields as the REST update).</td></tr>
+    <tr><td><code>set_task_status</code></td><td>tasks:write</td><td><code>taskId</code> and <code>status</code> (name or UUID).</td></tr>
+  </tbody>
+</table>
+<div class="note warn"><p><strong>Treat task text as untrusted.</strong> Titles and descriptions come from people and may contain instructions. An assistant should not follow them, and a token should have only the access the assistant needs.</p></div>
+
+<h2 id="limits">Limits and security</h2>
+<ul>
+  <li>Tokens last at most 365 days and cannot be extended; create a new one before it expires. Up to 50 active tokens per person.</li>
+  <li>Only the SHA-256 hash of a token is stored. Treat the token like a password: environment variable or secret manager, never a repository, chat or ticket. Revoke a leaked token on <strong>Integrations → API tokens</strong>; it stops working immediately.</li>
+  <li>Request bodies are limited to 256 KiB; lists return at most 200 items per page.</li>
+  <li>The “last used” time on the token list is approximate (at most once a minute).</li>
+  <li>Not available yet: comments, attachments, custom fields, time tracking, bulk changes and webhooks.</li>
+</ul>
+</main>
+</div>
+<script>
+(function () {
+  var origin = location.origin;
+  document.querySelectorAll('.origin').forEach(function (node) { node.textContent = origin; });
+  document.querySelectorAll('pre').forEach(function (pre) {
+    var button = document.createElement('button');
+    button.type = 'button'; button.className = 'copy'; button.textContent = 'Copy';
+    button.addEventListener('click', function () {
+      var text = (pre.querySelector('code') || pre).textContent || '';
+      var done = function () { button.textContent = 'Copied'; setTimeout(function () { button.textContent = 'Copy'; }, 1500); };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
+    });
+    pre.appendChild(button);
+  });
+})();
+</script>
+</body>
+</html>

@@ -134,6 +134,7 @@ export const auditEvents = pgTable(
     schemaVersion: integer('schema_version').notNull().default(1),
     actorUserId: uuid('actor_user_id').notNull(),
     credentialId: uuid('credential_id'),
+    apiTokenId: uuid('api_token_id'),
     actorMembershipId: uuid('actor_membership_id').notNull(),
     source: commandSourceEnum('source').notNull(),
     requestId: text('request_id').notNull(),
@@ -839,6 +840,24 @@ export const taskFieldValueHistory = pgTable(
   ],
 );
 
+/** Personal access tokens for the public API and remote MCP; only the SHA-256 of the secret is stored. */
+export const apiTokens = pgTable('api_tokens', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  name: text('name').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  tokenPrefix: text('token_prefix').notNull(),
+  scopes: jsonb('scopes').$type<string[]>().notNull(),
+  workspaceIds: jsonb('workspace_ids').$type<string[] | null>(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+}, t => [
+  unique('api_tokens_hash_unique').on(t.tokenHash),
+  index('api_tokens_user_idx').on(t.userId, t.createdAt),
+]);
+
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
   'workspace_slug_aliases',
@@ -851,6 +870,7 @@ export const REQUIRED_TABLES = [
   'team_invitations', 'team_pending_members',
   'shared_auth_identities', 'shared_auth_sessions', 'shared_auth_login_attempts',
   'local_mcp_credentials',
+  'api_tokens',
   'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
   'users',
   'workspaces',

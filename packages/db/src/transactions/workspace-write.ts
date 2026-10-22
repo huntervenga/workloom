@@ -24,7 +24,7 @@ export interface DbWorkspaceWriteScope extends WorkspaceWriteScope {
 
 export interface WorkspaceWriteOptions {
   /** Trusted composition-only check, after the barrier/clock and before any receipt or handler. */
-  readonly authorizeInScope?: (scope:Pick<DbWorkspaceWriteScope, "tx"|"context"|"access"|"barrierAt">)=>Promise<{readonly credentialId:string}|undefined>;
+  readonly authorizeInScope?: (scope:Pick<DbWorkspaceWriteScope, "tx"|"context"|"access"|"barrierAt">)=>Promise<{readonly credentialId?:string;readonly apiTokenId?:string}|undefined>;
   /** Maximum wait for the workspace barrier. Default 5 s. */
   readonly lockTimeoutMs?: number;
   /** Maximum duration of any statement in the transaction. Default 15 s. */
@@ -95,7 +95,7 @@ export async function runWorkspaceWrite<T>(
       );
       const barrierAt = new Date(Number(clock?.epoch_ms));
 
-      let authorization: {readonly credentialId:string}|undefined;
+      let authorization: {readonly credentialId?:string;readonly apiTokenId?:string}|undefined;
       let changeSeq: bigint | undefined;
       let eventOrdinal = 0;
       let open = true;
@@ -129,6 +129,7 @@ export async function runWorkspaceWrite<T>(
           eventOrdinal: recorded.eventOrdinal,
           actorUserId: context.actor.userId,
           credentialId: authorization?.credentialId ?? null,
+          apiTokenId: authorization?.apiTokenId ?? null,
           actorMembershipId: access.membership.id,
           source: context.source,
           requestId: context.requestId,

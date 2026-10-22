@@ -12,6 +12,9 @@ export const DEFAULT_WEB_DIST_DIR = fileURLToPath(new URL('../../../web/dist/', 
 export const LANDING_DOCUMENT = 'landing.html';
 /** SPA document served only for navigations under APP_PREFIX. */
 export const SPA_DOCUMENT = 'index.html';
+/** Public, signed-out API and MCP documentation served at /docs; optional so older builds keep working. */
+export const DOCS_DOCUMENT = 'docs.html';
+export const DOCS_PATH = '/docs';
 export const APP_PREFIX = '/app';
 /** Pre-landing SPA workspace routes; HTML navigations move under APP_PREFIX. */
 const LEGACY_APP_PREFIX = '/w';
@@ -77,6 +80,10 @@ export function sendSpaIndex(reply: FastifyReply, cacheControl: DocumentCachePol
     .sendFile(SPA_DOCUMENT);
 }
 
+export function sendDocs(reply: FastifyReply): FastifyReply {
+  return reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8').sendFile(DOCS_DOCUMENT);
+}
+
 export function sendLanding(reply: FastifyReply): FastifyReply {
   return reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8').sendFile(LANDING_DOCUMENT);
 }
@@ -98,6 +105,7 @@ function isAllowedStaticPath(pathName: string, _root: string, request: FastifyRe
   const { path } = splitTarget(request.url);
   if (name === SPA_DOCUMENT) return isUnder(path, APP_PREFIX);
   if (name === LANDING_DOCUMENT) return path === '/';
+  if (name === DOCS_DOCUMENT) return path === DOCS_PATH || path === `${DOCS_PATH}/`;
   return true;
 }
 
@@ -120,5 +128,10 @@ export async function registerStaticWeb(app: FastifyInstance, distDir: string): 
   });
   app.get('/', async (_request, reply) => sendLanding(reply));
   app.get(`/${SPA_DOCUMENT}`, async (request, reply) => reply.redirect(`${APP_PREFIX}${splitTarget(request.url).query}`, CANONICAL_REDIRECT));
+  if (existsSync(join(distDir, DOCS_DOCUMENT))) {
+    app.get(DOCS_PATH, async (_request, reply) => sendDocs(reply));
+    app.get(`${DOCS_PATH}/`, async (_request, reply) => sendDocs(reply));
+    app.get(`/${DOCS_DOCUMENT}`, async (request, reply) => reply.redirect(`${DOCS_PATH}${splitTarget(request.url).query}`, CANONICAL_REDIRECT));
+  }
   app.get(`/${LANDING_DOCUMENT}`, async (request, reply) => reply.redirect(`/${splitTarget(request.url).query}`, CANONICAL_REDIRECT));
 }

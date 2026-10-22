@@ -110,6 +110,8 @@ export {createProjectImportApplication} from './imports/import-application.js';
 export {createLocalCredentialApplication,parseLocalMcpBearer,type LocalMcpApplicationOptions} from './local-mcp/credentials.js';
 export {createLocalMcpApplication} from './local-mcp/application.js';
 
+export { createAutomationApplication, type AutomationApplication, type WriteOptions as AutomationWriteOptions } from './automation/service.js';
+export { generateApiToken, hashApiToken, parseApiToken } from './automation/tokens.js';
 export { createMyTasksApplication } from './my-tasks/application.js';
 export { createMyTasksCursorCodec, type MyTasksCursorOptions } from './my-tasks/cursor.js';
 export { createTaskCommentsApplication } from './task-comments/application.js';

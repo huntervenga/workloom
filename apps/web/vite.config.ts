@@ -27,7 +27,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    rollupOptions: { input: { app: fileURLToPath(new URL('./index.html', import.meta.url)), landing: fileURLToPath(new URL('./landing.html', import.meta.url)) } },
+    rollupOptions: { input: { app: fileURLToPath(new URL('./index.html', import.meta.url)), landing: fileURLToPath(new URL('./landing.html', import.meta.url)), docs: fileURLToPath(new URL('./docs.html', import.meta.url)) } },
   },
   test: {
     // Locale resources are discovered from directory contents with import.meta.glob.

@@ -32,7 +32,7 @@ export function renderLanding(catalog: LandingCatalog = english, theme: ThemeCat
 <meta property="og:url" content="${PUBLIC_ORIGIN}/" />`,
     body: `<a class="skip-link" href="#main">${e(c.nav.skip)}</a>
 <div id="top" class="landing-shell">
-<header class="site-header"><a class="brand" href="/">${mark}${e(c.brand)}</a><nav aria-label="${e(c.nav.label)}"><a href="#features">${e(c.nav.features)}</a><a href="#how-it-works">${e(c.nav.how)}</a></nav><div class="header-actions">${toggle}${open}</div></header>
+<header class="site-header"><a class="brand" href="/">${mark}${e(c.brand)}</a><nav aria-label="${e(c.nav.label)}"><a href="#features">${e(c.nav.features)}</a><a href="#how-it-works">${e(c.nav.how)}</a><a href="/docs">${e(c.nav.docs)}</a></nav><div class="header-actions">${toggle}${open}</div></header>
 <main id="main" tabindex="-1">
 <section class="hero" aria-labelledby="hero-title"><div class="hero-copy"><p class="eyebrow">${e(c.hero.eyebrow)}</p><h1 id="hero-title">${e(c.hero.title)}</h1><p class="hero-description">${e(c.hero.description)}</p><div class="hero-actions">${open}<a class="text-link" href="#how-it-works">${e(c.hero.secondary)}<span aria-hidden="true">↓</span></a></div><p class="hero-note">${e(c.hero.note)}</p></div>
 <figure class="workspace-example" aria-label="${e(c.example.label)}"><div class="example-window"><div class="example-top"><span class="example-brand">${mark}${e(c.brand)}</span><span class="example-week">${e(c.example.week)}</span></div><div class="example-content"><p class="eyebrow">${e(c.example.eyebrow)}</p><h2>${e(c.example.project)}</h2><div class="example-tabs"><span>${e(c.example.tasks)}</span></div><table><thead><tr><th scope="col">${e(c.example.taskColumn)}</th><th scope="col">${e(c.example.statusColumn)}</th></tr></thead><tbody>${row(c.example.taskOne,c.example.ownerOne,c.example.statusOne,true)}${row(c.example.taskTwo,c.example.ownerTwo,c.example.statusTwo)}${row(c.example.taskThree,c.example.ownerThree,c.example.statusThree)}</tbody></table><div class="example-plan"><div><span class="plan-dot" aria-hidden="true"></span><h3>${e(c.example.planLabel)}</h3><p>${e(c.example.planDescription)}</p></div><div><span class="fact-dot" aria-hidden="true"></span><h3>${e(c.example.factLabel)}</h3><p>${e(c.example.factDescription)}</p></div></div><p class="connection-note"><span aria-hidden="true">↳</span>${e(c.example.connection)}</p></div></div><figcaption>${e(c.example.caption)}</figcaption></figure></section>
@@ -57,6 +57,8 @@ export function landingRequestUrl(method: string | undefined, url: string | unde
 export function landingPlugin(): Plugin {
   const rewrite = (request: { method?: string; url?: string }, _response: unknown, next: () => void) => {
     request.url = landingRequestUrl(request.method, request.url);
+    // The public documentation page lives at /docs, like in the production server.
+    if ((request.method === 'GET' || request.method === 'HEAD') && request.url && /^\/docs\/?(\?|$)/.test(request.url)) request.url = `/docs.html${request.url.slice(request.url.indexOf('?') === -1 ? request.url.length : request.url.indexOf('?'))}`;
     next();
   };
   return {
