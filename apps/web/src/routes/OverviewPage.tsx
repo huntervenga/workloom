@@ -1,3 +1,4 @@
+import { GettingStarted } from '../features/getting-started/GettingStarted';
 import { CompanyAddressCard } from '../features/workspace/CompanyAddressCard';
 import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { t, useTranslation } from '../i18n';
@@ -42,6 +43,8 @@ export function OverviewPage() {
       </header>
 
       <Link to={`/w/${workspace.id}/integrations`} className="inline-flex rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-accent-ink">{t('routes.integrations')}</Link>
+
+      {workspace.role === 'owner' || workspace.role === 'admin' ? <GettingStarted actorId={actorId} workspaceId={workspace.id} members={members.data} projectCount={projects.data?.projects.length} /> : null}
 
       <CompanyAddressCard actorId={actorId} workspace={workspace} />
 

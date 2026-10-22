@@ -1,0 +1,13 @@
+{
+  "title": "Getting started",
+  "progress": "{{done}} of {{total}} first steps done",
+  "dismiss": "Hide the getting started list",
+  "team": "Invite your team",
+  "teamHint": "Add the people who will work on tasks and appear in reports.",
+  "timeOff": "Set up working hours and time off",
+  "timeOffHint": "Working days, holidays and vacation rules, so reports compare work with real capacity.",
+  "project": "Add a project",
+  "projectHint": "Create one, import a week from Asana, or copy the last one without its tasks.",
+  "tools": "Connect your tools",
+  "toolsHint": "Create an API token for scripts, Claude or Codex."
+}

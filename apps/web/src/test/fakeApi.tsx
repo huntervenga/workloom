@@ -87,6 +87,8 @@ function defaultFieldRoute(request: FakeRequest): Response | null {
   const categoryBinding = new RegExp(`${workspaces}${segment}/projects/${segment}/work-category-binding$`).exec(request.path);
   if (categoryBinding) return ok({ workspaceId: categoryBinding[1], projectId: categoryBinding[2], revision: 1, versionId: null, fieldId: null, availability: 'unbound' });
   if (new RegExp(`${workspaces}${segment}/work-type-report-runs$`).test(request.path)) return ok([]);
+  const taskDefaults = new RegExp(`${workspaces}${segment}/projects/${segment}/task-defaults$`).exec(request.path);
+  if (taskDefaults) return ok({ workspaceId: decodeURIComponent(taskDefaults[1] ?? ''), projectId: decodeURIComponent(taskDefaults[2] ?? ''), revision: 0, config: { statusId: null, priority: null, estimateMinutes: null, fieldValues: [] } });
 
   const columns = new RegExp(`${workspaces}${segment}/projects/${segment}/columns$`).exec(request.path);
   if (columns) {
