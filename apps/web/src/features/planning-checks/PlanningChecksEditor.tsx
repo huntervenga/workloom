@@ -10,6 +10,7 @@ import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { usePlanningCheckCommands } from './queries';
 import { checkKind, sameCheckGroup } from './presentation';
 import { newPlanningRule, PlanningCheckRuleForm, type CheckFocus } from './PlanningCheckRuleForm';
+import { CopyChecksFromProject } from './CopyChecksFromProject';
 import { ReportSelect } from '../generic-reports/ReportConfigEditor';
 
 import type { SummaryTemplateWorkspace } from '../summary-templates/queries';
@@ -144,6 +145,8 @@ export function PlanningChecksEditor({ actorId, workspaceId, projectId, settings
         </div>;
       })}
       {configDirty && templateData?.bindings.some(binding => !binding.detached) ? <p className="text-xs text-muted">{t('planningChecks.saveProjectBeforeTemplate')}</p> : null}
+      <CopyChecksFromProject actorId={actorId} workspaceId={workspaceId} projectId={projectId} existing={config.rules} targetFields={fields} targetSections={sections} disabled={disabled || form !== null || config.rules.length >= 50}
+        onCopy={rules => setConfig(current => ({ ...current, enabled: true, rules: [...current.rules, ...rules].slice(0, 50) }))} />
       <div className="flex items-end gap-2">
         <div className="min-w-0 flex-1"><ReportSelect label={t('planningChecks.ruleType')} value={kind} disabled={disabled || config.rules.length >= 50} onChange={value => setKind(value === 'balance' ? 'balance' : value === 'overdue' ? 'overdue' : 'presence')}><option value="presence">{t('planningChecks.kind.presence')}</option><option value="balance">{t('planningChecks.kind.balance')}</option><option value="overdue">{t('planningChecks.kind.overdue')}</option></ReportSelect></div>
         <Button size="sm" variant="ghost" disabled={disabled || form !== null || config.rules.length >= 50 || Boolean(templateController && kind === 'balance' && !ownershipKnown)} onClick={() => openRule(newPlanningRule(kind, focus))}>{t('planningChecks.addRule')}</Button>

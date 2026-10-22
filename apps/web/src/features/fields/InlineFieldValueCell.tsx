@@ -6,7 +6,7 @@ import { Button, cn } from '@workloom/ui';
 import { CircleAlert, LoaderCircle, Lock } from 'lucide-react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
-import { FieldCellControl } from './FieldCellControl';
+import { CalculatedValue, FieldCellControl } from './FieldCellControl';
 import { FieldAdvisoryIndicator, fieldAdvisoryStyle, type FieldAdvisory } from './FieldAdvisory';
 import { BooleanFieldControl } from './BooleanFieldControl';
 import { SaveFeedback } from '../../shared/SaveFeedback';
@@ -35,6 +35,8 @@ export interface InlineFieldValueCellProps {
   presentation?: 'pane' | 'cell';
   /** Presentation of an authoritative advisory; never changes editability or value semantics. */
   advisory?: FieldAdvisory | null;
+  /** Rolled-up subtask total, shown muted while this task has no value of its own. */
+  inherited?: TaskFieldData | null;
 }
 
 const cellButtonClassName = cn('flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-sm px-1.5 text-left outline-none hover:bg-canvas focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent');
@@ -52,7 +54,7 @@ function unchanged(original: TaskFieldData | null, next: TaskFieldData): boolean
   return original === null ? next.value === null : JSON.stringify(original) === JSON.stringify(next);
 }
 
-export function InlineFieldValueCell({ actorId, workspaceId, task, field, value, members, writable, mutation, drafts, onMoreDetails, presentation = 'cell', advisory }: InlineFieldValueCellProps) {
+export function InlineFieldValueCell({ actorId, workspaceId, task, field, value, members, writable, mutation, drafts, onMoreDetails, presentation = 'cell', advisory, inherited }: InlineFieldValueCellProps) {
   const { t } = useTranslation();
   const registry = protectedCommandsFor(useQueryClient());
   useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
@@ -179,7 +181,7 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
   const shown = heldHere ? heldHere.input.value : (base?.value ?? null);
   const display = (
     <span className="min-w-0 flex-1 truncate">
-      {shown?.type === 'url' ? <span className="block truncate" title={shown.value ?? undefined}>{shown.value}</span> : <FieldValueDisplay field={field} value={shown} members={members} compact />}
+      {shown?.type === 'url' ? <span className="block truncate" title={shown.value ?? undefined}>{shown.value}</span> : inherited && (shown === null || shown.value === null) ? <CalculatedValue field={field} data={inherited} members={members} /> : <FieldValueDisplay field={field} value={shown} members={members} compact />}
     </span>
   );
 
@@ -195,7 +197,7 @@ export function InlineFieldValueCell({ actorId, workspaceId, task, field, value,
       </button>
     );
   } else if (editable || heldHere !== null) {
-    control = <FieldCellControl field={field} value={shown} members={members} label={editLabel} disabled={held !== null || blocked}
+    control = <FieldCellControl field={field} value={shown} inherited={inherited} members={members} label={editLabel} disabled={held !== null || blocked}
       draft={kept?.identity === editing.current ? kept.draft : undefined}
       error={parseError} onBegin={begin} onChange={change} onCommit={commit} onCancel={cancel} />;
   } else {

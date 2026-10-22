@@ -54,6 +54,7 @@ import type {
   ProjectDto,
   SectionDto,
   TaskDto,
+  TaskFieldData,
   TaskFieldDefinitionDto,
   TaskFieldValueDto,
   TaskStatusDto,
@@ -66,6 +67,7 @@ import { ArrowLeft, Lock, Pencil, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { useLocation, useParams } from 'react-router';
 import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
+import { fieldRollups } from '../features/fields/rollup';
 import {
   FieldManagerDialog,
   useProjectColumnsQuery,
@@ -431,6 +433,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const capturedBulk = session ? bulkInline.port(session.identity) !== undefined : bulkInline.selectsMany(task.id);
     return capturedBulk && heldFieldTaskId?.toLowerCase() !== task.id.toLowerCase();
   };
+  // Subtask totals are only offered once every task of the project is loaded; a partial tree would give a wrong sum.
+  const rollupsByField = new Map(fieldColumns.map(({ field }) => [field.id, tasks.hasNextPage ? new Map<string, TaskFieldData>() : fieldRollups(field, shownTasks, taskId => valueByKey.get(fieldValueKey(taskId, field.id)))]));
   const customColumns: TaskTableCustomColumn[] = fieldColumns.map(({ field, width }) => ({
     id: field.id,
     label: field.name,
@@ -448,6 +452,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       const cell = (
         <InlineFieldValueCell
           advisory={planningChecks.fieldAdvisory(task, field)}
+          inherited={rollupsByField.get(field.id)?.get(task.id) ?? null}
           actorId={actorId}
           workspaceId={workspace.id}
           task={task}

@@ -7,8 +7,16 @@ import { BooleanFieldControl } from './BooleanFieldControl';
 import { clearedFieldDraft, draftFromFieldValue, NOT_SET, optionsByPosition, referenceLabels, sameId, type FieldDraft } from './valueDraft';
 
 /** The same fixed-height, non-modal value editor in a row, a selection, or the task pane. */
-export function FieldCellControl({ field, value, members, label, disabled, draft, error, onBegin, onChange, onCommit, onCancel }: {
+/** A value computed from subtasks: muted and italic so it is never mistaken for something typed in. */
+export function CalculatedValue({ field, data, members }: { field: TaskFieldDefinitionDto; data: TaskFieldData; members: readonly MembershipDto[] }) {
+  const { t } = useTranslation();
+  return <span className="min-w-0 truncate italic text-muted" title={t('inlineFields.calculatedFromSubtasks')} data-calculated-from-subtasks=""><FieldValueDisplay field={field} value={data} members={members} compact /><span className="sr-only"> {t('inlineFields.calculatedFromSubtasks')}</span></span>;
+}
+
+export function FieldCellControl({ field, value, members, label, disabled, draft, error, inherited, onBegin, onChange, onCommit, onCancel }: {
   field: TaskFieldDefinitionDto; value: TaskFieldData | null; members: readonly MembershipDto[];
+  /** Sum of subtask values shown, in a muted style, while the task's own value is unset. */
+  inherited?: TaskFieldData | null | undefined;
   label: string; disabled: boolean; draft?: FieldDraft; error?: string | null;
   onBegin: () => void; onChange: (draft: FieldDraft) => void; onCommit: (draft: FieldDraft) => boolean; onCancel: (onlyClean?: boolean) => void;
 }) {
@@ -67,6 +75,6 @@ export function FieldCellControl({ field, value, members, label, disabled, draft
     <button type="button" disabled={disabled} aria-label={t('fields.fieldInput.clearValue', { p0: field.name })} className="h-7 shrink-0 px-1 text-muted hover:text-ink" onMouseDown={event => event.preventDefault()} onClick={() => { const empty = clearedFieldDraft(field); onChange(empty); const saved = onCommit(empty); cancelled.current = saved !== false; if (saved !== false) setEditing(false); }}>×</button>
   </div>;
   return <button type="button" aria-label={label} disabled={disabled} className={classes} onClick={() => { cancelled.current = false; begin(); setEditing(true); }}>
-    {value?.type === 'url' ? <span className="truncate">{value.value}</span> : <FieldValueDisplay field={field} value={value} members={members} compact />}
+    {value?.type === 'url' ? <span className="truncate">{value.value}</span> : inherited && (value === null || value.value === null) ? <CalculatedValue field={field} data={inherited} members={members} /> : <FieldValueDisplay field={field} value={value} members={members} compact />}
   </button>;
 }
