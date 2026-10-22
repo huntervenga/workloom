@@ -122,6 +122,23 @@ describe('saved task pane autosave', () => {
     expect(writes(ui.calls)).toHaveLength(2);
   });
 
+  it('puts Mark complete with its continue menu at the top of the pane, above the title', async () => {
+    const todo = { id: task.statusId, workspaceId: alpha.id, projectId: task.projectId, name: 'To do', group: 'todo' as const, position: 0, revision: 1 };
+    const done = { ...todo, id: '5eed0000-0000-4000-8000-0000000000d1', name: 'Done', group: 'done' as const, position: 1 };
+    installFakeApi({ ...tableRoutes(), [`GET ${rootPath}/tasks/${task.id}`]: () => ok(task) });
+    function Example() {
+      const commands = useTaskCommands(anna.id, alpha.id);
+      return <TaskDrawer actorId={anna.id} workspace={alpha} project={project(alpha.id, task.projectId, 'Week 1')} sections={[]} statuses={[todo, done]} members={alphaMembers} tags={[]} writable commands={commands} taskId={task.id} creating={null}
+        onCompleteTask={() => undefined} onContinueTask={() => undefined} onClose={() => undefined} onOpenTask={() => undefined} onResumeCreate={() => undefined} onCreated={() => undefined} onAnnounce={() => undefined} />;
+    }
+    const ui = renderFieldUi(<Example />);
+    const complete = await screen.findByRole('button', { name: 'Mark complete' });
+    const title = await screen.findByLabelText('Task name');
+    expect(complete.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    await ui.user.click(screen.getByRole('button', { name: 'More ways to complete' }));
+    expect(await screen.findByRole('menuitem', { name: /Complete and continue in another project/ })).toBeInTheDocument();
+  });
+
   it('adopts an unsent rich handoff and flushes it before Close instead of replacing it with server values', async () => {
     const seed = { base: task, draft: { ...draftFromTask(task), title: 'Retained title', description: 'Retained description' } };
     const api = installFakeApi({ ...tableRoutes(), [`GET ${rootPath}/tasks/${task.id}`]: () => ok(task),

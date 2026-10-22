@@ -139,6 +139,8 @@ export interface TaskFieldsProps {
   /** Only explicit legacy views expose the old package estimate; lineage/drafts stay intact. */
   showLegacyEstimate?: boolean;
   secondaryActions?: ReactNode;
+  /** Shown above the title, so the primary action (Mark complete) is visible without scrolling. */
+  topActions?: ReactNode;
 }
 
 const labelClassName = 'text-sm font-medium text-ink';
@@ -180,6 +182,7 @@ export function TaskFields({
   dependenciesField,
   showLegacyEstimate = false,
   secondaryActions,
+  topActions,
   participantsLabel,
 }: TaskFieldsProps) {
   const { t, locale } = useTranslation();
@@ -457,6 +460,7 @@ export function TaskFields({
     const addableTags = tagOptions.filter((tag) => !selectedTags.has(tag.id) && (tag.archivedAt === null || savedTags.has(tag.id)));
     return (
       <div className="space-y-3">
+        {topActions ? <div className="flex flex-wrap items-center gap-2">{topActions}</div> : null}
         <fieldset disabled={disabled} className="min-w-0 space-y-3">
           <legend className="sr-only">{t('autosave.fields.label')}</legend>
           <div className="flex min-w-0 items-start gap-2">
