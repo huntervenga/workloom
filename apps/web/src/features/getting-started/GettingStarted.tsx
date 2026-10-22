@@ -13,9 +13,9 @@ export interface ChecklistItem { key: 'team' | 'timeOff' | 'project' | 'tools'; 
 /** Which first steps are already done, from data the overview already has; `null` means unknown, never "not done". */
 export function checklistState(input: { members: readonly MembershipDto[] | undefined; projectCount: number | undefined; timeOffConfigured: boolean | undefined; hasToken: boolean | undefined }): ChecklistItem[] {
   return [
+    { key: 'project', done: input.projectCount === undefined ? null : input.projectCount > 0 },
     { key: 'team', done: input.members === undefined ? null : input.members.length > 1 },
     { key: 'timeOff', done: input.timeOffConfigured ?? null },
-    { key: 'project', done: input.projectCount === undefined ? null : input.projectCount > 0 },
     { key: 'tools', done: input.hasToken ?? null },
   ];
 }

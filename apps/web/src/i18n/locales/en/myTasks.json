@@ -1,6 +1,6 @@
 {
   "title": "My tasks",
-  "documentTitle": "My tasks \u00b7 {{workspace}}",
+  "documentTitle": "My tasks · {{workspace}}",
   "description": "Your work across this workspace, ordered by due date.",
   "refresh": "Refresh",
   "relationLabel": "My involvement",
@@ -15,7 +15,7 @@
   "searchPlaceholder": "Search title or description",
   "searchAction": "Apply search",
   "includeArchived": "Include archived",
-  "loading": "Loading my tasks\u2026",
+  "loading": "Loading my tasks…",
   "loadedCount": {
     "one": "{{count}} task loaded",
     "other": "{{count}} tasks loaded"
@@ -27,10 +27,12 @@
   "statusColumn": "Status",
   "dueColumn": "Due date",
   "listLabel": "My tasks across projects",
-  "openTask": "Open task \u201c{{title}}\u201d",
+  "openTask": "Open task “{{title}}”",
   "archived": "Archived",
   "noDueDate": "No due date",
-  "loadingMore": "Loading more\u2026",
+  "loadingMore": "Loading more…",
   "loadMore": "Load more tasks",
-  "errorStatus": "Tasks could not be loaded."
+  "errorStatus": "Tasks could not be loaded.",
+  "nothingAssignedTitle": "You have no open tasks",
+  "nothingAssignedDescription": "Tasks assigned to you, or where you take part, appear here from every project. Open a project to create one."
 }

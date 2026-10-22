@@ -16,6 +16,7 @@ import { QueryErrorState } from '../../shared/QueryErrorState';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { useSession } from '../session';
 import { MobileNav } from './MobileNav';
+import { QuickJump } from '../../features/quick-jump/QuickJump';
 import { SidebarContent } from './Sidebar';
 import { SwitchErrorNotice } from './SwitchErrorNotice';
 import { Topbar } from './Topbar';
@@ -240,6 +241,7 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
           workspaceName={currentWorkspace?.name ?? null}
           menu={<MobileNav>{(close) => sidebar(close)}</MobileNav>}
           localMode={!shared}
+          search={workspaceId ? <QuickJump actorId={actorId} workspaceId={workspaceId} /> : undefined}
           account={shared ? <AccountControls name={me.actor.displayName} avatarUrl={me.actor.avatarUrl} /> : undefined}
         />
         <main

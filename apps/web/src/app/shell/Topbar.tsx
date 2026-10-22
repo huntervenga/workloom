@@ -16,11 +16,13 @@ export interface TopbarProps {
   menu: ReactNode;
   /** Shows the local demo badge; off for a real shared session. Defaults to on. */
   localMode?: boolean | undefined;
+  /** Search-and-jump trigger, shown before the language selector. */
+  search?: ReactNode | undefined;
   /** The signed-in account and its sign-out, placed last. */
   account?: ReactNode;
 }
 
-export function Topbar({ actorId, workspaceId, workspaceName, menu, localMode = true, account }: TopbarProps) {
+export function Topbar({ actorId, workspaceId, workspaceName, menu, localMode = true, account, search }: TopbarProps) {
   useTranslation();
   const queryClient = useQueryClient();
   const onOverview = useMatch('/w/:workspaceId') !== null;
@@ -69,6 +71,7 @@ export function Topbar({ actorId, workspaceId, workspaceName, menu, localMode = 
           ) : null}
         </ol>
       </nav>
+      {search}
       <LanguageSelector />
       <ThemeToggle />
       {localMode ? (

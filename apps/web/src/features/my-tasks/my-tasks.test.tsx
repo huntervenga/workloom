@@ -38,8 +38,9 @@ describe('personal task inbox', () => {
   it('sends relation/completion/archive filters and applies a bounded server-side search only on submit', async () => {
     const { calls } = installFakeApi({ ...singleActorRoutes(anna, [alpha], { [alpha.id]: alphaMembers }), [`GET ${path}`]: () => page([]) });
     const { user } = renderApp(`/w/${alpha.id}/my-tasks`);
-    await screen.findByRole('heading', { name: 'No tasks match these filters' });
+    await screen.findByRole('heading', { name: 'You have no open tasks' });
     await user.selectOptions(screen.getByRole('combobox', { name: 'My involvement' }), 'assigned');
+    await screen.findByRole('heading', { name: 'No tasks match these filters' });
     await waitFor(() => expect(calls.filter(call => call.path === path).at(-1)?.searchParams.get('relation')).toBe('assigned'));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Show' }), 'closed');
     await user.click(screen.getByRole('checkbox', { name: 'Include archived' }));

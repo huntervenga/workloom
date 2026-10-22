@@ -1,0 +1,18 @@
+{
+  "open": "Search and jump",
+  "openHint": "Search and jump (Ctrl/Cmd+K)",
+  "title": "Jump to…",
+  "description": "Type part of a page, project or task name, then press Enter.",
+  "input": "Search",
+  "placeholder": "Page, project or one of your tasks",
+  "results": "Results",
+  "none": "Nothing found.",
+  "page": "Page",
+  "project": "Project",
+  "overview": "Overview",
+  "myTasks": "My tasks",
+  "projects": "All projects",
+  "reports": "Reports",
+  "timeOff": "Time off",
+  "members": "People"
+}

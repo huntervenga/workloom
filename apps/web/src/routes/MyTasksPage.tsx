@@ -33,6 +33,8 @@ export function MyTasksPage() {
     if (typeof value !== 'string') return;
     lens.applySearch(value);
   };
+  // Nothing narrowed the list, so an empty result means the person simply has no open work yet.
+  const untouched = filters.relation === 'all' && filters.completion === 'open' && !filters.includeArchived && search.trim() === '';
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -48,7 +50,7 @@ export function MyTasksPage() {
         <p role="status">{query.isError ? t('myTasks.errorStatus') : query.isPending ? t('myTasks.loading') : t('myTasks.loadedCount', { count: items.length })}</p>
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={filters.includeArchived} onChange={event => lens.changeArchived(event.target.checked)} />{t('myTasks.includeArchived')}</label>
       </div>
-      {query.isError ? <QueryErrorState error={query.error} subject="tasks" retrying={query.isFetching} onRetry={() => void query.refetch()} /> : query.isPending ? <div aria-label={t('myTasks.loading')} className="space-y-2 rounded-xl border border-line bg-surface p-4">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-10 w-full" />)}</div> : items.length === 0 ? <StateCard icon={<Inbox size={18} aria-hidden="true" />} title={t('myTasks.emptyTitle')} description={t('myTasks.emptyDescription')} /> : (
+      {query.isError ? <QueryErrorState error={query.error} subject="tasks" retrying={query.isFetching} onRetry={() => void query.refetch()} /> : query.isPending ? <div aria-label={t('myTasks.loading')} className="space-y-2 rounded-xl border border-line bg-surface p-4">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-10 w-full" />)}</div> : items.length === 0 ? <StateCard icon={<Inbox size={18} aria-hidden="true" />} title={untouched ? t('myTasks.nothingAssignedTitle') : t('myTasks.emptyTitle')} description={untouched ? t('myTasks.nothingAssignedDescription') : t('myTasks.emptyDescription')} /> : (
         <div className="overflow-hidden rounded-xl border border-line bg-surface">
           <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1fr)_10rem_9rem_7rem] gap-3 border-b border-line bg-canvas/70 px-4 py-2 text-xs font-medium text-muted md:grid"><span>{t('myTasks.taskColumn')}</span><span>{t('myTasks.projectColumn')}</span><span>{t('myTasks.statusColumn')}</span><span>{t('myTasks.dueColumn')}</span></div>
           <ul aria-label={t('myTasks.listLabel')} className="divide-y divide-line">
