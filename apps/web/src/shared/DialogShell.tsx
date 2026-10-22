@@ -54,13 +54,15 @@ export interface DialogShellProps {
    * `drawer` slides in from the right and takes the full width on small screens. `task-drawer` is
    * that drawer below desktop widths and a non-modal pane beside the page from 1280px.
    */
-  variant?: 'center' | 'drawer' | 'task-drawer' | undefined;
+  variant?: 'center' | 'wide' | 'drawer' | 'task-drawer' | undefined;
   children: ReactNode;
 }
 
 const contentClasses = {
   center:
     'fixed top-1/2 left-1/2 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-xl outline-none sm:p-6',
+  wide:
+    'fixed top-1/2 left-1/2 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-xl outline-none sm:p-6',
   // The drawer does not scroll itself: its content scrolls inside and keeps the actions anchored below.
   drawer:
     'fixed inset-y-0 right-0 flex h-dvh w-full max-w-full flex-col overflow-hidden border-l border-line bg-surface p-5 shadow-xl outline-none sm:max-w-xl sm:p-6',

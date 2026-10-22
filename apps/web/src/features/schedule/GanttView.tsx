@@ -1,5 +1,7 @@
-import { useAvailability } from '../time-off/queries';
-import { GanttAvailabilityBands, GanttAvailabilityWarning, supportedAvailabilityWindow, unavailableDates, availabilitySummary } from '../time-off/GanttAvailability';
+import { useAvailability, useTimeOffOverview } from '../time-off/queries';
+import { leaveColorByDay } from '../time-off/presentation';
+import { UserAvatar } from '../../shared/UserAvatar';
+import { GanttAvailabilityBands, GanttAvailabilityWarning, supportedAvailabilityWindow, unavailableDates, unavailableDayColors, availabilitySummary } from '../time-off/GanttAvailability';
 import { t, useTranslation } from '../../i18n';
 import type { BaselineDateValueDto, MembershipDto, PlanningPeriodDto, PlanBaselineDto, ProjectDto, TaskDto, TaskScheduleContextRowDto, WorkspaceDto } from '@workloom/contracts';
 import { useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent } from 'react';
@@ -113,6 +115,8 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
   const availabilityPeople = [...new Set(tasks.flatMap(task => task.responsibleMembershipId ? [task.responsibleMembershipId] : []))].sort();
   const availabilityWindow = axis ? supportedAvailabilityWindow(axis.window) : null;
   const availability = useAvailability(actorId, workspace.id, availabilityWindow ? { startDate: availabilityWindow.startDate, endDate: availabilityWindow.endDate, people: availabilityPeople.length ? { kind: 'selected', membershipIds: availabilityPeople } : { kind: 'all_active' } } : null);
+  const leaveOverview = useTimeOffOverview(actorId, workspace.id);
+  const leaveColors = useMemo(() => leaveOverview.data ? leaveColorByDay(leaveOverview.data.requests, leaveOverview.data.settings) : undefined, [leaveOverview.data]);
   // Calendar-only values are formatted at UTC midnight so the viewer's zone never shifts a day.
   const formats = useMemo(() => ({
     weekday: new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }),
@@ -207,6 +211,7 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
     const absenceDates = availability.isSuccess && availability.data.settingsConfigured ? unavailableDates(availability.data, task.responsibleMembershipId, window) : new Set<string>();
     const unavailable = availabilitySummary(availability.isSuccess ? availability.data : undefined, task.responsibleMembershipId, row.current.startDate, row.current.dueDate);
     const assigneeName = availability.isSuccess ? availability.data.members.find(member => member.membershipId === task.responsibleMembershipId)?.displayName : undefined;
+    const assignee = task.responsibleMembershipId ? members.find(member => member.id === task.responsibleMembershipId) : undefined;
     const dateHint = unavailable?.dates.slice(0, 3).join(', ') ?? '';
     const shownDates = unavailable && unavailable.dates.length > 3 ? t('timeOff.availabilityMoreDates', { dates: dateHint, count: unavailable.dates.length - 3 }) : dateHint;
     const availabilityHint = unavailable?.dates.length ? t('timeOff.ganttAbsenceHint', { person: assigneeName ?? t('timeOff.person'), dates: shownDates, hours: unavailable.minutes / 60 }) : undefined;
@@ -220,6 +225,7 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
       <div className={`sticky left-0 z-10 ${LABEL_COLUMN} shrink-0 border-r border-line bg-surface px-2 py-1.5`}>
         <div className="flex min-w-0 items-center gap-1.5">
           <input type="checkbox" className="shrink-0" aria-label={t('schedule.ganttView.selectDatesValue', { p0: task.title })} checked={selectedIds.includes(task.id)} disabled={selectionDisabled || !selectedIds.includes(task.id) && selectedIds.length >= 100} onChange={e => onSelect(task.id, e.target.checked)} />
+          {assignee ? <span title={assignee.displayName} data-gantt-assignee="" className="shrink-0"><UserAvatar size="sm" name={assignee.displayName} seed={assignee.id} avatarUrl={assignee.avatarUrl}/><span className="sr-only">{assignee.displayName}</span></span> : null}
           <button type="button" title={task.title} className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium text-accent-ink hover:underline" onClick={() => onOpen(task.id)}>{task.title}</button>
           {row.meetingId ? null : writable && row.editableDates ? <button type="button" aria-label={t('schedule.ganttView.editDates')} title={t('schedule.ganttView.editDates')} className="shrink-0 rounded border border-line bg-surface px-1.5 text-[11px] leading-5 text-ink-soft hover:border-line-strong hover:text-ink" onClick={() => c.open([task], context.rows)}>{t('schedule.ganttView.editShort')}</button> : <span title={t('schedule.ganttView.datesCannotBeEdited')} className="shrink-0 text-[11px] text-muted"><span aria-hidden="true">{t('schedule.ganttView.readOnlyShort')}</span><span className="sr-only">{t('schedule.ganttView.datesCannotBeEdited')}</span></span>}
         </div>
@@ -230,7 +236,7 @@ export function GanttView({ actorId, workspace, project, tasks, tasksSettled, se
         {row.blocking.isBlocked ? <p className="text-[11px] leading-4 text-amber-900">{t('schedule.ganttView.unfinishedPredecessorCount', { count: row.blocking.unresolvedCount })}</p> : null}
       </div>
       <div data-gantt-track="" title={trackHint} className={`relative shrink-0 py-1.5 ${TRACK_BACKGROUND}`} style={{ width: window.days * width, ...background }}>
-        <GanttAvailabilityBands dates={absenceDates} window={window} width={width}/>
+        <GanttAvailabilityBands dates={absenceDates} paint={availability.isSuccess ? unavailableDayColors(availability.data, task.responsibleMembershipId, window, leaveColors) : undefined} window={window} width={width}/>
         {todayOffset !== null ? <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 w-0.5 bg-rose-500/70" style={{ left: (todayOffset + 0.5) * width - 1 }} /> : null}
         {row.meetingId ? <p className="px-1 text-xs leading-6 text-muted">{t('schedule.ganttView.meetingScheduleIsInTheCalendarWithoutA')}</p>
           : <GanttMoveBar actorId={actorId} workspaceId={workspace.id} source={dateMoveSource(task, row, { projectId: project.id, writable, ready: snapshotReady })} viewportKey={viewportKey} pixelsPerDay={width} window={window} staged={movedDrafts.get(task.id) ?? null} canStart={() => c.moveGate(task.id) === null} onRefused={() => refuseMove(task.id)} onDrop={dropMove}>

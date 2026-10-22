@@ -2,7 +2,7 @@ import { Temporal } from 'temporal-polyfill';
 import type { LeaveAvailabilityDto, LeaveOverviewDto, LeaveRequestDto } from '@workloom/contracts';
 import { useTranslation } from '../../i18n';
 import { UserAvatar } from '../../shared/UserAvatar';
-import { MICRODAYS, rangeDates } from './presentation';
+import { ABSENCE_FALLBACK_COLOR, HOLIDAY_FALLBACK_COLOR, MICRODAYS, rangeDates } from './presentation';
 
 /** Only the already-authorized approved allocations cross into the team calendar; no type or note. */
 export interface ApprovedCalendarAllocation { membershipId: string; date: string; microdays: number; scheduledMinutes: number }
@@ -11,7 +11,7 @@ export function approvedCalendarAllocations(requests: readonly LeaveRequestDto[]
 }
 
 /** Capacity and recorded balance allocations are distinct. Raw intervals never imply a charged working day. */
-export function TimeOffCalendar({ availability, members, allocations = [] }: { availability: LeaveAvailabilityDto; members: LeaveOverviewDto['members']; allocations?: readonly ApprovedCalendarAllocation[] }) {
+export function TimeOffCalendar({ availability, members, allocations = [], colors }: { colors?: ReadonlyMap<string, string> | undefined; availability: LeaveAvailabilityDto; members: LeaveOverviewDto['members']; allocations?: readonly ApprovedCalendarAllocation[] }) {
   const { t, locale } = useTranslation();
   const fullDate = new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeZone: 'UTC' });
   const narrowWeekday = new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' });
@@ -39,8 +39,10 @@ export function TimeOffCalendar({ availability, members, allocations = [] }: { a
         const status = absence ? t('timeOff.unavailable') : paidRecord ? t('timeOff.approvedTimeOff') : holiday ? t('timeOff.companyHoliday') : neutralRecord ? t('timeOff.recordedAbsence') : unknown ? t('timeOff.scheduleUnknown') : day.scheduledMinutes > 0 ? t('timeOff.availableHours', { hours: day.availableMinutes / 60 }) : t('timeOff.nonWorkingDay');
         const current = day ? t('timeOff.calendarDayHint', { person, date: column.full, status, scheduled: day.scheduledMinutes / 60, available: day.availableMinutes / 60 }) : `${person} · ${column.full} · ${status} · ${t('timeOff.scheduleUnknown')}`;
         const title = allocation ? `${current} · ${t('timeOff.recordedBalanceDays', { days: allocation.microdays / MICRODAYS })}` : current;
-        const paint = absence ? 'bg-accent text-white ring-1 ring-inset ring-accent-strong' : paidRecord ? 'bg-accent-soft text-accent-ink ring-1 ring-inset ring-accent' : holiday ? 'bg-amber-500/20 ring-1 ring-inset ring-amber-500/40' : neutralRecord ? 'ring-1 ring-inset ring-line-strong text-ink-soft' : unknown ? 'border border-dashed border-line-strong' : day.scheduledMinutes === 0 && !column.weekend ? 'bg-canvas' : '';
-        return <td key={date} data-calendar-date={date} title={title} className={`h-11 border-l border-line/50 px-0.5 ${column.weekend ? 'bg-[#e2e8f0] [[data-theme=dark]_&]:bg-[#334155]' : ''}`}><span role="img" aria-label={`${date}: ${status}`} className={`block h-6 rounded ${paint}`}>{absence || holiday || allocation ? '·' : unknown ? '?' : ''}</span></td>;
+        const typeColor = colors?.get(`${member.membershipId}:${date}`);
+        const fill = absence || paidRecord || neutralRecord ? typeColor ?? (absence || paidRecord ? ABSENCE_FALLBACK_COLOR : undefined) : holiday ? HOLIDAY_FALLBACK_COLOR : undefined;
+        const paint = fill ? 'text-white ring-1 ring-inset ring-black/10' : neutralRecord ? 'ring-1 ring-inset ring-line-strong text-ink-soft' : unknown ? 'border border-dashed border-line-strong' : day.scheduledMinutes === 0 && !column.weekend ? 'bg-canvas' : '';
+        return <td key={date} data-calendar-date={date} title={title} className={`h-11 border-l border-line/50 px-0.5 ${column.weekend ? 'bg-[#e2e8f0] [[data-theme=dark]_&]:bg-[#334155]' : ''}`}><span role="img" aria-label={`${date}: ${status}`} className={`block h-6 rounded ${paint}`} style={fill ? { backgroundColor: fill } : undefined}>{absence || holiday || allocation ? '·' : unknown ? '?' : ''}</span></td>;
       })}</tr>;
     })}</tbody>
   </table></div>;

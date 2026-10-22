@@ -129,9 +129,12 @@ function displayNameFrom(...claims: readonly unknown[]): string {
 
 /** Reads the signed `picture` claim; invalid values are ignored rather than clearing the stored photo. */
 function pictureFrom(payload: Readonly<Record<string, unknown>>): PictureClaim {
-  if (!('picture' in payload)) return undefined;
+  if (!('picture' in payload)) { console.warn('[shared-auth] token has no picture claim; profile photo left unchanged'); return undefined; }
   if (payload.picture === null) return null;
-  return safeProfilePhotoUrl(payload.picture) ?? undefined;
+  const safe = safeProfilePhotoUrl(payload.picture);
+  // Diagnostic only: host and length, never the URL, so a rejected provider photo can be explained.
+  if (safe === null) console.warn(`[shared-auth] picture claim rejected (type=${typeof payload.picture}, host=${typeof payload.picture === 'string' ? (payload.picture.match(/^https?:\/\/([^/?#]*)/i)?.[1] ?? 'n/a') : 'n/a'}, length=${typeof payload.picture === 'string' ? payload.picture.length : 0})`);
+  return safe ?? undefined;
 }
 
 /** Auth VERIFIED_EMAIL v1.1. Only claims from the same verified token may establish a mailbox. */

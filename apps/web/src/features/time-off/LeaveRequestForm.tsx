@@ -12,11 +12,11 @@ import { futureDate, policyForYear } from './presentation';
 
 const reviewKey = (value: PreviewLeaveRequestInput | BulkLeaveRequestInput | null) => JSON.stringify(value ? { ...value, reason: '' } : null);
 
-export function LeaveRequestForm({ overview, disabled, onCreate, onBulk, actorId, onCancel }: { overview: LeaveOverviewDto; disabled: boolean; onCreate: (input: CreateLeaveRequestInput) => void; onBulk: (input: BulkLeaveRequestInput) => void; actorId: string; onCancel: () => void }) {
+export function LeaveRequestForm({ overview, disabled, onCreate, onBulk, actorId, onCancel, initialMembershipId }: { initialMembershipId?: string | undefined; overview: LeaveOverviewDto; disabled: boolean; onCreate: (input: CreateLeaveRequestInput) => void; onBulk: (input: BulkLeaveRequestInput) => void; actorId: string; onCancel: () => void }) {
   const { t } = useTranslation();
   const reasonRef = useRef<HTMLInputElement>(null);
   const reasonId = useId();
-  const [membershipId, setMembershipId] = useState(overview.ownMembershipId);
+  const [membershipId, setMembershipId] = useState(overview.capabilities.canManage && initialMembershipId && overview.members.some(member => member.id === initialMembershipId) ? initialMembershipId : overview.ownMembershipId);
   const today = overview.members.find(member => member.id === membershipId)?.today ?? overview.today;
   const [startDate, setStartDate] = useState(futureDate(today));
   const [endDate, setEndDate] = useState(futureDate(today));

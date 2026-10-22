@@ -51,7 +51,7 @@ describe('neutral time off availability', () => {
     expect(within(first).getByRole('img',{name:'2026-10-24: Non-working day'})).not.toHaveClass('bg-accent');
     expect(within(first).queryByRole('img',{name:'2026-10-25: Unavailable'})).not.toBeInTheDocument();
     const second = screen.getByRole('row', {name:new RegExp(required(overview().members[1]).displayName)});
-    expect(within(second).getByRole('img',{name:'2026-10-24: Unavailable'})).toHaveClass('bg-accent');
+    expect(within(second).getByRole('img',{name:'2026-10-24: Unavailable'})).toHaveStyle({backgroundColor:'#e11d48'});
     expect(within(second).getByRole('img',{name:'2026-10-24: Unavailable'}).parentElement).toHaveAttribute('title',expect.stringContaining('4h scheduled'));
     expect([...unavailableDates(source,MEMBER,required(calendarWindow(source.startDate,28)))]).toEqual(['2026-10-23','2026-10-26']);
     expect(availabilitySummary(source,OTHER,source.startDate,source.endDate)).toEqual({dates:['2026-10-24'],minutes:240});
@@ -59,8 +59,8 @@ describe('neutral time off availability', () => {
   it('keeps approved recorded allocations visible without claiming that capacity was removed', () => {
     const source = availability(); source.days = [{membershipId:MEMBER,date:'2026-10-20',scheduledMinutes:480,holidayMinutes:0,absenceMinutes:0,availableMinutes:480},{membershipId:MEMBER,date:'2026-10-21',scheduledMinutes:480,holidayMinutes:0,absenceMinutes:0,availableMinutes:480}];
     const allocations = [{membershipId:MEMBER,date:'2026-10-20',microdays:1_000_000,scheduledMinutes:480},{membershipId:MEMBER,date:'2026-10-21',microdays:0,scheduledMinutes:480}];
-    render(<TimeOffCalendar availability={source} members={overview().members} allocations={allocations}/>);
-    expect(screen.getByRole('img',{name:'2026-10-20: Approved time off'})).toHaveClass('ring-accent');
+    render(<TimeOffCalendar availability={source} members={overview().members} allocations={allocations} colors={new Map([[`${MEMBER}:2026-10-20`,'#f59e0b']])}/>);
+    expect(screen.getByRole('img',{name:'2026-10-20: Approved time off'})).toHaveStyle({backgroundColor:'#f59e0b'});
     expect(screen.getByRole('img',{name:'2026-10-20: Approved time off'})).not.toHaveClass('bg-accent');
     expect(screen.getByRole('img',{name:'2026-10-20: Approved time off'}).parentElement).toHaveAttribute('title',expect.stringContaining('1 recorded balance days'));
     expect(screen.getByRole('img',{name:'2026-10-21: Recorded absence'}).parentElement).toHaveAttribute('title',expect.stringContaining('8h available'));

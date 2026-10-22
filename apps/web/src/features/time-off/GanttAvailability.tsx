@@ -1,5 +1,6 @@
 import type { LeaveAvailabilityDto } from '@workloom/contracts';
 import { useTranslation } from '../../i18n';
+import { ABSENCE_FALLBACK_COLOR, HOLIDAY_FALLBACK_COLOR } from './presentation';
 import { windowOffset, type CalendarWindow } from '../schedule/dates';
 
 /** Matches the public leave-calendar contract; task dates retain their wider 0001–9999 domain. */
@@ -20,6 +21,18 @@ export function unavailableDates(availability: LeaveAvailabilityDto, membershipI
   return dates;
 }
 
+/** Paint for each unavailable day: the leave-type color when known, otherwise strong fallbacks (holidays differ from absences). */
+export function unavailableDayColors(availability: LeaveAvailabilityDto, membershipId: string | null, window: CalendarWindow, typeColors?: ReadonlyMap<string, string>): Map<string, string> {
+  const paint = new Map<string, string>();
+  if (!availability.settingsConfigured || !membershipId || availability.members.find(member => member.membershipId === membershipId)?.scheduleKnown !== true) return paint;
+  for (const day of availability.days) {
+    if (day.membershipId !== membershipId || day.date < window.start || day.date > window.end) continue;
+    if (day.absenceMinutes > 0) paint.set(day.date, typeColors?.get(`${membershipId}:${day.date}`) ?? ABSENCE_FALLBACK_COLOR);
+    else if (day.holidayMinutes > 0) paint.set(day.date, HOLIDAY_FALLBACK_COLOR);
+  }
+  return paint;
+}
+
 /** Unavailable dates and minutes inside an inclusive task interval; null when the assignee's availability is unknown. */
 export function availabilitySummary(availability: LeaveAvailabilityDto | undefined, membershipId: string | null, startDate: string | null, endDate: string | null): { dates: string[]; minutes: number } | null {
   if (!availability?.settingsConfigured || !membershipId) return null;
@@ -38,8 +51,8 @@ export function availabilitySummary(availability: LeaveAvailabilityDto | undefin
 }
 
 /** Decorative bands never catch a pointer intended for a Gantt move bar. */
-export function GanttAvailabilityBands({ dates, window, width }: { dates: ReadonlySet<string>; window: CalendarWindow; width: number }) {
-  return <div aria-hidden="true" data-gantt-availability="" className="pointer-events-none absolute inset-0 z-[1]">{[...dates].map(date => { const offset = windowOffset(date, window); return offset === null ? null : <span key={date} data-unavailable-date={date} className="pointer-events-none absolute inset-y-0 border-x border-accent-line/40 bg-accent-soft/80" style={{ left: offset * width, width }}/>; })}</div>;
+export function GanttAvailabilityBands({ dates, window, width, paint }: { paint?: ReadonlyMap<string, string> | undefined; dates: ReadonlySet<string>; window: CalendarWindow; width: number }) {
+  return <div aria-hidden="true" data-gantt-availability="" className="pointer-events-none absolute inset-0 z-[1]">{[...dates].map(date => { const offset = windowOffset(date, window); return offset === null ? null : <span key={date} data-unavailable-date={date} className="pointer-events-none absolute inset-y-0 border-x border-black/10" style={{ left: offset * width, width, backgroundColor: paint?.get(date) ?? ABSENCE_FALLBACK_COLOR, opacity: 0.6 }}/>; })}</div>;
 }
 
 /** The count follows authoritative capacity rows, never the raw leave interval. */
