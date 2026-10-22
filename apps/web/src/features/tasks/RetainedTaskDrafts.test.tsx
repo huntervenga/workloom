@@ -84,7 +84,10 @@ it('releases a reverted unsent draft and disposes protection after explicit depa
 
 
 it('cancels only an unsent inline title with Escape and leaves neither a hidden draft nor a claimed write', async () => {
- const ui=setup(tablePath);await ui.user.click(await screen.findByRole('button',{name:child.title}));
+ const ui=setup(tablePath);
+ // Task trees start collapsed.
+ await ui.user.click(await screen.findByRole('button',{name:/^Expand subtasks of/}));
+ await ui.user.click(await screen.findByRole('button',{name:child.title}));
  fireEvent.change(screen.getByLabelText('Task name'),{target:{value:'Cancelled actual inline title'}});expect(unload()).toBe(true);
  await ui.user.keyboard('{Escape}');
  expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();expect(unload()).toBe(false);
