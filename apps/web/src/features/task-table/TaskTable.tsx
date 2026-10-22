@@ -17,7 +17,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useId, useMemo, useRef, useState, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import type { DateIssueInfo } from '../projects/dateConsistency';
@@ -101,6 +101,8 @@ export interface TaskTableProps {
   /** Starts renaming a section. Shown only when provided and `writable`. */
   onRenameSection?: ((section: SectionDto) => void) | undefined;
   onDuplicateTask?: ((task: TaskDto) => void) | undefined;
+  /** Deletes (archives) a task; the page shows the Undo notice. */
+  onDeleteTask?: ((task: TaskDto) => void) | undefined;
   onDuplicateSection?: ((section: SectionDto) => void) | undefined;
   /** The actor may create tasks here. Defaults to `false`. */
   writable?: boolean | undefined;
@@ -467,6 +469,7 @@ interface RowContext {
   onOpenTask: (taskId: string) => void;
   onCreateChild: ((parent: TaskDto) => void) | null;
   onDuplicateTask: ((task: TaskDto) => void) | undefined;
+  onDeleteTask: ((task: TaskDto) => void) | undefined;
   partial: boolean;
   today: string | undefined;
   dateIssues: ReadonlyMap<string, DateIssueInfo> | undefined;
@@ -660,6 +663,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
                     <FolderInput size={14} aria-hidden="true" />{t('taskTable.rowActions.moveSection')}
                   </Menu.Item> : null}
                   {ctx.onDuplicateTask && task.archivedAt === null && task.meetingId === null ? <Menu.Item className={menuItemClassName} disabled={ctx.draftTaskIds.has(task.id)} onSelect={() => { keepMenuFocus.current = true; ctx.onDuplicateTask?.(task); }}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</Menu.Item> : null}
+                  {ctx.onDeleteTask && task.archivedAt === null && task.meetingId === null ? <Menu.Item className={cn(menuItemClassName, 'text-rose-700')} disabled={ctx.draftTaskIds.has(task.id)} onSelect={() => { keepMenuFocus.current = false; ctx.onDeleteTask?.(task); }}><Trash2 size={14} aria-hidden="true" />{t('taskTable.rowActions.deleteTask')}</Menu.Item> : null}
                   {canAddChild ? <Menu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onCreateChild?.(task); }}>
                     <Plus size={14} aria-hidden="true" />{t('taskTable.rowActions.addSubtask')}
                   </Menu.Item> : null}
@@ -866,7 +870,7 @@ export function TaskTable({
   onOpenTask,
   onCreateTask,
   onCreateChild,
-  onRenameSection, onDuplicateTask, onDuplicateSection,
+  onRenameSection, onDuplicateTask, onDeleteTask, onDuplicateSection,
   writable = false,
   partial = false,
   today,
@@ -1074,6 +1078,7 @@ export function TaskTable({
     onOpenTask,
     onCreateChild: writable ? onCreateChild : null,
     onDuplicateTask: writable ? onDuplicateTask : undefined,
+    onDeleteTask: writable ? onDeleteTask : undefined,
     partial,
     today,
     dateIssues,
@@ -1112,7 +1117,7 @@ export function TaskTable({
   // Match the real root title: cell inset, selection gutter, disclosure, completion and title padding.
   const titleInset = 12 + (selectRow ? 40 : 0) + 28 + (renderCompletionAction ? 32 : 0) + 4;
   // Confirmed rows the list has not loaded yet stay in place, read-only, so the next input never jumps.
-  const confirmedCtx: RowContext = { ...ctx, onEditTaskField: undefined, renderTaskFieldEditor: undefined, activeFieldEditor: undefined, onCreateChild: null, onDuplicateTask: undefined, move: null, renderCompletionAction: () => <span aria-hidden="true" className="size-7 shrink-0" /> };
+  const confirmedCtx: RowContext = { ...ctx, onEditTaskField: undefined, renderTaskFieldEditor: undefined, activeFieldEditor: undefined, onCreateChild: null, onDuplicateTask: undefined, onDeleteTask: undefined, move: null, renderCompletionAction: () => <span aria-hidden="true" className="size-7 shrink-0" /> };
   const quickRows = (group: TableTaskGroup | null, depth: number): ReactNode => quickAdd ? <>
     {group === null ? null : (quickAdd.confirmedTasks ?? []).filter(task => !taskById.has(task.id)).map(task => <TaskRow key={task.id} node={{ task, depth, children: [], detachedReason: null }} group={group} ctx={confirmedCtx} />)}
     {quickAdd.render ? quickAdd.render(draftRow(depth)) : quickAddRow(quickAdd.content)}

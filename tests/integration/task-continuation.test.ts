@@ -31,9 +31,26 @@ describe('close and continue in another project', () => {
     expect(result.closed).toMatchObject({ id: task.id });
     const statuses = await h.owner.tasks.listStatuses(task.projectId);
     expect(statuses.find(s => s.id === result.closed.statusId)?.group).toBe('done');
-    expect(result.continued).toMatchObject({ title: 'Rework billing 2', projectId: weekTwo.id, priority: 'low', estimateMinutes: 60, dueDate: null, responsibleMembershipId: task.responsibleMembershipId });
+    expect(result.continued).toMatchObject({ title: 'Rework billing 2', projectId: weekTwo.id, priority: 'high', estimateMinutes: 60, dueDate: null, responsibleMembershipId: task.responsibleMembershipId });
     const dependencies = (await h.db.sql`select predecessor_task_id, successor_task_id, state from task_dependencies where id = ${result.dependencyId}`)[0];
     expect(dependencies).toMatchObject({ predecessor_task_id: task.id, successor_task_id: result.continued.id });
+  });
+
+  it('carries priority, tags and the section by name — not by id — into a project that has a same-named section', async () => {
+    const { weekOne, weekTwo, task } = await setup();
+    const mine = (await h.owner.tasks.createSection(weekOne.id, { name: 'Mark' }));
+    await h.owner.tasks.createSection(weekOne.id, { name: 'Other' });
+    const markTwo = await h.owner.tasks.createSection(weekTwo.id, { name: ' mark ' });
+    const tag = await h.owner.tasks.createTag({ name: `ops-${randomUUID().slice(0, 6)}` });
+    const sectioned = expectEnvelope(await h.owner.patch(`/tasks/${task.id}`, { expectedRevision: task.revision, sectionId: mine.id, tagIds: [tag.id] }), 200, taskResponseSchema).data;
+    const result = expectEnvelope(await post(sectioned.id, { targetProjectId: weekTwo.id }), 201, continueTaskResponseSchema).data;
+    expect(result.continued).toMatchObject({ sectionId: markTwo.id, priority: 'high' });
+    expect(result.continued.tags.map(t => t.id)).toEqual([tag.id]);
+    expect(result.continued.sectionId).not.toBe(mine.id);
+    // No same-named section there: the task simply has no section.
+    const alone = await h.owner.tasks.createProject(`Week 3 ${randomUUID().slice(0, 6)}`);
+    const second = expectEnvelope(await post(result.continued.id, { targetProjectId: alone.id }), 201, continueTaskResponseSchema).data;
+    expect(second.continued.sectionId).toBeNull();
   });
 
   it('numbers a chain: a second continuation becomes "title 3"', async () => {

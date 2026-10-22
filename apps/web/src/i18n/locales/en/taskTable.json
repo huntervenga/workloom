@@ -5,7 +5,8 @@
     "moveSection": "Move to section…",
     "addSubtask": "Add subtask",
     "moveUp": "Move up",
-    "moveDown": "Move down"
+    "moveDown": "Move down",
+    "deleteTask": "Delete task"
   },
   "move": {
     "handle": "Move task: {{title}}",

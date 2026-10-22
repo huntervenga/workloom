@@ -7,7 +7,7 @@
   "current": "(this project)",
   "newTitle": "Name of the new task",
   "rule1": "The new task is blocked by this one, so you can always find where it came from.",
-  "rule2": "Only the name and the project carry over (and the assignee); everything else starts from the project's defaults, with no time recorded.",
+  "rule2": "The name, assignee, priority, tags and section (the one with the same name in the chosen project) carry over. Dates, estimate and fields start from the project's defaults, with no time recorded.",
   "rule3": "The finished task keeps its time and stays counted in the period it belongs to.",
   "cancel": "Cancel",
   "submit": "Close and continue in {{project}}",

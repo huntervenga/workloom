@@ -40,6 +40,16 @@ export function createTaskContinuationService(deps: TaskContinuationDependencies
       const ordered = [...targetStatuses].sort((a, b) => a.position - b.position);
       const start = ordered.find(status => status.id === configured) ?? ordered.find(status => status.group === 'todo') ?? ordered[0];
       if (!start) throw new DomainError('DOMAIN_VALIDATION_FAILED', 'The chosen project has no statuses.');
+      // A section belongs to one project, so it is carried over by name: the same-named section of the chosen project, if any.
+      let sectionId: string | null = null;
+      if (source.sectionId !== null) {
+        if (input.targetProjectId === source.projectId) sectionId = source.sectionId;
+        else {
+          const sourceName = (await deps.tasks.listSections(context, source.projectId)).find(section => section.id === source.sectionId)?.name;
+          const wanted = sourceName?.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
+          if (wanted) sectionId = (await deps.tasks.listSections(context, input.targetProjectId)).find(section => section.archivedAt === null && section.name.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase() === wanted)?.id ?? null;
+        }
+      }
       // Closing comes before creating: if the project requires something before completion, nothing else is created.
       if (current?.group !== 'done') {
         const done = [...sourceStatuses].filter(status => status.group === 'done').sort((a, b) => a.position - b.position)[0];
@@ -50,6 +60,9 @@ export function createTaskContinuationService(deps: TaskContinuationDependencies
       const continued = await deps.tasks.createTask(step('create'), {
         projectId: input.targetProjectId, title: input.title ?? C.nextContinuationTitle(source.title), statusId: start.id,
         ...(source.responsibleMembershipId ? { responsibleMembershipId: source.responsibleMembershipId } : {}),
+        ...(source.priority !== 'none' ? { priority: source.priority } : {}),
+        ...(source.tags.length > 0 ? { tagIds: source.tags.filter(tag => tag.archivedAt === null).map(tag => tag.id) } : {}),
+        ...(sectionId !== null ? { sectionId } : {}),
       });
       const dependency = await deps.dependencies.createDependency(step('link'), { predecessorTaskId: source.id, successorTaskId: continued.id, type: 'finish_to_start', expectedAbsent: true });
       return { closed: source, continued, dependencyId: dependency.id };

@@ -5,8 +5,9 @@ import { taskSchema } from './tasks.js';
 
 /**
  * "Close and continue in another project": the task is completed as it stands (its Fact stays with it), and a fresh task
- * with the next number in its name starts in the chosen project, blocked by the finished one. Only the title, the project
- * and the dependency carry over; everything else starts from that project's defaults.
+ * with the next number in its name starts in the chosen project, blocked by the finished one. The title, the assignee,
+ * the priority, the tags and the section (matched by name, since a section belongs to one project) carry over; Fact,
+ * estimate, dates and field values start from that project's defaults.
  */
 export const continueTaskInputSchema = z.strictObject({
   targetProjectId: idSchema,

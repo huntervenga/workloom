@@ -1,10 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+import { taskAutoLoad } from '../features/tasks/autoLoad';
 
 // Condition-based waits return as soon as they pass; explicit timing oracles and
 // physical Chrome acceptance remain separate.
 configure({ asyncUtilTimeout: 3_000 });
+
+// Most page tests drive the "Load more tasks" button themselves; the auto-load tests turn this back on.
+beforeEach(() => { taskAutoLoad.enabled = false; });
 
 afterEach(() => {
   cleanup();

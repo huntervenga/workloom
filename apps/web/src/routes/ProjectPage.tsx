@@ -71,6 +71,7 @@ import { fieldRollups } from '../features/fields/rollup';
 import { ContinueInProjectDialog } from '../features/task-continuation/ContinueInProjectDialog';
 import { DuplicateProjectDialog } from '../features/project-copy/DuplicateProjectDialog';
 import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
+import { useAutoLoadTasks } from '../features/tasks/autoLoad';
 import { CompletedDateBanner } from '../features/projects/CompletedDateBanner';
 import { completedDateIssues } from '../features/projects/dateConsistency';
 import { useTaskDefaults } from '../features/task-defaults/queries';
@@ -373,6 +374,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [],
     [tasks.data, tasks.isError, tasks.isFetchNextPageError]);
   const loadedTaskIds = useMemo(() => shownTasks.map(task => task.id), [shownTasks]);
+  useAutoLoadTasks(tasks, shownTasks.length);
   const { collapsedTaskIds, expandedTaskIds, collapsedGroupKeys, setTaskCollapsed, setGroupCollapsed } = useTableExpansionState(
     { actorId, workspaceId: workspace.id, projectId: project.id }, loadedTaskIds,
   );
@@ -712,6 +714,11 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const completionAction = (task: TaskDto) => <TaskCompletionAction task={task} statuses={statuses.data ?? []} writable={completionWritable} blocked={unresolvedTaskCommand(commands) !== null} pending={(completion.pending && completion.attempt?.session.base.id === task.id) || bulkInline.completionPending(task.id)} hasDraft={commands.editSessions.current.has(task.id)} editing={activeInline?.taskId === task.id}
     // The circle's own choice for its row goes to the whole selection it belongs to.
     onChoose={(chosen, statusId, source) => { if (!bulkInline.complete(chosen, statusId)) completion.choose(chosen, statusId, source); }} onTargetReady={completion.targetReady} onReview={openTask} />;
+  // "Delete" moves a task out of every list and report; the Undo notice brings it straight back.
+  const deleteTask = (task: TaskDto) => {
+    if (unresolvedTaskCommand(commands) !== null) return;
+    commands.archive.mutate({ taskId: task.id, input: { expectedRevision: task.revision } });
+  };
   const openGraphTask = useCallback((task: TaskDto) => {
     if (task.projectId !== project.id) { navigate(`/w/${workspace.id}/projects/${task.projectId}?task=${task.id}`); return; }
     setCreating(null);
@@ -1305,6 +1312,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onCreateTask={(sectionId) => startQuickAdd(sectionId ?? null)}
             onCreateChild={startChildInline}
             onRenameSection={writable ? renameSection : undefined}
+            onDeleteTask={writable ? deleteTask : undefined}
             onDuplicateTask={writable ? duplication.openTask : undefined}
             onDuplicateSection={writable ? duplication.openSection : undefined}
           />}
@@ -1426,6 +1434,7 @@ interface TaskListProps {
   onCreateChild: (parent: TaskDto) => void;
   onRenameSection: ((section: SectionDto) => void) | undefined;
   onDuplicateTask?: ComponentProps<typeof TaskTable>['onDuplicateTask'];
+  onDeleteTask?: ComponentProps<typeof TaskTable>['onDeleteTask'];
   onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
