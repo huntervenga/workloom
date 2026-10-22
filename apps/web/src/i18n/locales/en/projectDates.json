@@ -1,0 +1,12 @@
+{
+  "title": "Completed tasks outside the project dates",
+  "summary": "{{count}} completed task(s) do not fit the project dates ({{from}} – {{to}}).",
+  "breakdown": "{{missing}} without a due date, {{outside}} with a due date outside the project dates. Fix the date, or move the task to the project it belongs to.",
+  "partial": "Only loaded tasks are checked.",
+  "show": "Show tasks",
+  "hide": "Hide tasks",
+  "more": "…and {{count}} more.",
+  "kindMissing": "no due date",
+  "kindBefore": "due before the project starts",
+  "kindAfter": "due after the project ends"
+}

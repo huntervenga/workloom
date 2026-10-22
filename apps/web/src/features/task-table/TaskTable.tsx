@@ -20,6 +20,7 @@ import * as Menu from '@radix-ui/react-dropdown-menu';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useId, useMemo, useRef, useState, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
+import type { DateIssueKind } from '../projects/dateConsistency';
 import { visibleTaskRows, type TaskTreeNode } from './taskTree';
 import { buildTableGroups, type TableTaskGroup, type TaskGroupingMode } from './taskGrouping';
 import { dedupeTasks } from './workPackages';
@@ -110,6 +111,8 @@ export interface TaskTableProps {
   partial?: boolean | undefined;
   /** Today in the workspace time zone (`YYYY-MM-DD`); enables overdue marking. */
   today?: string | undefined;
+  /** Finished tasks whose due date does not fit the project dates; shown on the date cell. */
+  dateIssues?: ReadonlyMap<string, DateIssueKind> | undefined;
   /** Accessible table caption. */
   caption?: string | undefined;
   /** Extra columns in this order; the table renders what the parent gives and fetches nothing. */
@@ -379,9 +382,10 @@ function TagsCell({ tags }: { tags: readonly TagDto[] }) {
   );
 }
 
-function DueDateCell({ startDate, dueDate, today, finished }: { startDate: string | null; dueDate: string | null; today: string | undefined; finished: boolean }) {
+function DueDateCell({ startDate, dueDate, today, finished, issue = null }: { startDate: string | null; dueDate: string | null; today: string | undefined; finished: boolean; issue?: DateIssueKind | null }) {
   const { t } = useTranslation();
-  if (dueDate === null && startDate === null) return <Empty label={t('taskTable.taskTable.noDueDate')} />;
+  const warning = issue === null ? null : issue === 'missing' ? t('taskTable.dates.issueMissing') : issue === 'before' ? t('taskTable.dates.issueBefore') : t('taskTable.dates.issueAfter');
+  if (dueDate === null && startDate === null) return warning === null ? <Empty label={t('taskTable.taskTable.noDueDate')} /> : <span data-date-issue={issue} title={warning} className="block truncate font-medium text-amber-700 [[data-theme=dark]_&]:text-amber-300">{t('taskTable.taskTable.noDueDate')}<span className="sr-only"> {warning}</span></span>;
   const referenceYear = today === undefined ? new Date().getFullYear() : calendarDate(today).getUTCFullYear();
   const short = (value: string) => { const date = calendarDate(value); return date.getUTCFullYear() === referenceYear ? dayMonthFormat.format(date) : fullDateFormat.format(date); };
   const long = (value: string) => longDateFormat.format(calendarDate(value));
@@ -390,7 +394,7 @@ function DueDateCell({ startDate, dueDate, today, finished }: { startDate: strin
   const label = startDate !== null && dueDate !== null ? t('taskTable.dates.rangeLabel', { start: long(startDate), due: long(dueDate) })
     : dueDate !== null ? long(dueDate) : t('taskTable.dates.startOnly', { start: long(startDate ?? dueDate ?? '') });
   const overdue = today !== undefined && !finished && dueDate !== null && dueDate < today;
-  return <span title={label} aria-label={label} className={cn('block truncate tabular-nums', overdue ? 'font-medium text-rose-700' : 'text-ink-soft')}>
+  return <span title={warning === null ? label : `${label} — ${warning}`} aria-label={warning === null ? label : `${label}. ${warning}`} data-date-issue={issue ?? undefined} className={cn('block truncate tabular-nums', warning !== null ? 'font-medium text-amber-700 underline decoration-dotted [[data-theme=dark]_&]:text-amber-300' : overdue ? 'font-medium text-rose-700' : 'text-ink-soft')}>
     {text}{overdue ? <span className="sr-only">{t('taskTable.taskTable.overdue')}</span> : null}
   </span>;
 }
@@ -465,6 +469,7 @@ interface RowContext {
   onDuplicateTask: ((task: TaskDto) => void) | undefined;
   partial: boolean;
   today: string | undefined;
+  dateIssues: ReadonlyMap<string, DateIssueKind> | undefined;
   customColumns: readonly TaskTableCustomColumn[];
   columnIds: readonly string[];
   trailingColumn: boolean;
@@ -675,7 +680,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     status: td('status', 'statusId', cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)),
     responsible: td('responsible', 'responsibleMembershipId', cell('responsibleMembershipId', task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)),
     participants: td('participants', null, <span className="flex h-8 min-w-0 items-center px-1.5"><ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} /></span>),
-    dueDate: td('dueDate', 'dueDate', cell('dueDate', <DueDateCell startDate={task.startDate ?? null} dueDate={task.dueDate} today={ctx.today} finished={finished} />)),
+    dueDate: td('dueDate', 'dueDate', cell('dueDate', <DueDateCell startDate={task.startDate ?? null} dueDate={task.dueDate} today={ctx.today} finished={finished} issue={ctx.dateIssues?.get(task.id) ?? null} />)),
     tags: td('tags', 'tagIds', cell('tagIds', <span className="flex h-8 min-w-0 items-center px-1.5"><TagsCell tags={task.tags} /></span>)),
     priority: td('priority', 'priority', cell('priority', <PriorityCell priority={task.priority} />)),
     estimate: td('estimate', 'estimate', cell('estimate', <EstimateCell task={task} summary={ctx.summary} />), cn('text-right lg:bg-surface lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]', ctx.columnIds.at(-1) === 'estimate' && !ctx.trailingColumn && stickyEstimateClassName)),
@@ -865,6 +870,7 @@ export function TaskTable({
   writable = false,
   partial = false,
   today,
+  dateIssues,
   caption = t('taskTable.taskTable.projectTasks'),
   customColumns = noCustomColumns,
   columnPreset = 'expanded',
@@ -1070,6 +1076,7 @@ export function TaskTable({
     onDuplicateTask: writable ? onDuplicateTask : undefined,
     partial,
     today,
+    dateIssues,
     customColumns,
     columnIds: visibleIds,
     trailingColumn,

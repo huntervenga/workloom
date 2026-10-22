@@ -70,6 +70,8 @@ import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
 import { fieldRollups } from '../features/fields/rollup';
 import { DuplicateProjectDialog } from '../features/project-copy/DuplicateProjectDialog';
 import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
+import { CompletedDateBanner } from '../features/projects/CompletedDateBanner';
+import { completedDateIssues } from '../features/projects/dateConsistency';
 import { useTaskDefaults } from '../features/task-defaults/queries';
 import {
   FieldManagerDialog,
@@ -1447,13 +1449,17 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
   }
 
   const scope = loadedTaskScope(query.data);
+  const dateIssues = completedDateIssues(project, scope.tasks, table.statuses);
+  const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, issue.kind] as const));
   return (
     <div className="space-y-3">
+      {!boardMode ? <CompletedDateBanner project={project} issues={dateIssues} tasks={scope.tasks} partial={filtered || !scope.complete} onOpenTask={table.onOpenTask} /> : null}
       {boardMode ? <TaskBoard onMoveCard={table.sortMode === 'manual' ? table.onMoveBoardCard : undefined} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={table.sortMode === 'manual' ? orderBoardTaskHeads(scope.tasks, 'manual').sort((left, right) => compareTaskRows(left, right, 'manual')) : orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} isStatusEditBusy={task => table.isTaskFieldEditBusy?.(task, 'statusId') === true} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={scope.tasks}
         partial={filtered || !scope.complete}
         today={todayIn(workspace.timezone)}
+        dateIssues={dateIssueKinds}
         caption={t('projects.projectPage.tasksInValue', { p0: project.name })}
       />}
       {query.isFetchNextPageError ? (

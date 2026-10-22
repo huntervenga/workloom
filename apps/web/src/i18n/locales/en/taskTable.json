@@ -235,7 +235,10 @@
   "dates": {
     "range": "{{start}} – {{due}}",
     "rangeLabel": "Start date: {{start}}; due date: {{due}}",
-    "startOnly": "From {{start}}"
+    "startOnly": "From {{start}}",
+    "issueMissing": "Completed without a due date",
+    "issueBefore": "Due before the project starts",
+    "issueAfter": "Due after the project ends"
   },
   "columnMenu": {
     "trigger": "Add or show columns",
