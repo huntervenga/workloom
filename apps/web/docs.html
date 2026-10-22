@@ -87,7 +87,7 @@ summary { cursor:pointer; font-weight:600; padding:10px 0; }
   <thead><tr><th>Access</th><th>Allows</th></tr></thead>
   <tbody>
     <tr><td><code>read</code></td><td>List workspaces, projects, members, tags and tasks; read a task.</td></tr>
-    <tr><td><code>tasks:write</code></td><td>Create and update tasks (status, section, assignee, dates, tags, …). Add <code>read</code> too if you also want to read.</td></tr>
+    <tr><td><code>tasks:write</code></td><td>Create and update tasks (status, section, assignee, dates, tags, …). It includes <code>read</code>, so the written task can be returned and the token can look things up.</td></tr>
   </tbody>
 </table>
 <pre><code>export WORKLOOM_URL=<span class="origin">https://your-workloom</span>
