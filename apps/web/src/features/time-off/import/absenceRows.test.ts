@@ -43,5 +43,9 @@ describe('absence rows', () => {
     expect(fixed.map(row => row.status)).toEqual(['ready', 'ready', 'ready']);
     const already = resolveAbsences(table.rows, { ...data, requests: [{ membershipId: first.id, typeId: vacation.id, startDate: '2026-07-06', endDate: '2026-07-10', status: 'approved' } as unknown as (typeof data.requests)[number]] });
     expect(already[0]?.status).toBe('exists');
+    // Choosing "Skip rows" again (an empty choice) leaves the row unmatched instead of ready with an empty person.
+    const skipped = resolveAbsences(table.rows, data, { people: { ghost: '' }, types: { sabbatical: '' } });
+    expect(skipped.map(row => row.status)).toEqual(['ready', 'invalid', 'invalid']);
+    expect(skipped[1]?.membershipId).toBeNull();
   });
 });

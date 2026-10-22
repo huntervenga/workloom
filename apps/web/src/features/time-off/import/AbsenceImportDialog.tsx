@@ -33,7 +33,9 @@ function Importer({ actorId, workspaceId, overview, onClose }: { actorId: string
   const [reason, setReason] = useState(t('absenceImport.defaultReason'));
   const [outcomes, setOutcomes] = useState<Record<number, Outcome>>({});
   const [running, setRunning] = useState(false);
-  const keys = useRef(new Map<number, string>());
+  const [approveNegative, setApproveNegative] = useState(false);
+  // A key belongs to one exact request: a changed reason, person, type or dates must never reuse it.
+  const keys = useRef(new Map<number, { signature: string; key: string }>());
 
   const table = grid ? readAbsenceTable(grid) : null;
   const rows = table ? resolveAbsences(table.rows, overview, overrides) : [];
@@ -43,7 +45,7 @@ function Importer({ actorId, workspaceId, overview, onClose }: { actorId: string
   const types = [...new Map(overview.settings?.policyVersions.flatMap(version => version.types.map(type => [type.id, type] as const)) ?? []).values()].filter(type => !type.archived);
 
   async function readFile(file: File) {
-    setReadError(false); setOutcomes({}); setOverrides({ people: {}, types: {} });
+    setReadError(false); setOutcomes({}); setOverrides({ people: {}, types: {} }); keys.current.clear();
     try { setGrid(parseCsv(await file.text())); } catch { setGrid(null); setReadError(true); }
   }
 
@@ -53,8 +55,11 @@ function Importer({ actorId, workspaceId, overview, onClose }: { actorId: string
     try {
       const preview = await previewBulk(workspaceId, input);
       const negative = preview.previews.some(item => item.preview.deficits.some(deficit => deficit.negativeApprovalRequired));
-      const key = keys.current.get(row.line) ?? crypto.randomUUID();
-      keys.current.set(row.line, key);
+      if (negative && !approveNegative) return { state: 'failed', message: t('absenceImport.negativeNotApproved') };
+      const signature = JSON.stringify(input);
+      const known = keys.current.get(row.line);
+      const key = known?.signature === signature ? known.key : crypto.randomUUID();
+      keys.current.set(row.line, { signature, key });
       await sendMutation(bulkRequest(workspaceId, { ...input, approveNegative: negative, expectedSourceVersion: preview.sourceVersion }), { idempotencyKey: key });
       return { state: 'done' };
     } catch (error) {
@@ -124,6 +129,7 @@ function Importer({ actorId, workspaceId, overview, onClose }: { actorId: string
             </tr>)}</tbody>
           </table>
         </div>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={approveNegative} disabled={running} onChange={event => setApproveNegative(event.target.checked)} />{t('absenceImport.approveNegative')}</label>
         <label className="grid gap-1 text-xs text-muted">{t('absenceImport.reason')}<TextInput maxLength={2000} value={reason} disabled={running} onChange={event => setReason(event.target.value)} /></label>
         <p className="text-xs text-muted">{t('absenceImport.note')}</p>
       </> : null}

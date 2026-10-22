@@ -443,8 +443,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const capturedBulk = session ? bulkInline.port(session.identity) !== undefined : bulkInline.selectsMany(task.id);
     return capturedBulk && heldFieldTaskId?.toLowerCase() !== task.id.toLowerCase();
   };
-  // Subtask totals are only offered once every task of the project is loaded; a partial tree would give a wrong sum.
-  const rollupsByField = new Map(fieldColumns.map(({ field }) => [field.id, tasks.hasNextPage ? new Map<string, TaskFieldData>() : fieldRollups(field, shownTasks, taskId => valueByKey.get(fieldValueKey(taskId, field.id)))]));
+  const filtered = hasActiveTaskFilters({ ...filters, includeArchived: false });
+  // Subtask totals are only offered once every task of the project is loaded and no filter hides some of them; a partial tree would give a wrong sum.
+  const rollupsByField = new Map(fieldColumns.map(({ field }) => [field.id, tasks.hasNextPage || filtered ? new Map<string, TaskFieldData>() : fieldRollups(field, shownTasks, taskId => valueByKey.get(fieldValueKey(taskId, field.id)))]));
   const customColumns: TaskTableCustomColumn[] = fieldColumns.map(({ field, width }) => ({
     id: field.id,
     label: field.name,
@@ -903,7 +904,6 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // The open task's direct children among the loaded rows only. Without a current list nothing is
   // claimed; a filter, search or unloaded page labels the list as a subset.
   // Including archived tasks only widens the list; every other filter narrows it.
-  const filtered = hasActiveTaskFilters({ ...filters, includeArchived: false });
   // A new object for every filter, search, view or history change, so Back to an equal key
   // never revives an older confirmation.
   const quickCreateScope = useMemo(() => ({ key: taskPresentationKey, filtered }), [taskPresentationKey, filtered]);

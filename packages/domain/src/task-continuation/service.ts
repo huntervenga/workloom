@@ -52,20 +52,32 @@ export function createTaskContinuationService(deps: TaskContinuationDependencies
           if (wanted) sectionId = (await deps.tasks.listSections(context, input.targetProjectId)).find(section => section.archivedAt === null && section.name.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase() === wanted)?.id ?? null;
         }
       }
+      let closedHere: { statusId: string } | null = null;
       // Closing comes before creating: if the project requires something before completion, nothing else is created.
       if (current?.group !== 'done') {
         const done = [...sourceStatuses].filter(status => status.group === 'done').sort((a, b) => a.position - b.position)[0];
         if (!done) throw new DomainError('DOMAIN_VALIDATION_FAILED', 'The project has no completed status.');
-        source = await deps.tasks.updateTask(step('close'), source.id, { expectedRevision: source.revision, statusId: done.id });
+        // The revision in the key keeps a retry honest: after the close was undone below, the same request must close again.
+        source = await deps.tasks.updateTask(step(`close@${source.revision}`), source.id, { expectedRevision: source.revision, statusId: done.id });
+        closedHere = { statusId: current?.id ?? source.statusId };
       }
 
-      const continued = await deps.tasks.createTask(step('create'), {
+      let continued: C.TaskDto;
+      try {
+        continued = await deps.tasks.createTask(step('create'), {
         projectId: input.targetProjectId, title: input.title ?? C.nextContinuationTitle(source.title), statusId: start.id,
         ...(source.responsibleMembershipId ? { responsibleMembershipId: source.responsibleMembershipId } : {}),
         ...(source.priority !== 'none' ? { priority: source.priority } : {}),
         ...(source.tags.length > 0 ? { tagIds: source.tags.filter(tag => tag.archivedAt === null).map(tag => tag.id) } : {}),
         ...(sectionId !== null ? { sectionId } : {}),
-      });
+        });
+      } catch (error) {
+        // The target refused the new task (archived, no edit right, a planning rule…): do not leave the old one closed alone.
+        if (closedHere && error instanceof DomainError) {
+          try { await deps.tasks.updateTask(step(`reopen@${source.revision}`), source.id, { expectedRevision: source.revision, statusId: closedHere.statusId }); } catch { /* the original error is the useful one */ }
+        }
+        throw error;
+      }
       // Choice fields (a project's own "Priority", "Type"…) carry over by field name and option name. Any other field starts
       // from the new project's defaults unless the caller asked for its value to be copied.
       const copy = new Set((input.carryFieldIds ?? []).map(id => id.toLowerCase()));
@@ -75,14 +87,14 @@ export function createTaskContinuationService(deps: TaskContinuationDependencies
         const sourceFields = await deps.fields.listFields(context, source.projectId);
         const targetFields = (await deps.fields.listFields(context, input.targetProjectId)).filter(field => field.archivedAt === null);
         const existing = new Map((await deps.fields.listTaskValues(context, continued.id)).map(value => [value.fieldId, value]));
-        for (const [index, value] of sourceValues.entries()) {
+        for (const value of sourceValues) {
           const from = sourceFields.find(field => field.id === value.fieldId);
           const to = from && targetFields.find(field => field.type === from.type && key(field.name) === key(from.name));
           if (!from || !to) continue;
           if (value.value.type !== 'single_select' && value.value.type !== 'multi_select') {
             if (to.type === 'person') continue;
             try {
-              await deps.fields.setTaskValue(step(`field:${index}`), continued.id, to.id, { expectedRevision: existing.get(to.id)?.revision ?? 0, expectedDefinitionRevision: to.revision, value: value.value });
+              await deps.fields.setTaskValue(step(`field:${value.fieldId}`), continued.id, to.id, { expectedRevision: existing.get(to.id)?.revision ?? 0, expectedDefinitionRevision: to.revision, value: value.value });
             } catch (error) {
               if (!(error instanceof DomainError)) throw error;
             }
@@ -99,7 +111,7 @@ export function createTaskContinuationService(deps: TaskContinuationDependencies
           if (mapped.length === 0) continue;
           const data: C.TaskFieldData = to.type === 'single_select' ? { type: 'single_select', value: mapped[0] ?? null } : { type: 'multi_select', value: mapped };
           try {
-            await deps.fields.setTaskValue(step(`field:${index}`), continued.id, to.id, { expectedRevision: existing.get(to.id)?.revision ?? 0, expectedDefinitionRevision: to.revision, value: data });
+            await deps.fields.setTaskValue(step(`field:${value.fieldId}`), continued.id, to.id, { expectedRevision: existing.get(to.id)?.revision ?? 0, expectedDefinitionRevision: to.revision, value: data });
           } catch (error) {
             // A locked or since-changed field must not undo a continuation that has already been created.
             if (!(error instanceof DomainError)) throw error;

@@ -71,6 +71,19 @@ describe('close and continue in another project', () => {
     expect((await h.owner.listTaskValues(second.continued.id)).map(v => JSON.stringify(v.value)).sort()).toEqual([JSON.stringify({ type: 'duration', value: 120 }), JSON.stringify({ type: 'single_select', value: pick(to, 'P2') })].sort());
   });
 
+  it('leaves the old task open when the chosen project refuses the new one, and finishes on a later retry', async () => {
+    const { weekOne, weekTwo, task } = await setup();
+    await h.db.sql`update projects set archived_at = now() where id = ${weekTwo.id}`;
+    const key = `refuse-${randomUUID()}`;
+    const refused = await post(task.id, { targetProjectId: weekTwo.id }, key);
+    expect(refused.status).toBeGreaterThanOrEqual(400);
+    const after = expectEnvelope(await h.owner.get(`/tasks/${task.id}`), 200, taskResponseSchema).data;
+    expect((await h.owner.tasks.listStatuses(weekOne.id)).find(s => s.id === after.statusId)?.group).not.toBe('done');
+    await h.db.sql`update projects set archived_at = null where id = ${weekTwo.id}`;
+    const retried = expectEnvelope(await post(task.id, { targetProjectId: weekTwo.id }, key), 201, continueTaskResponseSchema).data;
+    expect((await h.owner.tasks.listStatuses(weekOne.id)).find(s => s.id === retried.closed.statusId)?.group).toBe('done');
+  });
+
   it('numbers a chain: a second continuation becomes "title 3"', async () => {
     const { weekTwo, task } = await setup();
     const second = expectEnvelope(await post(task.id, { targetProjectId: weekTwo.id }), 201, continueTaskResponseSchema).data;

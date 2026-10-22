@@ -57,8 +57,8 @@ export function createProjectCopyService(deps: ProjectCopyDependencies): Project
       }
 
       const sections = sourceSections.filter(section => section.archivedAt === null).sort((a, b) => a.position - b.position);
-      for (const [index, section] of sections.entries()) {
-        const copy = await deps.tasks.createSection(step(`section:${index}`), created.id, { name: section.name });
+      for (const section of sections) {
+        const copy = await deps.tasks.createSection(step(`section:${section.id}`), created.id, { name: section.name });
         link(section.id, copy.id);
       }
       const newStatuses = await deps.tasks.listStatuses(context, created.id);
@@ -68,9 +68,9 @@ export function createProjectCopyService(deps: ProjectCopyDependencies): Project
       }
 
       const fields = sourceFields.filter(field => field.archivedAt === null);
-      for (const [index, field] of fields.entries()) {
+      for (const field of fields) {
         const activeOptions = [...field.options].filter(option => option.archivedAt === null).sort((a, b) => a.position - b.position);
-        const copy = await deps.fields.createField(step(`field:${index}`), {
+        const copy = await deps.fields.createField(step(`field:${field.id}`), {
           projectId: created.id, name: field.name, type: field.type, historyEnabled: field.historyEnabled, locked: field.locked,
           options: activeOptions.map(option => ({ name: option.name, color: option.color })),
         });
@@ -127,8 +127,8 @@ export function createProjectCopyService(deps: ProjectCopyDependencies): Project
 
       if (input.copy.reports) await optional('reports', async () => {
         const definitions = (await deps.reports.list(context, sourceId)).filter(report => !report.archivedAt);
-        for (const [index, definition] of definitions.entries()) {
-          await deps.reports.create(step(`report:${index}`), { name: definition.name, config: remapSettings(definition.config, ids, input.shiftDays) });
+        for (const definition of definitions) {
+          await deps.reports.create(step(`report:${definition.id}`), { name: definition.name, config: remapSettings(definition.config, ids, input.shiftDays) });
           result.copied.reports += 1;
         }
       });

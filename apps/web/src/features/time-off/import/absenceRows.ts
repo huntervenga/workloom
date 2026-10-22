@@ -62,8 +62,8 @@ export function resolveAbsences(rows: readonly ParsedAbsence[], overview: Pick<L
   for (const version of [...(overview.settings?.policyVersions ?? [])].sort((a, b) => a.effectiveYear - b.effectiveYear)) for (const type of version.types) types.set(type.id, { id: type.id, name: type.name });
   const unique = (list: readonly Names[], text: string): string | null => { const hits = list.filter(item => normal(item.name) === normal(text)); return hits.length === 1 ? hits[0]?.id ?? null : null; };
   return rows.map(row => {
-    const membershipId = overrides.people[normal(row.person)] ?? unique(people, row.person);
-    const typeId = overrides.types[normal(row.type)] ?? unique([...types.values()], row.type);
+    const membershipId = overrides.people[normal(row.person)] || unique(people, row.person);
+    const typeId = overrides.types[normal(row.type)] || unique([...types.values()], row.type);
     const issues = [...row.issues];
     if (membershipId === null) issues.push('person');
     if (typeId === null) issues.push('type');

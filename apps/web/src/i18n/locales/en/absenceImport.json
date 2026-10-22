@@ -52,5 +52,7 @@
     "end": "end|end date|to|until|last day",
     "note": "note|notes|comment|reason|description"
   },
-  "templateCsv": "Person,Type,Start,End,Note\nAda Lovelace,Vacation,2026-07-06,2026-07-17,Summer\nAda Lovelace,Sick leave,2026-09-02,2026-09-02,\n"
+  "templateCsv": "Person,Type,Start,End,Note\nAda Lovelace,Vacation,2026-07-06,2026-07-17,Summer\nAda Lovelace,Sick leave,2026-09-02,2026-09-02,\n",
+  "approveNegative": "Also import rows that take a balance below zero",
+  "negativeNotApproved": "Takes the balance below zero. Tick the box above to import it anyway."
 }
