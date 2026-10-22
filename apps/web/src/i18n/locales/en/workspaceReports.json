@@ -134,5 +134,19 @@
   "selectedPeople": "{{count}} selected people",
   "setupSchedules": "Set up working schedules",
   "askAdminSchedules": "Ask a workspace administrator to configure working schedules.",
-  "thisWeek": "This week"
+  "thisWeek": "This week",
+  "accuracy": {
+    "title": "Estimation accuracy by period",
+    "team": "Team",
+    "help": "Actual ÷ estimate on the tasks that have both. 100% is a perfect estimate; above means the work took longer than estimated, below means it took less. Green is within 10%, amber within 25%.",
+    "trend": "Trend",
+    "improving": "Misses shrinking",
+    "worsening": "Misses growing",
+    "steady": "Steady",
+    "notEnough": "Needs {{count}}+ periods with data",
+    "missChange": "Average miss: {{early}} in the earlier half, {{late}} in the later half",
+    "noPairs": "No task has both an estimate and an actual in this period",
+    "cell": "{{percent}} of estimate, from {{paired}} task(s)",
+    "caption": "Based on current values of tasks due in each period; it shows how well estimates match results, not how much was worked or how good the work was."
+  }
 }

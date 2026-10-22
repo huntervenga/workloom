@@ -4,6 +4,7 @@ import { useTranslation } from '../../i18n';
 import { capacitySummary } from '../generic-reports/capacitySummary';
 import { categoryColor, effortCategoryColor } from '../generic-reports/categoryColors';
 import { reportNumber, roundedRational } from '../generic-reports/reportFormatting';
+import { AccuracyTrend } from './AccuracyTrend';
 
 type Num = WorkspaceReportSummaryDto['plan']['value'];
 type Rat = { n: bigint; d: bigint };
@@ -127,6 +128,7 @@ export function WorkspaceDashboard({ result, onPersonSelect, onConfigureTypes, c
         })}</ul> : <p role="status" className="text-xs text-muted">{t('workspaceReports.categories.empty')}</p>}
       </section>
     </div>
+    <AccuracyTrend result={result} />
     <section aria-label={t('workspaceReports.people.title')} className={panel}>
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium">{t('workspaceReports.people.title')}</h3>{legend}</div>
       {result.people.length ? <div className="overflow-x-auto"><table className="w-full min-w-[40rem] text-sm"><colgroup><col className="w-48"/><col/><col className="w-48"/></colgroup>
