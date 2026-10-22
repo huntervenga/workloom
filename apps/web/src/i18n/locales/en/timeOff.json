@@ -224,5 +224,11 @@
   "previewBalanceWarningHint": "These are conflicts found in this preview. Review the dates and working-day charge; a rejected save may have another cause.",
   "refreshRecord": "Refresh current record",
   "historicalCorrectionWarnings": "Balance warnings from historical correction",
-  "historicalCorrectionHint": "You can save this fully elapsed date correction with your reason. These balances are recalculated from the changed dates; this does not approve additional leave or change the rules for new requests."
+  "historicalCorrectionHint": "You can save this fully elapsed date correction with your reason. These balances are recalculated from the changed dates; this does not approve additional leave or change the rules for new requests.",
+  "historicalRecordingHint": "You can review without a reason. Enter a reason to save dates that have started or are in the past. A fully elapsed absence will be recorded as approved history.",
+  "historicalRecordingReasonRequired": "Enter a reason before saving dates that have started or are in the past.",
+  "historicalRecordingAdvisory": "Recording historical absence ending {{date}} ({{hours}} working hours unavailable). This will be saved as approved history.",
+  "historicalRecordingDeficits": "This historical recording will reduce balances on the following dates:",
+  "reasonRequiredLabel": "(required to save)",
+  "historicalRecordingTitle": "Historical absence recording"
 }

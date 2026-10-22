@@ -164,6 +164,31 @@ export type CreateLeaveRequestInput = z.infer<typeof createLeaveRequestInputSche
 export type UpdateLeaveRequestInput = z.infer<typeof updateLeaveRequestInputSchema>;
 export type DecideLeaveRequestInput = z.infer<typeof decideLeaveRequestInputSchema>;
 
+/**
+ * Derives whether a new request qualifies as a manager historical absence recording.
+ * Eligible: manager(scope); endDate strictly before today; no bypass flag or DTO field accepted.
+ * Preview may omit reason; save requires nonempty trimmed reason.
+ */
+export function isLeaveHistoricalAbsenceCreation(
+  proposed: Pick<LeaveRequestDto, 'endDate'>,
+  context: Pick<LeaveHistoricalAbsenceCorrectionContext, 'canManage' | 'today'>,
+): boolean {
+  if (!context.canManage) return false;
+  if (proposed.endDate >= context.today) return false;
+  return true;
+}
+
+/** First admission of true history; authority and local today come from the server. */
+export function isLeaveHistoricalAbsenceRecording(
+  before: LeaveRequestDto | undefined,
+  proposed: Pick<LeaveRequestDto, 'membershipId' | 'typeId' | 'startDate' | 'endDate' | 'status'>,
+  context: LeaveHistoricalAbsenceCorrectionContext,
+): boolean {
+  if (!isLeaveHistoricalAbsenceCreation(proposed, context) || !context.reason.trim() || proposed.status !== 'approved') return false;
+  if (!before) return true;
+  return before.status === 'pending' && before.endDate < context.today && before.membershipId === proposed.membershipId && before.typeId === proposed.typeId && before.startDate === proposed.startDate && before.endDate === proposed.endDate;
+}
+
 /** The service supplies authorized full source and a trusted per-person local asOf date. */
 export interface LeaveCalculationSource {
   settings: LeaveSettingsDto;
