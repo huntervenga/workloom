@@ -68,6 +68,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useLocation, useParams } from 'react-router';
 import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
 import { fieldRollups } from '../features/fields/rollup';
+import { DuplicateProjectDialog } from '../features/project-copy/DuplicateProjectDialog';
 import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
 import { useTaskDefaults } from '../features/task-defaults/queries';
 import {
@@ -1097,6 +1098,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
+            <DuplicateProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} canManage={canManageFields} />
             <TaskDefaultsDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
             <FieldManagerDialog onConfigurePlanningCheck={planningChecks.configureField} initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
