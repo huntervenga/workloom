@@ -57,7 +57,7 @@ summary { cursor:pointer; font-weight:600; padding:10px 0; }
 </style>
 </head>
 <body>
-<header class="top"><a class="brand" href="/">Workloom</a><nav aria-label="Primary"><a href="#api">API</a><a href="#mcp">MCP</a><a href="/api/public/v1/openapi.json">OpenAPI</a><a href="/app">Open app</a></nav></header>
+<header class="top"><a class="brand" href="/">Workloom</a><nav aria-label="Primary"><a href="#token">Get a token</a><a href="#api">REST API</a><a href="#mcp">MCP</a><a href="/app">Open app</a></nav></header>
 <div class="layout">
 <aside class="toc" aria-label="On this page">
   <p>Start</p><a href="#overview">Overview</a><a href="#token">Get a token</a><a href="#permissions">Permissions</a><a href="#quickstart">Quickstart</a>
@@ -124,7 +124,7 @@ curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&
 
 <h2 id="api">REST API conventions</h2>
 <ul>
-  <li><strong>Base URL:</strong> <code><span class="origin">https://your-workloom</span>/api/public/v1</code>. Machine-readable description: <a href="/api/public/v1/openapi.json">openapi.json</a>.</li>
+  <li><strong>Base URL:</strong> <code><span class="origin">https://your-workloom</span>/api/public/v1</code>. The sections below are the reference. For tools such as Postman or client generators there is also a raw <a href="/api/public/v1/openapi.json">OpenAPI file (JSON)</a>; it is not meant for reading.</li>
   <li><strong>Auth:</strong> <code>Authorization: Bearer wlm_pat_…</code> on every request. No cookies, no CORS; call it from servers and terminals, not from browser pages.</li>
   <li><strong>JSON</strong> in and out, camelCase fields, dates as <code>YYYY-MM-DD</code>, timestamps in UTC ISO 8601. Unknown fields are rejected, which catches typos.</li>
   <li><strong>Envelope:</strong> success is <code>{ "data": …, "meta": { "requestId", "nextCursor"? } }</code>; failure is <code>{ "error": { "code", "message", "details"?, "retryable" }, "meta": { "requestId" } }</code>. Quote <code>requestId</code> when reporting a problem.</li>
