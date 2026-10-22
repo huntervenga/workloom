@@ -68,6 +68,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useLocation, useParams } from 'react-router';
 import { InlineFieldValueCell } from '../features/fields/InlineFieldValueCell';
 import { fieldRollups } from '../features/fields/rollup';
+import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
+import { useTaskDefaults } from '../features/task-defaults/queries';
 import {
   FieldManagerDialog,
   useProjectColumnsQuery,
@@ -423,6 +425,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     project.id,
     !personalColumns.denied && fieldColumns.length > 0 ? shownTasks.map((task) => task.id) : [],
   );
+  const taskDefaults = useTaskDefaults(actorId, workspace.id, project.id);
   const valueByKey = new Map<string, TaskFieldValueDto>(
     fieldValues.data.map((value) => [fieldValueKey(value.taskId, value.fieldId), value]),
   );
@@ -983,7 +986,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const visibleExtraColumns = [...timeColumns, ...customColumns].filter(column => visibleColumnIds.includes(column.id));
   // More details keeps the row's place: its whole request, not only its section and parent.
 
-  const quickTaskAdd = (request: CreateRequest, key: string, renderRow: TaskTableDraftRow, anchored: boolean) => <QuickTaskAdd key={key} projectId={project.id} sectionId={request.sectionId}
+  const quickTaskAdd = (request: CreateRequest, key: string, renderRow: TaskTableDraftRow, anchored: boolean) => <QuickTaskAdd key={key} newTaskStatusId={taskDefaults.data?.config.statusId ?? null} projectId={project.id} sectionId={request.sectionId}
     sectionName={sections.data?.find(section => section.id === request.sectionId)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data ?? []} members={members.data ?? []} tags={tags.data ?? []} sections={sections.data ?? []}
     commands={commands} writable={writable} request={request} renderRow={renderRow} detailsKeepInitialCells
     initialFields={initialFields} initialTimeContext={initialTimeContextFor(request.parent, 'detail')} initialTimeWritable={rowContext.writable} initialTimeCurrent={initialTimeCurrent}
@@ -1094,6 +1097,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
             {canEdit ? <RenameProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} trigger={<Button size="sm" variant="ghost"><Pencil size={16} aria-hidden="true" />{t('projects.projectPage.rename')}</Button>} /> : null}
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
+            <TaskDefaultsDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
             <FieldManagerDialog onConfigurePlanningCheck={planningChecks.configureField} initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
         </ProjectActions>
@@ -1300,6 +1304,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           {!importMode && !graphMode ? <LinkedProjectTasks customFields={fieldColumns} expansion={{ expandedTaskIds, collapsedGroupKeys, setTaskCollapsed: changeTaskCollapsed, setGroupCollapsed: changeGroupCollapsed }} actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
           <ProjectUndoSurface actorId={actorId} workspaceId={workspace.id} projectId={project.id} writable={writable} />
           <TaskDrawer
+            newTaskStatusId={taskDefaults.data?.config.statusId ?? null}
             sharedActivityController={sharedActivityController}
             legacyTime={timeAvailable}
             placementCommands={placementCommands}

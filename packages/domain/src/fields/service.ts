@@ -633,7 +633,7 @@ function referenceIds(data: TaskFieldData | null): string[] {
  * Options: missing or foreign 404, another field 422, archived 422. People: an active membership
  * of this workspace, otherwise 404 (they are custom data, not task participants).
  */
-async function requireAssignableReferences(
+export async function requireAssignableReferences(
   repo: TaskFieldRepository,
   ws: string,
   field: TaskFieldDefinitionDto,

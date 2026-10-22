@@ -97,6 +97,8 @@ export interface TaskDrawerProps {
   project: ProjectDto;
   sections: readonly SectionDto[];
   statuses: readonly TaskStatusDto[];
+  /** The project's default status for new tasks (task defaults). */
+  newTaskStatusId?: string | null | undefined;
   members: readonly MembershipDto[];
   tags: readonly TagDto[];
   /** The actor may change tasks in this project (not a viewer, project not archived). */
@@ -198,9 +200,10 @@ export function submitTaskFormShortcut(event: KeyboardEvent<HTMLFormElement>, en
 }
 
 
-function defaultStatusId(statuses: readonly TaskStatusDto[]): string | null {
+function defaultStatusId(statuses: readonly TaskStatusDto[], preferredId?: string | null): string | null {
   const ordered = [...statuses].sort((a, b) => a.position - b.position);
-  return (ordered.find((status) => status.group === 'todo') ?? ordered[0])?.id ?? null;
+  const preferred = preferredId ? ordered.find((status) => status.id.toLowerCase() === preferredId.toLowerCase()) : undefined;
+  return (preferred ?? ordered.find((status) => status.group === 'todo') ?? ordered[0])?.id ?? null;
 }
 
 /**
@@ -904,7 +907,7 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
   const unresolved = unresolvedTaskCommand(commands);
   const blockedByOther = unresolved !== null && unresolved.taskId !== null ? unresolved : null;
   const busy = pending || blockedByOther !== null;
-  const statusId = defaultStatusId(statuses);
+  const statusId = defaultStatusId(statuses, props.newTaskStatusId);
   const scopeName = useId();
 
   const [session, setSession] = useState<CreateSession | null>(() =>

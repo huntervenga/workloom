@@ -1,0 +1,22 @@
+{
+  "open": "New task defaults",
+  "title": "Defaults for new tasks",
+  "description": "Values every new task in this project starts with. Anything left empty here is simply not set; you can always type another value on the task.",
+  "loading": "Loading defaults…",
+  "loadFailed": "Defaults could not be loaded. Close this window and try again.",
+  "builtIn": "Task properties",
+  "status": "Status",
+  "priority": "Priority",
+  "estimate": "Team estimate (hours)",
+  "estimatePlaceholder": "for example 1 or 1:30",
+  "noDefault": "No default",
+  "fields": "Fields",
+  "fieldsHelp": "Pick a value to make it the default for new tasks. Leave a field empty for no default — for example Fact, which should start blank.",
+  "noFields": "This project has no fields yet.",
+  "fieldEmpty": "No default: new tasks leave this empty.",
+  "footnote": "Defaults apply to tasks created in the table, the API and MCP, and to subtasks (a team estimate only to top-level tasks). They never change existing tasks.",
+  "cancel": "Cancel",
+  "save": "Save defaults",
+  "saving": "Saving…",
+  "retrySame": "Retry the same save"
+}

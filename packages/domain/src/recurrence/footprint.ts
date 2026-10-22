@@ -34,7 +34,7 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
     case 'shared_activity.configure':case 'shared_activity.attendance':return projects(i.target.taskId?await taskProject(i.target.taskId):undefined);
     default:return never(i);
    }
-  case 'comment':case 'table_preference':case 'cutoff':case 'generic_report':case 'planning_check':case 'summary_template':return none;
+  case 'comment':case 'table_preference':case 'cutoff':case 'generic_report':case 'planning_check':case 'task_defaults':case 'summary_template':return none;
   case 'task_placement':
    switch(i.command){
     case 'task.project.attach':case 'task.project.update':case 'task.project.detach':case 'task.project.restore':return projects(await taskProject(i.target.taskId),(await repo.tasks.findProject(ws,i.target.projectId))?.id);

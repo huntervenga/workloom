@@ -1,5 +1,5 @@
 import { and, asc, eq, exists, gt, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
-import type { ProjectDto, SectionDto, TagDto, TaskDto, TaskParticipantDto, TaskStatusDto } from '@workloom/contracts';
+import { taskDefaultsSchema, type ProjectDto, type SectionDto, type TagDto, type TaskDto, type TaskParticipantDto, type TaskStatusDto } from '@workloom/contracts';
 import {
   DomainError,
   notFoundError,
@@ -13,6 +13,7 @@ import {
   meetings,
   commandIdempotency,
   projects,
+  projectTaskDefaults,
   sections,
   taskParticipants,
   taskStatuses,
@@ -320,6 +321,13 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
         throw notFoundError();
       }
       return row.permissionEpoch.toString();
+    },
+
+    async findTaskDefaults(workspaceId, projectId) {
+      if (!isUuid(workspaceId) || !isUuid(projectId)) return null;
+      const [row] = await db.select().from(projectTaskDefaults)
+        .where(and(eq(projectTaskDefaults.workspaceId, workspaceId), eq(projectTaskDefaults.projectId, projectId))).limit(1);
+      return row ? taskDefaultsSchema.parse({ workspaceId: row.workspaceId, projectId: row.projectId, revision: row.revision, config: row.config }) : null;
     },
 
     async findProject(workspaceId, projectId) {

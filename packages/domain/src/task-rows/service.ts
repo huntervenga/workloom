@@ -5,6 +5,7 @@ import {
 import type { CommandContext } from '../access/context.js';
 import { DomainError,notFoundError,unauthenticatedError } from '../errors.js';
 import { setTaskFieldValueInScope } from '../fields/service.js';
+import { resolveTaskDefaults } from '../task-defaults/apply.js';
 import { createPlanningMutationGuard,isCommittedPlanningRejection,unwrapPlanningOutcome } from '../planning/freeze.js';
 import type { CommittedPlanningRejection,PlanningApplicationWriteScope,PlanningMutationGuard } from '../planning/ports.js';
 import { authorizePlanningMemberInScope,createCommitmentInScope,setManualPeriodWorkInScope,updateCommitmentInScope } from '../planning/service.js';
@@ -69,10 +70,13 @@ export function createTaskRowApplication({writer,tools}:TaskRowApplicationDepend
   };
 
   async function createAll(scope:PlanningApplicationWriteScope,p:CreateTaskRowInput,branch:PlanBranch|null,planningGuard:PlanningMutationGuard):Promise<TaskRowCreatedDto> {
-    const task=await createTaskInScope({...scope,repository:scope.repository.tasks,planningGuard},p.task,tools,p.fields??[]);
+    // Project defaults fill in only what the row left out; the row's own values always win.
+    const defaults=await resolveTaskDefaults(scope.repository.tasks,scope.repository.fields,scope.context.workspaceId,p.task,new Set((p.fields??[]).map(f=>f.fieldId)));
+    const rowFields=[...(p.fields??[]),...defaults.fields];
+    const task=await createTaskInScope({...scope,repository:scope.repository.tasks,planningGuard},defaults.input,tools,rowFields);
     // Every custom value first: the category resolver captures custom work-category sources for the actual.
     const fields:TaskFieldValueDto[]=[];
-    for(const f of p.fields??[])fields.push(await setTaskFieldValueInScope({...scope,repository:scope.repository.fields,planningGuard},task.id,f.fieldId,{expectedRevision:0,expectedDefinitionRevision:f.expectedDefinitionRevision,value:f.value},tools));
+    for(const f of rowFields)fields.push(await setTaskFieldValueInScope({...scope,repository:scope.repository.fields,planningGuard},task.id,f.fieldId,{expectedRevision:0,expectedDefinitionRevision:f.expectedDefinitionRevision,value:f.value},tools));
     let plan:PeriodCommitmentDto|undefined;
     if(p.plan) {
       if(branch?.kind==='update') {

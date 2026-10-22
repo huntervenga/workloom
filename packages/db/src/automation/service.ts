@@ -9,6 +9,7 @@ import {
 import { authorizeWorkspace, capabilityRequiredError, DomainError, listWorkspaceMembers, notFoundError, type Capability, type CommandContext } from '@workloom/domain';
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
 import { createAccessRepository } from '../repositories/access-repository.js';
+import { createTaskRepository } from '../repositories/task-repository.js';
 import { createTaskApplication } from '../tasks/task-application.js';
 import { workspaceSlugAliases, workspaces, memberships } from '../schema.js';
 import { isUuid, matchRefs, resolveRef, resolveRefs } from './refs.js';
@@ -147,9 +148,12 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
     const project = resolveRef('project', input.project, await projectItems(s));
     const people = await membersOf(s);
     const [sectionRows, statusRows, tagRows] = await Promise.all([app.listSections(s.context, project.id), app.listStatuses(s.context, project.id), input.tags?.length ? app.listTags(s.context) : Promise.resolve([])]);
+    const configured = (await createTaskRepository(s.tx).findTaskDefaults?.(s.workspaceId, project.id))?.config.statusId ?? null;
+    const ordered = [...statusRows].sort((a, b) => a.position - b.position);
+    // An explicit status wins; then the project's default; then the first "to do" status.
     const status = input.status !== undefined
       ? resolveRef('status', input.status, statusRows)
-      : [...statusRows].sort((a, b) => a.position - b.position).find(row => row.group === 'todo') ?? [...statusRows].sort((a, b) => a.position - b.position)[0];
+      : ordered.find(row => row.id === configured) ?? ordered.find(row => row.group === 'todo') ?? ordered[0];
     if (!status) throw new DomainError('VALIDATION_FAILED', 'The project has no statuses.');
     return {
       projectId: project.id, title: input.title,

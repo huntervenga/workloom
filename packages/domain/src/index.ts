@@ -201,6 +201,8 @@ export * from './leave/accrual.js';
 export * from './generic-reports/workspace-engine.js';
 
 export * from "./planning-checks/ports.js";
+export * from "./task-defaults/service.js";
+export { resolveTaskDefaults } from "./task-defaults/apply.js";
 export * from "./planning-checks/service.js";
 export * from "./planning-checks/engine.js";
 export * from "./planning-checks/math.js";

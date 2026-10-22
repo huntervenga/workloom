@@ -31,9 +31,11 @@ export function canMoveTaskSection(task: TaskDto): boolean {
   return canEditTaskInline(task) && task.parentTaskId === null;
 }
 
-export function defaultTaskStatusId(statuses: readonly TaskStatusDto[]): string | null {
+/** The project's configured default status when it still exists; otherwise the first "to do" status. */
+export function defaultTaskStatusId(statuses: readonly TaskStatusDto[], preferredId?: string | null): string | null {
   const ordered = [...statuses].sort((a, b) => a.position - b.position);
-  return (ordered.find(status => status.group === 'todo') ?? ordered[0])?.id ?? null;
+  const preferred = preferredId ? ordered.find(status => status.id.toLowerCase() === preferredId.toLowerCase()) : undefined;
+  return (preferred ?? ordered.find(status => status.group === 'todo') ?? ordered[0])?.id ?? null;
 }
 
 /** The section a create lands in: a subtask always shares its parent's section. */

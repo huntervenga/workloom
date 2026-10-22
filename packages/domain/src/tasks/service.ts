@@ -58,6 +58,9 @@ import type { Capability } from '../access/capabilities.js';
 import type { CommandContext } from '../access/context.js';
 import { DomainError, notFoundError, unauthenticatedError } from '../errors.js';
 import type { RecordedChange } from '../transactions/ports.js';
+import type { TaskFieldRepository } from '../fields/ports.js';
+import { setTaskFieldValueInScope } from '../fields/service.js';
+import { resolveTaskDefaults } from '../task-defaults/apply.js';
 import { loadTaskActivityLabels, taskActivityDiff } from './activity.js';
 import type { TaskApplication, TaskPage } from './application.js';
 import {
@@ -377,7 +380,16 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
 
     async createTask(context: CommandContext, input: CreateTaskInput): Promise<TaskDto> {
       const parsed = parseInput<CreateTaskInput>(createTaskInputSchema, input);
-      return mutate(context, 'task.edit', 'task.create', null, parsed, taskSchema, scope => createTaskInScope(scope,parsed,tools));
+      return mutate(context, 'task.edit', 'task.create', null, parsed, taskSchema, async scope => {
+        // The receipt keeps the caller's own input; project defaults only fill in what was left out.
+        const filled = await resolveTaskDefaults(scope.repository, scope.fieldRepository, scope.context.workspaceId, parsed, new Set());
+        const created = await createTaskInScope(scope, filled.input, tools, filled.fields);
+        for (const item of filled.fields) {
+          await setTaskFieldValueInScope({ ...scope, repository: scope.fieldRepository as TaskFieldRepository, planningGuard: scope.planningGuard }, created.id, item.fieldId,
+            { expectedRevision: 0, expectedDefinitionRevision: item.expectedDefinitionRevision, value: item.value }, tools);
+        }
+        return created;
+      });
     },
 
     async updateTask(context: CommandContext, taskId: string, input: UpdateTaskInput): Promise<TaskDto> {

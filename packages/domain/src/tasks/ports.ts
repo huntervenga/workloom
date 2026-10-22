@@ -5,6 +5,7 @@ import type {
   ProjectDto,
   SectionDto,
   TagDto,
+  TaskDefaultsDto,
   TaskDto,
   TaskListQuery,
   TaskParticipantDto,
@@ -68,6 +69,9 @@ export interface IdempotencyRecord {
  */
 export interface TaskRepository {
   readonly access: AccessRepository;
+
+  /** Starting values for new tasks of a project; absent means none are configured. Optional so partial fakes stay valid. */
+  findTaskDefaults?(workspaceId: string, projectId: string): Promise<TaskDefaultsDto | null>;
 
   /** Opaque value that changes whenever workspace access changes; bound into list cursors. */
   permissionEpoch(workspaceId: string): Promise<string>;

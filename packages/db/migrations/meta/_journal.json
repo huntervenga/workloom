@@ -218,6 +218,13 @@
       "when": 1792480000006,
       "tag": "0030_api_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792480000007,
+      "tag": "0031_project_task_defaults",
+      "breakpoints": true
     }
   ]
 }

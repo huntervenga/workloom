@@ -32,6 +32,8 @@ export interface QuickTaskAddProps {
   sectionId: string | null;
   sectionName: string;
   statuses: readonly TaskStatusDto[];
+  /** The project's default status for new tasks (task defaults); the first "to do" status when unset. */
+  newTaskStatusId?: string | null | undefined;
   commands: TaskCommands;
   writable: boolean;
   onClose: (reason?: QuickAddCloseReason) => void;
@@ -100,7 +102,7 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   const fullRow = renderRow !== undefined;
   const tags = useWithCreatedTags(props.tags, commands.createdTags);
   const lookups = useTaskLookups(statuses, props.members, tags, props.sections);
-  const statusId = defaultTaskStatusId(statuses);
+  const statusId = defaultTaskStatusId(statuses, props.newTaskStatusId);
   const [foreignDraft] = useState(() => commands.createSession.current !== null && !canResumeQuickSession(commands.createSession.current, sectionId, request, fullRow));
   const [session, setSession] = useState<CreateSession | null>(() => {
     // A submitted session belongs to the queue; editing it again here would send it twice.

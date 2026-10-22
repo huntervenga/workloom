@@ -143,6 +143,7 @@ export { createGenericReportApplication } from './generic-reports/application.js
 export {createLeaveApplication} from './leave/application.js';
 
 export {createPlanningCheckApplication} from "./planning-checks/application.js";
+export {createTaskDefaultsApplication, createTaskDefaultsRepository} from "./task-defaults/application.js";
 
 export { createDuplicationApplication } from './duplication/application.js';
 
