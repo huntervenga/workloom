@@ -2,6 +2,7 @@ import * as C from '@workloom/contracts';
 import type { CommandContext } from '../access/context.js';
 import type { DependencyApplication } from '../dependencies/application.js';
 import { DomainError } from '../errors.js';
+import type { TaskFieldApplication } from '../fields/application.js';
 import type { TaskApplication } from '../tasks/application.js';
 import type { TaskDefaultsApplication } from '../task-defaults/service.js';
 
@@ -10,6 +11,7 @@ export interface TaskContinuationApplication {
 }
 export interface TaskContinuationDependencies {
   readonly tasks: TaskApplication;
+  readonly fields: Pick<TaskFieldApplication, 'listFields' | 'listTaskValues' | 'setTaskValue'>;
   readonly dependencies: DependencyApplication;
   readonly defaults: TaskDefaultsApplication;
   digest(value: string): string;
@@ -64,8 +66,40 @@ export function createTaskContinuationService(deps: TaskContinuationDependencies
         ...(source.tags.length > 0 ? { tagIds: source.tags.filter(tag => tag.archivedAt === null).map(tag => tag.id) } : {}),
         ...(sectionId !== null ? { sectionId } : {}),
       });
+      // Choice fields (a project's own "Priority", "Type"…) carry over by field name and option name. Hours, numbers and dates are
+      // deliberately left to the new project's defaults so planned and recorded time are not counted twice.
+      const sourceValues = (await deps.fields.listTaskValues(context, source.id)).filter(value => (value.value.type === 'single_select' || value.value.type === 'multi_select') && !isEmptyValue(value.value.value));
+      if (sourceValues.length > 0 && input.targetProjectId !== source.projectId) {
+        const key = (name: string) => name.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
+        const sourceFields = await deps.fields.listFields(context, source.projectId);
+        const targetFields = (await deps.fields.listFields(context, input.targetProjectId)).filter(field => field.archivedAt === null);
+        const existing = new Map((await deps.fields.listTaskValues(context, continued.id)).map(value => [value.fieldId, value]));
+        for (const [index, value] of sourceValues.entries()) {
+          const from = sourceFields.find(field => field.id === value.fieldId);
+          const to = from && targetFields.find(field => field.type === from.type && key(field.name) === key(from.name));
+          if (!from || !to) continue;
+          const wanted = value.value.type === 'single_select' ? [value.value.value] : value.value.type === 'multi_select' ? value.value.value : [];
+          if (wanted === null) continue;
+          const mapped = wanted.flatMap(id => {
+            if (id === null) return [];
+            const name = from.options.find(option => option.id === id)?.name;
+            const match = name === undefined ? undefined : to.options.find(option => option.archivedAt === null && key(option.name) === key(name));
+            return match ? [match.id] : [];
+          });
+          if (mapped.length === 0) continue;
+          const data: C.TaskFieldData = to.type === 'single_select' ? { type: 'single_select', value: mapped[0] ?? null } : { type: 'multi_select', value: mapped };
+          try {
+            await deps.fields.setTaskValue(step(`field:${index}`), continued.id, to.id, { expectedRevision: existing.get(to.id)?.revision ?? 0, expectedDefinitionRevision: to.revision, value: data });
+          } catch (error) {
+            // A locked or since-changed field must not undo a continuation that has already been created.
+            if (!(error instanceof DomainError)) throw error;
+          }
+        }
+      }
       const dependency = await deps.dependencies.createDependency(step('link'), { predecessorTaskId: source.id, successorTaskId: continued.id, type: 'finish_to_start', expectedAbsent: true });
       return { closed: source, continued, dependencyId: dependency.id };
     },
   };
 }
+
+function isEmptyValue(value: unknown): boolean { return value === null || (Array.isArray(value) && value.length === 0); }

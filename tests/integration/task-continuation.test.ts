@@ -53,6 +53,21 @@ describe('close and continue in another project', () => {
     expect(second.continued.sectionId).toBeNull();
   });
 
+  it('carries a choice field such as a custom Priority by field and option name, and leaves hours to the new project', async () => {
+    const { weekOne, weekTwo, task } = await setup();
+    const options = [{ name: 'P1' }, { name: 'P2' }];
+    const from = await h.owner.createField({ projectId: weekOne.id, name: 'Priority', type: 'single_select', options });
+    const to = await h.owner.createField({ projectId: weekTwo.id, name: ' priority ', type: 'single_select', options });
+    const hoursFrom = await h.owner.createField({ projectId: weekOne.id, name: 'Hours Est', type: 'duration' });
+    await h.owner.createField({ projectId: weekTwo.id, name: 'Hours Est', type: 'duration' });
+    const pick = (field: typeof from, name: string) => field.options.find(o => o.name === name)?.id ?? null;
+    await h.owner.setValue(task.id, from.id, { expectedRevision: 0, expectedDefinitionRevision: from.revision, value: { type: 'single_select', value: pick(from, 'P2') } });
+    await h.owner.setValue(task.id, hoursFrom.id, { expectedRevision: 0, expectedDefinitionRevision: hoursFrom.revision, value: { type: 'duration', value: 120 } });
+    const result = expectEnvelope(await post(task.id, { targetProjectId: weekTwo.id }), 201, continueTaskResponseSchema).data;
+    const values = await h.owner.listTaskValues(result.continued.id);
+    expect(values.map(v => JSON.stringify(v.value))).toEqual([JSON.stringify({ type: 'single_select', value: pick(to, 'P2') })]);
+  });
+
   it('numbers a chain: a second continuation becomes "title 3"', async () => {
     const { weekTwo, task } = await setup();
     const second = expectEnvelope(await post(task.id, { targetProjectId: weekTwo.id }), 201, continueTaskResponseSchema).data;
