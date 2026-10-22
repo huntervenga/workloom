@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { LeaveHolidayDto, LeavePolicyVersionDto, LeaveSettingsDto, LeaveTypeDto, PutLeaveSettingsInput } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useTranslation } from '../../i18n';
@@ -10,7 +10,7 @@ import { LeaveRecalculationReview } from './LeavePreview';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { MICRODAYS } from './presentation';
 
-export function LeaveSettingsEditor({ settings, disabled, onSave, actorId }: { settings: LeaveSettingsDto; disabled: boolean; onSave: (input: PutLeaveSettingsInput) => void; actorId: string }) {
+export function LeaveSettingsEditor({ settings, disabled, onSave, actorId, today }: { settings: LeaveSettingsDto; disabled: boolean; onSave: (input: PutLeaveSettingsInput) => void; actorId: string; today?: string }) {
   const { t, locale } = useTranslation();
   const monthFormat = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' });
   const monthOptions = Array.from({ length: 12 }, (_, month) => ({ value: String(month + 1), label: monthFormat.format(new Date(Date.UTC(2000, month, 1))) }));
@@ -18,13 +18,17 @@ export function LeaveSettingsEditor({ settings, disabled, onSave, actorId }: { s
   const [year, setYear] = useState(Math.max(...settings.policyVersions.map(version => version.effectiveYear)));
   const [newYear, setNewYear] = useState(String(year + 1));
   const [reason, setReason] = useState('');
+  const [reasonMissing, setReasonMissing] = useState(false);
+  const reasonInput = useRef<HTMLInputElement>(null);
   const [opening, setOpening] = useState(settings);
   const dirty = JSON.stringify(draft) !== JSON.stringify(opening) || reason !== '';
   useProtectedDraft(dirty);
   const [previewInput, setPreviewInput] = useState<PutLeaveSettingsInput | null>(null);
   const saveInput: PutLeaveSettingsInput = { expectedRevision: draft.revision, timezone: draft.timezone, defaultWeeklyMinutes: draft.defaultWeeklyMinutes, policyVersions: draft.policyVersions, reason };
   const preview = useSettingsPreview(actorId, settings.workspaceId, previewInput);
-  const previewCurrent = preview.isSuccess && JSON.stringify(previewInput) === JSON.stringify(saveInput);
+  const previewCurrent = preview.isSuccess && JSON.stringify(previewInput ? { ...previewInput, reason: '' } : null) === JSON.stringify({ ...saveInput, reason: '' });
+  const currentYear = Number((today ?? preview.data?.balancesAfter[0]?.asOf ?? '1900-01-01').slice(0, 4));
+  const reasonRequired = draft.timezone !== opening.timezone || JSON.stringify(draft.defaultWeeklyMinutes) !== JSON.stringify(opening.defaultWeeklyMinutes) || JSON.stringify(draft.policyVersions.filter(version => version.effectiveYear <= currentYear)) !== JSON.stringify(opening.policyVersions.filter(version => version.effectiveYear <= currentYear));
   const changedElsewhere = settings.revision !== draft.revision;
   const loadLatest = () => { setOpening(settings); setDraft(settings); setReason(''); setPreviewInput(null); };
   if (changedElsewhere && !dirty && !disabled) loadLatest();
@@ -32,7 +36,7 @@ export function LeaveSettingsEditor({ settings, disabled, onSave, actorId }: { s
   const changeVersion = (version: LeavePolicyVersionDto) => setDraft(current => ({ ...current, policyVersions: current.policyVersions.map(item => item.effectiveYear === year ? version : item) }));
   const changeType = (type: LeaveTypeDto) => { if (selected) changeVersion({ ...selected, types: selected.types.map(item => item.id === type.id ? type : item) }); };
   const changeHoliday = (holiday: LeaveHolidayDto) => { if (selected) changeVersion({ ...selected, holidays: selected.holidays.map(item => item.id === holiday.id ? holiday : item) }); };
-  return <form className="space-y-5" onSubmit={event => { event.preventDefault(); if (previewCurrent) onSave({ ...saveInput, expectedSourceVersion: preview.data.sourceVersion }); else setPreviewInput(saveInput); }}>
+  return <form className="space-y-5" onSubmit={event => { event.preventDefault(); if (previewCurrent && reasonRequired && !reason.trim()) { setReasonMissing(true); reasonInput.current?.focus(); return; } if (previewCurrent) onSave({ ...saveInput, expectedSourceVersion: preview.data.sourceVersion }); else setPreviewInput(saveInput); }}>
     <fieldset disabled={disabled} className="space-y-5">
       {changedElsewhere ? <div role="status" className="rounded-lg bg-canvas p-3 text-sm"><p>{t('timeOff.changedElsewhere')}</p><Button type="button" size="sm" onClick={loadLatest}>{t('timeOff.loadLatest')}</Button></div> : null}
       <div className="grid gap-3 sm:grid-cols-2"><label className="grid gap-1 text-xs text-muted">{t('timeOff.timezone')}<TextInput required value={draft.timezone} onChange={event => setDraft({ ...draft, timezone: event.target.value })}/></label><label className="grid gap-1 text-xs text-muted">{t('timeOff.policyYear')}<ChoicePicker label={t('timeOff.policyYear')} value={String(year)} options={draft.policyVersions.map(version => ({ value: String(version.effectiveYear), label: String(version.effectiveYear) }))} onValueChange={value => setYear(Number(value))}/></label></div>
@@ -55,8 +59,8 @@ export function LeaveSettingsEditor({ settings, disabled, onSave, actorId }: { s
         <Button type="button" variant="ghost" size="sm" onClick={() => { if (selected) changeVersion({ ...selected, holidays: selected.holidays.filter(item => item.id !== holiday.id) }); }}>{t('timeOff.remove')}</Button>
       </div>)}<Button type="button" variant="ghost" size="sm" disabled={!selected || selected.holidays.length >= 200} onClick={() => { if (selected) changeVersion({ ...selected, holidays: [...selected.holidays, { id: crypto.randomUUID(), name: t('timeOff.newHoliday'), rule: { kind: 'date', date: `${year}-01-01` } }] }); }}>{t('timeOff.addHoliday')}</Button></section>
       <section className="space-y-2"><h3 className="font-medium">{t('timeOff.defaultSchedule')}</h3><div className="grid grid-cols-2 gap-2 sm:grid-cols-7">{draft.defaultWeeklyMinutes.map((minutes, index) => <label key={index} className="grid gap-1 text-xs text-muted">{weekdayLabel(index)}<TextInput aria-label={t('timeOff.defaultDayHours', { day: weekdayLabel(index) })} type="number" min={0} max={24} step="0.25" value={minutes / 60} onChange={event => { const weeklyMinutes = [...draft.defaultWeeklyMinutes] as LeaveSettingsDto['defaultWeeklyMinutes']; weeklyMinutes[index] = Math.round(Number(event.target.value) * 60); setDraft({ ...draft, defaultWeeklyMinutes: weeklyMinutes }); }}/></label>)}</div></section>
-      <label className="grid gap-1 text-xs text-muted">{t('timeOff.correctionReason')}<TextInput maxLength={2000} value={reason} onChange={event => setReason(event.target.value)}/></label><p className="text-xs text-muted">{t('timeOff.correctionReasonHint')}</p>
-      {preview.isError ? <QueryErrorState error={preview.error} subject="timeOffPreview" onRetry={() => void preview.refetch()}/> : previewCurrent ? <LeaveRecalculationReview preview={preview.data} settings={draft}/> : null}
+      <label className="grid gap-1 text-xs text-muted">{t('timeOff.correctionReason')}<TextInput ref={reasonInput} aria-invalid={reasonMissing || undefined} maxLength={2000} value={reason} onChange={event => { setReason(event.target.value); setReasonMissing(false); }}/></label><p className="text-xs text-muted">{t('timeOff.administrationReasonHint')}</p>{reasonMissing ? <p role="alert" className="text-sm text-danger">{t('timeOff.profileReasonRequired')}</p> : null}
+      {preview.isError ? <QueryErrorState error={preview.error} subject="timeOffPreview" onRetry={() => void preview.refetch()}/> : previewCurrent ? <LeaveRecalculationReview preview={preview.data} settings={draft} administrative/> : null}
       <div className="flex flex-wrap gap-2"><Button type="submit" variant="primary" disabled={preview.isFetching}>{t(previewCurrent ? 'timeOff.savePolicy' : 'timeOff.reviewChanges')}</Button><Button type="button" variant="ghost" disabled={!dirty || preview.isFetching} onClick={() => { setDraft(opening); setReason(''); setPreviewInput(null); }}>{t('timeOff.discardChanges')}</Button></div>
     </fieldset>
   </form>;

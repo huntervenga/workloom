@@ -1,8 +1,9 @@
+import type { LeaveWarningsDto, LeaveWithWarnings } from '@workloom/contracts';
 import { leaveAdjustmentResponseSchema, leaveBulkPreviewResponseSchema, leaveRecalculationPreviewResponseSchema, leaveRequestPreviewResponseSchema, previewLeaveRequestInputSchema, type PreviewLeaveRequestInput, applyLeaveTemplateInputSchema, bulkLeaveRequestInputSchema, createLeaveAdjustmentInputSchema, createLeaveRequestInputSchema, decideLeaveRequestInputSchema, leaveAvailabilityInputSchema, leaveAvailabilityResponseSchema, leaveOverviewResponseSchema, leaveProfileResponseSchema, leaveRequestListResponseSchema, leaveRequestResponseSchema, leaveSettingsResponseSchema, putLeaveProfileInputSchema, putLeaveSettingsInputSchema, updateLeaveRequestInputSchema, type ApplyLeaveTemplateInput, type BulkLeaveRequestInput, type CreateLeaveAdjustmentInput, type CreateLeaveRequestInput, type DecideLeaveRequestInput, type LeaveAvailabilityInput, type PutLeaveProfileInput, type PutLeaveSettingsInput, type UpdateLeaveRequestInput } from '@workloom/contracts';
 import { ApiError, apiGet, apiRequest, prepareMutation, type ResponseParser } from '../../lib/api';
 import { workspacePath } from '../workspace/queries';
 const path = (workspaceId: string) => `${workspacePath(workspaceId)}/time-off`;
-export async function fetchOverview(workspaceId: string, signal?: AbortSignal) { return (await apiGet(`${path(workspaceId)}/overview`, leaveOverviewResponseSchema, signal)).data; }
+export async function fetchOverview(workspaceId: string, signal?: AbortSignal) { const result = await apiGet(`${path(workspaceId)}/overview`, leaveOverviewResponseSchema, signal); return { ...result.data, ...(result.meta.leaveWarnings ? { warnings: result.meta.leaveWarnings } : {}) }; }
 export async function fetchAvailability(workspaceId: string, input: LeaveAvailabilityInput, signal?: AbortSignal) {
   const parsed = leaveAvailabilityInputSchema.safeParse(input);
   if (!parsed.success) throw new ApiError({ kind: 'invalid_input', status: null });
@@ -22,13 +23,13 @@ export function bulkRequest(workspaceId: string, input: BulkLeaveRequestInput) {
 export function adjustmentRequest(workspaceId: string, input: CreateLeaveAdjustmentInput) { return prepareMutation({ method: 'POST', path: `${path(workspaceId)}/adjustments`, input, inputSchema: createLeaveAdjustmentInputSchema, responseSchema: leaveAdjustmentResponseSchema }); }
 
 
-async function readPreview<Input, Output>(url: string, input: Input, inputSchema: ResponseParser<Input>, outputSchema: ResponseParser<{ data: Output }>, signal?: AbortSignal): Promise<Output> {
+async function readPreview<Input, Output extends object>(url: string, input: Input, inputSchema: ResponseParser<Input>, outputSchema: ResponseParser<{ data: Output; meta?: { leaveWarnings?: LeaveWarningsDto } }>, signal?: AbortSignal): Promise<LeaveWithWarnings<Output>> {
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success) throw new ApiError({ kind: 'invalid_input', status: null });
   const response = await apiRequest(url, { method: 'POST', body: parsed.data, signal });
   const output = outputSchema.safeParse(response.payload);
   if (!output.success) throw new ApiError({ kind: 'invalid_response', status: response.status });
-  return output.data.data;
+  return { ...output.data.data, ...(output.data.meta?.leaveWarnings ? { warnings: output.data.meta.leaveWarnings } : {}) };
 }
 export const previewLeave = (workspaceId: string, input: PreviewLeaveRequestInput, signal?: AbortSignal) => readPreview(`${path(workspaceId)}/preview`, input, previewLeaveRequestInputSchema, leaveRequestPreviewResponseSchema, signal);
 export const previewBulk = (workspaceId: string, input: BulkLeaveRequestInput, signal?: AbortSignal) => readPreview(`${path(workspaceId)}/requests/bulk-preview`, input, bulkLeaveRequestInputSchema, leaveBulkPreviewResponseSchema, signal);

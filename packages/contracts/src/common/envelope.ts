@@ -1,8 +1,10 @@
 import { z } from 'zod';
+import { leaveWarningsSchema } from '../leave-warnings.js';
 
 /** `meta` of every successful response; lists add `nextCursor` (null on the last page). */
 export const responseMetaSchema = z.object({
   requestId: z.string(),
+  leaveWarnings: leaveWarningsSchema.optional(),
   nextCursor: z.string().nullable().optional(),
 });
 

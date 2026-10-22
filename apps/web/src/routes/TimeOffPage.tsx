@@ -14,11 +14,12 @@ import { ChoicePicker } from '../shared/ChoicePicker';
 import { QueryErrorState } from '../shared/QueryErrorState';
 import { useWorkspaceContext } from './WorkspaceLayout';
 import { timeOffKeys, useAvailability, useTimeOffCommands, useTimeOffOverview } from '../features/time-off/queries';
-import { daysText, monthRange, policyForYear } from '../features/time-off/presentation';
+import { daysText, monthRange } from '../features/time-off/presentation';
 import { approvedCalendarAllocations, TimeOffCalendar } from '../features/time-off/TimeOffCalendar';
 import { LeaveRequestForm } from '../features/time-off/LeaveRequestForm';
 import { LeaveRequestList, type RequestMutationError } from '../features/time-off/LeaveRequestList';
 import { LeaveSettingsEditor } from '../features/time-off/LeaveSettingsEditor';
+import { LeaveWarnings } from '../features/time-off/LeaveWarnings';
 import { LeaveProfileEditor } from '../features/time-off/LeaveProfileEditor';
 
 export function TimeOffPage() {
@@ -107,17 +108,16 @@ function TimeOffWorkspace({ actorId, workspaceId, initialPeople, initialPerson }
           <p className="text-xs text-muted">{t('timeOff.calendarLegend')}</p>
         </section>
       </div>
-      {canManage ? <div hidden={visibleTab !== 'people'} className="max-w-4xl space-y-4"><h2 className="text-lg font-semibold">{t('timeOff.people')}</h2><ChoicePicker label={t('timeOff.profilePerson')} value={current} searchable options={data.members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl }))} disabled={profileDirty || requestDirty || busy} onValueChange={setSelectedMember}/>{profileDirty ? <p className="text-xs text-muted">{t('timeOff.saveBeforePersonSwitch')}</p> : null}<BalanceCards overview={data} membershipId={current}/></div> : null}
+      {canManage ? <div hidden={visibleTab !== 'people'} className="max-w-4xl space-y-4"><h2 className="text-lg font-semibold">{t('timeOff.people')}</h2><ChoicePicker label={t('timeOff.profilePerson')} value={current} searchable options={data.members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl }))} disabled={profileDirty || requestDirty || busy} onValueChange={setSelectedMember}/>{profileDirty ? <p className="text-xs text-muted">{t('timeOff.saveBeforePersonSwitch')}</p> : null}<BalanceCards overview={data} membershipId={current}/><LeaveWarnings warnings={data.warnings} settings={data.settings} members={data.members} membershipId={current}/></div> : null}
       <div className={visibleTab === 'people' ? 'max-w-4xl' : undefined}><LeaveRequestList membershipId={visibleTab === 'people' ? current : undefined} onDirtyChange={setRequestDirty} acknowledgedRequests={requestAcks} actorId={actorId} overview={data} disabled={busy} onUpdate={(requestId, input) => commands.update.mutateAsync({ requestId, input })} onDecision={(requestId, input) => commands.decision.mutateAsync({ requestId, input })} mutationErrors={requestMutationErrors}/></div>
       {canManage ? <div hidden={visibleTab !== 'people'} className="max-w-4xl"><LeaveProfileEditor actorId={actorId} membershipId={current} key={`${current}:${profileGenerations[current] ?? 0}`} onDirtyChange={setProfileDirty} saveError={commands.profile.variables?.membershipId === current && commands.profile.uncertain === null ? commands.profile.error : null} profile={selectedProfile} settings={data.settings} today={selectedToday} disabled={busy} onSave={input => commands.profile.mutate({ membershipId: current, input })}/></div> : null}</section>
-      {canManage ? <section aria-label={t('timeOff.policies')} hidden={visibleTab !== 'settings'} className="max-w-4xl space-y-4"><h2 className="text-lg font-semibold">{t('timeOff.policies')}</h2><LeaveSettingsEditor actorId={actorId} key={settingsGeneration} settings={currentSettings ?? data.settings} disabled={busy} onSave={input => commands.settings.mutate({ input })}/></section> : null}
+      {canManage ? <section aria-label={t('timeOff.policies')} hidden={visibleTab !== 'settings'} className="max-w-4xl space-y-4"><h2 className="text-lg font-semibold">{t('timeOff.policies')}</h2><LeaveSettingsEditor today={data.today} actorId={actorId} key={settingsGeneration} settings={currentSettings ?? data.settings} disabled={busy} onSave={input => commands.settings.mutate({ input })}/></section> : null}
     </>}
   </div>;
 }
 function BalanceCards({ overview, membershipId }: { overview: LeaveOverviewDto; membershipId: string }) {
   const { t, locale } = useTranslation();
-  const today = overview.members.find(member => member.id === membershipId)?.today ?? overview.today;
-  const types = overview.settings ? policyForYear(overview.settings, Number(today.slice(0, 4)))?.types ?? [] : [];
+  const types = overview.settings ? [...new Map(overview.settings.policyVersions.flatMap(version => version.types).map(type => [type.id,type])).values()] : [];
   const balances = overview.balances.filter(balance => balance.membershipId === membershipId);
   const profile = overview.profiles.find(profile => profile.membershipId === membershipId);
   if (!profile) return <p role="status" className="rounded-xl border border-dashed border-line p-4 text-sm text-muted">{t('timeOff.profileRequired')}</p>;

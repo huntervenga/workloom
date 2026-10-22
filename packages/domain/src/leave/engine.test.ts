@@ -114,7 +114,7 @@ describe('configurable leave calendar and balances', () => {
     expect(result.availableMicrodays).toBe(7_000_000 + Number(21_000_000n * 184n / 366n));
     profile(s).employmentStart = '2020-01-01';
     profile(s).accountingStart = '2023-01-01';
-    expect(() => assertLeaveSource(s)).toThrow();
+    expect(() => assertLeaveSource(s)).not.toThrow();
   });
   it('requires explicit split when request snapshot behavior changes across a policy boundary', () => {
     const s = source();
@@ -159,15 +159,15 @@ describe('configurable leave calendar and balances', () => {
     spend.requests = [request(spend, '2025-01-06', '2025-01-10')];
     expect(balance(spend, '2025-04-01').expiredMicrodays).toBe(16_000_000);
   });
-  it('rejects removed and unknown types instead of silently dropping a carried balance', () => {
+  it('retains historically defined types across policy gaps and rejects never-known balance IDs', () => {
     const s = source();
     s.settings.policyVersions.push({ effectiveYear: 2025, types: [type()], holidays: [] });
-    expect(() => assertLeaveSource(s)).toThrow('Previously configured absence types must be retained');
+    expect(() => assertLeaveSource(s)).not.toThrow();
     expect(() => balance(source(), '2024-01-01', id(999))).toThrow('Unknown absence balance type');
     expect(() => calculateAvailability(source(), { membershipIds: [member], startDate: '2023-12-31', endDate: '2024-01-01' })).not.toThrow();
     const employedEarlier = source();
     profile(employedEarlier).employmentStart = '2020-01-01';
-    expect(() => calculateAvailability(employedEarlier, { membershipIds: [member], startDate: '2023-12-29', endDate: '2024-01-01' })).toThrow('No leave policy covers');
+    expect(() => calculateAvailability(employedEarlier, { membershipIds: [member], startDate: '2023-12-29', endDate: '2024-01-01' })).not.toThrow();
   });
   it('inactive history preserves its shape without constraining corrected employment or accounting dates', () => {
     for (const status of ['cancelled', 'rejected'] as const) {
@@ -184,17 +184,17 @@ describe('configurable leave calendar and balances', () => {
       expect(() => assertLeaveSource(s)).toThrow('Approved charge allocation must match');
     }
   });
-  it('active pending and approved requests still constrain corrected employment and accounting dates', () => {
+  it('active pinned history survives corrected employment and accounting dates', () => {
     for (const status of ['pending', 'approved'] as const) {
       const s = source();
       const active = request(s, '2024-06-03', '2024-06-07');
       active.status = status;
       s.requests = [active];
       profile(s).employmentEnd = '2024-05-31';
-      expect(() => assertLeaveSource(s)).toThrow('Absence must fall within');
+      expect(() => assertLeaveSource(s)).not.toThrow();
       profile(s).employmentEnd = null;
       profile(s).accountingStart = '2024-07-01';
-      expect(() => assertLeaveSource(s)).toThrow('Absence must fall within');
+      expect(() => assertLeaveSource(s)).not.toThrow();
     }
   });
   it('compares opaque type IDs case-insensitively at the pure domain boundary', () => {

@@ -69,5 +69,7 @@
   "subject.timeOffPreview": "Unable to review time off",
   "subject.timeOffSave": "Unable to update time off",
   "completionFieldsRequiredTitle": "Required fields are missing",
-  "completionFieldsRequired": "Fill the fields required by this project before completing the task. Open task details to review missing values, or ask an owner to review Planning checks if a required field is unavailable. No tasks in this action were changed."
+  "completionFieldsRequired": "Fill the fields required by this project before completing the task. Open task details to review missing values, or ask an owner to review Planning checks if a required field is unavailable. No tasks in this action were changed.",
+  "leaveCalculationLimitTitle": "This calculation is too large",
+  "leaveCalculationLimitDescription": "This query exceeds the supported calculation budget. Use a shorter date range or fewer people. Your saved dates and history have not been changed."
 }

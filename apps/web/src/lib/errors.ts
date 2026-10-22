@@ -197,6 +197,8 @@ export function describeError(error: unknown, subject: ErrorSubject): ErrorDescr
     };
   }
 
+  if(error.code==='LEAVE_CALCULATION_LIMIT')return {title:t('errors.leaveCalculationLimitTitle'),description:t('errors.leaveCalculationLimitDescription'),retryable:false,unavailable:false,requestId:error.requestId};
+
   const hidden = unavailableCopy[subject];
   if (hidden && (error.kind === 'forbidden' || error.kind === 'not_found' || error.kind === 'validation')) {
     return { ...hidden, retryable: false, unavailable: true, requestId: error.requestId };

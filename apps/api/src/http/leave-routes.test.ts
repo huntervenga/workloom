@@ -1,3 +1,5 @@
+import {z} from 'zod';
+import {leaveOverviewSchema} from '@workloom/contracts';
 import Fastify,{type FastifyInstance} from 'fastify';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import type {LeaveApplication} from '@workloom/domain';
@@ -16,4 +18,15 @@ describe('Time off HTTP contracts',()=>{
  it('binds request decisions to trusted identity, workspace, parsed defaults and key',async()=>{const h=await harness();vi.mocked(h.leave.decide).mockResolvedValue({id:id(8),workspaceId:ws,membershipId:mid,typeId:id(9),revision:2,startDate:'2026-10-20',endDate:'2026-10-20',status:'approved',note:'',createdBy:mid,createdAt:'2026-10-19T00:00:00.000Z',updatedAt:'2026-10-19T00:00:00.000Z',consumesBalance:true,pausesAccrual:false,capacityUnavailable:true,chargedDays:[{date:'2026-10-20',microdays:1000000,scheduledMinutes:480}],negativeApproved:false});const r=await h.app.inject({method:'POST',url:base+`/requests/${id(8)}/decision`,headers:{'idempotency-key':'approve-1'},payload:{expectedRevision:1,decision:'approve'}});expect(r.statusCode).toBe(200);expect(h.leave.decide).toHaveBeenCalledWith({workspaceId:ws,actor:h.actor,source:'web',requestId:expect.any(String),idempotencyKey:'approve-1'},id(8),{expectedRevision:1,decision:'approve',reason:'',approveNegative:false});});
  it('returns the committed adjustment directly without a second read that could mask a successful write',async()=>{const h=await harness(),value={id:id(11),membershipId:mid,typeId:id(12),effectiveDate:'2026-10-19',deltaMicrodays:1000000,reason:'Synthetic correction'};vi.mocked(h.leave.adjustment).mockResolvedValue(value);vi.mocked(h.leave.overview).mockRejectedValue(new Error('Read unavailable after commit'));const response=await h.app.inject({method:'POST',url:base+'/adjustments',headers:{'idempotency-key':'adjust-1'},payload:{membershipId:mid,typeId:id(12),effectiveDate:'2026-10-19',deltaMicrodays:1000000,reason:'Synthetic correction'}});expect(response.statusCode).toBe(201);expect(response.json().data).toEqual(value);expect(h.leave.overview).not.toHaveBeenCalled();});
  it('rejects malformed output rather than leaking partial private state',async()=>{const h=await harness();vi.mocked(h.leave.overview).mockResolvedValue({requests:[{note:'PRIVATE'}]} as never);const r=await h.app.inject({method:'GET',url:base+'/overview'});expect(r.statusCode).toBe(500);expect(r.body).not.toContain('PRIVATE');});
+});
+
+it('moves typed overview diagnostics to metadata while retaining the exact old strict data shape',async()=>{
+ const h=await harness(),warnings={warnings:[{code:'BEFORE_ACCOUNTING',entity:'request',entityId:id(8),membershipId:mid,startDate:'2022-10-01',endDate:'2022-10-02',typeId:id(9),availableMicrodays:null}],totalCount:1,truncated:false};
+ vi.mocked(h.leave.overview).mockResolvedValue({...overview,warnings} as never);
+ const r=await h.app.inject({method:'GET',url:base+'/overview'});expect(r.statusCode).toBe(200);expect(r.json().data).toEqual(overview);expect(r.json().data).not.toHaveProperty('warnings');expect(r.json().meta.leaveWarnings).toEqual(warnings);const legacy=z.object({data:leaveOverviewSchema,meta:z.object({requestId:z.string()})}).parse(r.json());expect(legacy.data).toEqual(overview);expect(legacy.meta).not.toHaveProperty('leaveWarnings');
+});
+it('keeps preview data compatible and carries structured warnings without any mutation or extra read',async()=>{
+ const h=await harness(),warnings={warnings:[{code:'NEGATIVE_BALANCE',entity:'profile',entityId:mid,membershipId:mid,startDate:'2026-10-19',endDate:null,typeId:id(9),availableMicrodays:-1000000}],totalCount:1,truncated:false};
+ const preview={sourceVersion:'a'.repeat(64),today:'2026-10-19',chargedDays:[],totalMicrodays:0,unavailableMinutes:0,overlappingRequestIds:[],pausesAccrual:false,balancesBefore:[],balancesAfter:[],deficits:[]};vi.mocked(h.leave.preview).mockResolvedValue({...preview,warnings} as never);
+ const r=await h.app.inject({method:'POST',url:base+'/preview',payload:{membershipId:mid,typeId:id(9),startDate:'2026-10-20',endDate:'2026-10-20'}});expect(r.statusCode).toBe(200);expect(r.json().data).toEqual(preview);expect(r.json().meta.leaveWarnings).toEqual(warnings);expect(h.leave.create).not.toHaveBeenCalled();expect(h.leave.overview).not.toHaveBeenCalled();
 });

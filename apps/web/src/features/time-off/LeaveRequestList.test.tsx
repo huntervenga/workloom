@@ -287,9 +287,9 @@ describe('historical absence correction advisory', () => {
   await user.click(screen.getByRole('button', { name: 'Review charge' }));
 
   // Should show the advisory section with historical correction copy, not blocking warning
-  const advisory = await screen.findByRole('region', { name: /balance warnings from historical correction/i });
+  const advisory = await screen.findByRole('region', { name: 'Balance details for these dates' });
   expect(advisory).toBeVisible();
-  expect(within(advisory).getByText(/recalculated from the changed dates/i)).toBeVisible();
+  expect(within(advisory).getByText(/You can save the correction/i)).toBeVisible();
   // Should show deficit table
   expect(within(advisory).getByText('2026-10-05')).toBeVisible();
   expect(within(advisory).getByText(/-2 days/)).toBeVisible();
@@ -342,11 +342,10 @@ describe('historical absence correction advisory', () => {
   await user.click(screen.getByRole('button', { name: 'Review charge' }));
 
   // Should show ordinary deficit details (expandable), NOT historical correction advisory
-  await waitFor(() => expect(screen.queryByRole('region', { name: /balance warnings from historical correction/i })).not.toBeInTheDocument());
+  await screen.findByRole('region', {name:'Balance details for these dates'});
   // Should show the standard expandable details
-  const details = screen.getByText('Balance details for these dates');
-  expect(details).toBeVisible();
-  expect(screen.getByText(/Approval cannot bypass/i)).toBeVisible();
+  expect(screen.getByText(/You can save the correction/i)).toBeVisible();
+  expect(screen.queryByText(/Approval cannot bypass/i)).not.toBeInTheDocument();
 
   unmount(); client.clear();
  });
@@ -394,10 +393,9 @@ describe('historical absence correction advisory', () => {
   await user.click(screen.getByRole('button', { name: 'Review charge' }));
 
   // Should show ordinary deficit details, not historical correction advisory
-  await waitFor(() => expect(screen.queryByRole('region', { name: /balance warnings from historical correction/i })).not.toBeInTheDocument());
-  const details = screen.getByText('Balance details for these dates');
-  expect(details).toBeVisible();
-  expect(screen.getByText(/Approval cannot bypass/i)).toBeVisible();
+  await screen.findByRole('region', {name:'Balance details for these dates'});
+  expect(screen.getByText(/You can save the correction/i)).toBeVisible();
+  expect(screen.queryByText(/Approval cannot bypass/i)).not.toBeInTheDocument();
 
   unmount(); client.clear();
  });

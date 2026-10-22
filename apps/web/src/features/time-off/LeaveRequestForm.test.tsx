@@ -72,9 +72,9 @@ describe('historical absence creation form', () => {
     expect(within(chargePreview).getByText(/5 balance days/)).toBeVisible();
 
     // Should show historical recording advisory with date and amount
-    const advisory = screen.getByRole('region', { name: 'Historical absence recording' });
+    const advisory = screen.getByRole('region', { name: 'Balance recalculation' });
     expect(advisory).toBeVisible();
-    expect(within(advisory).getByText(/Recording historical absence ending 2026-10-05/)).toBeVisible();
+    expect(within(advisory).getByText(/You can save the correction/)).toBeVisible();
 
     // Should show deficits table
     expect(within(advisory).getByText('2026-10-05')).toBeVisible();
@@ -151,11 +151,11 @@ describe('historical absence creation form', () => {
 
     await user.click(screen.getByRole('button', { name: 'Review charge' }));
 
-    const advisory = await screen.findByRole('region', { name: 'Historical absence recording' });
+    const advisory = await screen.findByRole('region', { name: 'Balance recalculation' });
     // Should show the recording advisory with date and amount
-    expect(within(advisory).getByText(/Recording historical absence ending 2026-09-16/)).toBeVisible();
+    expect(within(advisory).getByText(/No business conflicts found/)).toBeVisible();
     // Should show "will be saved as approved history"
-    expect(within(advisory).getByText(/will be saved as approved history/i)).toBeVisible();
+    expect(screen.getByRole('region',{name:'Charge preview'})).toHaveTextContent('24 working hours unavailable');
     // No deficits, so no deficit table
     expect(within(advisory).queryByRole('table')).not.toBeInTheDocument();
 
@@ -203,14 +203,14 @@ describe('historical absence creation form', () => {
     // Historical recording should NOT show the blocking message
     expect(screen.queryByText(/Approval cannot bypass/i)).not.toBeInTheDocument();
     // Should show the advisory instead
-    expect(screen.getByText(/recording.*historical absence/i)).toBeVisible();
+    expect(screen.getByText(/You can save the correction/)).toBeVisible();
 
     unmount();
     client.clear();
   });
 
   it('ordinary new/future/member warnings unchanged', async () => {
-    const data = overview();
+    const data = overview(); data.capabilities.canManage=false;
     // Future dates (after today 2026-10-19)
     installFakeApi({
       [`POST ${prefix}/preview`]: () => ok({
@@ -355,7 +355,7 @@ describe('historical absence creation form', () => {
 describe('unpaid historical presentation',()=>{
  it('labels unavailability in working hours instead of claiming zero absence days',async()=>{
   const data=overview(),user=userEvent.setup();installFakeApi({[`POST ${prefix}/preview`]:()=>ok({sourceVersion:'a'.repeat(64),today:data.today,chargedDays:[{date:'2026-10-01',microdays:0,scheduledMinutes:480}],totalMicrodays:0,unavailableMinutes:480,overlappingRequestIds:[],pausesAccrual:true,balancesBefore:[],balancesAfter:[],deficits:[]})});
-  const view=mount(data);await user.click(screen.getByRole('combobox',{name:'Leave type'}));await user.click(screen.getByRole('option',{name:'Unpaid leave'}));await user.clear(screen.getByLabelText('Start date'));await user.type(screen.getByLabelText('Start date'),'2026-10-01');await user.clear(screen.getByLabelText('End date (inclusive)'));await user.type(screen.getByLabelText('End date (inclusive)'),'2026-10-01');await user.click(screen.getByRole('button',{name:'Review charge'}));const advisory=await screen.findByRole('region',{name:'Historical absence recording'});expect(within(advisory).getByText(/8 working hours unavailable/)).toBeVisible();expect(within(screen.getByRole('region',{name:'Charge preview'})).getByText('0 balance days · 8 working hours unavailable')).toBeVisible();expect(screen.queryByText(/Recording 0 days/)).not.toBeInTheDocument();view.unmount();view.client.clear();
+  const view=mount(data);await user.click(screen.getByRole('combobox',{name:'Leave type'}));await user.click(screen.getByRole('option',{name:'Unpaid leave'}));await user.clear(screen.getByLabelText('Start date'));await user.type(screen.getByLabelText('Start date'),'2026-10-01');await user.clear(screen.getByLabelText('End date (inclusive)'));await user.type(screen.getByLabelText('End date (inclusive)'),'2026-10-01');await user.click(screen.getByRole('button',{name:'Review charge'}));const advisory=await screen.findByRole('region',{name:'Charge preview'});expect(within(advisory).getByText(/8 working hours unavailable/)).toBeVisible();expect(within(screen.getByRole('region',{name:'Charge preview'})).getByText('0 balance days · 8 working hours unavailable')).toBeVisible();expect(screen.queryByText(/Recording 0 days/)).not.toBeInTheDocument();view.unmount();view.client.clear();
  });
 });
 

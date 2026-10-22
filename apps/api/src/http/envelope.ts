@@ -1,3 +1,4 @@
+import type { LeaveWarningsDto } from '@workloom/contracts';
 import { DomainError } from '@workloom/domain';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
@@ -22,7 +23,7 @@ export function sendData<T extends z.ZodType>(
   reply: FastifyReply,
   schema: T,
   data: unknown,
-  options: { statusCode?: number; list?: boolean; nextCursor?: string | null } = {},
+  options: { statusCode?: number; list?: boolean; nextCursor?: string | null; leaveWarnings?: LeaveWarningsDto } = {},
 ): FastifyReply {
   const meta =
     options.nextCursor !== undefined
@@ -30,7 +31,7 @@ export function sendData<T extends z.ZodType>(
       : options.list === true
         ? { requestId: request.id, nextCursor: null }
         : { requestId: request.id };
-  const parsed = schema.safeParse({ data, meta });
+  const parsed = schema.safeParse({ data, meta: { ...meta, ...(options.leaveWarnings ? { leaveWarnings: options.leaveWarnings } : {}) } });
   if (!parsed.success) {
     throw new Error('Response did not match its contract schema.');
   }

@@ -213,3 +213,21 @@ export interface LeaveProjectionDeficitDto {
   membershipId: string; typeId: string; requestId: string; date: string; availableMicrodays: number;
   negativeAllowed: boolean; negativeApprovalRequired: boolean;
 }
+
+/** Presentation and admission share this reason boundary; it grants no administrative authority. */
+export function requiresLeaveProfileReason(
+  before: LeaveProfileDto | undefined,
+  next: Pick<LeaveProfileDto, 'employmentStart' | 'accountingStart' | 'employmentEnd' | 'timezone' | 'openingBalances' | 'schedulePeriods'>,
+  today: string,
+): boolean {
+  if (!before) return false;
+  if (before.timezone !== next.timezone) return true;
+  for (const field of ['employmentStart', 'accountingStart'] as const) {
+    if (before[field] !== next[field] && (before[field] <= today || next[field] <= today)) return true;
+  }
+  if (before.employmentEnd !== next.employmentEnd && (before.employmentEnd !== null && before.employmentEnd <= today || next.employmentEnd !== null && next.employmentEnd <= today)) return true;
+  const openings = (value: typeof next) => value.openingBalances.filter(row => row.microdays !== 0).map(row => ({ typeId: row.typeId.toLowerCase(), microdays: row.microdays })).sort((a, b) => a.typeId.localeCompare(b.typeId));
+  if ((before.accountingStart <= today || next.accountingStart <= today) && JSON.stringify(openings(before)) !== JSON.stringify(openings(next))) return true;
+  const elapsedSchedules = (value: typeof next) => value.schedulePeriods.filter(period => period.effectiveFrom <= today).map(period => ({ effectiveFrom: period.effectiveFrom, weeklyMinutes: period.weeklyMinutes })).sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  return JSON.stringify(elapsedSchedules(before)) !== JSON.stringify(elapsedSchedules(next));
+}

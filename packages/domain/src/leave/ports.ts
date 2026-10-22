@@ -23,11 +23,11 @@ export interface LeaveDependencies {
 export interface LeaveApplication {
  previewHistory(context:CommandContext,input:C.PreviewLeaveHistoryInput):Promise<C.LeaveHistoryPreviewDto>;
  importHistory(context:CommandContext,input:C.ImportLeaveHistoryInput):Promise<C.LeaveStoredRequestDto[]>;
- previewBulk(context:CommandContext,input:C.BulkLeaveRequestInput):Promise<C.LeaveBulkPreviewDto>;
- previewSettings(context:CommandContext,input:C.PutLeaveSettingsInput):Promise<C.LeaveRecalculationPreviewDto>;
- previewProfile(context:CommandContext,membershipId:string,input:C.PutLeaveProfileInput):Promise<C.LeaveRecalculationPreviewDto>;
- preview(context:CommandContext,input:C.PreviewLeaveRequestInput):Promise<C.LeaveRequestPreviewDto>;
- overview(context:CommandContext):Promise<C.LeaveOverviewDto>;
+ previewBulk(context:CommandContext,input:C.BulkLeaveRequestInput):Promise<C.LeaveWithWarnings<C.LeaveBulkPreviewDto>>;
+ previewSettings(context:CommandContext,input:C.PutLeaveSettingsInput):Promise<C.LeaveWithWarnings<C.LeaveRecalculationPreviewDto>>;
+ previewProfile(context:CommandContext,membershipId:string,input:C.PutLeaveProfileInput):Promise<C.LeaveWithWarnings<C.LeaveRecalculationPreviewDto>>;
+ preview(context:CommandContext,input:C.PreviewLeaveRequestInput):Promise<C.LeaveWithWarnings<C.LeaveRequestPreviewDto>>;
+ overview(context:CommandContext):Promise<C.LeaveWithWarnings<C.LeaveOverviewDto>>;
  availability(context:CommandContext,input:C.LeaveAvailabilityInput):Promise<C.LeaveAvailabilityDto>;
  settings(context:CommandContext,input:C.PutLeaveSettingsInput):Promise<C.LeaveSettingsDto>;
  template(context:CommandContext,input:C.ApplyLeaveTemplateInput):Promise<C.LeaveSettingsDto>;
