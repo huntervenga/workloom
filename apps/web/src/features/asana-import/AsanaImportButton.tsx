@@ -64,6 +64,9 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_MAPPING_REQUIRED' ? 'projects.asanaImport.mappingError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_REVIEW_REQUIRED' ? 'projects.asanaImport.reviewError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_BUSY' ? 'projects.asanaImport.busyError'
+    : error instanceof ApiError && error.code === 'ASANA_IMPORT_EXTERNAL_DEPENDENCY' ? 'projects.asanaImport.externalDependencyError'
+    : error instanceof ApiError && error.code === 'ASANA_IMPORT_MILESTONE_OPTION' ? 'projects.asanaImport.milestoneOptionError'
+    : error instanceof ApiError && error.code === 'ASANA_IMPORT_TEXT_BOUNDS' ? 'projects.asanaImport.textBoundsError'
     : upload ? 'projects.asanaImport.applyError' : 'projects.asanaImport.previewError';
   const projectId = result?.projectId ?? upload?.preview.existingProjectId;
   const importAnother = () => {

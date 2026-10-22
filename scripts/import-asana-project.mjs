@@ -44,6 +44,18 @@ function sourceFieldDefinition(f,duration){
  }fail('Unsupported source custom field type; nothing was written.');
 }
 /** Builds a complete, deterministic snapshot before a database command can execute. */
+/**
+ * Asana joins several dependencies into one comma-separated CSV cell. A cell is accepted when it is exactly one task name,
+ * or when it splits at commas into names that each identify exactly one task in exactly one way; otherwise it stays unresolved.
+ */
+export function dependencyTargets(cell,sourceNames){
+ const whole=sourceNames.get(cell);if(whole)return whole.length===1?[whole[0]]:null;
+ const parts=cell.split(',');if(parts.length<2||parts.length>50)return null;
+ const solutions=[];
+ const walk=(index,found)=>{if(solutions.length>1)return;if(index===parts.length){solutions.push(found);return;}for(let end=index+1;end<=parts.length;end++){const gids=sourceNames.get(parts.slice(index,end).join(','));if(gids?.length===1)walk(end,[...found,gids[0]]);}};
+ walk(0,[]);
+ return solutions.length===1&&new Set(solutions[0]).size===solutions[0].length?solutions[0]:null;
+}
 export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourceProjectId}){
  if(!UUID.test(workspaceId)||!GID.test(sourceProjectId)||mapping.version!==1||mapping.shareableScopeConfirmed!==true)fail('Explicit workspace, source project and confirmed shareable scope are required.');
  if(mapping.workspaceId&&mapping.workspaceId!==workspaceId)fail('Mapping workspace differs.');
@@ -59,7 +71,8 @@ export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourcePro
  for(const t of data.data){const m=t.memberships?.find(v=>v.project?.gid===sourceProjectId);if(!m)fail('Every source root must belong to the selected project.');if(m.section){const id=gid(m.section.gid);if(sections.has(id)&&sections.get(id).name!==m.section.name)fail('Conflicting source section identity.');sections.set(id,{gid:id,name:m.section.name});}}
  const tasks=flat.map(t=>{
   const r=required(byId.get(t.gid),'CSV row absent.');if(r.Name!==t.name||(r.Notes??'')!==(t.notes??'')||(r['Due Date']||null)!==(t.due_on??null)||(r['Start Date']||null)!==(t.start_on??null)||!!r['Completed At']!==!!t.completed)fail('JSON and CSV disagree on task content, dates or completion.');
-  if(!t.name?.trim()||t.name!==t.name.trim()||t.name.length>500||(t.notes??'').length>20000)fail('Task text cannot be imported losslessly within current bounds.');
+  // Asana allows stray leading/trailing spaces in names; a title is trimmed by the domain anyway, and the untouched name stays in provenance.
+  if(!t.name?.trim()||t.name.length>500||t.name.trim().length>500||(t.notes??'').length>20000)fail('Task text cannot be imported losslessly within current bounds.');
   if(t.due_at||t.start_at)fail('Timed dates require another adapter.');
   if(t.resource_subtype!=='default_task'&&!(t.resource_subtype==='milestone'&&mapping.unsupportedSubtypePolicy==='preserve_as_task'))fail('Nonordinary source tasks require an explicit preserve_as_task conversion decision.');
   const parentGid=t.parent?.gid??null;if((r['Parent task']||'')!==(t.parent?.name??''))fail('CSV parent label differs from JSON parent.');
@@ -74,12 +87,12 @@ export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourcePro
   }
   const {subtasks,...originalTask}=t;const provenance={version:1,source:'asana_project_export',sourceProjectId,originalTask:{...originalTask,subtasks:(subtasks??[]).map(v=>v.gid)},originalCsv:r};
   if(JSON.stringify(provenance).length>20000)fail('Per-task provenance exceeds the existing preserved-cell limit.');
-  return {gid:t.gid,title:t.name,description:t.notes??'',parentGid,sectionGid:section?.gid??null,responsibleMembershipId,sourceEmail,status:t.completed?'done':'todo',startDate:date(t.start_on),dueDate:date(t.due_on),tagGids,values,provenance};
+  return {gid:t.gid,title:t.name.trim(),description:t.notes??'',parentGid,sectionGid:section?.gid??null,responsibleMembershipId,sourceEmail,status:t.completed?'done':'todo',startDate:date(t.start_on),dueDate:date(t.due_on),tagGids,values,provenance};
  });
  for(const t of tasks)for(const f of fields.values())if(!Object.hasOwn(t.values,f.gid))fail('Source custom field catalogs differ between tasks.');
  if(new Set([...tags.values()].map(t=>t.name)).size!==tags.size||new Set([...fields.values()].map(f=>f.name)).size!==fields.size)fail('Ambiguous field or tag names require explicit mapping.');
  for(const id of Object.keys(mapping.durationFields??{}))if(!fields.has(id))fail('Mapped duration source field does not exist.');
- const edges=new Map(),unresolvedDependencies=[];for(const t of tasks){const r=byId.get(t.gid);for(const [column,predecessor]of [['Blocked By (Dependencies)',true],['Blocking (Dependencies)',false]]){if(!r[column])continue;const matches=sourceNames.get(r[column]);if(!matches&&mapping.unresolvedDependencyPolicy==='preserve'){unresolvedDependencies.push({taskGid:t.gid,column,label:r[column]});continue;}if(matches?.length!==1)fail('Dependency label must identify exactly one source task.');const a=predecessor?matches[0]:t.gid,b=predecessor?t.gid:matches[0];if(a===b)fail('Self dependency.');edges.set(a+'>'+b,{predecessorGid:a,successorGid:b});}}
+ const edges=new Map(),unresolvedDependencies=[];for(const t of tasks){const r=byId.get(t.gid);for(const [column,predecessor]of [['Blocked By (Dependencies)',true],['Blocking (Dependencies)',false]]){if(!r[column])continue;const labelled=dependencyTargets(r[column],sourceNames);if(!labelled&&mapping.unresolvedDependencyPolicy==='preserve'){unresolvedDependencies.push({taskGid:t.gid,column,label:r[column]});continue;}if(!labelled)fail('Dependency label must identify exactly one source task.');for(const other of labelled){const a=predecessor?other:t.gid,b=predecessor?t.gid:other;if(a===b)fail('Self dependency.');edges.set(a+'>'+b,{predecessorGid:a,successorGid:b});}}}
  const summary={tasks:tasks.length,roots:tasks.filter(t=>!t.parentGid).length,subtasks:tasks.filter(t=>t.parentGid).length,sections:sections.size,tags:tags.size,fields:fields.size,completed:tasks.filter(t=>t.status==='done').length,assigned:tasks.filter(t=>t.responsibleMembershipId).length,dependencies:edges.size,descriptions:tasks.filter(t=>t.description).length,dueDates:tasks.filter(t=>t.dueDate).length,startDates:tasks.filter(t=>t.startDate).length,taggedTasks:tasks.filter(t=>t.tagGids.length).length,provenanceOnly:{sourceTimestampSets:flat.length,permalinks:flat.filter(t=>t.permalink_url).length,followerSets:flat.filter(t=>t.followers?.length).length,extraProjectMemberships:flat.filter(t=>(t.memberships??[]).some(m=>m.project?.gid!==sourceProjectId)).length,comments:'not_exported',history:'not_exported',attachments:'not_exported'},batches:Math.ceil(tasks.length/50),durationFields:Object.fromEntries([...fields.values()].filter(f=>f.type==='duration').map(f=>[f.gid,{name:f.name,filled:tasks.filter(t=>t.values[f.gid]!==null&&t.values[f.gid]!==undefined).length,explicitZeros:tasks.filter(t=>t.values[f.gid]===0).length,minutes:tasks.reduce((sum,t)=>sum+(t.values[f.gid]??0),0),rootMinutes:tasks.filter(t=>!t.parentGid).reduce((sum,t)=>sum+(t.values[f.gid]??0),0)}]))};
  if(unresolvedDependencies.length)summary.provenanceOnly.unresolvedExternalDependencies=unresolvedDependencies.length;
  const converted=flat.filter(t=>t.resource_subtype==='milestone').length;if(converted)summary.provenanceOnly.milestonesPreservedAsOrdinaryTasks=converted;

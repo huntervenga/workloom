@@ -133,6 +133,9 @@
     "warningLinked": "Shared tasks keep their canonical data. Target project fields are display-only in linked rows.",
     "warningMilestones": "Milestones imported as ordinary tasks: {{count}}. Their original type remains in the source archive.",
     "warningExternal": "External dependency labels kept as source metadata: {{count}}. No dependency links are guessed.",
-    "warningUnknown": "This import has an additional warning. Ask the local import operator to review the source before proceeding."
+    "warningUnknown": "This import has an additional warning. Ask the local import operator to review the source before proceeding.",
+    "externalDependencyError": "A task depends on work that is not in this export (for example another week or project). Open advanced options, turn on “Keep unresolved external dependencies as source metadata”, and check the files again. The labels are kept as notes; no links are guessed.",
+    "milestoneOptionError": "The export contains milestones. Open advanced options, turn on “Import milestones as ordinary tasks”, and check the files again.",
+    "textBoundsError": "A task name is empty, or a name or description is longer than Workloom allows. Check the export in Asana."
   }
 }
