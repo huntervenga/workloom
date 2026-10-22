@@ -23,7 +23,7 @@ describe('continue in another project', () => {
     await waitFor(() => expect(document.body.textContent).toContain('Week 2'));
     await ui.user.selectOptions(screen.getByLabelText('Continue in project'), OTHER);
     await ui.user.click(screen.getByRole('button', { name: 'Close and continue in Week 2' }));
-    await waitFor(() => expect(body).toEqual({ targetProjectId: OTHER, title: 'Rework billing 3' }));
+    await waitFor(() => expect(body).toEqual({ targetProjectId: OTHER, title: 'Rework billing 3', carryFieldIds: [] }));
     expect(await screen.findByText('Done. “Rework billing 3” was created in Week 2.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open the new task' }).getAttribute('href')).toContain(`/projects/${OTHER}?task=`);
   });
