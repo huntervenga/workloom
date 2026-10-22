@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlanningCheckRuleDto, SectionDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { alpha, installFakeApi, ok, project, anna } from '../../test/fakeApi';
