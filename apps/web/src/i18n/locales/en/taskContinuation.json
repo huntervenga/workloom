@@ -7,7 +7,7 @@
   "current": "(this project)",
   "newTitle": "Name of the new task",
   "rule1": "The new task is blocked by this one, so you can always find where it came from.",
-  "rule2": "The name, assignee, priority, tags, section and choice fields such as a custom Priority carry over by name (the same-named section, field and option in the chosen project). Hours, dates and other fields start from the project's defaults, with no time recorded.",
+  "rule2": "The name, assignee, priority, tags, section and choice fields such as a custom Priority carry over by name (the same-named section, field and option in the chosen project). Other fields start from the project's defaults, with no time recorded, unless you tick them above.",
   "rule3": "The finished task keeps its time and stays counted in the period it belongs to.",
   "cancel": "Cancel",
   "submit": "Close and continue in {{project}}",
@@ -16,5 +16,6 @@
   "retry": "Retry the same request",
   "done": "Done. “{{title}}” was created in {{project}}.",
   "close": "Close",
-  "openNew": "Open the new task"
+  "openNew": "Open the new task",
+  "carryLegend": "Also copy the value of:"
 }

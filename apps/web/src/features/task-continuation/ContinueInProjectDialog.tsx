@@ -8,6 +8,8 @@ import { SaveFeedback } from '../../shared/SaveFeedback';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import { invalidateProject } from '../projects/queries';
 import { useProjectsQuery } from '../projects/queries';
+import { useTaskFieldsQuery } from '../fields/queries';
+import { carryableFields } from './carryableFields';
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import { continueTaskRequest } from './api';
 
@@ -19,9 +21,13 @@ export function ContinueInProjectDialog({ actorId, workspaceId, task, currentPro
   const choices = (projects.data?.projects ?? []).filter(project => project.archivedAt === null);
   const [target, setTarget] = useState('');
   const [title, setTitle] = useState(nextContinuationTitle(task.title));
+  const [carried, setCarried] = useState<readonly string[]>([]);
+  const sourceFields = useTaskFieldsQuery(actorId, workspaceId, currentProjectId);
+  const targetFields = useTaskFieldsQuery(actorId, workspaceId, target);
+  const carryable = target && target !== currentProjectId ? carryableFields(sourceFields.data ?? [], targetFields.data ?? []) : [];
   const [result, setResult] = useState<ContinueTaskResult | null>(null);
   const run = useIdempotentMutation({
-    prepare: ({ input }: IdempotentVariables & { input: { targetProjectId: string; title: string } }) => continueTaskRequest(workspaceId, task.id, input),
+    prepare: ({ input }: IdempotentVariables & { input: { targetProjectId: string; title: string; carryFieldIds: string[] } }) => continueTaskRequest(workspaceId, task.id, input),
     onSuccess: saved => {
       setResult(saved);
       for (const projectId of new Set([currentProjectId, saved.continued.projectId])) void invalidateProject(client, actorId, workspaceId, projectId);
@@ -37,16 +43,22 @@ export function ContinueInProjectDialog({ actorId, workspaceId, task, currentPro
         <Button variant="ghost" onClick={onClose}>{t('taskContinuation.close')}</Button>
         <Link className="inline-flex h-9 items-center rounded-md bg-accent px-3 text-sm font-medium text-white hover:bg-accent-strong" to={`/w/${workspaceId}/projects/${result.continued.projectId}?task=${result.continued.id}`}>{t('taskContinuation.openNew')}</Link>
       </div>
-    </div> : <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (target && title.trim() && !busy) run.mutate({ input: { targetProjectId: target, title: title.trim() } }); }}>
+    </div> : <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (target && title.trim() && !busy) run.mutate({ input: { targetProjectId: target, title: title.trim(), carryFieldIds: carryable.filter(field => carried.includes(field.id)).map(field => field.id) } }); }}>
       <fieldset disabled={busy} className="space-y-4">
         <p className="text-sm text-ink-soft">{t('taskContinuation.explain', { title: task.title })}</p>
         <label className="grid gap-1 text-xs text-muted">{t('taskContinuation.project')}
-          <select className="h-9 rounded-md border border-line bg-surface px-2 text-sm text-ink" required value={target} onChange={event => setTarget(event.target.value)}>
+          <select className="h-9 rounded-md border border-line bg-surface px-2 text-sm text-ink" required value={target} onChange={event => { setTarget(event.target.value); setCarried([]); }}>
             <option value="">{t('taskContinuation.choose')}</option>
             {choices.map(project => <option key={project.id} value={project.id}>{project.name}{project.id === currentProjectId ? ` ${t('taskContinuation.current')}` : ''}</option>)}
           </select>
         </label>
         <label className="grid gap-1 text-xs text-muted">{t('taskContinuation.newTitle')}<TextInput required maxLength={500} value={title} onChange={event => setTitle(event.target.value)} /></label>
+        {carryable.length > 0 ? <fieldset className="grid gap-1 text-sm">
+          <legend className="text-xs text-muted">{t('taskContinuation.carryLegend')}</legend>
+          {carryable.map(field => <label key={field.id} className="flex items-center gap-2">
+            <input type="checkbox" checked={carried.includes(field.id)} onChange={event => setCarried(event.target.checked ? [...carried, field.id] : carried.filter(id => id !== field.id))} />{field.name}
+          </label>)}
+        </fieldset> : null}
         <ul className="list-disc space-y-1 pl-5 text-xs text-muted">
           <li>{t('taskContinuation.rule1')}</li><li>{t('taskContinuation.rule2')}</li><li>{t('taskContinuation.rule3')}</li>
         </ul>

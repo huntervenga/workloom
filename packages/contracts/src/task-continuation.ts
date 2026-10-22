@@ -6,13 +6,16 @@ import { taskSchema } from './tasks.js';
 /**
  * "Close and continue in another project": the task is completed as it stands (its Fact stays with it), and a fresh task
  * with the next number in its name starts in the chosen project, blocked by the finished one. The title, the assignee,
- * the priority, the tags and the section (matched by name, since a section belongs to one project) carry over; Fact,
- * estimate, dates and field values start from that project's defaults.
+ * the priority, the tags, the section and choice fields (all matched by name, since sections and fields belong to one
+ * project) carry over. Any other field (hours, numbers, dates…) starts from the new project's defaults unless the caller
+ * lists its id in `carryFieldIds`, which copies the value to the same-named, same-typed field of the chosen project.
  */
 export const continueTaskInputSchema = z.strictObject({
   targetProjectId: idSchema,
   /** Optional: defaults to the old title with its trailing number raised ("Fix login" → "Fix login 2"). */
   title: z.string().trim().min(1).max(500).optional(),
+  /** Source-project field ids whose value is copied as it is. */
+  carryFieldIds: z.array(idSchema).max(50).optional(),
 });
 export const continueTaskResultSchema = z.strictObject({
   closed: taskSchema,

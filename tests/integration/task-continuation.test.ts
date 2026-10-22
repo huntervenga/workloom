@@ -66,6 +66,9 @@ describe('close and continue in another project', () => {
     const result = expectEnvelope(await post(task.id, { targetProjectId: weekTwo.id }), 201, continueTaskResponseSchema).data;
     const values = await h.owner.listTaskValues(result.continued.id);
     expect(values.map(v => JSON.stringify(v.value))).toEqual([JSON.stringify({ type: 'single_select', value: pick(to, 'P2') })]);
+    // Only when asked: the duration field is copied as it is, matched by name and type.
+    const second = expectEnvelope(await post(task.id, { targetProjectId: weekTwo.id, carryFieldIds: [hoursFrom.id] }, `copy-${randomUUID()}`), 201, continueTaskResponseSchema).data;
+    expect((await h.owner.listTaskValues(second.continued.id)).map(v => JSON.stringify(v.value)).sort()).toEqual([JSON.stringify({ type: 'duration', value: 120 }), JSON.stringify({ type: 'single_select', value: pick(to, 'P2') })].sort());
   });
 
   it('numbers a chain: a second continuation becomes "title 3"', async () => {

@@ -66,9 +66,10 @@ export function createTaskContinuationService(deps: TaskContinuationDependencies
         ...(source.tags.length > 0 ? { tagIds: source.tags.filter(tag => tag.archivedAt === null).map(tag => tag.id) } : {}),
         ...(sectionId !== null ? { sectionId } : {}),
       });
-      // Choice fields (a project's own "Priority", "Type"…) carry over by field name and option name. Hours, numbers and dates are
-      // deliberately left to the new project's defaults so planned and recorded time are not counted twice.
-      const sourceValues = (await deps.fields.listTaskValues(context, source.id)).filter(value => (value.value.type === 'single_select' || value.value.type === 'multi_select') && !isEmptyValue(value.value.value));
+      // Choice fields (a project's own "Priority", "Type"…) carry over by field name and option name. Any other field starts
+      // from the new project's defaults unless the caller asked for its value to be copied.
+      const copy = new Set((input.carryFieldIds ?? []).map(id => id.toLowerCase()));
+      const sourceValues = (await deps.fields.listTaskValues(context, source.id)).filter(value => (value.value.type === 'single_select' || value.value.type === 'multi_select' || copy.has(value.fieldId.toLowerCase())) && !isEmptyValue(value.value.value));
       if (sourceValues.length > 0 && input.targetProjectId !== source.projectId) {
         const key = (name: string) => name.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
         const sourceFields = await deps.fields.listFields(context, source.projectId);
@@ -78,6 +79,15 @@ export function createTaskContinuationService(deps: TaskContinuationDependencies
           const from = sourceFields.find(field => field.id === value.fieldId);
           const to = from && targetFields.find(field => field.type === from.type && key(field.name) === key(from.name));
           if (!from || !to) continue;
+          if (value.value.type !== 'single_select' && value.value.type !== 'multi_select') {
+            if (to.type === 'person') continue;
+            try {
+              await deps.fields.setTaskValue(step(`field:${index}`), continued.id, to.id, { expectedRevision: existing.get(to.id)?.revision ?? 0, expectedDefinitionRevision: to.revision, value: value.value });
+            } catch (error) {
+              if (!(error instanceof DomainError)) throw error;
+            }
+            continue;
+          }
           const wanted = value.value.type === 'single_select' ? [value.value.value] : value.value.type === 'multi_select' ? value.value.value : [];
           if (wanted === null) continue;
           const mapped = wanted.flatMap(id => {
