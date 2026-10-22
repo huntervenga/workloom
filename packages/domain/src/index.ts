@@ -131,6 +131,9 @@ export {LOCAL_MCP_TOOL_SCOPE,LOCAL_MCP_SCOPE_CAPABILITY,allowedLocalMcpScopes,as
 
 export {createLocalCredentialService,type StoredLocalCredential,type LocalCredentialRepository,type LocalCredentialScope,type LocalCredentialReader} from './local-mcp/service.js';
 
+export * from './inbox/application.js';
+export * from './inbox/ports.js';
+export { createInboxApplication } from './inbox/service.js';
 export * from './my-tasks/application.js';
 export * from './my-tasks/ports.js';
 export { createMyTasksApplication } from './my-tasks/service.js';

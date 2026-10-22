@@ -16,6 +16,7 @@ import {
   createCutoffApplication,
   createDependencyApplication,
   createMeetingApplication,
+  createInboxApplication,
   createMyTasksApplication,
   createWorkspaceChangeHeadApplication,
   createLocalCredentialApplication,
@@ -49,7 +50,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { SharedActivityApplication, SummaryTemplateApplication, PlanningCheckApplication, LeaveApplication, GenericReportApplication, TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, TaskDefaultsApplication, ProjectCopyApplication, TaskContinuationApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
+import type { InboxApplication, SharedActivityApplication, SummaryTemplateApplication, PlanningCheckApplication, LeaveApplication, GenericReportApplication, TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, TaskDefaultsApplication, ProjectCopyApplication, TaskContinuationApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { JWTVerifyGetKey } from 'jose';
 
@@ -85,6 +86,7 @@ import { registerTaskRoutes } from './http/task-routes.js';
 import { registerTaskRowRoutes } from './http/task-row-routes.js';
 import { registerWorkspaceCreateRoutes } from './http/workspace-create-routes.js';
 import { registerTeamRoutes } from './http/team-routes.js';
+import { registerInboxRoutes } from './http/inbox-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
 import { registerWorkspaceChangeHeadRoutes } from './http/workspace-change-head-routes.js';
 import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
@@ -117,6 +119,7 @@ export interface AppDependencies {
   readonly workspaceCreateApplication?: WorkspaceCreateApplication;
   /** Self-only workspace task inbox; reads share one read-only snapshot. */
   readonly myTasksApplication?: MyTasksApplication;
+  readonly inboxApplication?: InboxApplication;
   /** Authorized current-workspace head; uses one read-only snapshot. */
   readonly workspaceChangeHeadApplication?: WorkspaceChangeHeadApplication;
   readonly taskCommentsApplication?: TaskCommentsApplication;
@@ -219,6 +222,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const taskRowApplication = dependencies.taskRowApplication ?? (database === undefined ? undefined : createTaskRowApplication(database));
   const workspaceCreateApplication =
     dependencies.workspaceCreateApplication ?? (database === undefined ? undefined : createWorkspaceCreateApplication(database));
+  const inboxApplication = dependencies.inboxApplication ?? (database === undefined ? undefined : createInboxApplication(database));
   const myTasksApplication = dependencies.myTasksApplication ?? (database === undefined ? undefined : createMyTasksApplication(database));
   const workspaceChangeHeadApplication = dependencies.workspaceChangeHeadApplication ?? (database === undefined ? undefined : createWorkspaceChangeHeadApplication(database));
   const taskCommentsApplication = dependencies.taskCommentsApplication ?? (database === undefined ? undefined : createTaskCommentsApplication(database));
@@ -386,6 +390,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (workspaceChangeHeadApplication !== undefined) {
     registerWorkspaceChangeHeadRoutes(app, { identity, workspaceChangeHead: workspaceChangeHeadApplication });
   }
+  if (inboxApplication !== undefined) registerInboxRoutes(app, { identity, inbox: inboxApplication });
   if (myTasksApplication !== undefined) {
     registerMyTasksRoutes(app, { identity, myTasks: myTasksApplication });
   }

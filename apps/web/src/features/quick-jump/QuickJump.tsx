@@ -40,6 +40,7 @@ function QuickJumpDialog({ actorId, workspaceId, onClose }: { actorId: string; w
     const base = `/w/${workspaceId}`;
     const pages: JumpItem[] = [
       { key: 'page:overview', label: t('quickJump.overview'), hint: t('quickJump.page'), to: base },
+      { key: 'page:inbox', label: t('quickJump.inbox'), hint: t('quickJump.page'), to: `${base}/inbox` },
       { key: 'page:my-tasks', label: t('quickJump.myTasks'), hint: t('quickJump.page'), to: `${base}/my-tasks` },
       { key: 'page:projects', label: t('quickJump.projects'), hint: t('quickJump.page'), to: `${base}/projects` },
       { key: 'page:reports', label: t('quickJump.reports'), hint: t('quickJump.page'), to: `${base}/reports` },

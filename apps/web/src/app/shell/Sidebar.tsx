@@ -2,11 +2,13 @@ import { WorkspaceLink as Link, WorkspaceNavLink as NavLink, useCanonicalWorkspa
 import { t, useTranslation } from '../../i18n';
 import type { MeDto } from '@workloom/contracts';
 import { Logomark, Skeleton, cn } from '@workloom/ui';
-import { BarChart3, CalendarDays, CheckCheck, Folder, FolderKanban, LayoutDashboard, RefreshCw, Users } from 'lucide-react';
+import { BarChart3, Bell, CalendarDays, CheckCheck, Folder, FolderKanban, LayoutDashboard, RefreshCw, Users } from 'lucide-react';
 import { useLocation } from 'react-router';
 import { useProjectsQuery } from '../../features/projects/queries';
 import type { WorkspaceRole } from '../../features/workspace/roles';
 import { WorkspaceChooser } from '../../features/workspace/WorkspaceChooser';
+import { useInboxQuery } from '../../features/inbox/queries';
+import { unreadItems, useSeenAt } from '../../features/inbox/seen';
 import { LocalModeCard } from './LocalModeCard';
 
 export interface SidebarContentProps {
@@ -32,6 +34,16 @@ const projectLinkClass = ({ isActive }: { isActive: boolean }) =>
  * Active projects of the workspace, in server order. It shares the Projects page query and cache,
  * reads nothing else and never writes. A long list scrolls inside its own bounded area.
  */
+/** Count of items newer than the bookmark; shown only when there is something and the read worked. */
+function InboxBadge({ actorId, workspaceId }: { actorId: string; workspaceId: string }) {
+  const { t } = useTranslation();
+  const inbox = useInboxQuery(actorId, workspaceId);
+  const seenAt = useSeenAt(actorId, workspaceId);
+  const count = unreadItems(inbox.data ?? [], seenAt).length;
+  if (count === 0) return null;
+  return <span aria-label={t('inbox.badge', { count })} className="ml-auto rounded-full bg-accent px-1.5 text-xs font-medium text-white">{count > 99 ? '99+' : count}</span>;
+}
+
 function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string; workspaceId: string; onNavigate?: (() => void) | undefined }) {
   useTranslation();
   const projects = useProjectsQuery(actorId, workspaceId);
@@ -108,6 +120,13 @@ export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarCon
                     <LayoutDashboard size={18} aria-hidden="true" />
 
                     {t('shell.overview')}
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink to={`/w/${workspaceId}/inbox`} className={navLinkClass} onClick={onNavigate}>
+                    <Bell size={18} aria-hidden="true" />
+                    {t('inbox.nav')}
+                    <InboxBadge actorId={me.actor.id} workspaceId={workspaceId} />
                   </NavLink>
                 </li>
                 <li>
