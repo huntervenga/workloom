@@ -10,15 +10,15 @@
   "sharedHint": "Shared details and status. Hours stay in the home project.",
   "loadFailed": "Project memberships could not be loaded. Reload before changing projects.",
   "reload": "Reload",
-  "saving": "Updating projects\u2026",
+  "saving": "Updating projects…",
   "unknown": "The project change is unconfirmed. Retry the original change before making another.",
   "retry": "Retry original change",
   "failed": "Project change was not saved. Reload the task and project placements before trying again.",
-  "loadingHome": "Loading the home project\u2026",
+  "loadingHome": "Loading the home project…",
   "homeUnavailable": "The home project could not be verified. Shared task editing is unavailable until it reloads.",
-  "homeContext": "Home: {{p0}} \u00b7 Viewing: {{p1}}. Fields and hours use the home project.",
+  "homeContext": "Home: {{p0}} · Viewing: {{p1}}. Fields and hours use the home project.",
   "openHome": "Open home project",
-  "loadingRows": "Loading linked tasks\u2026",
+  "loadingRows": "Loading linked tasks…",
   "rowsFailed": "Linked tasks could not be fully loaded.",
   "linkedTasks": "Tasks linked from other projects",
   "accountingHint": "Task details and status are shared. Custom fields belong to each project.",
@@ -26,5 +26,6 @@
   "homeHierarchy": "Hierarchy stays in the home project.",
   "placement": "In this project",
   "section": "Section in this project",
-  "sharedStatus": "Shared status"
+  "sharedStatus": "Shared status",
+  "multiProjectWarning": "This task is in more than one project. Its time and estimate are counted once, in the project where it lives and in the period of its due date — not in each project. To carry unfinished work into another week, use “Complete and continue in another project” instead."
 }

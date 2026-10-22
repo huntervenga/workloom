@@ -1455,7 +1455,7 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
 
   const scope = loadedTaskScope(query.data);
   const dateIssues = completedDateIssues(project, scope.tasks, table.statuses);
-  const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, issue.kind] as const));
+  const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, { kind: issue.kind, finished: issue.finished }] as const));
   return (
     <div className="space-y-3">
       {!boardMode ? <CompletedDateBanner project={project} issues={dateIssues} tasks={scope.tasks} partial={filtered || !scope.complete} onOpenTask={table.onOpenTask} /> : null}

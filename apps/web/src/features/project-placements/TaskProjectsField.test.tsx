@@ -37,6 +37,16 @@ describe('independently saved Projects field', () => {
     await screen.findByRole('button', { name: 'Remove from Viewed project' });
     expect(api.calls.find(call => call.method === 'POST')?.body).toEqual({ projectId: target.id, expectedTaskRevision: task.revision });
     expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+    // Once the task lives in a second project, the pane says how it is counted and what to do instead.
+    expect(await screen.findByRole('note')).toHaveTextContent('counted once');
+    expect(screen.getByRole('note')).toHaveTextContent('Complete and continue in another project');
+  });
+
+  it('shows no multi-project warning for a task in its home project only', async () => {
+    installFakeApi({ [`GET ${root}/projects`]: () => ok([home, target]), [`GET ${root}/tasks/${task.id}/placements`]: () => ok([homePlacement]) });
+    const ui = renderFieldUi(<Harness />); cleanups.push(() => { ui.unmount(); ui.client.clear(); });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Add to project' })).toBeEnabled());
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
   it('retains an unknown detach outside the closed pane and retries exactly with the same key', async () => {
     let attempts = 0;

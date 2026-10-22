@@ -238,7 +238,8 @@
     "startOnly": "From {{start}}",
     "issueMissing": "Completed without a due date",
     "issueBefore": "Due before the project starts",
-    "issueAfter": "Due after the project ends"
+    "issueAfter": "Due after the project ends",
+    "issueMissingOpen": "No due date — period reports cannot count this task"
   },
   "columnMenu": {
     "trigger": "Add or show columns",

@@ -12,19 +12,21 @@ export function CompletedDateBanner({ project, issues, tasks, partial, onOpenTas
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   if (issues.length === 0 || !project.dateRange) return null;
-  const missing = issues.filter(issue => issue.kind === 'missing').length;
-  const outside = issues.length - missing;
+  const finishedIssues = issues.filter(issue => issue.finished);
+  const openUndated = issues.length - finishedIssues.length;
+  const missing = finishedIssues.filter(issue => issue.kind === 'missing').length;
+  const outside = finishedIssues.length - missing;
   const byId = new Map(tasks.map(task => [task.id, task]));
-  const kindText = (kind: DateIssue['kind']) => kind === 'missing' ? t('projectDates.kindMissing') : kind === 'before' ? t('projectDates.kindBefore') : t('projectDates.kindAfter');
+  const kindText = (issue: DateIssue) => issue.kind === 'missing' && !issue.finished ? t('projectDates.kindOpenMissing') : issue.kind === 'missing' ? t('projectDates.kindMissing') : issue.kind === 'before' ? t('projectDates.kindBefore') : t('projectDates.kindAfter');
   return <section role="status" aria-label={t('projectDates.title')} className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [[data-theme=dark]_&]:border-amber-500/40 [[data-theme=dark]_&]:bg-amber-500/10 [[data-theme=dark]_&]:text-amber-100">
     <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="flex items-center gap-2 font-medium"><CalendarX size={16} aria-hidden="true" />{t('projectDates.summary', { count: issues.length, from: project.dateRange.from, to: project.dateRange.to })}</p>
+      <p className="flex items-center gap-2 font-medium"><CalendarX size={16} aria-hidden="true" />{t(finishedIssues.length > 0 ? 'projectDates.summary' : 'projectDates.summaryOpen', { count: finishedIssues.length > 0 ? finishedIssues.length : openUndated, from: project.dateRange.from, to: project.dateRange.to })}</p>
       <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? t('projectDates.hide') : t('projectDates.show')}</Button>
     </div>
-    <p className="text-xs">{t('projectDates.breakdown', { missing, outside })}{partial ? ` ${t('projectDates.partial')}` : ''}</p>
+    <p className="text-xs">{finishedIssues.length > 0 ? t('projectDates.breakdown', { missing, outside }) : ''}{finishedIssues.length > 0 && openUndated > 0 ? ' ' : ''}{openUndated > 0 ? t('projectDates.openUndated', { count: openUndated }) : ''}{partial ? ` ${t('projectDates.partial')}` : ''}</p>
     {open ? <ul className="space-y-1">{issues.slice(0, LIST_LIMIT).map(issue => {
       const task = byId.get(issue.taskId);
-      return <li key={issue.taskId}><button type="button" className="text-left underline decoration-dotted" onClick={() => onOpenTask(issue.taskId)}>{task?.title ?? issue.taskId}</button><span className="ml-2 text-xs">{kindText(issue.kind)}{task?.dueDate ? ` (${task.dueDate})` : ''}</span></li>;
+      return <li key={issue.taskId}><button type="button" className="text-left underline decoration-dotted" onClick={() => onOpenTask(issue.taskId)}>{task?.title ?? issue.taskId}</button><span className="ml-2 text-xs">{kindText(issue)}{task?.dueDate ? ` (${task.dueDate})` : ''}</span></li>;
     })}{issues.length > LIST_LIMIT ? <li className="text-xs">{t('projectDates.more', { count: issues.length - LIST_LIMIT })}</li> : null}</ul> : null}
   </section>;
 }

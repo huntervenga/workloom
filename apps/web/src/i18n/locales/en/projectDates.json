@@ -8,5 +8,8 @@
   "more": "…and {{count}} more.",
   "kindMissing": "no due date",
   "kindBefore": "due before the project starts",
-  "kindAfter": "due after the project ends"
+  "kindAfter": "due after the project ends",
+  "summaryOpen": "{{count}} open task(s) have no due date in a project with dates ({{from}} – {{to}}).",
+  "openUndated": "{{count}} open top-level task(s) have no due date, so period reports cannot count them. Give each a date inside the project dates.",
+  "kindOpenMissing": "open, no due date"
 }
