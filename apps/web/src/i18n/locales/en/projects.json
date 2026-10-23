@@ -141,6 +141,7 @@
     "howOne": "Open the project in Asana and click the arrow next to the project name.",
     "howTwo": "Choose Export/Print, then CSV. A file downloads.",
     "howThree": "Open the same menu again and choose JSON. A second file downloads.",
-    "howFour": "Add your teammates to the Members page here first, using the e-mail addresses they have in Asana, so their tasks keep their owners."
+    "howFour": "Add your teammates to the Members page here first, using the e-mail addresses they have in Asana, so their tasks keep their owners.",
+    "wrongFiles": "These files are not one JSON export and one CSV export of the same Asana project. Choose the file ending in .json and the file ending in .csv."
   }
 }

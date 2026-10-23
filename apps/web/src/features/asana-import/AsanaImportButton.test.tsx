@@ -13,7 +13,7 @@ const uploadId = '91000000-0000-4000-8000-000000000001';
 const projectId = '92000000-0000-4000-8000-000000000001';
 const preview = { projectName: 'Delivery week', tasks: 8, roots: 6, subtasks: 2, sections: 3, createTasks: 7, reuseTasks: 1, completed: 4, fields: [{ name: 'Hours Estimation', type: 'duration' }], warnings: ['source_history', 'milestones_as_tasks:2', 'external_dependencies:3', 'linked_fields', 'unknown-provider-message-do-not-render'] };
 const result = { projectId, reportId: null, taskCount: 8, createdTasks: 7, reusedTasks: 1 };
-function rawFile(name: string, bytes = new Uint8Array([0xef, 0xbb, 0xbf, 0x7b, 0x7d])) {
+function rawFile(name: string, bytes = name.endsWith('.csv') ? new Uint8Array([0xef, 0xbb, 0xbf, ...new TextEncoder().encode('Task ID,Name')]) : new Uint8Array([0xef, 0xbb, 0xbf, 0x7b, 0x7d])) {
   const file = new File([bytes], name, { type: name.endsWith('.json') ? 'application/json' : 'text/csv' });
   Object.defineProperty(file, 'arrayBuffer', { value: vi.fn(async () => bytes.slice().buffer), configurable: true });
   return file;

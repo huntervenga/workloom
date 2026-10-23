@@ -1,3 +1,4 @@
+import { orderExportFiles } from './classifyExport';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@workloom/ui';
 import { FileUp } from 'lucide-react';
@@ -32,6 +33,7 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
   const [busy, setBusy] = useState<'preview' | 'apply' | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [uncertain, setUncertain] = useState(false);
+  const [filesProblem, setFilesProblem] = useState(false);
   const inFlight = useRef(false);
   const applyKey = useRef<string | null>(null);
   const oversized = (json?.size ?? 0) > MAX_ASANA_FILE_BYTES || (csv?.size ?? 0) > MAX_ASANA_FILE_BYTES;
@@ -40,7 +42,11 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
     if (!json || !csv || oversized || inFlight.current || upload) return;
     inFlight.current = true; setBusy('preview'); setError(null);
     try {
-      const [jsonBase64, csvBase64] = await Promise.all([fileBase64(json), fileBase64(csv)]);
+      // The files may have been chosen in the wrong fields; sort them by what they contain.
+      const ordered = await orderExportFiles(json, csv);
+      if (!ordered) { setFilesProblem(true); return; }
+      setFilesProblem(false);
+      const [jsonBase64, csvBase64] = await Promise.all([fileBase64(ordered.json), fileBase64(ordered.csv)]);
       if (!currentActor()) throw new ApiError({ kind: 'unauthenticated', status: 401 });
       const next = await previewAsanaImport(workspaceId, actorId, { jsonBase64, csvBase64, preserveMilestones: milestones, preserveExternalDependencies: external }, crypto.randomUUID());
       if (currentActor()) { setUpload(next); applyKey.current = crypto.randomUUID(); }
@@ -97,6 +103,7 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
         <label className="block space-y-1 text-sm font-medium text-ink">{t('projects.asanaImport.jsonFile')}<input type="file" accept=".json,application/json" disabled={busy !== null} className="block w-full rounded-lg border border-line p-2 text-sm" onChange={event => { setJson(event.target.files?.[0] ?? null); setError(null); }} /></label>
         <label className="block space-y-1 text-sm font-medium text-ink">{t('projects.asanaImport.csvFile')}<input type="file" accept=".csv,text/csv" disabled={busy !== null} className="block w-full rounded-lg border border-line p-2 text-sm" onChange={event => { setCsv(event.target.files?.[0] ?? null); setError(null); }} /></label>
         {oversized ? <p role="alert" className="text-sm text-red-600">{t('projects.asanaImport.sizeError')}</p> : null}
+        {filesProblem ? <p role="alert" className="text-sm text-red-600">{t('projects.asanaImport.wrongFiles')}</p> : null}
         <details className="rounded-lg border border-line p-3 text-sm"><summary className="cursor-pointer font-medium text-ink">{t('projects.asanaImport.advanced')}</summary><div className="mt-3 space-y-3 text-muted">
           <label className="flex items-start gap-2"><input type="checkbox" checked={milestones} disabled={busy !== null} onChange={event => setMilestones(event.target.checked)} />{t('projects.asanaImport.milestones')}</label>
           <label className="flex items-start gap-2"><input type="checkbox" checked={external} disabled={busy !== null} onChange={event => setExternal(event.target.checked)} />{t('projects.asanaImport.external')}</label>
