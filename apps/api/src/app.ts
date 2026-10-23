@@ -77,7 +77,7 @@ import { registerProjectCopyRoutes } from './http/project-copy-routes.js';
 import { registerTaskDefaultsRoutes } from './http/task-defaults-routes.js';
 import { registerApiTokenRoutes } from './http/api-token-routes.js';
 import { PUBLIC_API_PREFIX, registerPublicApiRoutes } from './http/public-api-routes.js';
-import { MCP_PATH, registerMcpHttp } from './http/mcp-http.js';
+import { MCP_MAX_BATCH, MCP_PATH, registerMcpHttp } from './http/mcp-http.js';
 import { registerPlanningRoutes } from './http/planning-routes.js';
 import { registerRecurrenceRoutes } from './http/recurrence-routes.js';
 import { registerScheduleRoutes } from './http/schedule-routes.js';
@@ -88,7 +88,7 @@ import { registerTaskRowRoutes } from './http/task-row-routes.js';
 import { registerWorkspaceCreateRoutes } from './http/workspace-create-routes.js';
 import { registerTeamRoutes } from './http/team-routes.js';
 import { registerSecurityHeaders } from './http/security-headers.js';
-import { createRateLimiter } from './http/rate-limit.js';
+import { createPublicRateLimiter, createRateLimiter } from './http/rate-limit.js';
 import { registerInboxRoutes } from './http/inbox-routes.js';
 import { registerProjectRulesRoutes } from './http/project-rules-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
@@ -324,15 +324,25 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     },
   };
 
-  const tokenLimiter = createRateLimiter({ limit: 300, windowMs: 60_000 });
   const sessionRouteLimiter = createRateLimiter({ limit: 120, windowMs: 60_000 });
-  const anonymousLimiter = createRateLimiter({ limit: 600, windowMs: 60_000 });
+  const publicLimiter = createPublicRateLimiter({ tokenLimit: 300, addressLimit: 600, windowMs: 60_000 });
+  const publicBearer = (authorization: string | string[] | undefined) =>
+    /^Bearer (wlm_pat_[A-Za-z0-9_-]{43})$/.exec(typeof authorization === 'string' ? authorization : '')?.[1];
+  const enforcePublicLimit = (request: { readonly ip: string; readonly headers: { readonly authorization?: string | string[] | undefined } }, reply: { header(name: string, value: string): unknown }, cost = 1) => {
+    // Always retain an address ceiling. Otherwise rotating well-formed but invalid token strings creates unlimited fresh buckets.
+    const bearer = publicBearer(request.headers.authorization);
+    const denied = publicLimiter.check(request.ip, bearer === undefined ? undefined : createHash('sha256').update(bearer).digest('hex'), cost);
+    if (!denied.allowed) {
+      reply.header('retry-after', String(denied.retryAfterSeconds));
+      throw new HttpError(429, 'RATE_LIMITED', 'Too many requests. Wait a moment and try again.', { retryAfterSeconds: denied.retryAfterSeconds }, { retryable: true });
+    }
+  };
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
     reply.header('x-content-type-options', 'nosniff');
     reply.header('referrer-policy', 'no-referrer');
     reply.header('x-frame-options', 'DENY');
-    if (request.url.startsWith('/api') || request.url.startsWith('/healthz')) {
+    if (request.url.startsWith('/api') || request.url.startsWith('/healthz') || request.url.startsWith(MCP_PATH)) {
       reply.header('cache-control', 'no-store');
     }
     assertAllowedHost(request, guardOptions);
@@ -349,14 +359,13 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
         }
       }
     } else {
-      // Per token when one is presented, otherwise per address, with a lower ceiling for guessing.
-      const bearer = /^Bearer (wlm_pat_[A-Za-z0-9_-]{43})$/.exec(request.headers.authorization ?? '')?.[1];
-      const decision = bearer ? tokenLimiter.check(createHash('sha256').update(bearer).digest('hex')) : anonymousLimiter.check(request.ip);
-      if (!decision.allowed) {
-        reply.header('retry-after', String(decision.retryAfterSeconds));
-        throw new HttpError(429, 'RATE_LIMITED', 'Too many requests. Wait a moment and try again.', { retryAfterSeconds: decision.retryAfterSeconds }, { retryable: true });
-      }
+      enforcePublicLimit(request, reply);
     }
+  });
+  app.addHook('preHandler', async (request, reply) => {
+    const path = request.url.split('?', 1)[0] ?? '';
+    // Charge accepted batches per message; oversized batches execute no tools and are rejected by the handler.
+    if (path === MCP_PATH && Array.isArray(request.body) && request.body.length > 1 && request.body.length <= MCP_MAX_BATCH) enforcePublicLimit(request, reply, request.body.length - 1);
   });
 
   app.setErrorHandler((error, request, reply) => {

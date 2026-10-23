@@ -20,7 +20,7 @@ export interface LoadCell {
   /** Time off or a holiday took part of the week, so the figure is measured against fewer hours. */
   partial: boolean;
   /** Why there is no figure. */
-  missing: 'away' | 'unknown' | null;
+  missing: 'away' | 'unknown' | 'fact' | null;
   awayMinutes: number;
 }
 export interface LoadRow { key: string; membershipId: string | null; name: string; cells: LoadCell[] }
@@ -31,13 +31,15 @@ const rational = (value: { numerator: string; denominator: string } | null | und
   return denominator === 0 ? null : Number(value.numerator) / denominator;
 };
 
-function personCell(bucket: WorkspaceReportBucketDto, person: WorkspaceReportPersonDto | undefined): LoadCell {
+function personCell(bucket: WorkspaceReportBucketDto, person: Pick<WorkspaceReportPersonDto, 'fact' | 'capacity'> | undefined): LoadCell {
   const base = { start: bucket.startDate, end: bucket.endDate };
   const capacity = person?.capacity;
   if (!person || !capacity || !capacity.scheduleKnown) return { ...base, ratio: null, workedMinutes: null, availableMinutes: null, scheduledMinutes: null, partial: false, missing: 'unknown', awayMinutes: 0 };
-  const worked = person.fact.unit === 'minutes' ? rational(person.fact.value) ?? 0 : 0;
-  const available = capacity.availableMinutes ?? 0, away = (capacity.absenceMinutes ?? 0) + (capacity.holidayMinutes ?? 0);
+  const worked = person.fact.unit === 'minutes' ? rational(person.fact.value) : null;
+  if (capacity.availableMinutes === null || capacity.scheduledMinutes === null) return { ...base, ratio: null, workedMinutes: worked, availableMinutes: null, scheduledMinutes: null, partial: false, missing: 'unknown', awayMinutes: 0 };
+  const available = capacity.availableMinutes, away = (capacity.absenceMinutes ?? 0) + (capacity.holidayMinutes ?? 0);
   if (available <= 0) return { ...base, ratio: null, workedMinutes: worked, availableMinutes: 0, scheduledMinutes: capacity.scheduledMinutes ?? 0, partial: false, missing: 'away', awayMinutes: away };
+  if (worked === null) return { ...base, ratio: null, workedMinutes: null, availableMinutes: available, scheduledMinutes: capacity.scheduledMinutes, partial: away > 0, missing: 'fact', awayMinutes: away };
   return { ...base, ratio: worked / available, workedMinutes: worked, availableMinutes: available, scheduledMinutes: capacity.scheduledMinutes ?? 0, partial: away > 0, missing: null, awayMinutes: away };
 }
 
@@ -50,13 +52,11 @@ export function loadRows(result: Pick<WorkspaceReportResultDto, 'buckets' | 'peo
   }));
   const team: LoadRow = {
     key: 'team', membershipId: null, name: teamLabel,
-    cells: buckets.map((bucket, index) => {
-      const cells = people.map(person => person.cells[index]).filter((cell): cell is LoadCell => cell !== undefined && cell.ratio !== null);
-      const available = cells.reduce((sum, cell) => sum + (cell.availableMinutes ?? 0), 0), worked = cells.reduce((sum, cell) => sum + (cell.workedMinutes ?? 0), 0);
-      const base = { start: bucket.startDate, end: bucket.endDate };
-      if (available <= 0) return { ...base, ratio: null, workedMinutes: null, availableMinutes: null, scheduledMinutes: null, partial: false, missing: 'away' as const, awayMinutes: 0 };
-      return { ...base, ratio: worked / available, workedMinutes: worked, availableMinutes: available, scheduledMinutes: cells.reduce((sum, cell) => sum + (cell.scheduledMinutes ?? 0), 0), partial: cells.some(cell => cell.partial), missing: null, awayMinutes: cells.reduce((sum, cell) => sum + cell.awayMinutes, 0) };
-    }),
+    // Use the server's whole-team totals: never relabel a subset of configured people as the team.
+    cells: buckets.map(bucket => personCell(bucket, {
+      fact: bucket.fact,
+      capacity: { ...bucket.capacity, membershipId: '', displayName: teamLabel, scheduleKnown: bucket.capacity.unconfiguredMembers === 0 },
+    })),
   };
   void unassignedLabel;
   return [team, ...people];

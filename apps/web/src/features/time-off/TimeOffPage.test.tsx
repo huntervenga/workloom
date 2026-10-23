@@ -3,7 +3,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { timeOffKeys } from './queries';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { alpha, anna, installFakeApi, ok, renderApp } from '../../test/fakeApi';
+import { alpha, anna, installFakeApi, json, ok, renderApp } from '../../test/fakeApi';
 import { MEMBER, overview, prefix, profile, routes, settings, uiPath } from './test/fixtures';
 beforeAll(async () => { await import('../../routes/TimeOffPage'); });
 const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filter(call => call.method !== 'GET' && !call.path.endsWith('/availability') && !call.path.endsWith('/preview'));
@@ -44,7 +44,7 @@ describe('time off workspace', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('keeps an existing profile change local until an administrator reason is supplied', async () => {
+  it('allows read-only review without a reason but keeps an existing correction local until a save reason is supplied', async () => {
     const { failure } = await import('../../test/fakeApi');
     const { calls } = installFakeApi(routes({
       [`POST ${prefix}/members/${MEMBER}/profile/preview`]: () => ok({ sourceVersion: 'd'.repeat(64), balancesBefore: [], balancesAfter: [], deficits: [] }),
@@ -57,8 +57,11 @@ describe('time off workspace', () => {
     await user.clear(within(region).getByLabelText('Timezone'));
     await user.type(within(region).getByLabelText('Timezone'), 'UTC');
     await user.click(within(region).getByRole('button', { name: 'Review changes' }));
+    await within(region).findByRole('region', { name: 'Balance recalculation' });
+    expect(calls.filter(call => call.path.endsWith('/profile/preview'))).toHaveLength(1);
+    await user.click(within(region).getByRole('button', { name: 'Save person settings' }));
     expect(within(region).getByLabelText('Reason for change')).toHaveFocus();
-    expect(within(region).getByText('Add a reason before reviewing changes to an existing profile.')).toBeVisible();
+    expect(within(region).getByText('Add a reason before saving this correction.')).toBeVisible();
     expect(writes(calls)).toHaveLength(0);
     expect(protectedDraftsFor(queryClient).protecting).toBe(true);
   });
@@ -148,8 +151,8 @@ it('edits historical person history through review and reason, refreshes capacit
 
 it('saves a pure employment-date correction after advisory deficit review and clears draft protection on the confirmed profile',async()=>{
  let saved={...profile(),openingBalances:[{typeId:'e0000000-0000-4000-8000-000000000001',microdays:0}]};const data=overview();
- const{calls}=installFakeApi(routes({[`GET ${prefix}/overview`]:()=>ok({...data,profiles:[saved]}),[`POST ${prefix}/members/${MEMBER}/profile/preview`]:()=>ok({sourceVersion:'f'.repeat(64),balancesBefore:[],balancesAfter:[],deficits:[{requestId:'f0000000-0000-4000-8000-000000000001',membershipId:MEMBER,typeId:'e0000000-0000-4000-8000-000000000001',date:'2026-07-26',availableMicrodays:-8197,negativeAllowed:false,negativeApprovalRequired:true}]}),[`PUT ${prefix}/members/${MEMBER}/profile`]:req=>{const input=req.body as {expectedRevision:number;employmentStart:string;accountingStart:string;reason:string;expectedSourceVersion:string};expect(input).toMatchObject({expectedRevision:1,expectedSourceVersion:'f'.repeat(64),reason:'Correct actual employment date'});saved={...saved,employmentStart:input.employmentStart,accountingStart:input.accountingStart,revision:2};return ok(saved);}}));
- const{user,queryClient}=renderApp(`${uiPath}?tab=people`);const region=await screen.findByRole('region',{name:'People & schedules'});const input=within(region).getByLabelText('Employment start');fireEvent.change(input,{target:{value:'2026-05-01'}});await user.type(within(region).getByLabelText('Reason for change'),'Correct actual employment date');await user.click(within(region).getByRole('button',{name:'Review changes'}));const warnings=await within(region).findByRole('region',{name:'Balance warnings from recorded absences'});expect(warnings).toHaveTextContent('2026-07-26');expect(warnings).toHaveTextContent('-0.008197 days');expect(writes(calls)).toHaveLength(0);expect(protectedDraftsFor(queryClient).protecting).toBe(true);
+ const{calls}=installFakeApi(routes({[`GET ${prefix}/overview`]:()=>ok({...data,profiles:[saved]}),[`POST ${prefix}/members/${MEMBER}/profile/preview`]:()=>json(200,{data:{sourceVersion:'f'.repeat(64),balancesBefore:[],balancesAfter:[],deficits:[{requestId:'f0000000-0000-4000-8000-000000000001',membershipId:MEMBER,typeId:'e0000000-0000-4000-8000-000000000001',date:'2026-07-26',availableMicrodays:-8197,negativeAllowed:false,negativeApprovalRequired:true}]},meta:{requestId:'req_preview',leaveWarnings:{warnings:[{code:'NEGATIVE_BALANCE',entity:'profile',entityId:MEMBER,membershipId:MEMBER,typeId:'e0000000-0000-4000-8000-000000000001',startDate:'2026-07-26',endDate:'2026-07-26',availableMicrodays:-8197}],totalCount:1,truncated:false}}}),[`PUT ${prefix}/members/${MEMBER}/profile`]:req=>{const input=req.body as {expectedRevision:number;employmentStart:string;accountingStart:string;reason:string;expectedSourceVersion:string};expect(input).toMatchObject({expectedRevision:1,expectedSourceVersion:'f'.repeat(64),reason:'Correct actual employment date'});saved={...saved,employmentStart:input.employmentStart,accountingStart:input.accountingStart,revision:2};return ok(saved);}}));
+ const{user,queryClient}=renderApp(`${uiPath}?tab=people`);const region=await screen.findByRole('region',{name:'People & schedules'});const input=within(region).getByLabelText('Employment start');fireEvent.change(input,{target:{value:'2026-05-01'}});await user.type(within(region).getByLabelText('Reason for change'),'Correct actual employment date');await user.click(within(region).getByRole('button',{name:'Review changes'}));const warnings=await within(region).findByRole('region',{name:'Administrative warnings'});expect(warnings).toHaveTextContent('2026-07-26');expect(warnings).toHaveTextContent('-0.008197 days');expect(writes(calls)).toHaveLength(0);expect(protectedDraftsFor(queryClient).protecting).toBe(true);
  await user.click(within(region).getByRole('button',{name:'Save person settings'}));await waitFor(()=>expect(protectedDraftsFor(queryClient).protecting).toBe(false));expect(within(region).getByLabelText('Employment start')).toHaveValue('2026-05-01');expect(within(region).getByLabelText('Reason for change')).toHaveValue('');expect(within(region).getByRole('button',{name:'Review changes'})).toBeDisabled();expect(writes(calls)).toHaveLength(1);await user.click(screen.getByRole('link',{name:'Projects'}));expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 

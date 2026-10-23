@@ -1,16 +1,17 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
-  publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema,
+  publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, taskViewSchema, updateTaskInputSchema,
   type ApiTokenDto, type ApiTokenScope, type CreateApiTokenInput, type CreatedApiTokenDto, type PublicMeDto, type PublicMemberDto,
   type PublicProjectDetailDto, type PublicProjectDto, type PublicTagDto, type PublicTaskCreate, type PublicTaskListQuery, type PublicTaskUpdate,
-  type PublicWorkspaceDto, type TaskView, type UpdateTaskInput,
+  type PublicWorkspaceDto, type TaskView, type UpdateTaskInput, type TaskDto,
 } from '@workloom/contracts';
-import { authorizeWorkspace, capabilityRequiredError, DomainError, listWorkspaceMembers, notFoundError, type Capability, type CommandContext } from '@workloom/domain';
+import { authorizeWorkspace, capabilityRequiredError, DomainError, isDomainError, listWorkspaceMembers, notFoundError, type Capability, type CommandContext } from '@workloom/domain';
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
 import { createAccessRepository } from '../repositories/access-repository.js';
 import { createTaskRepository } from '../repositories/task-repository.js';
 import { createTaskApplication } from '../tasks/task-application.js';
+import { createWorkspaceWriteRunner } from '../transactions/workspace-write.js';
 import { workspaceSlugAliases, workspaces, memberships } from '../schema.js';
 import { isUuid, matchRefs, resolveRef, resolveRefs } from './refs.js';
 import { databaseNow, issueApiToken, listApiTokens, loadPrincipal, parseApiToken, revokeApiToken, type ApiPrincipal } from './tokens.js';
@@ -286,10 +287,80 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
       if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid task change.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
       if (!isUuid(taskId)) throw notFoundError();
       const change = parsed.data;
-      for (let attempt = 0; ; attempt += 1) {
-        const plan = await prepared(token, workspace, async (s, hash) => {
+      const targetId = taskId.toLowerCase();
+      // The public body is bound before looking up mutable names. Internal revisions and ids are resolved only once.
+      const owner = await prepared(token, workspace, async (s, hash) => ({
+        hash, workspaceId: s.workspaceId, userId: s.principal.userId,
+        context: await writeContext(s, writeOptions),
+      }));
+      const key = owner.context.idempotencyKey;
+      if (!key) throw new DomainError('VALIDATION_FAILED', 'A valid Idempotency-Key is required.');
+      const command = 'public.task.update';
+      const payloadHash = createHash('sha256').update(JSON.stringify({ taskId: targetId, input: change })).digest('hex');
+      type Plan = {
+        input: UpdateTaskInput; view: TaskView;
+        people: { id: string; name: string }[];
+        statuses: TaskView['status'][];
+        sections: NonNullable<TaskView['section']>[];
+        tags: TaskView['tags'];
+      };
+      type Outcome = { state: 'done'; view: TaskView } | {
+        state: 'rejected'; code: DomainError['code']; message: string; details: unknown;
+      };
+      const conflict = () => new DomainError('IDEMPOTENCY_KEY_REUSED', 'This key was used for another public task update.');
+      const outcomeValue = (value: Outcome): TaskView => {
+        if (value.state === 'rejected') throw new DomainError(value.code, value.message, { details: value.details });
+        return taskViewSchema.parse(value.view);
+      };
+      const metadata = createWorkspaceWriteRunner(source, {
+        ...options,
+        authorizeInScope: async scope => {
+          const principal = await loadPrincipal(scope.tx, owner.hash, scope.barrierAt, true);
+          requireScope(principal, 'tasks:write');
+          if (principal.userId !== owner.userId || (principal.workspaceIds !== null && !principal.workspaceIds.includes(owner.workspaceId))) throw notFoundError();
+          return { apiTokenId: principal.tokenId };
+        },
+      });
+      const barrier = <T>(work: (s: ReadScope) => Promise<T>) => metadata.run(owner.context, 'task.edit', async scope => {
+        const principal = await loadPrincipal(scope.tx, owner.hash, scope.barrierAt, true);
+        if (!await createTaskRepository(scope.tx).findTask(owner.workspaceId, targetId)) throw notFoundError();
+        return work({ tx: scope.tx, principal, workspaceId: owner.workspaceId, context: owner.context,
+          role: scope.access.membership.role, myMembershipId: scope.access.membership.id });
+      });
+      const storedOutcome = async (s: ReadScope): Promise<Outcome | null> => {
+        const receipt = await createTaskRepository(s.tx).findIdempotency(owner.workspaceId, owner.userId, command, key);
+        if (!receipt) return null;
+        if (receipt.payloadHash !== payloadHash) throw conflict();
+        return receipt.result as Outcome;
+      };
+      const saveOutcome = async (s: ReadScope, value: Outcome): Promise<Outcome> => {
+        const previous = await storedOutcome(s);
+        if (previous) return previous;
+        await createTaskRepository(s.tx).insertIdempotency({ workspaceId: owner.workspaceId, actorUserId: owner.userId,
+          command, idempotencyKey: key, payloadHash, result: value, createdAt: (await databaseNow(s.tx)).toISOString() });
+        return value;
+      };
+      const initial = await barrier(async s => {
+        const outcome = await storedOutcome(s);
+        if (outcome) return { outcome };
+        const repo = createTaskRepository(s.tx);
+        const claim = await repo.findIdempotency(owner.workspaceId, owner.userId, command + '.plan', key);
+        if (claim) {
+          if (claim.payloadHash !== payloadHash) throw conflict();
+          const plan = claim.result as Plan;
+          return { plan: { ...plan, input: updateTaskInputSchema.parse(plan.input), view: taskViewSchema.parse(plan.view) } };
+        }
+        // Earlier public clients wrote the ordinary task.update receipt under the raw caller key.
+        // Its hash cannot prove the original public names/body, so never reinterpret it as a fresh operation.
+        if (await repo.findIdempotency(owner.workspaceId, owner.userId, 'task.update', key)) {
+          throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This key belongs to an earlier task update. Review the current task and use a new key.');
+        }
+        try {
           const app = taskApp(s.tx);
-          const current = await app.getTask(s.context, taskId.toLowerCase());
+          const current = await app.getTask(s.context, targetId);
+          if (change.ifRevision !== undefined && change.ifRevision !== current.revision) throw new DomainError('REVISION_CONFLICT', 'The task changed before this request.', { details: { currentRevision: current.revision } });
+          const project = await app.getProject(s.context, current.projectId);
+          if (current.archivedAt !== null || project.archivedAt !== null) throw new DomainError('DOMAIN_VALIDATION_FAILED', 'Restore the task and project before editing.');
           const people = await membersOf(s);
           const input: Record<string, unknown> = { expectedRevision: change.ifRevision ?? current.revision };
           let changed = false;
@@ -318,21 +389,68 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
             if (JSON.stringify(ids) !== JSON.stringify(current.tags.map(tag => tag.id).sort())) { input.tagIds = ids; changed = true; }
           }
           if (change.estimateMinutes !== undefined && change.estimateMinutes !== current.estimateMinutes) { input.estimateMinutes = change.estimateMinutes; input.expectedWorkPackageRevision = current.workPackageRevision; changed = true; }
-          return { hash, changed, input: input as unknown as UpdateTaskInput, context: await writeContext(s, writeOptions), workspaceId: s.workspaceId, userId: s.principal.userId };
-        });
-        try {
-          if (plan.changed) await writeApp(plan.hash, plan.workspaceId, plan.userId).updateTask(plan.context, taskId.toLowerCase(), plan.input);
-        } catch (error) {
-          // Without ifRevision this is "last write wins": a concurrent edit only costs one re-read.
-          if (change.ifRevision === undefined && attempt < 2 && error instanceof DomainError && error.code === 'REVISION_CONFLICT') continue;
-          throw error;
-        }
-        return authorizedRead(token, 'read', plan.workspaceId, READ_CAPABILITY, async s => {
-          const view = await loadTaskView(s.tx, s.workspaceId, taskId.toLowerCase());
+          const view = await loadTaskView(s.tx, owner.workspaceId, targetId);
           if (!view) throw notFoundError();
-          return view;
-        });
+          if (!changed) return { outcome: await saveOutcome(s, { state: 'done', view }) };
+          const internalInput = updateTaskInputSchema.parse(input);
+          const personIds = new Set([
+            ...view.participants.map(person => person.membershipId),
+            ...(view.assignee ? [view.assignee.membershipId] : []),
+            ...(internalInput.participantMembershipIds ?? []),
+            ...(internalInput.responsibleMembershipId ? [internalInput.responsibleMembershipId] : []),
+          ]);
+          const plan: Plan = {
+            input: internalInput, view,
+            people: people.filter(person => personIds.has(person.id)).map(({ id, name }) => ({ id, name })),
+            statuses: (await app.listStatuses(s.context, current.projectId))
+              .filter(status => status.id === current.statusId || status.id === internalInput.statusId)
+              .map(({ id, name, group }) => ({ id, name, group })),
+            sections: (await app.listSections(s.context, current.projectId))
+              .filter(section => section.id === current.sectionId || section.id === internalInput.sectionId)
+              .map(({ id, name }) => ({ id, name })),
+            tags: [...view.tags, ...(change.tags ? (await app.listTags(s.context))
+              .filter(tag => internalInput.tagIds?.includes(tag.id)).map(({ id, name }) => ({ id, name })) : [])],
+          };
+          await repo.insertIdempotency({ workspaceId: owner.workspaceId, actorUserId: owner.userId,
+            command: command + '.plan', idempotencyKey: key, payloadHash, result: plan, createdAt: (await databaseNow(s.tx)).toISOString() });
+          return { plan };
+        } catch (error) {
+          if (!isDomainError(error) || error.retryable) throw error;
+          return { outcome: await saveOutcome(s, { state: 'rejected', code: error.code, message: error.message, details: error.details ?? null }) };
+        }
+      });
+      if ('outcome' in initial) return outcomeValue(initial.outcome);
+      const plan = initial.plan;
+      let updated: TaskDto;
+      try {
+        // Intentionally top-level: a mandatory planning freeze/tagged rejection commits independently.
+        const internalKey = createHash('sha256').update(`${key}\0public.task.update\0${targetId}`).digest('hex');
+        updated = await writeApp(owner.hash, owner.workspaceId, owner.userId).updateTask(
+          { ...owner.context, idempotencyKey: internalKey }, targetId, plan.input);
+      } catch (error) {
+        if (!isDomainError(error) || error.retryable) throw error;
+        const rejected: Outcome = { state: 'rejected', code: error.code, message: error.message, details: error.details ?? null };
+        // Failure to persist this metadata cannot turn a known domain rejection into success.
+        try { return outcomeValue(await barrier(s => saveOutcome(s, rejected))); } catch { throw error; }
       }
+      const person = (membershipId: string) => ({ membershipId,
+        displayName: plan.people.find(member => member.id === membershipId)?.name
+          ?? [plan.view.assignee, ...plan.view.participants].find(member => member?.membershipId === membershipId)?.displayName
+          ?? 'Unknown member' });
+      // Data comes from the durable domain ACK; catalog labels come from the pinned plan, never a later mutable GET.
+      const view: TaskView = {
+        ...plan.view, title: updated.title, description: updated.description,
+        section: updated.sectionId === null ? null : plan.sections.find(section => section.id === updated.sectionId) ?? plan.view.section,
+        status: plan.statuses.find(status => status.id === updated.statusId) ?? plan.view.status,
+        assignee: updated.responsibleMembershipId === null ? null : person(updated.responsibleMembershipId),
+        participants: updated.participants.filter(member => member.active).map(member => person(member.membershipId)),
+        priority: updated.priority, startDate: updated.startDate ?? null, dueDate: updated.dueDate,
+        estimateMinutes: updated.estimateMinutes,
+        tags: updated.tags.map(tag => plan.tags.find(item => item.id === tag.id) ?? { id: tag.id, name: tag.name }),
+        parentTaskId: updated.parentTaskId, revision: updated.revision, archived: updated.archivedAt !== null,
+        createdAt: updated.createdAt, updatedAt: updated.updatedAt,
+      };
+      return outcomeValue(await barrier(s => saveOutcome(s, { state: 'done', view: taskViewSchema.parse(view) })));
     },
   };
 }

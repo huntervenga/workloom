@@ -63,7 +63,7 @@ async function run(automation: AutomationApplication, token: string, name: McpTo
   }
 }
 
-const MCP_MAX_BATCH = 20;
+export const MCP_MAX_BATCH = 10;
 
 /** A fresh server per HTTP request, exposing only the tools this token's scopes allow. */
 function createServer(automation: AutomationApplication, token: string, scopes: readonly string[], requestId: string): McpServer {
@@ -100,6 +100,9 @@ function toWebRequest(request: FastifyRequest): Request {
 
 async function sendWebResponse(reply: FastifyReply, response: Response): Promise<FastifyReply> {
   response.headers.forEach((value, key) => { if (key !== 'content-length' && key !== 'transfer-encoding') reply.header(key, value); });
+  // The SDK supplies no-cache for SSE, which still permits sensitive responses to be stored.
+  // Apply the stricter policy after copying its headers; retain no-transform for event framing.
+  reply.header('cache-control', 'no-store, no-transform');
   reply.code(response.status);
   return reply.send(Buffer.from(await response.arrayBuffer()));
 }

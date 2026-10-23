@@ -16,7 +16,7 @@ const errors = {
   '403': { description: 'The token scope or your role in the workspace does not allow this.' },
   '404': { description: 'Unknown workspace or object, or no access to it.' },
   '400': { description: 'Invalid input or an unknown/ambiguous reference. See error.details.' },
-  '409': { description: 'Revision conflict (ifRevision) or Idempotency-Key reuse.' },
+  '409': { description: 'Revision conflict against the explicit ifRevision or the revision pinned during preparation when omitted, or Idempotency-Key reuse. Exact-key retries do not overwrite later edits; after a confirmed revision conflict, review the current task and submit the intended change with a new key.' },
 };
 const wsParam = { name: 'ws', in: 'path', required: true, description: 'Workspace slug or UUID.', schema: { type: 'string' } };
 const taskParam = { name: 'taskId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } };

@@ -51,10 +51,17 @@ function sourceFieldDefinition(f,duration){
 export function dependencyTargets(cell,sourceNames){
  const whole=sourceNames.get(cell);if(whole)return whole.length===1?[whole[0]]:null;
  const parts=cell.split(',');if(parts.length<2||parts.length>50)return null;
- const solutions=[];
- const walk=(index,found)=>{if(solutions.length>1)return;if(index===parts.length){solutions.push(found);return;}for(let end=index+1;end<=parts.length;end++){const gids=sourceNames.get(parts.slice(index,end).join(','));if(gids?.length===1)walk(end,[...found,gids[0]]);}};
- walk(0,[]);
- return solutions.length===1&&new Set(solutions[0]).size===solutions[0].length?solutions[0]:null;
+ // Count suffix decompositions once, capped at two: ambiguous exports must fail closed.
+ // Recursive backtracking can visit 2^49 partitions for a 50-piece unresolved label.
+ const ways=Array(parts.length+1).fill(0),paths=Array(parts.length+1).fill(null);ways[parts.length]=1;paths[parts.length]=[];
+ for(let index=parts.length-1;index>=0;index--){
+  for(let end=index+1;end<=parts.length;end++){
+   const gids=sourceNames.get(parts.slice(index,end).join(','));if(gids?.length!==1||ways[end]===0)continue;
+   if(ways[index]===0&&ways[end]===1)paths[index]=[gids[0],...paths[end]];
+   ways[index]=Math.min(2,ways[index]+ways[end]);if(ways[index]===2){paths[index]=null;break;}
+  }
+ }
+ const result=paths[0];return ways[0]===1&&new Set(result).size===result.length?result:null;
 }
 export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourceProjectId}){
  if(!UUID.test(workspaceId)||!GID.test(sourceProjectId)||mapping.version!==1||mapping.shareableScopeConfirmed!==true)fail('Explicit workspace, source project and confirmed shareable scope are required.');
@@ -75,8 +82,11 @@ export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourcePro
  for(const t of flat){for(const tag of t.tags??[]){if(!tagByName.has(tag.name))tagByName.set(tag.name,tag.gid);tagCanon.set(tag.gid,tagByName.get(tag.name));}for(const f of t.custom_fields??[]){if(!fieldByName.has(f.name))fieldByName.set(f.name,f.gid);fieldCanon.set(f.gid,fieldByName.get(f.name));if(f.gid===fieldByName.get(f.name)&&!fieldDefs.has(f.gid))fieldDefs.set(f.gid,f);}}
  const effectiveFields=t=>{const groups=new Map();for(const f of t.custom_fields??[]){const id=fieldCanon.get(f.gid);if(!groups.has(id))groups.set(id,[]);groups.get(id).push(f);}
   return [...groups.entries()].map(([id,list])=>{if(list.length===1&&list[0].gid===id)return list[0];const base=fieldDefs.get(id);if(!base)fail('Duplicate source field has no canonical definition.');
-   // The CSV carries only the canonical (first) field's value for a repeated name, so a duplicate's value is not imported; the untouched task stays in provenance.
-   return list.find(f=>f.gid===id)??{...base,...(base.resource_subtype==='enum'?{enum_value:null}:{number_value:null})};});};
+   const canonicalField=list.find(f=>f.gid===id)??{...base,...(base.resource_subtype==='enum'?{enum_value:null}:{number_value:null})};
+   // CSV has one column per name. Never silently discard a distinct populated JSON value.
+   const value=f=>f.resource_subtype==='enum'?f.enum_value?.name??null:f.number_value??null;
+   for(const f of list)if(f.gid!==id&&value(f)!==null&&(f.resource_subtype!==canonicalField.resource_subtype||!equal(value(f),value(canonicalField))))fail('Conflicting populated same-name source fields require explicit mapping.');
+   return canonicalField;});};
  const tasks=flat.map(t=>{
   const r=required(byId.get(t.gid),'CSV row absent.');if(r.Name!==t.name||(r.Notes??'')!==(t.notes??'')||(r['Due Date']||null)!==(t.due_on??null)||(r['Start Date']||null)!==(t.start_on??null)||!!r['Completed At']!==!!t.completed)fail('JSON and CSV disagree on task content, dates or completion.');
   // Asana allows stray leading/trailing spaces in names; a title is trimmed by the domain anyway, and the untouched name stays in provenance.

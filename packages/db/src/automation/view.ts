@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
-import type { PublicTaskListQuery, TaskView } from '@workloom/contracts';
+import { idSchema, sqlCalendarDateSchema, type PublicTaskListQuery, type TaskView } from '@workloom/contracts';
 import { DomainError } from '@workloom/domain';
 import type { WorkloomExecutor } from '../client.js';
 import { memberships, projects, sections, taskParticipants, taskStatuses, taskTags, tasks, users, workPackages, workspaceTags } from '../schema.js';
@@ -67,10 +67,18 @@ function decodeCursor(value: string, sort: PublicTaskListQuery['sort']): Cursor 
     if (typeof parsed !== 'object' || parsed === null) throw invalid();
     const { s, v, i } = parsed as Record<string, unknown>;
     if (s !== sort || typeof i !== 'string' || !(v === null || typeof v === 'string')) throw invalid();
-    if (!/^[0-9a-f-]{36}$/i.test(i)) throw invalid();
-    // The position is what this server wrote itself: a calendar date, or an ISO instant with milliseconds.
-    if (v !== null && !(sort === 'due' ? /^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(`${v}T00:00:00Z`)) : /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v) && Number.isFinite(Date.parse(v)))) throw invalid();
-    return { s: sort, v, i };
+    const parsedId = idSchema.safeParse(i);
+    if (!parsedId.success) throw invalid();
+    // The position is exactly what this server writes: a real SQL calendar date, or a canonical ISO instant.
+    if (v !== null) {
+      if (sort === 'due') {
+        if (!sqlCalendarDateSchema.safeParse(v).success) throw invalid();
+      } else {
+        const instant = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v) ? new Date(v) : null;
+        if (instant === null || !Number.isFinite(instant.getTime()) || instant.toISOString() !== v) throw invalid();
+      }
+    }
+    return { s: sort, v, i: parsedId.data };
   } catch { throw invalid(); }
 }
 

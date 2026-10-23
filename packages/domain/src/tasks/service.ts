@@ -400,6 +400,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const task = requireFound(await repo.findTask(ws, id));
         expectRevision(task.revision, parsed.expectedRevision);
         if (task.archivedAt !== null) throw ruleError('The task is archived. Restore it before editing.', 'taskId');
+        await requireOpenProject(repo, ws, task.projectId);
 
         assertOrdinaryTaskDates(task,parsed);
         // Every provided reference is validated, even when it equals the current value.
@@ -408,9 +409,20 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           requireSameProject(requireFound(await repo.findStatus(ws, parsed.statusId)), task.projectId, 'statusId');
         }
         if (isSet(parsed.sectionId)) await requireAssignableSection(repo, ws, task.projectId, parsed.sectionId);
+        let sectionId = parsed.sectionId === undefined ? task.sectionId : parsed.sectionId;
+        const parentChanged = parsed.parentTaskId !== undefined && parsed.parentTaskId !== task.parentTaskId;
         if (isSet(parsed.parentTaskId)) {
           const parent = await requireParent(repo, ws, task.projectId, parsed.parentTaskId);
           await assertNoCycle(repo, ws, task.id, parent);
+          if (parentChanged) {
+            if (parsed.sectionId !== undefined && parsed.sectionId !== parent.sectionId) throw ruleError('A subtask must stay in its parent section.', 'sectionId');
+            sectionId = parent.sectionId;
+          }
+        }
+        if (!parentChanged && task.parentTaskId !== null && parsed.sectionId !== undefined && parsed.sectionId !== task.sectionId) throw ruleError('A subtask can only stay in its own section.', 'sectionId');
+        if (parentChanged && parsed.parentTaskId === null && task.parentTaskId !== null) {
+          const previousParent = requireFound(await repo.findTask(ws, task.parentTaskId));
+          if (task.workPackageId === previousParent.workPackageId) throw ruleError('A detail subtask shares its parent work package. Create an independent task instead of detaching it from that package.', 'parentTaskId');
         }
         await requireActiveMembers(repo, ws, parsed.responsibleMembershipId ?? null, parsed.participantMembershipIds ?? [], {
           responsibleId: task.responsibleMembershipId,
@@ -463,7 +475,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           title: parsed.title ?? task.title,
           description: parsed.description ?? task.description,
           statusId: parsed.statusId ?? task.statusId,
-          sectionId: parsed.sectionId === undefined ? task.sectionId : parsed.sectionId,
+          sectionId,
           // Reparenting never changes the task's own work package.
           parentTaskId: parsed.parentTaskId === undefined ? task.parentTaskId : parsed.parentTaskId,
           responsibleMembershipId:
@@ -500,6 +512,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const task = requireFound(await repo.findTask(ws, id));
         expectRevision(task.revision, parsed.expectedRevision);
         if (task.archivedAt !== null) throw ruleError('The task is already archived.', 'taskId');
+        await requireOpenProject(repo, ws, task.projectId);
         // Subtasks go with their parent, with the same instant, so a restore can bring back exactly them.
         for (const child of await descendantsOf(repo, ws, task, task.archivedAt)) await setTaskArchivedAt(scope, child, now, now, 'archived');
         return setTaskArchivedAt(scope, task, now, now, 'archived');
@@ -1052,7 +1065,8 @@ async function descendantsOf(repo: TaskRepository, ws: string, root: TaskDto, ar
   for (let head = 0; head < queue.length; head += 1) {
     for (const child of byParent.get(queue[head] ?? '') ?? []) {
       if (child.archivedAt === archivedAt) found.push(child);
-      queue.push(child.id);
+      // A restore must not reactivate a descendant below a separately archived parent.
+      if (archivedAt === null || child.archivedAt === archivedAt) queue.push(child.id);
     }
   }
   return found;

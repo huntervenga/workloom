@@ -77,7 +77,7 @@ export async function issueApiToken(tx: WorkloomExecutor, userId: string, input:
   const expiresAt = new Date(createdAt.getTime() + p.expiresInDays * 86_400_000);
   const [row] = await tx.insert(apiTokens).values({
     id: generated.id, userId, name: p.name, tokenHash: generated.hash, tokenPrefix: generated.prefix,
-    scopes: p.scopes, workspaceIds: p.workspaceIds && p.workspaceIds.length > 0 ? [...new Set(p.workspaceIds.map(id => id.toLowerCase()))] : null,
+    scopes: p.scopes, workspaceIds: p.workspaceIds === undefined ? null : [...new Set(p.workspaceIds.map(id => id.toLowerCase()))],
     createdAt, expiresAt,
   }).returning();
   if (!row) throw new Error('Token insert returned no row.');
@@ -85,7 +85,7 @@ export async function issueApiToken(tx: WorkloomExecutor, userId: string, input:
 }
 
 export async function listApiTokens(tx: WorkloomExecutor, userId: string): Promise<ApiTokenDto[]> {
-  const rows = await tx.select().from(apiTokens).where(eq(apiTokens.userId, userId)).orderBy(desc(apiTokens.createdAt)).limit(200);
+  const rows = await tx.select().from(apiTokens).where(eq(apiTokens.userId, userId)).orderBy(desc(sql<boolean>`${apiTokens.revokedAt} is null and ${apiTokens.expiresAt} > now()`), desc(apiTokens.createdAt), desc(apiTokens.id)).limit(200);
   return rows.map(toDto);
 }
 

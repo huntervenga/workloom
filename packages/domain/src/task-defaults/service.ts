@@ -40,7 +40,24 @@ export async function validateTaskDefaults(scope: TaskDefaultsScope, projectId: 
     const status = await scope.repository.tasks.findStatus(ws, config.statusId);
     if (!status || status.projectId.toLowerCase() !== projectId.toLowerCase()) invalid('The default status is not a status of this project.', 'statusId');
   }
+  if (config.assignee?.kind === 'fixed') {
+    const membershipId=config.assignee.membershipId;
+    const members = await scope.repository.tasks.access.listActiveMemberships(ws);
+    if (!members.some(member => member.id === membershipId && member.state === 'active')) invalid('The default assignee must be an active workspace member.', 'assignee');
+  }
+  if (config.tags?.kind === 'fixed') for (const id of config.tags.tagIds) {
+    const tag = await scope.repository.tasks.findTag(ws,id);
+    if (!tag || tag.archivedAt !== null) invalid('A default tag is unavailable in this workspace.', 'tags');
+  }
   const fields = await scope.repository.listFields(ws, projectId);
+  for (const id of config.fromAbove?.fieldIds ?? []) {
+    const field = fields.find(item => item.id === id);
+    if (!field || field.archivedAt !== null || field.locked) invalid('A field copied from above must be an editable field of this project.', 'fromAbove');
+  }
+  for (const item of config.todayFields ?? []) {
+    const field = fields.find(field => field.id === item.fieldId);
+    if (!field || field.type !== 'date' || field.archivedAt !== null || field.locked) invalid('Today can only initialize an editable date field of this project.', 'todayFields');
+  }
   for (const item of config.fieldValues) {
     const field = fields.find(candidate => candidate.id.toLowerCase() === item.fieldId.toLowerCase());
     if (!field) invalid('A default refers to a field of another project.', 'fieldValues');

@@ -22,10 +22,10 @@ export function HoursLoad({ result }: { result: WorkspaceReportResultDto }) {
   if (weeks.length < 1 || rows.every(row => row.cells.every(cell => cell.ratio === null))) return null;
   const label = (cell: LoadCell) => result.bucket === 'month' ? cell.start.slice(0, 7) : cell.start.slice(5);
   const title = (cell: LoadCell) => cell.ratio === null || cell.workedMinutes === null || cell.availableMinutes === null
-    ? t(cell.missing === 'unknown' ? 'workspaceReports.load.unknown' : 'workspaceReports.load.away')
+    ? t(cell.missing === 'unknown' ? 'workspaceReports.load.unknown' : cell.missing === 'fact' ? 'workspaceReports.load.noFact' : 'workspaceReports.load.away')
     : t(cell.partial ? 'workspaceReports.load.cellPartial' : 'workspaceReports.load.cell', { worked: hours(cell.workedMinutes), available: hours(cell.availableMinutes), percent: percent(cell.ratio), away: hours(cell.awayMinutes), scheduled: hours(cell.scheduledMinutes ?? 0) });
   const average = (cells: LoadCell[]) => {
-    const used = cells.filter(cell => cell.ratio !== null && cell.workedMinutes !== null && cell.availableMinutes !== null);
+    const used = cells.filter(cell => cell.workedMinutes !== null && cell.availableMinutes !== null);
     const available = used.reduce((sum, cell) => sum + (cell.availableMinutes ?? 0), 0);
     return available > 0 ? used.reduce((sum, cell) => sum + (cell.workedMinutes ?? 0), 0) / available : null;
   };

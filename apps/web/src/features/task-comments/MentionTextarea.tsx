@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { useId, useRef, useState, type ComponentProps } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useId, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import type { MembershipDto } from '@workloom/contracts';
 import { useTranslation } from '../../i18n';
 import { queryKeys } from '../../lib/queryKeys';
@@ -12,11 +12,17 @@ export function MentionTextarea({ actorId, workspaceId, value, onValueChange, ..
   const { t } = useTranslation();
   const listId = useId();
   const field = useRef<HTMLTextAreaElement>(null);
-  const members = useQuery({ queryKey: queryKeys.memberships(actorId, workspaceId), queryFn: () => Promise.resolve([] as MembershipDto[]), enabled: false });
+  const client = useQueryClient();
+  // Observe the existing cache without replacing the real membership query's fetcher or options.
+  const members = useSyncExternalStore(
+    listener => client.getQueryCache().subscribe(listener),
+    () => client.getQueryData<MembershipDto[]>(queryKeys.memberships(actorId, workspaceId)),
+    () => undefined,
+  );
   const [caret, setCaret] = useState(0);
   const [picked, setPicked] = useState(0);
   const typing = mentionQueryAt(value, caret);
-  const suggestions = typing ? suggestMembers(members.data ?? [], typing.query) : [];
+  const suggestions = typing ? suggestMembers(members ?? [], typing.query) : [];
   const choose = (member: Mentionable) => {
     if (!typing) return;
     const next = insertMention(value, typing.start, caret, member.displayName);

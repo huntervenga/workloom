@@ -197,7 +197,7 @@ curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&
   <li><strong>Change the status:</strong> <code>{"status": "In progress"}</code> (name or UUID of one of the project’s statuses).</li>
   <li><strong>Move to a section:</strong> <code>{"section": "Backlog"}</code>.</li>
   <li><strong>Nothing to change?</strong> A request that matches the current state succeeds and returns the task without a new revision, so scripts can run twice safely.</li>
-  <li><strong>Optimistic locking:</strong> add <code>"ifRevision": 4</code> to fail with <code>409 REVISION_CONFLICT</code> if someone changed the task since you read revision 4. Without it, your fields are applied to the latest version (“last write wins”).</li>
+  <li><strong>Optimistic locking:</strong> add <code>"ifRevision": 4</code> to require revision 4. Without it, the server pins the revision read while preparing your operation. An intervening edit returns <code>409 REVISION_CONFLICT</code> in either case. Retrying the same operation key does not overwrite later edits. After a confirmed conflict, review the current task and submit your intended change with a new key.</li>
 </ul>
 
 <h3 id="list">List and filter tasks</h3>

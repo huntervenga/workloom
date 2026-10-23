@@ -21,11 +21,17 @@ function sourceProjectClaim(plan,options,create){
 }
 /** Only intersection across all roots can identify an exported project without guessing a filename. */
 export function discoverAsanaSource(jsonText,sourceProjectId){
- const input=JSON.parse(jsonText.replace(/^\ufeff/,''));if(!Array.isArray(input.data)||!input.data.length)fail('Expected nonempty exported root tasks.');
- const roots=input.data,workspaceIds=unique(roots.map(t=>t.workspace?.gid));if(workspaceIds.length!==1||typeof workspaceIds[0]!=='string')fail('Expected exactly one source workspace.');
- const candidates=unique((roots[0].memberships??[]).map(m=>m.project?.gid).filter(Boolean)).filter(id=>roots.every(t=>(t.memberships??[]).some(m=>m.project?.gid===id)));
+ if(typeof jsonText!=='string'||Buffer.byteLength(jsonText)>10485760||jsonText.includes('\0')||!jsonText.isWellFormed())fail('Source JSON exceeds bounds.');
+ const input=JSON.parse(jsonText.replace(/^\ufeff/,''));if(!input||!Array.isArray(input.data)||!input.data.length)fail('Expected nonempty exported root tasks.');
+ const flat=[],roots=input.data;const walk=(tasks,depth=0)=>{
+  if(!Array.isArray(tasks))fail('Expected an array of source tasks.');if(depth>20)fail('Source hierarchy is too deep.');
+  for(const t of tasks){if(!t||typeof t!=='object'||Array.isArray(t))fail('Expected a source task object.');if(flat.length>=2000)fail('Source has more than 2000 tasks.');flat.push(t);walk(t.subtasks??[],depth+1);}
+ };walk(roots);
+ const validGid=id=>typeof id==='string'&&/^\d{1,254}$/.test(id);
+ const workspaceIds=unique(roots.map(t=>t.workspace?.gid));if(workspaceIds.length!==1||!validGid(workspaceIds[0]))fail('Expected exactly one source workspace with a decimal ID.');
+ for(const t of roots)if(t.memberships!==undefined&&(!Array.isArray(t.memberships)||t.memberships.some(m=>!m||typeof m!=='object'||!validGid(m.project?.gid))))fail('Expected project memberships with decimal IDs.');
+ const candidates=unique((roots[0].memberships??[]).map(m=>m.project.gid)).filter(id=>roots.every(t=>(t.memberships??[]).some(m=>m.project.gid===id)));
  if(sourceProjectId?!candidates.includes(sourceProjectId):candidates.length!==1)fail('Source project is ambiguous; pass the sourceProjectId explicitly.');
- const flat=[];const walk=tasks=>{for(const t of tasks){flat.push(t);walk(t.subtasks??[]);}};walk(roots);
  return {sourceProjectId:sourceProjectId??candidates[0],sourceNamespace:`asana:${workspaceIds[0]}`,flat};
 }
 function profilesUnder(root){

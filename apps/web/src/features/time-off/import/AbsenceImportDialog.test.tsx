@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { installFakeApi, ok, created, anna } from '../../../test/fakeApi';
+import { installFakeApi, ok, created, failure, anna } from '../../../test/fakeApi';
 import { renderFieldUi } from '../../fields/test/fixtures';
 import { overview, prefix } from '../test/fixtures';
 import { AbsenceImportDialog } from './AbsenceImportDialog';
@@ -52,6 +52,40 @@ describe('absence import dialog', () => {
     expect(new Set(keys).size).toBe(3);
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('3 imported'));
     expect(screen.getAllByText('Imported')).toHaveLength(3);
+  });
+
+
+  it('retains the exact committed-but-unknown row and key before importing any later rows', async () => {
+    const data = overview();
+    const person = data.members[0], type = data.settings?.policyVersions[0]?.types[0];
+    if (!person || !type) throw new Error('fixture');
+    const csv = `Person,Type,Start,End,Note\n${person.displayName},${type.name},2026-07-06,2026-07-06,First\n${person.displayName},${type.name},2026-07-07,2026-07-07,Second\n`;
+    const sent: { body: unknown; key: string | null }[] = [];
+    let previews = 0;
+    installFakeApi({
+      [`POST ${prefix}/requests/bulk-preview`]: () => { previews++; return ok({ ...preview(person.id), sourceVersion: hex(previews === 1 ? 'a' : 'c') }); },
+      [`POST ${prefix}/requests/bulk`]: request => { sent.push({ body: request.body, key: request.headers.get('Idempotency-Key') }); return sent.length === 1 ? failure(503, 'UNAVAILABLE', 'Lost acknowledgement') : created([]); },
+    });
+    const ui = renderFieldUi(<AbsenceImportDialog actorId={anna.id} workspaceId={data.settings?.workspaceId ?? ''} overview={data}/>);
+    await choose(ui, csv);
+    await ui.user.click(await screen.findByRole('button', { name: 'Import 2 absence(s)' }));
+    const retry = await screen.findByRole('button', { name: 'Retry exact import' });
+    expect(sent).toHaveLength(1); expect(previews).toBe(1);
+    const closeButtons = screen.getAllByRole('button', { name: 'Close' });
+    expect(closeButtons.at(-1)).toBeDisabled();
+    const dismiss = closeButtons[0]; if (!dismiss) throw new Error('Missing dialog close');
+    await ui.user.click(dismiss);
+    expect(screen.getByRole('button', { name: 'Retry exact import' })).toBeInTheDocument();
+    expect(screen.getByLabelText('CSV file with absences')).toBeDisabled();
+    expect(screen.getByLabelText('Reason recorded for past absences')).toBeDisabled();
+    await ui.user.click(retry);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('1 imported'));
+    expect(sent).toHaveLength(2); expect(sent[1]).toEqual(sent[0]); expect(previews).toBe(1);
+    await ui.user.click(screen.getByRole('button', { name: 'Import 1 absence(s)' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('2 imported'));
+    expect(previews).toBe(2); expect(sent).toHaveLength(3);
+    expect(sent[2]?.key).not.toBe(sent[0]?.key);
+    expect(sent[2]?.body).toMatchObject({ startDate: '2026-07-07', expectedSourceVersion: hex('c') });
   });
 
   it('is not offered to people who cannot manage time off', () => {

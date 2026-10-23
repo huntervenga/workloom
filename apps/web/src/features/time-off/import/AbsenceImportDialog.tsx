@@ -4,7 +4,8 @@ import { FileUp } from 'lucide-react';
 import type { LeaveOverviewDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useTranslation } from '../../../i18n';
-import { ApiError, sendMutation } from '../../../lib/api';
+import { ApiError, isUncertainOutcome } from '../../../lib/api';
+import { useIdempotentMutation, type IdempotentVariables } from '../../../lib/useIdempotentMutation';
 import { describeError } from '../../../lib/errors';
 import { DialogShell } from '../../../shared/DialogShell';
 import { bulkRequest, previewBulk } from '../api';
@@ -12,7 +13,7 @@ import { timeOffKeys } from '../queries';
 import { parseCsv } from './csv';
 import { nameKey, readAbsenceTable, resolveAbsences, unmatchedNames, type ResolvedAbsence, type RowIssue } from './absenceRows';
 
-type Outcome = { state: 'done' } | { state: 'failed'; message: string };
+type Outcome = { state: 'done' } | { state: 'failed'; message: string; stop?: boolean } | { state: 'uncertain'; message: string };
 
 export function AbsenceImportDialog({ actorId, workspaceId, overview }: { actorId: string; workspaceId: string; overview: LeaveOverviewDto }) {
   const { t } = useTranslation();
@@ -34,8 +35,15 @@ function Importer({ actorId, workspaceId, overview, onClose }: { actorId: string
   const [outcomes, setOutcomes] = useState<Record<number, Outcome>>({});
   const [running, setRunning] = useState(false);
   const [approveNegative, setApproveNegative] = useState(false);
-  // A key belongs to one exact request: a changed reason, person, type or dates must never reuse it.
-  const keys = useRef(new Map<number, { signature: string; key: string }>());
+  const inFlight = useRef(false);
+  const command = useIdempotentMutation({
+    prepare: ({ input }: IdempotentVariables & { line: number; input: Parameters<typeof bulkRequest>[1] }) => bulkRequest(workspaceId, input),
+    onSuccess: (_saved, variables) => {
+      setOutcomes(current => ({ ...current, [variables.line]: { state: 'done' } }));
+      void client.invalidateQueries({ queryKey: timeOffKeys.root(actorId, workspaceId) });
+    },
+  });
+  const holding = running || command.pendingCommand !== null || command.uncertain !== null;
 
   const table = grid ? readAbsenceTable(grid) : null;
   const rows = table ? resolveAbsences(table.rows, overview, overrides) : [];
@@ -45,57 +53,58 @@ function Importer({ actorId, workspaceId, overview, onClose }: { actorId: string
   const types = [...new Map(overview.settings?.policyVersions.flatMap(version => version.types.map(type => [type.id, type] as const)) ?? []).values()].filter(type => !type.archived);
 
   async function readFile(file: File) {
-    setReadError(false); setOutcomes({}); setOverrides({ people: {}, types: {} }); keys.current.clear();
+    setReadError(false); setOutcomes({}); setOverrides({ people: {}, types: {} });
     try { setGrid(parseCsv(await file.text())); } catch { setGrid(null); setReadError(true); }
   }
 
   async function importRow(row: ResolvedAbsence): Promise<Outcome> {
     if (row.membershipId === null || row.typeId === null || row.startDate === null || row.endDate === null) return { state: 'failed', message: '' };
     const input = { membershipIds: [row.membershipId], typeId: row.typeId, startDate: row.startDate, endDate: row.endDate, note: row.note, reason: reason.trim(), approveNegative: false };
+    let sending = false;
     try {
       const preview = await previewBulk(workspaceId, input);
       const negative = preview.previews.some(item => item.preview.deficits.some(deficit => deficit.negativeApprovalRequired));
       if (negative && !approveNegative) return { state: 'failed', message: t('absenceImport.negativeNotApproved') };
-      const signature = JSON.stringify(input);
-      const known = keys.current.get(row.line);
-      const key = known?.signature === signature ? known.key : crypto.randomUUID();
-      keys.current.set(row.line, { signature, key });
-      await sendMutation(bulkRequest(workspaceId, { ...input, approveNegative: negative, expectedSourceVersion: preview.sourceVersion }), { idempotencyKey: key });
+      // Keep the exact preview version, approval choice and key if the reply is lost.
+      sending = true;
+      await command.mutateAsync({ line: row.line, input: { ...input, approveNegative: negative, expectedSourceVersion: preview.sourceVersion } });
       return { state: 'done' };
     } catch (error) {
-      if (error instanceof ApiError && (error.kind === 'unauthenticated' || error.kind === 'forbidden')) throw error;
-      return { state: 'failed', message: describeError(error, 'timeOffSave').description };
+      const message = describeError(error, 'timeOffSave').description;
+      if (sending && isUncertainOutcome(error)) return { state: 'uncertain', message };
+      return { state: 'failed', message, stop: error instanceof ApiError && (error.kind === 'unauthenticated' || error.kind === 'forbidden') };
     }
   }
 
   async function run() {
-    if (running || ready.length === 0 || reason.trim() === '') return;
-    setRunning(true);
+    if (inFlight.current || holding || ready.length === 0 || reason.trim() === '') return;
+    inFlight.current = true; setRunning(true);
     try {
       for (const row of ready) {
         const outcome = await importRow(row);
         setOutcomes(current => ({ ...current, [row.line]: outcome }));
+        if (outcome.state === 'uncertain' || outcome.state === 'failed' && outcome.stop) break;
       }
     } catch { /* access changed: the rows left stay ready and nothing else is sent */ }
-    finally { setRunning(false); void client.invalidateQueries({ queryKey: timeOffKeys.root(actorId, workspaceId) }); }
+    finally { inFlight.current = false; setRunning(false); void client.invalidateQueries({ queryKey: timeOffKeys.root(actorId, workspaceId) }); }
   }
 
   const issueText = (issue: RowIssue) => issue === 'person' ? t('absenceImport.issue.person') : issue === 'type' ? t('absenceImport.issue.type') : issue === 'startDate' ? t('absenceImport.issue.startDate') : issue === 'endDate' ? t('absenceImport.issue.endDate') : issue === 'order' ? t('absenceImport.issue.order') : issue === 'duplicate' ? t('absenceImport.issue.duplicate') : t('absenceImport.issue.columns');
   const rowState = (row: ResolvedAbsence) => {
     const outcome = outcomes[row.line];
     if (outcome?.state === 'done') return t('absenceImport.state.done');
-    if (outcome?.state === 'failed') return outcome.message || t('absenceImport.state.failed');
+    if (outcome?.state === 'failed' || outcome?.state === 'uncertain') return outcome.message || t('absenceImport.state.failed');
     return row.status === 'exists' ? t('absenceImport.state.exists') : row.status === 'ready' ? t('absenceImport.state.ready') : row.issues.map(issueText).join(', ');
   };
   const selectClass = 'h-8 rounded-md border border-line bg-surface px-2 text-sm text-ink';
 
-  return <DialogShell open variant="wide" onOpenChange={next => { if (!next && !running) onClose(); }} title={t('absenceImport.title')} description={t('absenceImport.description')}>
+  return <DialogShell open variant="wide" onOpenChange={next => { if (!next && !holding) onClose(); }} title={t('absenceImport.title')} description={t('absenceImport.description')}>
     <div className="space-y-4">
       <div className="space-y-2 text-sm">
         <p>{t('absenceImport.format')}</p>
         <div className="flex flex-wrap items-center gap-2">
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-line bg-surface px-3 py-1.5 text-sm hover:bg-canvas">{t('absenceImport.choose')}
-            <input type="file" accept=".csv,text/csv,text/plain" className="sr-only" aria-label={t('absenceImport.file')} disabled={running} onChange={event => { const file = event.target.files?.[0]; if (file) void readFile(file); event.target.value = ''; }} />
+            <input type="file" accept=".csv,text/csv,text/plain" className="sr-only" aria-label={t('absenceImport.file')} disabled={holding} onChange={event => { const file = event.target.files?.[0]; if (file) void readFile(file); event.target.value = ''; }} />
           </label>
           <a className="text-xs text-accent-ink underline" download="absences-template.csv" href={`data:text/csv;charset=utf-8,${encodeURIComponent(t('absenceImport.templateCsv'))}`}>{t('absenceImport.template')}</a>
         </div>
@@ -108,18 +117,19 @@ function Importer({ actorId, workspaceId, overview, onClose }: { actorId: string
           <h3 className="text-sm font-medium">{t('absenceImport.matchTitle')}</h3>
           <p className="text-xs text-muted">{t('absenceImport.matchHelp')}</p>
           {unmatched.people.map(name => <label key={`p:${name}`} className="grid gap-1 text-xs text-muted sm:grid-cols-[1fr_1fr] sm:items-center">{t('absenceImport.matchPerson', { name })}
-            <select className={selectClass} value={overrides.people[nameKey(name)] ?? ''} disabled={running} onChange={event => setOverrides(current => ({ ...current, people: { ...current.people, [nameKey(name)]: event.target.value } }))}>
+            <select className={selectClass} value={overrides.people[nameKey(name)] ?? ''} disabled={holding} onChange={event => setOverrides(current => ({ ...current, people: { ...current.people, [nameKey(name)]: event.target.value } }))}>
               <option value="">{t('absenceImport.skipRows')}</option>
               {overview.members.map(member => <option key={member.id} value={member.id}>{member.displayName}</option>)}
             </select></label>)}
           {unmatched.types.map(name => <label key={`t:${name}`} className="grid gap-1 text-xs text-muted sm:grid-cols-[1fr_1fr] sm:items-center">{t('absenceImport.matchType', { name })}
-            <select className={selectClass} value={overrides.types[nameKey(name)] ?? ''} disabled={running} onChange={event => setOverrides(current => ({ ...current, types: { ...current.types, [nameKey(name)]: event.target.value } }))}>
+            <select className={selectClass} value={overrides.types[nameKey(name)] ?? ''} disabled={holding} onChange={event => setOverrides(current => ({ ...current, types: { ...current.types, [nameKey(name)]: event.target.value } }))}>
               <option value="">{t('absenceImport.skipRows')}</option>
               {types.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
             </select></label>)}
         </section> : null}
 
         <p role="status" className="text-sm">{t('absenceImport.summary', { ready: rows.filter(row => row.status === 'ready').length, exists: rows.filter(row => row.status === 'exists').length, invalid: rows.filter(row => row.status === 'invalid').length })}{finished > 0 ? ` ${t('absenceImport.progress', { done: finished })}` : ''}</p>
+        {command.uncertain ? <div role="alert" className="space-y-2 rounded-lg border border-amber-300 bg-canvas p-3 text-sm"><p>{t('absenceImport.uncertain')}</p><Button disabled={command.pendingCommand !== null} onClick={() => command.retryUncertain()}>{t('absenceImport.retryExact')}</Button></div> : null}
         <div className="max-h-72 overflow-auto rounded-lg border border-line">
           <table className="w-full min-w-[34rem] text-xs">
             <thead className="sticky top-0 bg-canvas text-muted"><tr>{[t('absenceImport.col.line'), t('absenceImport.col.person'), t('absenceImport.col.type'), t('absenceImport.col.dates'), t('absenceImport.col.result')].map(label => <th key={label} scope="col" className="px-2 py-1 text-left font-medium">{label}</th>)}</tr></thead>
@@ -129,14 +139,14 @@ function Importer({ actorId, workspaceId, overview, onClose }: { actorId: string
             </tr>)}</tbody>
           </table>
         </div>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={approveNegative} disabled={running} onChange={event => setApproveNegative(event.target.checked)} />{t('absenceImport.approveNegative')}</label>
-        <label className="grid gap-1 text-xs text-muted">{t('absenceImport.reason')}<TextInput maxLength={2000} value={reason} disabled={running} onChange={event => setReason(event.target.value)} /></label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={approveNegative} disabled={holding} onChange={event => setApproveNegative(event.target.checked)} />{t('absenceImport.approveNegative')}</label>
+        <label className="grid gap-1 text-xs text-muted">{t('absenceImport.reason')}<TextInput maxLength={2000} value={reason} disabled={holding} onChange={event => setReason(event.target.value)} /></label>
         <p className="text-xs text-muted">{t('absenceImport.note')}</p>
       </> : null}
 
       <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="ghost" disabled={running} onClick={onClose}>{t('absenceImport.close')}</Button>
-        <Button variant="primary" disabled={running || ready.length === 0 || reason.trim() === ''} onClick={() => void run()}>{running ? t('absenceImport.importing') : t('absenceImport.import', { count: ready.length })}</Button>
+        <Button variant="ghost" disabled={holding} onClick={onClose}>{t('absenceImport.close')}</Button>
+        <Button variant="primary" disabled={holding || ready.length === 0 || reason.trim() === ''} onClick={() => void run()}>{running ? t('absenceImport.importing') : t('absenceImport.import', { count: ready.length })}</Button>
       </div>
     </div>
   </DialogShell>;

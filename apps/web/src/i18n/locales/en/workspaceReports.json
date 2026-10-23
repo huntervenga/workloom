@@ -158,7 +158,8 @@
     "away": "Away all week: no data",
     "unknown": "No working hours set for this person: no data",
     "average": "Average",
-    "averageTitle": "Average over the weeks with data"
+    "averageTitle": "Average over the weeks with data",
+    "noFact": "No recorded duration is available for this period."
   },
   "unfinished": {
     "title": "Unfinished tasks",

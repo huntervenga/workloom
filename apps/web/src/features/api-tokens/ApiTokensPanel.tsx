@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ApiTokenDto, ApiTokenScope, CreatedApiTokenDto } from '@workloom/contracts';
 import { Badge, Button, TextInput } from '@workloom/ui';
 import { Check, Copy } from 'lucide-react';
@@ -20,9 +20,17 @@ function Snippet({ label, text }: { label: string; text: string }) {
   return <div className="space-y-1"><p className="text-xs font-medium text-muted">{label}</p><pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs leading-relaxed text-slate-100"><code>{text}</code></pre></div>;
 }
 
-export function ApiTokensPanel({ actorId, workspaceId, workspaceName }: { actorId: string; workspaceId: string; workspaceName: string }) {
+type PanelProps = { actorId: string; workspaceId: string; workspaceName: string };
+
+export function ApiTokensPanel(props: PanelProps) {
+  return <ScopedApiTokensPanel key={`${props.actorId}:${props.workspaceId}`} {...props} />;
+}
+
+function ScopedApiTokensPanel({ actorId, workspaceId, workspaceName }: PanelProps) {
   const { t } = useTranslation();
   const client = useQueryClient();
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const key = [...queryKeys.workspace(actorId, workspaceId), 'api-tokens'];
   const list = useQuery({ queryKey: key, queryFn: ({ signal }) => fetchApiTokens(signal), retry: false });
   const [name, setName] = useState('');
@@ -33,8 +41,12 @@ export function ApiTokensPanel({ actorId, workspaceId, workspaceName }: { actorI
   const [copy, setCopy] = useState<'idle' | 'ok' | 'failed'>('idle');
   const refresh = () => client.invalidateQueries({ queryKey: key });
   const create = useMutation({
-    mutationFn: () => createApiToken({ name, scopes, expiresInDays: days, ...(reach === 'this' ? { workspaceIds: [workspaceId] } : {}) }),
-    onSuccess: async token => { setCreated(token); setCopy('idle'); setName(''); await refresh(); },
+    mutationFn: async () => {
+      const token = await createApiToken({ name, scopes, expiresInDays: days, ...(reach === 'this' ? { workspaceIds: [workspaceId] } : {}) });
+      // The bearer is a one-time local display, never mutation-cache data or a later scope's state.
+      if (mounted.current) { setCreated(token); setCopy('idle'); setName(''); }
+    },
+    onSuccess: refresh,
   });
   const revoke = useMutation({ mutationFn: (id: string) => revokeApiToken(id), onSuccess: refresh });
   const toggle = (scope: ApiTokenScope) => setScopes(current => current.includes(scope) ? current.filter(item => item !== scope) : [...current, scope]);

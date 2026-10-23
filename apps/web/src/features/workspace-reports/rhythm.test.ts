@@ -3,14 +3,39 @@ import { describe, expect, it } from 'vitest';
 import { loadBand, loadRows, unfinishedWork } from './rhythm';
 
 const num = (value: number) => ({ numerator: String(value), denominator: '1', decimal: String(value) });
-const person = (id: string | null, name: string, worked: number, capacity: { scheduled: number; away: number; holiday?: number; known?: boolean } | null) => ({
-  membershipId: id, displayName: name, taskCount: 1, fact: { key: 'fact', operation: 'sum', fieldId: null, unit: 'minutes', value: num(worked), coverage: { tasks: 1, filled: 1, missing: 0, null: 0, zero: 0 } },
+const person = (id: string | null, name: string, worked: number | null, capacity: { scheduled: number; away: number; holiday?: number; known?: boolean } | null) => ({
+  membershipId: id, displayName: name, taskCount: 1, fact: { key: 'fact', operation: 'sum', fieldId: null, unit: 'minutes', value: worked === null ? null : num(worked), coverage: { tasks: 1, filled: 1, missing: 0, null: 0, zero: 0 } },
   capacity: capacity && { membershipId: id ?? '', displayName: name, scheduleKnown: capacity.known ?? true, scheduledMinutes: capacity.scheduled, holidayMinutes: capacity.holiday ?? 0, absenceMinutes: capacity.away, availableMinutes: capacity.scheduled - capacity.away - (capacity.holiday ?? 0) },
 });
-const bucket = (start: string, end: string, people: unknown[]) => ({ startDate: start, endDate: end, people });
+const bucket = (start: string, end: string, people: unknown[]) => {
+  const rows = people as ReturnType<typeof person>[];
+  const capacities = rows.map(row => row.capacity);
+  const unknown = capacities.filter(value => !value?.scheduleKnown).length;
+  const total = (key: 'scheduledMinutes' | 'holidayMinutes' | 'absenceMinutes' | 'availableMinutes') => unknown > 0 ? null : capacities.reduce((sum, value) => sum + (value?.[key] ?? 0), 0);
+  const fact = { key: 'fact', operation: 'sum', fieldId: null, unit: 'minutes', value: rows.some(row => row.fact.value === null) ? null : num(rows.reduce((sum, row) => sum + Number(row.fact.value?.numerator ?? 0), 0)) };
+  return { startDate: start, endDate: end, people, fact, capacity: { scheduledMinutes: total('scheduledMinutes'), holidayMinutes: total('holidayMinutes'), absenceMinutes: total('absenceMinutes'), availableMinutes: total('availableMinutes'), unconfiguredMembers: unknown } };
+};
 const result = (buckets: unknown[], people: unknown[], rows: unknown[] = []) => ({ buckets, people, rows, sources: [{ projectId: 'p1', projectName: 'Week 42' }] }) as unknown as WorkspaceReportResultDto;
 
 describe('hours worked against available hours', () => {
+
+  it('keeps missing or non-duration facts distinct from an explicit zero', () => {
+    const missing = person('a', 'Ann', null, { scheduled: 2400, away: 0 });
+    const zero = person('b', 'Bo', 0, { scheduled: 2400, away: 0 });
+    const numberFact = person('c', 'Cy', 3, { scheduled: 2400, away: 0 });
+    numberFact.fact.unit = 'number';
+    const rows = loadRows(result([bucket('2026-10-12', '2026-10-18', [missing, zero, numberFact])], [missing, zero, numberFact]), 'Team', 'Unassigned');
+    expect(rows.find(row => row.key === 'a')?.cells[0]).toMatchObject({ ratio: null, workedMinutes: null, missing: 'fact' });
+    expect(rows.find(row => row.key === 'b')?.cells[0]).toMatchObject({ ratio: 0, workedMinutes: 0, missing: null });
+    expect(rows.find(row => row.key === 'c')?.cells[0]).toMatchObject({ ratio: null, workedMinutes: null, missing: 'fact' });
+  });
+  it('includes recorded work during zero-capacity time in the authoritative team numerator', () => {
+    const a = person('a', 'Ann', 2400, { scheduled: 2400, away: 0 });
+    const b = person('b', 'Bo', 480, { scheduled: 2400, away: 2400 });
+    const rows = loadRows(result([bucket('2026-10-12', '2026-10-18', [a, b])], [a, b]), 'Team', 'Unassigned');
+    expect(rows[0]?.cells[0]).toMatchObject({ ratio: 1.2, workedMinutes: 2880, availableMinutes: 2400 });
+  });
+
   it('bands: under 90% is low, 90–95% fair, 95% and more good, nothing is none', () => {
     expect([0.5, 0.89, 0.9, 0.94, 0.95, 1.2, null].map(loadBand)).toEqual(['low', 'low', 'fair', 'fair', 'good', 'good', 'none']);
   });
@@ -24,9 +49,8 @@ describe('hours worked against available hours', () => {
     expect(bo?.cells[0]).toMatchObject({ ratio: 1, partial: true, awayMinutes: 1200 });
     expect(cy?.cells[0]).toMatchObject({ ratio: null, missing: 'away' });
     expect(di?.cells[0]).toMatchObject({ ratio: null, missing: 'unknown' });
-    // The team figure only counts people who could have worked: (2280 + 1200) / (2400 + 1200).
-    expect(team?.cells[0]?.ratio).toBeCloseTo(3480 / 3600);
-    expect(team?.cells[0]?.partial).toBe(true);
+    // An unknown schedule means the whole-team denominator is unknown, not a configured subset.
+    expect(team?.cells[0]).toMatchObject({ ratio: null, missing: 'unknown' });
   });
 });
 

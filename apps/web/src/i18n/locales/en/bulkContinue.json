@@ -7,5 +7,6 @@
   "failed": "Not continued",
   "summary": "{{done}} of {{total}} tasks continued.",
   "submit": "Close and continue {{count}} tasks in {{project}}",
-  "retry": "Try the remaining {{count}} again"
+  "retry": "Try the remaining {{count}} again",
+  "uncertain": "The last task may already have been continued. Retry the same request before changing options or closing; no later tasks were sent."
 }

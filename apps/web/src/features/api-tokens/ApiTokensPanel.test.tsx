@@ -12,7 +12,7 @@ const meta = (overrides: object = {}) => ({
 });
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><ApiTokensPanel actorId={anna.id} workspaceId={alpha.id} workspaceName={alpha.name}/></QueryClientProvider>);
+  return { ...render(<QueryClientProvider client={client}><ApiTokensPanel actorId={anna.id} workspaceId={alpha.id} workspaceName={alpha.name}/></QueryClientProvider>), client };
 }
 
 describe('API tokens panel', () => {
@@ -23,7 +23,7 @@ describe('API tokens panel', () => {
       'POST /api/v1/me/api-tokens': request => { tokens = [meta(), ...tokens]; expect(request.body).toMatchObject({ name: 'CI', scopes: ['read', 'tasks:write'], expiresInDays: 90 }); return created({ ...meta(), token: secret }); },
     });
     const user = userEvent.setup();
-    mount();
+    const { client } = mount();
     expect(await screen.findByText('Old')).toBeInTheDocument();
     await user.type(screen.getByLabelText('Name'), 'CI');
     await user.click(screen.getByRole('button', { name: 'Create token' }));
@@ -35,7 +35,30 @@ describe('API tokens panel', () => {
     expect(screen.queryByDisplayValue(secret)).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText('CI').length).toBeGreaterThan(0));
     expect(document.body.textContent).not.toContain(secret);
+    expect(JSON.stringify(client.getMutationCache().getAll().map(mutation => mutation.state))).not.toContain(secret);
     expect(calls.filter(call => call.method === 'POST')).toHaveLength(1);
+  });
+
+
+  it('drops a late one-time token when the actor or workspace changes', async () => {
+    let release: (() => void) | undefined;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const { calls } = installFakeApi({
+      'GET /api/v1/me/api-tokens': () => ok([]),
+      'POST /api/v1/me/api-tokens': async () => { await pending; return created({ ...meta(), token: secret }); },
+    });
+    const user = userEvent.setup();
+    const { client, rerender } = mount();
+    await user.type(screen.getByLabelText('Name'), 'CI');
+    await user.click(screen.getByRole('button', { name: 'Create token' }));
+    await waitFor(() => expect(calls.filter(call => call.method === 'POST')).toHaveLength(1));
+    rerender(<QueryClientProvider client={client}><ApiTokensPanel actorId="another-actor" workspaceId="another-workspace" workspaceName="Other"/></QueryClientProvider>);
+    release?.();
+    await waitFor(() => expect(client.getMutationCache().getAll()[0]?.state.status).toBe('success'));
+    expect(screen.queryByRole('region', { name: 'Copy your token now' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveValue('');
+    expect(JSON.stringify(client.getMutationCache().getAll().map(mutation => mutation.state))).not.toContain(secret);
+    expect(document.body.textContent).not.toContain(secret);
   });
 
   it('revokes an active token and offers no action for a revoked one', async () => {

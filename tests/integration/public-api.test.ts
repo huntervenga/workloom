@@ -58,6 +58,14 @@ describe('personal access tokens, public API and MCP', () => {
   }, 90_000);
   afterAll(async () => { if (h) await h.close(); }, 30_000);
 
+  it('rejects oversized MCP batches without exhausting the same address or token budget', async () => {
+    const denied = await mcp(owner.token, Array.from({ length: 601 }, (_, index) => rpc('ping', {}, index + 1)));
+    expect(denied.status, denied.text()).toBe(400);
+    expect(json<{ error: { code: number } }>(denied).error.code).toBe(-32600);
+    const next = await call(`${PREFIX}/me`, { token: owner.token });
+    expect(next.status, next.text()).toBe(200);
+  });
+
   it('issues a secret once, stores only its hash and never lists it', async () => {
     expect(owner.token).toMatch(API_TOKEN_PATTERN);
     const rows = await h.db.sql`select token_hash, token_prefix from api_tokens where id = ${owner.id}`;
@@ -68,6 +76,41 @@ describe('personal access tokens, public API and MCP', () => {
     expect(env<{ tokenPrefix: string }[]>(list).data[0]?.tokenPrefix).toBe(owner.token.slice(0, 12));
     const tables = await h.db.sql`select count(*)::int as n from audit_events where entity_type = 'api_token'`;
     expect(tables[0]?.n).toBe(0);
+  });
+
+  it('keeps older active tokens visible and revocable behind more than 200 newer inactive tokens', async () => {
+    const active = await issue(h.owner, { name: 'Old still-active token' });
+    const [source] = await h.db.sql`select user_id from api_tokens where id=${active.id}`;
+    if (!source) throw new Error('Expected synthetic token owner.');
+    await h.db.sql`update api_tokens set created_at=now()-interval '3 days' where id=${active.id}`;
+    const prefix = `inactive-list-${active.id}-`;
+    try {
+      await h.db.sql`insert into api_tokens(id,user_id,name,token_hash,token_prefix,scopes,created_at,expires_at,revoked_at)
+        select gen_random_uuid(),${source.user_id},${prefix}||n::text,repeat(md5(${active.id}||n::text),2),'wlm_pat_test','["read"]'::jsonb,now()-interval '2 days',
+          case when n%2=0 then now()-interval '1 day' else now()+interval '1 day' end,
+          case when n%2=1 then now()-interval '1 day' else null end
+        from generate_series(1,205) n`;
+      const response=await rawRequest(base,'/api/v1/me/api-tokens',{headers:{origin:base}});
+      expect(response.status,response.text()).toBe(200);
+      const rows=env<{id:string}[]>(response).data;
+      expect(rows).toHaveLength(200);expect(rows.some(row=>row.id===active.id)).toBe(true);
+      await revoke(h.owner,active.id);
+      expect((await call(`${PREFIX}/me`,{token:active.token})).status).toBe(401);
+    } finally {
+      await h.db.sql`delete from api_tokens where name like ${prefix+'%'}`;
+    }
+  });
+
+  it('rejects an explicitly empty workspace restriction instead of turning it into an unrestricted token', async () => {
+    const name = `empty-scope-${Date.now()}`;
+    const response = await rawRequest(base, '/api/v1/me/api-tokens', {
+      method: 'POST',
+      headers: { origin: base, 'content-type': 'application/json' },
+      body: JSON.stringify({ name, scopes: ['read'], workspaceIds: [] }),
+    });
+    expect(response.status, response.text()).toBe(400);
+    const rows = await h.db.sql`select count(*)::int as n from api_tokens where name = ${name}`;
+    expect(rows[0]?.n).toBe(0);
   });
 
   it('answers /me and addresses a workspace by slug or UUID', async () => {
@@ -156,8 +199,15 @@ describe('personal access tokens, public API and MCP', () => {
   });
 
   it('answers a tampered cursor with a validation error, never a 500', async () => {
-    for (const [sort, value] of [['updated', '0000000000'], ['due', '99999999999'], ['created', 'Z:::::::::Z']] as const) {
-      const cursor = Buffer.from(JSON.stringify({ s: sort, v: value, i: '00000000-0000-4000-8000-000000000001' })).toString('base64url');
+    for (const [sort, value, id] of [
+      ['updated', '0000000000', '00000000-0000-4000-8000-000000000001'],
+      ['due', '99999999999', '00000000-0000-4000-8000-000000000001'],
+      ['created', 'Z:::::::::Z', '00000000-0000-4000-8000-000000000001'],
+      ['due', '2026-02-31', '00000000-0000-4000-8000-000000000001'],
+      ['updated', '2026-02-31T00:00:00.000Z', '00000000-0000-4000-8000-000000000001'],
+      ['updated', '2026-02-28T00:00:00.000Z', '------------------------------------'],
+    ] as const) {
+      const cursor = Buffer.from(JSON.stringify({ s: sort, v: value, i: id })).toString('base64url');
       const res = await call(`${ws()}/tasks?sort=${sort}&cursor=${cursor}`, { token: owner.token });
       expect(res.status, res.text()).toBe(400);
     }
@@ -224,9 +274,12 @@ describe('personal access tokens, public API and MCP', () => {
   }, 30_000);
 
   it('serves MCP over Streamable HTTP with the same permissions', async () => {
-    expect((await mcp(undefined, rpc('initialize'))).status).toBe(401);
+    const anonymous = await mcp(undefined, rpc('initialize'));
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.headers['cache-control']).toBe('no-store');
     const init = await mcp(owner.token, rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } }));
     expect(init.status, init.text()).toBe(200);
+    expect(init.headers['cache-control']).toBe('no-store, no-transform');
     expect(init.text()).toContain('workloom');
 
     const list = json<Rpc>(await mcp(owner.token, rpc('tools/list', {}, 2))).result.tools.map(t => t.name);
@@ -247,7 +300,9 @@ describe('personal access tokens, public API and MCP', () => {
     expect(mine.structuredContent.result.tasks.map(t => t.id)).toContain(taskId);
 
     const viewer = await issue(h.viewer, { name: 'viewer mcp' });
-    const denied = json<Rpc>(await mcp(viewer.token, rpc('tools/call', { name: 'create_task', arguments: { project: name, title: 'nope' } }, 7))).result;
+    const deniedResponse = await mcp(viewer.token, rpc('tools/call', { name: 'create_task', arguments: { project: name, title: 'nope' } }, 7));
+    expect(deniedResponse.headers['cache-control']).toBe('no-store, no-transform');
+    const denied = json<Rpc>(deniedResponse).result;
     expect(denied.isError).toBe(true);
     expect(denied.structuredContent.error.code).toBe('CAPABILITY_REQUIRED');
     expect((await call('/mcp', { token: owner.token, method: 'GET' })).status).toBe(405);

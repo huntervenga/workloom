@@ -1,19 +1,19 @@
 import { createHash } from 'node:crypto';
-import { sql } from 'drizzle-orm';
-import { authorizeWorkspace, createProjectCopyService, type CommandContext, type ProjectCopyApplication } from '@workloom/domain';
-import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
+import { duplicateProjectInputSchema, duplicateProjectResultSchema, idSchema } from '@workloom/contracts';
+import { DomainError, notFoundError, createProjectCopyService, type CommandContext, type ProjectCopyApplication } from '@workloom/domain';
+import { type Database, type WorkloomExecutor } from '../client.js';
 import { createWorkCategoryApplication } from '../categories/work-category-application.js';
 import { createTaskFieldApplication } from '../fields/task-field-application.js';
 import { createGenericReportApplication } from '../generic-reports/application.js';
 import { createPlanningCheckApplication } from '../planning-checks/application.js';
-import { createAccessRepository } from '../repositories/access-repository.js';
+import { createTaskRepository } from '../repositories/task-repository.js';
+import { resumableWorkflow } from '../workflows/resumable.js';
 import { createProjectRulesApplication } from '../project-rules/application.js';
 import { createTaskDefaultsApplication } from '../task-defaults/application.js';
 import { createTaskApplication } from '../tasks/task-application.js';
 
 /** Copies a project's structure and settings by running the ordinary commands one after another (resumable by idempotency key). */
 export function createProjectCopyApplication(source: Database | WorkloomExecutor): ProjectCopyApplication {
-  const db = isDatabase(source) ? source.db : source;
   const service = createProjectCopyService({
     tasks: createTaskApplication(source), fields: createTaskFieldApplication(source), checks: createPlanningCheckApplication(source),
     reports: createGenericReportApplication(source), defaults: createTaskDefaultsApplication(source), rules: createProjectRulesApplication(source), categories: createWorkCategoryApplication(source),
@@ -21,9 +21,11 @@ export function createProjectCopyApplication(source: Database | WorkloomExecutor
   });
   return {
     async duplicateProject(context: CommandContext, sourceProjectId, input) {
-      // Settings and fields are what a copy reproduces, so it needs the same authority as managing them: fail before anything is created.
-      await db.transaction(async tx => { await tx.execute(sql`set local statement_timeout='15000'`); await authorizeWorkspace(createAccessRepository(tx), context, 'fields.manage'); }, { accessMode: 'read only' });
-      return service.duplicateProject(context, sourceProjectId, input);
+      const id=idSchema.safeParse(sourceProjectId),parsed=duplicateProjectInputSchema.safeParse(input);
+      if(!id.success||!parsed.success)throw new DomainError('VALIDATION_FAILED','Invalid project copy request.');
+      return resumableWorkflow(source,context,{command:'project.duplicate',capability:'fields.manage',input:{projectId:id.data,input:parsed.data},schema:duplicateProjectResultSchema,
+        authorize:async scope=>{if(!await createTaskRepository(scope.tx).findProject(context.workspaceId,id.data))throw notFoundError();},
+        work:()=>service.duplicateProject(context,id.data,parsed.data)});
     },
   };
 }

@@ -23,7 +23,7 @@ export const createApiTokenInputSchema = z.strictObject({
   name: tokenName,
   scopes,
   /** Restricts the token to these workspaces; omitted means every workspace the user belongs to. */
-  workspaceIds: z.array(idSchema).max(100).optional(),
+  workspaceIds: z.array(idSchema).min(1).max(100).optional(),
   expiresInDays: z.number().int().min(1).max(API_TOKEN_LIMITS.maxDays).default(API_TOKEN_LIMITS.defaultDays),
 });
 export const apiTokenSchema = z.object({
@@ -164,7 +164,7 @@ export const MCP_TOOL_INPUTS = {
     assignee: z.array(ref).max(20).optional().describe('Use "me" for the caller, "none" for unassigned, or a name/membership id.'),
     tag: z.array(ref).max(20).optional(), q: z.string().trim().min(1).max(200).optional(),
     dueBefore: date.optional(), dueAfter: date.optional(), open: z.boolean().optional(), includeArchived: z.boolean().optional(),
-    sort: z.enum(['updated', 'due', 'created']).optional(), limit: z.number().int().min(1).max(API_TOKEN_LIMITS.pageSize).optional(), cursor: z.string().max(2048).optional(),
+    sort: z.enum(['updated', 'due', 'created']).optional(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().max(2048).optional(),
   }),
   get_task: z.strictObject({ workspace: workspaceRef, taskId: idSchema }),
   create_task: publicTaskCreateSchema.extend({ workspace: workspaceRef, operationKey }),
