@@ -77,6 +77,7 @@ import { useProjectViewMemory } from '../features/projects/projectViewMemory';
 import { useAutoLoadTasks } from '../features/tasks/autoLoad';
 import { CompletedDateBanner } from '../features/projects/CompletedDateBanner';
 import { completedDateIssues } from '../features/projects/dateConsistency';
+import { startValuesFromDefaults } from '../features/task-defaults/startValues';
 import { useTaskDefaults } from '../features/task-defaults/queries';
 import {
   FieldManagerDialog,
@@ -1012,9 +1013,22 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const visibleExtraColumns = [...timeColumns, ...customColumns].filter(column => visibleColumnIds.includes(column.id));
   // More details keeps the row's place: its whole request, not only its section and parent.
 
+  // The row starts with what the project's defaults will give the task, so it is visible before saving. "The task above"
+  // is the anchor the row follows, or the last loaded task of its section and list; unknown means the server decides.
+  const withStartValues = (request: CreateRequest): CreateRequest => {
+    const config = taskDefaults.data?.config;
+    if (!config || taskDefaults.data?.revision === 0 || request.startValues !== undefined) return request;
+    const parentId = request.parent?.id ?? null;
+    const loaded = dedupeTasks(shownTasks).filter(task => task.archivedAt === null);
+    const anchorId = request.insertionAnchor?.taskId ?? request.insertion?.anchorTaskId ?? null;
+    const siblings = loaded.filter(task => (task.sectionId ?? null) === (request.parent?.sectionId ?? request.sectionId ?? null) && task.parentTaskId === parentId).sort((left, right) => left.position - right.position);
+    const above = anchorId !== null ? (request.insertionAnchor?.placement ?? request.insertion?.placement) === 'before' ? null : loaded.find(task => task.id === anchorId) ?? null : siblings[siblings.length - 1] ?? null;
+    const startValues = startValuesFromDefaults(config, above, { today: todayIn(workspace.timezone), subtask: request.parent !== null });
+    return Object.keys(startValues).length === 0 ? request : { ...request, startValues };
+  };
   const quickTaskAdd = (request: CreateRequest, key: string, renderRow: TaskTableDraftRow, anchored: boolean) => <QuickTaskAdd key={key} newTaskStatusId={taskDefaults.data?.config.statusId ?? null} projectId={project.id} sectionId={request.sectionId}
     sectionName={sections.data?.find(section => section.id === request.sectionId)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data ?? []} members={members.data ?? []} tags={tags.data ?? []} sections={sections.data ?? []}
-    commands={commands} writable={writable} request={request} renderRow={renderRow} detailsKeepInitialCells
+    commands={commands} writable={writable} request={withStartValues(request)} renderRow={renderRow} detailsKeepInitialCells
     initialFields={initialFields} initialTimeContext={initialTimeContextFor(request.parent, 'detail')} initialTimeWritable={rowContext.writable} initialTimeCurrent={initialTimeCurrent}
     onClose={reason => closeQuickAdd(request.sectionId, reason, anchored ? chainAnchorId : null)}
     onMoreDetails={() => startCreate(request)}

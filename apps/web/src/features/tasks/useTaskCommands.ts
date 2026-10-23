@@ -1,4 +1,4 @@
-import type { CreateTaskInput, ProjectDto, TagDto, TaskDto, TaskWorkScope, WorkspaceDto } from '@workloom/contracts';
+import type { CreateTaskInput, ProjectDto, TagDto, TaskDto, TaskPriority, TaskWorkScope, WorkspaceDto } from '@workloom/contracts';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../lib/queryKeys';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -36,8 +36,22 @@ export interface CreateResultAnchor {
   placement?: TaskInsertion['placement'];
 }
 
+/**
+ * Values a new row starts with because of the project's task defaults (the same ones the server would fill in). They are
+ * the row's baseline, not edits: a row holding only these is still an untouched row.
+ */
+export interface CreateStartValues {
+  responsibleMembershipId?: string | null;
+  tagIds?: string[];
+  dueDate?: string;
+  priority?: TaskPriority;
+  estimate?: string;
+}
+
 /** Where a new task goes: a section (or none) and, for a subtask, its parent as listed. */
 export interface CreateRequest {
+  /** Row-local, never sent as such: defaults the row shows before the task exists. */
+  startValues?: CreateStartValues;
   sectionId: string | null;
   parent: TaskDto | null;
   /** The row the person continued from; the new task is placed right next to it. */

@@ -46,7 +46,8 @@ function requestSectionId(sectionId: string | null, request: CreateRequest | und
 
 /** A new row's draft: the given status, and the assignee of the group it was explicitly opened in. */
 function quickStartDraft(statusId: string, sectionId: string | null, request: CreateRequest | undefined): TaskDraft {
-  const draft = emptyDraft(statusId, sectionId);
+  const start = request?.startValues;
+  const draft = start ? { ...emptyDraft(statusId, sectionId), ...start } : emptyDraft(statusId, sectionId);
   const responsible = request?.defaultResponsibleMembershipId;
   return responsible === undefined ? draft : { ...draft, responsibleMembershipId: responsible };
 }
