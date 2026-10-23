@@ -105,18 +105,22 @@ describe('sidebar project list', () => {
     expect(ui.router.state.location.key).toBe(before.key); expect(writes(ui.calls)).toHaveLength(0);
   });
 
-  it('keeps every active project reachable in one bounded scroll area with full names available', async () => {
-    const many = Array.from({ length: 60 }, (_, index) => project(alpha.id, `e1000000-0000-4000-8000-${String(index).padStart(12, '0')}`, `Synthetic project ${index + 1} with a deliberately long readable name`));
+  it('lists only the first few projects, newest period first, and leaves the rest behind "All projects"', async () => {
+    const many = Array.from({ length: 12 }, (_, index) => ({ ...project(alpha.id, `e1000000-0000-4000-8000-${String(index).padStart(12, '0')}`, `Week ${index + 1} with a deliberately long readable name`), dateRange: { from: `2026-01-${String(index + 1).padStart(2, '0')}`, to: `2026-01-${String(index + 1).padStart(2, '0')}` } }));
     app(`/w/${alpha.id}/my-tasks`, { [`GET ${projectsPath}`]: () => ok(many), [`GET ${rootPath}/my-tasks`]: () => ok([]) });
     const nav = await projectNav();
     const links = await nav.findAllByRole('link');
-    expect(links).toHaveLength(60);
+    // Eight projects plus the link to the full list.
+    expect(links).toHaveLength(9);
+    expect(links[0]).toHaveAccessibleName('Week 12 with a deliberately long readable name');
+    expect(links[7]).toHaveAccessibleName('Week 5 with a deliberately long readable name');
+    expect(links[8]).toHaveAccessibleName('All projects (12)');
+    expect(links[8].getAttribute('href')).toMatch(/\/projects$/);
     const list = nav.getByRole('list');
     expect(list).toHaveAttribute('data-sidebar-projects');
-    expect(list.className).toMatch(/max-h-/); expect(list.className).toContain('overflow-y-auto');
-    const last = nav.getByRole('link', { name: many[59]?.name });
-    expect(last.querySelector('[title]')).toHaveAttribute('title', many[59]?.name);
-    expect(last.querySelector('[title]')?.className).toContain('truncate');
+    const first = nav.getByRole('link', { name: many[11]?.name });
+    expect(first.querySelector('[title]')).toHaveAttribute('title', many[11]?.name);
+    expect(first.querySelector('[title]')?.className).toContain('truncate');
   });
 
   it('announces loading without hiding the workspace links, then shows the loaded list', async () => {

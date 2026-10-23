@@ -11,7 +11,7 @@ export function approvedCalendarAllocations(requests: readonly LeaveRequestDto[]
 }
 
 /** Capacity and recorded balance allocations are distinct. Raw intervals never imply a charged working day. */
-export function TimeOffCalendar({ availability, members, allocations = [], colors }: { colors?: ReadonlyMap<string, string> | undefined; availability: LeaveAvailabilityDto; members: LeaveOverviewDto['members']; allocations?: readonly ApprovedCalendarAllocation[] }) {
+export function TimeOffCalendar({ availability, members, allocations = [], colors, today }: { today?: string | undefined; colors?: ReadonlyMap<string, string> | undefined; availability: LeaveAvailabilityDto; members: LeaveOverviewDto['members']; allocations?: readonly ApprovedCalendarAllocation[] }) {
   const { t, locale } = useTranslation();
   const fullDate = new Intl.DateTimeFormat(locale, { dateStyle: 'full', timeZone: 'UTC' });
   const narrowWeekday = new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' });
@@ -27,7 +27,7 @@ export function TimeOffCalendar({ availability, members, allocations = [], color
     if ((recorded.get(key)?.microdays ?? -1) < allocation.microdays) recorded.set(key, allocation);
   }
   return <div className="overflow-x-auto rounded-xl border border-line bg-surface"><table className="w-full table-fixed border-collapse text-center text-xs" style={{ minWidth: columns.length * 32 + 190 }}>
-    <caption className="sr-only">{t('timeOff.teamCalendar')}</caption><thead><tr className="border-b border-line bg-canvas"><th className="sticky left-0 z-10 w-48 bg-canvas px-3 py-3 text-left font-medium">{t('timeOff.person')}</th>{columns.map(column => <th key={column.date} data-calendar-date={column.date} scope="col" title={column.full} className={`w-8 py-2 font-normal text-ink-soft ${column.weekend ? 'bg-[#e2e8f0] [[data-theme=dark]_&]:bg-[#334155]' : ''}`}><span className="block text-[10px]">{column.narrow}</span><span className="font-semibold">{column.day}</span></th>)}</tr></thead>
+    <caption className="sr-only">{t('timeOff.teamCalendar')}</caption><thead><tr className="border-b border-line bg-canvas"><th className="sticky left-0 z-10 w-48 bg-canvas px-3 py-3 text-left font-medium">{t('timeOff.person')}</th>{columns.map(column => <th key={column.date} data-calendar-date={column.date} scope="col" title={column.full} aria-current={column.date === today ? 'date' : undefined} className={`w-8 py-2 font-normal text-ink-soft ${column.weekend ? 'bg-[#e2e8f0] [[data-theme=dark]_&]:bg-[#334155]' : ''} ${column.date === today ? 'bg-accent-soft text-accent-ink' : ''}`}><span className="block text-[10px]">{column.narrow}</span><span className={column.date === today ? 'inline-flex size-5 items-center justify-center rounded-full bg-accent font-semibold text-white' : 'font-semibold'}>{column.day}</span></th>)}</tr></thead>
     <tbody>{availability.members.map(member => {
       const identity = members.find(person => person.id === member.membershipId), person = identity?.displayName ?? member.displayName;
       return <tr key={member.membershipId} className="border-b border-line last:border-0"><th scope="row" className="sticky left-0 z-10 bg-surface px-3 py-3 text-left"><span className="flex items-center gap-2"><UserAvatar size="sm" name={person} seed={member.membershipId} avatarUrl={identity?.avatarUrl}/><span className="truncate font-medium">{person}</span></span></th>{columns.map(column => {
@@ -42,7 +42,7 @@ export function TimeOffCalendar({ availability, members, allocations = [], color
         const typeColor = colors?.get(`${member.membershipId}:${date}`);
         const fill = absence || paidRecord || neutralRecord ? typeColor ?? (absence || paidRecord ? ABSENCE_FALLBACK_COLOR : undefined) : holiday ? HOLIDAY_FALLBACK_COLOR : undefined;
         const paint = fill ? 'text-white ring-1 ring-inset ring-black/10' : neutralRecord ? 'ring-1 ring-inset ring-line-strong text-ink-soft' : unknown ? 'border border-dashed border-line-strong' : day.scheduledMinutes === 0 && !column.weekend ? 'bg-canvas' : '';
-        return <td key={date} data-calendar-date={date} title={title} className={`h-11 border-l border-line/50 px-0.5 ${column.weekend ? 'bg-[#e2e8f0] [[data-theme=dark]_&]:bg-[#334155]' : ''}`}><span role="img" aria-label={`${date}: ${status}`} className={`block h-6 rounded ${paint}`} style={fill ? { backgroundColor: fill } : undefined}>{absence || holiday || allocation ? '·' : unknown ? '?' : ''}</span></td>;
+        return <td key={date} data-calendar-date={date} title={title} className={`h-11 border-l border-line/50 px-0.5 ${column.weekend ? 'bg-[#e2e8f0] [[data-theme=dark]_&]:bg-[#334155]' : ''} ${date === today ? 'border-x-2 border-x-accent bg-accent-soft/50' : ''}`}><span role="img" aria-label={`${date}: ${status}`} className={`block h-6 rounded ${paint}`} style={fill ? { backgroundColor: fill } : undefined}>{absence || holiday || allocation ? '·' : unknown ? '?' : ''}</span></td>;
       })}</tr>;
     })}</tbody>
   </table></div>;

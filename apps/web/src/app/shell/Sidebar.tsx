@@ -44,12 +44,19 @@ function InboxBadge({ actorId, workspaceId }: { actorId: string; workspaceId: st
   return <span aria-label={t('inbox.badge', { count })} className="ml-auto rounded-full bg-accent px-1.5 text-xs font-medium text-white">{count > 99 ? '99+' : count}</span>;
 }
 
+const SIDEBAR_PROJECTS_SHOWN = 8;
+
 function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string; workspaceId: string; onNavigate?: (() => void) | undefined }) {
   useTranslation();
   const projects = useProjectsQuery(actorId, workspaceId);
   const location = useLocation();
   const canonical = useCanonicalWorkspaceTo();
-  const active = projects.data?.projects.filter(project => project.archivedAt === null) ?? [];
+  // Newest period first (by project end date), undated ones after; only a handful are listed, the rest sit behind "All projects".
+  const all = (projects.data?.projects.filter(project => project.archivedAt === null) ?? [])
+    .map((project, index) => ({ project, index }))
+    .sort((a, b) => (b.project.dateRange?.to ?? '').localeCompare(a.project.dateRange?.to ?? '') || a.index - b.index)
+    .map(item => item.project);
+  const active = all.slice(0, SIDEBAR_PROJECTS_SHOWN);
   return (
     <nav aria-label={t('shell.activeProjects')}>
       <p aria-hidden="true" className="px-2.5 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-subtle uppercase">{t('shell.activeProjects')}</p>
@@ -71,7 +78,7 @@ function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string
       ) : active.length === 0 ? (
         <p className="px-2.5 text-xs text-muted">{t('shell.noActiveProjects')}</p>
       ) : (
-        <ul data-sidebar-projects="" className="max-h-[min(40dvh,20rem)] space-y-0.5 overflow-y-auto overscroll-contain">
+        <ul data-sidebar-projects="" className="space-y-0.5">
           {active.map(project => {
             const pathname = canonical(`/w/${workspaceId}/projects/${project.id}`) as string;
             // On this project's own task page the link keeps the current filters, week, person,
@@ -90,6 +97,7 @@ function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string
               </li>
             );
           })}
+          {all.length > active.length ? <li><NavLink to={canonical(`/w/${workspaceId}/projects`) as string} end className="block rounded-md px-2.5 py-1.5 text-sm font-medium text-accent-ink hover:bg-canvas" onClick={() => onNavigate?.()}>{t('shell.allProjectsCount', { count: all.length })}</NavLink></li> : null}
         </ul>
       )}
     </nav>
@@ -173,15 +181,7 @@ export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarCon
         {workspaceId && role ? <SidebarProjects actorId={me.actor.id} workspaceId={workspaceId} onNavigate={onNavigate} /> : null}
 
         <div className="mt-auto">
-          {me.authMode === 'shared' ? (
-            // A real account: who is signed in, without any local demo framing.
-            <div className="rounded-xl border border-line bg-surface px-3 py-2.5">
-              <p className="truncate text-sm font-medium text-ink" title={me.actor.displayName}>
-                {t('auth.signedInAs', { name: me.actor.displayName })}
-              </p>
-            </div>
-          ) : (
-            <LocalModeCard me={me} role={role} />
+          {me.authMode === 'shared' ? null : (            <LocalModeCard me={me} role={role} />
           )}
         </div>
       </div>
