@@ -6,16 +6,15 @@ import { t, useTranslation } from '../i18n';
 import type { UseQueryResult } from '@tanstack/react-query';
 import type { MembershipDto } from '@workloom/contracts';
 import { Badge, Skeleton } from '@workloom/ui';
-import { ArrowRight, Clock, FolderKanban, ShieldCheck, Users } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ArrowRight, FolderKanban } from 'lucide-react';
 
 import type { ProjectList } from '../features/projects/api';
 import { orderProjects } from '../features/projects/order';
 import { useProjectsQuery } from '../features/projects/queries';
 import { MemberIdentity } from '../features/workspace/MemberIdentity';
 import { useMembershipsQuery } from '../features/workspace/queries';
-import { RoleBadge, roleLabels } from '../features/workspace/roles';
-import { formatMemberCount, formatUtcOffset } from '../lib/format';
+import { RoleBadge } from '../features/workspace/roles';
+import { formatUtcOffset } from '../lib/format';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { QueryErrorState } from '../shared/QueryErrorState';
 import { useWorkspaceContext } from './WorkspaceLayout';
@@ -38,8 +37,8 @@ export function OverviewPage() {
           {workspace.name}
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted">
-
           {t('routes.overviewDescription')}
+          <span className="ml-2 text-sm">{workspace.timezone}{offset ? ` ${offset}` : ''}</span>
         </p>
       </header>
 
@@ -47,18 +46,6 @@ export function OverviewPage() {
 
       <NextTasks actorId={actorId} workspaceId={workspace.id} />
 
-      <dl className="grid gap-3 sm:grid-cols-3">
-        <DetailTile icon={<Clock size={16} aria-hidden="true" />} label={t('routes.timezone')}>
-          <span className="[overflow-wrap:anywhere]">{workspace.timezone}</span>
-          {offset ? <span className="ml-1.5 text-sm font-normal text-muted">{offset}</span> : null}
-        </DetailTile>
-        <DetailTile icon={<ShieldCheck size={16} aria-hidden="true" />} label={t('routes.yourRole')}>
-          {roleLabels[workspace.role]}
-        </DetailTile>
-        <DetailTile icon={<Users size={16} aria-hidden="true" />} label={t('routes.team')}>
-          <MemberCount members={members} />
-        </DetailTile>
-      </dl>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <ProjectsPreview projects={projects} workspaceId={workspace.id} />
@@ -75,33 +62,6 @@ export function OverviewPage() {
       </details>
     </div>
   );
-}
-
-function DetailTile({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
-  useTranslation();
-  return (
-    <div className="min-w-0 rounded-xl border border-line bg-surface px-4 py-3.5">
-      <dt className="flex items-center gap-1.5 text-xs font-medium text-muted">
-        <span className="text-subtle">{icon}</span>
-        {label}
-      </dt>
-      <dd className="mt-1.5 text-[15px] font-semibold text-ink">{children}</dd>
-    </div>
-  );
-}
-
-function MemberCount({ members }: { members: UseQueryResult<MembershipDto[]> }) {
-  useTranslation();
-  if (members.isPending) {
-    return (
-      <>
-        <span className="sr-only">{t('routes.loading')}</span>
-        <Skeleton className="h-5 w-24" />
-      </>
-    );
-  }
-  if (members.isError) return <span className="text-sm font-normal text-muted">{t('routes.noData')}</span>;
-  return <>{formatMemberCount(members.data.length)}</>;
 }
 
 interface ProjectsPreviewProps {

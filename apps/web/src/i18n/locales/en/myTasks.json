@@ -34,5 +34,12 @@
   "loadMore": "Load more tasks",
   "errorStatus": "Tasks could not be loaded.",
   "nothingAssignedTitle": "You have no open tasks",
-  "nothingAssignedDescription": "Tasks assigned to you, or where you take part, appear here from every project. Open a project to create one."
+  "nothingAssignedDescription": "Tasks assigned to you, or where you take part, appear here from every project. Open a project to create one.",
+  "bucket": {
+    "overdue": "Overdue",
+    "today": "Today",
+    "week": "This week",
+    "later": "Later",
+    "none": "No due date"
+  }
 }

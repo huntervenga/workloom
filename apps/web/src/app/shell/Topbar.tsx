@@ -81,9 +81,9 @@ export function Topbar({ actorId, workspaceId, workspaceName, menu, localMode = 
           <span className="hidden sm:inline">{t('shell.localDemo')}</span>
         </Badge>
       ) : null}
-      <Button size="sm" onClick={refresh} aria-disabled={fetching || undefined}>
+      <Button size="sm" onClick={refresh} title={t('shell.refresh')} aria-disabled={fetching || undefined}>
         <RefreshCw size={16} aria-hidden="true" className={fetching ? 'motion-safe:animate-spin' : undefined} />
-        <span className="sr-only sm:not-sr-only">{t('shell.refresh')}</span>
+        <span className="sr-only">{t('shell.refresh')}</span>
       </Button>
       {account}
     </header>

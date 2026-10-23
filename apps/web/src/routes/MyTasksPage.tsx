@@ -2,10 +2,11 @@ import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation
 import { useMyTasksLens } from '../features/my-tasks/navigation';
 import { Badge, Button, Skeleton, StateCard, TextInput, inputClassName } from '@workloom/ui';
 import { ArrowUpRight, CheckCheck, Inbox, RefreshCw, Search } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { Fragment, useState, type FormEvent } from 'react';
 
 import { useTranslation } from '../i18n';
 import { uniqueLoadedMyTasks } from '../features/my-tasks/api';
+import { dueBucket, localToday } from '../features/my-tasks/dueBuckets';
 import { useMyTasksQuery } from '../features/my-tasks/queries';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { QueryErrorState } from '../shared/QueryErrorState';
@@ -34,6 +35,11 @@ export function MyTasksPage() {
     lens.applySearch(value);
   };
   // Nothing narrowed the list, so an empty result means the person simply has no open work yet.
+  // Open work is grouped by how soon it is due; closed or archived lists keep their plain order.
+  const today = localToday();
+  const grouped = filters.completion === 'open' && !filters.includeArchived;
+  const bucketLabels = { overdue: t('myTasks.bucket.overdue'), today: t('myTasks.bucket.today'), week: t('myTasks.bucket.week'), later: t('myTasks.bucket.later'), none: t('myTasks.bucket.none') } as const;
+  const bucketOf = (row: (typeof items)[number]) => dueBucket(row.task.dueDate, today);
   const untouched = filters.relation === 'all' && filters.completion === 'open' && !filters.includeArchived && search.trim() === '';
   return (
     <div className="space-y-4">
@@ -54,7 +60,7 @@ export function MyTasksPage() {
         <div className="overflow-hidden rounded-xl border border-line bg-surface">
           <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1fr)_10rem_9rem_7rem] gap-3 border-b border-line bg-canvas/70 px-4 py-2 text-xs font-medium text-muted md:grid"><span>{t('myTasks.taskColumn')}</span><span>{t('myTasks.projectColumn')}</span><span>{t('myTasks.statusColumn')}</span><span>{t('myTasks.dueColumn')}</span></div>
           <ul aria-label={t('myTasks.listLabel')} className="divide-y divide-line">
-            {items.map(row => <li key={row.task.id}><Link to={`/w/${workspace.id}/projects/${row.task.projectId}?task=${row.task.id}`} aria-label={t('myTasks.openTask', { title: row.task.title })} className="grid min-w-0 gap-1.5 px-4 py-3 transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent md:grid-cols-[minmax(0,1fr)_10rem_9rem_7rem] md:items-center md:gap-3"><div className="flex min-w-0 items-start gap-2"><CheckCheck size={16} aria-hidden="true" className={row.status.group === 'done' || row.status.group === 'cancelled' ? 'mt-0.5 shrink-0 text-emerald-600' : 'mt-0.5 shrink-0 text-subtle'} /><span className="min-w-0 flex-1 break-words text-sm font-medium text-ink">{row.task.title}</span><ArrowUpRight size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-subtle md:hidden" /></div><span className="truncate pl-6 text-xs text-muted md:pl-0" title={row.project.name}>{row.project.name}</span><span className="flex flex-wrap items-center gap-1.5 pl-6 md:pl-0"><Badge tone={row.status.group === 'done' ? 'accent' : 'neutral'}>{row.status.name}</Badge>{row.task.archivedAt || row.project.archivedAt ? <Badge tone="muted">{t('myTasks.archived')}</Badge> : null}</span><span className="pl-6 text-xs text-muted md:pl-0">{row.task.dueDate ? formatDate(row.task.dueDate, { month: 'short', day: 'numeric', year: 'numeric' }) : t('myTasks.noDueDate')}</span></Link></li>)}
+            {items.map((row, index) => <Fragment key={row.task.id}>{grouped && bucketOf(row) !== (index > 0 && items[index - 1] ? bucketOf(items[index - 1] as typeof row) : null) ? <li role="presentation" className="bg-canvas/70 px-4 py-1.5 text-xs font-semibold tracking-wide text-muted uppercase">{bucketLabels[bucketOf(row)]}</li> : null}<li><Link to={`/w/${workspace.id}/projects/${row.task.projectId}?task=${row.task.id}`} aria-label={t('myTasks.openTask', { title: row.task.title })} className="grid min-w-0 gap-1.5 px-4 py-3 transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent md:grid-cols-[minmax(0,1fr)_10rem_9rem_7rem] md:items-center md:gap-3"><div className="flex min-w-0 items-start gap-2"><CheckCheck size={16} aria-hidden="true" className={row.status.group === 'done' || row.status.group === 'cancelled' ? 'mt-0.5 shrink-0 text-emerald-600' : 'mt-0.5 shrink-0 text-subtle'} /><span className="min-w-0 flex-1 break-words text-sm font-medium text-ink">{row.task.title}</span><ArrowUpRight size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-subtle md:hidden" /></div><span className="truncate pl-6 text-xs text-muted md:pl-0" title={row.project.name}>{row.project.name}</span><span className="flex flex-wrap items-center gap-1.5 pl-6 md:pl-0"><Badge tone={row.status.group === 'done' ? 'accent' : 'neutral'}>{row.status.name}</Badge>{row.task.archivedAt || row.project.archivedAt ? <Badge tone="muted">{t('myTasks.archived')}</Badge> : null}</span><span className="pl-6 text-xs text-muted md:pl-0">{row.task.dueDate ? formatDate(row.task.dueDate, { month: 'short', day: 'numeric', year: 'numeric' }) : t('myTasks.noDueDate')}</span></Link></li></Fragment>)}
           </ul>
         </div>
       )}

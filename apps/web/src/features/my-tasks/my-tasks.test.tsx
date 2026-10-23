@@ -63,8 +63,9 @@ describe('personal task inbox', () => {
     await user.click(await screen.findByRole('button', { name: 'Load more tasks' }));
     expect(await screen.findByRole('link', { name: 'Open task “Updated task”' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('3 tasks loaded');
-    expect(screen.getByRole('list', { name: 'My tasks across projects' }).children).toHaveLength(3);
-    expect(screen.getByText('No due date')).toBeInTheDocument();
+    // Three task rows; undated open work sits under one date-group heading.
+    expect(screen.getByRole('list', { name: 'My tasks across projects' }).querySelectorAll('li:not([role="presentation"])')).toHaveLength(3);
+    expect(screen.getAllByText('No due date').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Load more tasks' })).not.toBeInTheDocument();
     expect(calls.filter(call => call.path === path).at(-1)?.searchParams.get('cursor')).toBe('next-live-page');
     expect(uniqueLoadedMyTasks([{ items: [item(2)], nextCursor: 'next' }, { items: [changed], nextCursor: null }])[0]?.task.revision).toBe(2);

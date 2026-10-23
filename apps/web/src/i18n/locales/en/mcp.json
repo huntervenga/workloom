@@ -56,5 +56,6 @@
   "integrations2": "Integrations",
   "localAccessForYourToolsInThisWorkspace": "Local access for your tools in this workspace.",
   "expiresBrowserTimeZone": "Expires: {{expiresAt}} · browser time zone. {{expiryNotice}}",
-  "createdExpires": "Created: {{createdAt}} · expires {{expiresAt}}"
+  "createdExpires": "Created: {{createdAt}} · expires {{expiresAt}}",
+  "localMcpAdvanced": "Local MCP for desktop tools (advanced)"
 }
