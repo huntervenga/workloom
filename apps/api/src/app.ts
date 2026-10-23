@@ -86,6 +86,7 @@ import { registerTaskRoutes } from './http/task-routes.js';
 import { registerTaskRowRoutes } from './http/task-row-routes.js';
 import { registerWorkspaceCreateRoutes } from './http/workspace-create-routes.js';
 import { registerTeamRoutes } from './http/team-routes.js';
+import { registerSecurityHeaders } from './http/security-headers.js';
 import { createRateLimiter } from './http/rate-limit.js';
 import { registerInboxRoutes } from './http/inbox-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
@@ -297,7 +298,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
           },
     genReqId: () => randomUUID(),
     requestIdHeader: false,
-    trustProxy: false,
+    // Behind a reverse proxy the client address comes from X-Forwarded-For, trusted for exactly this many hops.
+    trustProxy: (_address: string, hop: number) => hop < config.trustProxyHops,
     bodyLimit: BODY_LIMIT_BYTES,
     return503OnClosing: true,
   });
@@ -319,6 +321,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   };
 
   const tokenLimiter = createRateLimiter({ limit: 300, windowMs: 60_000 });
+  const sessionRouteLimiter = createRateLimiter({ limit: 120, windowMs: 60_000 });
   const anonymousLimiter = createRateLimiter({ limit: 600, windowMs: 60_000 });
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
@@ -331,8 +334,17 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     assertAllowedHost(request, guardOptions);
     // Bearer-only surfaces never read cookies, so the browser cross-site guard does not apply to them.
     const path = request.url.split('?', 1)[0] ?? '';
-    if (!(path.startsWith(`${PUBLIC_API_PREFIX}/`) || path === MCP_PATH)) assertTrustedOrigin(request, guardOptions);
-    else {
+    if (!(path.startsWith(`${PUBLIC_API_PREFIX}/`) || path === MCP_PATH)) {
+      assertTrustedOrigin(request, guardOptions);
+      // Sign-in, invitation acceptance and workspace creation are reachable by anyone with (or without) a session: bound them per address.
+      if (path.startsWith('/api/v1/auth/') || path.startsWith('/api/v1/invitations') || (request.method === 'POST' && path === '/api/v1/workspaces')) {
+        const decision = sessionRouteLimiter.check(`${request.ip}|${path.startsWith('/api/v1/auth/') ? 'auth' : 'account'}`);
+        if (!decision.allowed) {
+          reply.header('retry-after', String(decision.retryAfterSeconds));
+          throw new HttpError(429, 'RATE_LIMITED', 'Too many requests. Wait a moment and try again.', { retryAfterSeconds: decision.retryAfterSeconds }, { retryable: true });
+        }
+      }
+    } else {
       // Per token when one is presented, otherwise per address, with a lower ceiling for guessing.
       const bearer = /^Bearer (wlm_pat_[A-Za-z0-9_-]{43})$/.exec(request.headers.authorization ?? '')?.[1];
       const decision = bearer ? tokenLimiter.check(createHash('sha256').update(bearer).digest('hex')) : anonymousLimiter.check(request.ip);
@@ -451,6 +463,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);
   }
+  registerSecurityHeaders(app, { webDistDir: webDist, hosted: config.appEnv !== 'local' });
   if (webDist !== null) {
     await registerStaticWeb(app, webDist);
   }

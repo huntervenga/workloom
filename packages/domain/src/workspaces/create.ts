@@ -46,6 +46,8 @@ export interface WorkspaceCreateScope {
    * the single `workspace.created` audit event at change sequence 1 and the receipt.
    */
   insertWorkspace(plan: NewWorkspacePlan): Promise<WorkspaceAccessRecord>;
+  /** Active workspaces this person owns; bounds how many a single account can create. */
+  countOwnedWorkspaces?(userId: string): Promise<number>;
 }
 
 export interface WorkspaceCreateUnitOfWork {
@@ -59,6 +61,8 @@ export interface WorkspaceCreateServiceDependencies {
   readonly digest: (value: string) => string;
 }
 
+/** A generous ceiling that stops scripted creation, not real use. */
+export const MAX_OWNED_WORKSPACES = 25;
 const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7e]{1,128}$/;
 const PAYLOAD_HASH_PATTERN = /^[0-9a-f]{64}$/;
 const PAYLOAD_VERSION = 'workspace.create.v1';
@@ -142,6 +146,9 @@ export function createWorkspaceCreateService(dependencies: WorkspaceCreateServic
           return toDto(current);
         }
 
+        if (scope.countOwnedWorkspaces && (await scope.countOwnedWorkspaces(actorUserId)) >= MAX_OWNED_WORKSPACES) {
+          throw new DomainError('DOMAIN_VALIDATION_FAILED', `You can own at most ${MAX_OWNED_WORKSPACES} workspaces.`);
+        }
         const workspaceId = newId();
         let membershipId = newId();
         while (sameId(membershipId, workspaceId)) membershipId = newId();

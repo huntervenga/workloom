@@ -35,8 +35,16 @@ export function createInboxReadRepository(db: WorkloomExecutor): InboxReadReposi
           join tasks t on t.workspace_id = c.workspace_id and t.id = c.task_id
           where c.workspace_id = ${workspaceId} and c.created_at > now() - make_interval(days => ${windowDays})
             and c.author_membership_id <> ${membershipId}
+            and not exists (select 1 from task_comment_mentions x where x.comment_id = c.id and x.membership_id = ${membershipId})
             and (t.responsible_membership_id = ${membershipId}
               or exists (select 1 from task_participants p where p.workspace_id = c.workspace_id and p.task_id = c.task_id and p.membership_id = ${membershipId} and p.active))
+          union all
+          select c.id, 'mention', c.created_at, c.author_user_id, c.task_id, left(c.body, 240), null, null, null, null, null
+          from task_comment_mentions x
+          join task_comments c on c.id = x.comment_id
+          where x.workspace_id = ${workspaceId} and x.membership_id = ${membershipId}
+            and c.created_at > now() - make_interval(days => ${windowDays})
+            and c.author_membership_id <> ${membershipId}
           union all
           select a.id, 'leave_decided', a.recorded_at, a.actor_user_id, null::uuid, null::text,
                  a.entity_id, a.diff -> 'after' ->> 'status', a.diff -> 'after' ->> 'startDate', a.diff -> 'after' ->> 'endDate', null::text

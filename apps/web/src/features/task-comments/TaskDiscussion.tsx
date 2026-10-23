@@ -8,6 +8,7 @@ import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { discussionKeys, uniqueRows, useActivityQuery, useCommentsQuery } from './queries';
+import { MentionTextarea } from './MentionTextarea';
 import type { TaskCommentsWorkspace, CommentProblem } from './useTaskCommentsWorkspace';
 
 const activityKeys = {
@@ -82,7 +83,7 @@ export function TaskDiscussion({ task, controller, writable, canRetry, timezone,
       if (!event.defaultPrevented && !event.nativeEvent.isComposing && event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) { event.preventDefault(); event.currentTarget.requestSubmit(); }
     }} className="space-y-2">
       <label htmlFor={`${id}-body`} className="block text-sm font-medium">{t('comments.body')}</label>
-      <textarea id={`${id}-body`} rows={3} maxLength={4000} placeholder={t('comments.placeholder')} className={inputClassName('resize-y')} value={body} disabled={pending || uncertain} aria-invalid={Boolean(problem) || undefined} aria-describedby={`${id}-hint${problem ? ` ${id}-problem` : ''}`} onChange={event => controller.setBody(task.id, event.target.value)} />
+      <MentionTextarea actorId={controller.actorId} workspaceId={controller.workspaceId} id={`${id}-body`} rows={3} maxLength={4000} placeholder={t('comments.placeholder')} className={inputClassName('resize-y')} value={body} disabled={pending || uncertain} aria-invalid={Boolean(problem) || undefined} aria-describedby={`${id}-hint${problem ? ` ${id}-problem` : ''}`} onValueChange={next => controller.setBody(task.id, next)} />
       <p id={`${id}-hint`} className="text-xs text-muted">{t('comments.hint')}</p>
       {problem ? <p role="alert" id={`${id}-problem`} className="text-sm text-red-700">{t(problemKeys[problem])}</p> : null}
       <SaveFeedback subject="commentSave" error={ownError} uncertainError={uncertain ? command.uncertain?.error ?? null : null} />

@@ -121,7 +121,7 @@ export function createLeaveService(deps:LeaveDependencies):LeaveApplication {
   const source=s.settings?calculateSource(s):null;
   if(source)assertLeaveQueryBudget(source,today(scope,s),profiles.map(p=>p.membershipId));
   const balances=source?profiles.flatMap(profile=>{const asOf=today(scope,s,profile.membershipId);return balanceTypeIds(source,profile.membershipId).map(typeId=>calculateLeaveBalance(warningSource(source,[profile.membershipId]),{membershipId:profile.membershipId,typeId,asOf}));}):[];
-  return {ownMembershipId:own,today:today(scope,s,own),capabilities:{canManage:admin,canApprove:roleHasCapability(scope.access.membership.role,'leave.approve'),canRequest},settings:s.settings,members:visible.map(m=>({id:m.id,displayName:m.displayName,avatarUrl:m.avatarUrl??null,today:today(scope,s,m.id)})),profiles,requests,balances,...(source?{warnings:evaluateLeaveWarnings({source,context:{...adminContext(scope,s),balances}})}:{})};
+  return {ownMembershipId:own,today:today(scope,s,own),capabilities:{canManage:admin,canApprove:roleHasCapability(scope.access.membership.role,'leave.approve'),canRequest},settings:s.settings,members:visible.map(m=>({id:m.id,displayName:m.displayName,avatarUrl:m.avatarUrl??null,today:admin||m.id===own?today(scope,s,m.id):today(scope,s,own)})),profiles,requests,balances,...(source?{warnings:evaluateLeaveWarnings({source,context:{...adminContext(scope,s),balances}})}:{})};
  }
  const requestSourceHash=(scope:LeaveScope,s:LeaveStoredSource,memberIds:readonly string[])=>deps.digest(canonicalJson(leaveRequestSourcePayload(s,memberIds,scope.barrierAt,scope.access.workspace.timezone)));
  const sourceHash=(scope:LeaveScope,s:LeaveStoredSource)=>requestSourceHash(scope,s,s.profiles.map(p=>p.membershipId));
@@ -205,6 +205,7 @@ export function createLeaveService(deps:LeaveDependencies):LeaveApplication {
    reasonForPast(scope,s,before.startDate,value.reason,before.membershipId);const preview=checkRequestRange(scope,s,before,rid,before);const type=before;
    next={...next,status:'approved',chargedDays:preview.chargedDays,negativeApproved:value.approveNegative,consumesBalance:type.consumesBalance,pausesAccrual:type.pausesAccrual,capacityUnavailable:type.capacityUnavailable};
   }else if(value.decision==='reject'){if(!value.reason)throw rule('Please give a reason when rejecting an absence.');next={...next,status:'rejected',chargedDays:[]};}
+  else if(before.status==='pending'&&!manager(scope)){next={...next,status:'cancelled',chargedDays:[]};}
   else if(before.startDate<=local&&!manager(scope)){
    if(before.status!=='approved'||before.endDate<=local)throw rule('Started and past absence days are locked.');next={...next,endDate:local,chargedDays:before.chargedDays.filter(d=>d.date<=local)};
   }else {reasonForPast(scope,s,before.startDate,value.reason,before.membershipId);next={...next,status:'cancelled',chargedDays:[]};}

@@ -40,6 +40,11 @@ function createScope(tx: WorkloomTransaction): WorkspaceCreateScope {
       return access.findWorkspaceAccess(workspaceId, userId);
     },
 
+    async countOwnedWorkspaces(userId) {
+      const [row] = await tx.execute<{ n: number }>(sql`select count(*)::int as n from memberships where user_id = ${userId} and role = 'owner' and state = 'active'`);
+      return Number(row?.n ?? 0);
+    },
+
     async insertWorkspace(plan) {
       const { context } = plan;
       const [clock] = await tx.execute<{ epoch_ms: number }>(

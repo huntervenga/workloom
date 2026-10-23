@@ -884,6 +884,7 @@ export const REQUIRED_TABLES = [
   'local_mcp_credentials',
   'api_tokens',
   'project_task_defaults',
+  'task_comment_mentions',
   'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
   'users',
   'workspaces',
@@ -1427,6 +1428,19 @@ export const taskComments = pgTable('task_comments', {
   check('task_comments_body_length', sql`char_length(body) between 1 and 4000 and body ~ '[^[:space:]]'`),
   check('task_comments_author_label_length', sql`char_length(btrim(author_display_name_snapshot)) between 1 and 200`),
   check('task_comments_created_at_finite', sql`isfinite(created_at)`),
+]);
+
+/** Who a comment @mentions; written with the comment, read by the inbox. */
+export const taskCommentMentions = pgTable('task_comment_mentions', {
+  workspaceId: uuid('workspace_id').notNull(),
+  commentId: uuid('comment_id').notNull(),
+  membershipId: uuid('membership_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+}, t => [
+  primaryKey({ name: 'task_comment_mentions_pkey', columns: [t.commentId, t.membershipId] }),
+  foreignKey({ name: 'task_comment_mentions_comment_fk', columns: [t.commentId], foreignColumns: [taskComments.id] }),
+  foreignKey({ name: 'task_comment_mentions_membership_fk', columns: [t.workspaceId, t.membershipId], foreignColumns: [memberships.workspaceId, memberships.id] }),
+  index('task_comment_mentions_person_idx').on(t.workspaceId, t.membershipId, t.createdAt.desc()),
 ]);
 
 /** Actor-owned display head; null remains a versioned instruction to follow current defaults. */

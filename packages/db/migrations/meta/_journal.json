@@ -225,6 +225,13 @@
       "when": 1792480000007,
       "tag": "0031_project_task_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792480000008,
+      "tag": "0032_task_comment_mentions",
+      "breakpoints": true
     }
   ]
 }

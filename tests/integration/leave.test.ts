@@ -36,6 +36,14 @@ describe('Time off authoritative PostgreSQL lifecycle',()=>{
   expect((await inbox.list(f.ctx(),{limit:50})).some(i=>i.kind==='leave_pending')).toBe(false);
   expect((await inbox.list(f.ctx(U.memberA),{limit:50})).filter(i=>i.kind==='leave_decided').map(i=>i.leave?.status)).toEqual(['approved']);
  });
+ it('lets an employee withdraw a pending request that has already started, and shows colleagues only the viewer\'s own date',async()=>{
+  const f=await fixture(),own=await leave.create(f.ctx(U.memberA),{membershipId:f.member,typeId:f.vacation.id,startDate:add(today,5),endDate:add(today,8),note:'',reason:''});
+  expect(own.status).toBe('pending');
+  // Time passes: the first day is now behind us.
+  await db.sql`update leave_requests set snapshot = jsonb_set(snapshot, '{startDate}', to_jsonb(${add(today,-1)}::text)) where id = ${own.id}`;
+  const cancelled=await leave.decide(f.ctx(U.memberA),own.id,decision(own.revision,'cancel'));expect(cancelled.status).toBe('cancelled');expect(cancelled.chargedDays).toEqual([]);
+  const seen=await leave.overview(f.ctx(U.viewer));expect(new Set(seen.members.map(m=>m.today))).toEqual(new Set([seen.today]));
+ });
  it('authorizes own requests, hides private notes/balances from peers/viewer and rejects foreign workspace/membership',async()=>{
   const f=await fixture();await request(f,add(today,10));const peer=await leave.overview(f.ctx(U.viewer));expect(peer.requests).toEqual([]);expect(peer.balances).toEqual([]);expect(peer.profiles).toEqual([]);const neutral=await leave.availability(f.ctx(U.viewer),{startDate:today,endDate:add(today,30),people:{kind:'all_active'}});expect(JSON.stringify(neutral)).not.toContain('PRIVATE');expect(neutral.inputVersions.requests).toEqual([]);expect(neutral.inputVersions.profiles).toEqual([]);expect(neutral.inputVersions.digest).toMatch(/^[a-f0-9]{64}$/);expect(neutral.members).toHaveLength(3);expect(neutral.members.find(m=>m.membershipId===f.owner)?.scheduleKnown).toBe(false);
   await expect(leave.create(f.ctx(U.memberA),{membershipId:f.owner,typeId:f.vacation.id,startDate:add(today,20),endDate:add(today,20),note:'',reason:''})).rejects.toMatchObject({code:'NOT_FOUND'});await expect(leave.overview({...f.ctx(),workspaceId:randomUUID()})).rejects.toMatchObject({code:'NOT_FOUND'});

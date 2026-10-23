@@ -23,6 +23,8 @@ export interface TaskCommentsRepository {
   /** One bounded keyset statement over comments and typed activity, `(changeSeq, eventOrdinal)` DESC, at most 101 rows. */
   listTimeline(workspaceId: string, taskId: string, after: TaskActivityAnchor | null, take: number): Promise<TaskTimelineItemDto[]>;
   insertComment(comment: TaskCommentDto): Promise<void>;
+  /** Records who the comment names. Anyone who is not an active member of the workspace is skipped, never an error. */
+  insertMentions(workspaceId: string, commentId: string, membershipIds: readonly string[], createdAt: string): Promise<void>;
   findIdempotency(workspaceId: string, actorUserId: string, command: string, key: string): Promise<IdempotencyRecord | null>;
   insertIdempotency(receipt: IdempotencyRecord): Promise<void>;
 }

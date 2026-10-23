@@ -1,6 +1,6 @@
 {
   "title": "Inbox",
-  "description": "What other people did on your tasks and time off in the last 30 days, and time-off requests waiting for your decision.",
+  "description": "What other people did on your tasks and time off in the last 30 days, mentions of you, and time-off requests waiting for your decision.",
   "loading": "Loading your inbox",
   "list": "Inbox items",
   "emptyTitle": "Nothing new",
@@ -13,5 +13,6 @@
   "leaveApproved": "{{actor}} approved your time off ({{start}} – {{end}})",
   "leaveRejected": "{{actor}} declined your time off ({{start}} – {{end}})",
   "leaveCancelled": "{{actor}} cancelled your time off ({{start}} – {{end}})",
-  "leavePending": "{{person}} is waiting for your decision on time off ({{start}} – {{end}})"
+  "leavePending": "{{person}} is waiting for your decision on time off ({{start}} – {{end}})",
+  "mentioned": "{{actor}} mentioned you on “{{task}}”"
 }

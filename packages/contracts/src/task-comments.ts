@@ -17,6 +17,8 @@ const displayNameSchema = z.string().min(1).max(200);
 /** Preserve exact submitted text; names, author identity and server time are not client input. */
 export const createTaskCommentInputSchema = z.strictObject({
   body: z.string().min(1).max(4000).refine(value => value.length <= 4000 && value.trim().length > 0 && !value.includes('\0'), 'A nonblank plain-text comment is required.'),
+  /** People named with @ in the body, chosen by the author; ignored for anyone who is not an active member. Absent keeps old requests byte-identical. */
+  mentionedMembershipIds: z.array(idSchema).max(20).optional(),
 });
 export const taskCommentSchema = z.strictObject({
   id: idSchema, workspaceId: idSchema, taskId: idSchema,

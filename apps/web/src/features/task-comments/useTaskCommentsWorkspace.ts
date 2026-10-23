@@ -1,9 +1,11 @@
-import type { CreateTaskCommentInput } from '@workloom/contracts';
+import type { CreateTaskCommentInput, MembershipDto } from '@workloom/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef, useState } from 'react';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
+import { queryKeys } from '../../lib/queryKeys';
 import { createCommentRequest } from './api';
+import { findMentions } from './mentions';
 import { discussionKeys, invalidateTaskTimelines } from './queries';
 
 export interface CommentDraft { readonly body: string }
@@ -52,7 +54,10 @@ export function useTaskCommentsWorkspace(actorId: string, workspaceId: string) {
     setProblems(before => ({ ...before, [taskId]: problem }));
     if (!session || problem) return;
     setPostedTaskId(null);
-    command.mutate({ taskId, input: { body: session.body }, session });
+    // Names typed with @ become mentions, resolved against the members already loaded for the workspace.
+    const members = client.getQueryData<MembershipDto[]>(queryKeys.memberships(actorId, workspaceId)) ?? [];
+    const mentioned = findMentions(session.body, members);
+    command.mutate({ taskId, input: { body: session.body, ...(mentioned.length > 0 ? { mentionedMembershipIds: mentioned } : {}) }, session });
   };
   const setTab = useCallback((taskId: string, tab: TaskDetailTab) => setTabs(before => ({ ...before, [taskId]: tab })), []);
   useUnsavedChangesWarning(Object.values(drafts).some(draft => draft.body.length > 0) || held !== null);

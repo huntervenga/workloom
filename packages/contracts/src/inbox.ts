@@ -5,7 +5,7 @@ import { utcTimestampSchema } from './tasks.js';
 
 /**
  * The person's inbox, derived on read from what already happened: someone else made them responsible for a task, wrote a
- * comment on a task they are responsible for or take part in, or decided one of their time-off requests; people who may
+ * comment on a task they are responsible for or take part in, named them with @ in a comment, or decided one of their time-off requests; people who may
  * approve time off also see requests still waiting for a decision. Nothing is stored per person; "unread" is a browser-side
  * bookmark. The window is the last 30 days.
  */
@@ -23,7 +23,7 @@ const leaveRefSchema = z.strictObject({
 export const inboxItemSchema = z.strictObject({
   /** The audit event or comment this item comes from; stable, so the browser can remember what it showed. */
   id: idSchema,
-  kind: z.enum(['assigned', 'comment', 'leave_decided', 'leave_pending']),
+  kind: z.enum(['assigned', 'comment', 'mention', 'leave_decided', 'leave_pending']),
   at: utcTimestampSchema,
   actorName: z.string(),
   task: taskRefSchema.nullable(),

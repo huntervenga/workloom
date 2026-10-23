@@ -11,6 +11,7 @@ import { useTaskCommands } from '../tasks/useTaskCommands';
 import { CommentCommandRecovery } from './CommentCommandRecovery';
 import { fetchComments } from './api';
 import { discussionKeys } from './queries';
+import { queryKeys } from '../../lib/queryKeys';
 import { commentProblem, useTaskCommentsWorkspace, type TaskCommentsWorkspace } from './useTaskCommentsWorkspace';
 
 const path = `${rootPath}/tasks/${task.id}`;
@@ -49,6 +50,23 @@ async function discussion() {
   await screen.findByRole('region', { name: 'Activity' });
   await screen.findByText('No comments or changes yet.');
 }
+
+describe('@mentions in a comment', () => {
+  it('offers the loaded members after @, inserts the chosen name and posts their membership id', async () => {
+    let body: unknown;
+    installFakeApi(routes({ [`POST ${path}/comments`]: request => { body = request.body; return created({ ...comment, body: (request.body as { body: string }).body }); } }));
+    const ui = example();
+    ui.client.setQueryData(queryKeys.memberships(anna.id, alpha.id), alphaMembers);
+    await discussion();
+    const box = screen.getByLabelText('Comment');
+    await ui.user.type(box, 'Please check @Вер');
+    const option = await screen.findByRole('option', { name: 'Вера Образцова' });
+    await ui.user.click(option);
+    expect(box).toHaveValue('Please check @Вера Образцова ');
+    await ui.user.click(screen.getByRole('button', { name: 'Add comment' }));
+    await waitFor(() => expect(body).toEqual({ body: 'Please check @Вера Образцова ', mentionedMembershipIds: ['c0000000-0000-4000-8000-000000000002'] }));
+  });
+});
 
 describe('saved task discussion', () => {
   it('keeps field drafts in a sibling form and posts exact inert plaintext without changing task revision', async () => {

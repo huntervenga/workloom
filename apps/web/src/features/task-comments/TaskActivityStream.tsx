@@ -10,6 +10,7 @@ import { UserAvatar } from '../../shared/UserAvatar';
 import { TIMELINE_PAGE_SIZE } from './api';
 import { chronological, describeChange, detailNote, headline, type ActivityItem, type ChangeLine, type Shown } from './presentation';
 import { discussionKeys, invalidateTaskTimelines, useTimelineQuery } from './queries';
+import { MentionTextarea } from './MentionTextarea';
 import type { CommentProblem, TaskCommentsWorkspace } from './useTaskCommentsWorkspace';
 
 const problemKeys = { blank: 'comments.problem.blank', tooLong: 'comments.problem.tooLong', nul: 'comments.problem.nul' } satisfies Record<CommentProblem, TranslationKey>;
@@ -130,7 +131,7 @@ export function TaskActivityStream({ task, controller, writable, canRetry, timez
         if (!event.defaultPrevented && !event.nativeEvent.isComposing && event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) { event.preventDefault(); event.currentTarget.requestSubmit(); }
       }} className="space-y-1.5">
         <label htmlFor={`${id}-body`} className="sr-only">{t('comments.body')}</label>
-        <textarea id={`${id}-body`} rows={2} maxLength={4000} placeholder={t('comments.placeholder')} className={inputClassName('resize-y text-sm')} value={body} disabled={pending || uncertain} aria-invalid={Boolean(problem) || undefined} aria-describedby={`${id}-hint${problem ? ` ${id}-problem` : ''}`} onChange={event => controller.setBody(task.id, event.target.value)} />
+        <MentionTextarea actorId={controller.actorId} workspaceId={controller.workspaceId} id={`${id}-body`} rows={2} maxLength={4000} placeholder={t('comments.placeholder')} className={inputClassName('resize-y text-sm')} value={body} disabled={pending || uncertain} aria-invalid={Boolean(problem) || undefined} aria-describedby={`${id}-hint${problem ? ` ${id}-problem` : ''}`} onValueChange={next => controller.setBody(task.id, next)} />
         {problem ? <p role="alert" id={`${id}-problem`} className="text-xs text-ink">{t(problemKeys[problem])}</p> : null}
         <SaveFeedback subject="commentSave" error={ownError} uncertainError={uncertain ? command.uncertain?.error ?? null : null} />
         {otherHeld ? <div role="status" className="flex flex-wrap items-center gap-2 text-xs text-muted"><p>{t('comments.otherPending')}</p><Button size="sm" onClick={() => { const original = controller.held?.variables.taskId; if (original) onOpenTask(original); }}>{t('comments.recovery.open')}</Button></div> : null}

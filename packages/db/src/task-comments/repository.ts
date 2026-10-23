@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
 import { taskActivityKindSchema, type TaskCommentDto } from '@workloom/contracts';
 import type { TaskCommentsRepository } from '@workloom/domain';
 import type { WorkloomExecutor } from '../client.js';
-import { auditEvents, memberships, projects, taskComments, tasks, users } from '../schema.js';
+import { auditEvents, memberships, projects, taskCommentMentions, taskComments, tasks, users } from '../schema.js';
 import { createTaskRepository } from '../repositories/task-repository.js';
 import { listTimeline, safeAvatarUrl } from './timeline.js';
 const bounded = (take: number) => { if (!Number.isSafeInteger(take) || take < 1 || take > 101) throw new TypeError('Task timeline pages are bounded to 101 read rows.'); };
@@ -34,5 +34,9 @@ export function createTaskCommentsRepository(db: WorkloomExecutor): TaskComments
       return rows.map(({ action, ...row }) => ({ ...row, kind: taskActivityKindSchema.parse(action), occurredAt: row.occurredAt.toISOString(), changeSeq: row.changeSeq.toString() }));
     },
     async insertComment({ authorAvatarUrl: _avatar, ...comment }) { await db.insert(taskComments).values({ ...comment, createdAt: new Date(comment.createdAt) }); },
+    async insertMentions(workspaceId, commentId, membershipIds, createdAt) {
+      const people = await db.select({ id: memberships.id }).from(memberships).where(and(eq(memberships.workspaceId, workspaceId), eq(memberships.state, 'active'), inArray(memberships.id, [...membershipIds])));
+      if (people.length > 0) await db.insert(taskCommentMentions).values(people.map(person => ({ workspaceId, commentId, membershipId: person.id, createdAt: new Date(createdAt) }))).onConflictDoNothing();
+    },
   };
 }

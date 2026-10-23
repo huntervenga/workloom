@@ -83,6 +83,8 @@ export function createTaskCommentsApplication(unit: TaskCommentsUnitOfWork, tool
         const createdAt = scope.barrierAt.toISOString();
         const comment = taskCommentSchema.parse({ id: tools.newId(), workspaceId: ws, taskId: id, authorUserId: ctx.actor.userId, authorMembershipId: scope.access.membership.id, authorDisplayNameSnapshot: scope.access.membership.displayName, ...authorAvatar(scope.access.membership), createdAt, body: parsed.data.body });
         await repo.insertComment(comment);
+        const named = [...new Set((parsed.data.mentionedMembershipIds ?? []).map(value => value.toLowerCase()))].filter(value => value !== scope.access.membership.id.toLowerCase());
+        if (named.length > 0) await repo.insertMentions(ws, comment.id, named, createdAt);
         await scope.recordChange({ entityType: 'task_comment', entityId: comment.id, action: 'created', diff: { taskId: id, projectId: current.projectId }, outbox: { type: 'task_comment.created', payload: { workspaceId: ws, taskId: id, projectId: current.projectId, commentId: comment.id } } });
         await repo.insertIdempotency({ workspaceId: ws, actorUserId: ctx.actor.userId, command, idempotencyKey: key, payloadHash, result: comment, createdAt });
         return comment;

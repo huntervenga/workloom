@@ -10,7 +10,7 @@
   "posting": "Posting…",
   "retry": "Retry original comment",
   "posted": "Comment posted.",
-  "hint": "Plain text · Cmd/Ctrl+Enter to post",
+  "hint": "Plain text · Cmd/Ctrl+Enter to post · @ to mention someone",
   "readOnly": "You can read this discussion. Commenting is unavailable with your current access.",
   "archived": "This task is archived. Existing discussion is read-only.",
   "loading": "Loading comments…",
@@ -41,5 +41,6 @@
     "archived": "{{name}} archived this task.",
     "restored": "{{name}} restored this task.",
     "schedule_updated": "{{name}} updated this task’s schedule."
-  }
+  },
+  "mentionList": "People to mention"
 }

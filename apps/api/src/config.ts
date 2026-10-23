@@ -80,6 +80,8 @@ export interface AppConfig {
   readonly logLevel: LogLevel;
   /** Serve apps/web/dist (optimized build) from the API process. */
   readonly serveWeb: boolean;
+  /** Number of reverse-proxy hops in front of the API whose X-Forwarded-For is trusted for client addresses; 0 trusts none. */
+  readonly trustProxyHops: number;
 }
 
 export class ConfigError extends Error {
@@ -346,6 +348,9 @@ export function loadConfig(env: Env = process.env): AppConfig {
     if (!appOrigins.includes(origin)) appOrigins.push(origin);
   }
 
+  const hopsRaw = read(env, 'TRUST_PROXY_HOPS') ?? '0';
+  const trustProxyHops = /^[0-5]$/.test(hopsRaw) ? Number(hopsRaw) : undefined;
+  if (trustProxyHops === undefined) issues.push('TRUST_PROXY_HOPS must be an integer from 0 to 5.');
   const logLevelRaw = read(env, 'LOG_LEVEL') ?? 'info';
   const logLevel = (LOG_LEVELS as readonly string[]).includes(logLevelRaw) ? (logLevelRaw as LogLevel) : undefined;
   if (logLevel === undefined) {
@@ -367,6 +372,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     database === undefined ||
     host === undefined ||
     logLevel === undefined ||
+    trustProxyHops === undefined ||
     authMode === undefined ||
     (authMode === 'shared' && sharedAuth === undefined)
   ) {
@@ -385,5 +391,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
     appOrigins,
     logLevel,
     serveWeb: nodeEnv === 'production',
+    trustProxyHops,
   };
 }

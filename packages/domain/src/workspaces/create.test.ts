@@ -36,7 +36,9 @@ function harness() {
     hashes.set(value, next);
     return next;
   };
+  let owned = 0;
   const scope: WorkspaceCreateScope = {
+    async countOwnedWorkspaces() { return owned; },
     async findActor(userId) { return users.get(userId) ?? null; },
     async findReceipt(actorUserId, key) { return receipts.get(`${actorUserId}|${key}`) ?? null; },
     async lockWorkspaceAccess(workspaceId, userId) { locked.push(workspaceId); return access.get(`${workspaceId}|${userId}`) ?? null; },
@@ -56,7 +58,7 @@ function harness() {
     digest,
     unitOfWork: { async run(actorUserId, idempotencyKey, work) { runs.push({ actorUserId, idempotencyKey }); return work(scope); } },
   });
-  return { service, users, receipts, access, inserted, locked, runs, digestInputs };
+  return { service, users, receipts, access, inserted, locked, runs, digestInputs, setOwned: (count: number) => { owned = count; } };
 }
 
 async function rejection(promise: Promise<unknown>): Promise<string> {
@@ -70,6 +72,13 @@ async function rejection(promise: Promise<unknown>): Promise<string> {
 }
 
 describe('workspace creation service', () => {
+  it('refuses a new workspace once the person owns the maximum', async () => {
+    const h = harness();
+    h.setOwned(25);
+    await expect(h.service.createWorkspace(context(), { name: 'One more', timezone: 'UTC' })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' });
+    expect(h.inserted).toHaveLength(0);
+  });
+
   it('creates one owned workspace with fresh IDs, trusted audit context and a canonical payload hash', async () => {
     const h = harness();
     const dto = await h.service.createWorkspace(context(), { name: '  Launch team ', timezone: 'Europe/Berlin' });

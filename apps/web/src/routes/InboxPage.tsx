@@ -27,6 +27,7 @@ export function InboxPage() {
   }, [actorId, workspace.id, newest]);
   const describe = (item: InboxItemDto): string => {
     if (item.kind === 'assigned' && item.task) return t('inbox.assigned', { actor: item.actorName, task: item.task.title });
+    if (item.kind === 'mention' && item.task) return t('inbox.mentioned', { actor: item.actorName, task: item.task.title });
     if (item.kind === 'comment' && item.task) return t('inbox.commented', { actor: item.actorName, task: item.task.title });
     const dates = { start: item.leave?.startDate ?? '', end: item.leave?.endDate ?? '' };
     if (item.kind === 'leave_pending') return t('inbox.leavePending', { person: item.leave?.personName ?? item.actorName, ...dates });
@@ -42,7 +43,7 @@ export function InboxPage() {
           const text = describe(item);
           return <li key={item.id}>
             <Link to={item.task ? `/w/${workspace.id}/projects/${item.task.projectId}?task=${item.task.id}` : `/w/${workspace.id}/time-off`} className="flex items-start gap-3 px-4 py-3 hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2">
-              {item.kind === 'assigned' ? <UserPlus size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" /> : item.kind === 'comment' ? <MessageSquare size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" /> : <CalendarDays size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" />}
+              {item.kind === 'assigned' ? <UserPlus size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" /> : item.kind === 'comment' || item.kind === 'mention' ? <MessageSquare size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" /> : <CalendarDays size={16} aria-hidden="true" className="mt-0.5 shrink-0 text-accent-ink" />}
               <span className="min-w-0 flex-1">
                 <span className="block text-sm text-ink">
                   {unread.has(item.id) ? <span className="mr-2 rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent-ink">{t('inbox.new')}</span> : null}

@@ -22,6 +22,7 @@ function setup() {
     findIdempotency: vi.fn(async (_ws, _user, _command, key) => { order.push('receipt'); return receipts.get(key) ?? null; }),
     insertIdempotency: vi.fn(async row => { receipts.set(row.idempotencyKey, row); }),
     insertComment: vi.fn(async row => { comments.push(row); }),
+    insertMentions: vi.fn(async () => undefined),
     listComments: vi.fn(async () => comments), listActivity: vi.fn(async () => activities),
     listTimeline: vi.fn(async () => timeline),
   };
