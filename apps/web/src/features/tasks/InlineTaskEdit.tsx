@@ -395,7 +395,7 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   const assigneeOptions: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFields.unassigned') },
     ...(session.draft.responsibleMembershipId && !members.some(member => member.id === session.draft.responsibleMembershipId) ? [{ value: session.draft.responsibleMembershipId, label: t('tasks.taskFields.memberUnavailable'), disabled: true }] : []),
-    ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
+    ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarSeed: member.userId, avatarUrl: member.avatarUrl })),
   ];
   const priorityOptions: ChoiceOption[] = taskPrioritySchema.options.map(priority => ({ value: priority, label: priorityLabels[priority], color: priorityColors[priority] }));
   // Active sections in their project order. A current archived or unknown section stays visible

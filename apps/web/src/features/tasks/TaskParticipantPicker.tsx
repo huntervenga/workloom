@@ -32,7 +32,7 @@ export function TaskParticipantPicker({ members, value, retainedIds, disabled = 
     <ChoicePicker label={t('tasks.taskFields.addParticipant')} value="" compact searchable disabled={disabled}
       className="border-transparent! bg-transparent! px-1.5 shadow-none! hover:bg-canvas!"
       options={[{ value: '', label: t('tasks.taskFields.addParticipant') },
-        ...available.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
+        ...available.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarSeed: member.userId, avatarUrl: member.avatarUrl })),
         ...unavailable.map(id => ({ value: id, label: t('tasks.taskFields.memberUnavailable') }))]}
       onValueChange={id => { if (id !== '' && !selected.has(id)) onChange([...value, id]); }} />
   </div>;

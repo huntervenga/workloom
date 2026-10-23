@@ -2,7 +2,7 @@ import { taskPrioritySchema, type TagDto, type TaskPriority, type TaskStatusGrou
 import { cn } from '@workloom/ui';
 import { ChevronDown } from 'lucide-react';
 import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { useTranslation } from '../../i18n';
+import { formatDate, useTranslation } from '../../i18n';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { CellPopover } from './CellPopover';
 import { keepFocusOnPopoverPress, TaskDateInput } from './TaskDateInput';
@@ -87,7 +87,7 @@ function TaskDraftCell({ cell, context }: { cell: TaskDraftCellId; context: Task
       const options: ChoiceOption[] = [
         { value: '', label: t('tasks.taskFields.unassigned') },
         ...(held && !members.some(member => member.id === held) ? [{ value: held, label: t('tasks.taskFields.memberUnavailable'), disabled: true }] : []),
-        ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
+        ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarSeed: member.userId, avatarUrl: member.avatarUrl })),
       ];
       return <ChoicePicker compact searchable className={cellPickerClassName} label={fieldLabels.responsibleMembershipId} value={held ?? ''} options={options} disabled={disabled} onValueChange={value => onChange({ responsibleMembershipId: value || null })} />;
     }
@@ -226,6 +226,17 @@ function DraftTagPicker({ summary, tags, values, disabled, rowKey, onChange, cre
 }
 
 /** A new row keeps both date endpoints in its own unsent draft, without growing the grid. */
+/** The table's own short form (“Oct 23”, with the year only for another year); text that is not a full date stays as typed. */
+function shortDraftDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (Number.isNaN(date.getTime())) return value;
+  return date.getUTCFullYear() === new Date().getFullYear()
+    ? formatDate(date, { day: 'numeric', month: 'short', timeZone: 'UTC' })
+    : formatDate(date, { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+}
+
 function DraftDatePicker({ context }: { context: TaskDraftCellContext }) {
   const { t } = useTranslation();
   const { draft, onChange, disabled, errors, rowKey } = context;
@@ -242,7 +253,7 @@ function DraftDatePicker({ context }: { context: TaskDraftCellContext }) {
   }}>
     <button ref={trigger} type="button" disabled={disabled} aria-label={t('tasks.dates.editNew')} aria-haspopup="dialog" aria-expanded={open}
       aria-controls={open ? `${id}-panel` : undefined} className="h-8 min-w-0 flex-1 truncate rounded px-2 text-left text-sm text-ink hover:bg-canvas disabled:text-muted"
-      onClick={() => setOpen(value => !value)}>{draft.dueDate || t('tasks.taskFields.noDueDate')}</button>
+      onClick={() => setOpen(value => !value)}>{draft.dueDate ? shortDraftDate(draft.dueDate) : t('tasks.taskFields.noDueDate')}</button>
     {open ? <CellPopover anchor={anchor} className="max-h-[calc(100dvh-16px)] overflow-y-auto" role="dialog" ariaLabel={t('tasks.dates.edit')} id={`${id}-panel`}>
       <div ref={panel} data-quick-draft={rowKey} data-task-draft-popup="" onKeyDown={event => {
         if (event.key === 'Enter' && event.target instanceof HTMLInputElement) {

@@ -14,6 +14,8 @@ export interface ChoiceOption {
   description?: string | undefined;
   /** Initials for a person. When any option has one, options without it get an empty person slot. */
   avatarName?: string | undefined;
+  /** Colour seed of the avatar; pass the same one the rest of the app uses for this person (their user ID). */
+  avatarSeed?: string | undefined;
   /** Profile photo shown instead of the `avatarName` initials when it loads. */
   avatarUrl?: string | null | undefined;
   /** A `#rgb`/`#rrggbb` dot for statuses and enum options; other values draw a neutral ring. */
@@ -107,7 +109,7 @@ function isPrintable(event: ReactKeyboardEvent): boolean {
 function ChoiceMark({ option, mark }: { option: ChoiceOption; mark: Mark }) {
   if (mark === 'avatar') {
     return option.avatarName ? (
-      <UserAvatar name={option.avatarName} seed={option.value} avatarUrl={option.avatarUrl} size="sm" />
+      <UserAvatar name={option.avatarName} seed={option.avatarSeed ?? option.value} avatarUrl={option.avatarUrl} size="sm" />
     ) : (
       <span aria-hidden="true" className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-dashed border-line-strong text-subtle">
         <UserRound size={12} />

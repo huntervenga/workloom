@@ -45,7 +45,7 @@ export function FieldCellControl({ field, value, members, label, disabled, draft
     if (ids.length === 0 && current.value !== null) placeholder = t('fields.valueDraft.nothingSelected');
     const selected = (id: string) => ids.some(value => sameId(id, value));
     const available = current.type === 'person'
-      ? members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl }))
+      ? members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarSeed: member.userId, avatarUrl: member.avatarUrl }))
       : optionsByPosition(field.options).filter(option => option.archivedAt === null).map(option => ({ value: option.id, label: option.name, color: option.color ?? undefined }));
     options = [{ value: '', label: NOT_SET() }, ...available.map(option => ({ ...option, value: option.value.toLowerCase(), description: selected(option.value) ? t('inlineFields.selectedChoice') : undefined }))];
     // Retained references remain visible in the trigger and cannot accidentally be re-selected.

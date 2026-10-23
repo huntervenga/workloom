@@ -145,7 +145,7 @@ export function TaskFilters({ value, onChange, statuses, members, tags = [] }: T
   const participantOptions: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFilters.allParticipants') },
     ...(unavailableParticipant ? [{ value: value.participantMembershipId, label: t('tasks.taskFilters.participantUnavailable'), disabled: true }] : []),
-    ...orderedMembers.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
+    ...orderedMembers.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarSeed: member.userId, avatarUrl: member.avatarUrl })),
   ];
   const tagOptions: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFilters.allTags') },

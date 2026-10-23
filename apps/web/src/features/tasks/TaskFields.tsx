@@ -229,7 +229,7 @@ export function TaskFields({
   const responsibleChoices: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFields.unassigned') },
     ...(responsibleKnown ? [] : [{ value: draft.responsibleMembershipId ?? '', label: UNAVAILABLE_MEMBER() }]),
-    ...members.map((member) => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarUrl: member.avatarUrl })),
+    ...members.map((member) => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarSeed: member.userId, avatarUrl: member.avatarUrl })),
   ];
   const sectionChoices: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFields.noSection') },
