@@ -10,11 +10,13 @@ describe('quick jump', () => {
     const { calls } = installFakeApi({ ...singleActorRoutes(anna, [alpha], { [alpha.id]: alphaMembers }), [`GET ${path}`]: empty });
     const { user } = renderApp(`/w/${alpha.id}`);
     await screen.findByRole('button', { name: 'Search and jump' });
+    // The Overview itself reads the person's tasks; opening the palette must not add a request.
+    const before = calls.filter(call => call.path === path && call.searchParams.has('search')).length;
     await user.keyboard('{Control>}k{/Control}');
     const input = await screen.findByRole('combobox', { name: 'Search' });
     expect(input).toHaveFocus();
-    // Nothing is asked of the server until two characters are typed.
-    expect(calls.some(call => call.path === path)).toBe(false);
+    // Nothing is searched on the server until two characters are typed.
+    expect(calls.filter(call => call.path === path && call.searchParams.has('search')).length).toBe(before);
     await user.type(input, 'time');
     const list = screen.getByRole('listbox', { name: 'Results' });
     expect(within(list).getAllByRole('option').map(option => option.textContent)).toEqual(['Time offPage']);
