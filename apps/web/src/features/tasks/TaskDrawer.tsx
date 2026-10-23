@@ -28,6 +28,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
 import { CompleteSplitButton } from './CompleteSplitButton';
+import { CopyTaskLink } from './CopyTaskLink';
 import { Archive, ArchiveRestore, Copy, Lock, MoreHorizontal, RefreshCw, TriangleAlert } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { ApiError } from '../../lib/api';
@@ -724,9 +725,9 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             topActions={writable && !archived && !locked && props.onCompleteTask && props.onContinueTask && !latest.meetingId ? <CompleteSplitButton task={latest} statuses={props.statuses} busy={busy} onComplete={props.onCompleteTask} onContinue={props.onContinueTask} /> : null}
             secondaryActions={writable && !archived && !locked ? (
               retained ? <p className="text-xs text-muted">{t('autosave.archive.waitForSave')}</p> : (
-                <div className="flex flex-wrap items-center gap-2"><Button size="sm" aria-disabled={busy || undefined} onClick={runArchive}><Archive size={16} aria-hidden="true" />{t('tasks.taskDrawer.archive')}</Button>{props.onDuplicateTask && latest.meetingId === null ? <Menu.Root modal={false}><Menu.Trigger asChild><Button type="button" size="sm" variant="ghost" disabled={busy} aria-label={t('duplication.taskActions')}><MoreHorizontal size={16} aria-hidden="true"/></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg" onCloseAutoFocus={event=>event.preventDefault()}><Menu.Item className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-ink outline-none data-[highlighted]:bg-canvas" onSelect={()=>props.onDuplicateTask?.(latest)}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root> : null}</div>
+                <div className="flex flex-wrap items-center gap-2"><CopyTaskLink workspaceId={latest.workspaceId} projectId={latest.projectId} taskId={latest.id} /><Button size="sm" aria-disabled={busy || undefined} onClick={runArchive}><Archive size={16} aria-hidden="true" />{t('tasks.taskDrawer.archive')}</Button>{props.onDuplicateTask && latest.meetingId === null ? <Menu.Root modal={false}><Menu.Trigger asChild><Button type="button" size="sm" variant="ghost" disabled={busy} aria-label={t('duplication.taskActions')}><MoreHorizontal size={16} aria-hidden="true"/></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg" onCloseAutoFocus={event=>event.preventDefault()}><Menu.Item className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-ink outline-none data-[highlighted]:bg-canvas" onSelect={()=>props.onDuplicateTask?.(latest)}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root> : null}</div>
               )
-            ) : null}
+            ) : <div className="flex flex-wrap items-center gap-2"><CopyTaskLink workspaceId={latest.workspaceId} projectId={latest.projectId} taskId={latest.id} /></div>}
           />
         </div>
 
