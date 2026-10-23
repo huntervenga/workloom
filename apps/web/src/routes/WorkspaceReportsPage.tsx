@@ -11,6 +11,7 @@ import { useWorkspaceContext } from './WorkspaceLayout';
 import { QueryErrorState } from '../shared/QueryErrorState';
 import { DashboardFilters } from '../features/workspace-reports/DashboardFilters';
 import { WorkspaceDashboard } from '../features/workspace-reports/WorkspaceDashboard';
+import { HoursLoad, UnfinishedWork } from '../features/workspace-reports/WorkLoad';
 import { dashboardSearch, dashboardSelection, defaultDashboardInput, WORKSPACE_REPORT_QUERY } from '../features/workspace-reports/state';
 import { useWorkspaceReportResult, useWorkspaceReportSources } from '../features/workspace-reports/queries';
 import { reportNumber } from '../features/generic-reports/reportFormatting';
@@ -63,6 +64,8 @@ function DashboardWorkspace({ actorId, workspaceId, discovery, onReloadSources, 
     {result.isError ? <div className="space-y-2"><QueryErrorState error={result.error} subject="report" headingLevel={2} onRetry={() => void result.refetch()}/><Button size="sm" disabled={reloadingSources} onClick={() => void reloadMappings()}>{t(reloadingSources ? 'workspaceReports.reloadingSources' : 'workspaceReports.reloadMappings')}</Button>{sourceMissing ? <p role="alert" className="text-sm text-danger">{t('workspaceReports.sourceMissing')}</p> : null}</div> : result.data ? <>
       <div className="flex items-center justify-between gap-2 text-xs text-muted"><p>{input.range.from} – {input.range.to} · {t('workspaceReports.taskCount', { count: result.data.summary.taskCount })}</p><Button size="sm" variant="ghost" disabled={result.isFetching} onClick={() => void result.refetch()}><RefreshCw size={14} className={result.isFetching ? 'motion-safe:animate-spin' : ''} aria-hidden="true"/>{t('workspaceReports.refresh')}</Button></div>
       <WorkspaceDashboard result={result.data} categoryFields={discovery.sources.flatMap(source => source.fields)} capacityAction={canManageSchedules ? <Link to={`/w/${workspaceId}/time-off?tab=people#working-hours`} className="inline-block pt-1 text-xs font-medium text-accent-strong hover:underline">{t('workspaceReports.setupSchedules')}</Link> : <p className="pt-1 text-xs text-muted">{t('workspaceReports.askAdminSchedules')}</p>} onConfigureTypes={() => setSourcesOpen(true)} onPersonSelect={membershipId => { if (membershipId) apply({ ...input, people: { kind: 'selected', membershipIds: [membershipId] } }); }}/>
+      <HoursLoad result={result.data}/>
+      <UnfinishedWork result={result.data} today={discovery.today} workspaceId={workspaceId}/>
       <details className="rounded-xl border border-line bg-surface p-3"><summary className="cursor-pointer text-sm font-medium">{t('workspaceReports.methodDetails')}</summary><div className="mt-2 space-y-1 text-xs text-muted"><p>{t(result.data.attribution === 'personal_effort' ? 'effortReports.dateHint' : 'workspaceReports.coverageHint')}</p><p>{t('workspaceReports.excludedDates', { count: result.data.missingDateTasks })}</p><p>{t('workspaceReports.unmapped', { count: result.data.unmappedHomeTasks })}</p></div></details>
       <DashboardTasks key={result.data.sourceVersion} workspaceId={workspaceId} result={result.data}/>
     </> : <DashboardLoading/>}

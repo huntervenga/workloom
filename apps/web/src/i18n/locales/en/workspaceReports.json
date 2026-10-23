@@ -148,5 +148,26 @@
     "noPairs": "No task has both an estimate and an actual in this period",
     "cell": "{{percent}} of estimate, from {{paired}} task(s)",
     "caption": "Based on current values of tasks due in each period; it shows how well estimates match results, not how much was worked or how good the work was."
+  },
+  "load": {
+    "title": "Hours worked vs available",
+    "help": "Recorded hours ÷ hours the person could have worked that week (working hours minus time off and holidays). 95% and more is good, 90–95% is fine, below 90% is highlighted. Over 100% means more was recorded than planned working time. A dash means no data: the person was away all week or has no working hours set.",
+    "partial": "* Part of the week was time off or a holiday, so the figure is measured against fewer hours and is less precise.",
+    "cell": "{{worked}} recorded of {{available}} available ({{percent}})",
+    "cellPartial": "{{worked}} recorded of {{available}} available ({{percent}}). Part week: {{away}} of time off or holidays out of {{scheduled}} scheduled, so this is less precise.",
+    "away": "Away all week: no data",
+    "unknown": "No working hours set for this person: no data",
+    "average": "Average",
+    "averageTitle": "Average over the weeks with data"
+  },
+  "unfinished": {
+    "title": "Unfinished tasks",
+    "help": "Tasks still to do or in progress, by the week of their due date. Tasks whose week is already over are overdue and listed per person.",
+    "overdue": "{{count}} overdue",
+    "none": "No unfinished tasks in this range",
+    "person": "Person",
+    "task": "{{title}} · {{project}} · due {{due}}",
+    "showMore": "Show {{count}} more",
+    "weekOver": "Week is over"
   }
 }
