@@ -11,6 +11,21 @@ const run=(input:PlanningCheckEvaluationInput)=>evaluatePlanningChecks(input).as
 function must<T>(value:T|undefined):T{if(value===undefined)throw Error('Missing test fixture');return value;}
 describe('server planning assessment semantics',()=>{
  it('counts unique missing tasks across overlappingrules, keeps per-rule violations and excludeslinked explicitly',()=>{const input=fixture([presence(),presence({id:id(21)})]),r=run(input);expect(r.scope).toMatchObject({placements:'home_tasks',taskCount:2,excludedLinkedTasks:2});expect(r.summary).toMatchObject({eligibleTasks:2,missingRequiredTasks:2});expect(r.rules.map(rule=>rule.issueCount)).toEqual([2,2]);expect(r.taskFlags[0]).toMatchObject({missingFieldIds:[text],missingRuleIds:[id(20),id(21)]});expect(r.people.map(person=>person.counts.missingRequiredTasks)).toEqual([1,1]);});
+ it('does not flag a parent whose total is the sum of subtasks that are all estimated, but flags it with the one that is not',()=>{
+  const input=fixture([presence({fieldId:metric})]);
+  const task=(n:number,parentTaskId:string|null)=>({id:id(n),projectId:pid,title:'T',revision:1,parentTaskId,sectionId:section,responsibleMembershipId:a,dueDate:'2026-10-21',statusGroup:'todo' as const,tagIds:[]});
+  const value=(n:number)=>({taskId:id(n),fieldId:metric,revision:1,definitionVersionId:metric,present:true,numberValue:60,dateValue:null});
+  input.source.tasks.push(task(40,null),task(41,id(40)),task(42,id(40)));
+  const base=input.source.values.length;
+  input.source.values.push(value(41),value(42));
+  const flagged=(input2:PlanningCheckEvaluationInput)=>run(input2).taskFlags.map(flag=>flag.taskId).filter(taskId=>[id(40),id(41),id(42)].includes(taskId)).sort();
+  expect(flagged(input)).toEqual([]);
+  input.source.values.splice(base+1,1);
+  expect(flagged(input)).toEqual([id(40),id(42)]);
+  // A parent of a text field is never covered by its children: only totals roll up.
+  const text2=fixture([presence()]);text2.source.tasks.push(task(40,null),task(41,id(40)));text2.source.values.push({taskId:id(41),fieldId:text,revision:1,definitionVersionId:text,present:true,numberValue:null,dateValue:null});
+  expect(run(text2).taskFlags.map(flag=>flag.taskId)).toContain(id(40));
+ });
  it('uses projected presence booleans so known0/false remainpresent without copying values',()=>{const input=fixture([presence()]);input.source.values.push({taskId:id(30),fieldId:text,revision:1,definitionVersionId:text,present:true,numberValue:null,dateValue:null});expect(run(input).summary.missingRequiredTasks).toBe(1);expect(JSON.stringify(run(input))).not.toContain('numberValue');});
  it('counts overdue tasks once, respects configured status/date filters and includes undated coverage',()=>{const rule:C.PlanningCheckRuleDto={...base,kind:'overdue',dateSource:'due_date',warnAfterDays:0,fullIntensityAfterDays:7,nearColor:'#ffff00',farColor:'#ff0000'},input=fixture([rule,{...rule,id:id(21)}]);input.source.tasks.push({...must(input.source.tasks[0]),id:id(32),dueDate:null});const r=run(input);expect(r.summary).toMatchObject({eligibleTasks:3,overdueTasks:1});expect(r.rules[0]).toMatchObject({issueCount:1,undatedTasks:1,state:'warning'});expect(r.taskFlags[0]?.overdueRuleIds).toHaveLength(2);});
  it('keeps a mixedsectionunderplanning warning out of individualfaultcounts',()=>{const r=run(fixture([balance()]));expect(r.groups[0]).toMatchObject({direction:'under',planned:{decimal:'1800'},target:{decimal:'2400'},computedAvailableMinutes:2400,ratio:{decimal:'0.75'},targetBasis:'computed_capacity'});expect(r.summary.underplannedGroups).toBe(1);expect(r.people.every(person=>person.counts.underplannedGroups===0)).toBe(true);});
