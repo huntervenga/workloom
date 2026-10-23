@@ -88,7 +88,7 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
     // The historical0013→0014 preservation oracle above is complete. Explicitly add the
     // remaining current migrations before exercising today's shared Auth application.
     const currentPrefix = journal.entries;
-    expect(currentPrefix).toHaveLength(29);
+    expect(currentPrefix.length).toBeGreaterThanOrEqual(29);expect(currentPrefix.map(entry=>entry.idx)).toEqual(currentPrefix.map((_,index)=>index));
     for (const entry of currentPrefix.filter(entry => entry.idx > 14)) {
       await copyFile(join(migrations, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`));
     }

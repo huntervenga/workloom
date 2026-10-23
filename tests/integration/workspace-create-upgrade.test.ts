@@ -76,7 +76,7 @@ it('preserves0014→0015 legacy rows, then upgrades the isolated fixture before 
     expect(afterReceipts).toHaveLength(receipts.length + 1);
     expect(await db.sql`select * from workspace_creation_receipts`).toHaveLength(0);
     // Historical0014→0015 proof is complete. Today's command needs the full current schema.
-    const currentPrefix=journal.entries;expect(currentPrefix).toHaveLength(29);
+    const currentPrefix=journal.entries;expect(currentPrefix.length).toBeGreaterThanOrEqual(29);expect(currentPrefix.map(entry=>entry.idx)).toEqual(currentPrefix.map((_,index)=>index));
     const later=currentPrefix.filter(entry=>entry.idx>15);
     for(const entry of later)await copyFile(join(migrations,`${entry.tag}.sql`),join(folder,`${entry.tag}.sql`));
     await writeFile(join(folder,'meta/_journal.json'),JSON.stringify({...journal,entries:currentPrefix}));

@@ -4,9 +4,10 @@ import {mkdtemp,readFile,writeFile,copyFile,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {describe,expect,it} from 'vitest';
-import {createDatabase,runMigrations,MIGRATIONS_FOLDER,readExpectedMigrations,seedDemoData,FIXTURE_USER_IDS as U,FIXTURE_WORKSPACE_IDS as W,type Database} from '@workloom/db';
+import {createDatabase,runMigrations,MIGRATIONS_FOLDER,readExpectedMigrations,FIXTURE_USER_IDS as U,FIXTURE_WORKSPACE_IDS as W,type Database} from '@workloom/db';
 import {createThrowawayDatabase,type ThrowawayDatabase} from './support/test-database.js';
 import {requireTestDatabaseUrl} from './support/test-database-url.js';
+import {seedLegacyDemoData} from './support/legacy-upgrade-fixture.js';
 import {databaseSnapshot} from './support/p1b.js';
 requireTestDatabaseUrl();
 describe('0021 additive Time off migration',()=>{
@@ -14,7 +15,7 @@ describe('0021 additive Time off migration',()=>{
   let target:ThrowawayDatabase|undefined,db:Database|undefined;const folder=await mkdtemp(join(tmpdir(),'workloom-leave-migration-'));
   try{
    await mkdir(join(folder,'meta'));const fullJournal=JSON.parse(await readFile(join(MIGRATIONS_FOLDER,'meta/_journal.json'),'utf8'))as{entries:{idx:number;tag:string}[]};const journal={...fullJournal,entries:fullJournal.entries.filter(e=>e.idx<=20)};await writeFile(join(folder,'meta/_journal.json'),JSON.stringify(journal));for(const entry of journal.entries)await copyFile(join(MIGRATIONS_FOLDER,entry.tag+'.sql'),join(folder,entry.tag+'.sql'));
-   target=await createThrowawayDatabase('leave_upgrade');await runMigrations(target.url,{requireLoopback:true,migrationsFolder:folder});db=createDatabase(target.url,{requireLoopback:true});await seedDemoData(db);
+   target=await createThrowawayDatabase('leave_upgrade');await runMigrations(target.url,{requireLoopback:true,migrationsFolder:folder});db=createDatabase(target.url,{requireLoopback:true});await seedLegacyDemoData(db.sql);
    // Bootstrap only columns that existed at0020; current project repositories require0023.
    const projectId=randomUUID(),reportId=randomUUID(),snapshotId=randomUUID(),now='2026-10-18T00:00:00.000Z',config={projectId,hierarchy:'all_tasks',filters:{statusGroups:[],tagIds:[],assignee:{kind:'all'},dateRange:null},groupBy:{kind:'none'},comparison:null,measures:[{key:'tasks',operation:'count_tasks'}]},definition={id:reportId,workspaceId:W.team,projectId,name:'Retained report',revision:1,config,archivedAt:null,createdAt:now,updatedAt:now},header={id:snapshotId,workspaceId:W.team,projectId,reportId,name:'Unchanged original',definitionRevision:1,config,fields:[],capturedAt:now,capturedByUserId:U.owner,sourceVersion:'a'.repeat(64),taskCount:0};
    await db.sql`insert into projects(id,workspace_id,name) values(${projectId},${W.team},'Synthetic retained planning')`;
