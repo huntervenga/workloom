@@ -55,7 +55,7 @@ function Bars({ items }: { items: readonly Bar[] }) {
 }
 
 /** Manager overview from authoritative server aggregates only; loaded task rows are never summed into totals. */
-export function WorkspaceDashboard({ result, onPersonSelect, onConfigureTypes, capacityAction, categoryFields = [] }: { result: WorkspaceReportResultDto; onPersonSelect: (membershipId: string | null) => void; onConfigureTypes?: () => void; capacityAction?: ReactNode; categoryFields?: readonly TaskFieldDefinitionDto[] }) {
+export function WorkspaceDashboard({ beforePeople, result, onPersonSelect, onConfigureTypes, capacityAction, categoryFields = [] }: { beforePeople?: ReactNode; result: WorkspaceReportResultDto; onPersonSelect: (membershipId: string | null) => void; onConfigureTypes?: () => void; capacityAction?: ReactNode; categoryFields?: readonly TaskFieldDefinitionDto[] }) {
   const { t } = useTranslation();
   const { summary, capacity } = result;
   const series = { available: t('workspaceReports.series.available'), plan: t('workspaceReports.series.plan'), actual: t('workspaceReports.series.actual') };
@@ -129,6 +129,7 @@ export function WorkspaceDashboard({ result, onPersonSelect, onConfigureTypes, c
       </section>
     </div>
     <AccuracyTrend result={result} />
+    {beforePeople}
     <section aria-label={t('workspaceReports.people.title')} className={panel}>
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium">{t('workspaceReports.people.title')}</h3>{legend}</div>
       {result.people.length ? <div className="overflow-x-auto"><table className="w-full min-w-[40rem] text-sm"><colgroup><col className="w-48"/><col/><col className="w-48"/></colgroup>
