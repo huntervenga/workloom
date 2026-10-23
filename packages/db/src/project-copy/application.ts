@@ -7,6 +7,7 @@ import { createTaskFieldApplication } from '../fields/task-field-application.js'
 import { createGenericReportApplication } from '../generic-reports/application.js';
 import { createPlanningCheckApplication } from '../planning-checks/application.js';
 import { createAccessRepository } from '../repositories/access-repository.js';
+import { createProjectRulesApplication } from '../project-rules/application.js';
 import { createTaskDefaultsApplication } from '../task-defaults/application.js';
 import { createTaskApplication } from '../tasks/task-application.js';
 
@@ -15,7 +16,7 @@ export function createProjectCopyApplication(source: Database | WorkloomExecutor
   const db = isDatabase(source) ? source.db : source;
   const service = createProjectCopyService({
     tasks: createTaskApplication(source), fields: createTaskFieldApplication(source), checks: createPlanningCheckApplication(source),
-    reports: createGenericReportApplication(source), defaults: createTaskDefaultsApplication(source), categories: createWorkCategoryApplication(source),
+    reports: createGenericReportApplication(source), defaults: createTaskDefaultsApplication(source), rules: createProjectRulesApplication(source), categories: createWorkCategoryApplication(source),
     digest: value => createHash('sha256').update(value).digest('hex'),
   });
   return {

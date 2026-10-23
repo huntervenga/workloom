@@ -7,6 +7,7 @@ import type { GenericReportApplication } from '../generic-reports/service.js';
 import type { PlanningCheckApplication } from '../planning-checks/ports.js';
 import type { TaskApplication } from '../tasks/application.js';
 import type { TaskDefaultsApplication } from '../task-defaults/service.js';
+import type { ProjectRulesApplication } from '../project-rules/service.js';
 import { derivedId, remapSettings, shiftDate } from './mapping.js';
 
 export interface ProjectCopyApplication {
@@ -18,6 +19,8 @@ export interface ProjectCopyDependencies {
   readonly checks: PlanningCheckApplication;
   readonly reports: GenericReportApplication;
   readonly defaults: TaskDefaultsApplication;
+  /** Optional so older compositions keep working; rules travel with the defaults. */
+  readonly rules?: ProjectRulesApplication;
   readonly categories: WorkCategoryApplication;
   digest(value: string): string;
 }
@@ -115,6 +118,12 @@ export function createProjectCopyService(deps: ProjectCopyDependencies): Project
         if (settings.revision === 0) return;
         await deps.defaults.setDefaults(step('defaults'), created.id, { expectedRevision: 0, config: remapSettings(settings.config, ids, input.shiftDays) });
         result.copied.defaults = true;
+      });
+      const rulesApplication = deps.rules;
+      if (input.copy.defaults && rulesApplication) await optional('defaults', async () => {
+        const rules = await rulesApplication.getRules(context, sourceId);
+        if (rules.revision === 0) return;
+        await rulesApplication.setRules(step('rules'), created.id, { expectedRevision: 0, config: rules.config });
       });
 
       if (input.copy.workCategory) await optional('workCategory', async () => {

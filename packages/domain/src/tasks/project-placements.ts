@@ -46,6 +46,13 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
   if(sectionId===null)return;const section=found(await scope.repository.findSection(ws,sectionId));
   if(section.projectId!==projectId)rule('The section belongs to another project.','sectionId');if(section.archivedAt!==null)rule('The section is archived.','sectionId');
  }
+ /** A project may forbid its tasks from living in other projects, and may refuse tasks from other projects. */
+ async function requireSharingAllowed(scope:TaskProjectPlacementWriteScope,task:TaskDto,projectId:string):Promise<void>{
+  const find=scope.repository.findProjectRules;if(!find)return;
+  const [target,home]=await Promise.all([find.call(scope.repository,task.workspaceId,projectId),find.call(scope.repository,task.workspaceId,task.projectId)]);
+  if(target?.config.singleProject)rule('This project keeps every task in one project only. Move the task here instead of adding it.','projectId');
+  if(home?.config.singleProject)rule('The task\'s own project keeps every task in one project only.','projectId');
+ }
  async function openTarget(scope:TaskProjectPlacementWriteScope,task:TaskDto,projectId:string):Promise<void>{
   if(task.archivedAt!==null)rule('The task is archived.','taskId');
   if(found(await scope.repository.findProject(task.workspaceId,projectId)).archivedAt!==null)rule('The project is archived.','projectId');
@@ -58,7 +65,7 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
   const input=parse(changeTaskProjectPlacementStateInputSchema,raw);
   return mutate(ctx,archived?'task.project.detach':'task.project.restore',path(id),input,false,async(scope,task,current,projectId,now)=>{
    const row=found(current);if(row.projectId===row.homeProjectId)rule('The accounting home placement cannot be detached or restored.','placementId');revision(row.revision,input.expectedRevision);
-   if(!archived){await openTarget(scope,task,projectId);await targetSection(scope,row.workspaceId,projectId,row.sectionId);}
+   if(!archived){await openTarget(scope,task,projectId);await requireSharingAllowed(scope,task,projectId);await targetSection(scope,row.workspaceId,projectId,row.sectionId);}
    if((row.archivedAt!==null)===archived)return row;
    const next={...row,archivedAt:archived?now:null,revision:row.revision+1,updatedAt:now};await scope.placements.save(next);await record(scope,next,archived?'detached':'restored',row);return next;
   });
@@ -75,7 +82,7 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
    const last=selected.at(-1);return {items,nextCursor:hasMore&&last?tools.encodeCursor({version:1,workspaceId:ws,actorUserId:normalized.actor.userId,permissionEpoch:epoch,queryHash,position:last.position,id:last.id}):null};
   },
   async attachTaskProject(ctx,taskId,raw){const input=parse(attachTaskProjectInputSchema,raw);return mutate(ctx,'task.project.attach',path(taskId),input,true,async(scope,task,_current,projectId,now)=>{
-   revision(task.revision,input.expectedTaskRevision);await openTarget(scope,task,projectId);
+   revision(task.revision,input.expectedTaskRevision);await openTarget(scope,task,projectId);await requireSharingAllowed(scope,task,projectId);
    if(projectId===task.projectId)rule('The task already has its accounting home placement.','projectId');
    if(await scope.placements.findForTaskProject(task.workspaceId,task.id,projectId))rule('This placement already exists. Restore a detached placement explicitly.','projectId');
    if((await scope.placements.listForTask(task.workspaceId,task.id,501)).length>=500)rule('The task has reached its placement limit.','projectId');

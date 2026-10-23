@@ -2,7 +2,7 @@ import type {SharedActivityDto,SharedActivityContributionDto,SharedActivityHisto
 import type {PlanningCheckConfigDto,PlanningCheckSettingsDto,PlanningCheckCheckpointDto} from '@workloom/contracts';
 import type {LeaveSettingsDto,LeaveProfileDto,LeaveRequestDto,LeaveAdjustmentDto} from '@workloom/contracts';
 import type { GenericReportConfig, GenericReportDefinitionDto, GenericInitialSnapshotDto, GenericReportRowDto, GenericReportMeasure, GenericHeaderWidgetRuleDto, TaskFieldValueDto } from '@workloom/contracts';
-import type { ColumnChoice, CutoffWorkerOutcome, TaskDefaultsConfig } from '@workloom/contracts';
+import type { ColumnChoice, CutoffWorkerOutcome, ProjectRulesConfig, TaskDefaultsConfig } from '@workloom/contracts';
 /**
  * Drizzle description of the P0, P1a and P1b schema. The executable source of truth is the
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
@@ -870,6 +870,18 @@ export const projectTaskDefaults = pgTable('project_task_defaults', {
   foreignKey({ name: 'project_task_defaults_project_fk', columns: [t.workspaceId, t.projectId], foreignColumns: [projects.workspaceId, projects.id] }),
 ]);
 
+/** Optional per-project rules; a missing row means every rule is off. */
+export const projectRules = pgTable('project_rules', {
+  workspaceId: uuid('workspace_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  revision: integer('revision').notNull(),
+  config: jsonb('config').$type<ProjectRulesConfig>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+}, t => [
+  primaryKey({ name: 'project_rules_pkey', columns: [t.workspaceId, t.projectId] }),
+  foreignKey({ name: 'project_rules_project_fk', columns: [t.workspaceId, t.projectId], foreignColumns: [projects.workspaceId, projects.id] }),
+]);
+
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
   'workspace_slug_aliases',
@@ -884,6 +896,7 @@ export const REQUIRED_TABLES = [
   'local_mcp_credentials',
   'api_tokens',
   'project_task_defaults',
+  'project_rules',
   'task_comment_mentions',
   'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
   'users',

@@ -1,0 +1,13 @@
+{
+  "open": "Project rules",
+  "title": "Project rules",
+  "description": "Optional rules for this project. Each one only limits what can be done from now on; nothing that exists is changed.",
+  "loading": "Loading the rules\u2026",
+  "loadFailed": "The rules could not be loaded.",
+  "singleProject": "A task can belong to only one project",
+  "singleProjectHelp": "Tasks of this project cannot also be placed in other projects, and tasks from other projects cannot be added to it.",
+  "cancel": "Cancel",
+  "save": "Save rules",
+  "saving": "Saving\u2026",
+  "retry": "Retry the same save"
+}

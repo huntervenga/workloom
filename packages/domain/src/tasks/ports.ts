@@ -6,6 +6,7 @@ import type {
   SectionDto,
   TagDto,
   TaskDefaultsDto,
+  ProjectRulesDto,
   TaskDto,
   TaskListQuery,
   TaskParticipantDto,
@@ -72,6 +73,8 @@ export interface TaskRepository {
 
   /** Starting values for new tasks of a project; absent means none are configured. Optional so partial fakes stay valid. */
   findTaskDefaults?(workspaceId: string, projectId: string): Promise<TaskDefaultsDto | null>;
+  /** The project's rules; null (or an absent method) means every rule is off. */
+  findProjectRules?(workspaceId: string, projectId: string): Promise<ProjectRulesDto | null>;
 
   /** Opaque value that changes whenever workspace access changes; bound into list cursors. */
   permissionEpoch(workspaceId: string): Promise<string>;

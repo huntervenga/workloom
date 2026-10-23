@@ -27,5 +27,7 @@
   "placement": "In this project",
   "section": "Section in this project",
   "sharedStatus": "Shared status",
-  "multiProjectWarning": "This task is in more than one project. Its time and estimate are counted once, in the project where it lives and in the period of its due date — not in each project. To carry unfinished work into another week, use “Complete and continue in another project” instead."
+  "multiProjectWarning": "This task is in more than one project. Its time and estimate are counted once, in the project where it lives and in the period of its due date — not in each project. To carry unfinished work into another week, use “Complete and continue in another project” instead.",
+  "oneProjectHint": "This project keeps every task in one project only.",
+  "failedRule": "This project does not allow the task to be added there. A project rule keeps each task in one project."
 }

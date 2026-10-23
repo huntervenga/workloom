@@ -134,6 +134,7 @@ export {createLocalCredentialService,type StoredLocalCredential,type LocalCreden
 export * from './inbox/application.js';
 export * from './inbox/ports.js';
 export { createInboxApplication } from './inbox/service.js';
+export { createProjectRulesService, type ProjectRulesApplication, type ProjectRulesDependencies, type ProjectRulesRepository, type ProjectRulesScope } from './project-rules/service.js';
 export * from './my-tasks/application.js';
 export * from './my-tasks/ports.js';
 export { createMyTasksApplication } from './my-tasks/service.js';

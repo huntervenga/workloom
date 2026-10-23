@@ -6,12 +6,15 @@ import { Button } from '@workloom/ui';
 import { useTranslation } from '../../i18n';
 import { ChoicePicker } from '../../shared/ChoicePicker';
 import { useProjectsQuery } from '../projects/queries';
+import { useProjectRules } from '../project-rules/queries';
 import { useTaskPlacementsQuery, type PlacementCommands } from './queries';
 
 export function TaskProjectsField({ actorId, task, homeProject, writable, commands }: { actorId: string; task: TaskDto; homeProject: ProjectDto; writable: boolean; commands: PlacementCommands }) {
   const { t } = useTranslation();
   const placements = useTaskPlacementsQuery(actorId, task.workspaceId, task.id);
   const projects = useProjectsQuery(actorId, task.workspaceId);
+  const homeRules = useProjectRules(actorId, task.workspaceId, homeProject.id);
+  const keepsOneProject = homeRules.data?.config.singleProject === true;
   const registry = protectedCommandsFor(useQueryClient());
   useSyncExternalStore(registry.subscribe, registry.getSnapshot);
   // A denied/failed refetch hides retained membership metadata and disables all writes.
@@ -28,9 +31,9 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
     {active.map(item => <div key={item.id} className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate">{projectName(item.projectId)}</span><Button size="sm" variant="ghost" disabled={blocked} aria-label={t('placements.removeFrom', { p0: projectName(item.projectId) })} onClick={() => commands.mutate({ command: { kind: 'detach', placementId: item.id, input: { expectedRevision: item.revision } } })}>{t('placements.remove')}</Button></div>)}
     {archived.map(item => <Button key={item.id} size="sm" variant="ghost" disabled={blocked} onClick={() => commands.mutate({ command: { kind: 'restore', placementId: item.id, input: { expectedRevision: item.revision } } })}>{t('placements.restoreTo', { p0: projectName(item.projectId) })}</Button>)}
     {placements.isError || projects.isError ? <div className="space-y-1"><p role="status" className="text-xs text-muted">{t('placements.loadFailed')}</p><Button size="sm" variant="ghost" onClick={() => { void placements.refetch(); void projects.refetch(); }}>{t('placements.reload')}</Button></div> : null}
-    {writable && task.visibility === 'workspace' && task.meetingId === null && task.archivedAt === null ? <ChoicePicker compact searchable label={t('placements.add')} placeholder={t('placements.add')} value="" options={choices} disabled={blocked || choices.length === 0} onValueChange={projectId => {
+    {writable && !keepsOneProject && task.visibility === 'workspace' && task.meetingId === null && task.archivedAt === null ? <ChoicePicker compact searchable label={t('placements.add')} placeholder={t('placements.add')} value="" options={choices} disabled={blocked || choices.length === 0} onValueChange={projectId => {
       if (!blocked && choices.some(choice => choice.value === projectId)) commands.mutate({ command: { kind: 'attach', taskId: task.id, input: { projectId, expectedTaskRevision: task.revision } } });
     }} /> : null}
-    <p className="text-xs text-muted">{t('placements.sharedHint')}</p>
+    <p className="text-xs text-muted">{keepsOneProject ? t('placements.oneProjectHint') : t('placements.sharedHint')}</p>
   </div>;
 }

@@ -71,6 +71,7 @@ import { fieldRollups } from '../features/fields/rollup';
 import { BulkContinueDialog } from '../features/task-continuation/BulkContinueDialog';
 import { ContinueInProjectDialog } from '../features/task-continuation/ContinueInProjectDialog';
 import { DuplicateProjectDialog } from '../features/project-copy/DuplicateProjectDialog';
+import { ProjectRulesDialog } from '../features/project-rules/ProjectRulesDialog';
 import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
 import { useProjectViewMemory } from '../features/projects/projectViewMemory';
 import { useAutoLoadTasks } from '../features/tasks/autoLoad';
@@ -1124,6 +1125,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <DuplicateProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} canManage={canManageFields} unfinished={unfinishedTasks} />
             <TaskDefaultsDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
+            <ProjectRulesDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
             <FieldManagerDialog onConfigurePlanningCheck={planningChecks.configureField} initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
         </ProjectActions>
