@@ -20,8 +20,7 @@
     "moreFields": "More fields",
     "moreFieldsHint": "Participants, custom fields and estimate history",
     "addTag": "Add tag",
-    "removeTag": "Remove tag {{name}}",
-    "hint": "Changes are saved when you leave a field. In the description, press Ctrl+Enter to save."
+    "removeTag": "Remove tag {{name}}"
   },
   "archive": {
     "waitForSave": "Archiving is available once your changes are saved."

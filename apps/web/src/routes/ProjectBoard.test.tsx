@@ -71,7 +71,7 @@ describe('project Board integration', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: task.title })).not.toBeInTheDocument());
     await board(user);
     expect(filterPicker('Task status')).toHaveTextContent('Stored progress');
-    expect(screen.getByText('1 loaded task in this view.')).toBeVisible();
+    expect(screen.getByText('1 task in this view.')).toBeVisible();
     // A filtered list is always a partial loaded budget, like the table, even after its last page.
     expect(screen.getByText('More matching tasks may be available. Counts cover only the loaded tasks in this view.')).toBeVisible();
     await user.click(screen.getByRole('button', { name: other.title }));
@@ -108,8 +108,8 @@ describe('project Board integration', () => {
     let newest: TaskDto = { ...task, title: 'Newest row title', statusId: NEXT, revision: 3, workPackageRevision: 2, estimateMinutes: 60, participantsRevision: 5, participants: [{ membershipId: alphaMembers[1]?.id ?? '', active: true, role: 'assignee', revision: 1 }] };
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: request => request.searchParams.has('cursor') ? page([newest, other]) : page([old], 'board-next'), [`PATCH ${rootPath}/tasks/${task.id}`]: request => ok(newest = { ...newest, statusId: (request.body as { statusId: string }).statusId, revision: 4 }) }));
     const { user } = renderApp(legacyTablePath(`${tablePath}?view=board`));
-    await screen.findByText('1 loaded task in this view.'); await user.click(screen.getByRole('button', { name: 'Load more tasks' }));
-    await screen.findByText('2 loaded tasks in this view.'); expect(screen.queryByRole('button', { name: 'Old row title' })).not.toBeInTheDocument();
+    await screen.findByText('1 task in this view.'); await user.click(screen.getByRole('button', { name: 'Load more tasks' }));
+    await screen.findByText('2 tasks in this view.'); expect(screen.queryByRole('button', { name: 'Old row title' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Newest row title' })).toHaveLength(1);
     const card = screen.getByRole('button', { name: 'Newest row title' }).closest('li'); if (!card) throw new Error('Missing card');
     await user.click(within(card).getByRole('button', { name: 'Change status' }));
@@ -147,7 +147,7 @@ describe('project Board integration', () => {
     await user.click(await screen.findByRole('button', { name: 'Change status' })); await choose(user, 'Stored progress');
     await waitFor(() => expect(calls.some(call => call.method === 'PATCH')).toBe(true));
     await user.type(screen.getByLabelText('Search tasks'), 'not matching');
-    await screen.findByText('0 loaded tasks in this view.'); await screen.findByRole('button', { name: 'Resume original editor' });
+    await screen.findByText('0 tasks in this view.'); await screen.findByRole('button', { name: 'Resume original editor' });
     const search = screen.getByLabelText('Search tasks'); expect(search).toHaveFocus();
     current = { ...task, statusId: NEXT, revision: 2 }; await act(async () => gate.resolve(ok(current)));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument());
@@ -251,7 +251,7 @@ describe('project Board integration', () => {
     await user.click(await screen.findByRole('button', { name: 'Load more tasks' }));
     await screen.findByRole('button', { name: 'Try again' }); expect(screen.getByRole('button', { name: task.title })).toBeVisible();
     expect(screen.queryByText('private page failure')).not.toBeInTheDocument(); await user.click(screen.getByRole('button', { name: 'Try again' }));
-    await screen.findByText('2 loaded tasks in this view.'); expect(screen.getByRole('button', { name: other.title })).toBeVisible();
+    await screen.findByText('2 tasks in this view.'); expect(screen.getByRole('button', { name: other.title })).toBeVisible();
   });
 
   it('matches only exact view=board and leaves other values on the existing table fallback', async () => {

@@ -69,6 +69,10 @@ export interface TaskTableQuickAdd {
 export interface TaskTableProps {
   showLegacySummary?: boolean;
   aggregateFooter?: ReactNode;
+  /** Per-group totals rows; off when no total is chosen, so groups are not followed by empty rows. */
+  showGroupAggregates?: boolean | undefined;
+  /** The project-wide totals row; off for people who cannot choose a total when none is chosen. */
+  showProjectAggregates?: boolean | undefined;
   /** Authoritative full-scope totals, aligned with the same visible columns as the task rows. */
   renderColumnAggregate?: ((columnId: string, group?: TableTaskGroup) => ReactNode) | undefined;
   renderGroupMetadata?: ((group: TableTaskGroup) => ReactNode) | undefined;
@@ -880,7 +884,7 @@ export function TaskTable({
   columnPreset = 'expanded',
   columnIds,
   onEditTaskField, isTaskFieldEditBusy, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
-  showLegacySummary = true, aggregateFooter, renderColumnAggregate, renderGroupMetadata, renderTaskIndicator, columnMenu, onCreateSection,
+  showLegacySummary = true, aggregateFooter, showGroupAggregates = true, showProjectAggregates = true, renderColumnAggregate, renderGroupMetadata, renderTaskIndicator, columnMenu, onCreateSection,
   onMoveTask, moveBlocked = false, acquireDragProtection,
   grouping = 'section',
   sortMode = 'manual',
@@ -1195,7 +1199,7 @@ export function TaskTable({
               {/* Asana-style: the quick row, or a persistent Add task row, closes every expanded section. */}
               {grouping !== 'section' || collapsed ? null : anchored === null && quickAdd?.sectionId === group.sectionId ? quickRows(group, 0)
                 : acceptsNewTasks(group, writable) ? <AddTaskRow sectionId={group.sectionId} label={addTaskLabel(group)} columnCount={columnCount} titleInset={titleInset} onCreate={() => onCreateTask(group.sectionId)} /> : null}
-              {!collapsed && renderColumnAggregate ? <tr data-task-group-aggregates={group.key} className="h-8 border-t border-line bg-canvas/60">{columns.map(column => <td key={column.id} className={cn('h-8 px-3 text-right text-xs', columnLine(column.id), column.id === 'title' && 'sticky left-0 z-[1] bg-canvas text-left')}>{renderColumnAggregate(column.id, group)}</td>)}{trailingColumn ? <td /> : null}</tr> : null}
+              {!collapsed && renderColumnAggregate && showGroupAggregates ? <tr data-task-group-aggregates={group.key} className="h-8 border-t border-line bg-canvas/60">{columns.map(column => <td key={column.id} className={cn('h-8 px-3 text-right text-xs', columnLine(column.id), column.id === 'title' && 'sticky left-0 z-[1] bg-canvas text-left')}>{renderColumnAggregate(column.id, group)}</td>)}{trailingColumn ? <td /> : null}</tr> : null}
             </tbody>
           );
         })}
@@ -1204,7 +1208,7 @@ export function TaskTable({
         {writable && onCreateSection && !sectionComposer ? <tbody><tr className="h-11 border-t border-line"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] px-3"><button type="button" data-add-section-row="" onClick={onCreateSection} className="flex h-10 min-w-0 items-center gap-1 rounded text-sm font-medium text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"><Plus size={16} aria-hidden="true" /><span>{t('taskTable.sections.add')}</span></button></div></td></tr></tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
           {showLegacySummary ? <SummaryRow summary={summary} partial={partial} columnCount={columnCount} /> : null}
-          {renderColumnAggregate ? <tr data-task-project-aggregates="" className="h-9 border-t border-line-strong bg-surface">{columns.map(column => <td key={column.id} className={cn('h-9 px-3 text-right text-xs', columnLine(column.id), column.id === 'title' && 'sticky left-0 z-[1] bg-surface text-left')}>{renderColumnAggregate(column.id)}</td>)}{trailingColumn ? <td /> : null}</tr> : null}
+          {renderColumnAggregate && showProjectAggregates ? <tr data-task-project-aggregates="" className="h-9 border-t border-line-strong bg-surface">{columns.map(column => <td key={column.id} className={cn('h-9 px-3 text-right text-xs', columnLine(column.id), column.id === 'title' && 'sticky left-0 z-[1] bg-surface text-left')}>{renderColumnAggregate(column.id)}</td>)}{trailingColumn ? <td /> : null}</tr> : null}
           {aggregateFooter ? <tr className="border-t border-line-strong bg-surface"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] px-3">{aggregateFooter}</div></td></tr> : null}
         </tfoot>
       </table>

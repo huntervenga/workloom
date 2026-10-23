@@ -19,13 +19,13 @@ describe('independent loaded-task board', () => {
     renderBoard({ tasks, partial: true, caption: 'Filtered review' });
     expect(screen.getByRole('heading', { name: 'Filtered review' })).toHaveClass('sr-only');
     expect(screen.getByRole('region', { name: 'Filtered review' })).toHaveAccessibleName('Filtered review');
-    expect(screen.getByText('3 loaded tasks in this view.')).toBeInTheDocument();
+    expect(screen.getByText('3 tasks in this view.')).toBeInTheDocument();
     expect(screen.getByText('More matching tasks may be available. Counts cover only the loaded tasks in this view.')).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Task status lanes' })).toHaveAttribute('tabindex', '0');
-    expect(screen.getByRole('region', { name: 'Done A' })).toHaveTextContent('0 loaded tasks');
-    expect(screen.getByRole('region', { name: 'Done B' })).toHaveTextContent('0 loaded tasks');
-    expect(screen.getByRole('region', { name: 'Status unavailable (1)' })).toHaveTextContent('1 loaded task');
-    expect(screen.getByRole('region', { name: 'Status unavailable (2)' })).toHaveTextContent('1 loaded task');
+    expect(screen.getByRole('region', { name: 'Done A' })).toHaveTextContent('0 tasks');
+    expect(screen.getByRole('region', { name: 'Done B' })).toHaveTextContent('0 tasks');
+    expect(screen.getByRole('region', { name: 'Status unavailable (1)' })).toHaveTextContent('1 task');
+    expect(screen.getByRole('region', { name: 'Status unavailable (2)' })).toHaveTextContent('1 task');
     expect(screen.getAllByRole('listitem')).toHaveLength(3);
     expect(document.body).not.toHaveTextContent('missing-a');
     expect(document.body).not.toHaveTextContent('missing-b');
@@ -140,8 +140,8 @@ describe('independent loaded-task board', () => {
 
   it('keeps empty catalog lanes and gives an explicit empty loaded view', () => {
     renderBoard();
-    expect(screen.getByText('0 loaded tasks in this view.')).toBeInTheDocument();
-    expect(screen.getAllByText('No loaded tasks in this status.')).toHaveLength(4);
-    expect(screen.getByText('No loaded tasks match this view.')).toBeInTheDocument();
+    expect(screen.getByText('0 tasks in this view.')).toBeInTheDocument();
+    expect(screen.getAllByText('No tasks in this status.')).toHaveLength(4);
+    expect(screen.getByText('No tasks match this view.')).toBeInTheDocument();
   });
 });

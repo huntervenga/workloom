@@ -46,7 +46,7 @@ describe('Board density with retained time context', () => {
     expect(screen.queryByLabelText('Week for hours')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Whose hours to show')).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Weekly hours in table' })).not.toBeInTheDocument();
-    expect(screen.getByText('1 loaded task in this view.')).toBeInTheDocument();
+    expect(screen.getByText('1 task in this view.')).toBeInTheDocument();
     expect(views().getByRole('link', { name: 'Reports' })).toHaveAttribute('href', reportHref);
     expect(views().queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
     const location = screen.getByTestId('location');

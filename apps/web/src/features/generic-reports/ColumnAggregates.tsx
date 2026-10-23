@@ -98,6 +98,8 @@ export function useColumnAggregates({ actorId, workspaceId, projectId, fields, m
     const title = group.kind === 'assignee' ? group.member?.displayName ?? t('genericReports.unassigned') : group.section?.name ?? t('genericReports.noSection');
     return <HeaderWidgets templateController={templateController} templateChecks={templateCheckSettings.data?.config.rules??[]} templateChecksReady={templateCheckSettings.isSuccess&&!templateCheckSettings.isFetching} group={widgetGroup} title={title} projectDateRange={projectDateRange ?? null} rules={currentSettings.headerWidgets ?? []} revision={currentSettings.revision} result={currentHeaders} fields={fields} members={members} workspaceId={workspaceId} writable={writable} disabled={settings.isFetching || held || edit !== null || command.hasOtherProtectedCommands()} loading={currentHeaders === undefined && (settings.isFetching || headerResult.isFetching)} uncertain={command.uncertain !== null} onRetry={onSuccess => command.retryUncertain({ onSuccess })} feedback={<SaveFeedback error={command.error} uncertainError={command.uncertain?.error ?? null} subject="fieldValueSave"/>} onSave={(widgets, revision, onSuccess) => { command.mutate({ input: { expectedRevision: revision, measures: currentSettings.measures, headerWidgets: replaceHeaderWidgets(currentSettings.headerWidgets ?? [], widgetGroup, widgets) } }, { onSuccess }); }} />;
   };
-  return { panel, footer: renderLine(), renderColumn, renderGroupMetadata, templateController };
+  // With no totals chosen the rows would only show a label over empty cells.
+  // A person who cannot configure totals sees the panel only when there is something to read.
+  return { panel: config.measures.length > 0 || writable ? panel : null, footer: renderLine(), renderColumn, renderGroupMetadata, templateController, hasMeasures: config.measures.length > 0, canConfigure: writable };
 
 }

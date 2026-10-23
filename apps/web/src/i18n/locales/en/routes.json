@@ -11,9 +11,9 @@
   "notFoundDescription": "This page does not exist. Check the address or return to your workspace.",
   "backOverview": "Back to overview",
   "workspace": "Workspace",
-  "overviewDescription": "Your team's place for weekly planning, tasks and time tracking. Explore projects, team members and their roles.",
+  "overviewDescription": "Projects and people of your workspace.",
   "localDescription": "You are using synthetic data on your computer. Sign-in, invitations and real team members are planned for a later release.",
-  "integrations": "Integrations · local MCP",
+  "integrations": "API & integrations",
   "timezone": "Time zone",
   "yourRole": "Your role",
   "team": "Team",
@@ -49,5 +49,6 @@
   "projectCreated": "Project “{{name}}” created.",
   "projectRenamed": "Project renamed to “{{name}}”.",
   "renameProject": "Rename project “{{name}}”",
-  "notInWorkspace": "{{name}} is not a member of a workspace yet. Your workspace will appear here when you are added to a team."
+  "notInWorkspace": "{{name}} is not a member of a workspace yet. Your workspace will appear here when you are added to a team.",
+  "workspaceSettings": "Workspace settings"
 }

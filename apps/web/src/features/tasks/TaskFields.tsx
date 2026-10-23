@@ -336,6 +336,7 @@ export function TaskFields({
           id={ids.description}
           className={inputClassName('mt-1.5 h-auto min-h-20 py-2 leading-relaxed')}
           rows={3}
+          placeholder={t('tasks.taskFields.descriptionPlaceholder')}
           value={draft.description}
           maxLength={TASK_DESCRIPTION_MAX}
           aria-invalid={errors.description ? true : undefined}

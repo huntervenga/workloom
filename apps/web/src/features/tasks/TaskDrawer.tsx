@@ -780,7 +780,6 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
       {/* No Save, Draft or Discard for ordinary edits: only the save state, and a Retry for a held lock. */}
       <div className={formFooterClassName}>
         <AutosaveStatus phase={phase} unsent={unsent} committed={(entry?.committed.length ?? 0) > 0} />
-        {canEdit && !locked ? <span className="order-last ml-auto text-xs text-muted">{t('autosave.fields.hint')}</span> : null}
         {locked ? (
           <Button type="submit" form={formId} variant="primary" aria-disabled={busy || undefined}>
             {pending ? t('tasks.taskDrawer.submitting') : t('tasks.taskDrawer.retrySubmission')}

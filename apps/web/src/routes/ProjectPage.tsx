@@ -72,6 +72,7 @@ import { BulkContinueDialog } from '../features/task-continuation/BulkContinueDi
 import { ContinueInProjectDialog } from '../features/task-continuation/ContinueInProjectDialog';
 import { DuplicateProjectDialog } from '../features/project-copy/DuplicateProjectDialog';
 import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
+import { useProjectViewMemory } from '../features/projects/projectViewMemory';
 import { useAutoLoadTasks } from '../features/tasks/autoLoad';
 import { CompletedDateBanner } from '../features/projects/CompletedDateBanner';
 import { completedDateIssues } from '../features/projects/dateConsistency';
@@ -341,6 +342,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     // Only changed filters are patched onto the current URL head; a search edit never navigates.
     setSearchParams(before => patchTaskFilterParams(before, urlFilters, next));
   };
+  useProjectViewMemory({
+    actorId, workspaceId: workspace.id, projectId: project.id, searchParams, grouping,
+    restore: (params, group) => { setSearchParams(() => new URLSearchParams(params), { replace: true }); setGrouping(group === 'assignee' ? 'assignee' : 'section'); },
+  });
   const sortMode: TaskSortMode = searchParams.getAll('sort').length === 1 && searchParams.get('sort') === 'due_asc' ? 'due_asc' : 'manual';
   const taskId = searchParams.get('task');
   const desktopTaskPane = useDesktopTaskPane(taskId !== null);
@@ -1314,7 +1319,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             columnIds={visibleColumnIds}
             customColumns={[...timeColumns, ...customColumns]}
             showLegacySummary={timeAvailable}
-            renderColumnAggregate={ordinaryAggregates.renderColumn}
+            renderColumnAggregate={ordinaryAggregates.renderColumn} showGroupAggregates={ordinaryAggregates.hasMeasures} showProjectAggregates={ordinaryAggregates.hasMeasures || ordinaryAggregates.canConfigure}
             renderGroupMetadata={group => <>{planningChecks.renderGroup(group)}{ordinaryAggregates.renderGroupMetadata(group)}</>}
             renderTaskIndicator={planningChecks.renderTaskIndicator}
             writable={writable}
@@ -1432,6 +1437,8 @@ interface TaskListProps {
   showLegacySummary?: boolean;
   aggregateFooter?: ComponentProps<typeof TaskTable>['aggregateFooter'];
   renderColumnAggregate?: ComponentProps<typeof TaskTable>['renderColumnAggregate'];
+  showGroupAggregates?: boolean;
+  showProjectAggregates?: boolean;
   renderGroupMetadata?: ComponentProps<typeof TaskTable>['renderGroupMetadata'];
   renderTaskIndicator?: ComponentProps<typeof TaskTable>['renderTaskIndicator'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;

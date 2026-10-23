@@ -161,7 +161,8 @@
     "moreDetailsHint": "Dates, priority, estimate, people and tags",
     "addParticipant": "Add participant",
     "removeParticipant": "Remove {{name}}",
-    "moreDetailsOrdinaryHint": "Section, priority, people and tags"
+    "moreDetailsOrdinaryHint": "Section, priority, people and tags",
+    "descriptionPlaceholder": "Add a description… (Ctrl+Enter to save)"
   },
   "taskFilters": {
     "searchTasks": "Search tasks",

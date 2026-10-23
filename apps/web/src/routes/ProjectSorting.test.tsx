@@ -140,7 +140,7 @@ it('resorts flat Assignee groups and deduped Board heads after a newer duplicate
   await user.click(views().getByRole('button', { name: 'Board' }));
   const cards = screen.getAllByRole('button', { name: /^(Later parent|Earlier child|Middle root)$/ }).filter(button => !button.hasAttribute('aria-describedby'));
   expect(cards.map(card => card.textContent)).toEqual([parent.title, child.title, peer.title]);
-  expect(screen.getByText('3 loaded tasks in this view.')).toBeInTheDocument(); expect(sort()).toHaveTextContent('Due date');
+  expect(screen.getByText('3 tasks in this view.')).toBeInTheDocument(); expect(sort()).toHaveTextContent('Due date');
   await user.click(views().getByRole('button', { name: 'Tasks' })); expect(screen.getByRole('combobox', { name: 'Group by' })).toHaveTextContent('Assignee'); expect(writes(calls)).toHaveLength(0);
 });
 

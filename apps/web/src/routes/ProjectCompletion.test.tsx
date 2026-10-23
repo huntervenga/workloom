@@ -87,7 +87,7 @@ describe('explicit task completion', () => {
     const { user } = renderApp(tablePath); await user.click(await complete()); await waitFor(() => expect(attempts).toBe(1));
     await act(async () => gate.lose()); await screen.findByRole('button', { name: 'Retry original status change' });
     await user.click(views().getByRole('button', { name: 'Board' })); await user.type(screen.getByLabelText('Search tasks'), 'hidden');
-    await screen.findByText('0 loaded tasks in this view.'); await user.click(screen.getByRole('button', { name: 'Retry original status change' }));
+    await screen.findByText('0 tasks in this view.'); await user.click(screen.getByRole('button', { name: 'Retry original status change' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Retry original status change' })).not.toBeInTheDocument());
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     const writes = calls.filter(call => call.method === 'PATCH'); expect(writes).toHaveLength(2); expect(writes[1]?.body).toEqual(writes[0]?.body); expect(writes[1]?.headers.get('Idempotency-Key')).toBe(writes[0]?.headers.get('Idempotency-Key'));

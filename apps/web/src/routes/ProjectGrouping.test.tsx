@@ -203,7 +203,7 @@ describe('page-owned task grouping', () => {
     expect(groupToggle(NEXT.displayName, true)).toHaveAttribute('aria-expanded', 'false');
   });
 
-  it('allows viewer grouping without mutation controls and resets an unmounted personal presentation', async () => {
+  it('allows viewer grouping without mutation controls and remembers it when the project is opened again', async () => {
     const { calls } = installFakeApi(routes({ 'GET /api/v1/workspaces': () => ok([{ ...alpha, role: 'viewer' }]), [`GET ${rootPath}`]: () => ok({ ...alpha, role: 'viewer' }) }));
     const first = renderApp(tablePath); await screen.findByRole('button', { name: parent.title });
     await tableChoice(first.user, groupControl(), 'assignee');
@@ -211,7 +211,8 @@ describe('page-owned task grouping', () => {
     expect(screen.queryByRole('button', { name: 'Add task' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add task to “Original section”' })).not.toBeInTheDocument();
     first.unmount(); renderApp(tablePath); await screen.findByRole('button', { name: parent.title });
-    expect(groupControl()).toHaveTextContent('Section'); expect(writes(calls)).toHaveLength(0);
+    // The last grouping comes back (browser-local, per project), still without any write.
+    expect(groupControl()).toHaveTextContent('Assignee'); expect(writes(calls)).toHaveLength(0);
   });
 
 

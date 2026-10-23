@@ -134,10 +134,10 @@ describe('project task completion filter', () => {
     const partial = 'More matching tasks may be available. Counts cover only the loaded tasks in this view.';
     const ui = app(`${tablePath}?view=board`);
     await screen.findByRole('region', { name: 'Task status lanes' });
-    await screen.findByText('4 loaded tasks in this view.');
+    await screen.findByText('4 tasks in this view.');
     expect(screen.queryByText(partial)).not.toBeInTheDocument();
     await chooseFilter(ui.user, 'Task completion', 'Incomplete tasks');
-    await screen.findByText('2 loaded tasks in this view.');
+    await screen.findByText('2 tasks in this view.');
     expect(listCalls(ui.calls).at(-1)?.searchParams.get('completion')).toBe('open');
     expect(screen.getByText(partial)).toBeInTheDocument();
     expect(writes(ui.calls)).toHaveLength(0);

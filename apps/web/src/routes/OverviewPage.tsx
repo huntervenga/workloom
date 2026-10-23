@@ -1,4 +1,5 @@
 import { GettingStarted } from '../features/getting-started/GettingStarted';
+import { NextTasks } from '../features/my-tasks/NextTasks';
 import { CompanyAddressCard } from '../features/workspace/CompanyAddressCard';
 import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { t, useTranslation } from '../i18n';
@@ -42,11 +43,9 @@ export function OverviewPage() {
         </p>
       </header>
 
-      <Link to={`/w/${workspace.id}/integrations`} className="inline-flex rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-accent-ink">{t('routes.integrations')}</Link>
-
       {workspace.role === 'owner' || workspace.role === 'admin' ? <GettingStarted actorId={actorId} workspaceId={workspace.id} members={members.data} projectCount={projects.data?.projects.length} /> : null}
 
-      <CompanyAddressCard actorId={actorId} workspace={workspace} />
+      <NextTasks actorId={actorId} workspaceId={workspace.id} />
 
       <dl className="grid gap-3 sm:grid-cols-3">
         <DetailTile icon={<Clock size={16} aria-hidden="true" />} label={t('routes.timezone')}>
@@ -65,6 +64,15 @@ export function OverviewPage() {
         <ProjectsPreview projects={projects} workspaceId={workspace.id} />
         <MembersPreview members={members} actorId={actorId} workspaceId={workspace.id} />
       </div>
+
+      {/* Set-up pages that are rarely needed stay out of the way. */}
+      <details className="rounded-2xl border border-line bg-surface px-5 py-3">
+        <summary className="cursor-pointer text-sm font-semibold text-ink">{t('routes.workspaceSettings')}</summary>
+        <div className="mt-3 space-y-3">
+          <CompanyAddressCard actorId={actorId} workspace={workspace} />
+          <Link to={`/w/${workspace.id}/integrations`} className="inline-flex rounded-lg border border-line bg-surface px-4 py-2 text-sm font-medium text-accent-ink">{t('routes.integrations')}</Link>
+        </div>
+      </details>
     </div>
   );
 }
