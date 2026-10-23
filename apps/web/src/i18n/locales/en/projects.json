@@ -91,7 +91,7 @@
   "asanaImport": {
     "trigger": "Import from Asana",
     "title": "Import an Asana project",
-    "description": "Local import from your matching JSON and CSV exports. Your Asana project stays unchanged.",
+    "description": "Bring a project over from Asana using its matching JSON and CSV exports. Your Asana project stays unchanged.",
     "stepFiles": "1 · Choose files",
     "stepReview": "2 · Review and import",
     "stepDone": "3 · Ready to explore",
@@ -123,8 +123,8 @@
     "sizeError": "Each file must be no larger than 10 MiB. Export a smaller project or use the local import command.",
     "accessError": "Your session or workspace permissions changed. Sign in as the workspace owner and try again.",
     "uncertainError": "The import may have finished, but its answer did not arrive. Retry this same import to retrieve its result safely. Do not upload another copy.",
-    "mappingError": "Some people or fields could not be matched. Check workspace Members and the matching export files. If it persists, ask the local import operator to review the mapping.",
-    "reviewError": "This export needs review: it may conflict with an existing import or current shared tasks, or need a preservation option. Check the original exports and advanced options. Ask the local import operator to resolve any remaining conflict.",
+    "mappingError": "Every person in the export must already be on the Members page with the same e-mail address as in Asana. Add the missing teammates there, then check the files again.",
+    "reviewError": "This export needs review: it may conflict with an existing import or current shared tasks, or need a preservation option. Check the original exports and the advanced options.",
     "busyError": "Another import is running. Wait for it to finish, then retry this import.",
     "previewError": "The files could not be checked. Make sure the JSON and CSV are matching Asana exports, review the advanced options, and try again.",
     "applyError": "The import could not finish. Retry this import; already imported tasks will be reused.",
@@ -136,6 +136,11 @@
     "warningUnknown": "This import has an additional warning. Ask the local import operator to review the source before proceeding.",
     "externalDependencyError": "A task depends on work that is not in this export (for example another week or project). Open advanced options, turn on “Keep unresolved external dependencies as source metadata”, and check the files again. The labels are kept as notes; no links are guessed.",
     "milestoneOptionError": "The export contains milestones. Open advanced options, turn on “Import milestones as ordinary tasks”, and check the files again.",
-    "textBoundsError": "A task name is empty, or a name or description is longer than Workloom allows. Check the export in Asana."
+    "textBoundsError": "A task name is empty, or a name or description is longer than Workloom allows. Check the export in Asana.",
+    "howTitle": "How to get the two files from Asana",
+    "howOne": "Open the project in Asana and click the arrow next to the project name.",
+    "howTwo": "Choose Export/Print, then CSV. A file downloads.",
+    "howThree": "Open the same menu again and choose JSON. A second file downloads.",
+    "howFour": "Add your teammates to the Members page here first, using the e-mail addresses they have in Asana, so their tasks keep their owners."
   }
 }

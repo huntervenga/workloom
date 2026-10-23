@@ -1,4 +1,4 @@
-import {managedLocalAsanaTarget,registerLocalAsanaImportRoutes,type LocalAsanaImporter} from './http/local-asana-import-routes.js';
+import {hostedAsanaImportEnabled,managedLocalAsanaTarget,registerLocalAsanaImportRoutes,type LocalAsanaImporter} from './http/local-asana-import-routes.js';
 import { registerWorkspaceSlugRoutes } from './http/workspace-slug-routes.js';
 import { createWorkspaceSlugApplication } from '@workloom/db';
 import type { WorkspaceSlugApplication } from '@workloom/domain';
@@ -393,9 +393,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     registerSharedAuthRoutes(app, { service: sharedAuth, ...(config.sharedAuth && teamApplication ? { invitationHandoff: createInvitationHandoff(config.sharedAuth, dependencies.clock), team: teamApplication } : {}) });
   }
   registerApiRoutes(app, routeDeps);
-  if(managedLocalAsanaTarget(config.appEnv,config.authMode,config.database.url)){
+  if(managedLocalAsanaTarget(config.appEnv,config.authMode,config.database.url)||hostedAsanaImportEnabled(config.appEnv,config.authMode)){
     let importer=dependencies.localAsanaImporter;
-    if(!importer){const adapterUrl=new URL('../../../scripts/asana-browser-import.mjs',import.meta.url).href;const adapter=await import(adapterUrl) as {createAsanaBrowserImporter:(options:{databaseUrl:string})=>LocalAsanaImporter};importer=adapter.createAsanaBrowserImporter({databaseUrl:config.database.url});}
+    if(!importer){const adapterUrl=new URL('../../../scripts/asana-browser-import.mjs',import.meta.url).href;const adapter=await import(adapterUrl) as {createAsanaBrowserImporter:(options:{databaseUrl:string;hosted?:boolean;importsDir?:string|undefined})=>LocalAsanaImporter};importer=adapter.createAsanaBrowserImporter({databaseUrl:config.database.url,...(config.appEnv!=='local'?{hosted:true,importsDir:process.env['ASANA_IMPORT_DIR']}:{})});}
     registerLocalAsanaImportRoutes(app,{identity,repository,importer});
   }
   if (identity.mode === 'shared' && workspaceCreateApplication !== undefined) {

@@ -90,6 +90,9 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
       <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
       <p className="text-xs font-medium text-muted">{t(result ? 'projects.asanaImport.stepDone' : upload ? 'projects.asanaImport.stepReview' : 'projects.asanaImport.stepFiles')}</p>
       {!upload ? <>
+        <details className="rounded-lg border border-line p-3 text-sm" open><summary className="cursor-pointer font-medium text-ink">{t('projects.asanaImport.howTitle')}</summary>
+          <ol className="mt-2 list-decimal space-y-1 pl-5 text-muted"><li>{t('projects.asanaImport.howOne')}</li><li>{t('projects.asanaImport.howTwo')}</li><li>{t('projects.asanaImport.howThree')}</li><li>{t('projects.asanaImport.howFour')}</li></ol>
+        </details>
         <p className="text-sm text-muted">{t('projects.asanaImport.fileHelp')}</p>
         <label className="block space-y-1 text-sm font-medium text-ink">{t('projects.asanaImport.jsonFile')}<input type="file" accept=".json,application/json" disabled={busy !== null} className="block w-full rounded-lg border border-line p-2 text-sm" onChange={event => { setJson(event.target.files?.[0] ?? null); setError(null); }} /></label>
         <label className="block space-y-1 text-sm font-medium text-ink">{t('projects.asanaImport.csvFile')}<input type="file" accept=".csv,text/csv" disabled={busy !== null} className="block w-full rounded-lg border border-line p-2 text-sm" onChange={event => { setCsv(event.target.files?.[0] ?? null); setError(null); }} /></label>

@@ -113,8 +113,10 @@ export class OperatorJournal{
  checkpoint(phase,data={}){this.value.phase=phase;Object.assign(this.value,data);privateSave(this.path,this.value);}
 }
 
-function localTarget(url,{testMode=false}={}){
+function localTarget(url,{testMode=false,hosted=false}={}){
  let target;try{target=new URL(url);}catch{fail('Database URL is invalid.');}
+ // A hosted deployment writes to its own database (TLS options in the URL are expected); only local runs are pinned to the managed local database.
+ if(hosted&&!testMode){if(!['postgres:','postgresql:'].includes(target.protocol))fail('Only PostgreSQL targets are accepted.');return;}
  if(!['postgres:','postgresql:'].includes(target.protocol)||!['127.0.0.1','localhost','[::1]'].includes(target.hostname)||target.search||target.hash)fail('Only explicit local PostgreSQL targets are accepted.');
  if(testMode){if(target.port!=='55433'||!/^\/workloom_[a-z0-9_]*test[a-z0-9_]*$/i.test(target.pathname))fail('Synthetic execution requires the isolated test PostgreSQL on55433.');}
  else if(target.port!=='55432'||target.pathname!=='/workloom_dev')fail('This operator accepts only the managed local55432 workloom_dev database.');
@@ -179,9 +181,9 @@ export async function reconcileAsana(plan,apps,ctx,resources,idMap){
  return {status:differences.length?'mismatch':'verified',taskCount:rows.length,checkedAt:new Date().toISOString(),differences,totals};
 }
 /** All mutations are existing authorized domain commands, each journaled before invocation. */
-export async function executeAsanaImport(plan,{databaseUrl,ownerUserId,journalDir,testMode=false,planOnly=false,afterStep}={}){
- localTarget(databaseUrl,{testMode});await validatePrepared(plan);secureDirectory(journalDir);
- const release=journalLock(journalDir);const lib=await import('@workloom/db'),database=lib.createDatabase(databaseUrl,{requireLoopback:true,maxConnections:3,applicationName:'workloom-local-asana-operator'});
+export async function executeAsanaImport(plan,{databaseUrl,ownerUserId,journalDir,testMode=false,hosted=false,planOnly=false,afterStep}={}){
+ localTarget(databaseUrl,{testMode,hosted});await validatePrepared(plan);secureDirectory(journalDir);
+ const release=journalLock(journalDir);const lib=await import('@workloom/db'),database=lib.createDatabase(databaseUrl,{requireLoopback:!hosted,maxConnections:3,applicationName:'workloom-local-asana-operator'});
  try{
   let ctx=await ownerContext(database,plan,ownerUserId);
   if(planOnly){if(existsSync(join(journalDir,'journal.json')))new OperatorJournal(join(journalDir,'journal.json'),plan);privateSave(join(journalDir,'plan.json'),plan);return {status:'planned',summary:plan.summary};}
