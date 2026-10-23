@@ -22,6 +22,8 @@ const LANDING_HTML =
 const SPA_HTML =
   '<!doctype html><html><head><meta name="robots" content="noindex"></head>' +
   `<body><div id="root" ${SPA_MARKER}></div><script type="module" src="/assets/app-abc.js"></script></body></html>`;
+const START_MARKER = 'data-marker="start-page"';
+const START_HTML = `<!doctype html><html><head><title>Start</title></head><body><main ${START_MARKER}>Start</main></body></html>`;
 const ROBOTS_TXT = 'User-agent: *\nAllow: /\nDisallow: /app\nSitemap: https://workloom.pavelignatov.com/sitemap.xml\n';
 const SITEMAP_XML =
   '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' +
@@ -57,6 +59,7 @@ function writeDist(files: { readonly landing: boolean; readonly index: boolean }
   if (files.index) writeFileSync(join(dist, 'index.html'), SPA_HTML);
   writeFileSync(join(dist, 'assets', 'app-abc.js'), 'console.log(1);');
   writeFileSync(join(dist, 'assets', 'app-abc.css'), 'body{}');
+  writeFileSync(join(dist, 'start.html'), START_HTML);
   writeFileSync(join(dist, 'robots.txt'), ROBOTS_TXT);
   writeFileSync(join(dist, 'sitemap.xml'), SITEMAP_XML);
   return dist;
@@ -154,6 +157,20 @@ describe('API app routing the landing and /app SPA', () => {
   afterAll(async () => {
     await app.close();
     rmSync(dist, { recursive: true, force: true });
+  });
+
+  it('serves the public sign-up chooser at /start and redirects its document alias', async () => {
+    for (const url of ['/start', '/start/', '/start?utm_source=landing']) {
+      const get = await request(app, 'GET', url);
+      expect(get.statusCode).toBe(200);
+      expect(get.headers['content-type']).toMatch(/^text\/html/);
+      expect(get.headers['x-robots-tag']).toBeUndefined();
+      expect(get.body).toContain(START_MARKER);
+    }
+    const alias = await request(app, 'GET', '/start.html?ref=a%20b');
+    expect(alias.statusCode).toBe(308);
+    expect(alias.headers.location).toBe('/start?ref=a%20b');
+    for (const url of ['/START.HTML', '/%73tart.html', '/assets/../start.html']) expect((await request(app, 'GET', url)).body).not.toContain(START_MARKER);
   });
 
   it('serves the public landing at / for GET and HEAD without SPA or noindex', async () => {

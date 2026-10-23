@@ -8,7 +8,8 @@ import { createThemeManager, THEME_STORAGE_KEY } from '../src/features/theme/The
 import english from '../src/i18n/locales/en/landing.json';
 import englishTheme from '../src/i18n/locales/en/theme.json';
 import { wireThemeToggle } from '../src/landing/theme';
-import { landingPlugin, landingRequestUrl, PUBLIC_ORIGIN, renderLanding, transformLandingHtml } from './landing';
+import startTemplate from '../start.html?raw';
+import { landingPlugin, landingRequestUrl, LOGIN_HREF, PUBLIC_ORIGIN, renderLanding, renderStart, START_PATH, structuredData, transformLandingHtml } from './landing';
 
 function page(copy = english) {
   const rendered = renderLanding(copy);
@@ -20,22 +21,67 @@ describe('public landing prerender', () => {
     const document = page();
     expect(document.title).toBe(english.seo.title);
     expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toBe(english.seo.description);
+    expect(document.querySelector('meta[name="robots"]')?.getAttribute('content')).toContain('index');
     expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(`${PUBLIC_ORIGIN}/`);
     expect(document.querySelector('meta[property="og:title"]')?.getAttribute('content')).toBe(english.seo.title);
     expect(document.querySelector('meta[property="og:description"]')?.getAttribute('content')).toBe(english.seo.description);
     expect(document.querySelector('meta[property="og:url"]')?.getAttribute('content')).toBe(`${PUBLIC_ORIGIN}/`);
+    expect(document.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe(`${PUBLIC_ORIGIN}/shots/table.png`);
+    expect(document.querySelector('meta[name="twitter:card"]')?.getAttribute('content')).toBe('summary_large_image');
     expect(document.querySelectorAll('h1')).toHaveLength(1);
     expect(document.querySelector('h1')?.textContent).toBe(english.hero.title);
-    expect(document.querySelectorAll('a[href="/app"]')).toHaveLength(3);
+    // Every "Try for free" goes to the chooser; sign-in goes straight to the shared Auth login.
+    const tries = [...document.querySelectorAll<HTMLAnchorElement>(`a[href="${START_PATH}"]`)];
+    expect(tries.filter(link => link.textContent?.startsWith(english.nav.tryFree))).toHaveLength(4);
+    expect(document.querySelector('a.sign-in')?.getAttribute('href')).toBe(LOGIN_HREF);
+    expect(document.querySelectorAll('a[href="/app"]')).toHaveLength(0);
     for (const link of document.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')) {
       expect(document.getElementById(link.hash.slice(1))).not.toBeNull();
     }
     expect(document.querySelector('nav')?.getAttribute('aria-label')).toBe(english.nav.label);
-    expect(document.querySelectorAll('script,iframe,form,input')).toHaveLength(0);
-    expect(document.querySelector('figure')?.textContent).toContain(english.example.caption);
-    for (const feature of [english.features.tasks, english.features.planning, english.features.meetings, english.features.dependencies]) {
+    expect(document.body.querySelectorAll('script,iframe,form,input')).toHaveLength(0);
+    for (const feature of Object.values({ ...english.features }).filter((item): item is typeof english.features.tasks => typeof item === 'object')) {
       expect(document.getElementById('features')?.textContent).toContain(feature.title);
     }
+    // Screenshots are real files with alternative text and fixed dimensions (no layout shift).
+    const images = [...document.querySelectorAll('img')];
+    expect(images).toHaveLength(7);
+    for (const image of images) {
+      expect(image.getAttribute('src')).toMatch(/^\/shots\/[a-z-]+\.png$/);
+      expect(image.getAttribute('alt')?.length).toBeGreaterThan(20);
+      expect(image.getAttribute('width')).toBe('1440');
+      expect(image.getAttribute('height')).toBe('900');
+    }
+    // The honest section lists both sides, and the FAQ is plain disclosure elements.
+    expect(document.getElementById('pros')?.querySelectorAll('li')).toHaveLength(Object.keys(english.pros.items).length + Object.keys(english.cons.items).length);
+    expect(document.querySelectorAll('#faq details')).toHaveLength(Object.keys(english.faq.items).length);
+  });
+
+  it('describes the product and its FAQ as valid JSON-LD that cannot close its script early', () => {
+    const hostile = structuredClone(english);
+    hostile.faq.items.one = { q: 'Q </script><b>', a: 'A </script>' };
+    const json = structuredData(hostile);
+    expect(json).not.toContain('</script>');
+    const data = JSON.parse(json) as { '@type': string; mainEntity?: { name: string }[] }[];
+    expect(data.map(item => item['@type'])).toEqual(['SoftwareApplication', 'FAQPage']);
+    expect(data[1]?.mainEntity).toHaveLength(Object.keys(english.faq.items).length);
+    expect(data[1]?.mainEntity?.[0]?.name).toBe('Q </script><b>');
+    const head = new DOMParser().parseFromString(`<!doctype html><html><head>${renderLanding(english).head}</head><body></body></html>`, 'text/html');
+    expect(head.querySelectorAll('script[type="application/ld+json"]')).toHaveLength(1);
+  });
+
+  it('renders the sign-up chooser: both choices reach the shared sign-in and it is indexable', () => {
+    const rendered = renderStart(english);
+    const document = new DOMParser().parseFromString(`<!doctype html><html><head>${rendered.head}</head><body>${rendered.body}</body></html>`, 'text/html');
+    expect(document.title).toBe(english.start.seoTitle);
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(`${PUBLIC_ORIGIN}${START_PATH}`);
+    expect(document.querySelector('meta[name="robots"]')?.getAttribute('content')).toBe('index, follow');
+    expect(document.querySelectorAll('h1')).toHaveLength(1);
+    const buttons = [...document.querySelectorAll<HTMLAnchorElement>('a.button')];
+    expect(buttons.map(button => button.getAttribute('href'))).toEqual([LOGIN_HREF, LOGIN_HREF]);
+    expect(buttons.map(button => button.textContent?.replace('→', ''))).toEqual([english.start.newButton, english.start.oldButton]);
+    expect(document.querySelectorAll('script,iframe,form,input')).toHaveLength(0);
+    expect(document.querySelector('button[data-theme-toggle]')).not.toBeNull();
   });
 
   it('treats catalog copy as text in both element and attribute contexts', () => {
@@ -45,14 +91,17 @@ describe('public landing prerender', () => {
     copy.nav.label = hostile;
     copy.seo.title = hostile;
     copy.seo.description = hostile;
-    copy.example.taskOne = hostile;
+    copy.hero.note = hostile;
+    copy.faq.items.one = { q: hostile, a: hostile };
+    copy.pros.items.one = hostile;
     const document = page(copy);
     expect(document.querySelector('h1')?.textContent).toBe(hostile);
     expect(document.title).toBe(hostile);
     expect(document.querySelector('meta[name="description"]')?.getAttribute('content')).toBe(hostile);
     expect(document.querySelector('nav')?.getAttribute('aria-label')).toBe(hostile);
-    expect(document.querySelector('table')?.textContent).toContain(hostile);
-    expect(document.querySelectorAll('script,[onerror],[onload],iframe')).toHaveLength(0);
+    expect(document.querySelector('.hero-note')?.textContent).toBe(hostile);
+    expect(document.querySelector('#faq summary')?.textContent).toBe(hostile);
+    expect(document.querySelectorAll('script:not([type="application/ld+json"]),[onerror],[onload],iframe')).toHaveLength(0);
   });
 
   it('prerenders one accessible theme button beside the header CTA with escaped theme copy', () => {
@@ -66,7 +115,7 @@ describe('public landing prerender', () => {
     expect(button?.getAttribute('aria-pressed')).toBe('false');
     expect(button?.textContent).toBe('');
     expect([...(button?.querySelectorAll('svg') ?? [])].every(icon => icon.getAttribute('aria-hidden') === 'true')).toBe(true);
-    expect(button?.parentElement?.querySelector('a[href="/app"]')).not.toBeNull();
+    expect(button?.parentElement?.querySelector(`a[href="${START_PATH}"]`)).not.toBeNull();
     expect(header?.querySelector('nav')).not.toBeNull();
 
     const hostile = `A & B <script>alert("x")</script> "quoted" 'single'`;
@@ -116,14 +165,18 @@ describe('public landing prerender', () => {
   it('fills the actual HTML template with only the theme scripts and leaves the noindex SPA untouched', () => {
     const html = transformLandingHtml(template);
     expect(html).toContain(`<h1 id="hero-title">${english.hero.title}</h1>`);
+    expect(transformLandingHtml(startTemplate)).toContain(`<h1 id="start-title">${english.start.title}</h1>`);
+    expect(transformLandingHtml(startTemplate)).not.toContain('<!--start:');
     expect(html).not.toContain('<!--landing:');
     expect(html).not.toContain('/src/main.tsx');
     expect(html).not.toMatch(/SessionProvider|dev\/session/);
     const parsed = new DOMParser().parseFromString(html, 'text/html');
     const scripts = [...parsed.querySelectorAll('script')];
-    expect(scripts.map(script => [script.getAttribute('src'), script.getAttribute('type')])).toEqual([['/theme-init.js', null], ['/src/landing/theme.ts', 'module']]);
-    expect(scripts.every(script => script.textContent === '' && script.parentElement === parsed.head)).toBe(true);
-    expect(html.match(/<script/g)).toHaveLength(2);
+    const executable = scripts.filter(script => script.getAttribute('type') !== 'application/ld+json');
+    expect(executable.map(script => [script.getAttribute('src'), script.getAttribute('type')])).toEqual([['/theme-init.js', null], ['/src/landing/theme.ts', 'module']]);
+    expect(executable.every(script => script.textContent === '' && script.parentElement === parsed.head)).toBe(true);
+    // Plus the JSON-LD data block, which the browser never executes.
+    expect(html.match(/<script(?![^>]*ld\+json)/g)).toHaveLength(2);
     // The classic theme script blocks parsing before the stylesheet and after the theme-color it updates.
     expect(html.indexOf('name="theme-color"')).toBeLessThan(html.indexOf('/theme-init.js'));
     expect(html.indexOf('/theme-init.js')).toBeLessThan(html.indexOf('/src/landing/landing.css'));
@@ -154,12 +207,12 @@ describe('public landing prerender', () => {
     expect(document.querySelectorAll('h1')).toHaveLength(1);
   });
 
-  it('advertises only the public root and the public docs in crawl resources', () => {
+  it('advertises only the public root, the sign-up chooser and the public docs in crawl resources', () => {
     expect(robots).toContain('Disallow: /app');
     expect(robots).toContain('Disallow: /api');
     expect(robots).toContain(`Sitemap: ${PUBLIC_ORIGIN}/sitemap.xml`);
     const sitemap = new DOMParser().parseFromString(sitemapText, 'application/xml');
-    expect([...sitemap.querySelectorAll('loc')].map(node => node.textContent)).toEqual([`${PUBLIC_ORIGIN}/`, `${PUBLIC_ORIGIN}/docs`]);
+    expect([...sitemap.querySelectorAll('loc')].map(node => node.textContent)).toEqual([`${PUBLIC_ORIGIN}/`, `${PUBLIC_ORIGIN}${START_PATH}`, `${PUBLIC_ORIGIN}/docs`]);
   });
 });
 

@@ -2,70 +2,98 @@
   "brand": "Workloom",
   "seo": {
     "title": "Workloom — Team Task Management and Weekly Planning",
-    "description": "Bring tasks, weekly plans, recorded work, team meetings and dependencies into one connected workspace."
+    "description": "Plan the week, track tasks and see what really happened. Workloom connects tasks, weekly plans, time off, mentions and an open API in one workspace. Try it for free.",
+    "image": "Workloom task table with sections, owners and due dates",
+    "keywords": "task management, weekly planning, team tasks, time off tracking, Asana alternative, project management, MCP"
   },
   "nav": {
     "label": "Main navigation",
     "features": "Features",
-    "how": "How it works",
+    "screens": "Screenshots",
+    "pros": "Pros & limits",
+    "faq": "FAQ",
     "docs": "API & MCP docs",
-    "openApp": "Open app",
+    "signIn": "Sign in",
+    "tryFree": "Try for free",
     "skip": "Skip to content"
   },
   "hero": {
-    "eyebrow": "A little more clarity. Every week.",
-    "title": "Give every week a clear thread.",
-    "description": "Connect the tasks ahead with the work that actually happens. Keep owners, weekly plans, meetings and dependencies in view, together.",
+    "eyebrow": "Task tracking for teams that plan by the week",
+    "title": "Plan the week. See what really happened.",
+    "description": "Workloom keeps tasks, weekly plans, time off and recorded work in one place, so your team spends less time in spreadsheets and more time shipping.",
     "secondary": "See how it works",
-    "note": "Tasks, plans and recorded work, connected."
-  },
-  "example": {
-    "label": "An illustrative workspace",
-    "eyebrow": "A connected week",
-    "project": "Project launch",
-    "tasks": "Tasks",
-    "week": "This week",
-    "taskColumn": "Task & owner",
-    "statusColumn": "Status",
-    "taskOne": "Shape the first draft",
-    "ownerOne": "Design team",
-    "statusOne": "In progress",
-    "taskTwo": "Review the details",
-    "ownerTwo": "Project team",
-    "statusTwo": "To do",
-    "taskThree": "Share the next steps",
-    "ownerThree": "Project team",
-    "statusThree": "To do",
-    "planLabel": "Plan with intention",
-    "planDescription": "Choose the work you want to take on.",
-    "factLabel": "Record what happened",
-    "factDescription": "Keep actual work alongside the plan.",
-    "connection": "Dependencies keep the next step in context.",
-    "caption": "Illustration with example tasks. Your workspace starts with your own work."
+    "note": "Sign in with Google and your workspace is ready in a minute. No payment details needed.",
+    "shotAlt": "The Workloom task table: sections, owners, statuses, due dates and tags for a project called Spring launch",
+    "shotCaption": "A real screenshot with example data."
   },
   "features": {
-    "eyebrow": "The whole thread",
-    "title": "Less piecing things together. More shared understanding.",
-    "description": "Move between the details of a task and the shape of the week without losing the context.",
+    "eyebrow": "What you get",
+    "title": "One workspace for the whole week.",
+    "description": "Everything a small team needs to agree on the work, do it, and look back honestly.",
     "tasks": {
       "tag": "Tasks",
-      "title": "Make the next step clear.",
-      "description": "Keep tasks, owners, statuses and dates together. Use the table or board to find the work that needs attention."
+      "title": "Table, board, timeline and graph.",
+      "description": "Edit inline, group by section or person, drag cards, undo mistakes. The same tasks in four views."
     },
     "planning": {
       "tag": "Plan & fact",
-      "title": "Give the week an honest picture.",
-      "description": "Set personal weekly plans and record work against tasks. Compare the plan with what was actually recorded."
+      "title": "An honest picture of the week.",
+      "description": "Set weekly plans, record the work that happened and compare the two. Copy last week into the next one in a click."
     },
-    "meetings": {
-      "tag": "Team meetings",
-      "title": "Keep meetings in the picture.",
-      "description": "Bring scheduled meetings, personal plans and recorded attendance into the same weekly context."
+    "timeoff": {
+      "tag": "Time off",
+      "title": "Absences that understand capacity.",
+      "description": "Vacation and flexible days with accruals, approvals and a team calendar that shows who is away on the timeline."
     },
     "dependencies": {
       "tag": "Dependencies",
       "title": "See what comes before what.",
-      "description": "Connect tasks across projects, see unfinished predecessors and explore the graph or dated timeline."
+      "description": "Link tasks across projects, spot unfinished predecessors and carry unfinished work into next week without double counting."
+    },
+    "inbox": {
+      "tag": "Inbox & mentions",
+      "title": "Know when something needs you.",
+      "description": "Assignments, comments, @mentions and time-off decisions land in one inbox, with a badge for what is new."
+    },
+    "api": {
+      "tag": "API & MCP",
+      "title": "Automate it, or ask an assistant.",
+      "description": "Personal access tokens, a REST API and an MCP server let scripts, Claude or Codex create and update tasks with your permissions."
+    }
+  },
+  "screens": {
+    "eyebrow": "See it in action",
+    "title": "What it looks like.",
+    "description": "Real screenshots of the product with example data.",
+    "table": {
+      "title": "Task table",
+      "description": "Sections, owners, status, due dates and tags, with subtasks and inline editing.",
+      "alt": "Task table grouped by section with subtasks, owners and due dates"
+    },
+    "board": {
+      "title": "Board",
+      "description": "Cards by status, with owners, dates and tags at a glance.",
+      "alt": "Board view with To do, In progress and Done columns"
+    },
+    "timeline": {
+      "title": "Timeline",
+      "description": "Dated tasks on a calendar, with teammates' time off shown in the same view.",
+      "alt": "Timeline view with task bars and absence bands"
+    },
+    "task": {
+      "title": "Task details",
+      "description": "Owner, dates, tags, dependencies and a discussion with @mentions.",
+      "alt": "Task details panel with assignee, dates, priority and tags"
+    },
+    "inbox": {
+      "title": "Inbox",
+      "description": "Assignments, comments, mentions and time-off decisions in one list.",
+      "alt": "Inbox listing an assignment, a mention and a comment"
+    },
+    "timeoff": {
+      "title": "Time off",
+      "description": "Balances and a team calendar that respect weekends, holidays and approvals.",
+      "alt": "Time off page with balances and a team calendar"
     }
   },
   "how": {
@@ -74,26 +102,99 @@
     "one": {
       "number": "01",
       "title": "Lay out the work.",
-      "description": "Create a project, add tasks and make ownership clear. Connect the tasks that depend on one another."
+      "description": "Create a project, add tasks and make ownership clear. Import from Asana if you are moving over."
     },
     "two": {
       "number": "02",
       "title": "Make room for the week.",
-      "description": "Choose personal commitments in an explicit weekly period, with meetings in the same context."
+      "description": "Choose commitments for the period, with meetings and time off in the same context."
     },
     "three": {
       "number": "03",
       "title": "Keep the picture honest.",
-      "description": "Record work and review plan versus fact. Use the context to decide what comes next."
+      "description": "Record work, review plan against fact, then copy the week and carry over what is unfinished."
+    }
+  },
+  "pros": {
+    "eyebrow": "Honest about it",
+    "title": "Why teams pick it",
+    "items": {
+      "one": "Plan and fact live next to each other, not in separate spreadsheets.",
+      "two": "Time off and capacity are built in, not bolted on.",
+      "three": "A fast table with inline editing, keyboard shortcuts (Ctrl/Cmd+K) and Undo.",
+      "four": "Start in minutes: sign in with Google, or import a project from Asana.",
+      "five": "An open API and MCP server, with tokens limited to what you can do.",
+      "six": "Weekly rhythm tools: copy last week, defaults for new tasks, carry over unfinished work."
+    },
+    "heading": "The good, and the not-yet."
+  },
+  "cons": {
+    "title": "Where it is not for you (yet)",
+    "items": {
+      "one": "The interface is English only.",
+      "two": "It is a web app: no native mobile apps (the browser works, wide tables scroll sideways).",
+      "three": "No private projects: everyone in a workspace sees all of its tasks.",
+      "four": "No file attachments on tasks.",
+      "five": "Notifications live in the in-app Inbox; there are no e-mail digests yet.",
+      "six": "Sign-in is with Google only.",
+      "seven": "Recurring tasks are not supported yet (recurring meetings are).",
+      "eight": "It is a young product: expect rough edges and quick changes."
+    }
+  },
+  "faq": {
+    "eyebrow": "Questions",
+    "title": "Good to know",
+    "items": {
+      "one": {
+        "q": "Is it free to try?",
+        "a": "Yes. Choose Try for free, sign in and you get an empty workspace to explore. No payment details are asked. Plans and pricing have not been announced."
+      },
+      "two": {
+        "q": "How do I sign in?",
+        "a": "With your Google account. The first sign-in creates your account and your own workspace, so signing up and signing in are the same step."
+      },
+      "three": {
+        "q": "Can I bring my work from Asana?",
+        "a": "Yes. Export a project from Asana and import it from the Projects page; sections, assignees, dates, tags and dependencies come along."
+      },
+      "four": {
+        "q": "Who can see my tasks?",
+        "a": "People you invite to your workspace. Inside a workspace every member can see all tasks; roles decide who can edit, manage people and approve time off."
+      },
+      "five": {
+        "q": "Is there an API?",
+        "a": "Yes: a REST API and an MCP server, authorised with personal access tokens that never exceed your own permissions. See the API and MCP docs."
+      },
+      "six": {
+        "q": "Can my team use it together?",
+        "a": "Yes. Invite teammates with a link and give them a role: owner, admin, member or viewer."
+      }
     }
   },
   "closing": {
     "eyebrow": "Pick up the thread",
-    "title": "A clearer view of the work ahead.",
-    "description": "Bring your tasks and your week into one workspace."
+    "title": "A clearer week starts with one click.",
+    "description": "Create a free workspace with your Google account."
   },
   "footer": {
     "note": "A connected workspace for tasks, plans and recorded work.",
-    "top": "Back to top"
+    "top": "Back to top",
+    "docs": "API & MCP docs",
+    "start": "Try for free"
+  },
+  "start": {
+    "seoTitle": "Try Workloom for free — sign up or sign in",
+    "seoDescription": "Create your free Workloom workspace or sign in. One Google sign-in sets up your account.",
+    "title": "Start with Workloom",
+    "description": "Create your free workspace, or come back to the one you already have.",
+    "newTitle": "I am new here",
+    "newDescription": "Continue with Google. We create your account and an empty workspace; no payment details are needed.",
+    "newButton": "Create my free account",
+    "oldTitle": "I already have an account",
+    "oldDescription": "Sign in with the Google account you used before and pick up where you left off.",
+    "oldButton": "Sign in",
+    "note": "Signing up and signing in are the same Google step: a new account is created the first time.",
+    "back": "Back to the home page",
+    "looking": "Just looking around? Read the docs"
   }
 }
