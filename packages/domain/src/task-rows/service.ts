@@ -71,7 +71,7 @@ export function createTaskRowApplication({writer,tools}:TaskRowApplicationDepend
 
   async function createAll(scope:PlanningApplicationWriteScope,p:CreateTaskRowInput,branch:PlanBranch|null,planningGuard:PlanningMutationGuard):Promise<TaskRowCreatedDto> {
     // Project defaults fill in only what the row left out; the row's own values always win.
-    const defaults=await resolveTaskDefaults(scope.repository.tasks,scope.repository.fields,scope.context.workspaceId,p.task,new Set((p.fields??[]).map(f=>f.fieldId)));
+    const defaults=await resolveTaskDefaults(scope.repository.tasks,scope.repository.fields,scope.context.workspaceId,p.task,new Set((p.fields??[]).map(f=>f.fieldId)),scope.barrierAt);
     const rowFields=[...(p.fields??[]),...defaults.fields];
     const task=await createTaskInScope({...scope,repository:scope.repository.tasks,planningGuard},defaults.input,tools,rowFields);
     // Every custom value first: the category resolver captures custom work-category sources for the actual.

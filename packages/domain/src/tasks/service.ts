@@ -382,7 +382,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
       const parsed = parseInput<CreateTaskInput>(createTaskInputSchema, input);
       return mutate(context, 'task.edit', 'task.create', null, parsed, taskSchema, async scope => {
         // The receipt keeps the caller's own input; project defaults only fill in what was left out.
-        const filled = await resolveTaskDefaults(scope.repository, scope.fieldRepository, scope.context.workspaceId, parsed, new Set());
+        const filled = await resolveTaskDefaults(scope.repository, scope.fieldRepository, scope.context.workspaceId, parsed, new Set(), scope.barrierAt);
         const created = await createTaskInScope(scope, filled.input, tools, filled.fields);
         for (const item of filled.fields) {
           await setTaskFieldValueInScope({ ...scope, repository: scope.fieldRepository as TaskFieldRepository, planningGuard: scope.planningGuard }, created.id, item.fieldId,

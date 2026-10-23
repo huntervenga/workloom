@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, gt, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { projectRulesSchema, taskDefaultsSchema, type ProjectDto, type SectionDto, type TagDto, type TaskDto, type TaskParticipantDto, type TaskStatusDto } from '@workloom/contracts';
 import {
   DomainError,
@@ -329,6 +329,42 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
       const [row] = await db.select().from(projectRules)
         .where(and(eq(projectRules.workspaceId, workspaceId), eq(projectRules.projectId, projectId))).limit(1);
       return row ? projectRulesSchema.parse({ workspaceId: row.workspaceId, projectId: row.projectId, revision: row.revision, config: row.config }) : null;
+    },
+
+    async findWorkspaceTimezone(workspaceId) {
+      if (!isUuid(workspaceId)) return null;
+      const [row] = await db.select({ timezone: workspaces.timezone }).from(workspaces).where(eq(workspaces.id, workspaceId)).limit(1);
+      return row?.timezone ?? null;
+    },
+
+    async findTaskAbove(workspaceId, place) {
+      if (!isUuid(workspaceId) || !isUuid(place.projectId)) return null;
+      const siblings = and(
+        eq(tasks.workspaceId, workspaceId), eq(tasks.projectId, place.projectId), isNull(tasks.archivedAt),
+        place.sectionId === null ? isNull(tasks.sectionId) : eq(tasks.sectionId, place.sectionId),
+        place.parentTaskId === null ? isNull(tasks.parentTaskId) : eq(tasks.parentTaskId, place.parentTaskId),
+      );
+      let id: string | undefined;
+      if (place.insertion) {
+        const anchorId = place.insertion.anchorTaskId;
+        if (!isUuid(anchorId)) return null;
+        const [anchor] = await db.select({ id: tasks.id, position: tasks.position }).from(tasks).where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, anchorId))).limit(1);
+        if (!anchor) return null;
+        if (place.insertion.placement === 'after') id = anchor.id;
+        else {
+          const [before] = await db.select({ id: tasks.id }).from(tasks)
+            .where(and(siblings, or(sql`${tasks.position} < ${anchor.position}`, and(eq(tasks.position, anchor.position), sql`${tasks.id} < ${anchor.id}`))))
+            .orderBy(desc(tasks.position), desc(tasks.id)).limit(1);
+          id = before?.id;
+        }
+      } else {
+        const [last] = await db.select({ id: tasks.id }).from(tasks).where(siblings).orderBy(desc(tasks.position), desc(tasks.id)).limit(1);
+        id = last?.id;
+      }
+      if (id === undefined) return null;
+      const rows = await selectTasks().where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.id, id))).limit(1);
+      const [found] = await projectTasks(workspaceId, rows);
+      return found ?? null;
     },
 
     async findTaskDefaults(workspaceId, projectId) {

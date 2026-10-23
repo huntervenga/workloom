@@ -72,6 +72,12 @@ export interface TaskRepository {
   readonly access: AccessRepository;
 
   /** Starting values for new tasks of a project; absent means none are configured. Optional so partial fakes stay valid. */
+  /**
+   * The task a new one is placed directly under: the anchor itself (or the sibling before it) for an insertion, otherwise
+   * the last active task of the same section and parent. Null when the list is empty.
+   */
+  findTaskAbove?(workspaceId: string, place: { projectId: string; sectionId: string | null; parentTaskId: string | null; insertion?: { anchorTaskId: string; placement: 'before' | 'after' } }): Promise<TaskDto | null>;
+  findWorkspaceTimezone?(workspaceId: string): Promise<string | null>;
   findTaskDefaults?(workspaceId: string, projectId: string): Promise<TaskDefaultsDto | null>;
   /** The project's rules; null (or an absent method) means every rule is off. */
   findProjectRules?(workspaceId: string, projectId: string): Promise<ProjectRulesDto | null>;

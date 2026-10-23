@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { taskDefaultsResponseSchema, taskResponseSchema, taskRowResponseSchema, taskFieldValueListResponseSchema } from '@workloom/contracts';
 import { expectEnvelope } from './support/p1a.js';
-import { planningHarness, type PlanningHarness } from './support/p2a-fixture.js';
+import { MEMBERS, planningHarness, type PlanningHarness } from './support/p2a-fixture.js';
 import { requireTestDatabaseUrl } from './support/test-database-url.js';
 
 requireTestDatabaseUrl();
@@ -83,5 +83,28 @@ describe('project task defaults', () => {
     const created = expectEnvelope(await h.owner.post('/tasks', { projectId: project.id, title: 'After lock', statusId: todo.id }), 201, taskResponseSchema).data;
     const values = await h.owner.listTaskValues(created.id);
     expect(values.map(v => v.fieldId)).toEqual([fact.id]);
+  });
+
+  it('takes assignee, tags, priority, estimate and chosen fields from the task above, and sets dates to today', async () => {
+    const { project, todo, est } = await setup();
+    const review = await h.owner.createField({ projectId: project.id, name: 'Review by', type: 'date' });
+    const tag = await h.owner.tasks.createTag({ name: `Above ${Date.now()}` });
+    const person = MEMBERS.teamOwner;
+    const config = { statusId: null, priority: 'low', estimateMinutes: 30, assignee: { kind: 'above' }, tags: { kind: 'above' }, dueDate: { kind: 'today', offsetDays: 2 },
+      fromAbove: { priority: true, estimate: true, fieldIds: [est.id] }, todayFields: [{ fieldId: review.id, offsetDays: 0 }], fieldValues: [] };
+    expectEnvelope(await put(project.id, { expectedRevision: 0, config }), 200, taskDefaultsResponseSchema);
+    const first = expectEnvelope(await h.owner.post('/tasks', { projectId: project.id, title: 'First', statusId: todo.id, responsibleMembershipId: person, tagIds: [tag.id], priority: 'urgent', estimateMinutes: 120, dueDate: '2030-01-01' }), 201, taskResponseSchema).data;
+    await h.owner.setValue(first.id, est.id, { expectedRevision: 0, expectedDefinitionRevision: est.revision, value: { type: 'duration', value: 45 } });
+    const second = expectEnvelope(await h.owner.post('/tasks', { projectId: project.id, title: 'Second', statusId: todo.id }), 201, taskResponseSchema).data;
+    expect(second).toMatchObject({ responsibleMembershipId: person, priority: 'urgent', estimateMinutes: 120 });
+    expect(second.tags.map(t => t.id)).toEqual([tag.id]);
+    const today = new Date(); today.setUTCDate(today.getUTCDate() + 2);
+    expect(Math.abs(Date.parse(`${second.dueDate}T00:00:00Z`) - Date.parse(`${today.toISOString().slice(0, 10)}T00:00:00Z`))).toBeLessThanOrEqual(2 * 86_400_000);
+    const values = await h.owner.listTaskValues(second.id);
+    expect(values.find(v => v.fieldId === est.id)?.value).toEqual({ type: 'duration', value: 45 });
+    expect(values.find(v => v.fieldId === review.id)?.value).toMatchObject({ type: 'date' });
+    // An explicit value always wins over the rule.
+    const explicit = expectEnvelope(await h.owner.post('/tasks', { projectId: project.id, title: 'Explicit', statusId: todo.id, responsibleMembershipId: null, priority: 'high' }), 201, taskResponseSchema).data;
+    expect(explicit).toMatchObject({ responsibleMembershipId: null, priority: 'high' });
   });
 });

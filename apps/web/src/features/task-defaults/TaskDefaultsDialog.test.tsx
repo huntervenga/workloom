@@ -40,6 +40,33 @@ describe('task defaults dialog', () => {
     expect(body).toEqual({ expectedRevision: 0, config: { statusId: doing.id, priority: 'high', estimateMinutes: 90, fieldValues: [{ fieldId: hours.id, value: { type: 'duration', value: 60 } }] } });
   });
 
+  it('saves same-as-above and today rules next to the fixed defaults', async () => {
+    let body: unknown;
+    const due = { ...field('Review by', 'date', '71000000-0000-4000-8000-0000000000b3'), projectId: PROJECT };
+    installFakeApi({
+      [`GET ${base}/projects/${PROJECT}/task-defaults`]: () => ok(saved()),
+      [`GET ${base}/fields`]: () => ok([hours, due]),
+      [`GET ${base}/projects/${PROJECT}/statuses`]: () => ok([todo]),
+      [`GET ${base}/memberships`]: () => ok(alphaMembers),
+      [`GET ${base}/tags`]: () => ok([]),
+      [`PUT ${base}/projects/${PROJECT}/task-defaults`]: request => { body = request.body; return ok(saved(1)); },
+    });
+    const ui = renderFieldUi(<TaskDefaultsDialog actorId={anna.id} workspaceId={alpha.id} projectId={PROJECT} canManage />);
+    await ui.user.click(screen.getByRole('button', { name: 'New task defaults' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Defaults for new tasks' });
+    await within(dialog).findByLabelText('Assignee');
+    await ui.user.selectOptions(within(dialog).getByLabelText('Assignee'), 'above');
+    await ui.user.selectOptions(within(dialog).getByLabelText('Due date'), 'today');
+    await ui.user.click(within(dialog).getByLabelText('Priority: same as the task above'));
+    await ui.user.selectOptions(within(dialog).getByLabelText('Value of Hours Est'), 'above');
+    await ui.user.selectOptions(within(dialog).getByLabelText('Value of Review by'), 'today');
+    await ui.user.click(within(dialog).getByRole('button', { name: 'Save defaults' }));
+    await waitFor(() => expect(body).toBeDefined());
+    expect(body).toEqual({ expectedRevision: 0, config: { statusId: null, priority: null, estimateMinutes: null, fieldValues: [],
+      assignee: { kind: 'above' }, dueDate: { kind: 'today', offsetDays: 0 },
+      fromAbove: { priority: true, estimate: false, fieldIds: [hours.id] }, todayFields: [{ fieldId: due.id, offsetDays: 0 }] } });
+  });
+
   it('offers nothing to people who cannot manage fields', () => {
     installFakeApi({});
     renderFieldUi(<TaskDefaultsDialog actorId={anna.id} workspaceId={alpha.id} projectId={PROJECT} canManage={false} />);
