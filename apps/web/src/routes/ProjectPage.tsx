@@ -1,3 +1,5 @@
+import { queryOptions, skipToken, useQueries } from '@tanstack/react-query';
+import { queryKeys } from '../lib/queryKeys';
 import { WorkspaceLink as Link, useWorkspaceNavigate as useNavigate } from '../features/workspace/WorkspaceNavigation';
 import { useSharedActivityWorkspace } from '../features/shared-activities/queries';
 import { CreateSharedActivityDialog } from '../features/shared-activities/CreateSharedActivityDialog';
@@ -160,7 +162,7 @@ interface QuickInsertion {
   /** The unsent input row is shown; submitted rows stay visible after it closes until they resolve. */
   open: boolean;
   /** Confirmed creates of this chain, kept in place until a list loaded after them arrives. */
-  confirmed: readonly { task: TaskDto; at: number }[];
+  confirmed: readonly { task: TaskDto; at: number; listed?: boolean }[];
 }
 
 /** A queued create started from this insertion chain (same section and parent, anchored). */
@@ -379,19 +381,30 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const canManageImports = workspace.role === 'owner' || workspace.role === 'admin';
 
   // Values are requested, in batches, only for the tasks the table shows and only while a custom column is visible.
-  // A deleted task stays out of the table until a finished refetch no longer lists it, so a stale
-  // response cannot flash it back. A rejected delete releases it.
-  const [deletedTaskIds, setDeletedTaskIds] = useState<ReadonlySet<string>>(() => new Set());
+  // A late list cannot undo an accepted archive. Keep its known subtree hidden until a newer
+  // restore is read (or the archived head is explicitly requested); rejected writes release it.
+  const [deletedTasks, setDeletedTasks] = useState<ReadonlyMap<string, { archivedRevision: number | null; taskIds: ReadonlySet<string> }>>(() => new Map());
+  const deletedTaskIds = useMemo(() => new Set([...deletedTasks.values()].flatMap(entry => [...entry.taskIds])), [deletedTasks]);
+  const restoreAcks = useQueries({ queries: [...deletedTasks.keys()].map(taskId => queryOptions<number>({
+    queryKey: queryKeys.taskRestoreAck(actorId, workspace.id, taskId), queryFn: skipToken,
+  })) });
   const shownTasks = useMemo(() => {
     if (tasks.data === undefined || (tasks.isError && !tasks.isFetchNextPageError)) return [];
     return withoutDeletedTasks(loadedTaskScope(tasks.data).tasks, deletedTaskIds);
   }, [tasks.data, tasks.isError, tasks.isFetchNextPageError, deletedTaskIds]);
   useEffect(() => {
-    if (deletedTaskIds.size === 0 || tasks.isFetching || tasks.data === undefined) return;
-    const listed = new Set(loadedTaskScope(tasks.data).tasks.map(task => task.id));
-    const remaining = [...deletedTaskIds].filter(id => listed.has(id));
-    if (remaining.length !== deletedTaskIds.size) setDeletedTaskIds(new Set(remaining));
-  }, [deletedTaskIds, tasks.data, tasks.isFetching]);
+    if (deletedTasks.size === 0 || tasks.data === undefined) return;
+    const listed = new Map(loadedTaskScope(tasks.data).tasks.map(task => [task.id, task]));
+    const released = [...deletedTasks].filter(([id, entry], index) => {
+      const head = listed.get(id);
+      if (entry.archivedRevision === null) return false;
+      if ((restoreAcks[index]?.data ?? 0) > entry.archivedRevision) return true;
+      return head && (
+        head.archivedAt === null && head.revision > entry.archivedRevision
+        || urlFilters.includeArchived && head.archivedAt !== null && head.revision >= entry.archivedRevision);
+    }).map(([id]) => id);
+    if (released.length > 0) setDeletedTasks(before => { const next = new Map(before); for (const id of released) next.delete(id); return next; });
+  }, [deletedTasks, restoreAcks, tasks.data, urlFilters.includeArchived]);
   const loadedTaskIds = useMemo(() => shownTasks.map(task => task.id), [shownTasks]);
   useAutoLoadTasks(tasks, shownTasks.length);
   const { collapsedTaskIds, expandedTaskIds, collapsedGroupKeys, setTaskCollapsed, setGroupCollapsed } = useTableExpansionState(
@@ -743,9 +756,16 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // "Delete" moves a task out of every list and report; the Undo notice brings it straight back.
   const deleteTask = (task: TaskDto) => {
     if (unresolvedTaskCommand(commands) !== null) return;
-    setDeletedTaskIds(before => new Set(before).add(task.id));
-    const release = () => setDeletedTaskIds(before => { const next = new Set(before); next.delete(task.id); return next; });
-    commands.archive.mutate({ taskId: task.id, input: { expectedRevision: task.revision } }, { onError: release });
+    const taskIds = deletedTaskTree([...(tasks.data ? loadedTaskScope(tasks.data).tasks : []), ...(insertion?.confirmed.map(entry => entry.task) ?? [])], new Set([task.id]));
+    setDeletedTasks(before => new Map(before).set(task.id, { archivedRevision: null, taskIds }));
+    const release = () => setDeletedTasks(before => { const next = new Map(before); next.delete(task.id); return next; });
+    commands.archive.mutate({ taskId: task.id, input: { expectedRevision: task.revision } }, {
+      onError: release,
+      onSuccess: archived => setDeletedTasks(before => {
+        const entry = before.get(task.id);
+        return entry ? new Map(before).set(task.id, { ...entry, archivedRevision: archived.revision }) : before;
+      }),
+    });
   };
   const openGraphTask = useCallback((task: TaskDto) => {
     if (task.projectId !== project.id) { navigate(`/w/${workspace.id}/projects/${task.projectId}?task=${task.id}`); return; }
@@ -986,7 +1006,18 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // after the last of its tasks the list shows, so the next input never jumps to the section end.
   const listedTaskIds = new Set(shownTasks.map(task => task.id));
   const chainQueue = insertion ? commands.quick.queue.filter(entry => belongsToInsertion(entry.session.request, insertion)) : [];
-  const chainRetained = insertion ? insertion.confirmed.filter(entry => !listedTaskIds.has(entry.task.id) && (tasks.isFetching || tasks.dataUpdatedAt < entry.at)) : [];
+  // A create ACK bridges only its first list read. Once the raw list has contained it, the
+  // list owns this row: a later delete/filter/refetch must never revive the old create payload.
+  useLayoutEffect(() => {
+    if (!insertion || !tasks.data) return;
+    const listed = new Set(loadedTaskScope(tasks.data).tasks.map(task => task.id));
+    setInsertion(before => !before || !before.confirmed.some(entry => !entry.listed && listed.has(entry.task.id)) ? before : {
+      ...before, confirmed: before.confirmed.map(entry => !entry.listed && listed.has(entry.task.id) ? { ...entry, listed: true } : entry),
+    });
+  }, [insertion, tasks.data]);
+  const chainRetained = insertion ? insertion.confirmed.filter(entry => !entry.listed && !deletedTaskIds.has(entry.task.id)
+    && (entry.task.parentTaskId === null || !deletedTaskIds.has(entry.task.parentTaskId))
+    && !listedTaskIds.has(entry.task.id) && (tasks.isFetching || tasks.dataUpdatedAt < entry.at)) : [];
   const chainAnchorId = insertion ? [insertion.anchorTaskId, ...insertion.confirmed.map(entry => entry.task.id)].filter(id => listedTaskIds.has(id)).at(-1) ?? insertion.anchorTaskId : null;
   const insertionOpen = insertion !== null && insertion.open && quickAddSection !== undefined;
   const recordInsertion = (task: TaskDto) => setInsertion(before => before && task.parentTaskId === (before.request.parent?.id ?? null)
@@ -1584,7 +1615,18 @@ function ProjectUnavailable({ projectsHref }: { projectsHref: string }) {
   );
 }
 
-/** The deleted tasks and their subtasks. */
+/** Include every loaded descendant, even when the input is not sorted parent-first. */
+function deletedTaskTree(list: readonly TaskDto[], deleted: ReadonlySet<string>): Set<string> {
+  const hidden = new Set(deleted);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const task of list) if (!hidden.has(task.id) && task.parentTaskId !== null && hidden.has(task.parentTaskId)) { hidden.add(task.id); changed = true; }
+  }
+  return hidden;
+}
 function withoutDeletedTasks(list: readonly TaskDto[], deleted: ReadonlySet<string>): TaskDto[] {
-  return deleted.size === 0 ? [...list] : list.filter(task => !deleted.has(task.id) && (task.parentTaskId === null || !deleted.has(task.parentTaskId)));
+  if (deleted.size === 0) return [...list];
+  const hidden = deletedTaskTree(list, deleted);
+  return list.filter(task => !hidden.has(task.id));
 }

@@ -305,8 +305,13 @@ export function useArchiveTaskMutation(actorId: string, workspaceId: string) {
     onSuccess: (task, variables, ack) => {
       if (ack.actorId !== null && ack.actorId !== actorId) return;
       if (ack.actorId === actorId) recordTaskUndo(queryClient, actorId, workspaceId, 'archive', snapshots.get(variables), task, variables.input, ack.receipt);
-      // The deleted task and its subtasks leave every loaded list now; the refetch below only confirms it.
-      queryClient.setQueriesData<InfiniteData<TaskPage>>({ queryKey: queryKeys.projectTaskLists(actorId, workspaceId, task.projectId) }, (data) => data && Array.isArray(data.pages)
+      // Canonical task lists have one params object after this prefix. Placement lists share
+      // the prefix but contain pages.rows; treating them as TaskPage would discard the Undo ACK.
+      const listPrefix = queryKeys.projectTaskLists(actorId, workspaceId, task.projectId);
+      queryClient.setQueriesData<InfiniteData<TaskPage>>({
+        queryKey: listPrefix,
+        predicate: query => query.queryKey.length === listPrefix.length + 1 && typeof query.queryKey[listPrefix.length] === 'object',
+      }, (data) => data && Array.isArray(data.pages) && data.pages.every(page => Array.isArray(page.tasks))
         ? { ...data, pages: data.pages.map((page) => ({ ...page, tasks: page.tasks.filter((item) => item.id !== task.id && item.parentTaskId !== task.id) })) }
         : data);
       void storeTask(queryClient, actorId, workspaceId, task);

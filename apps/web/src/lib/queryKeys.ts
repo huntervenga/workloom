@@ -35,6 +35,9 @@ export const queryKeys = {
     ['actor', actorId, 'workspace', workspaceId, 'tasks', 'list', projectId, params] as const,
   task: (actorId: string, workspaceId: string, taskId: string) =>
     ['actor', actorId, 'workspace', workspaceId, 'tasks', 'detail', taskId] as const,
+  /** A validated Undo restore revision, independent of whichever filtered list is visible. */
+  taskRestoreAck: (actorId: string, workspaceId: string, taskId: string) =>
+    ['actor', actorId, 'workspace', workspaceId, 'tasks', 'restore-ack', canonicalId(taskId)] as const,
   workCategoryBinding: (actorId: string, workspaceId: string, projectId: string) =>
     ['actor', actorId, 'workspace', workspaceId, 'workCategoryBinding', canonicalId(projectId)] as const,
   timeSummaries: (actorId: string, workspaceId: string) =>

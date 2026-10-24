@@ -65,4 +65,16 @@ describe('undo command ACK capture',()=>{
     const{client}=setup(),single=queryKeys.taskFieldValues(anna.id,alpha.id,task.id),batch=queryKeys.projectFieldValueChunk(anna.id,alpha.id,PROJECT_ID,[task.id]);client.setQueryData(single,[value(4,120)]);client.setQueryData(batch,[]);
     storeFieldAcks(client,anna.id,alpha.id,[value(3,90)]);expect(client.getQueryData(single)).toEqual([value(4,120)]);expect(client.getQueryData(batch)).toEqual([value(3,90)]);
   });
+  it.each(['current', 'actor-changed', 'wrong-workspace'] as const)('publishes only an identity-validated restore revision for %s', async variant => {
+    const { client, store } = setup();
+    client.setQueryData(queryKeys.me, { actor: { id: variant === 'actor-changed' ? 'different-actor' : anna.id } });
+    store.activate(undoScope(anna.id, alpha.id, PROJECT_ID), true);
+    const archived = { ...task, archivedAt: STAMP, revision: task.revision + 1 };
+    const restored = { ...task, revision: archived.revision + 1, workspaceId: variant === 'wrong-workspace' ? 'a0000000-0000-4000-8000-000000000099' : alpha.id };
+    installFakeApi({ [`POST ${path}/tasks/${task.id}/restore`]: () => ok(restored) });
+    recordTaskUndo(client, anna.id, alpha.id, 'archive', task, archived, { expectedRevision: task.revision }, 'archive-receipt');
+    await store.undo();
+    expect(client.getQueryData(queryKeys.taskRestoreAck(anna.id, alpha.id, task.id))).toBe(variant === 'current' ? restored.revision : undefined);
+  });
+
 });

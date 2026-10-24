@@ -82,7 +82,19 @@ export function recordTaskUndo(client: QueryClient, actor: string, workspace: st
         ...(changes.participantMembershipIds !== undefined ? { expectedParticipantsRevision: confirmedHead(guards, participantSource(after.id)) } : {}),
       };
       const request = command === 'archive' ? restoreTaskRequest(workspace, after.id, { expectedRevision }) : command === 'restore' || command === 'create' ? archiveTaskRequest(workspace, after.id, { expectedRevision }) : updateTaskRequest(workspace, after.id, inverse);
-      return async () => { const result = (await sendMutation(request, { idempotencyKey: key })).data; invalidate(client, actor, workspace); if (result.id !== after.id || result.workspaceId !== workspace || result.projectId !== after.projectId) throw new ApiError({ kind: 'invalid_response', status: null }); return heads(result, changes); };
+      return async () => {
+        const result = (await sendMutation(request, { idempotencyKey: key })).data;
+        invalidate(client, actor, workspace);
+        if (result.id !== after.id || result.workspaceId !== workspace || result.projectId !== after.projectId) throw new ApiError({ kind: 'invalid_response', status: null });
+        // A restored parent may not match the current list filter. Publish only its confirmed
+        // revision, never an old task DTO or an inferred descendant head, to release its subtree.
+        const currentActor = client.getQueryData<{ actor?: { id?: string } }>(queryKeys.me)?.actor?.id;
+        if (command === 'archive' && result.archivedAt === null && currentActor === actor) {
+          try { client.setQueryData<number>(queryKeys.taskRestoreAck(actor, workspace, result.id), before => Math.max(before ?? 0, result.revision)); }
+          catch { reportMutationObserverFailure(); }
+        }
+        return heads(result, changes);
+      };
     },
   });
 }
