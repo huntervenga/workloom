@@ -19,7 +19,7 @@ import {
   useUpdateTaskMutation,
 } from './queries';
 import { useInlineTagCreation } from './inlineTagCreate';
-import type { InitialTaskCellsDraft } from './InitialTaskCells';
+import type { InitialFieldEntry, InitialTaskCellsDraft } from './InitialTaskCells';
 import type { InitialCreateExtras, TaskDraft } from './taskDraft';
 import { hasQuickInitialCells, quickSessionHasValues, type TaskInlineField } from './tableEditing';
 
@@ -52,6 +52,8 @@ export interface CreateStartValues {
 export interface CreateRequest {
   /** Row-local, never sent as such: defaults the row shows before the task exists. */
   startValues?: CreateStartValues;
+  /** Row-local baseline of ordinary field values from the project's defaults; staged like typed ones but not counted as edits. */
+  startFields?: Readonly<Record<string, InitialFieldEntry>>;
   sectionId: string | null;
   parent: TaskDto | null;
   /** The row the person continued from; the new task is placed right next to it. */

@@ -1,4 +1,6 @@
-import type { TaskDefaultsConfig, TaskDto } from '@workloom/contracts';
+import type { TaskDefaultsConfig, TaskDto, TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
+import { draftFromFieldValue } from '../fields/valueDraft';
+import type { InitialFieldEntry } from '../tasks/InitialTaskCells';
 import { formatEstimateInput } from '../task-table/estimate';
 import type { CreateStartValues } from '../tasks/useTaskCommands';
 
@@ -31,4 +33,30 @@ export function startValuesFromDefaults(config: TaskDefaultsConfig, above: TaskD
     if (minutes !== null && minutes !== undefined) start.estimate = formatEstimateInput(minutes);
   }
   return start;
+}
+
+/**
+ * Ordinary (custom) field values a new row would get, in the server's order of preference: the task above, then today,
+ * then the fixed default; the first usable one wins. Locked, archived and type-mismatched fields are skipped, as on the
+ * server. `valueOf` reads a loaded value of the task above; an unloaded one is simply left to the server.
+ */
+export function startFieldsFromDefaults(config: TaskDefaultsConfig, above: TaskDto | null, options: {
+  today: string | undefined;
+  fields: readonly TaskFieldDefinitionDto[];
+  valueOf: (taskId: string, fieldId: string) => TaskFieldData | null | undefined;
+}): Record<string, InitialFieldEntry> {
+  const candidates: { fieldId: string; value: TaskFieldData }[] = [];
+  if (above) for (const fieldId of config.fromAbove?.fieldIds ?? []) {
+    const value = options.valueOf(above.id, fieldId);
+    if (value && value.value !== null) candidates.push({ fieldId, value });
+  }
+  if (options.today) for (const item of config.todayFields ?? []) candidates.push({ fieldId: item.fieldId, value: { type: 'date', value: plusDays(options.today, item.offsetDays) } });
+  for (const item of config.fieldValues) candidates.push({ fieldId: item.fieldId, value: item.value });
+  const result: Record<string, InitialFieldEntry> = {};
+  for (const candidate of candidates) {
+    const field = options.fields.find(item => item.id.toLowerCase() === candidate.fieldId.toLowerCase());
+    if (!field || field.archivedAt !== null || field.locked || field.type !== candidate.value.type || field.id in result) continue;
+    result[field.id] = { field, draft: draftFromFieldValue(field, candidate.value) };
+  }
+  return result;
 }

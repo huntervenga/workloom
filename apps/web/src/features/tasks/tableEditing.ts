@@ -1,7 +1,7 @@
 import type { TaskDto, TaskStatusDto } from '@workloom/contracts';
 import { changedKeys, draftFromTask, emptyDraft, inheritsEstimate, type CreateOptions, type TaskDraft, type TaskDraftKey } from './taskDraft';
 import type { WorkPackageEntry } from '../task-table/workPackages';
-import { hasInitialTaskCells } from './InitialTaskCells';
+import { emptyInitialTaskCellsDraft, hasInitialTaskCells } from './InitialTaskCells';
 import type { CreateRequest, CreateResultAnchor, CreateSession, EditSession } from './useTaskCommands';
 
 export type TaskInlineField = 'title' | 'statusId' | 'responsibleMembershipId' | 'dueDate' | 'priority' | 'estimate' | 'sectionId' | 'tagIds';
@@ -61,6 +61,7 @@ export function freshQuickSession(sectionId: string | null, statusId: string, re
     origin: 'quick',
     clientId: crypto.randomUUID(),
     baseStatusId: statusId,
+    ...(request?.startFields !== undefined && Object.keys(request.startFields).length > 0 ? { initialCells: { fields: { ...request.startFields }, time: emptyInitialTaskCellsDraft().time } } : {}),
   };
 }
 
@@ -97,7 +98,12 @@ export function nextQuickRequest(request: CreateRequest, resultAnchor: CreateRes
 
 /** Custom field values or hours staged in the row, valid or not; a title-only row never shows them. */
 export function hasQuickInitialCells(session: CreateSession): boolean {
-  return session.initialCells !== undefined && hasInitialTaskCells(session.initialCells);
+  const cells = session.initialCells;
+  if (cells === undefined) return false;
+  // Values the project's defaults staged at the start are the row's baseline, not something a person entered.
+  const baseline = session.request.startFields ?? {};
+  const fields = Object.entries(cells.fields).filter(([id, entry]) => JSON.stringify(baseline[id]?.draft) !== JSON.stringify(entry.draft));
+  return hasInitialTaskCells({ ...cells, fields: Object.fromEntries(fields) });
 }
 
 /** Anything a person typed or picked in the row, including staged extras with a blank title. */

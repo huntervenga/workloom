@@ -78,7 +78,7 @@ import { useProjectViewMemory } from '../features/projects/projectViewMemory';
 import { useAutoLoadTasks } from '../features/tasks/autoLoad';
 import { CompletedDateBanner } from '../features/projects/CompletedDateBanner';
 import { completedDateIssues } from '../features/projects/dateConsistency';
-import { startValuesFromDefaults } from '../features/task-defaults/startValues';
+import { startFieldsFromDefaults, startValuesFromDefaults } from '../features/task-defaults/startValues';
 import { useTaskDefaults } from '../features/task-defaults/queries';
 import {
   FieldManagerDialog,
@@ -1058,14 +1058,17 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // is the anchor the row follows, or the last loaded task of its section and list; unknown means the server decides.
   const withStartValues = (request: CreateRequest): CreateRequest => {
     const config = taskDefaults.data?.config;
-    if (!config || taskDefaults.data?.revision === 0 || request.startValues !== undefined) return request;
+    if (!config || taskDefaults.data?.revision === 0 || request.startValues !== undefined || request.startFields !== undefined) return request;
     const parentId = request.parent?.id ?? null;
     const loaded = dedupeTasks(shownTasks).filter(task => task.archivedAt === null);
     const anchorId = request.insertionAnchor?.taskId ?? request.insertion?.anchorTaskId ?? null;
     const siblings = loaded.filter(task => (task.sectionId ?? null) === (request.parent?.sectionId ?? request.sectionId ?? null) && task.parentTaskId === parentId).sort((left, right) => left.position - right.position);
     const above = anchorId !== null ? (request.insertionAnchor?.placement ?? request.insertion?.placement) === 'before' ? null : loaded.find(task => task.id === anchorId) ?? null : siblings[siblings.length - 1] ?? null;
-    const startValues = startValuesFromDefaults(config, above, { today: todayIn(workspace.timezone), subtask: request.parent !== null });
-    return Object.keys(startValues).length === 0 ? request : { ...request, startValues };
+    const today = todayIn(workspace.timezone);
+    const startValues = startValuesFromDefaults(config, above, { today, subtask: request.parent !== null });
+    const startFields = startFieldsFromDefaults(config, above, { today, fields: fieldDefinitions.data ?? [], valueOf: (taskId, fieldId) => valueByKey.get(fieldValueKey(taskId, fieldId))?.value });
+    return Object.keys(startValues).length === 0 && Object.keys(startFields).length === 0 ? request
+      : { ...request, ...(Object.keys(startValues).length > 0 ? { startValues } : {}), ...(Object.keys(startFields).length > 0 ? { startFields } : {}) };
   };
   const quickTaskAdd = (request: CreateRequest, key: string, renderRow: TaskTableDraftRow, anchored: boolean) => <QuickTaskAdd key={key} newTaskStatusId={taskDefaults.data?.config.statusId ?? null} projectId={project.id} sectionId={request.sectionId}
     sectionName={sections.data?.find(section => section.id === request.sectionId)?.name ?? t('tasks.taskFields.noSection')} statuses={statuses.data ?? []} members={members.data ?? []} tags={tags.data ?? []} sections={sections.data ?? []}
