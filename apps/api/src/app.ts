@@ -5,7 +5,7 @@ import type { WorkspaceSlugApplication } from '@workloom/domain';
 import {registerSharedActivityRoutes} from './http/shared-activity-routes.js';
 import {registerSummaryTemplateRoutes} from './http/summary-template-routes.js';
 import type { DuplicationApplication } from '@workloom/domain';
-import { createDuplicationApplication } from '@workloom/db';
+import { createDuplicationApplication, type PurgeApplication } from '@workloom/db';
 import { registerDuplicationRoutes } from './http/duplication-routes.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
@@ -24,6 +24,7 @@ import {
   createLocalMcpApplication,
   createAutomationApplication,
   createProjectRulesApplication,
+  createPurgeApplication,
   createTaskDefaultsApplication,
   createProjectCopyApplication,
   createTaskContinuationApplication,
@@ -91,6 +92,7 @@ import { registerSecurityHeaders } from './http/security-headers.js';
 import { createPublicRateLimiter, createRateLimiter } from './http/rate-limit.js';
 import { registerInboxRoutes } from './http/inbox-routes.js';
 import { registerProjectRulesRoutes } from './http/project-rules-routes.js';
+import { registerPurgeRoutes } from './http/purge-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
 import { registerWorkspaceChangeHeadRoutes } from './http/workspace-change-head-routes.js';
 import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
@@ -155,6 +157,7 @@ export interface AppDependencies {
   readonly automationApplication?: AutomationApplication;
   readonly taskDefaultsApplication?: TaskDefaultsApplication;
   readonly projectRulesApplication?: ProjectRulesApplication;
+  readonly purgeApplication?: PurgeApplication;
   readonly projectCopyApplication?: ProjectCopyApplication;
   readonly taskContinuationApplication?: TaskContinuationApplication;
   /** Trusted local test port; registration still requires local/shared managed target. */
@@ -259,6 +262,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const taskContinuationApplication=dependencies.taskContinuationApplication??(database===undefined?undefined:createTaskContinuationApplication(database));
   const projectCopyApplication=dependencies.projectCopyApplication??(database===undefined?undefined:createProjectCopyApplication(database));
   const projectRulesApplication=dependencies.projectRulesApplication??(database===undefined?undefined:createProjectRulesApplication(database));
+  const purgeApplication=dependencies.purgeApplication??(database===undefined?undefined:createPurgeApplication(database));
   const taskDefaultsApplication=dependencies.taskDefaultsApplication??(database===undefined?undefined:createTaskDefaultsApplication(database));
   const automationApplication=dependencies.automationApplication??(database===undefined?undefined:createAutomationApplication(database));
   const localMcpApplication=dependencies.localMcpApplication??(database===undefined?undefined:createLocalMcpApplication(database,{enableTaskWrites:true}));
@@ -468,6 +472,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (taskContinuationApplication !== undefined) registerTaskContinuationRoutes(app, { identity, continuation: taskContinuationApplication });
   if (projectCopyApplication !== undefined) registerProjectCopyRoutes(app, { identity, copies: projectCopyApplication });
   if (projectRulesApplication !== undefined) registerProjectRulesRoutes(app, { identity, rules: projectRulesApplication });
+  if (purgeApplication !== undefined) registerPurgeRoutes(app, { identity, purge: purgeApplication });
   if (taskDefaultsApplication !== undefined) registerTaskDefaultsRoutes(app, { identity, defaults: taskDefaultsApplication });
   if (automationApplication !== undefined) {
     registerApiTokenRoutes(app, { identity, automation: automationApplication });

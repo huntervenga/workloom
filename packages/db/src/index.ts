@@ -114,6 +114,7 @@ export { createAutomationApplication, type AutomationApplication, type WriteOpti
 export { generateApiToken, hashApiToken, parseApiToken } from './automation/tokens.js';
 export { createInboxApplication } from './inbox/application.js';
 export { createProjectRulesApplication } from './project-rules/application.js';
+export { createPurgeApplication, type PurgeApplication, type PurgeResult } from './purge/application.js';
 export { createMyTasksApplication } from './my-tasks/application.js';
 export { createMyTasksCursorCodec, type MyTasksCursorOptions } from './my-tasks/cursor.js';
 export { createTaskCommentsApplication } from './task-comments/application.js';

@@ -18,6 +18,7 @@ export * from './imports.js';
 export * from './local-mcp.js';
 export * from './automation.js';
 export * from './project-rules.js';
+export * from './purge.js';
 export * from './task-defaults.js';
 export * from './project-copy.js';
 export * from './task-continuation.js';
