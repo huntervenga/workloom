@@ -2,7 +2,6 @@ import {hostedAsanaImportEnabled,managedLocalAsanaTarget,registerLocalAsanaImpor
 import { registerWorkspaceSlugRoutes } from './http/workspace-slug-routes.js';
 import { createWorkspaceSlugApplication } from '@workloom/db';
 import type { WorkspaceSlugApplication } from '@workloom/domain';
-import {registerSharedActivityRoutes} from './http/shared-activity-routes.js';
 import {registerSummaryTemplateRoutes} from './http/summary-template-routes.js';
 import type { DuplicationApplication } from '@workloom/domain';
 import { createDuplicationApplication, type PurgeApplication } from '@workloom/db';
@@ -41,7 +40,6 @@ import {
   createPlanningCheckApplication,
   createGenericReportApplication,
   createSummaryTemplateApplication,
-  createSharedActivityApplication,
   createLeaveApplication,
   createTaskScheduleApplication,
   createTaskRowApplication,
@@ -52,7 +50,7 @@ import {
   type Database,
   type ReadinessProbe,
 } from '@workloom/db';
-import type { ProjectRulesApplication, InboxApplication, SharedActivityApplication, SummaryTemplateApplication, PlanningCheckApplication, LeaveApplication, GenericReportApplication, TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, TaskDefaultsApplication, ProjectCopyApplication, TaskContinuationApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
+import type { ProjectRulesApplication, InboxApplication, SummaryTemplateApplication, PlanningCheckApplication, LeaveApplication, GenericReportApplication, TeamApplication, CutoffApplication, PersonalTablePreferenceApplication, TaskCommentsApplication, MyTasksApplication, WorkspaceChangeHeadApplication, LocalCredentialApplication, LocalMcpApplication, TaskDefaultsApplication, ProjectCopyApplication, TaskContinuationApplication, AccessRepository, DependencyApplication, MeetingApplication, PlanningApplication, ProjectImportApplication, RecurrenceApplication, SharedAuthStore, TaskScheduleApplication, TaskApplication, TaskFieldApplication, TaskRowApplication, WorkCategoryApplication, WorkspaceCreateApplication } from '@workloom/domain';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { JWTVerifyGetKey } from 'jose';
 
@@ -101,7 +99,6 @@ import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, replyWebNavigation, resolveWebD
 
 export interface AppDependencies {
   readonly workspaceSlugApplication?: WorkspaceSlugApplication;
-  readonly sharedActivityApplication?: SharedActivityApplication;
   readonly duplicationApplication?: DuplicationApplication;
   readonly leaveApplication?: LeaveApplication;
   readonly genericReportApplication?: GenericReportApplication;
@@ -239,7 +236,6 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     dependencies.taskFieldApplication ?? (database === undefined ? undefined : createTaskFieldApplication(database));
   const leaveApplication = dependencies.leaveApplication ?? (database === undefined ? undefined : createLeaveApplication(database));
   const planningCheckApplication=dependencies.planningCheckApplication??(database===undefined?undefined:createPlanningCheckApplication(database));
-  const sharedActivityApplication=dependencies.sharedActivityApplication??(database===undefined?undefined:createSharedActivityApplication(database));
   const summaryTemplateApplication=dependencies.summaryTemplateApplication??(database===undefined?undefined:createSummaryTemplateApplication(database));
   const genericReportApplication = dependencies.genericReportApplication ?? (database === undefined ? undefined : createGenericReportApplication(database));
   const planningApplication =
@@ -442,7 +438,6 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     registerFieldRoutes(app, { identity, fields: taskFieldApplication });
   }
   if (leaveApplication !== undefined) registerLeaveRoutes(app,{identity,leave:leaveApplication});
-  if(sharedActivityApplication!==undefined)registerSharedActivityRoutes(app,{identity,activities:sharedActivityApplication});
   if(summaryTemplateApplication!==undefined)registerSummaryTemplateRoutes(app,{identity,templates:summaryTemplateApplication});
   if(planningCheckApplication!==undefined)registerPlanningCheckRoutes(app,{identity,checks:planningCheckApplication});
   if (genericReportApplication !== undefined) registerGenericReportRoutes(app, { identity, reports: genericReportApplication });

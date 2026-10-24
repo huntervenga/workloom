@@ -154,6 +154,5 @@ export { createDuplicationApplication } from './duplication/application.js';
 
 export {createSummaryTemplateApplication} from './summary-templates/application.js';
 
-export {createSharedActivityApplication} from './shared-activities/application.js';
 
 export { createWorkspaceSlugApplication } from './workspace-slugs/application.js';

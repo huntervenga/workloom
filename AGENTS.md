@@ -1,5 +1,7 @@
 # Workloom
 
+**24 October 2026: shared calls were removed** (UI, API and write code; see [127](docs/127-shared-calls-removed.md)). Mentions of shared activities below are historical.
+
 **Current reviewed source slice (23 October 2026): security and correctness fixes.** [Findings, final evidence and remaining limits](docs/123-security-and-correctness-review.md) covers `d3c7586..526da45` plus 48 review-change files. Final private check/build, unit 2464/160, changed web 351/55, PostgreSQL 67/10 and Asana scripts 20/4 pass; 1756 runnable files match main/stage. Safe public PATCH key binding and continuation carry retry received independent scoped GO. Workflows retain separate transactions and external-source snapshot limitations. No candidate runtime activation, main database mutation, push or deployment occurred. The accidental main library build and original-source-equivalent restoration are recorded honestly; exact pre-incident bytes were not proven.
 
 **Release prep (23 October 2026).** Security/correctness review fixes are in [123](docs/123-security-and-correctness-review.md); the Railway + Cloudflare setup guide is [124](docs/124-railway-cloudflare-deploy.md). Nothing is deployed; the Docker image build, real HTTPS sign-in and managed restore are NOT CHECKED.

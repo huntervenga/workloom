@@ -1,7 +1,4 @@
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
-import { SharedActivityPanel } from '../shared-activities/SharedActivityPanel';
-import { flushBeforeSharedCommand, SharedActivityCommandBlockedError } from '../shared-activities/model';
-import type { SharedActivityWorkspace } from '../shared-activities/queries';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 
 import { PlacementCommandFeedback } from '../project-placements/PlacementCommandFeedback';
@@ -79,7 +76,6 @@ import {
 } from './useTaskCommands';
 
 export interface TaskDrawerProps {
-  sharedActivityController?: SharedActivityWorkspace;
   /** Explicit legacy planning routes only; ordinary time values are custom fields. */
   legacyTime?: boolean;
   placementCommands?: PlacementCommands | undefined;
@@ -247,7 +243,7 @@ export function TaskDrawer(props: TaskDrawerProps) {
       writable: props.writable && home.data.archivedAt === null && workspace.role !== 'viewer' && !home.isFetching && !homeSections.isFetching && !homeStatuses.isFetching,
       viewedProjectName: project.name,
       // These page-owned projections belong to the viewed project. Never retarget their writers.
-      dependencyController: undefined, meetingController: undefined, sharedActivityController: undefined, loadedSubtasks: undefined,
+      dependencyController: undefined, meetingController: undefined, loadedSubtasks: undefined,
       subtaskColumns: undefined, onCreateChild: undefined, onDuplicateTask: undefined, initialFields: undefined,
       initialTimeContextFor: undefined, initialTimeWritable: false, initialTimeCurrent: false,
     } : {}),
@@ -670,7 +666,6 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
 
         <div className="min-w-0" aria-label={t('tasks.taskDrawer.taskFields')} role="group">
           <TaskFields
-            participantsLabel={props.sharedActivityController?t('sharedActivities.collaborators'):undefined}
             draft={draft}
             onChange={setDraft}
             onCommit={commitFields}
@@ -773,7 +768,6 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           </p>
         ) : null}
       </form>
-      {props.sharedActivityController&&latest.meetingId===null?<SharedActivityPanel controller={props.sharedActivityController} task={latest} fields={props.initialFields??[]} members={members} writable={canEdit} current={props.hierarchyCurrent&&!props.viewedProjectName} beforeCommand={async()=>{const fresh=await flushBeforeSharedCommand(commands,taskId,()=>reloadTask(taskId));if(fresh.id!==taskId||fresh.projectId!==props.project.id||fresh.workspaceId!==workspace.id)throw new SharedActivityCommandBlockedError({kind:'context_changed'});return fresh;}}/>:null}
       {subtasks}
       {props.activity}
     </div>
@@ -1076,7 +1070,6 @@ function CreateTaskForm(props: TaskDrawerProps & { request: CreateRequest }) {
             </fieldset>
           ) : null}
           <TaskFields
-            participantsLabel={props.sharedActivityController?t('sharedActivities.collaborators'):undefined}
             draft={draft}
             onChange={setDraft}
             errors={errors}

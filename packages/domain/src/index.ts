@@ -222,7 +222,6 @@ export * from './summary-templates/service.js';
 export * from './summary-templates/resolution.js';
 
 export * from './shared-activities/ports.js';
-export * from './shared-activities/service.js';
 export * from './shared-activities/effort.js';
 
 export * from './workspace-slugs/service.js';
