@@ -50,7 +50,7 @@ describe('shared call attendance saves as it is chosen', () => {
     const [first, second] = people;
     const user = show([contribution(1, first?.id ?? ''), contribution(2, second?.id ?? '')]);
     expect(screen.queryByRole('button', { name: /confirm/i })).not.toBeInTheDocument();
-    await choose(user, second?.displayName ?? '', 'Present — full duration');
+    await choose(user, second?.displayName ?? '', 'Present');
     await vi.waitFor(() => expect(mocks.mutate).toHaveBeenCalledTimes(1));
     expect(rowsSent()).toEqual([expect.objectContaining({ contributionId: id(2), attendance: 'present' })]);
   });
@@ -62,35 +62,28 @@ describe('shared call attendance saves as it is chosen', () => {
     expect(rowsSent().map(row => row.attendance)).toEqual(['present', 'present', 'present']);
   });
 
-  it('asks for minutes on Partial and saves when the field is left', async () => {
+  it('saves Partial at once with the full duration, then lets the minutes be edited', async () => {
     const [first] = people;
     const user = show([contribution(1, first?.id ?? '')]);
     await choose(user, first?.displayName ?? '', 'Partial');
-    expect(mocks.mutate).not.toHaveBeenCalled();
-    const minutes = screen.getByRole('spinbutton', { name: 'Personal actual minutes' });
-    await user.type(minutes, '30');
-    await user.tab();
     await vi.waitFor(() => expect(mocks.mutate).toHaveBeenCalledTimes(1));
-    expect(rowsSent()).toEqual([expect.objectContaining({ contributionId: id(1), attendance: 'partial', minutes: 30 })]);
+    expect(rowsSent()).toEqual([expect.objectContaining({ contributionId: id(1), attendance: 'partial', minutes: 120 })]);
   });
 
-  it('keeps a correction of saved time waiting for its reason, then saves it', async () => {
+  it('saves a correction of saved time at once with a standard reason', async () => {
     const [first] = people;
     const confirmed = contribution(1, first?.id ?? '', { attendance: 'present', postingState: 'active', minutes: 120, confirmedActivityRevision: 1, confirmedFactValueRevision: 1, confirmedDurationMinutes: 120, confirmedOccurrenceDate: '2026-10-26' });
     const user = show([confirmed]);
-    await choose(user, first?.displayName ?? '', 'Absent — zero minutes');
-    expect(mocks.mutate).not.toHaveBeenCalled();
-    const reason = screen.getByRole('textbox', { name: 'Reason for correcting saved time' });
-    await user.type(reason, 'Was on leave{Enter}');
+    await choose(user, first?.displayName ?? '', 'Absent');
     await vi.waitFor(() => expect(mocks.mutate).toHaveBeenCalledTimes(1));
-    expect(rowsSent()).toEqual([expect.objectContaining({ contributionId: id(1), attendance: 'absent', reason: 'Was on leave' })]);
+    expect(rowsSent()).toEqual([expect.objectContaining({ contributionId: id(1), attendance: 'absent', reason: 'Corrected in the shared call panel' })]);
   });
 
   it('does not offer the one-click action once everyone is confirmed', () => {
     const [first] = people;
     show([contribution(1, first?.id ?? '', { attendance: 'present', postingState: 'active', minutes: 120, confirmedActivityRevision: 1, confirmedDurationMinutes: 120 })]);
     expect(screen.queryByRole('button', { name: 'Everyone present' })).not.toBeInTheDocument();
-    expect(within(screen.getByRole('group', { name: 'Attendance' })).getByText(/Saved: Present/)).toBeVisible();
+    expect(within(screen.getByRole('group', { name: 'Attendance' })).getByText('120 min')).toBeVisible();
   });
 
   it('saves a change to the call settings by itself, without a save button', async () => {

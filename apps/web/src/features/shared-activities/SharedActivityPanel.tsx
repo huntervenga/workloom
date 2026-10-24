@@ -21,7 +21,7 @@ export function SharedActivityPanel({controller,task,fields,members,writable,cur
  const{t}=useTranslation(),query=useSharedActivityRecord(controller.actorId,controller.workspaceId,task.id,task.revision,current),values=useTaskFieldValuesQuery(controller.actorId,controller.workspaceId,task.id);
  const noticeMessages:Record<ActivityNotice,string>={invalidConfiguration:t('sharedActivities.invalidConfiguration'),invalidAttendance:t('sharedActivities.invalidAttendance'),ordinaryUnresolved:t('sharedActivities.ordinaryUnresolved'),sourceChanged:t('sharedActivities.sourceChanged')};
  const[preparing,setPreparing]=useState(false),[notice,setNotice]=useState<{kind:ActivityNotice}|null>(null);
- const[edited,setEdited]=useState<SharedActivityConfiguration|null>(null),[pending,setPending]=useState<Record<string,PendingRow>>({});
+ const[edited,setEdited]=useState<SharedActivityConfiguration|null>(null);
  const record=query.isSuccess&&!query.isError?query.data:null,draft=controller.drafts[task.id]??{},setup=draft.setup;
  const configure=controller.configure,confirm=controller.attendance,held=[configure,confirm].some(command=>command.pendingCommand!==null||command.uncertain!==null),disabled=!current||preparing||held;
  const canConfigure=writable&&current&&(!record||record.permissions.canEditActivity),canAttend=!!record&&current&&(record.permissions.canWriteSelf||record.permissions.canWriteOthers);
@@ -72,21 +72,20 @@ export function SharedActivityPanel({controller,task,fields,members,writable,cur
    confirm.mutate({taskId:task.id,input:parsed.data},{onSuccess:()=>{onDone?.();}});
   }catch{setNotice({kind:'ordinaryUnresolved'});}finally{setPreparing(false);}
  };
- const forget=(id:string)=>setPending(before=>{const{[id]:old,...rest}=before;void old;return rest;});
- const patchPending=(source:SharedActivityContributionDto,patch:Partial<PendingRow>)=>setPending(before=>{const base:PendingRow=before[source.id]??{attendance:source.attendance,minutes:source.minutes===null?'':String(source.minutes),reason:'',void:false};return{...before,[source.id]:{...base,...patch}};});
+ const[minutesDraft,setMinutesDraft]=useState<Record<string,string>>({});
+ const forgetMinutes=(id:string)=>setMinutesDraft(before=>{const{[id]:old,...rest}=before;void old;return rest;});
+ /** Every choice is saved at once; a correction of already saved time gets a standard reason so nothing waits for more input. */
+ const rowFor=(source:SharedActivityContributionDto,attendance:Attendance,minutes:string):PendingRow=>({attendance,minutes,reason:isCorrection(source)?t('sharedActivities.autoReason'):'',void:false});
  const choose=(source:SharedActivityContributionDto,value:string)=>{
   const attendance:Attendance=value==='present'||value==='partial'||value==='absent'?value:'unconfirmed';
-  if(attendance===source.attendance&&source.postingState!=='void'){forget(source.id);return;}
-  if(attendance==='partial'||isCorrection(source)){patchPending(source,{attendance,void:false});return;}
-  if(attendance==='unconfirmed')return;
-  void commitAttendance([{id:source.id,row:{attendance,minutes:'',reason:'',void:false}}],()=>forget(source.id));
+  if(attendance==='unconfirmed'||(attendance===source.attendance&&source.postingState!=='void'))return;
+  void commitAttendance([{id:source.id,row:rowFor(source,attendance,attendance==='partial'?String(record?.actualDurationMinutes??''):'')}]);
  };
- /** Saves a held change as soon as it is complete: on leaving the minutes or reason field, or Enter. */
- const finishPending=(source:SharedActivityContributionDto)=>{
-  const row=pending[source.id];if(!row)return;
-  const minutesOk=row.attendance!=='partial'||(row.minutes.trim()!==''&&Number.isSafeInteger(Number(row.minutes))&&Number(row.minutes)>=1);
-  if(!minutesOk||(isCorrection(source)&&!row.reason.trim()))return;
-  void commitAttendance([{id:source.id,row}],()=>forget(source.id));
+ const saveMinutes=(source:SharedActivityContributionDto)=>{
+  const text=minutesDraft[source.id];if(text===undefined)return;
+  if(text.trim()===String(source.minutes??'')){forgetMinutes(source.id);return;}
+  const value=Number(text);if(text.trim()===''||!Number.isSafeInteger(value)||value<1||value>(record?.actualDurationMinutes??0)){setNotice({kind:'invalidAttendance'});return;}
+  void commitAttendance([{id:source.id,row:rowFor(source,'partial',text.trim())}],()=>forgetMinutes(source.id));
  };
  const active=record?.contributions.filter(row=>row.rosterActive)??[],known=record?.contributions.filter(row=>row.postingState==='active')??[],knownMinutes=known.reduce((sum,row)=>sum+(row.minutes??0),0),unknown=active.filter(row=>row.postingState==='unconfirmed').length;
  const name=(membershipId:string)=>members.find(member=>member.id===membershipId)?.displayName??t('sharedActivities.formerParticipant');
@@ -97,31 +96,22 @@ export function SharedActivityPanel({controller,task,fields,members,writable,cur
  return <section aria-label={t('sharedActivities.title')} className="my-3 space-y-3 rounded-lg border border-line bg-canvas p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium">{t('sharedActivities.title')}</h3>{!record&&!setup?<Button size="sm" variant="primary" disabled={disabled||!canConfigure||query.isPending||query.isFetching||query.isError} onClick={()=>void begin()}>{t('sharedActivities.enable')}</Button>:null}</div>
   {query.isPending?<p role="status" className="text-xs text-muted">{t('sharedActivities.loading')}</p>:query.isError?<QueryErrorState error={query.error} subject="task" headingLevel={3} onRetry={()=>void query.refetch()}/>:!record?<p className="text-xs text-muted">{t('sharedActivities.enableHelp')}</p>:<>
    <p className="text-xs text-muted">{t('sharedActivities.savedSummary',{duration:record.actualDurationMinutes===null?'—':String(record.actualDurationMinutes),count:active.length,minutes:knownMinutes,unknown})}</p>
-   <p className="text-xs text-muted">{t('sharedActivities.boundFields',{plan:fields.find(field=>field.id===record.activity.planFieldId)?.name??t('sharedActivities.unavailableField'),fact:fields.find(field=>field.id===record.activity.factFieldId)?.name??t('sharedActivities.unavailableField')})}</p>
-   <p className="text-xs text-muted">{t('sharedActivities.savedDate',{date:record.activity.occurrenceDate,organizer:name(record.activity.organizerMembershipId)})}</p>
-   {record.contributions.some(row=>row.postingState==='active'&&(row.confirmedDurationMinutes!==record.actualDurationMinutes||row.confirmedActivityRevision!==record.activity.revision))?<p role="status" className="text-xs text-muted">{t('sharedActivities.snapshotHelp')}</p>:null}
    <div className="flex flex-wrap gap-3 text-xs">{safeLink(record.activity.recordingUrl)?<a href={safeLink(record.activity.recordingUrl)??undefined} target="_blank" rel="noreferrer" className="text-accent-ink underline">{t('sharedActivities.openRecording')}</a>:null}{safeLink(record.activity.summaryUrl)?<a href={safeLink(record.activity.summaryUrl)??undefined} target="_blank" rel="noreferrer" className="text-accent-ink underline">{t('sharedActivities.openSummary')}</a>:null}</div>
    {record.activity.summaryText?<details><summary className="cursor-pointer text-xs text-muted">{t('sharedActivities.summary')}</summary><p className="mt-1 whitespace-pre-wrap break-words text-sm">{record.activity.summaryText}</p></details>:null}
-   {canAttend?<div className="space-y-2" aria-label={t('sharedActivities.attendance')} role="group">
+   {canAttend?<div className="space-y-1" aria-label={t('sharedActivities.attendance')} role="group">
     <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-medium">{t('sharedActivities.attendance')}</p>{everyonePresent.length>0?<Button size="sm" variant="ghost" disabled={disabled} onClick={()=>void commitAttendance(everyonePresent.map(source=>({id:source.id,row:{attendance:'present',minutes:'',reason:'',void:false}})))}>{t('sharedActivities.everyonePresent')}</Button>:null}</div>
-    <p className="text-xs text-muted">{t('sharedActivities.confirmHelp')}</p>
-    {!record.permissions.canWriteOthers?<p className="text-xs text-muted">{t('sharedActivities.selfOnly')}</p>:null}
-    <div className="max-h-96 space-y-2 overflow-y-auto">{listed.map(source=>{
-     const allowed=allowedFor(source),row=pending[source.id],correction=isCorrection(source),state=row?.attendance??source.attendance;
-     return <div key={source.id} className="space-y-2 rounded border border-line bg-surface p-2" onKeyDown={event=>{if(event.key==='Escape'&&row){event.stopPropagation();forget(source.id);}}}>
-      <p className="text-xs font-medium">{name(source.membershipId)}{!source.rosterActive?<span className="ml-2 text-xs font-normal text-muted">{t('sharedActivities.formerParticipant')}</span>:null}</p>
-      <p className="text-xs text-muted">{t('sharedActivities.savedContribution',{state:t(source.postingState==='void'?'sharedActivities.void':source.attendance==='unconfirmed'?'sharedActivities.unconfirmed':source.attendance==='present'?'sharedActivities.present':source.attendance==='partial'?'sharedActivities.partial':'sharedActivities.absent'),minutes:source.minutes===null?'—':String(source.minutes)})}</p>
-      <ReportSelect label={t('sharedActivities.attendanceFor',{person:name(source.membershipId)})} value={source.postingState==='void'&&!row?'unconfirmed':state} disabled={disabled||!allowed} onChange={value=>choose(source,value)}><option value="unconfirmed">{t('sharedActivities.unconfirmed')}</option><option value="present">{t('sharedActivities.present')}</option><option value="partial">{t('sharedActivities.partial')}</option><option value="absent">{t('sharedActivities.absent')}</option></ReportSelect>
-      {row?.attendance==='partial'?<label className="grid gap-1 text-xs text-muted">{t('sharedActivities.personalMinutes')}<TextInput type="number" min={1} max={record.actualDurationMinutes??undefined} value={row.minutes} disabled={disabled||!allowed} onChange={event=>patchPending(source,{minutes:event.target.value})} onBlur={()=>finishPending(source)} onKeyDown={onEnter(()=>finishPending(source))}/></label>:null}
-      {correction&&allowed?<label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={row?.void??false} disabled={disabled} onChange={event=>patchPending(source,{void:event.target.checked})}/>{t('sharedActivities.voidEntry')}</label>:null}
-      {row&&correction?<label className="grid gap-1 text-xs text-muted">{t('sharedActivities.reason')}<TextInput value={row.reason} maxLength={1000} disabled={disabled||!allowed} onChange={event=>patchPending(source,{reason:event.target.value})} onBlur={()=>finishPending(source)} onKeyDown={onEnter(()=>finishPending(source))}/></label>:null}
-      {row?<p role="status" className="text-xs text-muted">{t('sharedActivities.finishToSave')}</p>:null}
+    <div className="divide-y divide-line rounded border border-line bg-surface">{listed.map(source=>{
+     const allowed=allowedFor(source),state=source.postingState==='void'?'unconfirmed':source.attendance;
+     return <div key={source.id} className="flex items-center gap-2 px-2 py-1">
+      <p className="min-w-0 flex-1 truncate text-sm">{name(source.membershipId)}{!source.rosterActive?<span className="ml-2 text-xs text-muted">{t('sharedActivities.formerParticipant')}</span>:null}</p>
+      <div className="w-36 shrink-0"><ReportSelect label={t('sharedActivities.attendanceFor',{person:name(source.membershipId)})} value={state} disabled={disabled||!allowed} onChange={value=>choose(source,value)}><option value="unconfirmed">{t('sharedActivities.unconfirmed')}</option><option value="present">{t('sharedActivities.present')}</option><option value="partial">{t('sharedActivities.partial')}</option><option value="absent">{t('sharedActivities.absent')}</option></ReportSelect></div>
+      {source.attendance==='partial'&&source.postingState==='active'?<TextInput aria-label={t('sharedActivities.personalMinutes')} className="w-16 shrink-0" type="number" min={1} max={record.actualDurationMinutes??undefined} value={minutesDraft[source.id]??String(source.minutes??'')} disabled={disabled||!allowed} onChange={event=>setMinutesDraft(before=>({...before,[source.id]:event.target.value}))} onBlur={()=>saveMinutes(source)} onKeyDown={onEnter(()=>saveMinutes(source))}/>:<span className="w-16 shrink-0 text-right text-sm tabular-nums text-muted">{source.postingState==='active'&&source.minutes!==null?t('sharedActivities.minutesShort',{minutes:source.minutes}):'—'}</span>}
      </div>;})}</div>
    </div>:null}
    {canConfigure&&shown?<details className="rounded border border-line p-2"><summary className="cursor-pointer text-xs text-muted">{t('sharedActivities.configure')}</summary><div className="mt-2 space-y-2"><SharedActivityFields value={shown} onChange={setEdited} fields={fields} members={members} disabled={disabled||!canConfigure}/><p className="text-xs text-muted">{t('sharedActivities.editDurationHelp')}</p></div></details>:null}
   </>}
   {!record&&setup?<div className="space-y-3"><SharedActivityFields value={setup.configuration} onChange={configuration=>setDraft({setup:{...setup,configuration}})} fields={fields} members={members} disabled={disabled||!canConfigure}/><p className="text-xs text-muted">{t('sharedActivities.editDurationHelp')}</p><div className="flex gap-2"><Button size="sm" disabled={disabled||!canConfigure} onClick={()=>void save()}>{t('sharedActivities.saveConfiguration')}</Button><Button size="sm" variant="ghost" disabled={held} onClick={clearSetup}>{t('sharedActivities.discard')}</Button></div></div>:null}
   {notice?<p role="alert" className="text-xs text-danger">{noticeMessages[notice.kind]}</p>:null}
-  {[configure,confirm].map((command,index)=>{const own=(command.uncertain?.variables??command.pendingCommand?.variables)?.taskId===task.id;return <div key={index}><SaveFeedback subject="taskSave" error={command.variables?.taskId===task.id?command.error:null} uncertainError={own?command.uncertain?.error??null:null}/>{own&&command.uncertain?<Button size="sm" disabled={!current||command.pendingCommand!==null||(index===0?!canConfigure:!canAttend)} onClick={()=>{if(index===0)configure.retryUncertain({onSuccess:()=>{setEdited(null);clearSetup();}});else confirm.retryUncertain({onSuccess:()=>setPending({})});}}>{t('sharedActivities.retry')}</Button>:null}</div>;})}
+  {[configure,confirm].map((command,index)=>{const own=(command.uncertain?.variables??command.pendingCommand?.variables)?.taskId===task.id;return <div key={index}><SaveFeedback subject="taskSave" error={command.variables?.taskId===task.id?command.error:null} uncertainError={own?command.uncertain?.error??null:null}/>{own&&command.uncertain?<Button size="sm" disabled={!current||command.pendingCommand!==null||(index===0?!canConfigure:!canAttend)} onClick={()=>{if(index===0)configure.retryUncertain({onSuccess:()=>{setEdited(null);clearSetup();}});else confirm.retryUncertain();}}>{t('sharedActivities.retry')}</Button>:null}</div>;})}
  </section>;
 }
