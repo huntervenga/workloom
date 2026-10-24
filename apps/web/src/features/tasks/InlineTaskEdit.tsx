@@ -101,6 +101,8 @@ export interface InlineTaskEditProps {
   writable: boolean;
   estimatePackages?: ReadonlyMap<string, WorkPackageEntry> | undefined;
   onClose: (reason?: InlineCloseReason) => void;
+  /** Title only: Backspace in an already emptied title deletes the task (the page shows the Undo notice). */
+  onDeleteTask?: (() => void) | undefined;
   onMoreDetails: () => void;
   onSaved: (task: TaskDto) => void;
   /** Page-owned completion survives a row moving to another group or Board lane. */
@@ -122,7 +124,7 @@ const iconActionClassName = cn('inline-flex size-7 shrink-0 items-center justify
  * Uses the exact seen task revision; only this cell's field can enter the update. Choices save
  * at once through the same command; text saves on Enter or when focus leaves the editor.
  */
-export function InlineTaskEdit({ task, field, statuses, members, sections = [], tags = [], commands, writable, onClose, onMoreDetails, onSaved, focusClaim, titleCaret, onSaveStarted, estimatePackages, bulkEdit, singleOnly }: InlineTaskEditProps) {
+export function InlineTaskEdit({ task, field, statuses, members, sections = [], tags = [], commands, writable, onClose, onDeleteTask, onMoreDetails, onSaved, focusClaim, titleCaret, onSaveStarted, estimatePackages, bulkEdit, singleOnly }: InlineTaskEditProps) {
   const { t } = useTranslation();
   const shouldFocus = focusClaim?.current !== true;
   useLayoutEffect(() => { if (focusClaim) focusClaim.current = true; }, [focusClaim]);
@@ -432,6 +434,14 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
     onMouseDown={field === 'dueDate' || field === 'tagIds' ? keepFocusOnPopoverPress : undefined}
     onKeyDown={event => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelInline(); return; }
+      // A title emptied earlier is never saved (it is invalid); one more Backspace removes the task, as in Asana.
+      if (field === 'title' && event.key === 'Backspace' && onDeleteTask && writable && !pending && !uncertain && !confirmed && !foreignDraft && event.target === titleInput.current
+        && titleInput.current.value === '' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+        event.preventDefault();
+        cancelInline();
+        onDeleteTask();
+        return;
+      }
       if (choice || event.key !== 'Enter' || !(event.target instanceof HTMLInputElement) || event.target.closest('form') !== event.currentTarget) return;
       if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
       event.preventDefault();
