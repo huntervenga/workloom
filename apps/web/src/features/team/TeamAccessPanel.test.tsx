@@ -80,7 +80,7 @@ describe('Team UI scope and backwards compatibility', () => {
     expect(screen.queryByRole('button', { name: 'Create invitation' })).not.toBeInTheDocument();
     expect(api.calls.some(call => call.path.endsWith('/team'))).toBe(false);
   });
-  it('creates a hash-only invitation and copies its credential, shows it once in the creator's tab and never puts it in a query cache', async () => {
+  it('creates a hash-only invitation and copies its credential, shows it once in the creating tab and never puts it in a query cache', async () => {
     vi.stubGlobal('crypto', { randomUUID: () => '33333333-3333-4333-8333-333333333333', getRandomValues: (bytes: Uint8Array) => bytes.fill(7), subtle: { digest: async () => new Uint8Array(32).fill(9).buffer } });
     const { api, user, client } = setup('shared', true);
     const create = await screen.findByRole('button', { name: 'Create invitation' });
