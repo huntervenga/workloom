@@ -80,7 +80,7 @@ describe('Team UI scope and backwards compatibility', () => {
     expect(screen.queryByRole('button', { name: 'Create invitation' })).not.toBeInTheDocument();
     expect(api.calls.some(call => call.path.endsWith('/team'))).toBe(false);
   });
-  it('creates a hash-only invitation and copies its credential without rendering it or putting it in a query cache', async () => {
+  it('creates a hash-only invitation and copies its credential, shows it once in the creator's tab and never puts it in a query cache', async () => {
     vi.stubGlobal('crypto', { randomUUID: () => '33333333-3333-4333-8333-333333333333', getRandomValues: (bytes: Uint8Array) => bytes.fill(7), subtle: { digest: async () => new Uint8Array(32).fill(9).buffer } });
     const { api, user, client } = setup('shared', true);
     const create = await screen.findByRole('button', { name: 'Create invitation' });
@@ -89,7 +89,7 @@ describe('Team UI scope and backwards compatibility', () => {
     const raw = await navigator.clipboard.readText(), credential = new URL(raw).hash.slice(1).split('.')[1] as string;
     expect(raw).toContain('/app/join#33333333-3333-4333-8333-333333333333.');
     expect(credential).toHaveLength(43);
-    expect(document.documentElement.outerHTML.includes(credential)).toBe(false);
+    expect((screen.getByRole('textbox', { name: 'Invitation link' }) as HTMLInputElement).value).toBe(raw);
     expect(JSON.stringify(client.getQueryCache().getAll().map(query => query.state.data)).includes(credential)).toBe(false);
     const sent = api.calls.filter(call => call.method === 'POST'); expect(sent).toHaveLength(1);
     expect(Object.keys(sent[0]?.body as object).sort()).toEqual(['expiresInSeconds', 'hashVersion', 'id', 'role', 'secretHash']);

@@ -34,6 +34,8 @@ export function TeamAccessPanel({ actorId, workspace }: { actorId: string; works
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [generationFailed, setGenerationFailed] = useState(false);
   const generationOwner = useRef(0);
+  const readyBox = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (linkReady) readyBox.current?.scrollIntoView?.({ block: 'center' }); }, [linkReady]);
   useProtectedDraft(command.phase === 'idle' && Boolean(firstName || lastName || email));
   useEffect(() => {
     const owner = ++generationOwner.current;
@@ -97,7 +99,7 @@ export function TeamAccessPanel({ actorId, workspace }: { actorId: string; works
         <Button type="submit" variant="primary" disabled={busy || !writable}>{t('team.invite')}</Button>
       </div>
       <label className="flex items-center gap-2 text-xs text-muted"><input type="checkbox" checked={general} disabled={busy || !writable} onChange={event => setGeneral(event.target.checked)} />{t('team.personal.general')}</label>
-      {linkReady ? <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border border-accent/30 bg-accent/5 p-3"><Button onClick={() => void copyLink()}>{t(copyState === 'copied' ? 'team.copied' : 'team.copy')}</Button><p className="max-w-xl text-xs text-muted">{t('team.linkReady')}</p></div> : null}
+      {linkReady ? <div ref={readyBox} role="status" className="space-y-2 rounded-lg border border-accent/30 bg-accent/5 p-3"><div className="flex flex-wrap items-center gap-3"><Button onClick={() => void copyLink()}>{t(copyState === 'copied' ? 'team.copied' : 'team.copy')}</Button><p className="max-w-xl text-xs text-muted">{t('team.linkReady')}</p></div><input readOnly aria-label={t('team.linkField')} value={link.current?.value ?? ''} onFocus={event => event.currentTarget.select()} className="min-h-10 w-full rounded-lg border border-line bg-canvas px-3 text-xs text-ink" /></div> : null}
       {copyState === 'failed' ? <p role="alert" className="text-sm text-danger">{t('team.copyFailed')}</p> : null}
     </form>
     {command.error || generationFailed ? <p role="alert" className="text-sm text-danger">{t(command.phase === 'uncertain' ? 'team.command.uncertain' : 'team.command.failed')}</p> : null}

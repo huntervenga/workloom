@@ -33,6 +33,7 @@
   "invite": "Create invitation",
   "copy": "Copy invitation link",
   "copied": "Link copied",
+  "linkField": "Invitation link",
   "linkReady": "Copy this link to send privately. It is available only in this tab; you can create a replacement later without duplicating the person.",
   "role": "Role",
   "expires": "Expires in",
