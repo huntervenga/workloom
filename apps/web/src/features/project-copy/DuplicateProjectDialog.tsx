@@ -56,7 +56,7 @@ function CopyForm({ actorId, workspaceId, project, unfinished, onClose }: { acto
         {result.copied.aggregates ? <li>{t('projectCopy.copiedAggregates')}</li> : null}
         {result.copied.defaults ? <li>{t('projectCopy.copiedDefaults')}</li> : null}
       </ul>
-      {result.warnings.length > 0 ? <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [[data-theme=dark]_&]:border-amber-500/40 [[data-theme=dark]_&]:bg-amber-500/10 [[data-theme=dark]_&]:text-amber-100">
+      {result.warnings.length > 0 ? <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
         <p className="font-medium">{t('projectCopy.warningsTitle')}</p>
         <ul className="list-disc pl-5">{result.warnings.map(warning => <li key={warning.part}>{warning.message}</li>)}</ul>
       </div> : null}

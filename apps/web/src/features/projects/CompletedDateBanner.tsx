@@ -18,7 +18,7 @@ export function CompletedDateBanner({ project, issues, tasks, partial, onOpenTas
   const outside = finishedIssues.length - missing;
   const byId = new Map(tasks.map(task => [task.id, task]));
   const kindText = (issue: DateIssue) => issue.kind === 'missing' && !issue.finished ? t('projectDates.kindOpenMissing') : issue.kind === 'missing' ? t('projectDates.kindMissing') : issue.kind === 'before' ? t('projectDates.kindBefore') : t('projectDates.kindAfter');
-  return <section role="status" aria-label={t('projectDates.title')} className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 [[data-theme=dark]_&]:border-amber-500/40 [[data-theme=dark]_&]:bg-amber-500/10 [[data-theme=dark]_&]:text-amber-100">
+  return <section role="status" aria-label={t('projectDates.title')} className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="flex items-center gap-2 font-medium"><CalendarX size={16} aria-hidden="true" />{t(finishedIssues.length > 0 ? 'projectDates.summary' : 'projectDates.summaryOpen', { count: finishedIssues.length > 0 ? finishedIssues.length : openUndated, from: project.dateRange.from, to: project.dateRange.to })}</p>
       <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? t('projectDates.hide') : t('projectDates.show')}</Button>

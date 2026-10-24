@@ -61,7 +61,7 @@ function ScopedApiTokensPanel({ actorId, workspaceId, workspaceName }: PanelProp
   return <section aria-label={t('apiTokens.title')} className="min-w-0 space-y-5">
     <header className="space-y-2"><h2 className="text-lg font-semibold">{t('apiTokens.title')}</h2><p className="max-w-3xl text-sm text-muted">{t('apiTokens.intro')}</p><a className="text-sm text-accent-ink underline" href="/docs" target="_blank" rel="noreferrer">{t('apiTokens.docsLink')}</a></header>
 
-    {created ? <section aria-label={t('apiTokens.createdTitle')} className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 [[data-theme=dark]_&]:border-amber-500/40 [[data-theme=dark]_&]:bg-amber-500/10 [[data-theme=dark]_&]:text-amber-100">
+    {created ? <section aria-label={t('apiTokens.createdTitle')} className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
       <h3 className="font-semibold">{t('apiTokens.createdTitle')}</h3>
       <p className="text-sm">{t('apiTokens.createdHint')}</p>
       <div className="flex flex-wrap items-center gap-2"><TextInput readOnly aria-label={t('apiTokens.tokenLabel')} value={created.token} className="min-w-0 flex-1 font-mono text-xs" onFocus={event => event.currentTarget.select()}/><Button onClick={() => void copyToken()}>{copy === 'ok' ? <Check size={15} aria-hidden="true"/> : <Copy size={15} aria-hidden="true"/>}{copy === 'ok' ? t('apiTokens.copied') : t('apiTokens.copy')}</Button></div>

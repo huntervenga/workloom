@@ -400,7 +400,7 @@ function DueDateCell({ startDate, dueDate, today, finished, issue = null }: { st
   const label = startDate !== null && dueDate !== null ? t('taskTable.dates.rangeLabel', { start: long(startDate), due: long(dueDate) })
     : dueDate !== null ? long(dueDate) : t('taskTable.dates.startOnly', { start: long(startDate ?? dueDate ?? '') });
   const overdue = today !== undefined && !finished && dueDate !== null && dueDate < today;
-  return <span title={warning === null ? label : `${label} — ${warning}`} aria-label={warning === null ? label : `${label}. ${warning}`} data-date-issue={issue?.kind} className={cn('block truncate tabular-nums', warning !== null ? 'font-medium text-amber-700 underline decoration-dotted [[data-theme=dark]_&]:text-amber-300' : overdue ? 'font-medium text-rose-700' : 'text-ink-soft')}>
+  return <span title={warning === null ? label : `${label} — ${warning}`} aria-label={warning === null ? label : `${label}. ${warning}`} data-date-issue={issue?.kind} className={cn('block truncate tabular-nums', warning !== null ? 'font-medium text-amber-700 underline decoration-dotted' : overdue ? 'font-medium text-rose-700' : 'text-ink-soft')}>
     {text}{overdue ? <span className="sr-only">{t('taskTable.taskTable.overdue')}</span> : null}
   </span>;
 }

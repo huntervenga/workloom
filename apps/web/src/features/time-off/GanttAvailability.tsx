@@ -61,5 +61,5 @@ export function GanttAvailabilityWarning({ availability, membershipId, startDate
   if (!availability?.settingsConfigured || !membershipId) return null;
   if (availability.members.find(member => member.membershipId === membershipId)?.scheduleKnown === false) return <span title={t('timeOff.availabilityUnknownPerson')} className="text-[11px] text-muted">{t('timeOff.scheduleUnknown')}</span>;
   const count = availabilitySummary(availability, membershipId, startDate, endDate)?.dates.length ?? 0;
-  return count > 0 ? <p title={t('timeOff.availabilityOverlap', { count })} className="truncate text-[11px] text-amber-800 [[data-theme=dark]_&]:text-amber-300">{t('timeOff.availabilityOverlap', { count })}</p> : null;
+  return count > 0 ? <p title={t('timeOff.availabilityOverlap', { count })} className="truncate text-[11px] text-amber-800">{t('timeOff.availabilityOverlap', { count })}</p> : null;
 }

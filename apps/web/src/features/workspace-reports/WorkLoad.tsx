@@ -6,8 +6,8 @@ import { loadBand, loadRows, unfinishedWork, type LoadBand, type LoadCell } from
 
 const classes = (...names: string[]) => names.join(' ');
 const LOAD_CLASS: Record<LoadBand, string> = {
-  good: classes('bg-emerald-500/20', 'text-emerald-900', '[[data-theme=dark]_&]:text-emerald-200'),
-  fair: classes('bg-amber-500/20', 'text-amber-900', '[[data-theme=dark]_&]:text-amber-200'),
+  good: classes('bg-emerald-500/20', 'text-emerald-800'),
+  fair: classes('bg-amber-500/20', 'text-amber-900'),
   low: classes('bg-rose-500/20', 'text-rose-900', '[[data-theme=dark]_&]:text-rose-200'),
   none: 'text-muted',
 };
