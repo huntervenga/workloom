@@ -305,6 +305,10 @@ export function useArchiveTaskMutation(actorId: string, workspaceId: string) {
     onSuccess: (task, variables, ack) => {
       if (ack.actorId !== null && ack.actorId !== actorId) return;
       if (ack.actorId === actorId) recordTaskUndo(queryClient, actorId, workspaceId, 'archive', snapshots.get(variables), task, variables.input, ack.receipt);
+      // The deleted task and its subtasks leave every loaded list now; the refetch below only confirms it.
+      queryClient.setQueriesData<InfiniteData<TaskPage>>({ queryKey: queryKeys.projectTaskLists(actorId, workspaceId, task.projectId) }, (data) => data && Array.isArray(data.pages)
+        ? { ...data, pages: data.pages.map((page) => ({ ...page, tasks: page.tasks.filter((item) => item.id !== task.id && item.parentTaskId !== task.id) })) }
+        : data);
       void storeTask(queryClient, actorId, workspaceId, task);
     },
   });
