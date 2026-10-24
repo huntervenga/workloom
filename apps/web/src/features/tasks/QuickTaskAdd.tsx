@@ -161,10 +161,19 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   const issues = Object.entries(errors);
   const tagWait = waitsForTag && tagCreate.held;
   const hasFeedback = issues.length > 0 || initialIssues.length > 0 || blockedUnknown || commands.create.error !== null || uncertain || tagWait;
-  // Leaving an untouched row closes it, like an unused Asana add row; typed drafts and titles
-  // still waiting to be sent stay put, and so does a row whose own tag create is unresolved.
+  // Leaving an untouched row closes it, like an unused Asana add row. Leaving a row with a title
+  // creates the task exactly as Enter does and then closes the row; a draft without a title, titles
+  // still waiting to be sent and a row whose own tag create is unresolved stay put.
   const leave = useRef<() => void>(() => undefined);
-  leave.current = () => { if (!dirty && !pending && !uncertain && !hasFeedback && commands.quick.queue.length === 0 && !ownTagHeld()) onClose('blur'); };
+  const enqueuedByRow = useRef(false);
+  leave.current = () => {
+    if (pending || uncertain || hasFeedback || commands.quick.queue.length > 0 || ownTagHeld()) return;
+    if (!dirty) { onClose('blur'); return; }
+    if (frozen || foreignDraft || session === null || handedOff.current === session || session.draft.title.trim() === '' || !(anchor instanceof HTMLFormElement)) return;
+    enqueuedByRow.current = false;
+    anchor.requestSubmit();
+    if (enqueuedByRow.current) onClose('blur');
+  };
   // A staged field editor opens in a portalled panel that its trigger in this row controls.
   const controlledByRow = (node: Element) => [...document.querySelectorAll('[aria-controls]')].some(trigger =>
     trigger.closest('[data-quick-draft]')?.getAttribute('data-quick-draft') === id && document.getElementById(trigger.getAttribute('aria-controls') ?? '')?.contains(node) === true);
@@ -290,6 +299,7 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
     // never edits this next buffer or restores focus after the person moves elsewhere.
     // A continuing row's next task follows the one just queued, whatever ID it gets.
     const next = commands.enqueueQuickCreate(session, result.input, resultAnchor => freshQuickSession(sectionId, statusId, nextQuickRequest(session.request, resultAnchor)), onCreated, initial);
+    enqueuedByRow.current = true;
     setSession(next);
     setErrors({});
     setInitialIssues([]);

@@ -1,7 +1,7 @@
 import {hostedAsanaImportEnabled,managedLocalAsanaTarget,registerLocalAsanaImportRoutes,type LocalAsanaImporter} from './http/local-asana-import-routes.js';
 import { registerWorkspaceSlugRoutes } from './http/workspace-slug-routes.js';
 import { createWorkspaceSlugApplication } from '@workloom/db';
-import type { WorkspaceSlugApplication } from '@workloom/domain';
+import { toCommandContext, type WorkspaceSlugApplication } from '@workloom/domain';
 import {registerSummaryTemplateRoutes} from './http/summary-template-routes.js';
 import type { DuplicationApplication } from '@workloom/domain';
 import { createDuplicationApplication, type PurgeApplication } from '@workloom/db';
@@ -409,7 +409,15 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if(managedLocalAsanaTarget(config.appEnv,config.authMode,config.database.url)||hostedAsanaImportEnabled(config.appEnv,config.authMode)){
     let importer=dependencies.localAsanaImporter;
     if(!importer){const adapterUrl=new URL('../../../scripts/asana-browser-import.mjs',import.meta.url).href;const adapter=await import(adapterUrl) as {createAsanaBrowserImporter:(options:{databaseUrl:string;hosted?:boolean;importsDir?:string|undefined})=>LocalAsanaImporter};importer=adapter.createAsanaBrowserImporter({databaseUrl:config.database.url,...(config.appEnv!=='local'?{hosted:true,importsDir:process.env['ASANA_IMPORT_DIR']}:{})});}
-    registerLocalAsanaImportRoutes(app,{identity,repository,importer});
+    registerLocalAsanaImportRoutes(app,{identity,repository,importer,...(taskApplication&&projectCopyApplication?{inheritSettings:async(request,workspaceId,projectId)=>{
+      // A new week starts with the sums, checks and defaults of the closest earlier project that has them; settings already present are never replaced.
+      const context=toCommandContext({actor:await identity.resolveActor(request),source:'web',requestId:request.id},workspaceId,`inherit-${projectId}`.slice(0,128));
+      const candidates=(await taskApplication.listProjects(context)).filter(project=>project.id!==projectId&&project.archivedAt===null).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,10);
+      for(const candidate of candidates){
+        const result=await projectCopyApplication.applySettings({...context,idempotencyKey:`inherit-${projectId}-${candidate.id}`.slice(0,128)},candidate.id,{targetProjectIds:[projectId]});
+        if(result.results.some(item=>item.applied.aggregates||item.applied.checkRules>0||item.applied.defaults))return;
+      }
+    }}:{})});
   }
   if (identity.mode === 'shared' && workspaceCreateApplication !== undefined) {
     registerWorkspaceCreateRoutes(app, { identity, workspaces: workspaceCreateApplication });

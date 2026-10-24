@@ -252,6 +252,16 @@ describe('full quick task row', () => {
     await waitFor(() => expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('blur'));
   });
 
+  it('creates the typed task when focus leaves the row, like Enter, and then closes the row', async () => {
+    const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => created({ ...task, id: X_ID, title: titleOf(request.body) }) });
+    const ui = row(afterB);
+    await ui.user.type(screen.getByLabelText('Task name'), 'Typed then clicked away');
+    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
+    await waitFor(() => expect(ui.onClosed).toHaveBeenCalledExactlyOnceWith('blur'));
+    await waitFor(() => expect(calls.filter(call => call.method === 'POST')).toHaveLength(1));
+    expect(titleOf(calls.find(call => call.method === 'POST')?.body)).toBe('Typed then clicked away');
+  });
+
   it('creates a detail subtask in its parent section without an estimate cell or estimate', async () => {
     const parent: TaskDto = { ...task, sectionId: SECTION };
     const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => created({ ...task, id: X_ID, parentTaskId: parent.id, title: titleOf(request.body) }) });

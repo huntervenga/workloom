@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { duplicateProjectInputSchema, duplicateProjectResultSchema, idSchema } from '@workloom/contracts';
+import { applyProjectSettingsInputSchema, applyProjectSettingsResultSchema, duplicateProjectInputSchema, duplicateProjectResultSchema, idSchema } from '@workloom/contracts';
 import { DomainError, notFoundError, createProjectCopyService, type CommandContext, type ProjectCopyApplication } from '@workloom/domain';
 import { type Database, type WorkloomExecutor } from '../client.js';
 import { createWorkCategoryApplication } from '../categories/work-category-application.js';
@@ -26,6 +26,13 @@ export function createProjectCopyApplication(source: Database | WorkloomExecutor
       return resumableWorkflow(source,context,{command:'project.duplicate',capability:'fields.manage',input:{projectId:id.data,input:parsed.data},schema:duplicateProjectResultSchema,
         authorize:async scope=>{if(!await createTaskRepository(scope.tx).findProject(context.workspaceId,id.data))throw notFoundError();},
         work:()=>service.duplicateProject(context,id.data,parsed.data)});
+    },
+    async applySettings(context: CommandContext, sourceProjectId, input) {
+      const id=idSchema.safeParse(sourceProjectId),parsed=applyProjectSettingsInputSchema.safeParse(input);
+      if(!id.success||!parsed.success)throw new DomainError('VALIDATION_FAILED','Invalid settings copy request.');
+      return resumableWorkflow(source,context,{command:'project.apply_settings',capability:'fields.manage',input:{projectId:id.data,input:parsed.data},schema:applyProjectSettingsResultSchema,
+        authorize:async scope=>{if(!await createTaskRepository(scope.tx).findProject(context.workspaceId,id.data))throw notFoundError();},
+        work:()=>service.applySettings(context,id.data,parsed.data)});
     },
   };
 }

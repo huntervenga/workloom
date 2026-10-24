@@ -1,4 +1,4 @@
-import { duplicateProjectInputSchema, duplicateProjectResponseSchema, idSchema } from '@workloom/contracts';
+import { applyProjectSettingsInputSchema, applyProjectSettingsResponseSchema, duplicateProjectInputSchema, duplicateProjectResponseSchema, idSchema } from '@workloom/contracts';
 import { toCommandContext, type ProjectCopyApplication } from '@workloom/domain';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -15,5 +15,11 @@ export function registerProjectCopyRoutes(app: FastifyInstance, deps: { identity
     const key = readIdempotencyKey(request), input = parseInput(duplicateProjectInputSchema, request.body);
     const context = toCommandContext({ actor: await deps.identity.resolveActor(request), source: 'web', requestId: request.id }, p.workspaceId, key);
     return sendData(request, reply, duplicateProjectResponseSchema, await deps.copies.duplicateProject(context, p.projectId, input), { statusCode: 201 });
+  });
+  app.post('/api/v1/workspaces/:workspaceId/projects/:projectId/apply-settings', async (request, reply) => {
+    const p = parseInput(path, request.params); parseInput(none, request.query);
+    const key = readIdempotencyKey(request), input = parseInput(applyProjectSettingsInputSchema, request.body);
+    const context = toCommandContext({ actor: await deps.identity.resolveActor(request), source: 'web', requestId: request.id }, p.workspaceId, key);
+    return sendData(request, reply, applyProjectSettingsResponseSchema, await deps.copies.applySettings(context, p.projectId, input));
   });
 }

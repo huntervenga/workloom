@@ -115,7 +115,14 @@ export function useTaskCompletion(commands: TaskCommands, context: Context, onSa
     busy.current = true;
     latestCommands.current.update.retryUncertain({ onSuccess: task => saved(submitted, task), onError:error=>rejected(submitted,error), onSettled: () => { busy.current = false; } });
   };
+  // Only a confirmed refusal for missing required fields is released from its draft, so only it can be dismissed.
+  const dismiss = () => {
+    const shown = current.current;
+    if (!shown?.released || busy.current) return;
+    current.current = null;
+    setAttempt(null);
+  };
   const acknowledgeReview = (taskId: string) => setReviewTaskId(before => before === taskId ? null : before);
-  return { acknowledgeReview, targetReady, choose, attempt: confirmed ? null : attempt, pending, uncertain, canRetry, retry, reviewTaskId };
+  return { acknowledgeReview, dismiss, targetReady, choose, attempt: confirmed ? null : attempt, pending, uncertain, canRetry, retry, reviewTaskId };
 }
 export type TaskCompletionController = ReturnType<typeof useTaskCompletion>;

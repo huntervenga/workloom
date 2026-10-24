@@ -132,7 +132,7 @@ describe('section quick creation', () => {
     expect(ui.onClosed).not.toHaveBeenCalled();
   });
 
-  it('closes an untouched row when focus leaves, keeps a typed draft open and uncreated, and discards it only on Escape', async () => {
+  it('closes an untouched row when focus leaves, keeps a typed draft uncreated while focused, and discards it on Escape', async () => {
     const { calls } = installFakeApi({});
     const ui = quick();
     await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
@@ -140,12 +140,10 @@ describe('section quick creation', () => {
     expect(screen.getByRole('button', { name: 'Outside focus' })).toHaveFocus();
     await ui.user.click(screen.getByRole('button', { name: 'Resume QA create' }));
     await ui.user.type(screen.getByLabelText('Task name'), 'Typed but not sent');
-    await ui.user.click(screen.getByRole('button', { name: 'Outside focus' }));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
     expect(screen.getByLabelText('Task name')).toHaveValue('Typed but not sent');
     expect(ui.onClosed).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(0);
-    await ui.user.click(screen.getByLabelText('Task name'));
     await ui.user.keyboard('{Escape}');
     expect(ui.onClosed).toHaveBeenLastCalledWith('cancel');
     // Escape is the explicit discard of a never-sent draft: nothing keeps or brings it back.

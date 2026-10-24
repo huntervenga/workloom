@@ -37,3 +37,28 @@ export const duplicateProjectResponseSchema = envelopeSchema(duplicateProjectRes
 export type DuplicateProjectInput = z.input<typeof duplicateProjectInputSchema>;
 export type DuplicateProjectParsed = z.infer<typeof duplicateProjectInputSchema>;
 export type DuplicateProjectResult = z.infer<typeof duplicateProjectResultSchema>;
+
+/**
+ * Copies one project's settings onto existing projects of the same workspace (for example week 41's checks and sums
+ * onto every other week). Fields, options and sections are matched by type and name; a part that cannot be matched is
+ * reported. A target part that already has settings is left alone unless `replaceExisting` is set.
+ */
+export const applyProjectSettingsInputSchema = z.strictObject({
+  targetProjectIds: z.array(idSchema).min(1).max(100),
+  replaceExisting: z.boolean().default(false),
+  copy: z.strictObject({
+    aggregates: z.boolean().default(true),
+    checks: z.boolean().default(true),
+    defaults: z.boolean().default(true),
+  }).default({ aggregates: true, checks: true, defaults: true }),
+});
+export const applyProjectSettingsResultSchema = z.strictObject({
+  results: z.array(z.strictObject({
+    projectId: idSchema,
+    applied: z.strictObject({ aggregates: z.boolean(), checkRules: z.number().int().nonnegative(), defaults: z.boolean() }),
+    warnings: z.array(z.strictObject({ part: z.enum(['aggregates', 'checks', 'defaults']), message: z.string() })),
+  })),
+});
+export const applyProjectSettingsResponseSchema = envelopeSchema(applyProjectSettingsResultSchema);
+export type ApplyProjectSettingsInput = z.input<typeof applyProjectSettingsInputSchema>;
+export type ApplyProjectSettingsResult = z.infer<typeof applyProjectSettingsResultSchema>;

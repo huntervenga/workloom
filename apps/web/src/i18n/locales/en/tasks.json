@@ -295,6 +295,7 @@
     "completeAs": "Complete as {{status}}",
     "feedback": "Task completion status",
     "review": "Review original task",
+    "dismiss": "Close",
     "reviewChange": "Review the status change for {{title}}.",
     "retry": "Retry original status change",
     "saved": "Task status change confirmed."

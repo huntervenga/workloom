@@ -26,5 +26,22 @@
   "warningsTitle": "Some settings could not be copied. The project works without them:",
   "close": "Close",
   "openNew": "Open the new project",
-  "carryOver": "Carry over {{count}} unfinished tasks…"
+  "carryOver": "Carry over {{count}} unfinished tasks…",
+  "applyOpen": "Copy settings to other projects",
+  "applyTitle": "Copy these settings to other projects",
+  "applyDescription": "Sums, planning checks (including “fact required before done”) and defaults for new tasks are copied from this project. Fields and sections are matched by name. Tasks are not touched.",
+  "applyTargets": "Copy to",
+  "applySelectAll": "Select all",
+  "applySelectNone": "Select none",
+  "applyReplace": "Replace settings that already exist in the selected projects",
+  "applyNoProjects": "There are no other projects.",
+  "applyRun": "Copy to {{count}} projects",
+  "applyRunning": "Copying…",
+  "applyDone": "Done: {{count}} projects updated.",
+  "applyPartAggregates": "sums",
+  "applyPartChecks": "{{count}} checks",
+  "applyPartDefaults": "defaults",
+  "applyProjectResult": "{{name}}: {{parts}}",
+  "applyProjectNothing": "{{name}}: nothing copied",
+  "applyRunOne": "Copy to 1 project"
 }

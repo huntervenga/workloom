@@ -77,17 +77,15 @@ describe('page-owned task grouping', () => {
     expect(writes(calls)).toHaveLength(0);
   });
 
-  it('keeps an unsent Section quick draft reachable in details without duplicating quick rows', async () => {
-    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
+  it('sends a typed Section quick draft when focus leaves the row for the grouping control, in its original Section', async () => {
+    const { calls } = installFakeApi(routes({ [`POST ${rootPath}/tasks`]: request => created({ ...parent, id: 'f2000000-0000-4000-8000-0000000000f1', title: (request.body as { title: string }).title }) }));
+    const { user } = renderApp(tablePath);
     await user.click(await screen.findByRole('button', { name: 'Add task to “Original section”' }));
-    await user.type(screen.getByLabelText('Task name'), 'Unsent original draft');
+    await user.type(screen.getByLabelText('Task name'), 'Typed original draft');
     await tableChoice(user, groupControl(), 'assignee');
-    expect(screen.queryByLabelText('Task name')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
-    const drawer = within(await screen.findByRole('dialog'));
-    expect(drawer.getByLabelText('Task name')).toHaveValue('Unsent original draft');
-    expect(drawer.getByLabelText('Section')).toHaveTextContent('Original section');
-    expect(writes(calls)).toHaveLength(0);
+    await waitFor(() => expect(writes(calls)).toHaveLength(1));
+    expect(writes(calls)[0]?.body).toMatchObject({ title: 'Typed original draft', sectionId: SECTION });
+    expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument();
   });
 
   it('resumes a held quick command in its original Section and retries identical bytes/key', async () => {
