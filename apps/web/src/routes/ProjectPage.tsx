@@ -379,9 +379,13 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const canManageImports = workspace.role === 'owner' || workspace.role === 'admin';
 
   // Values are requested, in batches, only for the tasks the table shows and only while a custom column is visible.
-  const shownTasks = useMemo(() =>
-    tasks.data !== undefined && (!tasks.isError || tasks.isFetchNextPageError) ? loadedTaskScope(tasks.data).tasks : [],
-    [tasks.data, tasks.isError, tasks.isFetchNextPageError]);
+  // A task being deleted leaves the table at once; it comes back if the command is rejected.
+  const deletingTaskId = commands.archive.pendingCommand?.variables.taskId ?? null;
+  const shownTasks = useMemo(() => {
+    if (tasks.data === undefined || (tasks.isError && !tasks.isFetchNextPageError)) return [];
+    const loaded = loadedTaskScope(tasks.data).tasks;
+    return deletingTaskId === null ? loaded : loaded.filter(task => task.id !== deletingTaskId && task.parentTaskId !== deletingTaskId);
+  }, [tasks.data, tasks.isError, tasks.isFetchNextPageError, deletingTaskId]);
   const loadedTaskIds = useMemo(() => shownTasks.map(task => task.id), [shownTasks]);
   useAutoLoadTasks(tasks, shownTasks.length);
   const { collapsedTaskIds, expandedTaskIds, collapsedGroupKeys, setTaskCollapsed, setGroupCollapsed } = useTableExpansionState(
