@@ -379,13 +379,19 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const canManageImports = workspace.role === 'owner' || workspace.role === 'admin';
 
   // Values are requested, in batches, only for the tasks the table shows and only while a custom column is visible.
-  // A task being deleted leaves the table at once; it comes back if the command is rejected.
-  const deletingTaskId = commands.archive.pendingCommand?.variables.taskId ?? null;
+  // A deleted task stays out of the table until a finished refetch no longer lists it, so a stale
+  // response cannot flash it back. A rejected delete releases it.
+  const [deletedTaskIds, setDeletedTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const shownTasks = useMemo(() => {
     if (tasks.data === undefined || (tasks.isError && !tasks.isFetchNextPageError)) return [];
-    const loaded = loadedTaskScope(tasks.data).tasks;
-    return deletingTaskId === null ? loaded : loaded.filter(task => task.id !== deletingTaskId && task.parentTaskId !== deletingTaskId);
-  }, [tasks.data, tasks.isError, tasks.isFetchNextPageError, deletingTaskId]);
+    return withoutDeletedTasks(loadedTaskScope(tasks.data).tasks, deletedTaskIds);
+  }, [tasks.data, tasks.isError, tasks.isFetchNextPageError, deletedTaskIds]);
+  useEffect(() => {
+    if (deletedTaskIds.size === 0 || tasks.isFetching || tasks.data === undefined) return;
+    const listed = new Set(loadedTaskScope(tasks.data).tasks.map(task => task.id));
+    const remaining = [...deletedTaskIds].filter(id => listed.has(id));
+    if (remaining.length !== deletedTaskIds.size) setDeletedTaskIds(new Set(remaining));
+  }, [deletedTaskIds, tasks.data, tasks.isFetching]);
   const loadedTaskIds = useMemo(() => shownTasks.map(task => task.id), [shownTasks]);
   useAutoLoadTasks(tasks, shownTasks.length);
   const { collapsedTaskIds, expandedTaskIds, collapsedGroupKeys, setTaskCollapsed, setGroupCollapsed } = useTableExpansionState(
@@ -737,7 +743,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // "Delete" moves a task out of every list and report; the Undo notice brings it straight back.
   const deleteTask = (task: TaskDto) => {
     if (unresolvedTaskCommand(commands) !== null) return;
-    commands.archive.mutate({ taskId: task.id, input: { expectedRevision: task.revision } });
+    setDeletedTaskIds(before => new Set(before).add(task.id));
+    const release = () => setDeletedTaskIds(before => { const next = new Set(before); next.delete(task.id); return next; });
+    commands.archive.mutate({ taskId: task.id, input: { expectedRevision: task.revision } }, { onError: release });
   };
   const openGraphTask = useCallback((task: TaskDto) => {
     if (task.projectId !== project.id) { navigate(`/w/${workspace.id}/projects/${task.projectId}?task=${task.id}`); return; }
@@ -1330,6 +1338,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             selectionDisabled={bulkHeld}
             dragScope={taskPresentationKey}
             query={tasks}
+            deletedTaskIds={deletedTaskIds}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
             workspace={workspace}
@@ -1437,6 +1446,7 @@ interface TaskListProps {
   selectionDisabled?: boolean | undefined;
   dragScope?: string | undefined;
   query: ReturnType<typeof useTaskListQuery>;
+  deletedTaskIds: ReadonlySet<string>;
   filtered: boolean;
   project: ProjectDto;
   workspace: WorkspaceDto;
@@ -1475,7 +1485,7 @@ interface TaskListProps {
   onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
-function TaskList({ query, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
+function TaskList({ query, deletedTaskIds, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
   const { t } = useTranslation();
   if (query.isPending) {
     return (
@@ -1499,7 +1509,8 @@ function TaskList({ query, filtered, project, workspace, boardMode, ...table }: 
     );
   }
 
-  const scope = loadedTaskScope(query.data);
+  const loadedScope = loadedTaskScope(query.data);
+  const scope = deletedTaskIds.size === 0 ? loadedScope : { ...loadedScope, tasks: withoutDeletedTasks(loadedScope.tasks, deletedTaskIds) };
   const dateIssues = completedDateIssues(project, scope.tasks, table.statuses);
   const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, { kind: issue.kind, finished: issue.finished }] as const));
   return (
@@ -1571,4 +1582,9 @@ function ProjectUnavailable({ projectsHref }: { projectsHref: string }) {
       }
     />
   );
+}
+
+/** The deleted tasks and their subtasks. */
+function withoutDeletedTasks(list: readonly TaskDto[], deleted: ReadonlySet<string>): TaskDto[] {
+  return deleted.size === 0 ? [...list] : list.filter(task => !deleted.has(task.id) && (task.parentTaskId === null || !deleted.has(task.parentTaskId)));
 }
