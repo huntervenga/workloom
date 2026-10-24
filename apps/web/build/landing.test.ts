@@ -8,6 +8,7 @@ import { createThemeManager, THEME_STORAGE_KEY } from '../src/features/theme/The
 import english from '../src/i18n/locales/en/landing.json';
 import englishTheme from '../src/i18n/locales/en/theme.json';
 import { wireThemeToggle } from '../src/landing/theme';
+import { landingCatalogs, landingLocales, landingPath, languageDescriptors } from './landing-locales';
 import startTemplate from '../start.html?raw';
 import { landingPlugin, landingRequestUrl, LOGIN_HREF, PUBLIC_ORIGIN, renderLanding, renderStart, START_PATH, structuredData, transformLandingHtml } from './landing';
 
@@ -207,12 +208,45 @@ describe('public landing prerender', () => {
     expect(document.querySelectorAll('h1')).toHaveLength(1);
   });
 
-  it('advertises only the public root, the sign-up chooser and the public docs in crawl resources', () => {
+  it('advertises the localized public landings and choosers, but not the app, in crawl resources', () => {
     expect(robots).toContain('Disallow: /app');
     expect(robots).toContain('Disallow: /api');
     expect(robots).toContain(`Sitemap: ${PUBLIC_ORIGIN}/sitemap.xml`);
     const sitemap = new DOMParser().parseFromString(sitemapText, 'application/xml');
-    expect([...sitemap.querySelectorAll('loc')].map(node => node.textContent)).toEqual([`${PUBLIC_ORIGIN}/`, `${PUBLIC_ORIGIN}${START_PATH}`, `${PUBLIC_ORIGIN}/docs`]);
+    expect([...sitemap.querySelectorAll('loc')].map(node => node.textContent)).toEqual([`${PUBLIC_ORIGIN}/`, `${PUBLIC_ORIGIN}${START_PATH}`, `${PUBLIC_ORIGIN}/docs`, ...landingLocales.filter(locale => locale !== 'en').flatMap(locale => [PUBLIC_ORIGIN + landingPath(locale), PUBLIC_ORIGIN + landingPath(locale, true)])]);
+  });
+
+  it.each(landingLocales)('prerenders complete %s landing and start copy, links, metadata and controls', locale => {
+    const catalog = landingCatalogs[locale];
+    const shape = (value: unknown, prefix = ''): string[] => {
+      if (Array.isArray(value)) return value.flatMap((item, index) => shape(item, `${prefix}.${index}`));
+      if (value && typeof value === 'object') return Object.entries(value).flatMap(([key, item]) => shape(item, `${prefix}.${key}`));
+      expect(typeof value).toBe('string');
+      expect(String(value).trim()).not.toBe('');
+      return [prefix];
+    };
+    expect(shape(catalog)).toEqual(shape(english));
+    for (const start of [false, true]) {
+      const html = transformLandingHtml(start ? startTemplate : template, catalog, catalog.theme, locale);
+      const document = new DOMParser().parseFromString(html, 'text/html');
+      expect(document.documentElement.lang).toBe(languageDescriptors[locale].lang);
+      expect(document.querySelector('h1')?.textContent).toBe(start ? catalog.start.title : catalog.hero.title);
+      expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(PUBLIC_ORIGIN + landingPath(locale, start));
+      expect(document.querySelectorAll('link[rel="alternate"]')).toHaveLength(7);
+      expect([...document.querySelectorAll('.language-options a')].map(a => a.getAttribute('href'))).toEqual(landingLocales.map(item => landingPath(item, start)));
+      expect(document.querySelector('.language-options [aria-current="page"]')?.getAttribute('href')).toBe(landingPath(locale, start));
+      expect(document.querySelector('.language-picker summary')?.getAttribute('aria-label')).toBe(catalog.language.choose);
+      expect(document.querySelector('[data-theme-toggle]')?.getAttribute('title')).toBe(catalog.theme.toDark);
+      expect(document.querySelector('a[href="https://github.com/huntervenga/workloom"]')?.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(document.querySelector(`a[href="https://pavelignatov.com${locale === 'en' ? '' : `/${locale}`}"]`)).not.toBeNull();
+      if (!start) {
+        expect(document.querySelector('.hero-actions a')?.getAttribute('href')).toBe(landingPath(locale, true));
+        expect(document.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe(PUBLIC_ORIGIN + '/shots/table.png');
+        const data = JSON.parse(document.querySelector('script[type="application/ld+json"]')?.textContent ?? '[]');
+        expect(data[0].inLanguage).toBe(languageDescriptors[locale].lang);
+        expect(data[0].url).toBe(PUBLIC_ORIGIN + landingPath(locale));
+      }
+    }
   });
 });
 

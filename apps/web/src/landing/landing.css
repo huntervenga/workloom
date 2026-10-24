@@ -144,6 +144,18 @@
 .landing .faq-item summary::-webkit-details-marker { display:none; }
 .landing .faq-item p { padding:0 0 18px; font-size:14px; line-height:1.85; color:var(--landing-muted, #6f657d); }
 .landing .footer-links { display:flex; gap:26px; flex-wrap:wrap; align-items:center; }
+.landing { --landing-line:#e8e1f1; --landing-card:#fff9; --landing-surface:#fff; --landing-accent:#7651c8; }
+.landing .language-picker { position:relative; font-size:13px; flex-shrink:0; }
+.landing .language-picker summary { display:flex; align-items:center; gap:8px; min-height:38px; padding:6px 10px; border:1px solid var(--landing-line); border-radius:9px; cursor:pointer; list-style:none; }
+.landing .language-picker summary::-webkit-details-marker { display:none; }
+.landing .language-picker summary:hover { background:var(--landing-card); }
+.landing .language-picker :focus-visible { outline:2px solid var(--landing-accent); outline-offset:3px; }
+.landing .site-header .language-options { position:absolute; top:calc(100% + 8px); right:0; z-index:20; display:grid; margin:0; gap:3px; min-width:210px; padding:7px; border:1px solid var(--landing-line); border-radius:12px; background:var(--landing-surface); box-shadow:0 12px 36px #21133426; }
+.landing .site-header .language-options a { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:7px; white-space:nowrap; }
+.landing .site-header .language-options a:hover,.landing .site-header .language-options a[aria-current="page"] { background:var(--landing-card); color:var(--landing-accent); }
+@media(max-width:1150px) { .landing .site-header > nav { display:none; } .landing .header-actions { margin-left:auto; } }
+@media(max-width:760px) { .landing .language-name { display:none; } .landing .header-actions { gap:8px; } .landing .site-header { gap:12px; } .landing .site-header .button { padding:10px 12px; } }
+@media(max-width:420px) { .landing .site-header { flex-wrap:wrap; padding-top:16px; padding-bottom:16px; } .landing .header-actions { flex-wrap:wrap; } }
 .landing .start { padding:40px 0 80px; }
 .landing .start-heading { max-width:640px; margin:0 auto 36px; text-align:center; }
 .landing .start-heading h1 { font-size:clamp(34px,4vw,48px); max-width:none; margin:0 0 14px; }
@@ -161,3 +173,6 @@
 .landing .start-heading p { margin-left:auto; margin-right:auto; max-width:520px; }
 .landing .hero { grid-template-columns:minmax(0,.85fr) minmax(0,1.25fr); }
 @media(max-width:900px) { .landing .hero { grid-template-columns:1fr; } }
+.landing .site-header .language-picker .language-options { display:grid; }
+.landing .site-header .language-picker .language-options a { display:flex; }
+@media(max-width:600px) { .landing .feature-grid { grid-template-columns:minmax(0,1fr); } }

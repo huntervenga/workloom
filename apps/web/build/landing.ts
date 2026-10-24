@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite';
 import english from '../src/i18n/locales/en/landing.json';
 import englishTheme from '../src/i18n/locales/en/theme.json';
+import { landingCatalogs, landingLocales, landingPath, languageDescriptors, localeFromUrl, type LandingLocale } from './landing-locales';
 
 export const PUBLIC_ORIGIN = 'https://workloom.pavelignatov.com';
 /** Where "Try for free" leads: a page that offers sign-up or sign-in. */
@@ -37,7 +38,7 @@ export function structuredData(c: LandingCatalog): string {
 }
 
 /** Copy is data: it can never insert elements or attributes into the prerendered page. */
-export function renderLanding(catalog: LandingCatalog = english, theme: ThemeCatalog = englishTheme): { head: string; body: string } {
+function renderLandingBase(catalog: LandingCatalog = english, theme: ThemeCatalog = englishTheme): { head: string; body: string } {
   const e = escapeHtml;
   const c = catalog;
   const feature = (key: (typeof FEATURES)[number], index: number) => { const item = c.features[key]; return `<article class="feature-card"><span class="feature-symbol symbol-${(index % 4) + 1}" aria-hidden="true"></span><p class="card-tag">${e(item.tag)}</p><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`; };
@@ -83,7 +84,7 @@ export function renderLanding(catalog: LandingCatalog = english, theme: ThemeCat
 }
 
 /** The sign-up / sign-in chooser at /start. */
-export function renderStart(catalog: LandingCatalog = english, theme: ThemeCatalog = englishTheme): { head: string; body: string } {
+function renderStartBase(catalog: LandingCatalog = english, theme: ThemeCatalog = englishTheme): { head: string; body: string } {
   const e = escapeHtml;
   const s = catalog.start;
   return {
@@ -112,11 +113,45 @@ export function renderStart(catalog: LandingCatalog = english, theme: ThemeCatal
   };
 }
 
-function fill(html: string, rendered: { head: string; body: string }, marker: 'landing' | 'start'): string {
-  return html.replace(`<!--${marker}:head-->`, () => rendered.head).replace(`<!--${marker}:body-->`, () => rendered.body);
+function languagePicker(catalog: LandingCatalog, locale: LandingLocale, start: boolean): string {
+  const current = languageDescriptors[locale];
+  // Native details/summary remains usable with JavaScript disabled.
+  return `<details class="language-picker"><summary aria-label="${escapeHtml(catalog.language.choose)}"><span aria-hidden="true">${current.flag}</span><span class="language-name">${current.label}</span><span aria-hidden="true">⌄</span></summary><nav class="language-options" aria-label="${escapeHtml(catalog.language.choose)}">${landingLocales.map(item => `<a href="${landingPath(item, start)}" lang="${languageDescriptors[item].lang}" hreflang="${item === 'pt-br' ? 'pt-BR' : item}"${item === locale ? ' aria-current="page"' : ''}><span aria-hidden="true">${languageDescriptors[item].flag}</span>${languageDescriptors[item].label}</a>`).join('')}</nav></details>`;
 }
-export function transformLandingHtml(html: string, catalog: LandingCatalog = english, theme: ThemeCatalog = englishTheme): string {
-  return fill(fill(html, renderLanding(catalog, theme), 'landing'), renderStart(catalog, theme), 'start');
+
+function decoratePage(rendered: { head: string; body: string }, catalog: LandingCatalog, locale: LandingLocale, start: boolean): { head: string; body: string } {
+  const descriptor = languageDescriptors[locale];
+  const canonical = `${PUBLIC_ORIGIN}${landingPath(locale, start)}`;
+  const alternates = landingLocales.map(item => `<link rel="alternate" hreflang="${item === 'pt-br' ? 'pt-BR' : item}" href="${PUBLIC_ORIGIN}${landingPath(item, start)}" />`).join('\n');
+  const home = landingPath(locale);
+  const footer = `<a class="text-link" href="https://pavelignatov.com${locale === 'en' ? '' : `/${locale}`}" target="_blank" rel="noopener noreferrer">${escapeHtml(catalog.footer.personalSite)}</a><a class="text-link" href="https://github.com/huntervenga/workloom" target="_blank" rel="noopener noreferrer">${escapeHtml(catalog.footer.github)}</a>`;
+  return {
+    head: rendered.head.replaceAll(`"${PUBLIC_ORIGIN}${start ? START_PATH : '/'}"`, `"${canonical}"`)
+      .replace('content="en_US"', `content="${descriptor.og}"`)
+      .replace('"inLanguage":"en"', `"inLanguage":"${descriptor.lang}"`)
+      + `\n${alternates}\n<link rel="alternate" hreflang="x-default" href="${PUBLIC_ORIGIN}${landingPath('en', start)}" />`,
+    body: rendered.body.replaceAll('href="/"', `href="${home}"`)
+      .replaceAll('href="/start"', `href="${landingPath(locale, true)}"`)
+      .replace('<div class="header-actions">', `<div class="header-actions">${languagePicker(catalog, locale, start)}`)
+      .replace('data-theme-toggle ', `data-theme-toggle data-theme-to-dark="${escapeHtml(catalog.theme.toDark)}" data-theme-to-light="${escapeHtml(catalog.theme.toLight)}" `)
+      .replace('<div class="footer-links">', `<div class="footer-links">${footer}`)
+      .replace('</main></div>', `</main><footer><div class="footer-links">${footer}</div></footer></div>`),
+  };
+}
+
+export function renderLanding(catalog: LandingCatalog = english, theme: ThemeCatalog = catalog.theme, locale: LandingLocale = 'en'): { head: string; body: string } {
+  return decoratePage(renderLandingBase(catalog, theme), catalog, locale, false);
+}
+export function renderStart(catalog: LandingCatalog = english, theme: ThemeCatalog = catalog.theme, locale: LandingLocale = 'en'): { head: string; body: string } {
+  return decoratePage(renderStartBase(catalog, theme), catalog, locale, true);
+}
+
+function fill(html: string, rendered: { head: string; body: string }, marker: 'landing' | 'start'): string {
+  return html.replace(`<!--${marker}:head-->`, () => `<!--workloom:${marker}:head:start-->${rendered.head}<!--workloom:${marker}:head:end-->`).replace(`<!--${marker}:body-->`, () => `<!--workloom:${marker}:body:start-->${rendered.body}<!--workloom:${marker}:body:end-->`);
+}
+export function transformLandingHtml(html: string, catalog: LandingCatalog = english, theme: ThemeCatalog = catalog.theme, locale: LandingLocale = 'en'): string {
+  if (!html.includes('<!--landing:head-->') && !html.includes('<!--start:head-->')) return html;
+  return fill(fill(html.replace('<html lang="en">', `<html lang="${languageDescriptors[locale].lang}">`), renderLanding(catalog, theme, locale), 'landing'), renderStart(catalog, theme, locale), 'start');
 }
 
 /** Run before Vite's HTML fallback; keep queries and every non-root request intact. */
@@ -139,8 +174,42 @@ export function landingPlugin(): Plugin {
   };
   return {
     name: 'workloom-public-landing',
-    transformIndexHtml: { order: 'pre', handler: html => transformLandingHtml(html) },
-    configureServer(server) { server.middlewares.use(rewrite); },
-    configurePreviewServer(server) { server.middlewares.use(rewrite); },
+    transformIndexHtml: { order: 'pre', handler: (html, context) => {
+      const locale = localeFromUrl(context.originalUrl ?? context.path);
+      return transformLandingHtml(html, landingCatalogs[locale], landingCatalogs[locale].theme, locale);
+    } },
+    generateBundle: {
+      order: 'post',
+      handler(_options, bundle) {
+        for (const locale of landingLocales.filter(item => item !== 'en')) {
+          for (const page of ['landing', 'start'] as const) {
+            const asset = bundle[`${page}.html`];
+            if (!asset || asset.type !== 'asset' || typeof asset.source !== 'string') throw new Error(`Missing built ${page}.html`);
+            const catalog = landingCatalogs[locale];
+            const rendered = page === 'landing' ? renderLanding(catalog, catalog.theme, locale) : renderStart(catalog, catalog.theme, locale);
+            let html = asset.source.replace('<html lang="en">', `<html lang="${languageDescriptors[locale].lang}">`);
+            for (const region of ['head', 'body'] as const) {
+              html = html.replace(new RegExp(`<!--workloom:${page}:${region}:start-->[\\s\\S]*?<!--workloom:${page}:${region}:end-->`), () => rendered[region]);
+            }
+            this.emitFile({ type: 'asset', fileName: `${page === 'start' ? 'start/' : ''}${locale}/index.html`, source: html });
+          }
+        }
+      },
+    },
+    configureServer(server) { server.middlewares.use((request, response, next) => {
+      const path = request.url?.split('?')[0] ?? '';
+      if ((request.method === 'GET' || request.method === 'HEAD') && /^\/(?:start\/)?(?:ru|ja|ko|es|pt-br)\/?$/.test(path)) {
+        const locale = localeFromUrl(path);
+        const query = new URLSearchParams(request.url?.split('?').slice(1).join('?'));
+        query.set('__wl_locale', locale);
+        request.url = `/${path.startsWith('/start/') ? 'start' : 'landing'}.html?${query}`;
+      }
+      rewrite(request, response, next);
+    }); },
+    configurePreviewServer(server) { server.middlewares.use((request, response, next) => {
+      const path = request.url?.split('?')[0] ?? '';
+      if ((request.method === 'GET' || request.method === 'HEAD') && /^\/(?:start\/)?(?:ru|ja|ko|es|pt-br)\/?$/.test(path)) request.url = `${path.replace(/\/$/, '')}/index.html${request.url?.slice(path.length) ?? ''}`;
+      rewrite(request, response, next);
+    }); },
   };
 }

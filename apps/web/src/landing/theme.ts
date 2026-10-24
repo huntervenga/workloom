@@ -12,7 +12,7 @@ export function wireThemeToggle(root: ParentNode = document, manager: ThemeManag
     const dark = manager.getTheme() === 'dark';
     for (const button of buttons) {
       button.setAttribute('aria-pressed', String(dark));
-      button.title = dark ? copy.toLight : copy.toDark;
+      button.title = dark ? (button.dataset.themeToLight ?? copy.toLight) : (button.dataset.themeToDark ?? copy.toDark);
     }
   };
   const onClick = () => manager.toggle();
@@ -26,4 +26,17 @@ export function wireThemeToggle(root: ParentNode = document, manager: ThemeManag
   };
 }
 
-if (typeof document !== 'undefined' && document.body?.classList.contains('landing')) wireThemeToggle();
+if (typeof document !== 'undefined' && document.body?.classList.contains('landing')) {
+  wireThemeToggle();
+  const pickers = [...document.querySelectorAll<HTMLDetailsElement>('.language-picker')];
+  document.addEventListener('click', event => {
+    for (const picker of pickers) if (event.target instanceof Node && !picker.contains(event.target)) picker.open = false;
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    for (const picker of pickers) if (picker.open) {
+      picker.open = false;
+      picker.querySelector('summary')?.focus();
+    }
+  });
+}

@@ -1,2 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://workloom.pavelignatov.com/</loc></url><url><loc>https://workloom.pavelignatov.com/start</loc></url><url><loc>https://workloom.pavelignatov.com/docs</loc></url></urlset>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://workloom.pavelignatov.com/</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/start</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/docs</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/ru</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/start/ru</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/ja</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/start/ja</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/ko</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/start/ko</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/es</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/start/es</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/pt-br</loc></url>
+  <url><loc>https://workloom.pavelignatov.com/start/pt-br</loc></url>
+</urlset>

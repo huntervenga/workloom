@@ -29,6 +29,10 @@ const IMMUTABLE_ASSET = 'public, max-age=31536000, immutable';
 const REVALIDATE = 'no-cache';
 const NO_STORE = 'no-store';
 const CANONICAL_REDIRECT = 308;
+const PUBLIC_LOCALES = ['ru', 'ja', 'ko', 'es', 'pt-br'] as const;
+function localizedDocument(path: string): string | null {
+  return /^\/(?:start\/)?(?:ru|ja|ko|es|pt-br)\/?$/.test(path) ? `${path.replace(/^\/|\/$/g, '')}/index.html` : null;
+}
 
 type DocumentCachePolicy = typeof REVALIDATE | typeof NO_STORE;
 
@@ -110,6 +114,7 @@ export function replyWebNavigation(request: NavigationRequest, reply: FastifyRep
 function isAllowedStaticPath(pathName: string, _root: string, request: FastifyRequest): boolean {
   const name = pathName.replace(/^\/+|\/+$/g, '').toLowerCase();
   const { path } = splitTarget(request.url);
+  if (/^(?:start\/)?(?:ru|ja|ko|es|pt-br)\/index\.html$/.test(name)) return name === localizedDocument(path);
   if (name === SPA_DOCUMENT) return isUnder(path, APP_PREFIX);
   if (name === LANDING_DOCUMENT) return path === '/';
   if (name === DOCS_DOCUMENT) return path === DOCS_PATH || path === `${DOCS_PATH}/`;
@@ -135,6 +140,15 @@ export async function registerStaticWeb(app: FastifyInstance, distDir: string): 
     },
   });
   app.get('/', async (_request, reply) => sendLanding(reply));
+  for (const locale of PUBLIC_LOCALES) {
+    for (const path of [`/${locale}`, `/start/${locale}`]) {
+      const document = localizedDocument(path);
+      if (!document || !existsSync(join(distDir, document))) continue;
+      const handler = async (_request: FastifyRequest, reply: FastifyReply) => reply.header('cache-control', REVALIDATE).type('text/html; charset=utf-8').sendFile(document);
+      app.get(path, handler);
+      app.get(`${path}/`, handler);
+    }
+  }
   app.get(`/${SPA_DOCUMENT}`, async (request, reply) => reply.redirect(`${APP_PREFIX}${splitTarget(request.url).query}`, CANONICAL_REDIRECT));
   if (existsSync(join(distDir, DOCS_DOCUMENT))) {
     app.get(DOCS_PATH, async (_request, reply) => sendDocs(reply));

@@ -60,6 +60,12 @@ function writeDist(files: { readonly landing: boolean; readonly index: boolean }
   writeFileSync(join(dist, 'assets', 'app-abc.js'), 'console.log(1);');
   writeFileSync(join(dist, 'assets', 'app-abc.css'), 'body{}');
   writeFileSync(join(dist, 'start.html'), START_HTML);
+  for (const locale of ['ru', 'ja', 'ko', 'es', 'pt-br']) {
+    mkdirSync(join(dist, locale), { recursive: true });
+    mkdirSync(join(dist, 'start', locale), { recursive: true });
+    writeFileSync(join(dist, locale, 'index.html'), `<html lang="${locale}"><main data-locale="${locale}">Localized landing</main></html>`);
+    writeFileSync(join(dist, 'start', locale, 'index.html'), `<html lang="${locale}"><main data-locale="${locale}">Localized start</main></html>`);
+  }
   writeFileSync(join(dist, 'robots.txt'), ROBOTS_TXT);
   writeFileSync(join(dist, 'sitemap.xml'), SITEMAP_XML);
   return dist;
@@ -157,6 +163,28 @@ describe('API app routing the landing and /app SPA', () => {
   afterAll(async () => {
     await app.close();
     rmSync(dist, { recursive: true, force: true });
+  });
+
+  it('serves only the explicit localized public routes and not their HTML file aliases', async () => {
+    for (const locale of ['ru', 'ja', 'ko', 'es', 'pt-br']) {
+      for (const path of [`/${locale}`, `/start/${locale}`]) {
+        for (const suffix of ['', '/', '?ref=a%20b']) {
+          const get = await request(app, 'GET', path + suffix);
+          expect(get.statusCode).toBe(200);
+          expect(get.body).toContain(`data-locale="${locale}"`);
+          expect(get.headers['cache-control']).toBe('no-cache');
+          const head = await request(app, 'HEAD', path + suffix);
+          expect(head.statusCode).toBe(200);
+          expect(head.body).toBe('');
+        }
+        for (const alias of [`${path}/index.html`, `${path.toUpperCase()}/index.html`]) {
+          const response = await request(app, 'GET', alias);
+          expect([403, 404]).toContain(response.statusCode);
+          expect(response.body).not.toContain('data-locale=');
+        }
+      }
+    }
+    for (const path of ['/de', '/start/de', '/ru/app', '/start/ru/anything', '/api/ru']) expectJsonNotFound(await request(app, 'GET', path));
   });
 
   it('serves the public sign-up chooser at /start and redirects its document alias', async () => {

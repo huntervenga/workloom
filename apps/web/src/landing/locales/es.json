@@ -1,0 +1,219 @@
+{
+  "brand": "Workloom",
+  "seo": {
+    "title": "Workloom — Gestión de tareas en equipo y planificación semanal",
+    "description": "Planifica la semana, da seguimiento a las tareas y ve lo que realmente pasó. Workloom reúne tareas, planes semanales, ausencias, menciones y una API abierta en un solo espacio de trabajo. Pruébalo gratis.",
+    "image": "Tabla de tareas de Workloom con secciones, responsables y fechas de entrega",
+    "keywords": "gestión de tareas, planificación semanal, tareas en equipo, control de ausencias, alternativa a Asana, gestión de proyectos, MCP"
+  },
+  "nav": {
+    "label": "Navegación principal",
+    "features": "Funciones",
+    "screens": "Capturas de pantalla",
+    "pros": "Ventajas y límites",
+    "faq": "Preguntas frecuentes",
+    "docs": "Documentación de API y MCP",
+    "signIn": "Iniciar sesión",
+    "tryFree": "Pruébalo gratis",
+    "skip": "Saltar al contenido"
+  },
+  "hero": {
+    "eyebrow": "Seguimiento de tareas para equipos que planifican por semana",
+    "title": "Planifica la semana. Ve lo que realmente pasó.",
+    "description": "Workloom reúne tareas, planes semanales, ausencias y trabajo registrado en un solo lugar, para que tu equipo pase menos tiempo en hojas de cálculo y más tiempo entregando resultados.",
+    "secondary": "Mira cómo funciona",
+    "note": "Inicia sesión con Google y tu espacio de trabajo estará listo en un minuto. No se necesitan datos de pago.",
+    "shotAlt": "La tabla de tareas de Workloom: secciones, responsables, estados, fechas de entrega y etiquetas de un proyecto llamado Lanzamiento de primavera",
+    "shotCaption": "Una captura de pantalla real con datos de ejemplo."
+  },
+  "features": {
+    "eyebrow": "Lo que obtienes",
+    "title": "Un solo espacio de trabajo para toda la semana.",
+    "description": "Todo lo que un equipo pequeño necesita para ponerse de acuerdo sobre el trabajo, hacerlo y revisarlo con honestidad.",
+    "tasks": {
+      "tag": "Tareas",
+      "title": "Tabla, tablero, cronograma y grafo.",
+      "description": "Edita directamente en la tabla, agrupa por sección o por persona, arrastra tarjetas y deshaz errores. Las mismas tareas en cuatro vistas."
+    },
+    "planning": {
+      "tag": "Planificado y realizado",
+      "title": "Una imagen honesta de la semana.",
+      "description": "Define planes semanales, registra el trabajo realizado y compara ambos. Copia la semana anterior a la siguiente con un clic."
+    },
+    "timeoff": {
+      "tag": "Ausencias",
+      "title": "Ausencias que tienen en cuenta la capacidad.",
+      "description": "Vacaciones y días flexibles con acumulación, aprobaciones y un calendario de equipo que muestra quién está ausente en el cronograma."
+    },
+    "dependencies": {
+      "tag": "Dependencias",
+      "title": "Ve qué va antes de qué.",
+      "description": "Vincula tareas entre proyectos, detecta tareas previas sin terminar y pasa el trabajo pendiente a la semana siguiente sin contarlo dos veces."
+    },
+    "inbox": {
+      "tag": "Bandeja y menciones",
+      "title": "Entérate cuando algo requiere tu atención.",
+      "description": "Asignaciones, comentarios, @menciones y decisiones sobre ausencias llegan a una sola bandeja de entrada, con un indicador de lo nuevo."
+    },
+    "api": {
+      "tag": "API y MCP",
+      "title": "Automatízalo o pídeselo a un asistente.",
+      "description": "Los tokens de acceso personal, una API REST y un servidor MCP permiten que scripts, Claude o Codex creen y actualicen tareas con tus permisos."
+    }
+  },
+  "screens": {
+    "eyebrow": "Míralo en acción",
+    "title": "Así se ve.",
+    "description": "Capturas de pantalla reales del producto con datos de ejemplo.",
+    "table": {
+      "title": "Tabla de tareas",
+      "description": "Secciones, responsables, estado, fechas de entrega y etiquetas, con subtareas y edición directa.",
+      "alt": "Tabla de tareas agrupada por sección con subtareas, responsables y fechas de entrega"
+    },
+    "board": {
+      "title": "Tablero",
+      "description": "Tarjetas por estado, con responsables, fechas y etiquetas de un vistazo.",
+      "alt": "Vista de tablero con las columnas Por hacer, En curso y Terminado"
+    },
+    "timeline": {
+      "title": "Cronograma",
+      "description": "Tareas con fecha en un calendario, con las ausencias del equipo en la misma vista.",
+      "alt": "Vista de cronograma con barras de tareas y franjas de ausencias"
+    },
+    "task": {
+      "title": "Detalles de la tarea",
+      "description": "Responsable, fechas, etiquetas, dependencias y una conversación con @menciones.",
+      "alt": "Panel de detalles de la tarea con responsable, fechas, prioridad y etiquetas"
+    },
+    "inbox": {
+      "title": "Bandeja de entrada",
+      "description": "Asignaciones, comentarios, menciones y decisiones sobre ausencias en una sola lista.",
+      "alt": "Bandeja de entrada con una asignación, una mención y un comentario"
+    },
+    "timeoff": {
+      "title": "Ausencias",
+      "description": "Saldos y un calendario de equipo que respetan fines de semana, feriados y aprobaciones.",
+      "alt": "Página de ausencias con saldos y un calendario de equipo"
+    }
+  },
+  "how": {
+    "eyebrow": "Un ritmo fácil de seguir",
+    "title": "De una tarea a una semana más clara.",
+    "one": {
+      "number": "01",
+      "title": "Organiza el trabajo.",
+      "description": "Crea un proyecto, agrega tareas y deja claro quién es responsable de cada una. Si vienes de Asana, importa tus proyectos."
+    },
+    "two": {
+      "number": "02",
+      "title": "Haz espacio para la semana.",
+      "description": "Elige los compromisos del período, con las ausencias en el mismo contexto."
+    },
+    "three": {
+      "number": "03",
+      "title": "Mantén una imagen honesta.",
+      "description": "Registra el trabajo, compara lo planificado con lo real y luego copia la semana y pasa lo que quedó pendiente."
+    }
+  },
+  "pros": {
+    "eyebrow": "Con total transparencia",
+    "title": "Por qué lo eligen los equipos",
+    "items": {
+      "one": "Lo planificado y lo real están uno junto al otro, no en hojas de cálculo separadas.",
+      "two": "Las ausencias y la capacidad vienen integradas, no como un agregado.",
+      "three": "Una tabla rápida con edición directa, atajos de teclado (Ctrl/Cmd+K) y Deshacer.",
+      "four": "Empieza en minutos: inicia sesión con Google o importa un proyecto desde Asana.",
+      "five": "Una API abierta y un servidor MCP, con tokens limitados a lo que tú puedes hacer.",
+      "six": "Herramientas para el ritmo semanal: copia la semana anterior, valores predeterminados para tareas nuevas y traspaso del trabajo pendiente."
+    },
+    "heading": "Lo bueno y lo que aún falta."
+  },
+  "cons": {
+    "title": "Cuándo no es para ti (por ahora)",
+    "items": {
+      "one": "La interfaz del espacio de trabajo está solo en inglés; este sitio web está disponible en seis idiomas.",
+      "two": "Es una aplicación web: no hay apps móviles nativas (funciona en el navegador; las tablas anchas se desplazan horizontalmente).",
+      "three": "No hay proyectos privados: todos los miembros de un espacio de trabajo ven todas sus tareas.",
+      "four": "No se pueden adjuntar archivos a las tareas.",
+      "five": "Las notificaciones llegan a la bandeja de entrada de la app; todavía no hay resúmenes por correo electrónico.",
+      "six": "Solo se puede iniciar sesión con Google.",
+      "seven": "Las tareas recurrentes todavía no están disponibles.",
+      "eight": "Es un producto joven: puede tener detalles por pulir y cambios frecuentes."
+    }
+  },
+  "faq": {
+    "eyebrow": "Preguntas",
+    "title": "Bueno saberlo",
+    "items": {
+      "one": {
+        "q": "¿Puedo probarlo gratis?",
+        "a": "Sí. Elige Pruébalo gratis, inicia sesión y obtendrás un espacio de trabajo vacío para explorar. No se piden datos de pago. Aún no se han anunciado planes ni precios."
+      },
+      "two": {
+        "q": "¿Cómo inicio sesión?",
+        "a": "Con tu cuenta de Google. El primer inicio de sesión crea tu cuenta y tu propio espacio de trabajo, así que registrarte e iniciar sesión son el mismo paso."
+      },
+      "three": {
+        "q": "¿Puedo traer mi trabajo desde Asana?",
+        "a": "Sí. Exporta un proyecto desde Asana e impórtalo desde la página Proyectos; se conservan secciones, responsables, fechas, etiquetas y dependencias."
+      },
+      "four": {
+        "q": "¿Quién puede ver mis tareas?",
+        "a": "Las personas que invites a tu espacio de trabajo. Dentro de un espacio de trabajo, todos los miembros pueden ver todas las tareas; los roles determinan quién puede editar, administrar personas y aprobar ausencias."
+      },
+      "five": {
+        "q": "¿Hay una API?",
+        "a": "Sí: una API REST y un servidor MCP, autorizados con tokens de acceso personal que nunca superan tus propios permisos. Consulta la documentación de API y MCP."
+      },
+      "six": {
+        "q": "¿Mi equipo puede usarlo en conjunto?",
+        "a": "Sí. Invita a tus compañeros con un enlace y asígnales un rol: propietario, administrador, miembro o lector."
+      }
+    }
+  },
+  "closing": {
+    "eyebrow": "Retoma el hilo",
+    "title": "Una semana más clara empieza con un clic.",
+    "description": "Crea un espacio de trabajo gratis con tu cuenta de Google."
+  },
+  "footer": {
+    "note": "Un espacio de trabajo conectado para tareas, planes y trabajo registrado.",
+    "top": "Volver arriba",
+    "docs": "Documentación de API y MCP",
+    "start": "Pruébalo gratis",
+    "personalSite": "Pavel Ignatov",
+    "github": "GitHub"
+  },
+  "language": {
+    "choose": "Elegir idioma"
+  },
+  "theme": {
+    "toDark": "Cambiar al tema oscuro",
+    "toLight": "Cambiar al tema claro",
+    "label": "Tema oscuro"
+  },
+  "project": {
+    "tagline": "Tareas en equipo y una semana más clara.",
+    "description": "Un espacio de trabajo para tareas en equipo, planes semanales y trabajo registrado. Tabla, tablero, cronograma, ausencias, importación desde Asana y automatización con API y MCP.",
+    "tags": {
+      "one": "Planificación en equipo",
+      "two": "Gestión de tareas",
+      "three": "API y MCP"
+    }
+  },
+  "start": {
+    "seoTitle": "Prueba Workloom gratis: regístrate o inicia sesión",
+    "seoDescription": "Crea tu espacio de trabajo gratuito en Workloom o inicia sesión. Un solo inicio de sesión con Google configura tu cuenta.",
+    "title": "Empieza con Workloom",
+    "description": "Crea tu espacio de trabajo gratuito o vuelve al que ya tienes.",
+    "newTitle": "Es mi primera vez aquí",
+    "newDescription": "Continúa con Google. Creamos tu cuenta y un espacio de trabajo vacío; no se necesitan datos de pago.",
+    "newButton": "Crear mi cuenta gratis",
+    "oldTitle": "Ya tengo una cuenta",
+    "oldDescription": "Inicia sesión con la cuenta de Google que usaste antes y continúa donde lo dejaste.",
+    "oldButton": "Iniciar sesión",
+    "note": "Registrarte e iniciar sesión son el mismo paso con Google: la primera vez se crea una cuenta nueva.",
+    "back": "Volver a la página de inicio",
+    "looking": "¿Solo estás explorando? Lee la documentación"
+  }
+}

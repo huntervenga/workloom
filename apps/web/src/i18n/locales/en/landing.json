@@ -107,7 +107,7 @@
     "two": {
       "number": "02",
       "title": "Make room for the week.",
-      "description": "Choose commitments for the period, with meetings and time off in the same context."
+      "description": "Choose commitments for the period, with time off in the same context."
     },
     "three": {
       "number": "03",
@@ -131,13 +131,13 @@
   "cons": {
     "title": "Where it is not for you (yet)",
     "items": {
-      "one": "The interface is English only.",
+      "one": "The workspace interface is English only; this website is available in six languages.",
       "two": "It is a web app: no native mobile apps (the browser works, wide tables scroll sideways).",
       "three": "No private projects: everyone in a workspace sees all of its tasks.",
       "four": "No file attachments on tasks.",
       "five": "Notifications live in the in-app Inbox; there are no e-mail digests yet.",
       "six": "Sign-in is with Google only.",
-      "seven": "Recurring tasks are not supported yet (recurring meetings are).",
+      "seven": "Recurring tasks are not supported yet.",
       "eight": "It is a young product: expect rough edges and quick changes."
     }
   },
@@ -180,7 +180,26 @@
     "note": "A connected workspace for tasks, plans and recorded work.",
     "top": "Back to top",
     "docs": "API & MCP docs",
-    "start": "Try for free"
+    "start": "Try for free",
+    "personalSite": "Pavel Ignatov",
+    "github": "GitHub"
+  },
+  "language": {
+    "choose": "Choose language"
+  },
+  "theme": {
+    "toDark": "Switch to dark theme",
+    "toLight": "Switch to light theme",
+    "label": "Dark theme"
+  },
+  "project": {
+    "tagline": "Team tasks and a clearer week.",
+    "description": "A workspace for team tasks, weekly plans and recorded work. Table, board, timeline, time off, Asana imports, and API and MCP automation.",
+    "tags": {
+      "one": "Team planning",
+      "two": "Task management",
+      "three": "API & MCP"
+    }
   },
   "start": {
     "seoTitle": "Try Workloom for free — sign up or sign in",
