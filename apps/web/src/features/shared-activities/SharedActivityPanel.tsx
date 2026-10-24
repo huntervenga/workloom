@@ -5,7 +5,7 @@ import { useTranslation } from '../../i18n';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
-import { ReportSelect } from '../generic-reports/ReportConfigEditor';
+import { ChoicePicker } from '../../shared/ChoicePicker';
 import { useTaskFieldValuesQuery } from '../fields/queries';
 import { SharedActivityFields } from './SharedActivityFields';
 import { attendanceInput, attendanceRows, configurationPlanRevision, configurationFromRecord, emptyActivityConfiguration, validConfiguration } from './model';
@@ -92,6 +92,7 @@ export function SharedActivityPanel({controller,task,fields,members,writable,cur
  const allowedFor=(source:SharedActivityContributionDto)=>record?(source.membershipId===record.permissions.selfMembershipId?record.permissions.canWriteSelf:record.permissions.canWriteOthers):false;
  const listed=record?.contributions.filter(row=>row.rosterActive||row.postingState!=='unconfirmed')??[];
  const everyonePresent=record&&record.actualDurationMinutes!==null?listed.filter(row=>row.rosterActive&&row.postingState==='unconfirmed'&&allowedFor(row)):[];
+ const attendanceOptions=[{value:'unconfirmed',label:t('sharedActivities.unconfirmed')},{value:'present',label:t('sharedActivities.present')},{value:'partial',label:t('sharedActivities.partial')},{value:'absent',label:t('sharedActivities.absent')}];
  const onEnter=(done:()=>void)=>(event:{key:string;preventDefault:()=>void})=>{if(event.key==='Enter'){event.preventDefault();done();}};
  return <section aria-label={t('sharedActivities.title')} className="my-3 space-y-3 rounded-lg border border-line bg-canvas p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium">{t('sharedActivities.title')}</h3>{!record&&!setup?<Button size="sm" variant="primary" disabled={disabled||!canConfigure||query.isPending||query.isFetching||query.isError} onClick={()=>void begin()}>{t('sharedActivities.enable')}</Button>:null}</div>
   {query.isPending?<p role="status" className="text-xs text-muted">{t('sharedActivities.loading')}</p>:query.isError?<QueryErrorState error={query.error} subject="task" headingLevel={3} onRetry={()=>void query.refetch()}/>:!record?<p className="text-xs text-muted">{t('sharedActivities.enableHelp')}</p>:<>
@@ -104,7 +105,7 @@ export function SharedActivityPanel({controller,task,fields,members,writable,cur
      const allowed=allowedFor(source),state=source.postingState==='void'?'unconfirmed':source.attendance;
      return <div key={source.id} className="flex items-center gap-2 px-2 py-1">
       <p className="min-w-0 flex-1 truncate text-sm">{name(source.membershipId)}{!source.rosterActive?<span className="ml-2 text-xs text-muted">{t('sharedActivities.formerParticipant')}</span>:null}</p>
-      <div className="w-36 shrink-0"><ReportSelect label={t('sharedActivities.attendanceFor',{person:name(source.membershipId)})} value={state} disabled={disabled||!allowed} onChange={value=>choose(source,value)}><option value="unconfirmed">{t('sharedActivities.unconfirmed')}</option><option value="present">{t('sharedActivities.present')}</option><option value="partial">{t('sharedActivities.partial')}</option><option value="absent">{t('sharedActivities.absent')}</option></ReportSelect></div>
+      <div className="w-36 shrink-0"><ChoicePicker compact label={t('sharedActivities.attendanceFor',{person:name(source.membershipId)})} value={state} disabled={disabled||!allowed} onValueChange={value=>choose(source,value)} options={attendanceOptions}/></div>
       {source.attendance==='partial'&&source.postingState==='active'?<TextInput aria-label={t('sharedActivities.personalMinutes')} className="w-16 shrink-0" type="number" min={1} max={record.actualDurationMinutes??undefined} value={minutesDraft[source.id]??String(source.minutes??'')} disabled={disabled||!allowed} onChange={event=>setMinutesDraft(before=>({...before,[source.id]:event.target.value}))} onBlur={()=>saveMinutes(source)} onKeyDown={onEnter(()=>saveMinutes(source))}/>:<span className="w-16 shrink-0 text-right text-sm tabular-nums text-muted">{source.postingState==='active'&&source.minutes!==null?t('sharedActivities.minutesShort',{minutes:source.minutes}):'—'}</span>}
      </div>;})}</div>
    </div>:null}
