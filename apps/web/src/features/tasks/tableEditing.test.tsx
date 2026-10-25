@@ -699,7 +699,8 @@ describe('inline title keyboard and retained sessions', () => {
   });
 
   it('passes the continue intent only for plain Enter, never for Ctrl/Cmd+Enter or blur commits', async () => {
-    installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: request => ok({ ...task, ...(request.body as object), revision: task.revision + 1 }) });
+    // The answer keeps the stored title: the open cell rebases onto it and still shows the same text.
+    installFakeApi({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => ok({ ...task, revision: task.revision + 1 }) });
     const intents: boolean[] = [];
     function Example() {
       const commands = useTaskCommands(anna.id, alpha.id);

@@ -30,6 +30,7 @@ import { useTableExpansionState } from '../features/task-table/useTableExpansion
 import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/task-comments';
 import { ProjectActions } from '../features/projects/ProjectActions';
 import { QuickTaskAdd, QuickTaskDraftPreview, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
+import { withPendingEdit, type PendingEdit } from '../features/tasks/pendingEdit';
 import { InlineTaskEdit, type InlineCloseReason, type InlineSaveIntent } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
 import { SaveFeedback } from '../shared/SaveFeedback';
@@ -138,17 +139,6 @@ interface FieldColumn {
   field: TaskFieldDefinitionDto;
   width: number;
 }
-
-interface QueuedInline {
-  taskId: string;
-  field: TaskInlineField;
-  focus: Element | null;
-  /** The list heads loaded when the cell was clicked, before the held answer. */
-  listUpdatedAt: number;
-  /** Each task command's last result when the cell was clicked. */
-  receipts: readonly (TaskDto | undefined)[];
-}
-
 
 /**
  * Enter-continued creation right after a task in manual order. New rows stay at this anchor
@@ -309,17 +299,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const inlineFocusReturn = useRef<{ task: TaskDto; field: TaskInlineField; generation: number; presentationKey: string; ownsFocus: () => boolean; dispose: () => void } | null>(null);
   const inlineLeases = useRef(new Set<() => void>());
   const [savedAssignment, setSavedAssignment] = useState<{ taskId: string; membershipId: string | null; revision: number; generation: number } | null>(null);
-  // A cell clicked while another task save is still being sent opens once that answer arrives
-  // and, after a confirmed write, once the list has refetched heads at least that new.
-  const [queuedInline, setQueuedInline] = useState<QueuedInline | null>(null);
-  const commandReceipts = () => [commands.update.data, commands.archive.data, commands.restore.data, commands.create.data];
   // A title save whose editor already continued into the next new task. Its exact retained
   // session ties page-level progress, outcome feedback and recovery to that one command.
   const [continuation, setContinuation] = useState<{ taskId: string; session: EditSession } | null>(null);
   const invalidateInlineSave = useCallback(() => {
     inlineGeneration.current += 1;
     inlineReceipt.current = null;
-    setQueuedInline(null);
     for (const dispose of inlineLeases.current) dispose();
     inlineFocusReturn.current?.dispose();
     inlineFocusReturn.current = null;
@@ -865,15 +850,10 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const reopensHeld = held !== null && held.taskId === task.id && (commands.update.pendingCommand !== null || commands.update.uncertain !== null) && (kept?.inlineField === undefined || kept.inlineField === field);
     // A held batch reopens only in the selected cell that sent it, to show and retry exactly that batch.
     const reopensBulk = held?.kind === 'bulk' && bulkInline.holds(task.id, field);
-    // A list refetch, e.g. after a just-confirmed save, may still carry this row's older head.
-    if (writable && canEditTaskInline(task) && ((held && !held.uncertain && !reopensHeld && !reopensBulk) || (!held && tasks.isRefetching))) {
-      // The in-flight save keeps its editor, focus lease and confirmation; this cell opens after its
-      // answer and the current list refetch, then from the row as reloaded.
-      setQueuedInline({ taskId: task.id, field, focus: document.activeElement, listUpdatedAt: tasks.dataUpdatedAt, receipts: commandReceipts() });
-      return;
-    }
+    // A save still on its way (or a refetch after one) does not hold this cell back: it opens at once, takes
+    // input right away and sends after that answer, on the row as just confirmed.
     invalidateInlineSave();
-    if (!writable || !canEditTaskInline(task) || (held && !reopensHeld && !reopensBulk)) return;
+    if (!writable || !canEditTaskInline(task) || (held?.uncertain === true && !reopensHeld && !reopensBulk)) return;
     const original = kept?.base ?? task;
     if (field === 'estimate' && !commands.update.pendingCommand && !commands.update.uncertain && !isCurrentEstimateProjection(original, inlineHead.current.loadedPackages.packages)) {
       setAnnouncement(message('tasks.inlineEstimate.refreshRequired'));
@@ -909,43 +889,6 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       (target ?? document.querySelector<HTMLButtonElement>(`button[data-add-task-row="${sectionId ?? ''}"]`))?.focus();
     });
   };
-  const heldCommand = unresolvedTaskCommand(commands);
-  const heldKey = heldCommand ? `${heldCommand.taskId ?? 'create'}:${heldCommand.uncertain}` : '';
-  // A confirmed write refetches list heads asynchronously. Until its own row is loaded at every
-  // confirmed revision (or, when it left the list, a later list is loaded), rows are stale.
-  const listHeadCurrent = (confirmed: TaskDto, listUpdatedAt: number) => {
-    const loaded = dedupeTasks(shownTasks).find(task => task.id.toLowerCase() === confirmed.id.toLowerCase());
-    if (!loaded) return tasks.dataUpdatedAt > listUpdatedAt;
-    return loaded.revision >= confirmed.revision && loaded.participantsRevision >= confirmed.participantsRevision
-      && (loaded.workPackageId !== confirmed.workPackageId || loaded.workPackageRevision >= confirmed.workPackageRevision);
-  };
-  // Read at answer time: the current command receipts, loaded rows and open rules.
-  const settleQueued = useRef<(queued: QueuedInline) => void>(() => undefined);
-  settleQueued.current = queued => {
-    if (heldKey.endsWith(':false')) return;
-    // An unknown outcome keeps every other cell closed.
-    if (heldKey !== '') { setQueuedInline(null); return; }
-    // Explicit quick creates are sent one after another; the next one may already be sending
-    // in this commit. The cell waits for the whole queue, including a paused rejected front.
-    if (commands.quick.queue.length > 0 || commands.quick.sending) return;
-    // Every result newer than the click is a confirmed write; the list must include them all.
-    const receipts = commandReceipts();
-    const confirmed = receipts.filter((receipt, i): receipt is TaskDto => receipt !== undefined && receipt !== queued.receipts[i]);
-    // A failed list refetch replaces the stale rows with its error, and the person reopens the
-    // cell after an explicit retry rather than editing an old head.
-    if (tasks.isError && !tasks.isFetchNextPageError) { setQueuedInline(null); return; }
-    // Any list refetch, with or without a new receipt, may still change this row's head.
-    if (tasks.isRefetching) return;
-    if (confirmed.length > 0 && (tasks.isFetching || !confirmed.every(receipt => listHeadCurrent(receipt, queued.listUpdatedAt)))) return;
-    setQueuedInline(null);
-    // A moved focus means the person went elsewhere.
-    if (document.activeElement !== queued.focus && document.activeElement !== document.body) return;
-    const task = dedupeTasks(shownTasks).find(item => item.id === queued.taskId);
-    if (task) startInline(task, queued.field);
-  };
-  useEffect(() => {
-    if (queuedInline) settleQueued.current(queuedInline);
-  }, [queuedInline, heldKey, commands.quickVersion, tasks.isFetching, tasks.isRefetching, tasks.isError, shownTasks]);
   // The open task's direct children among the loaded rows only. Without a current list nothing is
   // claimed; a filter, search or unloaded page labels the list as a subset.
   // Including archived tasks only widens the list; every other filter narrows it.
@@ -994,7 +937,13 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   // Nothing else needs page-level recovery: no other edit draft and no other held command.
   const continuedOnly = continued !== null && commands.editSessions.current.size === 1
     && [commands.create, commands.archive, commands.restore].every(command => !command.pendingCommand && !command.uncertain);
-  const showTaskRecovery = taskId === null && creating === null && (quickEditorHidden || commands.editSessions.current.size > 0) && inlineEditorHidden
+  // A cell opened while an earlier save was on its way can outlive that save's trouble: an unknown or refused
+  // answer for another task is offered for recovery without waiting for this editor to close.
+  const heldNow = unresolvedTaskCommand(commands);
+  const strandedElsewhere = activeInline !== null && !inlineEditorHidden && (
+    (heldNow?.uncertain === true && heldNow.taskId !== activeInline.taskId)
+    || [...commands.editSessions.current.keys()].some(id => id !== activeInline.taskId && !(heldNow !== null && !heldNow.uncertain && heldNow.taskId === id)));
+  const showTaskRecovery = taskId === null && creating === null && (quickEditorHidden || commands.editSessions.current.size > 0) && (inlineEditorHidden || strandedElsewhere)
     // An ordinary pending continuation needs no page notice that shifts the table; its definite
     // or unknown outcome has its own alert with the same recovery.
     && !(continuedOnly && ((continuedPending && !quickEditorHidden) || (continuedFeedback && (!quickEditorHidden || commands.createSession.current === null))));
@@ -1369,6 +1318,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             dragScope={taskPresentationKey}
             query={tasks}
             deletedTaskIds={deletedTaskIds}
+            pendingEdit={commands.update.pendingCommand ? { taskId: commands.update.pendingCommand.variables.taskId, input: commands.update.pendingCommand.variables.input } : null}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
             workspace={workspace}
@@ -1476,6 +1426,8 @@ interface TaskListProps {
   dragScope?: string | undefined;
   query: ReturnType<typeof useTaskListQuery>;
   deletedTaskIds: ReadonlySet<string>;
+  /** The sent, unanswered update: its row shows the new values meanwhile. */
+  pendingEdit?: PendingEdit | null | undefined;
   filtered: boolean;
   project: ProjectDto;
   workspace: WorkspaceDto;
@@ -1514,7 +1466,7 @@ interface TaskListProps {
   onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
-function TaskList({ query, deletedTaskIds, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
+function TaskList({ query, deletedTaskIds, pendingEdit, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
   const { t } = useTranslation();
   if (query.isPending) {
     return (
@@ -1539,7 +1491,8 @@ function TaskList({ query, deletedTaskIds, filtered, project, workspace, boardMo
   }
 
   const loadedScope = loadedTaskScope(query.data);
-  const scope = deletedTaskIds.size === 0 ? loadedScope : { ...loadedScope, tasks: withoutDeletedTasks(loadedScope.tasks, deletedTaskIds) };
+  const keptScope = deletedTaskIds.size === 0 ? loadedScope : { ...loadedScope, tasks: withoutDeletedTasks(loadedScope.tasks, deletedTaskIds) };
+  const scope = pendingEdit ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit) } : keptScope;
   const dateIssues = completedDateIssues(project, scope.tasks, table.statuses);
   const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, { kind: issue.kind, finished: issue.finished }] as const));
   return (

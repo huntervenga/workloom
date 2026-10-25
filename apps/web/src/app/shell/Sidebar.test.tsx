@@ -181,22 +181,18 @@ describe('sidebar project list', () => {
     expect(projectListCalls(ui.calls)).toHaveLength(1); expect(writes(ui.calls)).toHaveLength(0);
   });
 
-  it('asks before a sidebar project link discards an unsent quick task draft and keeps it on Stay', async () => {
+  it('sends a typed quick task when the sidebar link takes the focus, and still asks before leaving while it is unanswered', async () => {
     const ui = app(tablePath);
     await ui.user.click(await screen.findByRole('button', { name: 'Add task without a section' }));
     await ui.user.type(screen.getByLabelText('Task name'), 'Unsent sidebar draft');
     await ui.user.click((await projectNav()).getByRole('link', { name: other.name }));
+    // Leaving the row sends the title, as Enter would: nothing typed is dropped on the way out.
+    await waitFor(() => expect(writes(ui.calls).filter(call => call.method === 'POST')).toHaveLength(1));
+    expect(writes(ui.calls).filter(call => call.method === 'POST')[0]?.body).toMatchObject({ title: 'Unsent sidebar draft' });
     const guard = await screen.findByRole('dialog', { name: 'Leave this page?' });
-    expect(guard).toHaveTextContent('unsaved draft');
     expect(ui.router.state.location.pathname).toBe(tablePath);
     await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Leave this page?' })).not.toBeInTheDocument());
-    expect(screen.getByLabelText('Task name')).toHaveValue('Unsent sidebar draft');
-    expect(ui.router.state.location.pathname).toBe(tablePath); expect(writes(ui.calls)).toHaveLength(0);
-    // Leaving is explicit and still sends nothing.
-    await ui.user.click((await projectNav()).getByRole('link', { name: other.name }));
-    await ui.user.click(within(await screen.findByRole('dialog', { name: 'Leave this page?' })).getByRole('button', { name: 'Leave without saving' }));
-    await waitFor(() => expect(ui.router.state.location.pathname).toBe(projectHref(other.id)));
-    expect(writes(ui.calls)).toHaveLength(0);
+    expect(ui.router.state.location.pathname).toBe(tablePath);
   });
 });

@@ -23,7 +23,7 @@ function heldListFixture() {
     [`GET ${rootPath}/projects/${PROJECT_ID}/statuses`]: () => ok(statuses),
     [`GET ${rootPath}/projects/${PROJECT_ID}/table-preferences/me`]: () => ok(preference),
     [`GET ${rootPath}/tasks/${task.id}`]: () => ok(current),
-    [`GET ${rootPath}/tasks`]: () => hold ? list.promise : page([current]),
+    [`GET ${rootPath}/tasks`]: () => hold ? list.promise.then(response => response.clone()) : page([current]),
     [`PATCH ${rootPath}/tasks/${task.id}`]: request => {
       const body = request.body as { expectedRevision: number; title?: string; statusId?: string };
       if (body.title !== undefined) return title.promise;
@@ -44,19 +44,15 @@ async function editTitleThenClickStatus(fixture: ReturnType<typeof heldListFixtu
   const { user } = renderApp(tablePath);
   await user.click(await screen.findByRole('button', { name: task.title }));
   fireEvent.change(titleBox(), { target: { value: 'Renamed before status' } });
-  // Leaving the title for the adjacent status cell autosaves it; the cell waits for that answer.
+  // Leaving the title for the adjacent status cell autosaves it; the cell opens at once, without that answer.
   await user.click(screen.getByRole('button', { name: `Edit status for ${task.title}` }));
   await waitFor(() => expect(patches(calls)).toHaveLength(1));
   expect(patches(calls)[0]?.body).toEqual({ expectedRevision: 1, title: 'Renamed before status' });
-  expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+  const picker = await screen.findByRole('combobox', { name: 'Status' });
+  await waitFor(() => expect(picker).toHaveFocus());
+  expect(picker).not.toBeDisabled();
   fixture.holdList();
-  await act(async () => fixture.confirmTitle());
-  // The title is confirmed at revision 2, but the list still shows revision 1.
-  await waitFor(() => expect(screen.queryByRole('form', { name: /in the task table$/ })).not.toBeInTheDocument());
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
-  expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
-  expect(patches(calls)).toHaveLength(1);
-  return { calls, user };
+  return { calls, user, confirm: () => act(async () => fixture.confirmTitle()) };
 }
 
 async function saveTitleThenClickStatusAfterAck(fixture: ReturnType<typeof heldListFixture>) {
@@ -70,44 +66,61 @@ async function saveTitleThenClickStatusAfterAck(fixture: ReturnType<typeof heldL
   fixture.holdList();
   await act(async () => fixture.confirmTitle());
   await waitFor(() => expect(screen.queryByRole('form', { name: /in the task table$/ })).not.toBeInTheDocument());
-  // No command is held any more, but the refetched list head is not loaded yet.
+  // No command is held any more and the refetched list head is not loaded yet: the cell still opens at once.
   await user.click(screen.getByRole('button', { name: `Edit status for ${task.title}` }));
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
-  expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+  const picker = await screen.findByRole('combobox', { name: 'Status' });
+  await waitFor(() => expect(picker).toHaveFocus());
   expect(patches(calls)).toHaveLength(1);
-  return { calls, user };
+  return { calls, user, confirm: async () => undefined };
 }
 
 describe.each([
   ['clicked while the save is pending', editTitleThenClickStatus],
   ['clicked after the save ACK while the list refetches', saveTitleThenClickStatusAfterAck],
 ])('a cell %s', (_case, start) => {
-  it('opens only on the refreshed list head and writes the explicit status at the confirmed revision once', async () => {
+  it('opens at once and writes the explicit status at the confirmed revision once', async () => {
     const fixture = heldListFixture();
-    const { calls, user } = await start(fixture);
-    await act(async () => fixture.answerList(() => page([fixture.current()])));
-    const picker = await screen.findByRole('combobox', { name: 'Status' });
-    await waitFor(() => expect(picker).toHaveFocus());
-    expect(patches(calls)).toHaveLength(1);
+    const { calls, user, confirm } = await start(fixture);
     await user.click(within(screen.getByRole('listbox', { name: 'Status' })).getByRole('option', { name: 'Stored progress' }));
+    // Still one command at a time: the choice waits for the title's answer (if it is still outstanding).
+    await confirm();
     await waitFor(() => expect(patches(calls)).toHaveLength(2));
+    // The list still shows revision 1; the guard comes from the title's confirmed answer.
     expect(patches(calls)[1]?.body).toEqual({ expectedRevision: 2, statusId: NEXT_STATUS });
+    await act(async () => fixture.answerList(() => page([fixture.current()])));
     await screen.findByRole('button', { name: 'Renamed before status' });
     expect(patches(calls)).toHaveLength(2);
     expect(fixture.current()).toMatchObject({ title: 'Renamed before status', statusId: NEXT_STATUS, revision: 3, description: task.description, dueDate: task.dueDate, priority: task.priority });
   });
 
-  it('shows a failed list refresh instead of opening the stale head, then edits the retried head explicitly', async () => {
+  // After the ACK a failed refresh replaces the rows by its error, so there is no open cell left to write from.
+  it.runIf(_case.includes('pending'))('still writes against the confirmed revision when the list refresh fails', async () => {
     const fixture = heldListFixture();
-    const { calls, user } = await start(fixture);
+    const { calls, user, confirm } = await start(fixture);
     await act(async () => fixture.answerList(() => failure(503, 'UNAVAILABLE', 'private refresh details')));
-    const retry = await screen.findByRole('button', { name: 'Try again' });
-    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
-    expect(screen.queryByText('private refresh details')).not.toBeInTheDocument();
-    await user.click(retry);
-    await user.click(await screen.findByRole('button', { name: 'Edit status for Renamed before status' }));
-    expect(patches(calls)).toHaveLength(1);
+    await confirm();
     await user.click(within(await screen.findByRole('listbox', { name: 'Status' })).getByRole('option', { name: 'Stored progress' }));
+    await waitFor(() => expect(patches(calls)).toHaveLength(2));
+    expect(patches(calls)[1]?.body).toEqual({ expectedRevision: 2, statusId: NEXT_STATUS });
+    expect(screen.queryByText('private refresh details')).not.toBeInTheDocument();
+  });
+});
+
+describe('Tab from a title being edited', () => {
+  it('saves the title in the background and opens the next cell at once for editing', async () => {
+    const fixture = heldListFixture();
+    const { calls } = installFakeApi(fixture.routes);
+    const { user } = renderApp(tablePath);
+    await user.click(await screen.findByRole('button', { name: task.title }));
+    fireEvent.change(titleBox(), { target: { value: 'Renamed before status' } });
+    await user.tab();
+    const picker = await screen.findByRole('combobox', { name: 'Status' });
+    await waitFor(() => expect(picker).toHaveFocus());
+    expect(screen.getByRole('listbox', { name: 'Status' })).toBeInTheDocument();
+    await waitFor(() => expect(patches(calls)).toHaveLength(1));
+    expect(patches(calls)[0]?.body).toEqual({ expectedRevision: 1, title: 'Renamed before status' });
+    await act(async () => fixture.confirmTitle());
+    await user.click(within(screen.getByRole('listbox', { name: 'Status' })).getByRole('option', { name: 'Stored progress' }));
     await waitFor(() => expect(patches(calls)).toHaveLength(2));
     expect(patches(calls)[1]?.body).toEqual({ expectedRevision: 2, statusId: NEXT_STATUS });
   });

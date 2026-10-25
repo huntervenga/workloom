@@ -18,7 +18,7 @@ import type {
 import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2, TriangleAlert, UserRound } from 'lucide-react';
-import { useCallback, useId, useMemo, useRef, useState, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useId, useMemo, useRef, useState, Fragment, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import type { DateIssueInfo } from '../projects/dateConsistency';
 import { visibleTaskRows, type TaskTreeNode } from './taskTree';
@@ -194,6 +194,44 @@ export function revealInlineEditor(editor: HTMLElement): void {
   // A target wider than the clear area keeps its start (input and Save) in view.
   const delta = target.left < left || target.width > right - left ? target.left - left : target.right > right ? target.right - right : 0;
   if (delta !== 0) scroller.scrollLeft += delta;
+}
+
+/**
+ * Tab inside a row walks its cells and opens each one for typing, as in a spreadsheet. Only a focus move
+ * made by the Tab key itself from another cell of the same row counts; arriving from elsewhere never
+ * opens an editor, so keyboard users can still pass through the table.
+ */
+let tabKeyDown = false;
+let tabBackward = false;
+if (typeof window !== 'undefined') {
+  window.addEventListener('keydown', event => { tabKeyDown = event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey; tabBackward = event.shiftKey; }, true);
+  window.addEventListener('keyup', () => { tabKeyDown = false; }, true);
+  window.addEventListener('pointerdown', () => { tabKeyDown = false; }, true);
+}
+/**
+ * The title cell's own buttons sit between it and the next cell. Tab from an open editor lands on them only
+ * because of the markup, so the walk continues to the cell the person meant, forward or backward.
+ */
+function relayTabFromEditor(event: FocusEvent<HTMLElement>) {
+  const from = event.relatedTarget;
+  if (!tabKeyDown || !(from instanceof Element) || from.closest('form') === null) return;
+  const row = event.currentTarget.closest('tr');
+  if (row === null || !row.contains(from)) return;
+  if (tabBackward) {
+    row.querySelector<HTMLButtonElement>('button[data-task-cell$=":title"]')?.focus();
+    return;
+  }
+  const cells = [...row.children];
+  const here = cells.findIndex(cell => cell.contains(event.currentTarget));
+  for (const cell of cells.slice(here + 1)) {
+    const target = cell.querySelector<HTMLElement>('button[data-task-cell]:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled)');
+    if (target) { target.focus(); return; }
+  }
+}
+function openOnTabFromSameRow(event: FocusEvent<HTMLButtonElement>, open: () => void) {
+  if (!tabKeyDown || !(event.relatedTarget instanceof Node)) return;
+  const row = event.currentTarget.closest('tr');
+  if (row !== null && row.contains(event.relatedTarget)) open();
 }
 
 /** Icon-only control; callers add its size and text color. */
@@ -544,7 +582,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     if (!editable) return <span className={cn('flex h-8 min-w-0 items-center px-1.5', align)}>{content}</span>;
     if (field === 'estimate' && !isCurrentEstimateProjection(task, ctx.summary.packages)) return <span className={cn('flex h-8 min-w-0 items-center px-1.5', align)} title={t('tasks.inlineEstimate.refreshRequired')}>{content}<span className="sr-only">{t('tasks.inlineEstimate.refreshRequired')}</span></span>;
     const label = field === 'estimate' ? t('tasks.inlineEstimate.edit', { title: task.title }) : field === 'title' ? t('tasks.inlineEdit.editTitle', { title: task.title }) : field === 'statusId' ? t('tasks.inlineEdit.editStatus', { title: task.title }) : field === 'responsibleMembershipId' ? t('tasks.inlineEdit.editAssignee', { title: task.title }) : field === 'priority' ? t('tasks.inlineEdit.editPriority', { title: task.title }) : field === 'tagIds' ? t('tasks.inlineEdit.editTags', { title: task.title }) : t('tasks.inlineEdit.editDueDate', { title: task.title });
-    return <button type="button" data-task-cell={`${task.id}:${field}`} disabled={ctx.isTaskFieldEditBusy?.(task, field)} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} className={cn(cellButtonClassName, align)}>{content}</button>;
+    return <button type="button" data-task-cell={`${task.id}:${field}`} disabled={ctx.isTaskFieldEditBusy?.(task, field)} aria-label={label} title={label} onClick={() => ctx.onEditTaskField?.(task, field)} onFocus={event => openOnTabFromSameRow(event, () => ctx.onEditTaskField?.(task, field))} className={cn(cellButtonClassName, align)}>{content}</button>;
   };
   const td = (id: string, field: TaskInlineField | null, content: ReactNode, className?: string) =>
     <td data-editing={field !== null && isEditing(field) ? '' : undefined} className={cn(cellClassName, ctx.columnLine(id), className)} style={rowCellStyle(drop, selected)}>{content}</td>;
@@ -636,7 +674,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
               <span className="flex max-w-[35%] min-w-0 shrink-0 items-center gap-1 overflow-hidden">{meta}</span>
               {/* Everything right of the name opens the task; it never wraps the row's other controls. */}
               <button type="button" data-task-open-area={task.id} aria-label={t('taskTable.taskTable.openTask', { title: task.title })} title={t('taskTable.taskTable.openDetails')}
-                onClick={() => ctx.onOpenTask(task.id)}
+                onClick={() => ctx.onOpenTask(task.id)} onFocus={relayTabFromEditor}
                 className="group/open flex h-8 min-w-4 flex-1 items-center justify-end rounded px-1 text-subtle outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
                 <PanelRightOpen size={14} aria-hidden="true" className="opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible/open:opacity-100" />
               </button>
@@ -651,7 +689,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
             {/* Section, subtask and details actions; also on right click and Shift+F10 anywhere in the row. */}
             <Menu.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
               <Menu.Trigger asChild>
-                <button type="button" data-task-row-actions="" data-task-cell={movable ? `${task.id}:sectionId` : undefined} aria-label={t('taskTable.rowActions.trigger', { title: task.title })}
+                <button type="button" data-task-row-actions="" data-task-cell={movable ? `${task.id}:sectionId` : undefined} onFocus={relayTabFromEditor} aria-label={t('taskTable.rowActions.trigger', { title: task.title })}
                   className={cn(iconButtonClassName, 'size-7 text-muted data-[state=open]:pointer-events-auto data-[state=open]:opacity-100', rowActionClassName, movingSection && 'invisible')}>
                   <MoreHorizontal size={15} aria-hidden="true" />
                 </button>

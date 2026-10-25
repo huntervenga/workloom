@@ -176,26 +176,36 @@ describe('project inline task title rename', () => {
     await user.click(screen.getByRole('button', { name: 'More details' })); expect(within(await screen.findByRole('dialog')).getByLabelText('Task name')).toHaveValue('Unconfirmed name');
   });
 
-  it.each(['answered', 'moved-focus', 'unknown'] as const)('opens a cell clicked during another task save only after a confirmed answer (%s)', async outcome => {
+  it.each(['answered', 'unknown'] as const)('opens a cell clicked during another task save at once, takes input, and sends it after the first answer (%s)', async outcome => {
     const second: TaskDto = { ...task, id: 'f2000000-0000-4000-8000-000000000055', title: 'Second fast row', workPackageId: 'f1000000-0000-4000-8000-000000000055', position: 1 };
     const gate = deferred<Response>(); const lost = lostResponse(); let current = task;
-    const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current, second]), [`PATCH ${rootPath}/tasks/${task.id}`]: () => outcome === 'unknown' ? lost.promise : gate.promise }));
+    const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current, second]), [`PATCH ${rootPath}/tasks/${task.id}`]: () => outcome === 'unknown' ? lost.promise : gate.promise,
+      [`PATCH ${rootPath}/tasks/${second.id}`]: request => ok({ ...second, ...(request.body as object), revision: second.revision + 1 }) }));
     const { user } = renderApp(tablePath); await user.click(await rename());
     fireEvent.change(titleBox(), { target: { value: 'First fast row' } }); await user.keyboard('{Control>}{Enter}{/Control}');
     await waitFor(() => expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: second.title }));
-    // One command at a time: the second editor waits instead of racing the first save.
-    expect(screen.queryByDisplayValue(second.title)).not.toBeInTheDocument();
-    if (outcome === 'moved-focus') await user.click(screen.getByLabelText('Search tasks'));
-    if (outcome === 'unknown') await act(async () => lost.lose());
-    else await act(async () => gate.resolve(ok(current = { ...task, title: 'First fast row', revision: 2 })));
-    if (outcome === 'answered') await waitFor(() => expect(screen.getByDisplayValue(second.title)).toHaveFocus());
-    else {
-      await (outcome === 'unknown' ? screen.findByRole('button', { name: 'Retry' }) : screen.findByRole('button', { name: 'First fast row' }));
-      expect(screen.queryByDisplayValue(second.title)).not.toBeInTheDocument();
-      if (outcome === 'moved-focus') expect(screen.getByLabelText('Search tasks')).toHaveFocus();
-    }
+    // The first row already shows what was sent, though its answer is still outstanding.
+    expect(screen.getByRole('button', { name: 'First fast row' })).toBeInTheDocument();
+    // No waiting for the first answer: the second editor is there and has the focus.
+    await waitFor(() => expect(screen.getByDisplayValue(second.title)).toHaveFocus());
+    fireEvent.change(screen.getByDisplayValue(second.title), { target: { value: 'Typed ahead' } });
+    expect(screen.getByDisplayValue('Typed ahead')).not.toHaveAttribute('readonly');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    // One command at a time: the typed-ahead save is held back, not lost and not racing the first one.
     expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
+    if (outcome === 'unknown') {
+      await act(async () => lost.lose());
+      await screen.findByRole('button', { name: 'Resume original editor' });
+      expect(screen.getByDisplayValue('Typed ahead')).toBeInTheDocument();
+      expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(1);
+      return;
+    }
+    await act(async () => gate.resolve(ok(current = { ...task, title: 'First fast row', revision: 2 })));
+    await waitFor(() => expect(calls.filter(call => call.method === 'PATCH')).toHaveLength(2));
+    const sent = calls.filter(call => call.method === 'PATCH')[1];
+    expect(sent?.body).toMatchObject({ title: 'Typed ahead' });
+    await waitFor(() => expect(screen.queryByDisplayValue('Typed ahead')).not.toBeInTheDocument());
   });
 
   it('keeps viewers read-only while the task title still opens details', async () => {

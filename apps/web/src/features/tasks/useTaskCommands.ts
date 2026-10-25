@@ -287,9 +287,15 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
   // Weak keys retain neither discarded sessions nor an unbounded task history.
   const confirmedSessions = useRef(new WeakMap<CreateSession | EditSession, TaskDto>());
   const [, notifyConfirmation] = useState(0);
+  /** The newest answer this page confirmed per task: a cell opened before it arrived rebases onto it. */
+  const lastConfirmed = useRef(new Map<string, TaskDto>());
+  /** Inline sessions this page sent: a cell opened next to one that is still in flight must not adopt or erase it. */
+  const sentInline = useRef(new WeakSet<EditSession>());
   const confirmSession = useCallback((session: CreateSession | EditSession, task: TaskDto): boolean => {
     if (confirmedSessions.current.has(session)) return false;
     confirmedSessions.current.set(session, task);
+    const known = lastConfirmed.current.get(task.id);
+    if (!known || known.revision <= task.revision) lastConfirmed.current.set(task.id, task);
     if (createSession.current === session) createSession.current = null;
     if (editSessions.current.get(task.id) === session) editSessions.current.delete(task.id);
     notifyConfirmation(version => version + 1);
@@ -421,7 +427,7 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
   }, [scopeKey, workspaceId]);
   const inlineTags = useInlineTagCreation(createTag, addCreatedTag, canCreateTags, scopeKey);
 
-  return { create, update, archive, restore, move, bulk, createTag, createdTags, addCreatedTag, inlineTags, createSession, editSessions, confirmedSessions, confirmSession, autosave, adoptAutosaveSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, cancelQuickDraft, discardRejectedQuickCreate };
+  return { create, update, archive, restore, move, bulk, createTag, createdTags, addCreatedTag, inlineTags, createSession, editSessions, confirmedSessions, lastConfirmed, sentInline, confirmSession, autosave, adoptAutosaveSession, quick, quickVersion, setQuickDraft, enqueueQuickCreate, retryQuickCreate, releaseQuickDraft, cancelQuickDraft, discardRejectedQuickCreate };
 }
 
 export type TaskCommands = ReturnType<typeof useTaskCommands>;

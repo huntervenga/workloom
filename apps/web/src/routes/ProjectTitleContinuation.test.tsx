@@ -105,7 +105,7 @@ describe('a plain Enter title save that already continued into the next new task
 });
 
 describe('a cell clicked while explicit quick creates are still queued', () => {
-  it('opens only after the whole queue drains and the list includes it, then writes the chosen status once', async () => {
+  it('opens at once, and sends the chosen status once only after the whole queue drains', async () => {
     const first = deferred<Response>(); const second = deferred<Response>(); const posts = [first, second];
     const createdRows: TaskDto[] = []; let current = rootB; let sent = 0;
     const { calls } = installFakeApi(routes(() => [rootA, current, ...createdRows], {
@@ -124,19 +124,16 @@ describe('a cell clicked while explicit quick creates are still queued', () => {
     await waitFor(() => expect(writes(calls, 'POST')).toHaveLength(1));
     const savedTargetRow = () => within(screen.getByRole('button', { name: rootB.title }).closest('tr') as HTMLTableRowElement);
     await user.click(savedTargetRow().getByRole('button', { name: `Edit status for ${rootB.title}` }));
-    // The normal next draft has its own editable Status; only this saved cell waits for the queue.
-    expect(savedTargetRow().queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+    // The saved cell is open at once; only its write follows the queue.
+    const picker = await savedTargetRow().findByRole('combobox', { name: 'Status' });
+    await waitFor(() => expect(picker).toHaveFocus());
+    await user.click(within(screen.getByRole('listbox', { name: 'Status' })).getByRole('option', { name: 'Stored progress' }));
     await act(async () => first.resolve(new Response()));
     await waitFor(() => expect(writes(calls, 'POST')).toHaveLength(2));
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 20)); });
     // The first answer momentarily leaves no held command while the second create is sent.
-    expect(savedTargetRow().queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
-    await act(async () => second.resolve(new Response()));
-    const picker = await savedTargetRow().findByRole('combobox', { name: 'Status' });
-    await waitFor(() => expect(picker).toHaveFocus());
-    expect(screen.getByRole('listbox', { name: 'Status' })).toBeInTheDocument();
     expect(writes(calls, 'PATCH')).toHaveLength(0);
-    await user.click(within(screen.getByRole('listbox', { name: 'Status' })).getByRole('option', { name: 'Stored progress' }));
+    await act(async () => second.resolve(new Response()));
     await waitFor(() => expect(writes(calls, 'PATCH')).toHaveLength(1));
     expect(writes(calls, 'PATCH')[0]?.body).toEqual({ expectedRevision: rootB.revision, statusId: NEXT_STATUS });
     expect(writes(calls, 'POST').map(call => (call.body as { title: string }).title)).toEqual(['Queued one', 'Queued two']);

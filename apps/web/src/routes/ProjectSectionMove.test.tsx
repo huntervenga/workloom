@@ -213,7 +213,7 @@ describe('root task section move', () => {
     expect(patches(calls)[0]?.headers.get('Idempotency-Key')).toBe(original.headers.get('Idempotency-Key'));
   });
 
-  it('waits for a pending move before another row opens, then opens it from the reloaded rows', async () => {
+  it('opens another row at once while a move is pending, and keeps it open when the move is answered', async () => {
     const gate = deferred<Response>();
     const fixture = server(() => gate.promise);
     const { calls } = installFakeApi(fixture.routes);
@@ -224,7 +224,8 @@ describe('root task section move', () => {
     const row = screen.getByRole('button', { name: root.title }).closest('tr');
     expect(row).toHaveClass('h-10'); expect(row?.querySelector('[data-task-section-editor]')).toHaveClass('absolute', 'w-52');
     await requestMove(user, peer.title);
-    expect(screen.queryByRole('listbox', { name: 'Section' })).not.toBeInTheDocument();
+    // No waiting for the first answer.
+    expect(await screen.findByRole('listbox', { name: 'Section' })).toBeInTheDocument();
     await act(async () => gate.resolve(fixture.confirm({ sectionId: B })));
     await waitFor(() => expect(groupOf(root.title)).toBe(groupBody('Second section')));
     const peerMenu = within(await screen.findByRole('listbox', { name: 'Section' }));
