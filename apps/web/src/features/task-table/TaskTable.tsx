@@ -1,3 +1,4 @@
+import { isTabKeyDown, isTabWalkBackward, openOnTabFromSameRow } from './tabWalk';
 import { TagBadge } from '../tasks/TagBadge';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { TaskDragPreview } from './TaskDragPreview';
@@ -197,27 +198,15 @@ export function revealInlineEditor(editor: HTMLElement): void {
 }
 
 /**
- * Tab inside a row walks its cells and opens each one for typing, as in a spreadsheet. Only a focus move
- * made by the Tab key itself from another cell of the same row counts; arriving from elsewhere never
- * opens an editor, so keyboard users can still pass through the table.
- */
-let tabKeyDown = false;
-let tabBackward = false;
-if (typeof window !== 'undefined') {
-  window.addEventListener('keydown', event => { tabKeyDown = event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey; tabBackward = event.shiftKey; }, true);
-  window.addEventListener('keyup', () => { tabKeyDown = false; }, true);
-  window.addEventListener('pointerdown', () => { tabKeyDown = false; }, true);
-}
-/**
  * The title cell's own buttons sit between it and the next cell. Tab from an open editor lands on them only
  * because of the markup, so the walk continues to the cell the person meant, forward or backward.
  */
 function relayTabFromEditor(event: FocusEvent<HTMLElement>) {
   const from = event.relatedTarget;
-  if (!tabKeyDown || !(from instanceof Element) || from.closest('form') === null) return;
+  if (!isTabKeyDown() || !(from instanceof Element) || from.closest('form') === null) return;
   const row = event.currentTarget.closest('tr');
   if (row === null || !row.contains(from)) return;
-  if (tabBackward) {
+  if (isTabWalkBackward()) {
     row.querySelector<HTMLButtonElement>('button[data-task-cell$=":title"]')?.focus();
     return;
   }
@@ -228,12 +217,6 @@ function relayTabFromEditor(event: FocusEvent<HTMLElement>) {
     if (target) { target.focus(); return; }
   }
 }
-function openOnTabFromSameRow(event: FocusEvent<HTMLButtonElement>, open: () => void) {
-  if (!tabKeyDown || !(event.relatedTarget instanceof Node)) return;
-  const row = event.currentTarget.closest('tr');
-  if (row !== null && row.contains(event.relatedTarget)) open();
-}
-
 /** Icon-only control; callers add its size and text color. */
 const iconButtonClassName =
   'inline-flex shrink-0 items-center justify-center rounded-md transition-colors hover:bg-slate-100 hover:text-ink';

@@ -1,5 +1,6 @@
 import type { MembershipDto, TaskFieldData, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { useRef, useState } from 'react';
+import { openOnTabFromSameRow, walkToNeighbourCell } from '../task-table/tabWalk';
 import { useTranslation } from '../../i18n';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { FieldValueDisplay } from './FieldValueDisplay';
@@ -68,13 +69,22 @@ export function FieldCellControl({ field, value, members, label, disabled, draft
     onFocus={event => event.currentTarget.select()}
     onChange={event => onChange(current.type === 'text' ? { type: 'text', value: event.target.value } : { type: current.type as 'number' | 'duration' | 'date' | 'url', text: event.target.value })}
     onKeyDown={event => {
+      if (event.key === 'Tab' && !event.ctrlKey && !event.altKey && !event.metaKey && !event.nativeEvent.isComposing) {
+        // Save, then open the neighbouring cell at once; the browser's own move would land on the clear button.
+        const saved = onCommit(current);
+        if (saved === false) { event.preventDefault(); return; }
+        event.preventDefault(); cancelled.current = true; setEditing(false);
+        walkToNeighbourCell(event.currentTarget, event.shiftKey);
+        return;
+      }
       if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancelled.current = true; setEditing(false); onCancel(); }
       if (event.key === 'Enter' && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); event.stopPropagation(); const saved = onCommit(current); cancelled.current = saved !== false; if (saved !== false) setEditing(false); }
     }}
     onBlur={() => { const saved = cancelled.current ? true : onCommit(current); cancelled.current = false; if (saved !== false) setEditing(false); }} />
     <button type="button" disabled={disabled} aria-label={t('fields.fieldInput.clearValue', { p0: field.name })} className="h-7 shrink-0 px-1 text-muted hover:text-ink" onMouseDown={event => event.preventDefault()} onClick={() => { const empty = clearedFieldDraft(field); onChange(empty); const saved = onCommit(empty); cancelled.current = saved !== false; if (saved !== false) setEditing(false); }}>×</button>
   </div>;
-  return <button type="button" aria-label={label} disabled={disabled} className={classes} onClick={() => { cancelled.current = false; begin(); setEditing(true); }}>
+  return <button type="button" aria-label={label} disabled={disabled} className={classes} onClick={() => { cancelled.current = false; begin(); setEditing(true); }}
+    onFocus={event => openOnTabFromSameRow(event, () => { cancelled.current = false; begin(); setEditing(true); })}>
     {value?.type === 'url' ? <span className="truncate">{value.value}</span> : inherited && (value === null || value.value === null) ? <CalculatedValue field={field} data={inherited} members={members} /> : <FieldValueDisplay field={field} value={value} members={members} compact />}
   </button>;
 }
