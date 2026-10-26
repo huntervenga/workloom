@@ -1,4 +1,15 @@
 {
+  "list": {
+    "name": "Name",
+    "created": "Created",
+    "updated": "Updated",
+    "startDate": "Start date",
+    "endDate": "End date",
+    "status": "Status",
+    "actions": "Actions",
+    "active": "Active",
+    "notSet": "Not set"
+  },
   "projectDialogs": {
     "enterAProjectName": "Enter a project name.",
     "nameMustBeValueCharactersOrFewer": "Name must be {{p0}} characters or fewer.",
