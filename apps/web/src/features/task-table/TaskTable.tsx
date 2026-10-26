@@ -18,6 +18,7 @@ import type {
 } from '@workloom/contracts';
 import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
+import * as RowMenu from '@radix-ui/react-menu';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useId, useMemo, useRef, useState, Fragment, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
@@ -589,6 +590,18 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   // The name is only as wide as its text; the free area to its right opens the task.
   const titleClassName = cn('min-w-0 max-w-full shrink truncate px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', 'rounded', finished ? 'text-muted' : 'text-ink');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null);
+  const menuTrigger = useRef<HTMLButtonElement>(null);
+  const menuTriggerId = useId();
+  const menuContentId = useId();
+  const menuInteractedOutside = useRef(false);
+  // A virtual anchor keeps the real button in place and lets Radix handle viewport collisions.
+  const menuAnchor = useMemo(() => ({ current: {
+    getBoundingClientRect: () => menuPoint
+      ? new DOMRect(menuPoint.x, menuPoint.y, 0, 0)
+      : menuTrigger.current?.getBoundingClientRect() ?? new DOMRect(),
+    get contextElement() { return menuTrigger.current ?? undefined; },
+  } }), [menuPoint]);
   // An action that opens its own editor keeps focus there instead of on the trigger.
   const keepMenuFocus = useRef(false);
   const canAddChild = ctx.onCreateChild !== null && task.archivedAt === null && task.meetingId === null;
@@ -602,6 +615,8 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   const openMenuFromRow = (event: ReactMouseEvent | ReactKeyboardEvent) => {
     if (ownsNativeMenu(event.target)) return;
     event.preventDefault();
+    setMenuPoint('clientX' in event && (event.clientX !== 0 || event.clientY !== 0)
+      ? { x: event.clientX, y: event.clientY } : null);
     setMenuOpen(true);
   };
   const drop = ctx.dropTarget?.taskId === task.id ? ctx.dropTarget.placement : undefined;
@@ -674,39 +689,56 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
               {parent ? ` ${t('taskTable.taskTable.parentContext', { title: parent.title })}` : null}
             </span> : null}
             {/* Section, subtask and details actions; also on right click and Shift+F10 anywhere in the row. */}
-            <Menu.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
-              <Menu.Trigger asChild>
-                <button type="button" data-task-row-actions="" data-task-cell={movable ? `${task.id}:sectionId` : undefined} onFocus={relayTabFromEditor} aria-label={t('taskTable.rowActions.trigger', { title: task.title })}
-                  className={cn(iconButtonClassName, 'size-7 text-muted data-[state=open]:pointer-events-auto data-[state=open]:opacity-100', rowActionClassName, movingSection && 'invisible')}>
-                  <MoreHorizontal size={15} aria-hidden="true" />
-                </button>
-              </Menu.Trigger>
-              <Menu.Portal>
-                <Menu.Content data-task-row-menu={task.id} align="end" sideOffset={4}
-                  onCloseAutoFocus={event => { if (keepMenuFocus.current) { keepMenuFocus.current = false; event.preventDefault(); } }}
-                  className="z-50 min-w-48 max-w-72 rounded-lg border border-line bg-surface p-1 shadow-lg">
-                  <Menu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onOpenTask(task.id); }}>
+            <RowMenu.Root modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
+              <RowMenu.Anchor virtualRef={menuAnchor} />
+              <button type="button" ref={menuTrigger} id={menuTriggerId} aria-haspopup="menu" aria-expanded={menuOpen}
+                aria-controls={menuOpen ? menuContentId : undefined} data-state={menuOpen ? 'open' : 'closed'}
+                onClick={() => { setMenuPoint(null); setMenuOpen(open => !open); }}
+                onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); setMenuPoint(null); setMenuOpen(true); } }}
+                data-task-row-actions="" data-task-cell={movable ? `${task.id}:sectionId` : undefined} onFocus={relayTabFromEditor} aria-label={t('taskTable.rowActions.trigger', { title: task.title })}
+                className={cn(iconButtonClassName, 'size-7 text-muted data-[state=open]:pointer-events-auto data-[state=open]:opacity-100', rowActionClassName, movingSection && 'invisible')}>
+                <MoreHorizontal size={15} aria-hidden="true" />
+              </button>
+              <RowMenu.Portal>
+                <RowMenu.Content id={menuContentId} aria-labelledby={menuTriggerId} data-task-row-menu={task.id} align={menuPoint ? 'start' : 'end'} sideOffset={menuPoint ? 0 : 4} collisionPadding={8}
+                  onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}
+                  onPointerUpCapture={event => { if (event.button !== 0) event.preventDefault(); }}
+                  onInteractOutside={event => {
+                    if (event.target instanceof Node && menuTrigger.current?.contains(event.target)) event.preventDefault();
+                    else menuInteractedOutside.current = true;
+                  }}
+                  onCloseAutoFocus={event => {
+                    event.preventDefault();
+                    // A later menu may already own focus when Radix finishes closing this one.
+                    const anotherMenuFocused = document.activeElement?.closest('[data-radix-menu-content]');
+                    if (!keepMenuFocus.current && !menuInteractedOutside.current && !anotherMenuFocused) menuTrigger.current?.focus();
+                    keepMenuFocus.current = false;
+                    menuInteractedOutside.current = false;
+                  }}
+                  style={{ maxHeight: 'var(--radix-popper-available-height)' }}
+                  className="z-50 min-w-48 max-w-72 overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-lg">
+                  <RowMenu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onOpenTask(task.id); }}>
                     <PanelRightOpen size={14} aria-hidden="true" />{t('taskTable.rowActions.openDetails')}
-                  </Menu.Item>
-                  {movable ? <Menu.Item className={menuItemClassName} disabled={ctx.isTaskFieldEditBusy?.(task, 'sectionId')} onSelect={() => { keepMenuFocus.current = true; ctx.onEditTaskField?.(task, 'sectionId'); }}>
+                  </RowMenu.Item>
+                  {movable ? <RowMenu.Item className={menuItemClassName} disabled={ctx.isTaskFieldEditBusy?.(task, 'sectionId')} onSelect={() => { keepMenuFocus.current = true; ctx.onEditTaskField?.(task, 'sectionId'); }}>
                     <FolderInput size={14} aria-hidden="true" />{t('taskTable.rowActions.moveSection')}
-                  </Menu.Item> : null}
-                  {ctx.onDuplicateTask && task.archivedAt === null && task.meetingId === null ? <Menu.Item className={menuItemClassName} disabled={ctx.draftTaskIds.has(task.id)} onSelect={() => { keepMenuFocus.current = true; ctx.onDuplicateTask?.(task); }}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</Menu.Item> : null}
-                  {ctx.onDeleteTask && task.archivedAt === null && task.meetingId === null ? <Menu.Item className={cn(menuItemClassName, 'text-rose-700')} disabled={ctx.draftTaskIds.has(task.id)} onSelect={() => { keepMenuFocus.current = false; ctx.onDeleteTask?.(task); }}><Trash2 size={14} aria-hidden="true" />{t('taskTable.rowActions.deleteTask')}</Menu.Item> : null}
-                  {canAddChild ? <Menu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onCreateChild?.(task); }}>
+                  </RowMenu.Item> : null}
+                  {ctx.onDuplicateTask && task.archivedAt === null && task.meetingId === null ? <RowMenu.Item className={menuItemClassName} disabled={ctx.draftTaskIds.has(task.id)} onSelect={() => { keepMenuFocus.current = true; ctx.onDuplicateTask?.(task); }}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</RowMenu.Item> : null}
+                  {ctx.onDeleteTask && task.archivedAt === null && task.meetingId === null ? <RowMenu.Item className={cn(menuItemClassName, 'text-rose-700')} disabled={ctx.draftTaskIds.has(task.id)} onSelect={() => { keepMenuFocus.current = false; ctx.onDeleteTask?.(task); }}><Trash2 size={14} aria-hidden="true" />{t('taskTable.rowActions.deleteTask')}</RowMenu.Item> : null}
+                  {canAddChild ? <RowMenu.Item className={menuItemClassName} onSelect={() => { keepMenuFocus.current = true; ctx.onCreateChild?.(task); }}>
                     <Plus size={14} aria-hidden="true" />{t('taskTable.rowActions.addSubtask')}
-                  </Menu.Item> : null}
+                  </RowMenu.Item> : null}
                   {movableHere ? <>
-                    <Menu.Item className={menuItemClassName} disabled={!previous || ctx.move?.blocked === true} onSelect={() => moveBy(-1)}>
+                    <RowMenu.Item className={menuItemClassName} disabled={!previous || ctx.move?.blocked === true} onSelect={() => moveBy(-1)}>
                       <ArrowUp size={14} aria-hidden="true" />{t('taskTable.rowActions.moveUp')}
-                    </Menu.Item>
-                    <Menu.Item className={menuItemClassName} disabled={!next || ctx.move?.blocked === true} onSelect={() => moveBy(1)}>
+                    </RowMenu.Item>
+                    <RowMenu.Item className={menuItemClassName} disabled={!next || ctx.move?.blocked === true} onSelect={() => moveBy(1)}>
                       <ArrowDown size={14} aria-hidden="true" />{t('taskTable.rowActions.moveDown')}
-                    </Menu.Item>
+                    </RowMenu.Item>
                   </> : null}
-                </Menu.Content>
-              </Menu.Portal>
-            </Menu.Root>
+                </RowMenu.Content>
+              </RowMenu.Portal>
+            </RowMenu.Root>
           </div>
         </div>
       </td>),
