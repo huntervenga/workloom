@@ -18,6 +18,7 @@ import {
   listWorkspacesForActor,
   notFoundError,
   type AccessRepository,
+  type UserSettingsApplication,
   type Actor,
   type ActorContext,
 } from '@workloom/domain';
@@ -30,6 +31,7 @@ import { parseInput, sendData } from './envelope.js';
 import { HttpError } from './errors.js';
 
 export interface RouteDependencies {
+  readonly userSettings?: UserSettingsApplication;
   readonly repository: AccessRepository;
   readonly identity: IdentityAdapter;
   readonly readiness: ReadinessProbe;
@@ -68,11 +70,12 @@ export function registerApiRoutes(app: FastifyInstance, deps: RouteDependencies)
   app.get('/api/v1/me', async (request, reply) => {
     const context = await actorContext(request);
     const user = await getCurrentActor(deps.repository, context);
+    const settings = await deps.userSettings?.get(context);
     return sendData(
       request,
       reply,
       meResponseSchema,
-      toMe({ userId: user.id, displayName: user.displayName, kind: user.kind, avatarUrl: user.avatarUrl ?? null }, deps.identity.mode),
+      { ...toMe({ userId: user.id, displayName: user.displayName, kind: user.kind, avatarUrl: user.avatarUrl ?? null }, deps.identity.mode), ...(settings ? { settings } : {}) },
     );
   });
 

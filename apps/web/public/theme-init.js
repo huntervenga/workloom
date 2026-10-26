@@ -1,28 +1,13 @@
-// Runs in <head> before the stylesheets: applies the saved theme, else the system one, else light,
-// so the first paint already has the right colors. Mirrors src/features/theme/ThemeManager.ts.
+// Initial anonymous/loading palette. Authenticated /me settings replace it before the app is shown.
 (function (w) {
-  var theme = null;
-  try {
-    theme = w.localStorage.getItem('workloom.theme');
-  } catch {
-    theme = null;
-  }
-  if (theme !== 'light' && theme !== 'dark') {
-    theme = 'light';
-    try {
-      if (w.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'dark';
-    } catch {
-      theme = 'light';
-    }
-  }
+  var theme = 'light';
+  try { if (w.matchMedia('(prefers-color-scheme: dark)').matches) theme = 'default-dark'; } catch (_) { /* Light fallback. */ }
   try {
     var root = w.document.documentElement;
     root.setAttribute('data-theme', theme);
-    root.style.colorScheme = theme;
+    root.style.colorScheme = theme === 'light' ? 'light' : 'dark';
     var meta = w.document.querySelector('meta[name="theme-color"]');
-    var color = meta && meta.getAttribute('data-' + theme);
-    if (color) meta.setAttribute('content', color);
-  } catch {
-    // Without a document the page keeps its default light look.
-  }
-})(globalThis);
+    var color = meta && meta.getAttribute(theme === 'light' ? 'data-light' : 'data-dark');
+    if (meta && color) meta.setAttribute('content', color);
+  } catch (_) { /* No document. */ }
+})(window);

@@ -19,12 +19,7 @@ const SHOT_FILE: Record<(typeof SHOTS)[number], string> = { table: 'table', boar
 const FEATURES = ['tasks', 'planning', 'timeoff', 'dependencies', 'inbox', 'api'] as const;
 
 const mark = '<span class="loom-mark" aria-hidden="true"><i></i><i></i><i></i></span>';
-function themeToggle(theme: ThemeCatalog): string {
-  const e = escapeHtml;
-  // Works once /src/landing/theme.ts loads; CSS shows the icon for the current data-theme.
-  const icon = (name: string, paths: string) => `<svg class="theme-icon theme-icon-${name}" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`;
-  return `<button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false" aria-label="${e(theme.label)}" title="${e(theme.toDark)}">${icon('moon', '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>')}${icon('sun', '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-2.93 1.41-1.41m11.32-11.32 1.41-1.41M2 12h2m16 0h2M6.34 6.34 4.93 4.93m14.14 14.14-1.41-1.41"/>')}</button>`;
-}
+
 const tryButton = (label: string, className = 'button button-primary') => `<a class="${className}" href="${START_PATH}">${escapeHtml(label)}<span aria-hidden="true">→</span></a>`;
 
 /** JSON-LD for search engines: the product and its frequently asked questions. Serialised, never interpolated into markup. */
@@ -38,7 +33,7 @@ export function structuredData(c: LandingCatalog): string {
 }
 
 /** Copy is data: it can never insert elements or attributes into the prerendered page. */
-function renderLandingBase(catalog: LandingCatalog = english, theme: ThemeCatalog = englishTheme): { head: string; body: string } {
+function renderLandingBase(catalog: LandingCatalog = english, _theme: ThemeCatalog = englishTheme): { head: string; body: string } {
   const e = escapeHtml;
   const c = catalog;
   const feature = (key: (typeof FEATURES)[number], index: number) => { const item = c.features[key]; return `<article class="feature-card"><span class="feature-symbol symbol-${(index % 4) + 1}" aria-hidden="true"></span><p class="card-tag">${e(item.tag)}</p><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`; };
@@ -69,7 +64,7 @@ function renderLandingBase(catalog: LandingCatalog = english, theme: ThemeCatalo
 <script type="application/ld+json">${structuredData(c)}</script>`,
     body: `<a class="skip-link" href="#main">${e(c.nav.skip)}</a>
 <div id="top" class="landing-shell">
-<header class="site-header"><a class="brand" href="/">${mark}${e(c.brand)}</a><nav aria-label="${e(c.nav.label)}"><a href="#features">${e(c.nav.features)}</a><a href="#screens">${e(c.nav.screens)}</a><a href="#pros">${e(c.nav.pros)}</a><a href="#faq">${e(c.nav.faq)}</a><a href="/docs">${e(c.nav.docs)}</a></nav><div class="header-actions">${themeToggle(theme)}<a class="sign-in" href="${LOGIN_HREF}">${e(c.nav.signIn)}</a>${tryButton(c.nav.tryFree)}</div></header>
+<header class="site-header"><a class="brand" href="/">${mark}${e(c.brand)}</a><nav aria-label="${e(c.nav.label)}"><a href="#features">${e(c.nav.features)}</a><a href="#screens">${e(c.nav.screens)}</a><a href="#pros">${e(c.nav.pros)}</a><a href="#faq">${e(c.nav.faq)}</a><a href="/docs">${e(c.nav.docs)}</a></nav><div class="header-actions"><a class="sign-in" href="${LOGIN_HREF}">${e(c.nav.signIn)}</a>${tryButton(c.nav.tryFree)}</div></header>
 <main id="main" tabindex="-1">
 <section class="hero" aria-labelledby="hero-title"><div class="hero-copy"><p class="eyebrow">${e(c.hero.eyebrow)}</p><h1 id="hero-title">${e(c.hero.title)}</h1><p class="hero-description">${e(c.hero.description)}</p><div class="hero-actions">${tryButton(c.nav.tryFree)}<a class="text-link" href="#how-it-works">${e(c.hero.secondary)}<span aria-hidden="true">↓</span></a></div><p class="hero-note">${e(c.hero.note)}</p></div>
 <figure class="hero-shot"><div class="shot-frame"><img src="/shots/table.png" width="1440" height="900" fetchpriority="high" decoding="async" alt="${e(c.hero.shotAlt)}" /></div><figcaption>${e(c.hero.shotCaption)}</figcaption></figure></section>
@@ -84,7 +79,7 @@ function renderLandingBase(catalog: LandingCatalog = english, theme: ThemeCatalo
 }
 
 /** The sign-up / sign-in chooser at /start. */
-function renderStartBase(catalog: LandingCatalog = english, theme: ThemeCatalog = englishTheme): { head: string; body: string } {
+function renderStartBase(catalog: LandingCatalog = english, _theme: ThemeCatalog = englishTheme): { head: string; body: string } {
   const e = escapeHtml;
   const s = catalog.start;
   return {
@@ -100,7 +95,7 @@ function renderStartBase(catalog: LandingCatalog = english, theme: ThemeCatalog 
 <meta property="og:image" content="${PUBLIC_ORIGIN}/shots/table.png" />`,
     body: `<a class="skip-link" href="#main">${e(catalog.nav.skip)}</a>
 <div id="top" class="landing-shell">
-<header class="site-header"><a class="brand" href="/">${mark}${e(catalog.brand)}</a><div class="header-actions">${themeToggle(theme)}</div></header>
+<header class="site-header"><a class="brand" href="/">${mark}${e(catalog.brand)}</a><div class="header-actions"></div></header>
 <main id="main" tabindex="-1" class="start">
 <div class="section-heading start-heading"><h1 id="start-title">${e(s.title)}</h1><p>${e(s.description)}</p></div>
 <div class="start-grid">

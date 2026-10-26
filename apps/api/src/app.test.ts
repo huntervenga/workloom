@@ -98,6 +98,23 @@ describe('API app', () => {
     readinessReport = { ready: true, checks: { database: 'ok', schema: 'ok' } };
   });
 
+  it('loads account settings with identity and protects changes with the existing origin guard', async () => {
+    const saved = { userId: FIXTURE_USER_IDS.owner, revision: 1, settings: { version: 1 as const, theme: 'dark' as const }, updatedAt: '2026-10-26T10:00:00.000Z' };
+    let writes = 0;
+    const settingsApp = await createApp(config(), { accessRepository: repository, readiness, logger: false, webDistDir: null,
+      userSettingsApplication: { get: async context => ({ ...saved, userId: context.actor.userId }), update: async context => { writes++; return { ...saved, userId: context.actor.userId }; } },
+    });
+    try {
+      const me = meResponseSchema.parse((await get(settingsApp, '/api/v1/me')).json()).data;
+      expect(me.settings).toMatchObject({ userId: me.actor.id, settings: { theme: 'dark' } });
+      const payload = { expectedUserId: me.actor.id, expectedRevision: 1, settings: { theme: 'light' } };
+      const denied = await settingsApp.inject({ method: 'PATCH', url: '/api/v1/me/settings', headers: { host: HOST, origin: 'https://untrusted.invalid' }, payload });
+      expect(denied.statusCode).toBe(403); expect(writes).toBe(0);
+      const allowed = await settingsApp.inject({ method: 'PATCH', url: '/api/v1/me/settings', headers: { host: HOST, origin: ORIGIN }, payload });
+      expect(allowed.statusCode).toBe(200); expect(writes).toBe(1);
+    } finally { await settingsApp.close(); }
+  });
+
   it('answers liveness and readiness without details', async () => {
     const live = await get(app, '/healthz/live');
     expect(live.statusCode).toBe(200);

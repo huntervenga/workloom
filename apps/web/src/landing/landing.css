@@ -8,8 +8,8 @@
  * original colors because the roles are only defined for the dark theme below.
  */
 :root { color-scheme:light; }
-:root[data-theme="dark"] { color-scheme:dark; }
-:root[data-theme="dark"] .landing {
+:root:is([data-theme="dark"], [data-theme="default-dark"]) { color-scheme:dark; }
+:root:is([data-theme="dark"], [data-theme="default-dark"]) .landing {
   --landing-bg:#13111b; --landing-ink:#ece9f4; --landing-muted:#aaa3ba; --landing-focus:#b89cf2;
   --landing-surface:#1c1927; --landing-surface-soft:#211d2e; --landing-card:#1c1927cc; --landing-chip:#29243a;
   --landing-line:#2f2a40; --landing-line-strong:#443c5c;
@@ -39,8 +39,8 @@
 .landing .header-actions { display:flex; align-items:center; gap:12px; flex-shrink:0; }
 .landing .theme-toggle { display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; padding:0; border:1px solid var(--landing-line-strong, #e4deee); border-radius:9px; background:var(--landing-surface, #fff); color:inherit; cursor:pointer; transition:border-color .15s,color .15s; }
 .landing .theme-toggle:hover { border-color:var(--landing-accent-line, #9774d9); color:var(--landing-accent, #7651c8); }
-.landing .theme-icon-sun,:root[data-theme="dark"] .landing .theme-icon-moon { display:none; }
-:root[data-theme="dark"] .landing .theme-icon-sun { display:block; }
+.landing .theme-icon-sun,:root:is([data-theme="dark"], [data-theme="default-dark"]) .landing .theme-icon-moon { display:none; }
+:root:is([data-theme="dark"], [data-theme="default-dark"]) .landing .theme-icon-sun { display:block; }
 .landing .button { display:inline-flex; align-items:center; justify-content:center; gap:16px; min-height:46px; padding:11px 20px; border-radius:9px; font-size:13px; font-weight:600; line-height:1.4; white-space:nowrap; }
 .landing .button-primary { background:#7350c5; color:white; box-shadow:0 3px 7px #6032aa19,inset 0 1px 0 #ffffff24; transition:background .15s; }
 .landing .button-primary:hover { background:#603bb1; }
@@ -146,13 +146,13 @@
 .landing .footer-links { display:flex; gap:26px; flex-wrap:wrap; align-items:center; }
 .landing { --landing-line:#e8e1f1; --landing-card:#fff9; --landing-surface:#fff; --landing-accent:#7651c8; }
 .landing .language-picker { position:relative; font-size:13px; flex-shrink:0; }
-.landing .language-picker summary { display:flex; align-items:center; gap:8px; min-height:38px; padding:6px 10px; border:1px solid var(--landing-line); border-radius:9px; cursor:pointer; list-style:none; }
+.landing .language-picker summary { display:flex; align-items:center; gap:8px; min-height:38px; padding:6px 10px; border:1px solid var(--landing-line, #e9e2f1); border-radius:9px; cursor:pointer; list-style:none; }
 .landing .language-picker summary::-webkit-details-marker { display:none; }
-.landing .language-picker summary:hover { background:var(--landing-card); }
-.landing .language-picker :focus-visible { outline:2px solid var(--landing-accent); outline-offset:3px; }
-.landing .site-header .language-options { position:absolute; top:calc(100% + 8px); right:0; z-index:20; display:grid; margin:0; gap:3px; min-width:210px; padding:7px; border:1px solid var(--landing-line); border-radius:12px; background:var(--landing-surface); box-shadow:0 12px 36px #21133426; }
+.landing .language-picker summary:hover { background:var(--landing-card, #fff9); }
+.landing .language-picker :focus-visible { outline:2px solid var(--landing-accent, #7048c6); outline-offset:3px; }
+.landing .site-header .language-options { position:absolute; top:calc(100% + 8px); right:0; z-index:20; display:grid; margin:0; gap:3px; min-width:210px; padding:7px; border:1px solid var(--landing-line, #e9e2f1); border-radius:12px; background:var(--landing-surface, #fff); box-shadow:0 12px 36px #21133426; }
 .landing .site-header .language-options a { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:7px; white-space:nowrap; }
-.landing .site-header .language-options a:hover,.landing .site-header .language-options a[aria-current="page"] { background:var(--landing-card); color:var(--landing-accent); }
+.landing .site-header .language-options a:hover,.landing .site-header .language-options a[aria-current="page"] { background:var(--landing-card, #fff9); color:var(--landing-accent, #7048c6); }
 @media(max-width:1150px) { .landing .site-header > nav { display:none; } .landing .header-actions { margin-left:auto; } }
 @media(max-width:760px) { .landing .language-name { display:none; } .landing .header-actions { gap:8px; } .landing .site-header { gap:12px; } .landing .site-header .button { padding:10px 12px; } }
 @media(max-width:420px) { .landing .site-header { flex-wrap:wrap; padding-top:16px; padding-bottom:16px; } .landing .header-actions { flex-wrap:wrap; } }

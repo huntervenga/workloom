@@ -97,7 +97,12 @@ import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
 import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-routes.js';
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, replyWebNavigation, resolveWebDist } from './http/static-web.js';
 
+import { createUserSettingsApplication } from '@workloom/db';
+import type { UserSettingsApplication } from '@workloom/domain';
+import { registerUserSettingsRoutes } from './http/user-settings-routes.js';
+
 export interface AppDependencies {
+  readonly userSettingsApplication?: UserSettingsApplication;
   readonly workspaceSlugApplication?: WorkspaceSlugApplication;
   readonly duplicationApplication?: DuplicationApplication;
   readonly leaveApplication?: LeaveApplication;
@@ -222,6 +227,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   // Reuses the same pool; no additional connection is opened.
   const workspaceSlugApplication = dependencies.workspaceSlugApplication ?? (database === undefined ? undefined : createWorkspaceSlugApplication(database));
+  const userSettingsApplication = dependencies.userSettingsApplication ?? (database === undefined ? undefined : createUserSettingsApplication(database));
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
   const duplicationApplication = dependencies.duplicationApplication ?? (database === undefined ? undefined : createDuplicationApplication(database));
   const taskRowApplication = dependencies.taskRowApplication ?? (database === undefined ? undefined : createTaskRowApplication(database));
@@ -399,13 +405,14 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
       });
   });
 
-  const routeDeps = { repository, identity, readiness, devSessions, devSessionTtlSeconds: DEV_SESSION_TTL_SECONDS };
+  const routeDeps = { repository, identity, readiness, devSessions, devSessionTtlSeconds: DEV_SESSION_TTL_SECONDS, ...(userSettingsApplication ? { userSettings: userSettingsApplication } : {}) };
   registerHealthRoutes(app, readiness);
   registerAuthConfigRoute(app, config.authMode);
   if (sharedAuth !== undefined) {
     registerSharedAuthRoutes(app, { service: sharedAuth, ...(config.sharedAuth && teamApplication ? { invitationHandoff: createInvitationHandoff(config.sharedAuth, dependencies.clock), team: teamApplication } : {}) });
   }
   registerApiRoutes(app, routeDeps);
+  if (userSettingsApplication) registerUserSettingsRoutes(app, { identity, settings: userSettingsApplication });
   if(managedLocalAsanaTarget(config.appEnv,config.authMode,config.database.url)||hostedAsanaImportEnabled(config.appEnv,config.authMode)){
     let importer=dependencies.localAsanaImporter;
     if(!importer){const adapterUrl=new URL('../../../scripts/asana-browser-import.mjs',import.meta.url).href;const adapter=await import(adapterUrl) as {createAsanaBrowserImporter:(options:{databaseUrl:string;hosted?:boolean;importsDir?:string|undefined})=>LocalAsanaImporter};importer=adapter.createAsanaBrowserImporter({databaseUrl:config.database.url,...(config.appEnv!=='local'?{hosted:true,importsDir:process.env['ASANA_IMPORT_DIR']}:{})});}

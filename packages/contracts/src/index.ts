@@ -67,3 +67,5 @@ export * from './summary-templates.js';
 
 export * from './shared-activities.js';
 export * from './leave-warnings.js';
+
+export * from './user-settings.js';

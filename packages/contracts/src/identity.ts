@@ -1,3 +1,4 @@
+import { userSettingsSchema } from './user-settings.js';
 import { z } from 'zod';
 
 import { envelopeSchema } from './common/envelope.js';
@@ -22,6 +23,7 @@ export const actorSchema = fixtureActorSchema.extend({
 export const meSchema = z.object({
   actor: actorSchema,
   authMode: z.enum(['dev', 'shared']),
+  settings: userSettingsSchema.optional(),
 });
 
 export const meResponseSchema = envelopeSchema(meSchema);

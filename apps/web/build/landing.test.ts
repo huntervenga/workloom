@@ -4,10 +4,7 @@ import robots from '../public/robots.txt?raw';
 import sitemapText from '../public/sitemap.xml?raw';
 import landingThemeSource from '../src/landing/theme.ts?raw';
 import { describe, expect, it } from 'vitest';
-import { createThemeManager, THEME_STORAGE_KEY } from '../src/features/theme/ThemeManager';
 import english from '../src/i18n/locales/en/landing.json';
-import englishTheme from '../src/i18n/locales/en/theme.json';
-import { wireThemeToggle } from '../src/landing/theme';
 import { landingCatalogs, landingLocales, landingPath, languageDescriptors } from './landing-locales';
 import startTemplate from '../start.html?raw';
 import { landingPlugin, landingRequestUrl, LOGIN_HREF, PUBLIC_ORIGIN, renderLanding, renderStart, START_PATH, structuredData, transformLandingHtml } from './landing';
@@ -82,7 +79,7 @@ describe('public landing prerender', () => {
     expect(buttons.map(button => button.getAttribute('href'))).toEqual([LOGIN_HREF, LOGIN_HREF]);
     expect(buttons.map(button => button.textContent?.replace('→', ''))).toEqual([english.start.newButton, english.start.oldButton]);
     expect(document.querySelectorAll('script,iframe,form,input')).toHaveLength(0);
-    expect(document.querySelector('button[data-theme-toggle]')).not.toBeNull();
+    expect(document.querySelector('button[data-theme-toggle]')).toBeNull();
   });
 
   it('treats catalog copy as text in both element and attribute contexts', () => {
@@ -105,62 +102,13 @@ describe('public landing prerender', () => {
     expect(document.querySelectorAll('script:not([type="application/ld+json"]),[onerror],[onload],iframe')).toHaveLength(0);
   });
 
-  it('prerenders one accessible theme button beside the header CTA with escaped theme copy', () => {
-    const header = page().querySelector('header.site-header');
-    const buttons = header?.querySelectorAll('button[data-theme-toggle]');
-    expect(buttons).toHaveLength(1);
-    const button = buttons?.[0];
-    expect(button?.getAttribute('type')).toBe('button');
-    expect(button?.getAttribute('aria-label')).toBe(englishTheme.label);
-    expect(button?.getAttribute('title')).toBe(englishTheme.toDark);
-    expect(button?.getAttribute('aria-pressed')).toBe('false');
-    expect(button?.textContent).toBe('');
-    expect([...(button?.querySelectorAll('svg') ?? [])].every(icon => icon.getAttribute('aria-hidden') === 'true')).toBe(true);
-    expect(button?.parentElement?.querySelector(`a[href="${START_PATH}"]`)).not.toBeNull();
-    expect(header?.querySelector('nav')).not.toBeNull();
-
-    const hostile = `A & B <script>alert("x")</script> "quoted" 'single'`;
-    const rendered = renderLanding(english, { label: hostile, toDark: hostile, toLight: hostile });
-    const document = new DOMParser().parseFromString(`<!doctype html><html><body>${rendered.body}</body></html>`, 'text/html');
-    const hostileButton = document.querySelector('button[data-theme-toggle]');
-    expect(hostileButton?.getAttribute('aria-label')).toBe(hostile);
-    expect(hostileButton?.getAttribute('title')).toBe(hostile);
-    expect(document.querySelectorAll('script,[onerror],[onload],iframe')).toHaveLength(0);
-  });
-
-  it('wires the prerendered button to the shared theme store without any other script', () => {
-    const store = new Map<string, string>();
-    const host = window.document.createElement('div');
-    host.innerHTML = renderLanding().body;
-    window.document.body.append(host);
-    const manager = createThemeManager({
-      document: window.document,
-      localStorage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => { store.set(key, value); } },
-    });
-    const unwire = wireThemeToggle(host, manager);
-    try {
-      const button = host.querySelector<HTMLButtonElement>('button[data-theme-toggle]');
-      expect(button?.getAttribute('aria-pressed')).toBe('false');
-      button?.click();
-      expect(window.document.documentElement.getAttribute('data-theme')).toBe('dark');
-      expect(store.get(THEME_STORAGE_KEY)).toBe('dark');
-      expect([...store.keys()]).toEqual([THEME_STORAGE_KEY]);
-      expect(button?.getAttribute('aria-pressed')).toBe('true');
-      expect(button?.title).toBe(englishTheme.toLight);
-      expect(button?.getAttribute('aria-label')).toBe(englishTheme.label);
-      button?.click();
-      expect(window.document.documentElement.getAttribute('data-theme')).toBe('light');
-      expect(button?.title).toBe(englishTheme.toDark);
-    } finally {
-      unwire();
-      host.remove();
-      window.document.documentElement.removeAttribute('data-theme');
-      window.document.documentElement.style.colorScheme = '';
+  it('has no public theme switch; account appearance is configured inside the app', () => {
+    for (const page of [renderLanding(), renderStart()]) {
+      const doc = new DOMParser().parseFromString(page.body, 'text/html');
+      expect(doc.querySelector('[data-theme-toggle]')).toBeNull();
     }
-    // The landing module pulls in only the theme store and its English copy: no app, session or API.
     const imports = [...landingThemeSource.matchAll(/^import .* from '([^']+)';$/gm)].map(match => match[1]);
-    expect(imports.sort()).toEqual(['../features/theme/ThemeManager', '../i18n/locales/en/theme.json']);
-    expect(landingThemeSource).not.toMatch(/fetch|XMLHttpRequest|\/api|SessionProvider|dev\/session|mountApp/);
+    expect(imports).toEqual(['../features/theme/ThemeManager']);
   });
 
   it('fills the actual HTML template with only the theme scripts and leaves the noindex SPA untouched', () => {
@@ -236,7 +184,7 @@ describe('public landing prerender', () => {
       expect([...document.querySelectorAll('.language-options a')].map(a => a.getAttribute('href'))).toEqual(landingLocales.map(item => landingPath(item, start)));
       expect(document.querySelector('.language-options [aria-current="page"]')?.getAttribute('href')).toBe(landingPath(locale, start));
       expect(document.querySelector('.language-picker summary')?.getAttribute('aria-label')).toBe(catalog.language.choose);
-      expect(document.querySelector('[data-theme-toggle]')?.getAttribute('title')).toBe(catalog.theme.toDark);
+      expect(document.querySelector('[data-theme-toggle]')).toBeNull();
       expect(document.querySelector('a[href="https://github.com/huntervenga/workloom"]')?.getAttribute('rel')).toBe('noopener noreferrer');
       expect(document.querySelector(`a[href="https://pavelignatov.com${locale === 'en' ? '' : `/${locale}`}"]`)).not.toBeNull();
       if (!start) {

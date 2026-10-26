@@ -2,7 +2,7 @@ import type {SharedActivityDto,SharedActivityContributionDto,SharedActivityHisto
 import type {PlanningCheckConfigDto,PlanningCheckSettingsDto,PlanningCheckCheckpointDto} from '@workloom/contracts';
 import type {LeaveSettingsDto,LeaveProfileDto,LeaveRequestDto,LeaveAdjustmentDto} from '@workloom/contracts';
 import type { GenericReportConfig, GenericReportDefinitionDto, GenericInitialSnapshotDto, GenericReportRowDto, GenericReportMeasure, GenericHeaderWidgetRuleDto, TaskFieldValueDto } from '@workloom/contracts';
-import type { ColumnChoice, CutoffWorkerOutcome, ProjectRulesConfig, TaskDefaultsConfig } from '@workloom/contracts';
+import type { UserPreferences, ColumnChoice, CutoffWorkerOutcome, ProjectRulesConfig, TaskDefaultsConfig } from '@workloom/contracts';
 /**
  * Drizzle description of the P0, P1a and P1b schema. The executable source of truth is the
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
@@ -55,6 +55,18 @@ export const users = pgTable(
     check('users_avatar_url_shape', sql`avatar_url is null or (char_length(avatar_url) between 9 and 2048 and avatar_url like 'https://%')`),
   ],
 );
+
+/** Account-wide preferences; no workspace membership is needed. */
+export const userSettings = pgTable('user_settings', {
+  userId: uuid('user_id').primaryKey().references(() => users.id),
+  settings: jsonb('settings').$type<UserPreferences>().notNull(),
+  revision: integer('revision').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, () => [
+  check('user_settings_revision', sql`revision >= 1`),
+  check('user_settings_time', sql`isfinite(updated_at)`),
+  check('user_settings_document', sql`(jsonb_typeof(settings) = 'object' and settings->'version' = '1'::jsonb and jsonb_typeof(settings->'theme') = 'string' and settings->>'theme' in ('default', 'dark', 'light') and octet_length(settings::text) <= 16384) is true`),
+]);
 
 /** The workspace row doubles as the write barrier (SELECT … FOR UPDATE). */
 export const workspaces = pgTable(
@@ -900,6 +912,7 @@ export const REQUIRED_TABLES = [
   'task_comment_mentions',
   'meetings','meeting_revisions','meeting_attendances','meeting_attendance_revisions','meeting_schedule_locks',
   'users',
+  'user_settings',
   'workspaces',
   'memberships',
   'audit_events',

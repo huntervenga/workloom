@@ -4,7 +4,7 @@
 @source "../../../packages/ui/src";
 
 /* React Flow reads these documented overrides; the light theme keeps the library defaults. */
-:root[data-theme="dark"] .react-flow {
+:root:is([data-theme="dark"], [data-theme="default-dark"]) .react-flow {
   --xy-background-color: var(--color-canvas);
   --xy-background-pattern-color: var(--color-line-strong);
   --xy-node-color: var(--color-ink);

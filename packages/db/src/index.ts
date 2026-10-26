@@ -156,3 +156,5 @@ export {createSummaryTemplateApplication} from './summary-templates/application.
 
 
 export { createWorkspaceSlugApplication } from './workspace-slugs/application.js';
+
+export { createUserSettingsApplication } from './user-settings.js';

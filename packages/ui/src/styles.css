@@ -30,6 +30,8 @@
 @theme static {
   --color-focus: #6366f1;
   --color-selection: #e0e7ff;
+  --color-text-selection: #bfdbfe;
+  --color-text-selection-ink: #0f172a;
   --color-surface-hover: #f1f5f9;
   --color-tag-surface: #f1f5f9;
   --color-tag-ink: #334155;
@@ -58,7 +60,7 @@
   }
 
   /* Opaque surfaces, not an inversion: primary buttons keep their accent fill and white text. */
-  :root[data-theme="dark"] {
+  :root:is([data-theme="dark"], [data-theme="default-dark"]) {
     color-scheme: dark;
 
     --color-canvas: #0b1120;
@@ -78,6 +80,8 @@
 
     --color-focus: #818cf8;
     --color-selection: #303a66;
+    --color-text-selection: #93c5fd;
+    --color-text-selection-ink: #0f172a;
     --color-surface-hover: #1b2539;
     --color-tag-surface: #1f2a40;
     --color-tag-ink: #cbd5e1;
@@ -159,6 +163,30 @@
     --color-violet-700: #c4b5fd;
   }
 
+  :root[data-theme="dark"] {
+    --color-canvas: #0d1117;
+    --color-surface: #161b22;
+    --color-ink: #e6edf3;
+    --color-ink-soft: #c9d1d9;
+    --color-muted: #a0aab5;
+    --color-subtle: #7d8590;
+    --color-line: #30363d;
+    --color-line-strong: #484f58;
+    --color-surface-hover: #21262d;
+    --color-tag-surface: #21262d;
+    --color-tag-ink: #c9d1d9;
+    --color-gantt-weekend: #1c2128;
+    --color-chart-track: #30363d;
+    --color-slate-50: #161b22;
+    --color-slate-100: #21262d;
+    --color-slate-200: #30363d;
+    --color-slate-300: #484f58;
+    --color-slate-400: #636e7b;
+    --color-slate-500: #7d8590;
+    --color-slate-600: #a0aab5;
+    --color-slate-700: #c9d1d9;
+  }
+
   html {
     font-family: var(--font-sans);
     background-color: var(--color-canvas);
@@ -178,8 +206,8 @@
   }
 
   ::selection {
-    background-color: var(--color-accent-soft);
-    color: var(--color-ink);
+    background-color: var(--color-text-selection);
+    color: var(--color-text-selection-ink);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -199,11 +227,11 @@
  * utility's specificity, so hover and state variants still win.
  */
 @layer utilities {
-  :where(:root[data-theme="dark"]) .bg-white {
+  :where(:root:is([data-theme="dark"], [data-theme="default-dark"])) .bg-white {
     background-color: var(--color-surface);
   }
 
-  :where(:root[data-theme="dark"]) .text-emerald-600 {
+  :where(:root:is([data-theme="dark"], [data-theme="default-dark"])) .text-emerald-600 {
     color: #34d399;
   }
 }

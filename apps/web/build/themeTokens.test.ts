@@ -22,8 +22,9 @@ function tokens(block: string): Record<string, string> {
 
 const lightBlocks = [...sharedCss.matchAll(/@theme(?: static)? \{([\s\S]*?)\n\}/g)].map(match => match[1] ?? '');
 const light = tokens(lightBlocks.join('\n'));
-const darkBlock = /:root\[data-theme="dark"\] \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '';
+const darkBlock = /:root:is\(\[data-theme="dark"\], \[data-theme="default-dark"\]\) \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '';
 const dark = tokens(darkBlock);
+const neutral = { ...dark, ...tokens(/:root\[data-theme="dark"\] \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '') };
 
 function luminance(hex: string): number {
   const channel = (offset: number) => {
@@ -40,6 +41,9 @@ function contrast(a: string, b: string): number {
 const WHITE = '#ffffff';
 
 describe('shared theme tokens', () => {
+  it('gives explicit Dark a neutral canvas while preserving the original Default dark palette', () => {
+    expect(dark['color-canvas']).toBe('#0b1120'); expect(neutral['color-canvas']).toBe('#0d1117');
+  });
   it('keeps every original light token value except the accent, darkened so white text on it reaches 4.5:1, and muted, darkened so it reaches 4.5:1 on selection', () => {
     expect(light).toMatchObject({
       'color-canvas': '#f8fafc', 'color-surface': '#ffffff', 'color-ink': '#0f172a', 'color-ink-soft': '#334155',
@@ -68,7 +72,7 @@ describe('shared theme tokens', () => {
   });
 
   it('keeps text, focus and selection distinguishable in both palettes', () => {
-    for (const palette of [light, dark]) {
+    for (const palette of [light, dark, neutral]) {
       const p = (name: string) => palette[`color-${name}`] as string;
       expect(contrast(p('ink'), p('canvas'))).toBeGreaterThanOrEqual(7);
       expect(contrast(p('ink'), p('surface'))).toBeGreaterThanOrEqual(7);
@@ -92,7 +96,7 @@ describe('shared theme tokens', () => {
   });
 
   it('keeps muted secondary text readable on every surface it sits on, below ink-soft, in both palettes', () => {
-    for (const [paletteName, palette] of [['light', light], ['dark', dark]] as const) {
+    for (const [paletteName, palette] of [['light', light], ['dark', dark], ['neutral', neutral]] as const) {
       const p = (name: string) => palette[`color-${name}`] as string;
       // Completed titles and secondary row text use muted, including on selected and hovered rows.
       for (const background of ['canvas', 'surface', 'surface-hover', 'selection', 'tag-surface']) {
@@ -143,7 +147,7 @@ describe('shared theme tokens', () => {
 });
 
 describe('landing palette', () => {
-  const darkLanding = /:root\[data-theme="dark"\] \.landing \{([\s\S]*?)\n\}/.exec(landingCss)?.[1] ?? '';
+  const darkLanding = /:root:is\(\[data-theme="dark"\], \[data-theme="default-dark"\]\) \.landing \{([\s\S]*?)\n\}/.exec(landingCss)?.[1] ?? '';
   const defined = new Set([...darkLanding.matchAll(/--(landing-[\w-]+):/g)].map(match => match[1]));
   const uses = [...landingCss.matchAll(/var\(--(landing-[\w-]+)(?:,\s*([^)]+))?\)/g)].map(match => ({ name: match[1] as string, fallback: match[2]?.trim() }));
   const darkValue = (name: string) => new RegExp(`--${name}:(#[0-9a-f]{6})`).exec(darkLanding)?.[1] as string;

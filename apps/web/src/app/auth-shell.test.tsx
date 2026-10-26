@@ -167,10 +167,10 @@ const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 30))
 describe('shared identity in the shell', () => {
   it('shows the real actor and sign-out without any local demo framing or extra reads', async () => {
     const server = sharedServer();
-    renderApp(`/w/${alpha.id}`);
+    const { user } = renderApp(`/w/${alpha.id}`);
 
-    expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
-    expect(screen.getAllByText(`Signed in as ${realActor.displayName}`).length).toBeGreaterThan(0);
+    await user.click(await screen.findByRole('button', { name: `User menu for ${realActor.displayName}` }));
+    expect(screen.getByRole('menuitem', { name: 'Sign out' })).toBeInTheDocument();
     expect(screen.queryByText(t('shell.localDemo'))).not.toBeInTheDocument();
     expect(screen.queryByText(t('shell.testShort'))).not.toBeInTheDocument();
     expect(server.calls.some((call) => call.path.startsWith('/api/v1/dev'))).toBe(false);
@@ -260,7 +260,8 @@ describe('signing out with pending or uncertain work', () => {
     const { user, router } = renderWriteShell();
     await sendAndLose(user, server.lose);
 
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await user.click(screen.getByRole('button', { name: `User menu for ${realActor.displayName}` }));
+    await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     const dialog = await screen.findByRole('dialog', { name: 'Sign out?' });
     expect(within(dialog).getByRole('button', { name: 'Sign out without confirmation' })).toBeInTheDocument();
     await answerDialog(user, 'Sign out?', 'Stay');
@@ -282,7 +283,8 @@ describe('signing out with pending or uncertain work', () => {
     const { user, router, queryClient } = renderWriteShell();
     await sendAndLose(user, server.lose);
 
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await user.click(screen.getByRole('button', { name: `User menu for ${realActor.displayName}` }));
+    await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     await answerDialog(user, 'Sign out?', 'Sign out without confirmation');
     await waitFor(() => expect(server.state.logouts).toHaveLength(1));
 
@@ -291,7 +293,10 @@ describe('signing out with pending or uncertain work', () => {
     expect(probe.write?.uncertain?.variables).toEqual(sent);
     expect(queryClient.getQueryData(queryKeys.me)).toBeDefined();
     expect(unloadPrevented()).toBe(true);
-    await user.click(screen.getByRole('button', { name: 'Signing out…' }));
+    await user.click(screen.getByRole('button', { name: `User menu for ${realActor.displayName}` }));
+    const signingOut = screen.getByRole('menuitem', { name: 'Signing out…' });
+    expect(signingOut).toHaveAttribute('aria-disabled', 'true');
+    await user.click(signingOut);
     await settle();
     expect(server.state.logouts).toHaveLength(1);
 
@@ -323,7 +328,8 @@ describe('signing out with pending or uncertain work', () => {
     const { user, queryClient } = renderWriteShell();
     await sendAndLose(user, server.lose);
 
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await user.click(screen.getByRole('button', { name: `User menu for ${realActor.displayName}` }));
+    await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     await answerDialog(user, 'Sign out?', 'Sign out without confirmation');
     expect(await screen.findByText('Sign out did not finish.')).toBeInTheDocument();
     expect(screen.getByText(/could not confirm that you were signed out/)).toBeInTheDocument();
@@ -361,14 +367,16 @@ describe('unsent drafts across shared session changes', () => {
     const input = await screen.findByRole('textbox', { name: 'Unsent draft' });
     await user.type(input, 'Private unsent draft');
 
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await user.click(screen.getByRole('button', { name: `User menu for ${realActor.displayName}` }));
+    await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     let dialog = await screen.findByRole('dialog', { name: 'Sign out?' });
     expect(within(dialog).getByRole('button', { name: 'Discard and sign out' })).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Stay' }));
     expect(server.state.logouts).toHaveLength(0);
     expect(input).toHaveValue('Private unsent draft');
 
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await user.click(screen.getByRole('button', { name: `User menu for ${realActor.displayName}` }));
+    await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     dialog = await screen.findByRole('dialog', { name: 'Sign out?' });
     await user.click(within(dialog).getByRole('button', { name: 'Discard and sign out' }));
     await waitFor(() => expect(server.state.logouts).toHaveLength(1));

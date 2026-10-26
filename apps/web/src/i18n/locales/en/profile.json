@@ -1,0 +1,19 @@
+{
+  "menu": "User menu for {{name}}",
+  "settings": "Settings",
+  "description": "Your profile and appearance preferences.",
+  "theme": "Theme",
+  "themeDefault": "Default",
+  "themeDefaultHint": "Follow your system using Workloom’s original palettes.",
+  "themeDark": "Dark",
+  "themeDarkHint": "A neutral dark background.",
+  "themeLight": "Light",
+  "themeLightHint": "A bright background with dark text.",
+  "loading": "Loading settings…",
+  "saving": "Saving…",
+  "saved": "Settings saved to your account.",
+  "autoSave": "Changes save automatically and follow your account across devices.",
+  "failed": "Could not confirm your settings. Reload the saved settings and try again.",
+  "conflict": "Your settings changed elsewhere. Reload them before choosing again.",
+  "reload": "Reload settings"
+}

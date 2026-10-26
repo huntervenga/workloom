@@ -1,19 +1,19 @@
 import { t, useTranslation } from '../../i18n';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, Logomark, Skeleton } from '@workloom/ui';
-import { LogOut } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router';
 import { LoginScreen } from '../../features/auth/LoginScreen';
 import { MeProvider, useMe, useMeQuery } from '../../features/identity/identity';
-import { ThemeToggle } from '../../features/theme/ThemeToggle';
+import { themeManager } from '../../features/theme/ThemeManager';
+import { ProfileMenu } from '../../features/profile/ProfileMenu';
+import { ProfileSettingsDialog } from '../../features/profile/ProfileSettingsDialog';
 import { useWorkspaceQuery } from '../../features/workspace/queries';
 import { useWorkspaceLiveRefresh } from '../../features/workspace/useWorkspaceLiveRefresh';
 import { WorkspaceNavigationProvider, useWorkspaceRoute } from '../../features/workspace/WorkspaceNavigation';
 import { WorkspaceCreationProvider } from '../../features/workspace/WorkspaceCreation';
 import { discardWorkspaceData } from '../../lib/cacheScope';
 import { QueryErrorState } from '../../shared/QueryErrorState';
-import { UserAvatar } from '../../shared/UserAvatar';
 import { useSession } from '../session';
 import { MobileNav } from './MobileNav';
 import { QuickJump } from '../../features/quick-jump/QuickJump';
@@ -29,13 +29,17 @@ function isUnauthorized(error: unknown): boolean {
 export function AppShell() {
   useTranslation();
   const me = useMeQuery();
+  const expired = me.isError && isUnauthorized(me.error);
+  const settings = me.data?.settings;
+  useLayoutEffect(() => {
+    themeManager.setTheme(!expired && settings && settings.userId === me.data?.actor.id ? settings.settings.theme : 'default');
+  }, [expired, me.data?.actor.id, settings]);
   useResetOnActorChange(me.isSuccess ? me.data.actor.id : null);
 
   if (me.isPending) {
     return (
       <>
         <ShellLoading />
-        <PublicThemeControl />
       </>
     );
   }
@@ -61,8 +65,6 @@ export function AppShell() {
         ) : covered ? (
           <IdentityError error={me.error} retrying={me.isFetching} onRetry={() => void me.refetch()} />
         ) : null}
-        {/* Last, so the kept frame never shifts position; the hidden frame's Topbar toggle is not reachable. */}
-        {covered ? <PublicThemeControl /> : null}
       </>
     );
   }
@@ -71,7 +73,6 @@ export function AppShell() {
     return (
       <>
         <LoginScreen identityError={me.error} retryingIdentity={me.isFetching} onRetryIdentity={() => void me.refetch()} />
-        <PublicThemeControl />
       </>
     );
   }
@@ -80,7 +81,6 @@ export function AppShell() {
     return (
       <>
         <IdentityError error={me.error} retrying={me.isFetching} onRetry={() => void me.refetch()} />
-        <PublicThemeControl />
       </>
     );
   }
@@ -91,15 +91,6 @@ export function AppShell() {
         <ShellFrame />
       </WorkspaceCreationProvider></WorkspaceNavigationProvider>
     </MeProvider>
-  );
-}
-
-/** The theme switch for screens without a Topbar: loading, sign-in and identity errors. */
-function PublicThemeControl() {
-  return (
-    <div className="fixed top-3 right-3 z-40">
-      <ThemeToggle />
-    </div>
   );
 }
 
@@ -114,34 +105,6 @@ function IdentityError({ error, retrying, onRetry }: { error: unknown; retrying:
         </div>
         <QueryErrorState error={error} subject="identity" headingLevel={1} retrying={retrying} onRetry={onRetry} />
       </div>
-    </div>
-  );
-}
-
-/** The real actor's name and sign-out, at every width; only for a shared session. */
-function AccountControls({ name, avatarUrl }: { name: string; avatarUrl?: string | null | undefined }) {
-  useTranslation();
-  const session = useSession();
-  const label = t('auth.signedInAs', { name });
-  return (
-    <div className="flex min-w-0 shrink items-center gap-2">
-      <UserAvatar name={name} avatarUrl={avatarUrl} size="sm" />
-      <p className="min-w-0">
-        <span className="sr-only">{label}</span>
-        <span aria-hidden="true" title={label} className="hidden max-w-48 truncate text-sm text-ink-soft md:block">
-          {name}
-        </span>
-      </p>
-      <Button
-        size="sm"
-        onClick={() => {
-          if (!session.signingOut) void session.signOut();
-        }}
-        aria-disabled={session.signingOut || undefined}
-      >
-        <LogOut size={16} aria-hidden="true" />
-        <span className="sr-only sm:not-sr-only">{session.signingOut ? t('auth.signingOut') : t('auth.signOut')}</span>
-      </Button>
     </div>
   );
 }
@@ -212,10 +175,11 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
   // A covered frame stays mounted for its drafts but must not keep polling workspace heads.
   useWorkspaceLiveRefresh(actorId, workspaceId, sessionActive && workspace.isSuccess && workspace.headDenial === null);
 
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const shared = me.authMode === 'shared';
 
   const sidebar = (onNavigate?: () => void) => (
-    <SidebarContent me={me} workspaceId={workspaceId} role={currentWorkspace?.role ?? null} onNavigate={onNavigate} />
+    <SidebarContent me={me} workspaceId={workspaceId} role={currentWorkspace?.role ?? null} onNavigate={onNavigate} onSettings={() => { onNavigate?.(); setSettingsOpen(true); }} />
   );
 
   return (
@@ -242,7 +206,7 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
           menu={<MobileNav>{(close) => sidebar(close)}</MobileNav>}
           localMode={!shared}
           search={workspaceId ? <QuickJump actorId={actorId} workspaceId={workspaceId} /> : undefined}
-          account={shared ? <AccountControls name={me.actor.displayName} avatarUrl={me.actor.avatarUrl} /> : undefined}
+          account={<ProfileMenu me={me} onSettings={() => setSettingsOpen(true)} />}
         />
         <main
           id="main"
@@ -253,6 +217,7 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
           <SwitchErrorNotice />
           {shared ? <SignOutNotice /> : null}
           <Outlet />
+          {settingsOpen && sessionActive ? <ProfileSettingsDialog key={actorId} me={me} onClose={() => setSettingsOpen(false)} /> : null}
         </main>
       </div>
     </div>

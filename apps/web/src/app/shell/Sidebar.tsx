@@ -15,6 +15,7 @@ export interface SidebarContentProps {
   me: MeDto;
   workspaceId: string | null;
   role: WorkspaceRole | null;
+  onSettings?: (() => void) | undefined;
   onNavigate?: (() => void) | undefined;
 }
 
@@ -104,7 +105,7 @@ function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string
   );
 }
 
-export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarContentProps) {
+export function SidebarContent({ me, workspaceId, role, onNavigate, onSettings }: SidebarContentProps) {
   useTranslation();
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -187,7 +188,8 @@ export function SidebarContent({ me, workspaceId, role, onNavigate }: SidebarCon
         {workspaceId && role ? <SidebarProjects actorId={me.actor.id} workspaceId={workspaceId} onNavigate={onNavigate} /> : null}
 
         <div className="mt-auto">
-          {me.authMode === 'shared' ? null : (            <LocalModeCard me={me} role={role} />
+          {me.authMode === 'shared' ? null : (
+            <LocalModeCard me={me} role={role} onSettings={onSettings} />
           )}
         </div>
       </div>

@@ -225,3 +225,5 @@ export * from './shared-activities/ports.js';
 export * from './shared-activities/effort.js';
 
 export * from './workspace-slugs/service.js';
+
+export * from './user-settings.js';
