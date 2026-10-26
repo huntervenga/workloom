@@ -96,7 +96,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskRouteDependen
   // Projects
   app.get(`${BASE}/projects`, async (request, reply) => {
     const { ctx } = await read(request, workspaceParamsSchema);
-    return sendData(request, reply, projectListResponseSchema, await deps.tasks.listProjects(ctx), { list: true });
+    const { includeArchived } = parseInput(taskListQuerySchema.pick({ includeArchived: true }), request.query);
+    const projects = includeArchived ? await deps.tasks.listProjects(ctx, true) : await deps.tasks.listProjects(ctx);
+    return sendData(request, reply, projectListResponseSchema, projects, { list: true });
   });
 
   app.post(`${BASE}/projects`, async (request, reply) => {
@@ -140,7 +142,9 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskRouteDependen
   // Tags
   app.get(`${BASE}/tags`, async (request, reply) => {
     const { ctx } = await read(request, workspaceParamsSchema);
-    return sendData(request, reply, tagListResponseSchema, await deps.tasks.listTags(ctx), { list: true });
+    const { includeArchived } = parseInput(taskListQuerySchema.pick({ includeArchived: true }), request.query);
+    const tags = includeArchived ? await deps.tasks.listTags(ctx, true) : await deps.tasks.listTags(ctx);
+    return sendData(request, reply, tagListResponseSchema, tags, { list: true });
   });
 
   app.post(`${BASE}/tags`, async (request, reply) => {

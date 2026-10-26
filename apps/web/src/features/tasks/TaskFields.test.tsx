@@ -1,3 +1,4 @@
+import type { TagDto } from '@workloom/contracts';
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -40,6 +41,36 @@ describe('everyday task fields', () => {
     await user.click(screen.getByText('More details'));
     expect(screen.getByRole('combobox', { name: 'Priority' })).toHaveTextContent('Urgent');
     expect(screen.getByRole('combobox', { name: 'Section' })).toHaveTextContent('Stored section');
+  });
+
+  it('keeps tag links separate from selection and excludes archived tags on creation', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    const active: TagDto = { id: 'tag-active', workspaceId: 'workspace', name: 'Design', color: null, revision: 1, archivedAt: null };
+    const archived: TagDto = { ...active, id: 'tag-archive', name: 'Archive', archivedAt: '2026-10-01T00:00:00.000Z' };
+    show({ tags: new Map([[active.id, active], [archived.id, archived]]), onChange });
+    await user.click(screen.getByText('More details'));
+    expect(screen.queryByRole('checkbox', { name: /Archive/ })).not.toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Design' });
+    expect(link).toHaveAttribute('href', '/app/w/workspace/tags/tag-active');
+    await user.click(link);
+    expect(onChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('checkbox', { name: 'Design' }));
+    expect(onChange).toHaveBeenCalledWith({ tagIds: [active.id] });
+  });
+
+  it('keeps a saved archived tag linked and removable without nesting the remove control in its link', async () => {
+    const onChange = vi.fn();
+    const archived: TagDto = { id: 'tag-archive', workspaceId: 'workspace', name: 'Archive', color: null, revision: 1, archivedAt: '2026-10-01T00:00:00.000Z' };
+    show({ part: 'saved', draft: { ...initial, tagIds: [archived.id] }, savedTagIds: [archived.id], tags: new Map([[archived.id, archived]]), onChange });
+    const user = userEvent.setup();
+    const link = screen.getByRole('link', { name: 'Archive (archived)' });
+    const remove = screen.getByRole('button', { name: /Remove.*Archive/ });
+    expect(link.contains(remove)).toBe(false);
+    await user.click(link);
+    expect(onChange).not.toHaveBeenCalled();
+    await user.click(remove);
+    expect(onChange).toHaveBeenCalledWith({ tagIds: [] });
   });
 
   it('uses selected chips and search in ordinary creation instead of rendering a 100-person checkbox roster', async () => {

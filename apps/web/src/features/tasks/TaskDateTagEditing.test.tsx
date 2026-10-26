@@ -193,14 +193,14 @@ describe('task dates and existing tags', () => {
     expect(calls[0]?.body).toEqual({ expectedRevision: source.revision, [endpoint]: null });
   });
 
-  it('keeps a tag-label press local inside the shell until explicit Save', async () => {
+  it('keeps a tag-checkbox press local inside the shell until explicit Save', async () => {
     const emptyTags = { ...source, tags: [] };
     const { calls } = installFakeApi({ [`PATCH ${path}`]: () => ok({ ...emptyTags, tags: [newTag], revision: source.revision + 1 }) });
     const ui = inline('tagIds', emptyTags);
     await ui.user.type(screen.getByRole('searchbox', { name: 'Search tags' }), 'Del');
     await ui.user.keyboard('{Enter}');
     expect(calls).toHaveLength(0);
-    const label = screen.getByText('Delivery');
+    const label = screen.getByRole('checkbox', { name: 'Delivery' });
     await ui.user.pointer({ keys: '[MouseLeft>]', target: label });
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
     expect(screen.getByRole('dialog', { name: 'Edit tags' })).toBeInTheDocument();
@@ -213,6 +213,31 @@ describe('task dates and existing tags', () => {
     await waitFor(() => expect(ui.onSaved).toHaveBeenCalledTimes(1));
     expect(calls).toHaveLength(1);
     expect(calls[0]?.body).toEqual({ expectedRevision: source.revision, tagIds: [newTag.id] });
+  });
+
+  it('opens a tag link without selecting it or saving the task draft', async () => {
+    const { calls } = installFakeApi({});
+    const ui = inline('tagIds');
+    const link = screen.getByRole('link', { name: 'Delivery' });
+    expect(link).toHaveAttribute('href', `/app/w/${alpha.id}/tags/${newTag.id}`);
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(link).toHaveAttribute('title', 'Open tag Delivery in a new tab');
+    await ui.user.click(link);
+    expect(screen.getByRole('checkbox', { name: 'Delivery' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Design' })).toBeChecked();
+    expect(screen.getByRole('dialog', { name: 'Edit tags' })).toBeInTheDocument();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('excludes archived tags from a new task while keeping an assigned archived tag linked', () => {
+    const ui = renderFieldUi(<TaskTagPicker tags={[oldTag, archived]} values={[]} onChange={vi.fn()} />);
+    expect(screen.queryByRole('checkbox', { name: /Old tag/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Old tag/ })).not.toBeInTheDocument();
+    ui.unmount();
+    renderFieldUi(<TaskTagPicker tags={[oldTag, archived]} values={[archived.id]} onChange={vi.fn()} />);
+    expect(screen.getByRole('checkbox', { name: 'Old tag (archived)' })).toBeChecked();
+    expect(screen.getByRole('link', { name: 'Old tag (archived)' })).toHaveAttribute('href', `/app/w/${alpha.id}/tags/${archived.id}`);
   });
 
   it('keeps held archived and missing tags removable, without offering new archived assignments', async () => {

@@ -164,6 +164,7 @@ interface RouteCase {
 
 const CATALOG: RouteCase[] = [
   { method: 'GET', path: '/projects', call: 'listProjects', args: [], status: 200, schema: projectListResponseSchema, nextCursor: null },
+  { method: 'GET', path: '/projects', query: 'includeArchived=true', call: 'listProjects', args: [true], status: 200, schema: projectListResponseSchema, nextCursor: null },
   { method: 'POST', path: '/projects', body: { name: 'Launch' }, call: 'createProject', args: [{ name: 'Launch' }], status: 201, schema: projectResponseSchema },
   { method: 'GET', path: '/projects/:projectId', call: 'getProject', args: [IDS.project], status: 200, schema: projectResponseSchema },
   {
@@ -196,6 +197,8 @@ const CATALOG: RouteCase[] = [
   },
   { method: 'GET', path: '/projects/:projectId/statuses', call: 'listStatuses', args: [IDS.project], status: 200, schema: taskStatusListResponseSchema, nextCursor: null },
   { method: 'GET', path: '/tags', call: 'listTags', args: [], status: 200, schema: tagListResponseSchema, nextCursor: null },
+  { method: 'GET', path: '/tags', query: 'includeArchived=true', call: 'listTags', args: [true], status: 200, schema: tagListResponseSchema, nextCursor: null },
+  { method: 'GET', path: '/tags', query: 'includeArchived=false', call: 'listTags', args: [], status: 200, schema: tagListResponseSchema, nextCursor: null },
   { method: 'POST', path: '/tags', body: { name: 'ops', color: '#aabbcc' }, call: 'createTag', args: [{ name: 'ops', color: '#aabbcc' }], status: 201, schema: tagResponseSchema },
   {
     method: 'PATCH',
@@ -450,6 +453,13 @@ describe('P1a task routes (HTTP adapter)', () => {
     overrides.set('listTasks', () => ({ items: [], nextCursor: null }));
     const last = taskListResponseSchema.parse((await send(app, routeFor('listTasks'))).json());
     expect(last).toMatchObject({ data: [], meta: { nextCursor: null } });
+  });
+
+  it('rejects malformed archive inclusion flags before calling the tag service', async () => {
+    for (const query of ['includeArchived=maybe', 'includeArchived=true&includeArchived=false']) {
+      expect((await send(app, routeFor('listTags'), { query })).statusCode).toBe(400);
+    }
+    expect(calls).toHaveLength(0);
   });
 
   it('forwards the bounded scalar due sort and rejects unsupported or repeated modes', async () => {

@@ -5,7 +5,7 @@ import { X } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { formatEstimate, parseEstimateInput } from '../task-table';
-import { TagBadge } from './TagBadge';
+import { TagLink } from '../tags/TagLink';
 import { LinkedDescription } from './LinkedDescription';
 import { hasDescriptionLinks } from './descriptionLinks';
 import { tagColor } from './tagColors';
@@ -409,7 +409,7 @@ export function TaskFields({
               const assignable = !archived || savedTags.has(tag.id);
               return (
                 <li key={tag.id}>
-                  <label
+                  <div
                     className={cn(
                       'inline-flex max-w-full items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-xs',
                       archived ? 'text-muted' : 'text-ink-soft',
@@ -423,8 +423,8 @@ export function TaskFields({
                       disabled={!assignable}
                       onChange={(event) => choose({ tagIds: toggle(draft.tagIds, tag.id, event.target.checked) })}
                     />
-                    <TagBadge tag={tag} />
-                  </label>
+                    <TagLink tag={tag} />
+                  </div>
                 </li>
               );
             })}
@@ -491,7 +491,7 @@ export function TaskFields({
                   onClick={() => choose({ tagIds: draft.tagIds.filter((id) => id !== tagId) })}>
                   <X size={12} aria-hidden="true" />
                 </button>;
-                return tag ? <TagBadge key={tagId} tag={tag}>{remove}</TagBadge>
+                return tag ? <span key={tagId} className="inline-flex max-w-full items-center gap-1"><TagLink tag={tag} />{remove}</span>
                   : <span key={tagId} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-line py-0.5 pr-1 pl-2.5 text-xs text-ink-soft"><span className="truncate">{name}</span>{remove}</span>;
               })}
               {addableTags.length > 0 ? (

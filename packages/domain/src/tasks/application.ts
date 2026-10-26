@@ -47,7 +47,7 @@ export interface TaskPage {
  */
 export interface TaskApplication {
  readonly placements?:TaskProjectPlacementApplication;
-  listProjects(context: CommandContext): Promise<ProjectDto[]>;
+  listProjects(context: CommandContext, includeArchived?: boolean): Promise<ProjectDto[]>;
   getProject(context: CommandContext, projectId: string): Promise<ProjectDto>;
   createProject(context: CommandContext, input: CreateProjectInput): Promise<ProjectDto>;
   updateProject(context: CommandContext, projectId: string, input: UpdateProjectInput): Promise<ProjectDto>;
@@ -58,7 +58,7 @@ export interface TaskApplication {
 
   listStatuses(context: CommandContext, projectId: string): Promise<TaskStatusDto[]>;
 
-  listTags(context: CommandContext): Promise<TagDto[]>;
+  listTags(context: CommandContext, includeArchived?: boolean): Promise<TagDto[]>;
   createTag(context: CommandContext, input: CreateTagInput): Promise<TagDto>;
   updateTag(context: CommandContext, tagId: string, input: UpdateTagInput): Promise<TagDto>;
 

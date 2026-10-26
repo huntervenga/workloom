@@ -179,9 +179,9 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
   }
 
   return {
-    async listProjects(context: CommandContext): Promise<ProjectDto[]> {
+    async listProjects(context: CommandContext, includeArchived = false): Promise<ProjectDto[]> {
       const ctx = await authorizeRead(context);
-      return reader.listProjects(ctx.workspaceId);
+      return reader.listProjects(ctx.workspaceId, includeArchived);
     },
 
     async getProject(context: CommandContext, projectId: string): Promise<ProjectDto> {
@@ -275,9 +275,9 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
       return reader.listStatuses(ctx.workspaceId, id);
     },
 
-    async listTags(context: CommandContext): Promise<TagDto[]> {
+    async listTags(context: CommandContext, includeArchived = false): Promise<TagDto[]> {
       const ctx = await authorizeRead(context);
-      return reader.listTags(ctx.workspaceId);
+      return reader.listTags(ctx.workspaceId, includeArchived);
     },
 
     async createTag(context: CommandContext, input: CreateTagInput): Promise<TagDto> {

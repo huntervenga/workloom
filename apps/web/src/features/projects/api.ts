@@ -32,8 +32,8 @@ export interface ProjectList {
   nextCursor: string | null;
 }
 
-export async function fetchProjects(workspaceId: string, signal?: AbortSignal): Promise<ProjectList> {
-  const { data, meta } = await apiGet(`${workspacePath(workspaceId)}/projects`, projectListResponseSchema, signal);
+export async function fetchProjects(workspaceId: string, signal?: AbortSignal, includeArchived = false): Promise<ProjectList> {
+  const { data, meta } = await apiGet(`${workspacePath(workspaceId)}/projects${includeArchived ? '?includeArchived=true' : ''}`, projectListResponseSchema, signal);
   return { projects: data, nextCursor: meta.nextCursor ?? null };
 }
 

@@ -153,7 +153,7 @@ function harness() {
         .sort((left, right) => left.position - right.position),
     insertStatus: async (row) => void db.state.statuses.set(row.id, row),
     findTag: async (ws, id) => scoped(db.state.tags.get(id), ws),
-    listTags: async (ws) => [...db.state.tags.values()].filter((row) => row.workspaceId === ws && row.archivedAt === null),
+    listTags: async (ws, includeArchived = false) => [...db.state.tags.values()].filter((row) => row.workspaceId === ws && (includeArchived || row.archivedAt === null)),
     insertTag: async (row) => void db.state.tags.set(row.id, row),
     saveTag: async (row) => void db.state.tags.set(row.id, row),
     findWorkPackage: async (ws, id) => scoped(db.state.packages.get(id), ws),
@@ -584,6 +584,9 @@ describe('tags on tasks', () => {
     const other = await s.createTask();
     await s.app.updateTag(s.owner(), legacy.id, { expectedRevision: 1, archived: true });
 
+    expect((await s.app.listTags(s.owner())).some(tag => tag.id === legacy.id)).toBe(false);
+    expect((await s.app.listTags(s.owner(), true)).find(tag => tag.id === legacy.id)?.archivedAt).not.toBeNull();
+    expect((await errorOf(s.app.listTags(s.ctx(users.revoked), true))).code).toBe('NOT_FOUND');
     const kept = await s.app.updateTask(s.owner(), tagged.id, { expectedRevision: 1, tagIds: [legacy.id, fresh.id] });
     expect(kept.tags.map((tag) => tag.id)).toEqual([legacy.id, fresh.id]);
 

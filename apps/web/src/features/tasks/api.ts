@@ -97,7 +97,7 @@ export async function fetchTask(workspaceId: string, taskId: string, signal?: Ab
 }
 
 export async function fetchTags(workspaceId: string, signal?: AbortSignal): Promise<TagDto[]> {
-  return (await apiGet(`${workspacePath(workspaceId)}/tags`, tagListResponseSchema, signal)).data;
+  return (await apiGet(`${workspacePath(workspaceId)}/tags?includeArchived=true`, tagListResponseSchema, signal)).data;
 }
 
 export function createTagRequest(workspaceId: string, input: CreateTagInput) {

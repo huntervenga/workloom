@@ -386,14 +386,14 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
       return row === undefined ? null : toProject(row);
     },
 
-    async listProjects(workspaceId) {
+    async listProjects(workspaceId, includeArchived = false) {
       if (!isUuid(workspaceId)) {
         return [];
       }
       const rows = await db
         .select()
         .from(projects)
-        .where(and(eq(projects.workspaceId, workspaceId), isNull(projects.archivedAt)))
+        .where(and(eq(projects.workspaceId, workspaceId), includeArchived ? undefined : isNull(projects.archivedAt)))
         .orderBy(asc(projects.name), asc(projects.id));
       return rows.map(toProject);
     },
@@ -529,14 +529,14 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
       return row === undefined ? null : toTag(row);
     },
 
-    async listTags(workspaceId) {
+    async listTags(workspaceId, includeArchived = false) {
       if (!isUuid(workspaceId)) {
         return [];
       }
       const rows = await db
         .select()
         .from(workspaceTags)
-        .where(and(eq(workspaceTags.workspaceId, workspaceId), isNull(workspaceTags.archivedAt)))
+        .where(and(eq(workspaceTags.workspaceId, workspaceId), includeArchived ? undefined : isNull(workspaceTags.archivedAt)))
         .orderBy(asc(workspaceTags.name), asc(workspaceTags.id));
       return rows.map(toTag);
     },

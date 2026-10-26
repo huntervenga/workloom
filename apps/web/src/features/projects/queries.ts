@@ -85,7 +85,7 @@ export function useReloadSections(actorId: string, workspaceId: string) {
 }
 
 export function invalidateProjectList(queryClient: QueryClient, actorId: string, workspaceId: string) {
-  return queryClient.invalidateQueries({ queryKey: queryKeys.projectList(actorId, workspaceId), exact: true });
+  return queryClient.invalidateQueries({ queryKey: queryKeys.projectList(actorId, workspaceId) });
 }
 
 /** The project itself and the list; its sections and statuses are left alone. */

@@ -9,11 +9,13 @@ import { MembersPage } from '../routes/MembersPage';
 import { NotFoundPage } from '../routes/NotFoundPage';
 import { OverviewPage } from '../routes/OverviewPage';
 import { ProjectsPage } from '../routes/ProjectsPage';
+import { TagsPage } from '../routes/TagsPage';
 import { WorkspaceLayout } from '../routes/WorkspaceLayout';
 import { useSession } from './session';
 import { AppShell } from './shell/AppShell';
 import { createAsyncRoute } from './AsyncRoute';
 
+const TagPage = createAsyncRoute(() => import('../routes/TagPage').then(module => ({ default: module.TagPage })), 'tags.loading');
 const InboxPage = createAsyncRoute(() => import('../routes/InboxPage').then(module => ({ default: module.InboxPage })), 'inbox.loading');
 const MyTasksPage = createAsyncRoute(() => import('../routes/MyTasksPage').then(module => ({ default: module.MyTasksPage })), 'myTasks.loading');
 const ProjectPage = createAsyncRoute(() => import('../routes/ProjectPage').then(module => ({ default: module.ProjectPage })), 'shell.loadingProject');
@@ -46,6 +48,8 @@ export function AppRoutes() {
           <Route path="reports" element={<WorkspaceReportsPage />} />
           <Route path="time-off" element={<TimeOffPage />} />
           <Route path="integrations" element={<IntegrationsPage />} />
+          <Route path="tags" element={<TagsPage />} />
+          <Route path="tags/:tagId" element={<TagPage />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route path="projects/:projectId/reports" element={<ReportsPage />} />

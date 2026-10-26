@@ -1,5 +1,5 @@
 import type { TagDto } from '@workloom/contracts';
-import { TagBadge } from './TagBadge';
+import { TagLink } from '../tags/TagLink';
 import { cn } from '@workloom/ui';
 import { Check, Plus } from 'lucide-react';
 import { useId, useRef, useState, type ReactNode } from 'react';
@@ -93,13 +93,15 @@ export function TaskTagPicker({ tags, values, onChange, disabled = false, autoFo
       {missing.map(value => <label key={value} className="flex min-h-8 items-center gap-2 text-sm text-muted">
         <input type="checkbox" checked onChange={() => toggle(value, false)} /><span>{t('tasks.taskFields.tagUnavailable')}</span>
       </label>)}
-      {visible.map(tag => <label key={tag.id} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-canvas">
-        <input type="checkbox" className="peer sr-only" checked={selected.has(tag.id.toLowerCase())} onChange={event => toggle(tag.id, event.target.checked)} />
-        <span aria-hidden="true" className={cn('inline-flex size-4 shrink-0 items-center justify-center rounded border border-line-strong peer-focus-visible:ring-2 peer-focus-visible:ring-accent', selected.has(tag.id.toLowerCase()) && 'border-accent bg-accent text-white')}>
-          {selected.has(tag.id.toLowerCase()) ? <Check size={12} /> : null}
-        </span>
-        <TagBadge tag={tag} />
-      </label>)}
+      {visible.map(tag => <div key={tag.id} className="flex min-h-9 items-center gap-2 rounded px-1 py-1 text-sm hover:bg-canvas">
+        <label className="flex cursor-pointer items-center self-stretch px-1">
+          <input type="checkbox" className="peer sr-only" aria-label={tag.archivedAt ? tag.name + ' ' + t('tagColors.archived') : tag.name} checked={selected.has(tag.id.toLowerCase())} onChange={event => toggle(tag.id, event.target.checked)} />
+          <span aria-hidden="true" className={cn('inline-flex size-4 shrink-0 items-center justify-center rounded border border-line-strong peer-focus-visible:ring-2 peer-focus-visible:ring-accent', selected.has(tag.id.toLowerCase()) && 'border-accent bg-accent text-white')}>
+            {selected.has(tag.id.toLowerCase()) ? <Check size={12} /> : null}
+          </span>
+        </label>
+        <TagLink tag={tag} />
+      </div>)}
       {visible.length === 0 && missing.length === 0 ? <p className="text-xs text-muted">{options.length === 0 ? t('tasks.taskFields.noTagsYet') : t('tasks.tags.noMatches')}</p> : null}
     </fieldset>
     {offerCreate ? <button type="button" aria-disabled={createBlocked || undefined} aria-describedby={`${id}-help`} onClick={startCreate}

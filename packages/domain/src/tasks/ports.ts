@@ -86,8 +86,8 @@ export interface TaskRepository {
   permissionEpoch(workspaceId: string): Promise<string>;
 
   findProject(workspaceId: string, projectId: string): Promise<ProjectDto | null>;
-  /** All active projects of the workspace, without a hidden limit. */
-  listProjects(workspaceId: string): Promise<ProjectDto[]>;
+  /** Workspace projects without a hidden limit; archived projects are opt-in for retained task reads. */
+  listProjects(workspaceId: string, includeArchived?: boolean): Promise<ProjectDto[]>;
   insertProject(row: ProjectDto): Promise<void>;
   saveProject(row: ProjectDto): Promise<void>;
 
@@ -103,8 +103,8 @@ export interface TaskRepository {
   insertStatus(row: TaskStatusDto): Promise<void>;
 
   findTag(workspaceId: string, tagId: string): Promise<TagDto | null>;
-  /** All active tags of the workspace, without a hidden limit. */
-  listTags(workspaceId: string): Promise<TagDto[]>;
+  /** Workspace tags without a hidden limit; archived tags are opt-in for management/history. */
+  listTags(workspaceId: string, includeArchived?: boolean): Promise<TagDto[]>;
   insertTag(row: TagDto): Promise<void>;
   saveTag(row: TagDto): Promise<void>;
 

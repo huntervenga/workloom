@@ -77,6 +77,27 @@ describe('exact single-tag reads on owned disposable PostgreSQL', () => {
     }
   });
 
+  it('lists archived tags only on request, preserving workspace scope and task references', async () => {
+    const activeOnly = await app.listTags(context());
+    expect(activeOnly.some(row => row.id === archived.id)).toBe(false);
+    const response = await api.inject({ method: 'GET', url: `/api/v1/workspaces/${W.team}/tags?includeArchived=true`, headers: { host: '127.0.0.1:4310' } });
+    expect(response.statusCode).toBe(200);
+    const tags = response.json<{ data: TagDto[] }>().data;
+    expect(tags.find(row => row.id === archived.id)?.archivedAt).toBeTypeOf('string');
+    expect(tags.some(row => row.id === foreign.id)).toBe(false);
+    expect((await app.getTask(context(), root.id)).tags.some(row => row.id === archived.id)).toBe(true);
+    const oldProject = await app.createProject(context(), { name: 'Archived project with tagged tasks' });
+    const oldStatus = required((await app.listStatuses(context(), oldProject.id)).find(row => row.group === 'todo'));
+    const retained = await app.createTask(context(), { projectId: oldProject.id, statusId: oldStatus.id, title: 'Retained project task', tagIds: [tag.id] });
+    await app.updateProject(context(), oldProject.id, { expectedRevision: oldProject.revision, archived: true });
+    expect((await app.listProjects(context())).some(row => row.id === oldProject.id)).toBe(false);
+    const projects = await api.inject({ method: 'GET', url: `/api/v1/workspaces/${W.team}/projects?includeArchived=true`, headers: { host: '127.0.0.1:4310' } });
+    expect(projects.statusCode).toBe(200);
+    expect(projects.json<{ data: { id: string; archivedAt: string | null }[] }>().data.find(row => row.id === oldProject.id)?.archivedAt).toBeTypeOf('string');
+    expect(ids((await app.listTasks(context(), { projectId: oldProject.id, tagId: tag.id, limit: 50 })).items)).toEqual([retained.id]);
+    await expect(app.createTask(context(), { projectId, statusId, title: 'New task with archived tag', tagIds: [archived.id] })).rejects.toMatchObject({ code: 'DOMAIN_VALIDATION_FAILED' });
+  });
+
   it('filters only own tags, includes matching children alone, and never multiplies task/package estimates', async () => {
     const page = await list();
     expect(ids(page.items)).toEqual([root.id, taggedDetail.id, taggedOnlyChild.id, removed.id]);
