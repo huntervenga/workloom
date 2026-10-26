@@ -1,12 +1,12 @@
 /**
  * Process entry point: load the optional repository .env (existing variables
- * win), validate configuration, listen on loopback, and close gracefully on
+ * win), validate configuration, migrate in hosted mode, listen, and close on
  * SIGINT/SIGTERM (Fastify stops accepting, in-flight requests finish, the
  * owned database pool closes).
  */
 import { fileURLToPath } from 'node:url';
 
-import { loadEnvFileIfPresent } from '@workloom/db';
+import { databaseErrorCode, loadEnvFileIfPresent, MigrationStateError, runMigrations } from '@workloom/db';
 
 import { createApp } from './app.js';
 import { ConfigError, loadConfig, type AppConfig } from './config.js';
@@ -28,6 +28,28 @@ async function main(): Promise<void> {
       return;
     }
     throw error;
+  }
+
+  // Run inside the API entrypoint as well as pre-deploy: provider start-command
+  // overrides must not let a new API start against a pending schema.
+  if (config.appEnv === 'staging' || config.appEnv === 'production') {
+    try {
+      const result = await runMigrations(config.database.url, { requireLoopback: false });
+      process.stdout.write(`${JSON.stringify({
+        event: 'HOSTED_MIGRATION_COMPLETE', phase: 'startup',
+        appliedCount: result.appliedNow.length, appliedMigrations: result.appliedNow,
+        expectedCount: result.state.expectedCount,
+      })}\n`);
+    } catch (error) {
+      const code = databaseErrorCode(error);
+      process.stderr.write(`${JSON.stringify({
+        error: 'HOSTED_MIGRATION_FAILED', phase: 'startup',
+        reason: error instanceof MigrationStateError ? 'MIGRATION_HISTORY_INVALID' : 'MIGRATION_FAILED',
+        ...(code && /^[A-Z0-9_]{2,40}$/.test(code) ? { code } : {}),
+      })}\n`);
+      process.exitCode = 1;
+      return;
+    }
   }
 
   const app = await createApp(config);

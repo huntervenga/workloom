@@ -107,7 +107,7 @@ P6: `AUTH_MODE=shared`, вход через общий Auth, server BFF session 
 
 ## Хранение и транзакции
 
-PostgreSQL — source of truth для задач, часов, snapshot, ACL, audit и outbox. Drizzle описывает schema/query types; сложные constraints и lock statements разрешено писать SQL с тестами. Миграции версионируются, выполняются отдельно и никогда не заменяются schema sync на startup.
+PostgreSQL — source of truth для задач, часов, snapshot, ACL, audit и outbox. Drizzle описывает schema/query types; сложные constraints и lock statements разрешено писать SQL с тестами. Миграции версионируются и никогда не заменяются schema sync. В hosted-режиме они выполняются перед деплоем и повторно проверяются тем же runner перед открытием HTTP-порта API; повторный запуск пропускает уже применённые миграции. Локально миграции по-прежнему запускаются отдельной командой. Обоснование и порядок — в [124](124-railway-cloudflare-deploy.md#5-бэкап-и-миграция-базы).
 
 Каждая workspace-owned сущность содержит workspace ID; составные FK и уникальности предотвращают cross-tenant ссылки. Application authorization обязателен; RLS не считается автоматически включённым и не откладывает tenant tests. Для пилота достаточно explicit scoped repositories + DB constraints; решение о RLS — отдельный ADR перед расширением доверенных SQL consumers.
 

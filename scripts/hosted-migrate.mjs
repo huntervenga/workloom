@@ -1,4 +1,4 @@
-/** Hosted pre-deploy migration. No dotenv, seed, worker or API startup hook. */
+/** Hosted pre-deploy migration. The API entrypoint also runs the same locked migration runner. */
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
