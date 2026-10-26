@@ -45,7 +45,8 @@ export function TaskTagPicker({ tags, values, onChange, disabled = false, autoFo
   const selected = new Set(values.map(value => value.toLowerCase()));
   const byId = new Map(tags.map(tag => [tag.id.toLowerCase(), tag]));
   const options = [...tags.filter(tag => tag.archivedAt === null || selected.has(tag.id.toLowerCase()))]
-    .sort((a, b) => a.name.localeCompare(b.name, locale));
+    .sort((a, b) => Number(selected.has(b.id.toLowerCase())) - Number(selected.has(a.id.toLowerCase()))
+      || a.name.localeCompare(b.name, locale));
   const missing = values.filter(value => !byId.has(value.toLowerCase()));
   const needle = search.trim().toLocaleLowerCase(locale);
   const visible = options.filter(tag => tag.name.toLocaleLowerCase(locale).includes(needle));
@@ -89,15 +90,15 @@ export function TaskTagPicker({ tags, values, onChange, disabled = false, autoFo
       className="h-8 w-full min-w-0 rounded border border-line bg-surface px-2 text-sm text-ink outline-none focus:ring-2 focus:ring-accent-soft" />
     <fieldset className="max-h-56 min-w-48 space-y-1 overflow-y-auto" disabled={disabled}>
       <legend className="sr-only">{t('tasks.taskFields.tags')}</legend>
+      {missing.map(value => <label key={value} className="flex min-h-8 items-center gap-2 text-sm text-muted">
+        <input type="checkbox" checked onChange={() => toggle(value, false)} /><span>{t('tasks.taskFields.tagUnavailable')}</span>
+      </label>)}
       {visible.map(tag => <label key={tag.id} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm hover:bg-canvas">
         <input type="checkbox" className="peer sr-only" checked={selected.has(tag.id.toLowerCase())} onChange={event => toggle(tag.id, event.target.checked)} />
         <span aria-hidden="true" className={cn('inline-flex size-4 shrink-0 items-center justify-center rounded border border-line-strong peer-focus-visible:ring-2 peer-focus-visible:ring-accent', selected.has(tag.id.toLowerCase()) && 'border-accent bg-accent text-white')}>
           {selected.has(tag.id.toLowerCase()) ? <Check size={12} /> : null}
         </span>
         <TagBadge tag={tag} />
-      </label>)}
-      {missing.map(value => <label key={value} className="flex min-h-8 items-center gap-2 text-sm text-muted">
-        <input type="checkbox" checked onChange={() => toggle(value, false)} /><span>{t('tasks.taskFields.tagUnavailable')}</span>
       </label>)}
       {visible.length === 0 && missing.length === 0 ? <p className="text-xs text-muted">{options.length === 0 ? t('tasks.taskFields.noTagsYet') : t('tasks.tags.noMatches')}</p> : null}
     </fieldset>
