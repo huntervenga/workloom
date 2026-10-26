@@ -110,6 +110,8 @@
   "noBalances": "No paid allowances configured for this person.",
   "dayCount": "{{days}} days",
   "availableToday": "Earned and available as of {{date}}",
+  "leftAfterPlanned": "Left after planned time off is used",
+  "availableTodayPlanned": "As of {{date}}: {{available}} available, {{planned}} planned but not yet taken",
   "earned": "Earned",
   "taken": "Taken to date",
   "reserved": "Future reservations",

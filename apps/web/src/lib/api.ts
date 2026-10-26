@@ -39,12 +39,14 @@ export class ApiError extends Error {
   readonly fieldPolicyReason: 'deadline'|'change_limit'|null;
   /** Fixed completion-policy classification only; raw field values and server text are discarded. */
   readonly completionFieldsRequired:boolean;
+  /** Names of the fields the completion check found empty: short project-authored labels, nothing else from the response. */
+  readonly completionFieldNames:readonly string[];
   /** Bounded duplication rejection classification; no task names, values or raw details. */
   readonly duplicationReason:DuplicationReason|null;
   /** Fixed invitation classification; never stores recipient addresses or raw server details. */
   readonly invitationReason: InvitationReason | null;
 
-  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean;duplicationReason?:DuplicationReason|null;invitationReason?:InvitationReason|null }) {
+  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean;completionFieldNames?:readonly string[];duplicationReason?:DuplicationReason|null;invitationReason?:InvitationReason|null }) {
     super(`Workloom API request failed: ${init.kind}${init.status === null ? '' : ` (${init.status})`}`);
     this.name = 'ApiError';
     this.kind = init.kind;
@@ -52,6 +54,7 @@ export class ApiError extends Error {
     this.code = init.code ?? null;
     this.requestId = init.requestId ?? null;
     this.completionFieldsRequired = this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&init.completionFieldsRequired===true;
+    this.completionFieldNames=this.completionFieldsRequired?(init.completionFieldNames??[]).slice(0,10):[];
     this.invitationReason=this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&isInvitationReason(init.invitationReason)?init.invitationReason:null;
     this.duplicationReason=this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&isDuplicationReason(init.duplicationReason)?init.duplicationReason:null;
     this.fieldPolicyReason = this.code === 'FIELD_LOCKED' ? (init.fieldPolicyReason ?? null) : null;
@@ -121,6 +124,7 @@ export async function apiRequest(path: string, options: ApiRequestOptions = {}):
       code: safeToken(envelope.code, SAFE_CODE),
       fieldPolicyReason:envelope.fieldPolicyReason,
       completionFieldsRequired:envelope.completionFieldsRequired,
+      completionFieldNames:envelope.completionFieldNames,
       duplicationReason:envelope.duplicationReason,
       invitationReason:envelope.invitationReason,
       requestId: safeToken(envelope.requestId ?? response.headers.get('x-request-id'), SAFE_REQUEST_ID),
@@ -231,9 +235,9 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean;duplicationReason:DuplicationReason|null;invitationReason:InvitationReason|null } {
+function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean;completionFieldNames:string[];duplicationReason:DuplicationReason|null;invitationReason:InvitationReason|null } {
   const parsed = errorResponseSchema.safeParse(payload);
-  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false,duplicationReason:null,invitationReason:null };
+  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false,completionFieldNames:[],duplicationReason:null,invitationReason:null };
   const envelope: unknown = parsed.data;
   const error = isRecord(envelope) ? envelope['error'] : undefined;
   const meta = isRecord(envelope) ? envelope['meta'] : undefined;
@@ -243,6 +247,7 @@ function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknow
     invitationReason:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&isRecord(details)&&isInvitationReason(details['invitationReason'])?details['invitationReason']:null,
     duplicationReason:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&isRecord(details)&&isDuplicationReason(details['duplicationReason'])?details['duplicationReason']:null,
     completionFieldsRequired:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&reason==='completion_fields_required',
+    completionFieldNames:isRecord(details)&&Array.isArray(details['fieldNames'])?details['fieldNames'].filter((name):name is string=>typeof name==='string'&&name.length>0&&name.length<=120).slice(0,10):[],
     fieldPolicyReason:isRecord(error)&&error['code']==='FIELD_LOCKED'&&(reason==='deadline'||reason==='change_limit')?reason:null,
     code: isRecord(error) ? error['code'] : null,
     requestId: isRecord(meta) ? meta['requestId'] : null,

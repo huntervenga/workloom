@@ -18,6 +18,14 @@ describe('ordinary custom field completion requirements',()=>{
   const f=fixture();await expect(f.assert(task)).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED',details:{policyReason:'completion_fields_required',fieldIds:['field']}});
   f.values.push({taskId:'task',fieldId:'field',value:{type:'duration',value:0}} as TaskFieldValueDto);await expect(f.assert(task)).resolves.toBeUndefined();
  });
+ it('counts a parent filled by its subtasks, like the table, and names the fields still missing',async()=>{
+  const f=fixture();
+  await expect(f.assert(task)).rejects.toMatchObject({details:{fieldIds:['field'],fieldNames:['Ordinary custom field']}});
+  const rollup=createTaskCompletionRequirementPolicy({...f.reads,filledDescendantFieldIds:vi.fn(async()=>['field'])});
+  await expect(rollup(task)).resolves.toBeUndefined();
+  const none=createTaskCompletionRequirementPolicy({...f.reads,filledDescendantFieldIds:vi.fn(async()=>[])});
+  await expect(none(task)).rejects.toMatchObject({details:{fieldIds:['field']}});
+ });
  it.each([{enabled:false},{requireBeforeDone:false},{requireBeforeDone:undefined}])('leaves advisory/disabled rule %j inert',async changes=>{const f=fixture(changes);await expect(f.assert(task)).resolves.toBeUndefined();expect(f.reads.fields.listFields).not.toHaveBeenCalled();});
  it('master disable suppresses enforcement and archived requirements fail explicitly until repaired',async()=>{
   const disabled=fixture({},false);await expect(disabled.assert(task)).resolves.toBeUndefined();expect(disabled.reads.fields.listTaskValues).not.toHaveBeenCalled();

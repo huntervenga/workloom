@@ -68,7 +68,8 @@
   "subject.tablePreferenceSave": "Unable to save your table columns",
   "subject.timeOffPreview": "Unable to review time off",
   "subject.timeOffSave": "Unable to update time off",
-  "completionFieldsRequiredTitle": "Required fields are missing",
+  "completionFieldsRequiredNamed": "The task could not be closed because a required field is empty: {{fields}}. Fill it in the task (open its details) and try again.",
+  "completionFieldsRequiredTitle": "Could not close the task",
   "completionFieldsRequired": "Fill the fields required by this project before completing the task. Open task details to review missing values, or ask an owner to review Planning checks if a required field is unavailable. No tasks in this action were changed.",
   "leaveCalculationLimitTitle": "This calculation is too large",
   "leaveCalculationLimitDescription": "This query exceeds the supported calculation budget. Use a shorter date range or fewer people. Your saved dates and history have not been changed."

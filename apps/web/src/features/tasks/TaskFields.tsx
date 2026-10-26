@@ -2,10 +2,12 @@ import { t, useTranslation } from '../../i18n';
 import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto, TaskStatusGroup } from '@workloom/contracts';
 import { TextInput, cn, inputClassName } from '@workloom/ui';
 import { X } from 'lucide-react';
-import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { formatEstimate, parseEstimateInput } from '../task-table';
 import { TagBadge } from './TagBadge';
+import { LinkedDescription } from './LinkedDescription';
+import { hasDescriptionLinks } from './descriptionLinks';
 import { tagColor } from './tagColors';
 import { TaskDateInput } from './TaskDateInput';
 import { TaskCompactDateField } from './TaskCompactDateField';
@@ -329,29 +331,8 @@ export function TaskFields({
             errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} />
         </div>);
   const descriptionField = (
-<div>
-        <label htmlFor={ids.description} className={labelClassName}>
-          {t('tasks.taskFields.description')}</label>
-        <textarea
-          id={ids.description}
-          className={inputClassName('mt-1.5 h-auto min-h-20 py-2 leading-relaxed')}
-          rows={3}
-          placeholder={t('tasks.taskFields.descriptionPlaceholder')}
-          value={draft.description}
-          maxLength={TASK_DESCRIPTION_MAX}
-          aria-invalid={errors.description ? true : undefined}
-          aria-describedby={errors.description ? ids.descriptionError : undefined}
-          onChange={(event) => onChange({ description: event.target.value })}
-          onBlur={() => commit('description')}
-          onKeyDown={(event) => {
-            // Enter stays a newline; Ctrl/Cmd+Enter makes the description final.
-            if (!onCommit || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            commit('description');
-          }}
-        />
-        <FieldError id={ids.descriptionError} message={errors.description} />
-      </div>
+    <DescriptionField id={ids.description} errorId={ids.descriptionError} value={draft.description} error={errors.description}
+      onChange={value => onChange({ description: value })} onCommit={() => commit('description')} commitOnCtrlEnter={onCommit !== undefined} />
   );
   const sectionField = (<div>
           <label htmlFor={ids.section} className={labelClassName}>
@@ -573,4 +554,40 @@ export function TaskFields({
 </details>
     </div>
   );
+}
+
+function DescriptionField({ id, errorId, value, error, onChange, onCommit, commitOnCtrlEnter }: { id: string; errorId: string; value: string; error: TaskDraftIssue | undefined; onChange: (value: string) => void; onCommit: () => void; commitOnCtrlEnter: boolean }) {
+  const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const input = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { if (editing) input.current?.focus(); }, [editing]);
+  const reading = !editing && hasDescriptionLinks(value);
+  return <div>
+    <label htmlFor={id} className={labelClassName}>{t('tasks.taskFields.description')}</label>
+    {reading
+      ? <div role="textbox" tabIndex={0} aria-readonly="true" aria-label={t('tasks.taskFields.description')} data-description-links=""
+          className={inputClassName('mt-1.5 h-auto min-h-20 cursor-text whitespace-pre-wrap break-words py-2 leading-relaxed')}
+          onClick={event => { if (!(event.target instanceof Element && event.target.closest('a'))) setEditing(true); }}
+          onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setEditing(true); } }}><LinkedDescription text={value} /></div>
+      : <textarea
+          ref={input}
+          id={id}
+          className={inputClassName('mt-1.5 h-auto min-h-20 py-2 leading-relaxed')}
+          rows={3}
+          placeholder={t('tasks.taskFields.descriptionPlaceholder')}
+          value={value}
+          maxLength={TASK_DESCRIPTION_MAX}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          onChange={event => onChange(event.target.value)}
+          onBlur={() => { onCommit(); setEditing(false); }}
+          onKeyDown={event => {
+            // Enter stays a newline; Ctrl/Cmd+Enter makes the description final.
+            if (!commitOnCtrlEnter || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            onCommit();
+          }}
+        />}
+    <FieldError id={errorId} message={error} />
+  </div>;
 }

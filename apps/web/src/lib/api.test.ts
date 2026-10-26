@@ -189,7 +189,7 @@ describe('bounded field-policy error classification',()=>{
 
 describe('safe required-before-completion feedback',()=>{
  it('recognizes only the bounded completion discriminator and never retains field values, IDs or server copy',async()=>{
-  for(const [code,policyReason,expected] of [['DOMAIN_VALIDATION_FAILED','completion_fields_required',true],['FIELD_LOCKED','completion_fields_required',false],['DOMAIN_VALIDATION_FAILED','arbitrary',false]] as const){stubFetch(json(422,{error:{code,message:leakyMessage,retryable:false,details:{policyReason,fieldIds:[leakyMessage],rawValue:leakyMessage}},meta:{requestId:'completion-test'}}));const error=await captureError(apiGet('/completion-test',workspaceResponseSchema));expect(error.completionFieldsRequired).toBe(expected);expect(JSON.stringify(error)).not.toContain(leakyMessage);if(expected)expect(describeError(error,'taskSave')).toMatchObject({title:'Required fields are missing',retryable:false});}
+  for(const [code,policyReason,expected] of [['DOMAIN_VALIDATION_FAILED','completion_fields_required',true],['FIELD_LOCKED','completion_fields_required',false],['DOMAIN_VALIDATION_FAILED','arbitrary',false]] as const){stubFetch(json(422,{error:{code,message:leakyMessage,retryable:false,details:{policyReason,fieldIds:[leakyMessage],rawValue:leakyMessage}},meta:{requestId:'completion-test'}}));const error=await captureError(apiGet('/completion-test',workspaceResponseSchema));expect(error.completionFieldsRequired).toBe(expected);expect(JSON.stringify(error)).not.toContain(leakyMessage);if(expected)expect(describeError(error,'taskSave')).toMatchObject({title:'Could not close the task',retryable:false});}
  });
 });
 
