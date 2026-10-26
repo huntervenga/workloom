@@ -23,10 +23,12 @@ export interface BulkTaskToolbarProps {
   onClear: () => void;
   /** Opens the "continue in another project" dialog for the frozen selection. */
   onContinue?: (() => void) | undefined;
+  /** Deletes the frozen selection; every task keeps its own Undo. */
+  onDelete?: (() => void) | undefined;
   onConfirmed: (tasks: readonly TaskDto[]) => void;
 }
 /** The person explicitly applies one patch to a frozen selection, through one atomic command. */
-export function BulkTaskToolbar({ projectId, tasks, count, members, commands, writable, blocked, onClear, onContinue, onConfirmed, hiddenCount = 0, onClearHidden, onReload }: BulkTaskToolbarProps) {
+export function BulkTaskToolbar({ projectId, tasks, count, members, commands, writable, blocked, onClear, onContinue, onDelete, onConfirmed, hiddenCount = 0, onClearHidden, onReload }: BulkTaskToolbarProps) {
   const { t } = useTranslation();
   const command = commands.bulk;
   const [changes, setChanges] = useState<BulkUpdateTasksInput['changes']>({});
@@ -67,6 +69,7 @@ export function BulkTaskToolbar({ projectId, tasks, count, members, commands, wr
       <Button ref={dateButton} size="sm" variant="ghost" aria-expanded={datesOpen} disabled={locked} onClick={() => setDatesOpen(value => !value)}>{t('taskTable.bulk.dates')}</Button>
       <Button size="sm" variant="primary" disabled={locked || !dirty} onClick={apply}>{t('taskTable.bulk.apply')}</Button>
       {onContinue ? <Button size="sm" variant="ghost" disabled={locked} onClick={onContinue}>{t('taskTable.bulk.continue')}</Button> : null}
+      {onDelete ? <Button size="sm" variant="ghost" className="text-rose-700" disabled={locked} onClick={onDelete}>{t('taskTable.bulk.delete')}</Button> : null}
       <Button size="sm" variant="ghost" disabled={held} onClick={onClear}>{t('taskTable.bulk.clear')}</Button>
     </div>
     {datesOpen ? <div ref={datePanel} role="dialog" aria-label={t('taskTable.bulk.dateDialog')} className="absolute bottom-full left-0 mb-2 w-72 max-w-[calc(100vw-1.5rem)] max-h-[70dvh] overflow-auto rounded-xl border border-line bg-surface p-3 shadow-xl"

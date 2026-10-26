@@ -232,6 +232,7 @@
     "hidden": "{{count}} selected tasks are outside this view.",
     "clearHidden": "Clear hidden selection",
     "reload": "Refresh selected tasks",
+    "delete": "Delete",
     "continue": "Continue in another project…"
   },
   "dates": {

@@ -28,7 +28,7 @@ describe('atomic ordinary duplication on isolated PostgreSQL', () => {
     const names = ['plan_baselines', 'package_baselines', 'period_commitments', 'work_logs', 'work_log_revisions', 'weekly_report_runs', 'generic_report_initial_snapshots', 'task_dependencies', 'task_comments'];
     return Promise.all(names.map(async table => ({ table, rows: await db.sql`select * from ${db.sql(table)} order by 1` })));
   }
-  it('duplicates a complete tree with fresh identities, todo state, opt-in zero/false fields and no historical work', async () => {
+  it('duplicates a complete tree with fresh identities, the source status, opt-in zero/false fields and no historical work', async () => {
     const f = await fixture(), zero = await newField(f.project.id), flag = await newField(f.project.id, 'boolean');
     await fields.setTaskValue(ctx(), f.task.id, zero.id, { expectedRevision: 0, expectedDefinitionRevision: zero.revision, value: { type: 'duration', value: 0 } });
     await fields.setTaskValue(ctx(), f.task.id, flag.id, { expectedRevision: 0, expectedDefinitionRevision: flag.revision, value: { type: 'boolean', value: false } });
@@ -41,7 +41,7 @@ describe('atomic ordinary duplication on isolated PostgreSQL', () => {
     const result = await duplicates.duplicateTask(commandContext, f.task.id, { ...input, expectedSourceVersion: preview.sourceVersion });
     expect(result.taskIds).toHaveLength(3); expect(new Set(result.taskIds).size).toBe(3);
     const created = await Promise.all(result.taskIds.map(id => tasks.getTask(ctx(), id))), root = required(created[0]), detail = required(created[1]), added = required(created[2]);
-    expect(root).toMatchObject({ title: 'New work', description: f.task.description, statusId: f.todo.id, responsibleMembershipId: M.teamMemberA, priority: 'high', dueDate: f.task.dueDate, estimateMinutes: null });
+    expect(root).toMatchObject({ title: 'New work', description: f.task.description, statusId: f.done.id, responsibleMembershipId: M.teamMemberA, priority: 'high', dueDate: f.task.dueDate, estimateMinutes: null });
     expect(root.workPackageId).not.toBe(f.task.workPackageId); expect(detail.parentTaskId).toBe(root.id); expect(detail.workPackageId).toBe(root.workPackageId); expect(added.parentTaskId).toBe(detail.id); expect(added.workPackageId).not.toBe(root.workPackageId); expect(added.workPackageId).not.toBe(extra.workPackageId); expect(added.estimateMinutes).toBeNull();
     const values = await fields.listTaskValues(ctx(), root.id);
     expect(values.map(value => value.value)).toEqual(expect.arrayContaining([{ type: 'duration', value: 0 }, { type: 'boolean', value: false }])); expect(values.every(value => value.revision === 1)).toBe(true);

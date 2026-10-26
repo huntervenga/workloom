@@ -737,18 +737,31 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     // The circle's own choice for its row goes to the whole selection it belongs to.
     onChoose={(chosen, statusId, source) => { if (!bulkInline.complete(chosen, statusId)) completion.choose(chosen, statusId, source); }} onTargetReady={completion.targetReady} onReview={openTask} />;
   // "Delete" moves a task out of every list and report; the Undo notice brings it straight back.
-  const deleteTask = (task: TaskDto) => {
-    if (unresolvedTaskCommand(commands) !== null) return;
+  const archiveTask = (task: TaskDto): Promise<unknown> => {
     const taskIds = deletedTaskTree([...(tasks.data ? loadedTaskScope(tasks.data).tasks : []), ...(insertion?.confirmed.map(entry => entry.task) ?? [])], new Set([task.id]));
     setDeletedTasks(before => new Map(before).set(task.id, { archivedRevision: null, taskIds }));
     const release = () => setDeletedTasks(before => { const next = new Map(before); next.delete(task.id); return next; });
-    commands.archive.mutate({ taskId: task.id, input: { expectedRevision: task.revision } }, {
+    return commands.archive.mutateAsync({ taskId: task.id, input: { expectedRevision: task.revision } }, {
       onError: release,
       onSuccess: archived => setDeletedTasks(before => {
         const entry = before.get(task.id);
         return entry ? new Map(before).set(task.id, { ...entry, archivedRevision: archived.revision }) : before;
       }),
     });
+  };
+  const deleteTask = (task: TaskDto) => {
+    if (unresolvedTaskCommand(commands) !== null) return;
+    void archiveTask(task).catch(() => undefined);
+  };
+  // The selection is deleted one task after another, each with its own Undo; a subtask goes with its selected parent.
+  const deleteSelectedTasks = async (selection: readonly TaskDto[]) => {
+    if (unresolvedTaskCommand(commands) !== null) return;
+    const chosen = new Set(selection.map(task => task.id));
+    for (const task of selection.filter(row => row.parentTaskId === null || !chosen.has(row.parentTaskId))) {
+      try { await archiveTask(task); } catch { break; }
+    }
+    selectionLedger.current.clear();
+    setSelectedTaskIds([]);
   };
   const openGraphTask = useCallback((task: TaskDto) => {
     if (task.projectId !== project.id) { navigate(`/w/${workspace.id}/projects/${task.projectId}?task=${task.id}`); return; }
@@ -1166,6 +1179,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         blocked={unresolvedTaskCommand(commands) !== null || commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching}
         onClear={() => { selectionLedger.current.clear(); setSelectedTaskIds([]); }}
         onContinue={() => setBulkContinueTasks(toolbarSelection.tasks)}
+        onDelete={() => void deleteSelectedTasks(toolbarSelection.tasks)}
         onConfirmed={rows => { for (const row of rows) selectionLedger.current.set(row.id, row); }} /> : null}
       <TaskCompletionFeedback controller={completion} onReview={openTask} />
       <CommentCommandRecovery controller={commentsController} visibleTaskId={taskId} onOpen={openTask} />
