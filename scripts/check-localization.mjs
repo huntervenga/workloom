@@ -50,6 +50,7 @@ const literalExemptions = new Map([
 ]);
 // Exact machine strings in task editors; UI labels remain catalog checked.
 // Exact AST template-text fragments from dropCellStyle.boxShadow; no pattern or whole-file exemption.
+literalExemptions.set("apps/web/src/features/task-table/TaskTable.tsx:,calc(100cqw - ", "CSS width expression for the task title column; never rendered as user copy.");
 literalExemptions.set("apps/web/src/features/task-table/TaskTable.tsx:inset 0 ", "CSS boxShadow template head in dropCellStyle; assigned only to cell style, never rendered as user copy.");
 literalExemptions.set("apps/web/src/features/task-table/TaskTable.tsx:px 0 var(--color-accent), var(--tw-shadow, 0 0 #0000)", "CSS boxShadow template tail in dropCellStyle; retains the cell edge shadow and is never rendered as user copy.");
 literalExemptions.set("apps/web/src/features/task-table/TaskTable.tsx:flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-highlighted:bg-accent-soft data-disabled:cursor-default data-disabled:opacity-50", "Radix menu CSS tokens; never user-visible copy.");

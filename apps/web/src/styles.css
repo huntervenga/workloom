@@ -86,6 +86,13 @@
   }
 }
 
+/* Keep wide personal columns scrollable when pinned edges would cover the other cells. */
+[data-task-table-unpinned] .task-table-pinned-column {
+  position: relative;
+  left: auto;
+  right: auto;
+}
+
 /* The task name itself is the pane heading; ordinary create forms keep the standard input. */
 .task-title-input {
   height: auto;

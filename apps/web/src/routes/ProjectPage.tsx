@@ -1339,6 +1339,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             sections={sections.data}
             statuses={statuses.data}
             members={members.data}
+            layoutScope={{ actorId, workspaceId: workspace.id, projectId: project.id }}
             columnIds={visibleColumnIds}
             customColumns={[...timeColumns, ...customColumns]}
             showLegacySummary={timeAvailable}
@@ -1450,6 +1451,7 @@ interface TaskListProps {
   members: readonly MembershipDto[];
   customColumns: readonly TaskTableCustomColumn[];
   columnIds: readonly string[];
+  layoutScope: ComponentProps<typeof TaskTable>['layoutScope'];
   onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;
   isTaskFieldEditBusy?: ComponentProps<typeof TaskTable>['isTaskFieldEditBusy'];
   renderTaskFieldEditor: NonNullable<ComponentProps<typeof TaskTable>['renderTaskFieldEditor']>;

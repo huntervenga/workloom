@@ -30,6 +30,8 @@ import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
 import { usePointerRowDrag, type DropTarget } from './usePointerRowDrag';
 import { titleCaretFromPoint } from './titleCaret';
 import { useStickyTaskTableHeader } from './useStickyTaskTableHeader';
+import { useLocalTableLayout, type TableLayoutScope } from './useLocalTableLayout';
+import { ColumnResizeHandle } from './ColumnResizeHandle';
 
 /** A column supplied by the parent, shown after «Приоритет» and before the estimate. */
 export interface TaskTableCustomColumn {
@@ -68,6 +70,8 @@ export interface TaskTableQuickAdd {
 }
 
 export interface TaskTableProps {
+  /** Local column widths, isolated by actor/workspace/project UUIDs. */
+  layoutScope?: TableLayoutScope | undefined;
   showLegacySummary?: boolean;
   aggregateFooter?: ReactNode;
   /** Per-group totals rows; off when no total is chosen, so groups are not followed by empty rows. */
@@ -252,11 +256,11 @@ const cellButtonClassName = cn(
  * the total stay in view while the wider table scrolls. Small screens keep plain local scrolling.
  */
 const stickyEstimateClassName =
-  'lg:sticky lg:right-0 lg:z-[1] lg:shadow-[inset_1px_0_0_var(--color-line),-8px_0_8px_-8px_rgb(15_23_42/0.18)]';
+  'task-table-pinned-column lg:sticky lg:right-0 lg:z-[1] lg:shadow-[inset_1px_0_0_var(--color-line),-8px_0_8px_-8px_rgb(15_23_42/0.18)]';
 
 /** The title cell of every row, real or draft: pinned left from `lg`. */
 const titleCellClassName =
-  'h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]';
+  'task-table-pinned-column h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]';
 
 const menuItemClassName = 'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-highlighted:bg-accent-soft data-disabled:cursor-default data-disabled:opacity-50';
 
@@ -903,7 +907,7 @@ export function TaskTable({
   caption = t('taskTable.taskTable.projectTasks'),
   customColumns = noCustomColumns,
   columnPreset = 'expanded',
-  columnIds,
+  columnIds, layoutScope,
   onEditTaskField, isTaskFieldEditBusy, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
   showLegacySummary = true, aggregateFooter, showGroupAggregates = true, showProjectAggregates = true, renderColumnAggregate, renderGroupMetadata, renderTaskIndicator, columnMenu, onCreateSection,
   onMoveTask, moveBlocked = false, acquireDragProtection,
@@ -917,6 +921,12 @@ export function TaskTable({
 }: TaskTableProps) {
   const { t, locale } = useTranslation();
   const { scrollRef, headerRef } = useStickyTaskTableHeader();
+  const layout = useLocalTableLayout(layoutScope);
+  const [resizePreview, setResizePreview] = useState<{ key: string | null; id: string; width: number } | null>(null);
+  const widthOverride = (id: string) => resizePreview?.key === layout.key && resizePreview.id === id ? resizePreview.width : layout.columnWidths[id];
+  const previewWidth = (id: string, width: number | null) => setResizePreview(before => width === null
+    ? before?.key === layout.key && before.id === id ? null : before
+    : { key: layout.key, id, width });
   const expandedColumns = columnPreset === 'expanded';
   const builtinColumns = [
     { id: 'title', label: t('taskTable.taskTable.task2'), width: 460 },
@@ -931,7 +941,7 @@ export function TaskTable({
   const byColumnId = new Map<string, Pick<TaskTableCustomColumn, 'id' | 'label' | 'width' | 'onEdit' | 'onConfigureCheck'>>([...builtinColumns, ...customColumns].map(column => [column.id, column]));
   const defaultIds = ['title', 'status', 'responsible', ...(expandedColumns ? ['participants'] : []), 'dueDate', ...(expandedColumns ? ['tags', 'priority'] : []), ...customColumns.map(column => column.id), 'estimate'];
   const orderedIds = columnIds ? ['title', ...columnIds.filter(id => id !== 'title')] : defaultIds;
-  const columns = orderedIds.flatMap(id => { const column = byColumnId.get(id); return column ? [column] : []; });
+  const columns = orderedIds.flatMap(id => { const column = byColumnId.get(id); return column ? [{ ...column, width: widthOverride(id) ?? column.width }] : []; });
   const visibleIds = columns.map(column => column.id);
   const trailingColumn = columnMenu !== undefined && columnMenu !== null;
   const columnCount = columns.length + (trailingColumn ? 1 : 0);
@@ -943,7 +953,11 @@ export function TaskTable({
   const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
   // Widths never depend on an open editor: the grid stays still while any cell is edited.
   const otherColumnsWidth = columns.reduce((sum, column) => sum + (column.id === 'title' ? 0 : column.width), trailingColumn ? 44 : 0);
-  const minWidth = `calc(${titleWidth} + ${otherColumnsWidth}px)`;
+  // Exact widths keep a drag from redistributing space into every other column. The
+  // default title fills spare room; an explicit personal title width remains exact.
+  const resolvedTitleWidth = widthOverride('title') === undefined
+    ? `max(${titleWidth},calc(100cqw - ${otherColumnsWidth}px))` : `${widthOverride('title')}px`;
+  const minWidth = `calc(${resolvedTitleWidth} + ${otherColumnsWidth}px)`;
   const stickyEstimate = visibleIds.at(-1) === 'estimate' && !trailingColumn;
   const columnLine = (id: string): string | undefined => {
     const index = visibleIds.indexOf(id);
@@ -1177,10 +1191,11 @@ export function TaskTable({
     <div ref={scrollRef} data-task-table-scroll="" onKeyDown={clearSelectionOnEscape} className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
       {selectionLimit ? <div role="status" className="fixed right-3 bottom-24 z-[70] max-w-sm rounded-lg border border-line bg-surface p-3 text-sm shadow-lg">{t('taskTable.selection.limit')}<Button size="sm" variant="ghost" onClick={() => setSelectionLimit(false)}>{t('taskTable.selection.dismiss')}</Button></div> : null}
       {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} /> : null}
-      <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth }}>
+      <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth, width: minWidth }}>
         <caption className="sr-only">{caption}</caption>
-        <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? titleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
-        <thead ref={headerRef} className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} scope="col" className={cn('h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
+        <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? resolvedTitleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
+        <thead ref={headerRef} className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} data-task-column={column.id} scope="col" aria-label={column.label} className={cn('relative h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'task-table-pinned-column max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'task-table-pinned-column lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span><ColumnResizeHandle key={`${layout.key}:${column.id}`} columnId={column.id} label={column.label} width={column.width}
+          onPreview={width => previewWidth(column.id, width)} onCommit={width => layout.setColumnWidth(column.id, width)} /></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
           const collapsed = collapsedGroups.has(group.key);

@@ -21,6 +21,10 @@ export function useStickyTaskTableHeader() {
       frame = null;
       const headRect = head.getBoundingClientRect(), portRect = port.getBoundingClientRect();
       const tableRect = table.getBoundingClientRect();
+      // Saved wide columns (or a narrow pane) must not pin over all neighboring cells.
+      const pinnedWidth = [...head.querySelectorAll<HTMLElement>('.task-table-pinned-column')]
+        .reduce((sum, cell) => sum + cell.getBoundingClientRect().width, 0);
+      port.toggleAttribute('data-task-table-unpinned', port.clientWidth > 0 && pinnedWidth > port.clientWidth - 96);
       // Remove our previous translation from the measured rectangle. Native sticky positioning
       // still handles an explicitly height-constrained scrollport without a second offset.
       const naturalTop = headRect.top - appliedOffset;
@@ -52,6 +56,7 @@ export function useStickyTaskTableHeader() {
       if (frame !== null) window.cancelAnimationFrame(frame);
       head.style.translate = '';
       head.removeAttribute('data-task-table-header-stuck');
+      port.removeAttribute('data-task-table-unpinned');
     };
   }, []);
 

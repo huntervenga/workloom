@@ -125,6 +125,7 @@ function ProjectTasks({ project, tasks, members }: { project: ProjectDto; tasks:
       : sections.isError ? <QueryErrorState subject="tasks" error={sections.error} retrying={sections.isFetching} onRetry={() => void sections.refetch()} />
       : statuses.isPending || sections.isPending ? <Loading />
       : <TaskTable tasks={tasks} sections={sections.data} statuses={statuses.data} members={members} caption={t('tags.projectTasks', { name: project.name })}
+        layoutScope={{ actorId, workspaceId: workspace.id, projectId: project.id }}
         partial showLegacySummary={false} columnPreset="expanded"
         onOpenTask={id => void navigate(`/w/${workspace.id}/projects/${project.id}?task=${id}`)}
         onCreateTask={() => undefined} onCreateChild={() => undefined} />}

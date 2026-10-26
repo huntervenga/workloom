@@ -244,6 +244,10 @@
     "issueAfter": "Due after the project ends",
     "issueMissingOpen": "No due date — period reports cannot count this task"
   },
+  "resize": {
+    "label": "Resize {{name}} column",
+    "hint": "Drag to resize. Double-click or press Delete to reset. Arrow keys adjust the width."
+  },
   "columnMenu": {
     "trigger": "Add or show columns",
     "create": "Create field",
