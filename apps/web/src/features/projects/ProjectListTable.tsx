@@ -1,10 +1,10 @@
 import type { ProjectDto } from '@workloom/contracts';
 import { Badge, Button } from '@workloom/ui';
 import { ArrowDown, ArrowUp, ArrowUpDown, FolderKanban, Pencil } from 'lucide-react';
-import { useState } from 'react';
 import { useTranslation } from '../../i18n';
+import { useCurrentSearchParams } from '../../lib/useCurrentSearchParams';
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
-import { sortProjects, type ProjectSort, type ProjectSortField } from './order';
+import { readProjectSort, sortProjects, type ProjectSortField } from './order';
 import { RenameProjectDialog } from './ProjectDialogs';
 
 interface ProjectListTableProps {
@@ -18,7 +18,8 @@ interface ProjectListTableProps {
 
 export function ProjectListTable({ projects, actorId, workspaceId, timeZone, canEdit, onRenamed }: ProjectListTableProps) {
   const { t, locale, formatDate } = useTranslation();
-  const [sort, setSort] = useState<ProjectSort>({ field: 'name', direction: 'asc' });
+  const [searchParams, setSearchParams] = useCurrentSearchParams();
+  const sort = readProjectSort(searchParams);
   const columns: { field: ProjectSortField; label: string }[] = [
     { field: 'name', label: t('projects.list.name') },
     { field: 'createdAt', label: t('projects.list.created') },
@@ -27,12 +28,16 @@ export function ProjectListTable({ projects, actorId, workspaceId, timeZone, can
     { field: 'endDate', label: t('projects.list.endDate') },
     { field: 'status', label: t('projects.list.status') },
   ];
-  const changeSort = (field: ProjectSortField) => setSort(current => ({
-    field,
-    direction: current.field === field
+  const changeSort = (field: ProjectSortField) => setSearchParams(before => {
+    const current = readProjectSort(before);
+    const next = new URLSearchParams(before);
+    const direction = current.field === field
       ? current.direction === 'asc' ? 'desc' : 'asc'
-      : field === 'createdAt' || field === 'updatedAt' ? 'desc' : 'asc',
-  }));
+      : field === 'createdAt' || field === 'updatedAt' ? 'desc' : 'asc';
+    next.set('sort', field);
+    next.set('direction', direction);
+    return next;
+  }, { preventScrollReset: true });
   const timestamp = (value: string) => {
     const title = formatDate(value, { dateStyle: 'full', timeStyle: 'long', timeZone });
     return <time dateTime={value} title={title}>{formatDate(value, { dateStyle: 'medium', timeZone })}</time>;

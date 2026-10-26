@@ -5,10 +5,24 @@ export function orderProjects(projects: readonly ProjectDto[]): ProjectDto[] {
   return [...projects.filter((project) => !project.archivedAt), ...projects.filter((project) => project.archivedAt)];
 }
 
-export type ProjectSortField = 'name' | 'createdAt' | 'updatedAt' | 'startDate' | 'endDate' | 'status';
+const PROJECT_SORT_FIELDS = ['name', 'createdAt', 'updatedAt', 'startDate', 'endDate', 'status'] as const;
+export type ProjectSortField = typeof PROJECT_SORT_FIELDS[number];
 export interface ProjectSort {
   field: ProjectSortField;
   direction: 'asc' | 'desc';
+}
+
+/** The URL owns the view; old links and unsupported values fall back without rewriting history. */
+export function readProjectSort(params: URLSearchParams): ProjectSort {
+  const requested = params.get('sort') ?? 'name';
+  const field = PROJECT_SORT_FIELDS.find(candidate => candidate === requested);
+  if (field === undefined) return { field: 'name', direction: 'asc' };
+  const direction = params.get('direction');
+  return {
+    field,
+    direction: direction === 'asc' || direction === 'desc' ? direction
+      : field === 'createdAt' || field === 'updatedAt' ? 'desc' : 'asc',
+  };
 }
 
 function sortValue(project: ProjectDto, field: ProjectSortField): string | number | null {
