@@ -111,6 +111,8 @@ Code conventions that are enforced by lint: no inline `eslint-disable` comments,
 
 The hosted setup is one Railway service (`@workloom/api`) with a Railway PostgreSQL database, a custom domain behind Cloudflare, and the shared Auth service for sign-in. The image is built from the root `Dockerfile`; `railway.json` holds the service settings.
 
+Railway runs `node scripts/hosted-migrate.mjs --apply` before each deployment. It discovers pending migrations from the built image, so new migrations need no count/hash edits in the deployment config. Already applied migrations are skipped; changed history, an older image or a failed migration stops the deployment. The API itself never migrates at startup.
+
 - Step-by-step guide (variables, domain, Auth origin, migrations, rollback): [docs/124](docs/124-railway-cloudflare-deploy.md)
 - Moving a local database to the hosted one (dump and restore): [docs/125](docs/125-data-transfer-to-hosted.md)
 - Hosted runtime preparation notes: [docs/85](docs/85-hosted-runtime-preparation.md)
