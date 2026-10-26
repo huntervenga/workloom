@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { renderFieldUi } from '../fields/test/fixtures';
 import { alpha, alphaMembers, anna, project } from '../../test/fakeApi';
@@ -98,7 +98,8 @@ describe('saved task pane autosave', () => {
     expect(bodyOf(writes(ui.calls)[1])).toEqual({ expectedRevision: task.revision + 1, description: 'Second field' });
   });
 
-  it('flushes the latest text on Escape close behind a held save and clears protection after both acknowledgments', async () => {
+  it.each(['Escape', 'outside click'])('flushes the latest text on %s behind a held save and clears protection after both acknowledgments', async dismissal => {
+    if (dismissal === 'outside click') vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('1280'), media: query, onchange: null, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => true }));
     const first = heldAnswer(), second = heldAnswer();
     let attempts = 0;
     const ui = setup({ [`PATCH ${rootPath}/tasks/${task.id}`]: () => ++attempts === 1 ? first.promise : second.promise });
@@ -107,10 +108,12 @@ describe('saved task pane autosave', () => {
     fireEvent.blur(name);
     await waitFor(() => expect(writes(ui.calls)).toHaveLength(1));
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Latest description' } });
-    // No synthetic blur: pane Close/Escape itself commits the current text.
-    await ui.user.keyboard('{Escape}');
+    // No synthetic blur: every pane close must flush the current text.
+    if (dismissal === 'outside click') await ui.user.click(screen.getByLabelText('Search tasks'));
+    else await ui.user.keyboard('{Escape}');
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(unload()).toBe(true);
+    expect(new URLSearchParams(ui.router.state.location.search).has('task')).toBe(false);
     await act(async () => first.release(ok({ ...task, title: 'Held title', revision: task.revision + 1 })));
     await waitFor(() => expect(writes(ui.calls)).toHaveLength(2));
     expect(bodyOf(writes(ui.calls)[1])).toEqual({ expectedRevision: task.revision + 1, description: 'Latest description' });

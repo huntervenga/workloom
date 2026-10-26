@@ -407,7 +407,7 @@ describe('selection Escape beside the desktop task pane', () => {
 
 describe('neighboring table edits beside an existing desktop task pane', () => {
   const desktop = () => vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('1280'), media: query, onchange: null, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => true }));
-  it('keeps the same open task pane while a neighboring assignee edit saves only that neighbor', async () => {
+  it('closes the task pane while a neighboring assignee edit saves only that neighbor', async () => {
     desktop();
     const { calls } = installFakeApi(routes(rows => ({ [`PATCH ${rootPath}/tasks/${first.id}`]: request => ok(rows.current[0] = { ...first, responsibleMembershipId: (request.body as { responsibleMembershipId: string }).responsibleMembershipId, revision: first.revision + 1 }) })));
     const { user } = renderApp(tablePath);
@@ -415,15 +415,15 @@ describe('neighboring table edits beside an existing desktop task pane', () => {
     const pane = await screen.findByRole('dialog', { name: third.title });
     expect(pane).toHaveAttribute('data-task-panel');
     await user.click(cell(/assignee/, first));
-    expect(screen.getByRole('dialog', { name: third.title })).toBe(pane);
+    expect(screen.queryByRole('dialog', { name: third.title })).not.toBeInTheDocument();
     await choose(user, 'Assignee', NEXT.displayName);
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
     expect(writes(calls)[0]).toMatchObject({ method: 'PATCH', path: `${rootPath}/tasks/${first.id}`, body: { expectedRevision: first.revision, responsibleMembershipId: NEXT.id } });
-    expect(screen.getByRole('dialog', { name: third.title })).toBe(pane);
-    expect(pane).toBeInTheDocument(); expect(bulkWrites(calls)).toHaveLength(0);
+    expect(screen.queryByRole('dialog', { name: third.title })).not.toBeInTheDocument();
+    expect(pane).not.toBeInTheDocument(); expect(bulkWrites(calls)).toHaveLength(0);
   });
 
-  it('keeps the same pane when a neighboring custom-value editor applies its captured selection', async () => {
+  it('closes the pane when a neighboring custom-value editor applies its captured selection', async () => {
     desktop();
     const definition = { ...fieldFixture('Score', 'number'), projectId: PROJECT_ID, revision: 4 };
     const { calls } = installFakeApi(routes(rows => ({
@@ -437,13 +437,13 @@ describe('neighboring table edits beside an existing desktop task pane', () => {
     const pane = await screen.findByRole('dialog', { name: third.title });
     await user.click(screen.getByRole('button', { name: `Edit Score for ${first.title}` }));
     const editor = screen.getByRole('textbox', { name: `Edit Score for ${first.title}` }).closest('[data-inline-field-cell]') as HTMLElement;
-    expect(pane).toBeInTheDocument();
+    expect(pane).not.toBeInTheDocument();
     await user.click(within(editor).getByLabelText(`Edit Score for ${first.title}`));
     fireEvent.change(within(editor).getByLabelText(`Edit Score for ${first.title}`), { target: { value: '0' } });
     await user.tab();
     await screen.findByText('Saved 2 selected tasks.');
     await waitFor(() => expect(screen.queryByRole('dialog', { name: `Edit Score for ${first.title}` })).not.toBeInTheDocument());
-    expect(screen.getByRole('dialog', { name: third.title })).toBe(pane);
+    expect(screen.queryByRole('dialog', { name: third.title })).not.toBeInTheDocument();
     expect(writes(calls)).toHaveLength(1); expect(bulkWrites(calls)).toHaveLength(1);
     expect(bulkWrites(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, includeFieldValueAck: true, tasks: both.map(target => ({ ...target, expectedFieldValueRevision: 0 })), changes: { customField: { fieldId: definition.id, expectedDefinitionRevision: 4, value: { type: 'number', value: 0 } } } });
   });

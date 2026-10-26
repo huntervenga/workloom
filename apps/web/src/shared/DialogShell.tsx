@@ -111,6 +111,7 @@ export function DialogShell({ title, description, trigger, open, onOpenChange, v
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 bg-slate-900/30" style={{ zIndex: overlayZ }} />
           <Dialog.Content
+            aria-modal="true"
             data-task-panel={variant === 'task-drawer' ? '' : undefined}
             className={`${contentClasses[variant === 'task-drawer' ? 'drawer' : variant]}${variant === 'task-drawer' ? ' task-panel-modal' : ''}`}
             style={{ zIndex: overlayZ + 10 }}

@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import {
   cloneElement,
   useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -58,9 +59,9 @@ export interface TaskPanelFrameProps {
 }
 
 /**
- * A non-modal dialog beside the page: no overlay, focus trap, scroll lock or hidden page, and no
- * document listeners, so the page keeps its own clicks, focus and Escape. Escape inside the pane
- * closes it unless a nested picker or dialog handled it first.
+ * A non-modal dialog beside the page: outside presses close it while leaving the page
+ * interactive. Portalled children belong to the pane, and modal layers handle their own
+ * dismissal. Escape remains scoped to the pane unless a nested picker handled it first.
  */
 export function TaskPanelFrame({ title, description, trigger, open, onOpenChange, zIndex, returnTarget, children }: TaskPanelFrameProps) {
   const titleId = useId();
@@ -75,6 +76,10 @@ export function TaskPanelFrame({ title, description, trigger, open, onOpenChange
   const openerRef = useRef<HTMLElement | null>(null);
   const clickedTriggerRef = useRef<HTMLElement | null>(null);
   const ownsFocusRef = useRef(false);
+  const pointerCloseRef = useRef(false);
+  const ownedPointerEvents = useRef(new WeakSet<Event>());
+  const changeOpenRef = useRef(onOpenChange);
+  changeOpenRef.current = onOpenChange;
   const openAnimationRef = useRef('none');
   const returnTargetRef = useRef(returnTarget);
   returnTargetRef.current = returnTarget;
@@ -91,6 +96,9 @@ export function TaskPanelFrame({ title, description, trigger, open, onOpenChange
     }
   }
 
+  // A different task can open in the same click without a closed render in between.
+  useLayoutEffect(() => { if (open) pointerCloseRef.current = false; });
+
   // Only on opening: a refetch or new children never pull focus back into the pane.
   useLayoutEffect(() => {
     if (!open) return;
@@ -100,13 +108,47 @@ export function TaskPanelFrame({ title, description, trigger, open, onOpenChange
     if (!pane.contains(document.activeElement)) pane.focus({ preventScroll: true });
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const pane = paneRef.current;
+    if (!pane) return;
+    const doc = pane.ownerDocument;
+    let outsidePress: PointerEvent | null = null;
+    const press = (event: PointerEvent) => {
+      outsidePress = null;
+      if (event.button !== 0 || event.isPrimary === false || event.composedPath().includes(pane)) return;
+      // Inspect before a modal's backdrop can dismiss it: one click closes only that layer.
+      const modal = [...doc.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"],[role="alertdialog"][aria-modal="true"]')]
+        .some(dialog => dialog.dataset.state !== 'closed' && !dialog.closest('[hidden],[inert]'));
+      if (!modal) outsidePress = event;
+    };
+    const click = (event: globalThis.MouseEvent) => {
+      const started = outsidePress;
+      outsidePress = null;
+      if (!started || !openRef.current || ownedPointerEvents.current.has(started) || event.composedPath().includes(pane)) return;
+      // Wait for the click so the table cannot move under the pointer between down and up.
+      // Close before the target's click handler, allowing another task to open in one click.
+      pointerCloseRef.current = true;
+      ownsFocusRef.current = false;
+      changeOpenRef.current(false);
+    };
+    doc.addEventListener('pointerdown', press, true);
+    doc.addEventListener('click', click, true);
+    return () => {
+      doc.removeEventListener('pointerdown', press, true);
+      doc.removeEventListener('click', click, true);
+    };
+  }, [open]);
+
   // Focus returns only when the pane had it; work outside the pane keeps its focus.
   useLayoutEffect(() => {
     if (open) return;
     const pane = paneRef.current;
     const owned = ownsFocusRef.current;
     ownsFocusRef.current = false;
-    if (!pane) return;
+    const pointerClose = pointerCloseRef.current;
+    pointerCloseRef.current = false;
+    if (!pane || pointerClose) return;
     const active = document.activeElement;
     if (!pane.contains(active) && !(owned && (active === null || active === document.body))) return;
     const target = [returnTargetRef.current?.(), openerRef.current].find((element) => element?.isConnected && element !== document.body);
@@ -176,6 +218,7 @@ export function TaskPanelFrame({ title, description, trigger, open, onOpenChange
               className="task-panel fixed right-0 flex flex-col overflow-hidden border-l border-line bg-surface px-5 pt-2 pb-5 outline-none sm:px-6 sm:pb-6"
               style={{ zIndex }}
               onKeyDown={onKeyDown}
+              onPointerDownCapture={event => { ownedPointerEvents.current.add(event.nativeEvent); }}
               onFocus={() => {
                 ownsFocusRef.current = true;
               }}

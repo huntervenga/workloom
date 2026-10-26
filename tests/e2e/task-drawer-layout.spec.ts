@@ -205,8 +205,8 @@ async function desktopDrawer(page: Page, info: TestInfo, width: 1440 | 1920, the
   await expectContinuousScroll(page, pane);
   await picture(page, info, `drawer-${width}-${theme}-activity`);
 
-  // Neighbor Assignee edit with the real mouse while the same drawer element stays mounted and open.
-  const original = requireValue((await panel(page).elementHandle()) ?? undefined), neighbor = savedRow(page, b.id);
+  // Clicking a neighboring cell dismisses the pane and still opens that cell in one click.
+  const neighbor = savedRow(page, b.id);
   const assigneeCell = neighbor.locator(`button[data-task-cell="${b.id}:responsibleMembershipId"]`);
   await expect(assigneeCell).toBeAttached();
   await mouseClick(page, assigneeCell);
@@ -214,11 +214,11 @@ async function desktopDrawer(page: Page, info: TestInfo, width: 1440 | 1920, the
   if (await assignee.getAttribute('aria-expanded') !== 'true') await mouseClick(page, assignee);
   await mouseClick(page, page.getByRole('listbox').getByRole('option', { name: f.owner.displayName, exact: true }));
   await expect.poll(async () => byId(await allTasks(f), b.id).responsibleMembershipId).toBe(f.owner.id);
-  await expect(neighbor).toContainText(f.owner.displayName); await expect(drawer(page, a.title)).toBeVisible();
-  expect(await original.evaluate(node => node.isConnected ? node.getAttribute('data-state') : 'detached')).toBe('open');
+  await expect(neighbor).toContainText(f.owner.displayName); await expect(panel(page)).toHaveCount(0);
   expect(writes.commands).toHaveLength(1); expect(requireValue(writes.commands[0]).path).toContain(b.id);
   expect(byId(await allTasks(f), a.id)).toEqual(byId(baseline, a.id));
 
+  await mouseClick(page, openArea(page, a.id)); await expect(pane).toBeVisible();
   const nameInput = taskName(pane);
   await expect(nameInput).toBeEnabled();
   await mouseClick(page, nameInput); await expect(nameInput).toBeFocused();

@@ -1,6 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogShell } from './DialogShell';
 import { TaskPanelFrame } from './TaskPanelFrame';
@@ -118,7 +119,7 @@ afterEach(() => {
 });
 
 describe('task pane on desktop widths', () => {
-  it.each([1440, 1920])('stays open beside the page at %ipx while outside controls remain usable', async (width) => {
+  it.each([1440, 1920])('closes on an outside click at %ipx while letting that control handle the same click', async (width) => {
     stubViewport(width);
     const user = userEvent.setup();
     render(<TaskWorkspace />);
@@ -137,7 +138,7 @@ describe('task pane on desktop widths', () => {
     await user.type(search, 'design');
     expect(search).toHaveValue('design');
     expect(search).toHaveFocus();
-    expect(screen.getByRole('dialog', { name: 'Task details' })).toBeInTheDocument();
+    expect(pane).not.toBeInTheDocument();
   });
 
   it('leaves Escape pressed outside the pane to the page without closing the pane', async () => {
@@ -146,7 +147,7 @@ describe('task pane on desktop widths', () => {
     render(<TaskWorkspace />);
     await screen.findByRole('dialog', { name: 'Task details' });
     const search = screen.getByRole('textbox', { name: 'Search tasks' });
-    await user.click(search);
+    act(() => search.focus());
     expect(screen.getByRole('status')).toHaveTextContent('Selected: Alpha');
 
     await user.keyboard('{Escape}');
@@ -169,20 +170,60 @@ describe('task pane on desktop widths', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Selected: Alpha');
   });
 
-  it('does not pull focus back when the pane closes while the user is working outside it', async () => {
+  it('closes when clicking outside and keeps focus in the clicked field', async () => {
     stubViewport(1440);
     const user = userEvent.setup();
     render(<TaskWorkspace initiallyOpen={false} />);
     await user.click(screen.getByRole('button', { name: 'Open task' }));
     const pane = await screen.findByRole('dialog', { name: 'Task details' });
     await user.click(within(pane).getByRole('textbox', { name: 'Task name' }));
-    await user.click(screen.getByRole('textbox', { name: 'Search tasks' }));
-    expect(screen.getByRole('dialog', { name: 'Task details' })).toBeInTheDocument();
-
-    const dismiss = screen.getByRole('button', { name: 'Dismiss task' });
-    await user.click(dismiss);
+    const search = screen.getByRole('textbox', { name: 'Search tasks' });
+    await user.click(search);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    expect(dismiss).toHaveFocus();
+    expect(search).toHaveFocus();
+  });
+
+  it('closes on blank page space without returning focus to the opener', async () => {
+    stubViewport(1440);
+    const user = userEvent.setup();
+    render(<TaskWorkspace initiallyOpen={false} />);
+    const opener = screen.getByRole('button', { name: 'Open task' });
+    await user.click(opener);
+    await user.click(screen.getByRole('region', { name: 'Task list' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(opener).not.toHaveFocus();
+  });
+
+  it('keeps portalled controls inside the pane even when their press removes them and stops propagation', async () => {
+    function Example() {
+      const [open, setOpen] = useState(true);
+      const [picker, setPicker] = useState(true);
+      return <><button>Outside control</button><TaskPanelFrame title="Task" description="Details" open={open} onOpenChange={setOpen} zIndex={50}>
+        <input aria-label="Task title" />
+        {picker ? createPortal(<button onPointerDown={event => { event.stopPropagation(); setPicker(false); }}>Choose value</button>, document.body) : null}
+      </TaskPanelFrame></>;
+    }
+    const user = userEvent.setup();
+    render(<Example />);
+    const pane = screen.getByRole('dialog', { name: 'Task' });
+    const choice = screen.getByRole('button', { name: 'Choose value' });
+    expect(pane).not.toContainElement(choice);
+    await user.click(choice);
+    expect(choice).not.toBeInTheDocument();
+    expect(pane).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Outside control' }));
+    await waitFor(() => expect(pane).not.toBeInTheDocument());
+  });
+
+  it('dismisses only the nested modal when its backdrop is clicked', async () => {
+    stubViewport(1440);
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
+    render(<TaskWorkspace />);
+    await user.click(screen.getByRole('button', { name: 'Delete task' }));
+    await screen.findByRole('dialog', { name: 'Delete task' });
+    await user.click(document.body);
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Delete task' })).not.toBeInTheDocument());
+    expect(screen.getByRole('dialog', { name: 'Task details' })).toBeInTheDocument();
   });
 
   it('lets an inner picker consume Escape before the pane closes', async () => {
