@@ -165,7 +165,8 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       const separatePackage = oldParent !== null && oldParent.workPackageId !== row.workPackageId;
       const fields = selected.values.filter(value => value.taskId === row.id);
       const created = await createTaskInScope(taskScope, {
-        projectId, title: root && 'title' in input ? input.title : row.title, statusId: row.statusId,
+        // Copies are new work: use the project's first To do status for every copied task.
+        projectId, title: root && 'title' in input ? input.title : row.title, statusId: found(selected.status).id,
         sectionId: section?.id ?? row.sectionId, parentTaskId,
         ...(parentTaskId !== null && separatePackage ? { workScope: 'added_scope' as const } : {}),
         description: input.copy.description ? row.description : '', responsibleMembershipId: input.copy.assignee ? row.responsibleMembershipId : null,

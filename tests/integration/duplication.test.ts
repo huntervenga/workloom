@@ -28,7 +28,7 @@ describe('atomic ordinary duplication on isolated PostgreSQL', () => {
     const names = ['plan_baselines', 'package_baselines', 'period_commitments', 'work_logs', 'work_log_revisions', 'weekly_report_runs', 'generic_report_initial_snapshots', 'task_dependencies', 'task_comments'];
     return Promise.all(names.map(async table => ({ table, rows: await db.sql`select * from ${db.sql(table)} order by 1` })));
   }
-  it('duplicates a complete tree with fresh identities, the source status, opt-in zero/false fields and no historical work', async () => {
+  it('duplicates a complete tree with fresh identities, To do status, opt-in zero/false fields and no historical work', async () => {
     const f = await fixture(), zero = await newField(f.project.id), flag = await newField(f.project.id, 'boolean');
     await fields.setTaskValue(ctx(), f.task.id, zero.id, { expectedRevision: 0, expectedDefinitionRevision: zero.revision, value: { type: 'duration', value: 0 } });
     await fields.setTaskValue(ctx(), f.task.id, flag.id, { expectedRevision: 0, expectedDefinitionRevision: flag.revision, value: { type: 'boolean', value: false } });
@@ -41,7 +41,10 @@ describe('atomic ordinary duplication on isolated PostgreSQL', () => {
     const result = await duplicates.duplicateTask(commandContext, f.task.id, { ...input, expectedSourceVersion: preview.sourceVersion });
     expect(result.taskIds).toHaveLength(3); expect(new Set(result.taskIds).size).toBe(3);
     const created = await Promise.all(result.taskIds.map(id => tasks.getTask(ctx(), id))), root = required(created[0]), detail = required(created[1]), added = required(created[2]);
-    expect(root).toMatchObject({ title: 'New work', description: f.task.description, statusId: f.done.id, responsibleMembershipId: M.teamMemberA, priority: 'high', dueDate: f.task.dueDate, estimateMinutes: null });
+    expect(root).toMatchObject({ title: 'New work', description: f.task.description, statusId: f.todo.id, responsibleMembershipId: M.teamMemberA, priority: 'high', dueDate: f.task.dueDate, estimateMinutes: null });
+    expect(created.every(task => task.statusId === f.todo.id)).toBe(true);
+    expect((await tasks.getTask(ctx(), f.task.id)).statusId).toBe(f.done.id);
+    expect((await tasks.getTask(ctx(), child.id)).statusId).toBe(f.done.id);
     expect(root.workPackageId).not.toBe(f.task.workPackageId); expect(detail.parentTaskId).toBe(root.id); expect(detail.workPackageId).toBe(root.workPackageId); expect(added.parentTaskId).toBe(detail.id); expect(added.workPackageId).not.toBe(root.workPackageId); expect(added.workPackageId).not.toBe(extra.workPackageId); expect(added.estimateMinutes).toBeNull();
     const values = await fields.listTaskValues(ctx(), root.id);
     expect(values.map(value => value.value)).toEqual(expect.arrayContaining([{ type: 'duration', value: 0 }, { type: 'boolean', value: false }])); expect(values.every(value => value.revision === 1)).toBe(true);
@@ -94,6 +97,47 @@ describe('atomic ordinary duplication on isolated PostgreSQL', () => {
     expect(await historical()).toEqual(beforeHistory);
     await rejectUnchanged('CAPABILITY_REQUIRED', () => duplicates.previewSection(ctx(U.memberA), f.section.id, input));
   });
+  it('duplicates a completed task into To do without copying fields required only for completion', async () => {
+    const f = await fixture(), actual = await newField(f.project.id);
+    await fields.setTaskValue(ctx(), f.task.id, actual.id, { expectedRevision: 0, expectedDefinitionRevision: actual.revision, value: { type: 'duration', value: 90 } });
+    const rule: Extract<C.PlanningCheckRuleDto, { kind: 'presence' }> = {
+      id: randomUUID(), name: 'Actual required before completion', enabled: true, kind: 'presence', fieldId: actual.id,
+      color: '#dc2626', severity: 'critical', hierarchy: 'all_tasks', requireBeforeDone: true,
+      filters: { statusGroups: ['done'], tagIds: [], assignee: { kind: 'all' }, dateRange: null },
+    };
+    await checks.setSettings(ctx(), f.project.id, { expectedRevision: 0, config: { enabled: true, rules: [rule] } });
+    const input = { projectId: f.project.id, title: 'Fresh work', copy: { ...copy, subtasks: false } };
+    const preview = await duplicates.previewTask(ctx(), f.task.id, input);
+    const result = await duplicates.duplicateTask(ctx(), f.task.id, { ...input, expectedSourceVersion: preview.sourceVersion });
+    const created = await tasks.getTask(ctx(), required(result.rootTaskId));
+    expect(created.statusId).toBe(f.todo.id);
+    expect(await fields.listTaskValues(ctx(), created.id)).toEqual([]);
+    expect((await tasks.getTask(ctx(), f.task.id)).statusId).toBe(f.done.id);
+    expect((await fields.listTaskValues(ctx(), f.task.id))[0]?.value).toEqual({ type: 'duration', value: 90 });
+    // Completion rules still apply when the newly created work is actually completed.
+    await rejectUnchanged('DOMAIN_VALIDATION_FAILED', () => tasks.updateTask(ctx(), created.id, { expectedRevision: created.revision, statusId: f.done.id }));
+  });
+
+  it('starts all tasks copied with a section in the first To do status regardless of source status or status name', async () => {
+    const f = await fixture(), statuses = await tasks.listStatuses(ctx(), f.project.id);
+    const inProgress = required(statuses.find(status => status.group === 'in_progress'));
+    const cancelled = required(statuses.find(status => status.group === 'cancelled'));
+    const active = await tasks.createTask(ctx(), { projectId: f.project.id, sectionId: f.section.id, title: 'Started', statusId: inProgress.id });
+    const abandoned = await tasks.createTask(ctx(), { projectId: f.project.id, sectionId: f.section.id, title: 'Cancelled', statusId: cancelled.id });
+    const chosenId = randomUUID();
+    // Project statuses are identified by group and order, including custom names and multiple To do columns.
+    await db.sql`update task_statuses set position = position + 1 where workspace_id = ${W.team} and project_id = ${f.project.id}`;
+    await db.sql`insert into task_statuses (id, workspace_id, project_id, name, "group", position, revision)
+      values (${chosenId}, ${W.team}, ${f.project.id}, 'Ready to start', 'todo', 0, 1)`;
+    const input = { name: 'New section work', includeTasks: true, includeSettings: false, copy };
+    const preview = await duplicates.previewSection(ctx(), f.section.id, input);
+    const result = await duplicates.duplicateSection(ctx(), f.section.id, { ...input, expectedSourceVersion: preview.sourceVersion });
+    expect(result.taskIds).toHaveLength(3);
+    const created = await Promise.all(result.taskIds.map(id => tasks.getTask(ctx(), id)));
+    expect(created.every(task => task.statusId === chosenId)).toBe(true);
+    for (const original of [f.task, active, abandoned]) expect((await tasks.getTask(ctx(), original.id)).statusId).toBe(original.statusId);
+  });
+
   it('blocks locked copied values through the mandatory guard without committing a new task', async () => {
     const f = await fixture(), effort = await newField(f.project.id);
     await fields.setTaskValue(ctx(), f.task.id, effort.id, { expectedRevision: 0, expectedDefinitionRevision: effort.revision, value: { type: 'duration', value: 30 } });
