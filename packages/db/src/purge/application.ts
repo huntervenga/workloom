@@ -102,6 +102,13 @@ async function purge(tx: WorkloomExecutor, root: { table: string; ids: readonly 
     if (name !== undefined) for (const row of await run(`select id::text id from ${table} where ctid in (select row_id from ${name})`)) removedIds.push(String(row['id']));
   }
 
+  // The registry has no FK, so it survives the closure. Record deletion before any rows disappear.
+  const attachments = temp.get('public.task_attachments');
+  if (attachments !== undefined) await run(`update public.attachment_storage_objects o
+    set cleanup_at = case when o.cleanup_at is null then clock_timestamp()
+      else greatest(clock_timestamp(), o.write_deadline + interval '5 minutes') end
+    where exists (select 1 from public.task_attachments a where a.id = o.id
+      and a.ctid in (select row_id from ${attachments}))`);
   const switched: { table: string; trigger: string }[] = [];
   for (const table of doomed) {
     const triggers = await run(`select tgname from pg_trigger where tgrelid = '${table}'::regclass and not tgisinternal and tgenabled = 'O'`);

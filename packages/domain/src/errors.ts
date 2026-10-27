@@ -5,6 +5,7 @@
  * Codes follow docs/04-api-and-integrations.md section 5.
  */
 export const DOMAIN_ERROR_CODES = [
+  'ATTACHMENT_LIMIT_REACHED',
   'VALIDATION_FAILED',
   'LEAVE_CALCULATION_LIMIT',
   'UNAUTHENTICATED',

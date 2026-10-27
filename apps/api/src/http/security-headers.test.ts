@@ -15,10 +15,21 @@ describe('security headers', () => {
       expect(inlineScriptHashes(dir)).toEqual([`'sha256-${createHash('sha256').update(inline).digest('base64')}'`]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+  it('hashes the browser-normalized script text when HTML uses Windows line endings', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'csp-crlf-'));
+    try {
+      writeFileSync(join(dir, 'index.html'), '<script>\r\nwindow.x = 1;\rwindow.y = 2;\r\n</script>');
+      const browserText = '\nwindow.x = 1;\nwindow.y = 2;\n';
+      expect(inlineScriptHashes(dir)).toEqual([`'sha256-${createHash('sha256').update(browserText).digest('base64')}'`]);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
   it('forbids framing, foreign scripts and plugins, and keeps connections on the same origin', () => {
     const policy = documentPolicy(["'sha256-abc'"]);
     expect(policy).toContain("script-src 'self' 'sha256-abc'");
     for (const part of ["frame-ancestors 'none'", "object-src 'none'", "connect-src 'self'", "base-uri 'self'"]) expect(policy).toContain(part);
+    expect(policy).toContain("media-src 'self' https:");
+    expect(policy).not.toContain('http://');
+    expect(documentPolicy([], true)).toContain("media-src 'self' https: http://127.0.0.1:* http://localhost:*");
     expect(policy).not.toContain('unsafe-eval');
     expect(policy).not.toMatch(/script-src[^;]*unsafe-inline/);
   });

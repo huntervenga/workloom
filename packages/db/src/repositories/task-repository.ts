@@ -16,6 +16,7 @@ import {
   projectRules,
   projectTaskDefaults,
   sections,
+  taskAttachments,
   taskParticipants,
   taskStatuses,
   taskTags,
@@ -235,13 +236,19 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
 
   type TaskRow = Awaited<ReturnType<typeof selectTasks>>[number];
 
-  /** Batch-loads participants (active and inactive) and tags; two queries per chunk, not per task. */
+  /** Batch-loads task decoration, including attachment counts; fixed query count per chunk, not per task. */
   async function projectTasks(workspaceId: string, rows: readonly TaskRow[]): Promise<TaskDto[]> {
     const participantsByTask = new Map<string, TaskParticipantDto[]>();
     const tagsByTask = new Map<string, TagDto[]>();
+    const attachmentCounts = new Map<string, number>();
     const meetingsByTask=new Map<string,string>();
 
     for (const ids of chunks(rows.map((row) => row.id))) {
+      const counts = await db.select({ taskId: taskAttachments.taskId, count: sql<number>`count(*)::integer` })
+        .from(taskAttachments)
+        .where(and(eq(taskAttachments.workspaceId, workspaceId), inArray(taskAttachments.taskId, ids), eq(taskAttachments.state, 'ready')))
+        .groupBy(taskAttachments.taskId);
+      for (const row of counts) attachmentCounts.set(row.taskId, row.count);
       const meetingRows=await db.select({id:meetings.id,taskId:meetings.taskId}).from(meetings).where(and(eq(meetings.workspaceId,workspaceId),inArray(meetings.taskId,ids)));
       for(const m of meetingRows)meetingsByTask.set(m.taskId,m.id);
       const participantRows = await db
@@ -296,6 +303,7 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
       dueDate: row.dueDate,
       priority: row.priority,
       tags: tagsByTask.get(row.id) ?? [],
+      attachmentCount: attachmentCounts.get(row.id) ?? 0,
       estimateMinutes: row.estimateMinutes,
       revision: row.revision,
       position: row.position,

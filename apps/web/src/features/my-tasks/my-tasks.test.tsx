@@ -15,10 +15,13 @@ const page = (items: MyTaskDto[], nextCursor: string | null = null) => json(200,
 describe('personal task inbox', () => {
   it('loads cross-project rows directly and opens the existing project/task route without translating persisted content', async () => {
     const first = item(1, 'Задача клиента');
+    first.task.attachmentCount = 2;
     const { calls } = installFakeApi({ ...singleActorRoutes(anna, [alpha], { [alpha.id]: alphaMembers }), [`GET ${path}`]: () => page([first, item(2)]) });
     renderApp(`/w/${alpha.id}/my-tasks`);
     expect(await screen.findByRole('heading', { name: 'My tasks' })).toBeInTheDocument();
     const link = await screen.findByRole('link', { name: 'Open task “Задача клиента”' });
+    expect(screen.getByRole('img', { name: '2 attachments' })).toBeVisible();
+    expect(screen.getAllByRole('img')).toHaveLength(1);
     expect(link).toHaveAttribute('href', `/w/${alpha.id}/projects/${first.task.projectId}?task=${first.task.id}`);
     expect(screen.getAllByText('В работе')).toHaveLength(2);
     expect(screen.getByText('Project 1')).toBeInTheDocument();

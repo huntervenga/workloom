@@ -1,3 +1,4 @@
+import { TaskAttachments } from '../attachments/TaskAttachments';
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 
@@ -768,6 +769,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           </p>
         ) : null}
       </form>
+      <TaskAttachments actorId={actorId} workspaceId={workspace.id} taskId={taskId} writable={canEdit} members={members} />
       {subtasks}
       {props.activity}
     </div>

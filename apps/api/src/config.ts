@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { loadAttachmentConfig, type AttachmentConfig } from './attachments/config.js';
 
 import {
   DEFAULT_DEV_ACTOR_ID,
@@ -63,6 +64,7 @@ export interface SharedAuthConfig {
 }
 
 export interface AppConfig {
+  readonly attachments?: AttachmentConfig;
   readonly appEnv: 'local' | 'staging' | 'production';
   readonly authMode: 'dev' | 'shared';
   /** Present exactly when authMode is 'shared'. */
@@ -391,6 +393,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     appOrigins,
     logLevel,
     serveWeb: nodeEnv === 'production',
+    attachments: loadAttachmentConfig(env, appEnv !== 'local'),
     trustProxyHops,
   };
 }

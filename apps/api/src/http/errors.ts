@@ -5,6 +5,7 @@ import { RECURRENCE_ERROR_HTTP_STATUS, type ErrorResponseDto } from '@workloom/c
 export const DOMAIN_ERROR_STATUS: Readonly<Record<DomainErrorCode, number>> = {
   // Contract-owned controlled 409 MATERIALIZATION_REQUIRED; recovery goes through recurrence-readiness.
   ...RECURRENCE_ERROR_HTTP_STATUS,
+  ATTACHMENT_LIMIT_REACHED: 409,
   VALIDATION_FAILED: 400,
   LEAVE_CALCULATION_LIMIT: 422,
   UNAUTHENTICATED: 401,

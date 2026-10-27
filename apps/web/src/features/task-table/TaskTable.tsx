@@ -1,5 +1,6 @@
 import { isTabKeyDown, isTabWalkBackward, openOnTabFromSameRow } from './tabWalk';
 import { TagBadge } from '../tasks/TagBadge';
+import { AttachmentCount } from '../attachments/AttachmentCount';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { TaskDragPreview } from './TaskDragPreview';
 import { selectTaskRows, type SelectionModifiers } from './taskSelection';
@@ -577,6 +578,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   // Secondary title information stays on the same single line and truncates before the title does.
   const chip = (tone: 'muted' | 'warning', label: ReactNode, title?: string) => <span title={title} className={cn('inline-flex min-w-0 max-w-40 shrink-0 items-center rounded-full px-1.5 py-px text-[11px] font-medium ring-1 ring-inset', tone === 'warning' ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-canvas text-muted ring-line')}><span className="truncate">{label}</span></span>;
   const meta = <>
+    <AttachmentCount count={task.attachmentCount} />
     {context ? <span className="min-w-0 shrink truncate text-xs text-muted" title={context}>{context}</span> : null}
     {childCount > 0 ? <span className="shrink-0 text-xs text-muted tabular-nums" title={childCountText}><span aria-hidden="true">{childCount}</span><span className="sr-only">{childCountText}</span></span> : null}
     {node.detachedReason === 'parent_not_loaded' ? chip('muted', <>{t('taskTable.taskTable.subtask3')}<span className="sr-only">{t('taskTable.taskTable.parentTaskNotLoaded')}</span></>, t('taskTable.taskTable.parentTaskIsOutsideTheLoadedSet')) : null}

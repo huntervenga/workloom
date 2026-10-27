@@ -25,6 +25,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1157.0",
+    "@aws-sdk/s3-request-presigner": "3.1157.0",
     "@fastify/static": "^10.1.6",
     "@modelcontextprotocol/server": "2.3.1",
     "@workloom/contracts": "*",

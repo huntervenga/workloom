@@ -2,7 +2,7 @@ import type {SharedActivityDto,SharedActivityContributionDto,SharedActivityHisto
 import type {PlanningCheckConfigDto,PlanningCheckSettingsDto,PlanningCheckCheckpointDto} from '@workloom/contracts';
 import type {LeaveSettingsDto,LeaveProfileDto,LeaveRequestDto,LeaveAdjustmentDto} from '@workloom/contracts';
 import type { GenericReportConfig, GenericReportDefinitionDto, GenericInitialSnapshotDto, GenericReportRowDto, GenericReportMeasure, GenericHeaderWidgetRuleDto, TaskFieldValueDto } from '@workloom/contracts';
-import type { UserPreferences, ColumnChoice, CutoffWorkerOutcome, ProjectRulesConfig, TaskDefaultsConfig } from '@workloom/contracts';
+import type { TaskAttachmentDto, UserPreferences, ColumnChoice, CutoffWorkerOutcome, ProjectRulesConfig, TaskDefaultsConfig } from '@workloom/contracts';
 /**
  * Drizzle description of the P0, P1a and P1b schema. The executable source of truth is the
  * reviewed SQL in ../migrations; keep both in sync (drizzle-kit generate must
@@ -1787,4 +1787,39 @@ export const teamPendingMembers=pgTable('team_pending_members',{
  check('team_pending_members_name',sql`char_length(btrim(${t.firstName})) between 1 and 100 and char_length(${t.lastName})<=100 and char_length(concat_ws(' ',${t.firstName},nullif(${t.lastName},'')))<=200`),
  check('team_pending_members_email',sql`${t.email}=lower(btrim(${t.email})) and char_length(${t.email}) between 3 and 254`),
  check('team_pending_members_claim',sql`(${t.claimedAt} is null)=(${t.claimedByUserId} is null)`),
+]);
+
+/** Optional task attachments. The durable storage registry intentionally has no foreign keys. */
+export const taskAttachments = pgTable('task_attachments', {
+  id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull(), taskId: uuid('task_id').notNull(),
+  uploadedByUserId: uuid('uploaded_by_user_id').notNull().references(() => users.id),
+  fileName: text('file_name').notNull(), sizeBytes: integer('size_bytes').notNull(),
+  state: text('state').$type<TaskAttachmentDto['state']>().notNull(),
+  slot: smallint('slot').notNull(), revision: integer('revision').notNull(),
+  storageId: text('storage_id').notNull(), objectKey: text('object_key').notNull().unique(),
+  versionId: text('version_id'), checksum: text('checksum'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  uploadExpiresAt: timestamp('upload_expires_at', { withTimezone: true }).notNull(),
+}, t => [
+  foreignKey({ name: 'task_attachments_task_fk', columns: [t.workspaceId, t.taskId], foreignColumns: [tasks.workspaceId, tasks.id] }),
+  uniqueIndex('task_attachments_slot').on(t.workspaceId, t.taskId, t.slot).where(sql`${t.state} in ('pending','uploading','ready')`),
+  index('task_attachments_task').on(t.workspaceId, t.taskId),
+  check('task_attachments_name', sql`char_length(${t.fileName}) between 1 and 240 and ${t.fileName} !~ '[[:cntrl:]/\\\\]'`),
+  check('task_attachments_size', sql`${t.sizeBytes} between 0 and 50000000`),
+  check('task_attachments_slot_range', sql`${t.slot} between 1 and 5`),
+  check('task_attachments_state', sql`${t.state} in ('pending','uploading','ready','failed','expired','deleted')`),
+  check('task_attachments_revision', sql`${t.revision} >= 1`),
+  check('task_attachments_storage', sql`${t.storageId} ~ '^[a-f0-9]{64}$'`),
+  check('task_attachments_checksum', sql`${t.checksum} is null or ${t.checksum} ~ '^[a-f0-9]{64}$'`),
+  check('task_attachments_ready', sql`${t.state} <> 'ready' or ${t.checksum} is not null`),
+  check('task_attachments_time', sql`isfinite(${t.createdAt}) and isfinite(${t.uploadExpiresAt}) and ${t.uploadExpiresAt} > ${t.createdAt}`),
+]);
+export const attachmentStorageObjects = pgTable('attachment_storage_objects', {
+  id: uuid('id').primaryKey(), workspaceId: uuid('workspace_id').notNull(), taskId: uuid('task_id').notNull(),
+  storageId: text('storage_id').notNull(), objectKey: text('object_key').notNull().unique(), versionId: text('version_id'),
+  writeDeadline: timestamp('write_deadline', { withTimezone: true }).notNull(),
+  cleanupAt: timestamp('cleanup_at', { withTimezone: true }), leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  leaseToken: uuid('lease_token'), cleanupAttempts: integer('cleanup_attempts').notNull().default(0), lastError: text('last_error'),
+}, t => [index('attachment_objects_cleanup').on(t.storageId, t.cleanupAt), index('attachment_objects_task').on(t.workspaceId, t.taskId),
+  check('attachment_objects_storage', sql`${t.storageId} ~ '^[a-f0-9]{64}$'`), check('attachment_objects_attempts', sql`${t.cleanupAttempts} >= 0`),
 ]);

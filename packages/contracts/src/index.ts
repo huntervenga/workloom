@@ -69,3 +69,5 @@ export * from './shared-activities.js';
 export * from './leave-warnings.js';
 
 export * from './user-settings.js';
+
+export * from './attachments.js';

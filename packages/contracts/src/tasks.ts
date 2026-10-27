@@ -185,6 +185,8 @@ export const taskSchema = z.object({
   dueDate: calendarDateSchema.nullable(),
   priority: taskPrioritySchema,
   tags: z.array(tagSchema),
+  /** Completed attachments only. No default: old cached command/snapshot JSON stays unchanged. */
+  attachmentCount: z.number().int().min(0).max(5).optional(),
   /**
    * Current estimate of the shared work package: the whole team's budget, shown in the UI as
    * «Оценка задачи». Totals must count each `workPackageId` once. Not a baseline and not a

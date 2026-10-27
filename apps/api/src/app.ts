@@ -1,3 +1,6 @@
+import { createAttachmentStore, type AttachmentStore } from '@workloom/db';
+import { createAttachmentStorage, type AttachmentStorage } from './attachments/storage.js';
+import { registerAttachmentRoutes, registerAttachmentMaintenance } from './http/attachment-routes.js';
 import {hostedAsanaImportEnabled,managedLocalAsanaTarget,registerLocalAsanaImportRoutes,type LocalAsanaImporter} from './http/local-asana-import-routes.js';
 import { registerWorkspaceSlugRoutes } from './http/workspace-slug-routes.js';
 import { createWorkspaceSlugApplication } from '@workloom/db';
@@ -131,6 +134,8 @@ export interface AppDependencies {
   /** Authorized current-workspace head; uses one read-only snapshot. */
   readonly workspaceChangeHeadApplication?: WorkspaceChangeHeadApplication;
   readonly taskCommentsApplication?: TaskCommentsApplication;
+  readonly attachmentStore?: AttachmentStore;
+  readonly attachmentStorage?: AttachmentStorage;
   readonly personalTablePreferenceApplication?: PersonalTablePreferenceApplication;
   /**
    * Overrides the custom field service built from the database (HTTP tests). Without it and
@@ -412,6 +417,12 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     registerSharedAuthRoutes(app, { service: sharedAuth, ...(config.sharedAuth && teamApplication ? { invitationHandoff: createInvitationHandoff(config.sharedAuth, dependencies.clock), team: teamApplication } : {}) });
   }
   registerApiRoutes(app, routeDeps);
+  const attachmentStore = dependencies.attachmentStore ?? (database ? createAttachmentStore(database) : undefined);
+  const attachmentStorage = config.attachments?.enabled
+    ? dependencies.attachmentStorage ?? createAttachmentStorage(config.attachments.settings) : undefined;
+  registerAttachmentRoutes(app, { identity, config: config.attachments, store: attachmentStore, storage: attachmentStorage });
+  if (attachmentStore && attachmentStorage) registerAttachmentMaintenance(app, attachmentStore, attachmentStorage);
+  else if (attachmentStorage) app.addHook('onClose', async () => { attachmentStorage.close(); });
   if (userSettingsApplication) registerUserSettingsRoutes(app, { identity, settings: userSettingsApplication });
   if(managedLocalAsanaTarget(config.appEnv,config.authMode,config.database.url)||hostedAsanaImportEnabled(config.appEnv,config.authMode)){
     let importer=dependencies.localAsanaImporter;

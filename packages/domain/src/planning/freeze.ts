@@ -141,7 +141,7 @@ function never(value:never):never {throw new Error(`Unhandled planning mutation 
 export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<PlanningTools,'newId'|'digest'>):PlanningMutationGuard {
   return {async check(intent:PlanningMutationIntent) {
     // Comments and own display preferences are explicitly inert: no planning/census work.
-    if(intent.family==='comment'||intent.family==='table_preference'||intent.family==='cutoff'||intent.family==='generic_report'||intent.family==='planning_check'||intent.family==='task_defaults'||intent.family==='project_rules'||intent.family==='summary_template')return null;
+    if(intent.family==='attachment'||intent.family==='comment'||intent.family==='table_preference'||intent.family==='cutoff'||intent.family==='generic_report'||intent.family==='planning_check'||intent.family==='task_defaults'||intent.family==='project_rules'||intent.family==='summary_template')return null;
     const repo=scope.repository,ws=scope.context.workspaceId,census=requireCensus(scope);
     // materializePeriod and authorizeGeneration bypass every due-freeze loop; their handlers create only approved
     // target-period census or replace grant metadata, and never depend on a revoked old grant.
