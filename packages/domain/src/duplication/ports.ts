@@ -1,3 +1,4 @@
+import type { AttachmentRecord } from '../attachments/ports.js';
 import type {SummaryTemplateRepository} from '../summary-templates/ports.js';
 import type * as C from '@workloom/contracts';
 import type { CommandContext } from '../access/context.js';
@@ -6,7 +7,16 @@ import type { PlanningApplicationWriteScope } from '../planning/ports.js';
 import type { GenericReportRepository } from '../generic-reports/ports.js';
 import type { PlanningCheckRepository } from '../planning-checks/ports.js';
 import type { TaskProjectPlacementRepository } from '../tasks/project-placement-ports.js';
+export interface PreparedAttachmentCopy {
+  readonly sourceId: string;
+  readonly row: AttachmentRecord;
+}
+export interface DuplicationAttachments {
+  listReady(workspaceId: string, taskIds: readonly string[]): Promise<AttachmentRecord[]>;
+  adopt(row: AttachmentRecord): Promise<void>;
+}
 export interface DuplicationScope extends PlanningApplicationWriteScope {
+  readonly attachments: DuplicationAttachments;
   readonly templates?:SummaryTemplateRepository;
   sharedActivityTaskIds?(taskIds:readonly string[]):Promise<string[]>;
   readonly reports: GenericReportRepository;
@@ -14,6 +24,10 @@ export interface DuplicationScope extends PlanningApplicationWriteScope {
   readonly placements: TaskProjectPlacementRepository;
 }
 export interface DuplicationDependencies {
+  readonly attachmentCopies?: {
+    readonly storageId: string;
+    prepare(context: CommandContext, sources: readonly AttachmentRecord[]): Promise<PreparedAttachmentCopy[]>;
+  };
   read<T>(ctx: CommandContext, capability: Capability, work: (scope: DuplicationScope) => Promise<T>): Promise<T>;
   write<T>(ctx: CommandContext, capability: Capability, work: (scope: DuplicationScope) => Promise<T>): Promise<T>;
   newId(): string;

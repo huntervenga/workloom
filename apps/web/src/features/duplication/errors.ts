@@ -13,6 +13,7 @@ export function duplicationErrorText(error:unknown):string {
   case'too_many_tasks':return t('duplication.errors.limit');
   case'source_project_too_large':return t('duplication.errors.projectLimit');
   case'field_unavailable':return t('duplication.errors.fieldUnavailable');
+  case'attachment_storage_unavailable':return t('duplication.errors.attachmentStorage');
   case'todo_status_missing':return t('duplication.errors.todoMissing');
   case'archived_task':case'archived_source':return t('duplication.errors.archived');
   case'invalid_task_tree':return t('duplication.errors.hierarchy');

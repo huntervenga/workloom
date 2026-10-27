@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
 import { type Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { MAX_ATTACHMENT_BYTES, attachmentMedia, type AttachmentDownload, type AttachmentMedia, type AttachmentPreview } from '@workloom/contracts';
 import { temporarilyUnavailableError, type AttachmentRecord } from '@workloom/domain';
+import type { AttachmentCopyStorage } from '@workloom/db';
 import { HttpError } from '../http/errors.js';
 import type { AttachmentS3Settings } from './config.js';
 
-export interface AttachmentStorage {
+export interface AttachmentStorage extends AttachmentCopyStorage {
   readonly storageId: string;
   upload(row: AttachmentRecord, source: Readable, signal: AbortSignal): Promise<{ checksum: string; versionId: string | null }>;
   signDownload(row: AttachmentRecord): Promise<AttachmentDownload>;
@@ -97,6 +98,21 @@ export function createAttachmentStorage(settings: AttachmentS3Settings): Attachm
         if (results[0].status !== 'fulfilled' || stored.status !== 'fulfilled' || signal.aborted) throw temporarilyUnavailableError();
         return { checksum: digest.digest('hex'), versionId: stored.value.VersionId ?? null };
       } finally { signal.removeEventListener('abort', abort); }
+    },
+    async copy(source, destination, signal) {
+      if (source.storageId !== settings.storageId || destination.storageId !== settings.storageId
+        || source.state !== 'ready' || source.objectKey === destination.objectKey) throw temporarilyUnavailableError();
+      const path = [value.bucket, ...source.objectKey.split('/')].map(part => encodeURIComponent(part).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)).join('/');
+      try {
+        const result = await client.send(new CopyObjectCommand({ Bucket: value.bucket, Key: destination.objectKey,
+          CopySource: path + (source.versionId ? `?versionId=${encodeURIComponent(source.versionId)}` : ''),
+          MetadataDirective: 'REPLACE', ContentType: 'application/octet-stream',
+          ContentDisposition: downloadDisposition(destination.fileName), CacheControl: 'private, no-store',
+        }), { abortSignal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) });
+        // The SDK detects embedded errors in HTTP 200 copy responses. Require a complete success body too.
+        if (!result.CopyObjectResult?.ETag || signal.aborted) throw temporarilyUnavailableError();
+        return { versionId: result.VersionId ?? null };
+      } catch { throw temporarilyUnavailableError(); }
     },
     signDownload: row => sign(row),
     async signPreview(row) {

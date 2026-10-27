@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { inspect } from 'node:util';
 import { Readable } from 'node:stream';
-import { S3Client, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, CopyObjectCommand, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import type { AttachmentRecord } from '@workloom/domain';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attachmentFeature, loadAttachmentConfig } from './config.js';
@@ -21,6 +21,38 @@ const row = (storageId: string, sizeBytes = 3): AttachmentRecord => ({ id: '1000
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('optional attachment storage', () => {
+  it('copies a source version to an independent key with safe metadata and no file transfer', async () => {
+    const storage = createAttachmentStorage(configured());
+    const source = { ...row(storage.storageId), state: 'ready' as const, objectKey: 'attachments/some file?#.txt', versionId: 'v/a+?=' };
+    const destination = { ...source, objectKey: 'attachments/new-copy', versionId: null };
+    const send = vi.spyOn(S3Client.prototype, 'send').mockImplementation(async command => {
+      expect(command).toBeInstanceOf(CopyObjectCommand);
+      expect((command as CopyObjectCommand).input).toEqual({ Bucket: 'private-files', Key: destination.objectKey,
+        CopySource: 'private-files/attachments/some%20file%3F%23.txt?versionId=v%2Fa%2B%3F%3D',
+        MetadataDirective: 'REPLACE', ContentType: 'application/octet-stream', CacheControl: 'private, no-store',
+        ContentDisposition: downloadDisposition(source.fileName) });
+      return { CopyObjectResult: { ETag: 'copied' }, VersionId: 'new-version' };
+    });
+    try {
+      expect(await storage.copy(source, destination, new AbortController().signal)).toEqual({ versionId: 'new-version' });
+      expect(send).toHaveBeenCalledTimes(1);
+      await expect(storage.copy(source, source, new AbortController().signal)).rejects.toMatchObject({ code: 'TEMPORARILY_UNAVAILABLE' });
+      await expect(storage.copy({ ...source, storageId: 'other' }, destination, new AbortController().signal)).rejects.toMatchObject({ code: 'TEMPORARILY_UNAVAILABLE' });
+      expect(send).toHaveBeenCalledTimes(1);
+    } finally { storage.close(); }
+  });
+
+  it('does not accept incomplete copy responses or expose storage errors', async () => {
+    const storage = createAttachmentStorage(configured());
+    const source = { ...row(storage.storageId), state: 'ready' as const }, destination = { ...source, objectKey: 'attachments/new' };
+    const send = vi.spyOn(S3Client.prototype, 'send').mockResolvedValue({});
+    try {
+      await expect(storage.copy(source, destination, new AbortController().signal)).rejects.toMatchObject({ code: 'TEMPORARILY_UNAVAILABLE' });
+      send.mockRejectedValueOnce(new Error('Private provider details'));
+      await expect(storage.copy(source, destination, new AbortController().signal)).rejects.toMatchObject({ code: 'TEMPORARILY_UNAVAILABLE', message: expect.not.stringContaining('Private') });
+    } finally { storage.close(); }
+  });
+
   it('disables absent and partial configuration without throwing or exposing secrets', () => {
     for (const input of [{}, { ATTACHMENTS_S3_BUCKET: 'private-files' }, { ...env, AWS_SECRET_ACCESS_KEY: '' }, { ...env, ATTACHMENTS_SIGNED_URL_TTL_SECONDS: 'invalid' }]) {
       const config = loadAttachmentConfig(input, true);

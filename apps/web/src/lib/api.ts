@@ -24,7 +24,7 @@ const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
  * code, the request ID and a bounded field-rule classification; server messages and bodies are never retained, so
  * nothing from them can leak into the UI or logs.
  */
-const duplicationReasons = ['meeting_or_unknown_task_type','archived_task','invalid_task_tree','too_many_tasks','linked_task','archived_source','meeting_parent_requires_added_scope','source_project_too_large','field_unavailable','todo_status_missing','section_order_full'] as const;
+const duplicationReasons = ['meeting_or_unknown_task_type','archived_task','invalid_task_tree','too_many_tasks','linked_task','archived_source','meeting_parent_requires_added_scope','source_project_too_large','field_unavailable','todo_status_missing','section_order_full','attachment_storage_unavailable'] as const;
 export type DuplicationReason = typeof duplicationReasons[number];
 const invitationReasons = ['email_unverified', 'email_mismatch', 'member_conflict', 'pending_claimed'] as const;
 export type InvitationReason = typeof invitationReasons[number];

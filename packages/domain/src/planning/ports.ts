@@ -125,7 +125,7 @@ export type PlanningMutationIntent =
  | {readonly family:'task_placement';readonly command:TaskProjectPlacementCommand;readonly target:{readonly taskId:string;readonly projectId:string};readonly input:unknown}
  | {readonly family:'cutoff';readonly command:'cutoff.configure'|'cutoff.retry';readonly target:{readonly periodId:string};readonly input:unknown}
  | {readonly family:'table_preference';readonly command:'table.preference.set';readonly target:{readonly projectId:string};readonly input:unknown}
- | {readonly family:'attachment';readonly command:'attachment.reserve'|'attachment.start'|'attachment.finish'|'attachment.delete';readonly target:{readonly taskId:string};readonly input:unknown}
+ | {readonly family:'attachment';readonly command:'attachment.reserve'|'attachment.start'|'attachment.finish'|'attachment.delete'|'attachment.copy';readonly target:{readonly taskId:string};readonly input:unknown}
  | {readonly family:'comment';readonly command:'task.comment.create';readonly target:{readonly taskId:string};readonly input:unknown}
  | {readonly family:'import';readonly command:'import.csv.stage';readonly target:{readonly projectId:string};readonly input:unknown}
  | {readonly family:'import';readonly command:'import.project.apply';readonly target:{readonly projectId:string};readonly input:unknown;readonly previewMatches:()=>Promise<boolean>;readonly fieldPolicyCandidates:readonly {readonly fieldId:string;readonly value:TaskFieldData}[]}

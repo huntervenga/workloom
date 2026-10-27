@@ -234,7 +234,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const workspaceSlugApplication = dependencies.workspaceSlugApplication ?? (database === undefined ? undefined : createWorkspaceSlugApplication(database));
   const userSettingsApplication = dependencies.userSettingsApplication ?? (database === undefined ? undefined : createUserSettingsApplication(database));
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
-  const duplicationApplication = dependencies.duplicationApplication ?? (database === undefined ? undefined : createDuplicationApplication(database));
+  const attachmentStorage = config.attachments?.enabled
+    ? dependencies.attachmentStorage ?? createAttachmentStorage(config.attachments.settings) : undefined;
+  const duplicationApplication = dependencies.duplicationApplication ?? (database === undefined ? undefined : createDuplicationApplication(database, { ...(attachmentStorage ? { attachmentStorage } : {}) }));
   const taskRowApplication = dependencies.taskRowApplication ?? (database === undefined ? undefined : createTaskRowApplication(database));
   const workspaceCreateApplication =
     dependencies.workspaceCreateApplication ?? (database === undefined ? undefined : createWorkspaceCreateApplication(database));
@@ -418,8 +420,6 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   registerApiRoutes(app, routeDeps);
   const attachmentStore = dependencies.attachmentStore ?? (database ? createAttachmentStore(database) : undefined);
-  const attachmentStorage = config.attachments?.enabled
-    ? dependencies.attachmentStorage ?? createAttachmentStorage(config.attachments.settings) : undefined;
   registerAttachmentRoutes(app, { identity, config: config.attachments, store: attachmentStore, storage: attachmentStorage });
   if (attachmentStore && attachmentStorage) registerAttachmentMaintenance(app, attachmentStore, attachmentStorage);
   else if (attachmentStorage) app.addHook('onClose', async () => { attachmentStorage.close(); });

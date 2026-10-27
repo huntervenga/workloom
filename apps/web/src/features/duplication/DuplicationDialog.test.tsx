@@ -32,6 +32,13 @@ const writes = (calls: ReturnType<typeof installFakeApi>['calls']) => calls.filt
 async function open(ui: ReturnType<typeof setup>) { await ui.user.click(screen.getByRole('button', { name: 'Open task copy' })); await waitFor(() => expect(submit()).toBeEnabled()); }
 
 describe('ordinary duplication dialog', () => {
+  it('shows the number of independent attachment copies', async () => {
+    const ui = setup({ routes: { [`POST ${previewPath}`]: request => ok({ ...preview(request.body as DuplicateTaskPreviewInput), attachmentCount: 3 }) } });
+    await open(ui);
+    expect(screen.getByText('3 attachments will be copied independently')).toBeVisible();
+    await ui.user.click(submit());
+    await waitFor(() => expect(ui.onDuplicated).toHaveBeenCalledExactlyOnceWith(taskResult));
+  });
   it('auto-previews with no custom values selected before one direct duplicate action', async () => {
     const ui = setup(); await open(ui);
     expect(screen.getByRole('checkbox', { name: 'Hours Estimation' })).not.toBeChecked(); expect(screen.getByRole('checkbox', { name: 'Fact' })).not.toBeChecked();

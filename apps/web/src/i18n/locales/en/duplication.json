@@ -33,6 +33,10 @@
     "one": "{{count}} custom value will be copied",
     "other": "{{count}} custom values will be copied"
   },
+  "previewAttachments": {
+    "one": "{{count}} attachment will be copied independently",
+    "other": "{{count}} attachments will be copied independently"
+  },
   "copiedSettings": "Section settings to copy",
   "sharedReferences": "People, periods and manual availability overrides keep their current selections.",
   "summaryCount": {
@@ -63,6 +67,7 @@
     "limit": "A copy can contain at most 100 tasks. Turn off Subtasks, copy a smaller section, or turn off Copy tasks.",
     "projectLimit": "This project is too large to check safely for duplication. Choose a smaller project.",
     "fieldUnavailable": "A selected custom field is no longer available. Deselect it and refresh the preview.",
+    "attachmentStorage": "File storage is unavailable. Ask an administrator to configure it before copying tasks with attachments.",
     "todoMissing": "This project needs an active To do status before tasks can be duplicated. Ask an administrator to add one.",
     "archived": "Archived tasks and sections cannot be duplicated. Restore the original first.",
     "hierarchy": "This task hierarchy cannot be copied safely. Try without subtasks or review the original hierarchy.",

@@ -29,7 +29,7 @@ function setup(enabled = true) {
   const store: AttachmentStore = { application, recordStored: vi.fn(async () => undefined), failUpload: vi.fn(async () => undefined),
     claimCleanup: vi.fn(async () => []), completeCleanup: vi.fn(async () => undefined) };
   const signed = { url: 'https://objects.example.test/private?signature=test', expiresAt: new Date(Date.now() + 3600_000).toISOString() };
-  const storage: AttachmentStorage = { storageId: row.storageId,
+  const storage: AttachmentStorage = { copy: vi.fn(), storageId: row.storageId,
     upload: vi.fn(async (_record, source: Readable) => { for await (const chunk of source) void chunk; return { checksum: 'b'.repeat(64), versionId: null }; }),
     signPreview: vi.fn(async record => ({ ...signed, attachmentId: record.id, kind: 'image' as const, contentType: 'image/png' as const })),
     signDownload: vi.fn(async () => signed), invalidate: vi.fn(), remove: vi.fn(async () => undefined), close: vi.fn() };

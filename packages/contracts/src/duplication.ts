@@ -22,6 +22,7 @@ export const duplicateSectionInputSchema = duplicateSectionPreviewInputSchema.ex
 export const duplicationPreviewSchema = z.strictObject({
   kind: z.enum(['task', 'section']), sourceId: idSchema, projectId: idSchema, sourceVersion: version,
   name: z.string(), taskCount: z.number().int().min(0).max(DUPLICATION_LIMITS.maxTasks), customValueCount: z.number().int().nonnegative(),
+  attachmentCount: z.number().int().min(0).max(DUPLICATION_LIMITS.maxTasks * 5).optional(),
   copyableFields: z.array(taskFieldDefinitionSchema),
   settings: z.strictObject({
     aggregateRevision: z.number().int().nonnegative(), checksRevision: z.number().int().nonnegative(),

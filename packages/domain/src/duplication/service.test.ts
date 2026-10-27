@@ -21,6 +21,7 @@ function fixture() {
   const scope = {
     context, barrierAt: new Date(stamp), access: { membership: { role: 'owner', id: id(12) } }, recordChange: writes,
     repository: { tasks: { findTask: async (_ws: string, key: string) => rows.find(task => task.id === key) ?? null, findSection: async () => section, findProject: async () => project, listTasks: async () => rows, listSections: async () => [section], listStatuses: async () => [{ id: id(4), workspaceId: ws, projectId, group: 'todo', name: 'To do', revision: 1, position: 0 }], permissionEpoch: async () => '1', findIdempotency: async () => receipt.current, insertIdempotency: writes }, fields: { listFields: async () => [field], listProjectValues: async () => values } },
+    attachments: { listReady: async () => [], adopt: writes },
     placements: { listProject: async () => placements },
   } as unknown as DuplicationScope;
   // Stable within this fixture and collision-free for distinct canonical inputs.

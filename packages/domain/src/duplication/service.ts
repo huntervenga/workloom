@@ -1,5 +1,6 @@
 import {resolveSummaryTemplate,summaryBindingTaskScope} from '../summary-templates/resolution.js';
 import * as C from '@workloom/contracts';
+import type { AttachmentRecord } from '../attachments/ports.js';
 import { roleHasCapability } from '../access/capabilities.js';
 import type { CommandContext } from '../access/context.js';
 import { capabilityRequiredError, DomainError, notFoundError, unauthenticatedError } from '../errors.js';
@@ -9,13 +10,14 @@ import { validatePlanningCheckConfigInScope } from '../planning-checks/service.j
 import { createPlanningMutationGuard, isCommittedPlanningRejection, unwrapPlanningOutcome } from '../planning/freeze.js';
 import type { CommittedPlanningRejection } from '../planning/ports.js';
 import { canonicalJson, createSectionInScope, createTaskInScope } from '../tasks/service.js';
-import type { DuplicationApplication, DuplicationDependencies, DuplicationScope } from './ports.js';
+import type { DuplicationApplication, DuplicationDependencies, DuplicationScope, PreparedAttachmentCopy } from './ports.js';
 
 type Kind = 'task' | 'section';
 type Input = C.DuplicateTaskPreviewInput | C.DuplicateSectionPreviewInput;
 interface Source {
   kind: Kind; id: string; project: C.ProjectDto; sourceTask: C.TaskDto | null; sourceSection: C.SectionDto | null;
   rows: C.TaskDto[]; allRows: C.TaskDto[]; sections: C.SectionDto[]; fields: C.TaskFieldDefinitionDto[];
+  attachments: AttachmentRecord[];
   values: C.TaskFieldValueDto[]; status: C.TaskStatusDto | null;
   aggregates: C.GenericAggregateSettingsDto | null; checks: C.PlanningCheckSettingsDto | null;
   preview: C.DuplicationPreviewDto;
@@ -98,6 +100,8 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
     }
     const rows = includeTasks ? selectDuplicationTree(allRows, roots, input.copy.subtasks) : [];
     if(rows.length&&(await scope.sharedActivityTaskIds?.(rows.map(r=>r.id))??[]).length)invalid('shared_activity_requires_explicit_copy');
+    const attachments = await scope.attachments.listReady(ws, rows.map(row => row.id));
+    if (attachments.some(row => row.storageId !== deps.attachmentCopies?.storageId)) invalid('attachment_storage_unavailable');
     const fields = (await scope.repository.fields.listFields(ws, project.id)).filter(field => field.archivedAt === null);
     for (const fieldId of input.copy.customFieldIds) if (!fields.some(field => field.id === fieldId)) invalid('field_unavailable');
     const values = rows.length && input.copy.customFieldIds.length ? (await scope.repository.fields.listProjectValues(ws, project.id, rows.map(row => row.id))).filter(value => input.copy.customFieldIds.includes(value.fieldId)) : [];
@@ -114,9 +118,9 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
     const inputName = 'title' in input ? input.title : input.name;
     // Entire inventory protects hierarchy and insertion order, selected values protect independent revisions.
     // No server clock in this digest: unchanged previews remain usable until a semantic source changes.
-    const sourceVersion = deps.digest(canonicalJson({ kind, id, input, project, sourceTask, sourceSection, allRows, sections, fields, values, statuses, aggregates, checks,...(binding?{binding}:{}), actor: scope.context.actor.userId, epoch: await repo.permissionEpoch(ws) }));
-    const preview: C.DuplicationPreviewDto = { kind, sourceId: id, projectId: project.id, sourceVersion, name: inputName, taskCount: rows.length, customValueCount: values.length, copyableFields: fields, settings };
-    return { kind, id, project, sourceTask, sourceSection, rows, allRows, sections, fields, values, status, aggregates, checks, preview };
+    const sourceVersion = deps.digest(canonicalJson({ kind, id, input, project, sourceTask, sourceSection, allRows, sections, fields, values, attachments, statuses, aggregates, checks,...(binding?{binding}:{}), actor: scope.context.actor.userId, epoch: await repo.permissionEpoch(ws) }));
+    const preview: C.DuplicationPreviewDto = { kind, sourceId: id, projectId: project.id, sourceVersion, name: inputName, taskCount: rows.length, attachmentCount: attachments.length, customValueCount: values.length, copyableFields: fields, settings };
+    return { kind, id, project, sourceTask, sourceSection, rows, allRows, sections, fields, values, attachments, status, aggregates, checks, preview };
   }
   async function preview(ctx: CommandContext, kind: Kind, id: string, input: Input) {
     return deps.read(normalize(ctx), 'task.edit', async scope => (await source(scope, kind, id, input)).preview);
@@ -125,6 +129,21 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
     const context = normalize(ctx), key = context.idempotencyKey, command = kind === 'task' ? 'task.duplicate' as const : 'section.duplicate' as const;
     if (!key || !/^[\x21-\x7e]{1,128}$/.test(key)) throw new DomainError('VALIDATION_FAILED', 'A valid Idempotency-Key is required.');
     const payloadHash = deps.digest(canonicalJson({ command, id, input, expectedSourceVersion }));
+    // Authorize and replay before external work; never hold a workspace lock during an S3 copy.
+    const preparedSource = await deps.read(context, 'task.edit', async scope => {
+      await authorizeTarget(scope, kind, id, input);
+      const previous = await scope.repository.tasks.findIdempotency(context.workspaceId, context.actor.userId, command, key);
+      if (previous) {
+        if (previous.payloadHash !== payloadHash) throw new DomainError('IDEMPOTENCY_KEY_REUSED', 'This key was used for another duplication.');
+        return { result: isCommittedPlanningRejection(previous.result) ? previous.result : parse(C.duplicationResultSchema, previous.result) };
+      }
+      const selected = await source(scope, kind, id, input);
+      if (selected.preview.sourceVersion !== expectedSourceVersion) throw new DomainError('PREVIEW_STALE', 'Review the changed duplication preview.');
+      return { selected };
+    });
+    if (preparedSource.result) return unwrapPlanningOutcome(preparedSource.result);
+    const prepared = preparedSource.selected.attachments.length
+      ? await found(deps.attachmentCopies ?? null).prepare(context, preparedSource.selected.attachments) : [];
     return unwrapPlanningOutcome(await deps.write(context, 'task.edit', async (scope): Promise<C.DuplicationResultDto | CommittedPlanningRejection> => {
       await authorizeTarget(scope, kind, id, input);
       const repo = scope.repository.tasks, ws = context.workspaceId, previous = await repo.findIdempotency(ws, context.actor.userId, command, key);
@@ -136,12 +155,12 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       let result: C.DuplicationResultDto | CommittedPlanningRejection | null = await guard.check({ family: 'duplication', command, target: { projectId: selected.project.id, sourceId: id }, input, fieldPolicyCandidates: selected.values.map(value => ({ fieldId: value.fieldId, value: value.value, expectedDefinitionRevision: found(selected.fields.find(field => field.id === value.fieldId) ?? null).revision })) });
       // Prerequisite census may have introduced new source tasks; never copy a stale partial tree.
       if (result === null && (await source(scope, kind, id, input)).preview.sourceVersion !== expectedSourceVersion) result = { __workloomPlanningOutcome: 'rejected', code: 'PREVIEW_STALE', details: { committed: true, baselineIds: [] } };
-      result ??= await createCopies(scope, selected, input, guard);
+      result ??= await createCopies(scope, selected, input, guard, prepared);
       await repo.insertIdempotency({ workspaceId: ws, actorUserId: context.actor.userId, command, idempotencyKey: key, payloadHash, result, createdAt: scope.barrierAt.toISOString() });
       return result;
     }));
   }
-  async function createCopies(scope: DuplicationScope, selected: Source, input: Input, guard: ReturnType<typeof createPlanningMutationGuard>): Promise<C.DuplicationResultDto> {
+  async function createCopies(scope: DuplicationScope, selected: Source, input: Input, guard: ReturnType<typeof createPlanningMutationGuard>, prepared: readonly PreparedAttachmentCopy[]): Promise<C.DuplicationResultDto> {
     const repo = scope.repository.tasks, projectId = selected.project.id;
     const taskScope = { ...scope, repository: repo, planningGuard: guard };
     let section: C.SectionDto | null = null;
@@ -177,6 +196,16 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       }, deps, fields.map(value => ({ fieldId: value.fieldId, value: value.value })));
       mapping.set(row.id, created);
       for (const value of fields) await setTaskFieldValueInScope({ ...scope, repository: scope.repository.fields, planningGuard: guard }, created.id, value.fieldId, { expectedRevision: 0, expectedDefinitionRevision: found(selected.fields.find(field => field.id === value.fieldId) ?? null).revision, value: value.value }, deps);
+    }
+    for (const attachment of selected.attachments) {
+      const staged = found(prepared.find(copy => copy.sourceId === attachment.id) ?? null);
+      const taskId = found(mapping.get(attachment.taskId) ?? null).id;
+      const rejection = await guard.check({ family: 'attachment', command: 'attachment.copy', target: { taskId }, input: { sourceAttachmentId: attachment.id } });
+      if (rejection) throw new Error('Attachment metadata guard unexpectedly rejected a copy.');
+      const row = { ...staged.row, taskId };
+      await scope.attachments.adopt(row);
+      await scope.recordChange({ entityType: 'task_attachment', entityId: row.id, entityRevision: row.revision,
+        action: 'created', diff: { taskId }, outbox: { type: 'attachment.created', payload: { taskId, attachmentId: row.id } } });
     }
     if (section && selected.preview.settings && selected.aggregates && selected.checks) {
       const fieldsScope = { ...scope, repository: scope.repository.fields, planningGuard: guard };
