@@ -647,13 +647,19 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
                 event.preventDefault();
                 moveBy(event.key === 'ArrowUp' ? -1 : 1);
               }}
-              className={cn('absolute -left-3 top-2 flex h-6 w-3 cursor-grab touch-none items-center justify-center rounded text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing', rowActionClassName, ctx.draggingTaskId === task.id && 'pointer-events-auto opacity-100')}>
+              className={cn('absolute -left-3 top-2 z-[1] flex h-6 w-3 cursor-grab touch-none items-center justify-center rounded text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing', rowActionClassName, ctx.draggingTaskId === task.id && 'pointer-events-auto opacity-100')}>
               <GripVertical size={12} aria-hidden="true" />
               <span id={`${hierarchyDescriptionId}-move`} className="sr-only">{t('taskTable.move.handleHint')}</span>
             </button>
           ) : null}
-          {ctx.selectRow ? <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={selected} aria-disabled={ctx.selectionDisabled || undefined}
-            onClick={event => ctx.selectRow?.(task.id, event)} onKeyDown={event => ctx.selectionKey?.(task.id, event)} className={cn('mr-1 h-8 w-8 shrink-0 rounded-l outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', !selected && 'hover:bg-canvas')} /> : null}
+          {/* Keep the title aligned while the press target fills the row height, left inset,
+              hierarchy indentation and the unused disclosure space. The drag handle stays above it. */}
+          {ctx.selectRow ? <span className="relative mr-1 h-10 w-8 shrink-0">
+            <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={selected} aria-disabled={ctx.selectionDisabled || undefined}
+              style={{ width: 12 + 40 + Math.min(node.depth, 2) * 20 + (childCount === 0 ? 28 : 0) }}
+              onClick={event => ctx.selectRow?.(task.id, event)} onKeyDown={event => ctx.selectionKey?.(task.id, event)}
+              className={cn('absolute inset-y-0 -left-3 rounded-l outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', !selected && 'hover:bg-canvas')} />
+          </span> : null}
           <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
             {childCount > 0 ? (
               <button

@@ -93,14 +93,16 @@ export function TaskTagPicker({ tags, values, onChange, disabled = false, autoFo
       {missing.map(value => <label key={value} className="flex min-h-8 items-center gap-2 text-sm text-muted">
         <input type="checkbox" checked onChange={() => toggle(value, false)} /><span>{t('tasks.taskFields.tagUnavailable')}</span>
       </label>)}
-      {visible.map(tag => <div key={tag.id} className="flex min-h-9 items-center gap-2 rounded px-1 py-1 text-sm hover:bg-canvas">
-        <label className="flex cursor-pointer items-center self-stretch px-1">
+      {visible.map(tag => <div key={tag.id} className="relative flex min-h-9 items-center gap-2 rounded px-1 py-1 text-sm hover:bg-canvas">
+        {/* The label covers the free row area; the independent link sits above it. */}
+        <label className={cn('absolute inset-0 flex items-center px-2', !disabled && 'cursor-pointer')}>
           <input type="checkbox" className="peer sr-only" aria-label={tag.archivedAt ? tag.name + ' ' + t('tagColors.archived') : tag.name} checked={selected.has(tag.id.toLowerCase())} onChange={event => toggle(tag.id, event.target.checked)} />
           <span aria-hidden="true" className={cn('inline-flex size-4 shrink-0 items-center justify-center rounded border border-line-strong peer-focus-visible:ring-2 peer-focus-visible:ring-accent', selected.has(tag.id.toLowerCase()) && 'border-accent bg-accent text-white')}>
             {selected.has(tag.id.toLowerCase()) ? <Check size={12} /> : null}
           </span>
         </label>
-        <TagLink tag={tag} />
+        <span aria-hidden="true" className="w-6 shrink-0" />
+        <span className="relative min-w-0"><TagLink tag={tag} /></span>
       </div>)}
       {visible.length === 0 && missing.length === 0 ? <p className="text-xs text-muted">{options.length === 0 ? t('tasks.taskFields.noTagsYet') : t('tasks.tags.noMatches')}</p> : null}
     </fieldset>
