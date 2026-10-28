@@ -1,3 +1,4 @@
+import { userAvatarSql } from '../avatars/projection.js';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { AccessRepository, MembershipRecord, UserRecord, WorkspaceAccessRecord } from '@workloom/domain';
 
@@ -22,14 +23,14 @@ const accessColumns = {
   membershipId: memberships.id,
   userId: memberships.userId,
   displayName: users.displayName,
-  avatarUrl: users.avatarUrl,
+  avatarUrl: userAvatarSql(),
   role: memberships.role,
   state: memberships.state,
   revision: memberships.revision,
   pending: sql<boolean | null>`case when ${teamPendingMembers.membershipId} is null then null else ${teamPendingMembers.claimedAt} is null end`,
 };
 
-const userColumns = { id: users.id, displayName: users.displayName, kind: users.kind, avatarUrl: users.avatarUrl };
+const userColumns = { id: users.id, displayName: users.displayName, kind: users.kind, avatarUrl: userAvatarSql() };
 
 type AccessRow = {
   workspaceId: string;

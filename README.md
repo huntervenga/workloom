@@ -10,7 +10,7 @@ It is an npm-workspaces monorepo: a React + TypeScript + Vite client, a Node.js 
 - **Custom fields:** typed, project-scoped fields (text, number, duration, choice and more) with stable option IDs, value history and locks.
 - **Planning and reports:** configurable reports and summaries, plan versus actual, soft planning checks, per-project defaults for new tasks, project copy without tasks.
 - **Time off and capacity:** leave policies, requests and approvals, working-time capacity, team calendar.
-- **People:** workspaces, roles, personal invitations, pending teammates that can be assigned work before they join, shared sign-in.
+- **People:** workspaces, roles, personal invitations, pending teammates that can be assigned work before they join, shared sign-in. Profile settings support custom avatars when optional S3 storage is configured; see [setup and limits](docs/130-task-attachments.md#аватары-профиля).
 - **Import:** reusable two-file Asana import (JSON plus CSV) from the Projects page, and a CSV import.
 - **Automation:** personal access tokens, a public REST API at `/api/public/v1` (docs served at `/docs`) and a remote MCP endpoint at `/mcp`.
 - **Operator tools:** permanent delete of tasks and projects (API and CLI, see [docs/126](docs/126-permanent-delete.md)).

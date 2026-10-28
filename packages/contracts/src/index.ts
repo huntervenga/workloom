@@ -39,7 +39,7 @@ export type { CreateWorkspaceInput } from './workspace-create.js';
 
 export * from './task-row.js';
 
-export { safeProfilePhotoUrl, profilePhotoUrlSchema, MAX_PROFILE_PHOTO_URL_LENGTH } from './profile-photo.js';
+export { safeProfilePhotoUrl, safeUserAvatarUrl, uploadedAvatarUrl, profilePhotoUrlSchema, MAX_PROFILE_PHOTO_URL_LENGTH } from './profile-photo.js';
 export type { ProfilePhotoUrl } from './profile-photo.js';
 
 // One bounded comments-and-actions feed; legacy comments/activity exports remain unchanged.
@@ -69,5 +69,6 @@ export * from './shared-activities.js';
 export * from './leave-warnings.js';
 
 export * from './user-settings.js';
+export * from './user-avatars.js';
 
 export * from './attachments.js';

@@ -253,6 +253,13 @@
       "when": 1792480000011,
       "tag": "0035_task_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792480000012,
+      "tag": "0036_user_avatars",
+      "breakpoints": true
     }
   ]
 }

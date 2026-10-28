@@ -1,3 +1,4 @@
+import { UserAvatar } from '../../shared/UserAvatar';
 import { useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import { Button, TextInput } from '@workloom/ui';
@@ -32,7 +33,7 @@ export function ReportPersonWorkTypes({ actorId, workspaceId, projectId, result,
    const query = queries[index], data = query?.data, distribution = data ? workTypeDistribution(data, factId, categoryId) : null;
    const stops = distribution?.state === 'ready' ? distribution.items.flatMap(item => item.startBps === undefined || item.endBps === undefined ? [] : [`${item.color} ${item.startBps / 100}% ${item.endBps / 100}%`]).join(', ') : '';
    return <article key={person.key} aria-label={t('genericReports.personWorkTypes.person', { name: person.label })} data-work-type-person={person.key} className="min-w-0 space-y-3 rounded-lg border border-line p-3">
-    <header className="flex items-baseline justify-between gap-2"><h4 title={person.label} className="truncate text-sm font-semibold">{person.label}</h4><span className="shrink-0 text-xs text-muted">{t('genericReports.taskCount', { count: person.taskCount })}</span></header>
+    <header className="flex items-baseline justify-between gap-2"><div className="flex min-w-0 items-center gap-2">{person.key !== 'unassigned' ? <UserAvatar name={person.label} seed={person.key} avatarUrl={members.find(member => member.id === person.key)?.avatarUrl} size="sm" /> : null}<h4 title={person.label} className="truncate text-sm font-semibold">{person.label}</h4></div><span className="shrink-0 text-xs text-muted">{t('genericReports.taskCount', { count: person.taskCount })}</span></header>
     {query?.isError ? <QueryErrorState error={query.error} subject="fields" headingLevel={3} onRetry={() => void query.refetch()}/> : distribution && data ? <>
      <div className="flex items-center gap-3"><div aria-hidden="true" data-work-type-ring="" className="relative h-20 w-20 shrink-0 rounded-full bg-canvas" style={stops ? { background: `conic-gradient(${stops})` } : undefined}><div className="absolute inset-3 rounded-full bg-surface"/></div><div className="min-w-0"><p className="break-words text-lg font-semibold tabular-nums">{reportNumber(distribution.total?.value ?? null, distribution.total?.unit ?? 'minutes', true)}</p><p className="text-xs text-muted">{t('genericReports.personWorkTypes.recorded')}</p>{distribution.state !== 'ready' ? <p role="status" className="mt-1 text-xs text-muted">{states[distribution.state]}</p> : null}</div></div>
      {distribution.total ? <p className="text-xs text-muted">{t('genericReports.personWorkTypes.coverage', { filled: distribution.total.coverage.filled, tasks: distribution.total.coverage.tasks })}</p> : null}

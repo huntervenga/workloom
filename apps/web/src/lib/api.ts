@@ -83,6 +83,7 @@ export type MutationMethod = Exclude<ApiMethod, 'GET'>;
 export interface ApiRequestOptions {
   method?: ApiMethod | undefined;
   body?: unknown;
+  binaryBody?: Blob | undefined;
   headers?: Record<string, string> | undefined;
   signal?: AbortSignal | undefined;
 }
@@ -93,17 +94,18 @@ export interface ApiResponse {
 }
 
 export async function apiRequest(path: string, options: ApiRequestOptions = {}): Promise<ApiResponse> {
-  const { method = 'GET', body, headers, signal } = options;
+  const { method = 'GET', body, binaryBody, headers, signal } = options;
   const init: RequestInit = {
     method,
     credentials: 'same-origin',
     headers: {
       Accept: 'application/json',
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(binaryBody ? { 'Content-Type': 'application/octet-stream' } : body === undefined ? {} : { 'Content-Type': 'application/json' }),
       ...headers,
     },
   };
-  if (body !== undefined) init.body = JSON.stringify(body);
+  if (binaryBody) init.body = binaryBody;
+  else if (body !== undefined) init.body = JSON.stringify(body);
   if (signal) init.signal = signal;
 
   let response: Response;

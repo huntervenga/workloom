@@ -1,4 +1,5 @@
 import type { MembershipDto, TaskDto, TaskStatusDto } from '@workloom/contracts';
+import { UserAvatar } from '../../shared/UserAvatar';
 import { Badge, Button, cn } from '@workloom/ui';
 import { useId, type ReactNode, type PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from '../../i18n';
@@ -81,7 +82,8 @@ function TaskCard({ card, props, status, editor, canDrag, dragDisabled, drag, on
   const { task, parent } = card;
   const id = useId();
   const hasEditor = editor !== null && editor !== undefined && editor !== false;
-  const person = task.responsibleMembershipId === null ? t('board.unassigned') : props.members.find(member => member.id === task.responsibleMembershipId)?.displayName ?? t('board.memberUnavailable');
+  const assignee = props.members.find(member => member.id === task.responsibleMembershipId);
+  const person = task.responsibleMembershipId === null ? t('board.unassigned') : assignee?.displayName ?? t('board.memberUnavailable');
   const overdue = props.today !== undefined && task.dueDate !== null && task.dueDate < props.today && (status?.group === 'todo' || status?.group === 'in_progress');
   const due = task.dueDate === null ? t('board.noDueDate') : t('board.dueDate', { date: formatDate(new Date(`${task.dueDate}T12:00:00Z`), { dateStyle: 'medium', timeZone: 'UTC' }) });
   return <li data-board-card={preview ? undefined : task.id} className={cn("relative min-w-0 rounded-lg border bg-surface", preview ? "border-accent shadow-xl" : "border-line shadow-xs", drag?.task.id === task.id && "opacity-50")} onClick={event => {
@@ -96,7 +98,7 @@ function TaskCard({ card, props, status, editor, canDrag, dragDisabled, drag, on
     {parent.kind === 'loaded' ? <div className="space-y-0.5 text-xs"><p id={`${id}-parent`} className="text-muted">{t('board.parent')}</p><button aria-describedby={`${id}-parent`} type="button" onClick={() => props.onOpenTask(parent.task.id)} className="block min-h-6 max-w-full rounded text-left text-accent-ink [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">{parent.task.title}</button></div> : parent.kind === 'not_loaded' ? <p className="text-xs text-muted">{t('board.parentNotLoaded')}</p> : null}
     {/* A plain completion shape keeps the ghost's wrap without mounting a second live completion/focus registration. */}
     <div className="flex min-w-0 items-start gap-1.5">{preview ? props.renderCompletionAction ? <span aria-hidden="true" className="inline-flex size-7 shrink-0 items-center justify-center"><span className={cn('inline-flex size-[18px] items-center justify-center rounded-full border', status?.group === 'done' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-line-strong text-transparent')}><Check size={12} strokeWidth={3} /></span></span> : null : props.renderCompletionAction?.(task)}<button id={`${id}-title`} type="button" onClick={() => props.onOpenTask(task.id)} className="block min-h-8 w-full rounded text-left text-sm font-semibold [overflow-wrap:anywhere] hover:text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-ink">{task.title}</button></div>
-    <dl className="min-w-0 text-xs [overflow-wrap:anywhere]"><dt className="sr-only">{t('board.assignee')}</dt><dd>{person}</dd></dl>
+    <dl className="min-w-0 text-xs [overflow-wrap:anywhere]"><dt className="sr-only">{t('board.assignee')}</dt><dd className="flex items-center gap-2">{assignee ? <UserAvatar name={person} seed={assignee.userId} avatarUrl={assignee.avatarUrl} size="sm" /> : null}<span>{person}</span></dd></dl>
     {task.archivedAt !== null || task.meetingId !== null || props.draftTaskIds?.has(task.id) ? <div className="flex flex-wrap gap-1">
       {task.archivedAt !== null ? <Badge tone="muted">{t('board.archived')}</Badge> : null}
       {task.meetingId === undefined ? <Badge tone="warning">{t('board.refreshTaskType')}</Badge> : task.meetingId !== null ? <Badge tone="muted">{t('board.meeting')}</Badge> : null}

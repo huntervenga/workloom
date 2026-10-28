@@ -1,3 +1,4 @@
+import { userAvatarSql } from '../avatars/projection.js';
 import { sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 import {
@@ -19,7 +20,7 @@ const MAX_ROWS = 101, MAX_CHANGES = 20, MAX_REFS = 100;
 const UUID = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 const uuidOf = (text: SQL) => sql`(case when (${text}) ~ ${UUID} then (${text})::uuid end)`;
 const actor = sql`join memberships am on am.workspace_id = a.workspace_id and am.id = a.actor_membership_id and am.user_id = a.actor_user_id join users au on au.id = am.user_id`;
-const head = sql`a.change_seq, a.event_ordinal, a.recorded_at, a.action, a.actor_user_id, a.actor_membership_id, au.display_name as actor_display_name, au.avatar_url as actor_avatar_url`;
+const head = sql`a.change_seq, a.event_ordinal, a.recorded_at, a.action, a.actor_user_id, a.actor_membership_id, au.display_name as actor_display_name, ${userAvatarSql('au')} as actor_avatar_url`;
 const order = (take: number) => sql`order by a.change_seq desc, a.event_ordinal desc limit ${take}`;
 const otherTask = (id: SQL) => sql`(select jsonb_build_object('id', o.id, 'title', o.title) from tasks o where o.workspace_id = a.workspace_id and o.id = ${uuidOf(id)} and o.visibility = 'workspace')`;
 
@@ -52,7 +53,7 @@ export function timelineStatement(workspaceId: string, taskId: string, after: Ta
     union all
     (select 'comment', a.id, ${head}, jsonb_build_object(
         'id', c.id, 'workspaceId', c.workspace_id, 'taskId', c.task_id, 'authorUserId', c.author_user_id, 'authorMembershipId', c.author_membership_id,
-        'authorDisplayNameSnapshot', c.author_display_name_snapshot, 'createdAt', c.created_at, 'body', c.body, 'authorAvatarUrl', cu.avatar_url)
+        'authorDisplayNameSnapshot', c.author_display_name_snapshot, 'createdAt', c.created_at, 'body', c.body, 'authorAvatarUrl', ${userAvatarSql('cu')})
       from t join task_comments c on c.workspace_id = ${workspaceId}::uuid and c.task_id = t.id
       join audit_events a on a.workspace_id = c.workspace_id and a.entity_type = 'task_comment' and a.entity_id = c.id and a.action = 'created' ${keyset}
       left join users cu on cu.id = c.author_user_id

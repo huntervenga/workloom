@@ -100,11 +100,16 @@ import { registerTaskCommentsRoutes } from './http/task-comments-routes.js';
 import { registerPersonalTablePreferenceRoutes } from './http/table-preferences-routes.js';
 import { DEFAULT_WEB_DIST_DIR,registerStaticWeb, replyWebNavigation, resolveWebDist } from './http/static-web.js';
 
+import { createUserAvatarStore, type UserAvatarStore } from '@workloom/db';
+import { createAvatarStorage, type AvatarStorage } from './avatars/storage.js';
+import { registerUserAvatarRoutes, registerAvatarMaintenance } from './http/user-avatar-routes.js';
 import { createUserSettingsApplication } from '@workloom/db';
 import type { UserSettingsApplication } from '@workloom/domain';
 import { registerUserSettingsRoutes } from './http/user-settings-routes.js';
 
 export interface AppDependencies {
+  readonly userAvatarStore?: UserAvatarStore;
+  readonly avatarStorage?: AvatarStorage;
   readonly userSettingsApplication?: UserSettingsApplication;
   readonly workspaceSlugApplication?: WorkspaceSlugApplication;
   readonly duplicationApplication?: DuplicationApplication;
@@ -236,6 +241,8 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const taskApplication = dependencies.taskApplication ?? (database === undefined ? undefined : createTaskApplication(database));
   const attachmentStorage = config.attachments?.enabled
     ? dependencies.attachmentStorage ?? createAttachmentStorage(config.attachments.settings) : undefined;
+  const userAvatarStore = dependencies.userAvatarStore ?? (database ? createUserAvatarStore(database) : undefined);
+  const avatarStorage = config.attachments?.enabled ? dependencies.avatarStorage ?? createAvatarStorage(config.attachments.settings) : undefined;
   const duplicationApplication = dependencies.duplicationApplication ?? (database === undefined ? undefined : createDuplicationApplication(database, { ...(attachmentStorage ? { attachmentStorage } : {}) }));
   const taskRowApplication = dependencies.taskRowApplication ?? (database === undefined ? undefined : createTaskRowApplication(database));
   const workspaceCreateApplication =
@@ -420,9 +427,12 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   }
   registerApiRoutes(app, routeDeps);
   const attachmentStore = dependencies.attachmentStore ?? (database ? createAttachmentStore(database) : undefined);
-  registerAttachmentRoutes(app, { identity, config: config.attachments, store: attachmentStore, storage: attachmentStorage });
+  registerAttachmentRoutes(app, { identity, config: config.attachments, store: attachmentStore, storage: attachmentStorage, avatarAvailable: Boolean(userAvatarStore && avatarStorage) });
   if (attachmentStore && attachmentStorage) registerAttachmentMaintenance(app, attachmentStore, attachmentStorage);
   else if (attachmentStorage) app.addHook('onClose', async () => { attachmentStorage.close(); });
+  if (userAvatarStore) registerUserAvatarRoutes(app, { identity, store: userAvatarStore, storage: avatarStorage });
+  if (userAvatarStore && avatarStorage) registerAvatarMaintenance(app, userAvatarStore, avatarStorage);
+  else if (avatarStorage) app.addHook('onClose', async () => { avatarStorage.close(); });
   if (userSettingsApplication) registerUserSettingsRoutes(app, { identity, settings: userSettingsApplication });
   if(managedLocalAsanaTarget(config.appEnv,config.authMode,config.database.url)||hostedAsanaImportEnabled(config.appEnv,config.authMode)){
     let importer=dependencies.localAsanaImporter;

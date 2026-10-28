@@ -227,6 +227,7 @@ export * from './shared-activities/effort.js';
 export * from './workspace-slugs/service.js';
 
 export * from './user-settings.js';
+export * from './user-avatars.js';
 
 export { createAttachmentApplication, attachmentDto } from './attachments/service.js';
 export type { AttachmentApplication, AttachmentRecord, AttachmentRepository, AttachmentTools, AttachmentUnitOfWork, AttachmentWriteScope } from './attachments/ports.js';

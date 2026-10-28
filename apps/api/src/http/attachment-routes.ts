@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import {
-  MAX_ATTACHMENT_BYTES, attachmentDownloadResponseSchema, attachmentPreviewResponseSchema, deleteAttachmentInputSchema, idSchema,
+  MAX_ATTACHMENT_BYTES, MAX_AVATAR_BYTES, attachmentDownloadResponseSchema, attachmentPreviewResponseSchema, deleteAttachmentInputSchema, idSchema,
   reserveAttachmentInputSchema, serverFeaturesResponseSchema, taskAttachmentResponseSchema, taskAttachmentsResponseSchema,
 } from '@workloom/contracts';
 import { toCommandContext, temporarilyUnavailableError, unauthenticatedError, type AttachmentRecord, type CommandContext } from '@workloom/domain';
@@ -17,7 +17,7 @@ import { readIdempotencyKey } from './task-routes.js';
 
 const base = '/api/v1/workspaces/:workspaceId/tasks/:taskId/attachments';
 const paramsSchema = z.strictObject({ workspaceId: idSchema, taskId: idSchema, attachmentId: idSchema.optional() });
-interface Dependencies { identity: IdentityAdapter; config?: AttachmentConfig | undefined; store?: AttachmentStore | undefined; storage?: AttachmentStorage | undefined }
+interface Dependencies { avatarAvailable?: boolean; identity: IdentityAdapter; config?: AttachmentConfig | undefined; store?: AttachmentStore | undefined; storage?: AttachmentStorage | undefined }
 
 /** Features are available even when storage is absent; no S3 operation is performed at startup. */
 export function registerAttachmentRoutes(app: FastifyInstance, deps: Dependencies): void {
@@ -25,7 +25,9 @@ export function registerAttachmentRoutes(app: FastifyInstance, deps: Dependencie
   app.get('/api/v1/features', async (request, reply) => {
     await deps.identity.resolveActor(request);
     reply.header('cache-control', 'private, no-store');
-    return sendData(request, reply, serverFeaturesResponseSchema, { features: { taskAttachments: feature } });
+    return sendData(request, reply, serverFeaturesResponseSchema, { features: { taskAttachments: feature,
+      userAvatars: { enabled: feature.enabled && deps.avatarAvailable === true, reason: feature.enabled && deps.avatarAvailable ? null : feature.reason ?? 'storage_not_configured',
+        maxFileSizeBytes: MAX_AVATAR_BYTES, acceptedTypes: ['image/jpeg', 'image/png', 'image/webp'] } } });
   });
   const store = deps.store;
   if (!store) return;

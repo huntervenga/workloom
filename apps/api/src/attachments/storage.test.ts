@@ -45,7 +45,7 @@ describe('optional attachment storage', () => {
   it('does not accept incomplete copy responses or expose storage errors', async () => {
     const storage = createAttachmentStorage(configured());
     const source = { ...row(storage.storageId), state: 'ready' as const }, destination = { ...source, objectKey: 'attachments/new' };
-    const send = vi.spyOn(S3Client.prototype, 'send').mockResolvedValue({});
+    const send = vi.spyOn(S3Client.prototype, 'send').mockImplementation(async () => ({}));
     try {
       await expect(storage.copy(source, destination, new AbortController().signal)).rejects.toMatchObject({ code: 'TEMPORARILY_UNAVAILABLE' });
       send.mockRejectedValueOnce(new Error('Private provider details'));

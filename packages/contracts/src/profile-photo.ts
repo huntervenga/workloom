@@ -80,10 +80,19 @@ export function safeProfilePhotoUrl(value: unknown): string | null {
   return url.href.length <= MAX_PROFILE_PHOTO_URL_LENGTH ? url.href : null;
 }
 
-/** Strict DTO field: only already-normalized safe URLs. Compose with `.nullable().optional()`. */
+const UPLOADED_AVATAR = /^\/api\/v1\/users\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/avatars\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** Only this exact authenticated same-origin path may complement a verified provider URL. */
+export function safeUserAvatarUrl(value: unknown): string | null {
+  return typeof value === 'string' && UPLOADED_AVATAR.test(value) ? value : safeProfilePhotoUrl(value);
+}
+export function uploadedAvatarUrl(userId: string, avatarId: string): string {
+  return `/api/v1/users/${userId}/avatars/${avatarId}`;
+}
+
+/** Strict DTO field: verified provider URL or the exact authenticated uploaded-avatar path. Compose with `.nullable().optional()`. */
 export const profilePhotoUrlSchema = z
   .string()
   .max(MAX_PROFILE_PHOTO_URL_LENGTH)
-  .refine((value) => safeProfilePhotoUrl(value) === value, { message: 'Invalid profile photo URL.' });
+  .refine((value) => safeUserAvatarUrl(value) === value, { message: 'Invalid profile photo URL.' });
 
 export type ProfilePhotoUrl = z.infer<typeof profilePhotoUrlSchema>;

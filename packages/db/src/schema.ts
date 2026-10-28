@@ -47,14 +47,30 @@ export const users = pgTable(
     kind: userKindEnum('kind').notNull(),
     /** Verified shared-Auth profile photo, normalized by safeProfilePhotoUrl; never fetched server-side. */
     avatarUrl: text('avatar_url'),
+    avatarId: uuid('avatar_id'),
+    avatarRevision: integer('avatar_revision').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   () => [
     check('users_display_name_length', sql`char_length(btrim(display_name)) between 1 and 200`),
+    check('users_avatar_revision_valid', sql`avatar_revision >= 0`),
     check('users_avatar_url_shape', sql`avatar_url is null or (char_length(avatar_url) between 9 and 2048 and avatar_url like 'https://%')`),
   ],
 );
+
+/** Durable private avatar objects, retained without a user FK for eventual S3 cleanup. */
+export const avatarStorageObjects = pgTable('avatar_storage_objects', {
+  id: uuid('id').primaryKey(), userId: uuid('user_id').notNull(), expectedRevision: integer('expected_revision').notNull(),
+  storageId: text('storage_id').notNull(), objectKey: text('object_key').notNull().unique(), versionId: text('version_id'),
+  state: text('state').$type<'pending' | 'ready' | 'retired'>().notNull(),
+  writeDeadline: timestamp('write_deadline', { withTimezone: true }).notNull(),
+  cleanupAt: timestamp('cleanup_at', { withTimezone: true }), leaseUntil: timestamp('lease_until', { withTimezone: true }), leaseToken: uuid('lease_token'),
+}, table => [index('avatar_storage_cleanup_idx').on(table.storageId, table.cleanupAt), index('avatar_storage_user_idx').on(table.userId),
+  check('avatar_storage_state_valid', sql`state in ('pending', 'ready', 'retired')`),
+  check('avatar_storage_revision_valid', sql`expected_revision >= 0`),
+  check('avatar_storage_id_valid', sql`storage_id ~ '^[a-f0-9]{64}$'`),
+]);
 
 /** Account-wide preferences; no workspace membership is needed. */
 export const userSettings = pgTable('user_settings', {

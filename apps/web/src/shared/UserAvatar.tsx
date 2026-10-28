@@ -1,4 +1,4 @@
-import { safeProfilePhotoUrl } from '@workloom/contracts';
+import { safeUserAvatarUrl } from '@workloom/contracts';
 import { Avatar, cn } from '@workloom/ui';
 import { useState } from 'react';
 
@@ -22,10 +22,10 @@ export interface UserAvatarProps {
 /**
  * Decorative person avatar: the profile photo when it loads, otherwise the
  * initials Avatar. Always render the name as text next to it. The browser
- * loads the image directly without a referrer; Workloom never fetches it.
+ * loads provider images directly or follows an authenticated upload URL, without a referrer.
  */
 export function UserAvatar({ name, seed, avatarUrl, size = 'md', shape = 'circle', className }: UserAvatarProps) {
-  const src = safeProfilePhotoUrl(avatarUrl);
+  const src = safeUserAvatarUrl(avatarUrl);
   // Keyed by URL rather than reset in an effect: a new URL retries, the failed one stays on initials.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
 

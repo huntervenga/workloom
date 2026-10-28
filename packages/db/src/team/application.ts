@@ -1,3 +1,4 @@
+import { userAvatarSql } from '../avatars/projection.js';
 import {createHash,randomUUID,timingSafeEqual} from 'node:crypto';
 import {and,eq,isNull,sql} from 'drizzle-orm';
 import {teamInvitationSecretPreimage,type AcceptTeamInvitationInput} from '@workloom/contracts';
@@ -16,7 +17,7 @@ export function proveTeamInvitation(input:AcceptTeamInvitationInput):TeamInvitat
 }
 async function sharedActor(tx:WorkloomExecutor,c:ActorContext){
  if(c.actor.kind!=='real')throw capabilityRequiredError();
- const [actor]=await tx.select({id:users.id,displayName:users.displayName,avatarUrl:users.avatarUrl}).from(users).innerJoin(sharedAuthIdentities,eq(sharedAuthIdentities.userId,users.id)).where(and(eq(users.id,c.actor.userId),eq(users.kind,'real'))).limit(1);
+ const [actor]=await tx.select({id:users.id,displayName:users.displayName,avatarUrl:userAvatarSql()}).from(users).innerJoin(sharedAuthIdentities,eq(sharedAuthIdentities.userId,users.id)).where(and(eq(users.id,c.actor.userId),eq(users.kind,'real'))).limit(1);
  if(!actor)throw capabilityRequiredError();return actor;
 }
 function inviteRejection(reason:'email_unverified'|'email_mismatch'|'member_conflict'|'pending_claimed'){

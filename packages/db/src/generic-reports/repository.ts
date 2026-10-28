@@ -1,3 +1,4 @@
+import { userAvatarSql } from '../avatars/projection.js';
 import {loadSharedActivitySources} from '../shared-activities/repository.js';
 import {createSummaryTemplateRepository} from '../summary-templates/repository.js';
 import {createHash} from 'node:crypto';
@@ -21,7 +22,7 @@ export function createGenericReportRepository(tx: WorkloomExecutor, workspaceId:
       return rows.map(row=>({projectId:row.report.projectId,projectName:row.projectName,report:definition(row.report),fields:definitions.get(row.report.projectId)??[]}));
     },
     async workspaceMembers(){
-      const rows=await tx.select({membershipId:memberships.id,displayName:users.displayName,avatarUrl:users.avatarUrl}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).where(and(eq(memberships.workspaceId,workspaceId),eq(memberships.state,'active'))).orderBy(asc(users.displayName),asc(memberships.id)).limit(101);
+      const rows=await tx.select({membershipId:memberships.id,displayName:users.displayName,avatarUrl:userAvatarSql()}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).where(and(eq(memberships.workspaceId,workspaceId),eq(memberships.state,'active'))).orderBy(asc(users.displayName),asc(memberships.id)).limit(101);
       if(rows.length>100)throw new DomainError('DOMAIN_VALIDATION_FAILED','The workspace report catalogue supports at most 100 active people.');return rows;
     },
     async workspaceCapacities(inputs,manager){const stored=await createLeaveRepository(tx,workspaceId).source();return inputs.map(input=>buildLeaveAvailability(stored,input,manager,s=>createHash('sha256').update(s).digest('hex')));},

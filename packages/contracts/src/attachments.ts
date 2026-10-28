@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { userAvatarFeatureSchema } from './user-avatars.js';
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
 import { utcTimestampSchema } from './tasks.js';
@@ -15,7 +16,7 @@ export const attachmentFeatureSchema = z.strictObject({
   downloadUrlTtlSeconds: z.number().int().min(60).max(7200),
 });
 export const serverFeaturesResponseSchema = envelopeSchema(z.strictObject({
-  features: z.strictObject({ taskAttachments: attachmentFeatureSchema }),
+  features: z.strictObject({ taskAttachments: attachmentFeatureSchema, userAvatars: userAvatarFeatureSchema.optional() }),
 }));
 export const attachmentNameSchema = z.string().trim().min(1).max(240).refine(
   name => !/[\p{Cc}\p{Cs}/\\]/u.test(name) && name !== '.' && name !== '..',

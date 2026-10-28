@@ -6,7 +6,7 @@ import { useTranslation } from '../../i18n';
 import { apiGet, apiRequest, ApiError } from '../../lib/api';
 import { queryKeys } from '../../lib/queryKeys';
 import { DialogShell } from '../../shared/DialogShell';
-import { UserAvatar } from '../../shared/UserAvatar';
+import { AvatarSettings } from './AvatarSettings';
 
 function accept(client: QueryClient, actorId: string, settings: UserSettingsDto) {
   client.setQueryData<MeDto>(queryKeys.me, previous => {
@@ -49,7 +49,7 @@ export function ProfileSettingsDialog({ me, onClose }: { me: MeDto; onClose: () 
   ];
   return <DialogShell open title={t('profile.settings')} description={t('profile.description')} onOpenChange={open => { if (!open) onClose(); }}>
     <div className="mt-5 space-y-5">
-      <div className="flex items-center gap-3"><UserAvatar name={me.actor.displayName} avatarUrl={me.actor.avatarUrl} /><p className="min-w-0 break-words font-medium text-ink">{me.actor.displayName}</p></div>
+      <AvatarSettings key={actorId} me={me} />
       {query.isPending ? <p role="status" className="text-sm text-muted">{t('profile.loading')}</p> : null}
       {query.data ? <fieldset disabled={save.isPending || query.isError || save.isError} className="space-y-2">
         <legend className="mb-2 text-sm font-medium text-ink">{t('profile.theme')}</legend>

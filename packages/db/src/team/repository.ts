@@ -1,3 +1,4 @@
+import { userAvatarSql } from '../avatars/projection.js';
 import {randomUUID} from 'node:crypto';
 import {and,asc,eq,sql} from 'drizzle-orm';
 import {teamInvitationSchema,teamMembershipSchema,type TeamInvitationDto,type TeamMembershipDto} from '@workloom/contracts';
@@ -12,7 +13,7 @@ export const invitationDto=(r:typeof teamInvitations.$inferSelect):TeamInvitatio
 export const membershipDto=(r:typeof memberships.$inferSelect,u:{displayName:string;avatarUrl:string|null},pending?:typeof teamPendingMembers.$inferSelect|null):TeamMembershipDto=>teamMembershipSchema.parse({...r,displayName:u.displayName,avatarUrl:u.avatarUrl,revokedAt:r.revokedAt?.toISOString()??null,...(pending?{pending:pending.claimedAt===null,email:pending.email}:{})});
 export function teamRepository(tx:WorkloomExecutor,workspaceId:string):TeamRepository {
  const tasks=createTaskRepository(tx);
- const memberQuery=()=>tx.select({m:memberships,u:{displayName:users.displayName,avatarUrl:users.avatarUrl},p:teamPendingMembers}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).leftJoin(teamPendingMembers,and(eq(teamPendingMembers.workspaceId,memberships.workspaceId),eq(teamPendingMembers.membershipId,memberships.id)));
+ const memberQuery=()=>tx.select({m:memberships,u:{displayName:users.displayName,avatarUrl:userAvatarSql()},p:teamPendingMembers}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).leftJoin(teamPendingMembers,and(eq(teamPendingMembers.workspaceId,memberships.workspaceId),eq(teamPendingMembers.membershipId,memberships.id)));
  return {
  async findInvitation(id){const [r]=await tx.select().from(teamInvitations).where(and(eq(teamInvitations.workspaceId,workspaceId),eq(teamInvitations.id,id))).limit(1);return r?{metadata:invitationDto(r),secretHash:r.secretHash}:null;},
  async listInvitations(){return (await tx.select().from(teamInvitations).where(eq(teamInvitations.workspaceId,workspaceId)).orderBy(asc(teamInvitations.createdAt),asc(teamInvitations.id)).limit(1001)).map(invitationDto);},

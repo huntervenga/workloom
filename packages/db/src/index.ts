@@ -159,6 +159,8 @@ export { createWorkspaceSlugApplication } from './workspace-slugs/application.js
 
 export { createUserSettingsApplication } from './user-settings.js';
 
+export { createUserAvatarStore } from './avatars/application.js';
+export type { UserAvatarStore, AvatarCleanupJob } from './avatars/application.js';
 export type { AttachmentCopyStorage } from './attachments/copies.js';
 export { createAttachmentStore } from './attachments/application.js';
 export type { AttachmentStore, AttachmentCleanupJob } from './attachments/application.js';

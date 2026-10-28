@@ -1,3 +1,4 @@
+import { userAvatarSql } from '../avatars/projection.js';
 import { and, desc, eq, inArray, lt, or } from 'drizzle-orm';
 import { taskActivityKindSchema, type TaskCommentDto } from '@workloom/contracts';
 import type { TaskCommentsRepository } from '@workloom/domain';
@@ -18,8 +19,8 @@ export function createTaskCommentsRepository(db: WorkloomExecutor): TaskComments
     },
     async listComments(workspaceId, taskId, after, take) {
       bounded(take);
-      const rows = await db.select({ comment: taskComments, avatarUrl: users.avatarUrl }).from(taskComments).leftJoin(users, eq(users.id, taskComments.authorUserId)).where(and(eq(taskComments.workspaceId, workspaceId), eq(taskComments.taskId, taskId), after ? or(lt(taskComments.createdAt, new Date(after.createdAt)), and(eq(taskComments.createdAt, new Date(after.createdAt)), lt(taskComments.id, after.id))) : undefined)).orderBy(desc(taskComments.createdAt), desc(taskComments.id)).limit(take);
-      // Current author avatar, HTTPS-only per the contract policy; never stored with the comment.
+      const rows = await db.select({ comment: taskComments, avatarUrl: userAvatarSql() }).from(taskComments).leftJoin(users, eq(users.id, taskComments.authorUserId)).where(and(eq(taskComments.workspaceId, workspaceId), eq(taskComments.taskId, taskId), after ? or(lt(taskComments.createdAt, new Date(after.createdAt)), and(eq(taskComments.createdAt, new Date(after.createdAt)), lt(taskComments.id, after.id))) : undefined)).orderBy(desc(taskComments.createdAt), desc(taskComments.id)).limit(take);
+      // Current author avatar, validated provider or authenticated upload URL; never stored with the comment.
       return rows.map(({ comment, avatarUrl }): TaskCommentDto => ({ ...comment, createdAt: comment.createdAt.toISOString(), authorAvatarUrl: safeAvatarUrl(avatarUrl) }));
     },
     listTimeline(workspaceId, taskId, after, take) { return listTimeline(db, workspaceId, taskId, after, take); },

@@ -1,3 +1,4 @@
+import { userAvatarSql } from '../avatars/projection.js';
 import {randomUUID} from 'node:crypto';
 import {and,asc,eq} from 'drizzle-orm';
 import * as C from '@workloom/contracts';
@@ -15,7 +16,7 @@ export function createLeaveRepository(tx:WorkloomExecutor,workspaceId:string):Le
   const profiles=await tx.select().from(leaveProfiles).where(eq(leaveProfiles.workspaceId,workspaceId)).orderBy(asc(leaveProfiles.membershipId)).limit(1001);
   const requests=await tx.select().from(leaveRequests).where(eq(leaveRequests.workspaceId,workspaceId)).orderBy(asc(leaveRequests.id)).limit(5001);
   const adjustments=await tx.select().from(leaveAdjustments).where(eq(leaveAdjustments.workspaceId,workspaceId)).orderBy(asc(leaveAdjustments.id)).limit(5001);
-  const members=await tx.select({id:memberships.id,workspaceId:memberships.workspaceId,userId:memberships.userId,displayName:users.displayName,avatarUrl:users.avatarUrl,role:memberships.role,state:memberships.state,revision:memberships.revision}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).where(eq(memberships.workspaceId,workspaceId)).orderBy(asc(memberships.id)).limit(1001);
+  const members=await tx.select({id:memberships.id,workspaceId:memberships.workspaceId,userId:memberships.userId,displayName:users.displayName,avatarUrl:userAvatarSql(),role:memberships.role,state:memberships.state,revision:memberships.revision}).from(memberships).innerJoin(users,eq(users.id,memberships.userId)).where(eq(memberships.workspaceId,workspaceId)).orderBy(asc(memberships.id)).limit(1001);
   if(profiles.length>1000||requests.length>5000||adjustments.length>5000||members.length>1000)overflow();
   const [head]=await tx.select({seq:workspaces.changeSeq,epoch:workspaces.permissionEpoch}).from(workspaces).where(eq(workspaces.id,workspaceId));
   return {settings:policy?C.leaveSettingsSchema.parse(policy.snapshot):null,profiles:profiles.map(r=>C.leaveProfileSchema.parse(r.snapshot)),requests:requests.map(r=>C.leaveStoredRequestSchema.parse(r.snapshot)),adjustments:adjustments.map(r=>C.leaveAdjustmentSchema.parse(r.snapshot)),members,head:`${head?.seq??0}:${head?.epoch??0}`};

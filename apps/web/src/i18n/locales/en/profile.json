@@ -15,5 +15,21 @@
   "autoSave": "Changes save automatically and follow your account across devices.",
   "failed": "Could not confirm your settings. Reload the saved settings and try again.",
   "conflict": "Your settings changed elsewhere. Reload them before choosing again.",
-  "reload": "Reload settings"
+  "reload": "Reload settings",
+  "avatar": "Profile photo",
+  "avatarHelp": "JPEG, PNG or WebP, up to 5 MB. The image is cropped to a square.",
+  "chooseAvatar": "Choose profile photo",
+  "uploadAvatar": "Upload photo",
+  "changeAvatar": "Change photo",
+  "removeAvatar": "Remove custom photo",
+  "avatarSaving": "Uploading photo…",
+  "avatarChecking": "Checking photo uploads…",
+  "avatarUnavailable": "Configure S3 storage on the server to upload profile photos.",
+  "avatarFeatureFailed": "Photo upload availability could not be checked. Reopen settings to try again.",
+  "avatarTooLarge": "Choose an image no larger than 5 MB.",
+  "avatarInvalid": "Choose a valid, non-animated JPEG, PNG or WebP image up to 16 megapixels.",
+  "avatarConflict": "Your photo changed elsewhere. Reload it before trying again.",
+  "avatarFailed": "The photo change could not be confirmed. Reload your profile before trying again.",
+  "avatarReload": "Reload profile photo",
+  "avatarSaved": "Profile photo updated."
 }
