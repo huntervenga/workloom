@@ -654,12 +654,13 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
           ) : null}
           {/* Keep the title aligned while the press target fills the row height, left inset,
               hierarchy indentation and the unused disclosure space. The drag handle stays above it. */}
-          {ctx.selectRow ? <span className="relative mr-1 h-10 w-8 shrink-0">
-            <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={selected} aria-disabled={ctx.selectionDisabled || undefined}
+          <span className="relative mr-1 h-10 w-8 shrink-0">
+            {ctx.selectRow ? <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={selected} aria-disabled={ctx.selectionDisabled || undefined}
               style={{ width: 12 + 40 + Math.min(node.depth, 2) * 20 + (childCount === 0 ? 28 : 0) }}
               onClick={event => ctx.selectRow?.(task.id, event)} onKeyDown={event => ctx.selectionKey?.(task.id, event)}
-              className={cn('absolute inset-y-0 -left-3 rounded-l outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', !selected && 'hover:bg-canvas')} />
-          </span> : null}
+              className={cn('absolute inset-y-0 -left-3 rounded-l outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', !selected && 'hover:bg-canvas')} /> : null}
+            <span aria-hidden="true" data-task-row-number="" className="pointer-events-none relative flex h-full w-full items-center justify-center text-xs text-muted tabular-nums before:content-[counter(task-row)]" />
+          </span>
           <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(node.depth, 2) * 20 }}>
             {childCount > 0 ? (
               <button
@@ -762,7 +763,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
     onContextMenu={openMenuFromRow}
     onKeyDown={event => { if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') openMenuFromRow(event); }}
     aria-selected={ctx.selectRow ? selected : undefined}
-    className={cn('group h-10 border-t border-line hover:bg-canvas/70', selected && 'bg-selection', drop === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]', drop === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]', ctx.draggingTaskId === task.id && 'opacity-60')}>{ctx.columnIds.map(id => {
+    className={cn('group h-10 border-t border-line hover:bg-canvas/70 [counter-increment:task-row]', selected && 'bg-selection', drop === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]', drop === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]', ctx.draggingTaskId === task.id && 'opacity-60')}>{ctx.columnIds.map(id => {
     const custom = ctx.customColumns.find(column => column.id === id);
     // Supplied cells bring their own control padding; the row height still bounds them.
     return <Fragment key={id}>{builtinCells[id] ?? (custom ? td(id, null, <div className="flex h-10 min-w-0 items-center overflow-hidden">{custom.renderCell(task)}</div>, 'min-w-0') : null)}</Fragment>;
@@ -1178,7 +1179,7 @@ export function TaskTable({
       {visibleIds.map(id => id === 'title' ? (
         <td key={id} className={titleCellClassName} style={{ paddingLeft: 12 }}>
           <div className="flex h-10 min-w-0 items-center gap-1">
-            {selectRow ? <span aria-hidden="true" className="mr-1 h-8 w-8 shrink-0" /> : null}
+            <span aria-hidden="true" className="mr-1 h-8 w-8 shrink-0" />
             <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(depth, 2) * 20 }}>
               <span aria-hidden="true" className="size-6 shrink-0" />
               {renderCell(id)}
@@ -1193,8 +1194,8 @@ export function TaskTable({
       {trailingColumn ? <td data-task-column-menu-cell="" className={cellClassName} /> : null}
     </tr>
   );
-  // Match the real root title: cell inset, selection gutter, disclosure, completion and title padding.
-  const titleInset = 12 + (selectRow ? 40 : 0) + 28 + (renderCompletionAction ? 32 : 0) + 4;
+  // Match the real root title: cell inset, row number/selection gutter, disclosure, completion and title padding.
+  const titleInset = 12 + 40 + 28 + (renderCompletionAction ? 32 : 0) + 4;
   // Confirmed rows the list has not loaded yet stay in place, read-only, so the next input never jumps.
   const confirmedCtx: RowContext = { ...ctx, onEditTaskField: undefined, renderTaskFieldEditor: undefined, activeFieldEditor: undefined, onCreateChild: null, onDuplicateTask: undefined, onDeleteTask: undefined, move: null, renderCompletionAction: () => <span aria-hidden="true" className="size-7 shrink-0" /> };
   const quickRows = (group: TableTaskGroup | null, depth: number): ReactNode => quickAdd ? <>
@@ -1234,12 +1235,13 @@ export function TaskTable({
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth, width: minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? resolvedTitleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
-        <thead ref={headerRef} className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} data-task-column={column.id} scope="col" aria-label={column.label} className={cn('relative h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'task-table-pinned-column max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'task-table-pinned-column lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' && selectRow ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span><ColumnResizeHandle key={`${layout.key}:${column.id}`} columnId={column.id} label={column.label} width={column.width}
+        <thead ref={headerRef} className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} data-task-column={column.id} scope="col" aria-label={column.label} className={cn('relative h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'task-table-pinned-column max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'task-table-pinned-column lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span><ColumnResizeHandle key={`${layout.key}:${column.id}`} columnId={column.id} label={column.label} width={column.width}
           onPreview={width => previewWidth(column.id, width)} onCommit={width => layout.setColumnWidth(column.id, width)} /></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
           const collapsed = collapsedGroups.has(group.key);
           const rows = visibleTaskRows(group.roots, collapsedIds);
+          // CSS counts only rendered task rows, including confirmed quick-add rows, per group.
           const items: ReactNode[] = collapsed ? [] : rows.map((node) => <TaskRow key={node.task.id} node={node} group={group} ctx={ctx} />);
           // One keyed block among the rows: when the list grows above it, the block (and its
           // unsent input, focus and selection) stays mounted instead of being recreated.
@@ -1248,7 +1250,7 @@ export function TaskTable({
           // A null-anchor group-end drop is drawn on the empty-group row, otherwise on the header.
           const groupEnd = group.kind === 'assignee' && drag?.target?.taskId === null && drag.target.responsibleMembershipId === group.membershipId;
           return (
-            <tbody key={group.key} data-task-assignee-group={group.kind === 'assignee' ? group.membershipId ?? '' : undefined}>
+            <tbody key={group.key} className="[counter-reset:task-row]" data-task-assignee-group={group.kind === 'assignee' ? group.membershipId ?? '' : undefined}>
               <GroupHeader
                 dropMembershipId={group.kind === 'assignee' && moveEnabled ? group.membershipId ?? '' : undefined}
                 dropLine={groupEnd && !emptyRow}
@@ -1279,7 +1281,7 @@ export function TaskTable({
             </tbody>
           );
         })}
-        {grouping === 'section' && quickAdd && anchored === null && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody>{quickRows(null, 0)}</tbody> : null}
+        {grouping === 'section' && quickAdd && anchored === null && !groups.some(group => group.sectionId === quickAdd.sectionId) ? <tbody className="[counter-reset:task-row]">{quickRows(null, 0)}</tbody> : null}
         {sectionComposer ? <tbody><tr className="border-t border-line bg-canvas"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] min-w-0 px-3">{sectionComposer}</div></td></tr></tbody> : null}
         {writable && onCreateSection && !sectionComposer ? <tbody><tr className="h-11 border-t border-line"><td colSpan={columnCount} className="p-0"><div className="sticky left-0 w-[100cqw] px-3"><button type="button" data-add-section-row="" onClick={onCreateSection} className="flex h-10 min-w-0 items-center gap-1 rounded text-sm font-medium text-muted outline-none hover:text-ink focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"><Plus size={16} aria-hidden="true" /><span>{t('taskTable.sections.add')}</span></button></div></td></tr></tbody> : null}
         <tfoot className="sticky bottom-0 z-10">
