@@ -30,6 +30,7 @@ import { dedupeTasks } from './workPackages';
 import type { TaskSortMode } from './taskOrdering';
 import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
 import { usePointerRowDrag, type DropTarget } from './usePointerRowDrag';
+import { usePointerRangeSelect, type SelectionOutcome } from './usePointerRangeSelect';
 import { titleCaretFromPoint } from './titleCaret';
 import { useStickyTaskTableHeader } from './useStickyTaskTableHeader';
 import { useLocalTableLayout, type TableLayoutScope } from './useLocalTableLayout';
@@ -491,6 +492,8 @@ interface RowContext {
   selectRow: ((id: string, modifiers: SelectionModifiers) => void) | undefined;
   /** Neutral gutter keys: arrows move or extend the selection, Enter opens details. */
   selectionKey: ((id: string, event: ReactKeyboardEvent<HTMLButtonElement>) => void) | undefined;
+  /** Pressing a gutter and sweeping over other rows selects the range between them. */
+  rangeSelect: { start: (id: string, event: ReactPointerEvent<HTMLButtonElement>) => void; consumeClick: () => boolean } | undefined;
   statusById: ReadonlyMap<string, TaskStatusDto>;
   memberById: ReadonlyMap<string, MembershipDto>;
   sectionById: ReadonlyMap<string, SectionDto>;
@@ -657,7 +660,8 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
           <span className="relative mr-1 h-10 w-8 shrink-0">
             {ctx.selectRow ? <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={selected} aria-disabled={ctx.selectionDisabled || undefined}
               style={{ width: 12 + 40 + Math.min(node.depth, 2) * 20 + (childCount === 0 ? 28 : 0) }}
-              onClick={event => ctx.selectRow?.(task.id, event)} onKeyDown={event => ctx.selectionKey?.(task.id, event)}
+              onPointerDown={event => ctx.rangeSelect?.start(task.id, event)}
+              onClick={event => { if (ctx.rangeSelect?.consumeClick()) return; ctx.selectRow?.(task.id, event); }} onKeyDown={event => ctx.selectionKey?.(task.id, event)}
               className={cn('absolute inset-y-0 -left-3 rounded-l outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', !selected && 'hover:bg-canvas')} /> : null}
             <span aria-hidden="true" data-task-row-number="" className="pointer-events-none relative flex h-full w-full items-center justify-center text-xs text-muted tabular-nums before:content-[counter(task-row)]" />
           </span>
@@ -1090,17 +1094,25 @@ export function TaskTable({
   const selectionAnchor = useRef<string | null>(null);
   const [selectionLimit, setSelectionLimit] = useState(false);
   const visibleRowIds = () => groups.flatMap(group => collapsedGroups.has(group.key) ? [] : visibleTaskRows(group.roots, collapsedIds).map(node => node.task.id));
-  /** Returns whether the selection was accepted: not disabled and within the cap. */
-  const selectRow = onSelectionChange || onSelectTask ? (id: string, modifiers: SelectionModifiers, anchor = selectionAnchor.current): boolean => {
-    if (selectionDisabled) return false;
-    const next = selectTaskRows(selectedTaskIds, visibleRowIds(), anchor, id, modifiers);
+  /** Reports a computed selection to the owner; returns whether it was within the cap. */
+  const applySelection = (next: SelectionOutcome): boolean => {
     setSelectionLimit(next.limitReached === true);
     if (next.limitReached) return false;
     selectionAnchor.current = next.anchor;
     if (onSelectionChange) onSelectionChange(next.ids);
     else { for (const changed of new Set([...selectedTaskIds, ...next.ids])) if (selectedTaskIds.includes(changed) !== next.ids.includes(changed)) onSelectTask?.(changed, next.ids.includes(changed)); }
     return true;
+  };
+  /** Returns whether the selection was accepted: not disabled and within the cap. */
+  const selectRow = onSelectionChange || onSelectTask ? (id: string, modifiers: SelectionModifiers, anchor = selectionAnchor.current): boolean => {
+    if (selectionDisabled) return false;
+    return applySelection(selectTaskRows(selectedTaskIds, visibleRowIds(), anchor, id, modifiers));
   } : undefined;
+  // Mouse sweep over the gutters: the same visible saved rows, cap and owner callbacks as a click.
+  const rangeSelect = usePointerRangeSelect({
+    disabled: selectionDisabled || selectRow === undefined, selected: selectedTaskIds,
+    anchor: () => selectionAnchor.current, visibleRowIds, apply: applySelection,
+  });
   // Asana-style neutral gutter keys over the same visible saved rows. Editors, cell buttons, pickers,
   // menus and drag handles keep their own keys, and nothing is prevented unless it is handled here.
   const selectionKey = selectRow ? (id: string, event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -1149,6 +1161,7 @@ export function TaskTable({
     grouping, taskById,
     selectedTaskIds,
     onSelectTask, selectRow, selectionKey, selectionDisabled,
+    rangeSelect: selectRow ? { start: rangeSelect.start, consumeClick: rangeSelect.consumeClick } : undefined,
     statusById,
     memberById,
     sectionById,
@@ -1229,7 +1242,7 @@ export function TaskTable({
   })();
 
   return (
-    <div ref={scrollRef} data-task-table-scroll="" onKeyDown={clearSelectionOnEscape} className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', className)}>
+    <div ref={scrollRef} data-task-table-scroll="" data-task-range-select={rangeSelect.active ? '' : undefined} onKeyDown={clearSelectionOnEscape} className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', rangeSelect.active && 'select-none', className)}>
       {selectionLimit ? <div role="status" className="fixed right-3 bottom-24 z-[70] max-w-sm rounded-lg border border-line bg-surface p-3 text-sm shadow-lg">{t('taskTable.selection.limit')}<Button size="sm" variant="ghost" onClick={() => setSelectionLimit(false)}>{t('taskTable.selection.dismiss')}</Button></div> : null}
       {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} /> : null}
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth, width: minWidth }}>
