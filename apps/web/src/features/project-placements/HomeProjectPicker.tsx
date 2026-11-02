@@ -46,7 +46,7 @@ export function HomeProjectPicker({ actorId, task, homeProject, projects, disabl
   };
   const options = projects.filter(project => project.archivedAt === null || project.id === shownId).map(project => ({ value: project.id, label: project.name }));
   return <div className="min-w-0 space-y-1.5">
-    <ChoicePicker searchable label={t('placements.transfer.pick')} value={shownId} options={options} disabled={disabled || holding || transfer.uncertain !== null}
+    <ChoicePicker compact searchable className="border-transparent! bg-transparent! px-1.5 shadow-none! hover:bg-canvas!" label={t('placements.transfer.pick')} value={shownId} options={options} disabled={disabled || holding || transfer.uncertain !== null}
       onValueChange={projectId => { if (projectId !== shownId && options.some(option => option.value === projectId)) send(projectId, shownId, moved?.result.task.revision ?? task.revision); }} />
     {holding ? <p role="status" className="text-xs text-muted">{t('placements.transfer.moving')}</p> : null}
     {moved && !holding ? <div role="status" className="space-y-1 text-xs text-muted">

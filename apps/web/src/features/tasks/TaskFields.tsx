@@ -127,6 +127,8 @@ export interface TaskFieldsProps {
   projectName?: string | undefined;
   /** Independently saved project placements of an existing canonical task. */
   projectsField?: ReactNode;
+  /** Asana-style Projects block: receives the section picker of the home project, which then sits in the project's own row. */
+  projectsSection?: ((homeSectionPicker: ReactNode) => ReactNode) | undefined;
   /** Read-only history beneath the estimate, outside the disabled editable controls. */
   estimateSupplement?: ReactNode;
   disabled?: boolean | undefined;
@@ -177,6 +179,7 @@ export function TaskFields({
   part = 'all',
   projectName,
   projectsField,
+  projectsSection,
   estimateSupplement,
   disabled = false,
   onCommit,
@@ -440,6 +443,8 @@ export function TaskFields({
     const rowLabel = 'flex min-h-8 items-center py-1 text-sm text-ink-soft';
     const compactPicker = 'border-transparent! bg-transparent! px-1.5 shadow-none! hover:bg-canvas!';
     const addableTags = tagOptions.filter((tag) => !selectedTags.has(tag.id) && (tag.archivedAt === null || savedTags.has(tag.id)));
+    const sectionPicker = <ChoicePicker id={ids.section} compact className={compactPicker} label={t('tasks.taskFields.section')} value={draft.sectionId ?? ''} options={sectionChoices}
+      onValueChange={(value) => choose({ sectionId: value === '' ? null : value })} />;
     return (
       <div className="space-y-3">
         {topActions ? <div className="flex flex-wrap items-center gap-2">{topActions}</div> : null}
@@ -461,13 +466,12 @@ export function TaskFields({
             <dd className="min-w-0"><TaskCompactDateField startDate={draft.startDate ?? ''} dueDate={draft.dueDate} disabled={disabled}
               errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }}
               onDraftChange={onChange} onCommit={dates => choose(dates)} /></dd>
-            <dt className={rowLabel}>{t(projectsField ? 'placements.projects' : 'tasks.taskFields.project')}</dt>
-            <dd className="flex min-h-8 min-w-0 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{projectsField ?? projectName}</dd>
-            <dt className={rowLabel}><label htmlFor={ids.section}>{t('tasks.taskFields.section')}</label></dt>
-            <dd className="min-w-0">
-              <ChoicePicker id={ids.section} compact className={compactPicker} label={t('tasks.taskFields.section')} value={draft.sectionId ?? ''} options={sectionChoices}
-                onValueChange={(value) => choose({ sectionId: value === '' ? null : value })} />
-            </dd>
+            {projectsSection ? null : <>
+              <dt className={rowLabel}>{t(projectsField ? 'placements.projects' : 'tasks.taskFields.project')}</dt>
+              <dd className="flex min-h-8 min-w-0 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{projectsField ?? projectName}</dd>
+              <dt className={rowLabel}><label htmlFor={ids.section}>{t('tasks.taskFields.section')}</label></dt>
+              <dd className="min-w-0">{sectionPicker}</dd>
+            </>}
             {showLegacyEstimate ? <>
               <dt className={rowLabel}><label htmlFor={ids.estimate}>{t('tasks.taskFields.teamEstimateHours')}</label></dt>
               <dd className="min-w-0">
@@ -505,6 +509,7 @@ export function TaskFields({
             <dd className="min-w-0"><TaskParticipantPicker members={members} value={draft.participantMembershipIds} retainedIds={unavailableParticipantIds} disabled={disabled}
               onChange={participantMembershipIds => choose({ participantMembershipIds })} /></dd>
           </dl>
+          {projectsSection ? <div className="border-t border-line pt-3">{projectsSection(sectionPicker)}</div> : null}
         </fieldset>
         {dependenciesField}
         {moreFields}

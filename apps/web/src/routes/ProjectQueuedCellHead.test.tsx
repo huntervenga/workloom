@@ -66,8 +66,8 @@ async function saveTitleThenClickStatusAfterAck(fixture: ReturnType<typeof heldL
   fixture.holdList();
   await act(async () => fixture.confirmTitle());
   await waitFor(() => expect(screen.queryByRole('form', { name: /in the task table$/ })).not.toBeInTheDocument());
-  // No command is held any more and the refetched list head is not loaded yet: the cell still opens at once.
-  await user.click(screen.getByRole('button', { name: `Edit status for ${task.title}` }));
+  // No command is held any more and the refetched list is not back yet; the confirmed task is already in the loaded list, and the cell opens at once.
+  await user.click(screen.getByRole('button', { name: 'Edit status for Renamed before status' }));
   const picker = await screen.findByRole('combobox', { name: 'Status' });
   await waitFor(() => expect(picker).toHaveFocus());
   expect(patches(calls)).toHaveLength(1);
@@ -85,7 +85,7 @@ describe.each([
     // Still one command at a time: the choice waits for the title's answer (if it is still outstanding).
     await confirm();
     await waitFor(() => expect(patches(calls)).toHaveLength(2));
-    // The list still shows revision 1; the guard comes from the title's confirmed answer.
+    // The guard is the title's confirmed revision, whether the list already shows it or is still refetching.
     expect(patches(calls)[1]?.body).toEqual({ expectedRevision: 2, statusId: NEXT_STATUS });
     await act(async () => fixture.answerList(() => page([fixture.current()])));
     await screen.findByRole('button', { name: 'Renamed before status' });

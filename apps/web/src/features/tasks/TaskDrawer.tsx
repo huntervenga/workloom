@@ -681,6 +681,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             part="saved"
             projectName={props.project.name}
             projectsField={props.placementCommands && latest.meetingId === null ? <TaskProjectsField actorId={actorId} task={latest} homeProject={props.project} writable={canEdit} commands={props.placementCommands} /> : undefined}
+            projectsSection={props.placementCommands && latest.meetingId === null ? (homeSectionPicker) => <TaskProjectsField actorId={actorId} task={latest} homeProject={props.project} writable={canEdit} commands={props.placementCommands as NonNullable<typeof props.placementCommands>} homeSectionPicker={homeSectionPicker} /> : undefined}
             disabled={fieldsDisabled}
             showLegacyEstimate={props.legacyTime === true}
             estimateSupplement={props.legacyTime === true && latest.meetingId === null ? <div className="space-y-1.5 text-xs text-muted">

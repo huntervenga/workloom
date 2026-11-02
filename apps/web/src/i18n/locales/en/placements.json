@@ -60,5 +60,7 @@
       "no_status": "The target project has no status in the same group as the task's status."
     },
     "back": "Move back to {{project}}"
-  }
+  },
+  "noSection": "No section",
+  "sectionIn": "Section in this project"
 }

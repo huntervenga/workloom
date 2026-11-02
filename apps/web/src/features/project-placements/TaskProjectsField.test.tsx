@@ -7,7 +7,7 @@ import { renderFieldUi } from '../fields/test/fixtures';
 import { TaskProjectsField } from './TaskProjectsField';
 import { PlacementCommandFeedback } from './PlacementCommandFeedback';
 import { usePlacementCommands } from './queries';
-import { home, homePlacement, placement, target, task } from './testFixtures';
+import { home, homePlacement, placement, target, targetSection, task } from './testFixtures';
 const root = `/api/v1/workspaces/${alpha.id}`;
 const cleanups: (() => void)[] = [];
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); vi.unstubAllGlobals(); });
@@ -68,5 +68,23 @@ describe('independently saved Projects field', () => {
     expect(writes[0]?.body).toEqual({ expectedRevision: 7 });
     expect(writes[1]?.body).toEqual(writes[0]?.body);
     expect(writes[1]?.headers.get('Idempotency-Key')).toBe(writes[0]?.headers.get('Idempotency-Key'));
+  });
+  it('lists each project in its own row with a count, shows the home section picker in the home row, and sets a linked project\'s section there', async () => {
+    const api = installFakeApi({
+      [`GET ${root}/projects`]: () => ok([home, target]),
+      [`GET ${root}/tasks/${task.id}/placements`]: () => ok([homePlacement, placement]),
+      [`GET ${root}/projects/${target.id}/sections`]: () => ok([targetSection]),
+      [`PATCH ${root}/task-project-placements/${placement.id}`]: () => ok({ ...placement, sectionId: targetSection.id, revision: 8 }),
+    });
+    function Rows() { const commands = usePlacementCommands(anna.id, alpha.id); return <TaskProjectsField actorId={anna.id} task={task} homeProject={home} writable commands={commands} homeSectionPicker={<span>Home section picker</span>} />; }
+    const ui = renderFieldUi(<Rows />); cleanups.push(() => { ui.unmount(); ui.client.clear(); });
+    expect(await screen.findByText('Home section picker')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Projects' })).toBeInTheDocument();
+    expect(await screen.findByText('2')).toBeInTheDocument();
+    const section = await screen.findByRole('combobox', { name: 'Section in this project' });
+    await waitFor(() => expect(section).toBeEnabled());
+    await ui.user.click(section);
+    await ui.user.click(screen.getByRole('option', { name: targetSection.name }));
+    await waitFor(() => expect(api.calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: placement.revision, sectionId: targetSection.id }));
   });
 });
