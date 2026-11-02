@@ -77,7 +77,7 @@ export class WorkspaceLiveRefreshController {
   }
 
   private canPoll(): boolean { return this.running && this.visible && !this.denied && !this.dependencies.protected(); }
-  private safe = (): boolean => this.canPoll() && this.authorized && !this.dependencies.protected();
+  private safe = (): boolean => this.canPoll() && this.authorized;
 
   private clearTimer(): void {
     if (this.timer !== null) clearTimeout(this.timer);

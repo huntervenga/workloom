@@ -8,6 +8,7 @@ export function setWorkspaceRefreshComposing(client: QueryClient, active: boolea
   compositions.set(client, active);
 }
 
+const MUTATION_WAKE_MS = 100;
 const HIDDEN = '[hidden],[inert],[aria-hidden="true"],[data-state="closed"]';
 const EDITING = 'input:not([type="hidden"]),textarea,select,[contenteditable=""],[contenteditable="true"]';
 const SURFACES = '[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"],[data-choice-picker-menu],[aria-haspopup][aria-expanded="true"]';
@@ -33,13 +34,24 @@ export function observeWorkspaceRefreshInteraction(client: QueryClient, wake: ()
   const command = protectedCommandsFor(client).subscribe(changed);
   doc.addEventListener('focusin', changed, true);
   doc.addEventListener('focusout', changed, true);
-  const observer = new MutationObserver(changed);
+  // A big table re-renders thousands of nodes in bursts; every burst used to trigger a full DOM scan. The first change of
+  // a burst wakes at once (a closed dialog still releases promptly); the rest of the burst becomes one trailing wake.
+  let quietUntil = 0;
+  let trailing: ReturnType<typeof setTimeout> | undefined;
+  const mutated = () => {
+    if (trailing !== undefined) return;
+    const now = Date.now();
+    if (now >= quietUntil) { quietUntil = now + MUTATION_WAKE_MS; changed(); return; }
+    trailing = setTimeout(() => { trailing = undefined; quietUntil = Date.now() + MUTATION_WAKE_MS; changed(); }, quietUntil - now);
+  };
+  const observer = new MutationObserver(mutated);
   observer.observe(doc.body, {
     childList: true, subtree: true, attributes: true,
     attributeFilter: ['hidden', 'inert', 'aria-hidden', 'aria-expanded', 'data-state'],
   });
   return () => {
     draft(); command(); observer.disconnect();
+    if (trailing !== undefined) clearTimeout(trailing);
     doc.removeEventListener('focusin', changed, true);
     doc.removeEventListener('focusout', changed, true);
   };

@@ -48,7 +48,7 @@ describe('workspace refresh editing protection', () => {
     expect(wake).toHaveBeenCalled(); wake.mockClear();
     const menu = document.createElement('div'); menu.setAttribute('role', 'menu'); document.body.append(menu);
     await Promise.resolve(); await Promise.resolve(); expect(wake).toHaveBeenCalled();
-    wake.mockClear(); menu.remove(); await Promise.resolve(); await Promise.resolve(); expect(wake).toHaveBeenCalled();
+    wake.mockClear(); menu.remove(); await new Promise(resolve => setTimeout(resolve, 150)); /* mutation bursts coalesce into one trailing wake */ expect(wake).toHaveBeenCalled();
     stop(); wake.mockClear(); slot.set(true); await Promise.resolve(); expect(wake).not.toHaveBeenCalled(); client.clear();
   });
 });
