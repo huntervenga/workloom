@@ -17,6 +17,9 @@ class PresentationStore {
  private leases = new Set<Lease>();
  private listeners = new Set<() => void>();
  constructor(private client: QueryClient) { client.getQueryCache().subscribe(event => {
+  // Observer bookkeeping (options/results/added/removed) fires on every render of every useQuery and changes neither
+  // query state, promises nor cache membership, which is all a lease depends on.
+  if (event.type.startsWith('observer')) return;
   let changed = false;
   for (const lease of this.leases) {
    const authority = this.captures(lease).find(item => item.query === event.query);
