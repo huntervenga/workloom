@@ -85,6 +85,7 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_MAPPING_REQUIRED' ? 'projects.asanaImport.mappingError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_PROJECT_RULE' ? 'projects.asanaImport.projectRuleError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_REVIEW_REQUIRED' ? 'projects.asanaImport.reviewError'
+    : error instanceof ApiError && error.code === 'ASANA_IMPORT_ARCHIVED' ? 'projects.asanaImport.archivedError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_BUSY' ? 'projects.asanaImport.busyError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_EXTERNAL_DEPENDENCY' ? 'projects.asanaImport.externalDependencyError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_MILESTONE_OPTION' ? 'projects.asanaImport.milestoneOptionError'

@@ -40,3 +40,12 @@ test('leaves chosen task ids out and promotes their subtasks, without any assign
  assert.ok(!out.csvText.includes('Parent A,ann@x.test'));
  assert.equal(out.skipped,1);
 });
+
+test('a subtask listed inside a skipped parent and on its own is kept once',()=>{
+ const child=task('12','Child',{parent:{gid:'11',name:'Parent'}});
+ const dupJson=JSON.stringify({data:[task('11','Parent',{subtasks:[child]}),child]});
+ const dupCsv='Task ID,Name,Assignee,Assignee Email,Parent task,Blocked By (Dependencies)\n11,Parent,Bob,bob@x.test,,\n12,Child,,,Parent,\n';
+ const out=applyAssigneeResolutions(dupJson,dupCsv,{'bob@x.test':{action:'skip'}});
+ const gids=[];const visit=list=>{for(const t of list){gids.push(t.gid);visit(t.subtasks)}};visit(JSON.parse(out.jsonText).data);
+ assert.deepEqual(gids,['12']);
+});

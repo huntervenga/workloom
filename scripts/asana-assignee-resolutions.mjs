@@ -42,11 +42,13 @@ export function applyAssigneeResolutions(jsonText,csvText,resolutions,skipTaskId
  for(const row of records){const a=action(row[emailCol]);if(a){decided.set(row[id],a);if(a==='skip')skip.add(row[id]);}}
  walk(data.data,t=>names.set(t.gid,t.name));
  const projectId=discoverAsanaSource(jsonText).sourceProjectId;let projectName='';walk(data.data,t=>{for(const m of t.memberships??[])if(m.project?.gid===projectId&&m.project.name)projectName=m.project.name;});
- let unassigned=0;const newParent=new Map();
+ let unassigned=0;const newParent=new Map(),topLevel=new Set((data.data??[]).map(t=>t.gid));
  // Drop skipped tasks; their kept children move up to the nearest kept ancestor (or become top-level tasks).
  const rebuild=(tasks,kept,top=true)=>{
   const out=[];
   for(const t of tasks??[]){
+   // A subtask the export also lists on its own stays only in that own entry, so it is not added twice.
+   if(!top&&!kept&&topLevel.has(t.gid))continue;
    if(skip.has(t.gid)){out.push(...rebuild(t.subtasks,kept,false));continue;}
    if(decided.get(t.gid)==='unassign'){t.assignee=null;unassigned+=1;}
    if(kept&&t.parent?.gid!==kept.gid){t.parent={...t.parent,gid:kept.gid,name:kept.name};newParent.set(t.gid,kept.name);}

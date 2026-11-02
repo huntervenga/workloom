@@ -148,6 +148,7 @@
     "missingEmails": "Not found on the Members page: {{emails}}.",
     "mappingError": "Every person in the export must already be on the Members page with the same e-mail address as in Asana. Add the missing teammates there, then check the files again.",
     "reviewError": "This export needs review: it may conflict with an existing import or current shared tasks, or need a preservation option. Check the original exports and the advanced options.",
+    "archivedError": "This Asana project was already imported and is now archived. Restore it, or delete it permanently from the archive, then import again.",
     "busyError": "Another import is running. Wait for it to finish, then retry this import.",
     "previewError": "The files could not be checked. Make sure the JSON and CSV are matching Asana exports, review the advanced options, and try again.",
     "applyError": "The import could not finish. Retry this import; already imported tasks will be reused.",
