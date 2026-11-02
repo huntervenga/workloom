@@ -123,7 +123,11 @@ async function purge(tx: WorkloomExecutor, root: { table: string; ids: readonly 
     group.forEach((table, i) => { const n = Number(result[`n${i}`] ?? 0); if (n > 0) counts[table.replace(/^public\./, '').replaceAll('"', '')] = n; });
   }
   if (removedIds.length > 0) {
-    const result = await run(`with del as (delete from public.command_idempotency where result::text ~ '(${removedIds.join('|')})' returning 1) select count(*)::int n from del`);
+    // One regex over hundreds of alternatives is far too slow on large receipts; pull each uuid out and look it up instead.
+    const idList = removedIds.map((id) => `'${id.toLowerCase()}'`).join(',');
+    const result = await run(`with del as (delete from public.command_idempotency c where exists (
+      select 1 from regexp_matches(c.result::text, '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', 'g') m(found)
+      where lower(m.found[1]) = any (array[${idList}])) returning 1) select count(*)::int n from del`);
     const n = Number(result[0]?.['n'] ?? 0);
     if (n > 0) counts['command_idempotency'] = n;
   }
