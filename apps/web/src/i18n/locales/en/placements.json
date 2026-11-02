@@ -28,6 +28,7 @@
   "section": "Section in this project",
   "sharedStatus": "Shared status",
   "multiProjectWarning": "This task is in more than one project. Its time and estimate are counted once, in the project where it lives and in the period of its due date — not in each project. To carry unfinished work into another week, use “Complete and continue in another project” instead.",
+  "targetsKeepOneProject": "Every other project keeps its tasks in one project only, so none accepts this task. Turn off \"Task can belong to only one project\" in the Project rules of the project you want to add it to.",
   "oneProjectHint": "This project keeps every task in one project only.",
-  "failedRule": "This project does not allow the task to be added there. A project rule keeps each task in one project."
+  "failedRule": "The task could not be added there. A project rule keeps each task in one project: check the rules of this task's project and of the project you chose."
 }

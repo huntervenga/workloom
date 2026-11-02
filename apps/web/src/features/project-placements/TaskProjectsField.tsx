@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { protectedCommandsFor } from '../../lib/protectedCommands';
 import type { ProjectDto, TaskDto } from '@workloom/contracts';
@@ -6,7 +6,8 @@ import { Button } from '@workloom/ui';
 import { useTranslation } from '../../i18n';
 import { ChoicePicker } from '../../shared/ChoicePicker';
 import { useProjectsQuery } from '../projects/queries';
-import { useProjectRules } from '../project-rules/queries';
+import { fetchProjectRules } from '../project-rules/api';
+import { projectRulesKey, useProjectRules } from '../project-rules/queries';
 import { useTaskPlacementsQuery, type PlacementCommands } from './queries';
 
 export function TaskProjectsField({ actorId, task, homeProject, writable, commands }: { actorId: string; task: TaskDto; homeProject: ProjectDto; writable: boolean; commands: PlacementCommands }) {
@@ -24,7 +25,10 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
   const projectName = (id: string) => projects.isSuccess ? projects.data.projects.find(item => item.id === id)?.name ?? t('placements.unavailableProject') : t('placements.unavailableProject');
   const archived = placements.isSuccess ? placements.data.filter(item => item.archivedAt !== null && item.projectId !== homeProject.id) : [];
   const present = new Set([homeProject.id, ...active.map(item => item.projectId), ...archived.map(item => item.projectId)]);
-  const choices = projects.isSuccess ? projects.data.projects.filter(item => item.archivedAt === null && !present.has(item.id)).map(item => ({ value: item.id, label: item.name })) : [];
+  const candidates = projects.isSuccess ? projects.data.projects.filter(item => item.archivedAt === null && !present.has(item.id)) : [];
+  // A target project with the "one project only" rule refuses tasks from elsewhere, so it must not be offered.
+  const targetRules = useQueries({ queries: candidates.map(item => ({ queryKey: projectRulesKey(actorId, task.workspaceId, item.id), queryFn: ({ signal }: { signal: AbortSignal }) => fetchProjectRules(task.workspaceId, item.id, signal), retry: false, staleTime: 30_000 })) });
+  const choices = candidates.filter((_, index) => targetRules[index]?.data?.config.singleProject !== true).map(item => ({ value: item.id, label: item.name }));
   return <div className="min-w-0 space-y-2" aria-label={t('placements.projects')}>
     <div className="flex min-h-9 flex-wrap items-center gap-2"><span>{homeProject.name}</span><span className="rounded bg-canvas px-1.5 py-0.5 text-xs text-muted">{t('placements.home')}</span></div>
     {active.length > 0 ? <p role="note" data-multi-project-warning="" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">{t('placements.multiProjectWarning')}</p> : null}
@@ -34,6 +38,7 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
     {writable && !keepsOneProject && task.visibility === 'workspace' && task.meetingId === null && task.archivedAt === null ? <ChoicePicker compact searchable label={t('placements.add')} placeholder={t('placements.add')} value="" options={choices} disabled={blocked || choices.length === 0} onValueChange={projectId => {
       if (!blocked && choices.some(choice => choice.value === projectId)) commands.mutate({ command: { kind: 'attach', taskId: task.id, input: { projectId, expectedTaskRevision: task.revision } } });
     }} /> : null}
+    {!keepsOneProject && candidates.length > 0 && choices.length === 0 && targetRules.every(rule => rule.isSuccess) ? <p role="note" className="text-xs text-amber-900">{t('placements.targetsKeepOneProject')}</p> : null}
     <p className="text-xs text-muted">{keepsOneProject ? t('placements.oneProjectHint') : t('placements.sharedHint')}</p>
   </div>;
 }
