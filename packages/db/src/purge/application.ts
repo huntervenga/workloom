@@ -37,6 +37,11 @@ async function purge(tx: WorkloomExecutor, root: { table: string; ids: readonly 
       join pg_class pc on pc.oid = c.confrelid join pg_namespace pn on pn.oid = pc.relnamespace
     where c.contype = 'f' and cn.nspname = 'public' and pn.nspname = 'public'`)) as unknown as ForeignKey[];
 
+  // The closure is only as good as the schema's foreign keys. A database loaded without them would lose just the root row
+  // and leave everything that belongs to it behind, so refuse instead of deleting half.
+  if (!fks.some((fk) => fk.child === 'public.tasks' && fk.parent === 'public.projects')) {
+    throw new DomainError('DOMAIN_VALIDATION_FAILED', 'Permanent delete is unavailable: this database lacks the foreign keys it relies on.', { details: { fields: ['projectId'] } });
+  }
   const rootTable = `public.${root.table}`; // same spelling as format(%I) yields for these plain names
   const temp = new Map<string, string>(); // table -> temp table holding the ctids of doomed rows
   const tempFor = async (table: string) => {

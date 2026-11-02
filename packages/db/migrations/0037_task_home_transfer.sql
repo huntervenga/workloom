@@ -1,10 +1,15 @@
 -- A canonical task may change its home project through the explicit transfer command.
 -- Import provenance stays exactly as recorded: a reference keeps the project and import it was created in, and is
 -- tied to the task itself instead of to the task's current home project.
-ALTER TABLE "external_import_references" DROP CONSTRAINT "external_import_references_task_fk";
---> statement-breakpoint
-ALTER TABLE "external_import_references" ADD CONSTRAINT "external_import_references_task_fk"
-  FOREIGN KEY ("workspace_id", "task_id") REFERENCES "tasks" ("workspace_id", "id");
+-- (A hosted database loaded without foreign keys has no such constraint: nothing to replace there.)
+DO $$
+BEGIN
+ IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'external_import_references_task_fk' AND conrelid = 'external_import_references'::regclass) THEN
+  ALTER TABLE "external_import_references" DROP CONSTRAINT "external_import_references_task_fk";
+  ALTER TABLE "external_import_references" ADD CONSTRAINT "external_import_references_task_fk"
+   FOREIGN KEY ("workspace_id", "task_id") REFERENCES "tasks" ("workspace_id", "id");
+ END IF;
+END $$;
 --> statement-breakpoint
 -- A transfer swaps which placement carries the task's own id (the home row must have id = task id), so the primary
 -- key may be checked at the end of the statement. Nothing references this key.
