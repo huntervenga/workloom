@@ -8,6 +8,7 @@ import { HomeRedirect } from '../routes/HomeRedirect';
 import { MembersPage } from '../routes/MembersPage';
 import { NotFoundPage } from '../routes/NotFoundPage';
 import { OverviewPage } from '../routes/OverviewPage';
+import { ArchivedProjectsPage } from '../routes/ArchivedProjectsPage';
 import { ProjectsPage } from '../routes/ProjectsPage';
 import { TagsPage } from '../routes/TagsPage';
 import { WorkspaceLayout } from '../routes/WorkspaceLayout';
@@ -51,6 +52,7 @@ export function AppRoutes() {
           <Route path="tags" element={<TagsPage />} />
           <Route path="tags/:tagId" element={<TagPage />} />
           <Route path="projects" element={<ProjectsPage />} />
+          <Route path="projects/archive" element={<ArchivedProjectsPage />} />
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route path="projects/:projectId/reports" element={<ReportsPage />} />
           <Route path="projects/:projectId/week" element={<WeeklyPage />} />

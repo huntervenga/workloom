@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type {
   CreateProjectInput,
+  PurgeProjectInput,
   CreateSectionInput,
   ProjectDto,
   UpdateProjectInput,
@@ -17,6 +18,7 @@ import {
   fetchProjects,
   fetchSections,
   fetchStatuses,
+  purgeProjectRequest,
   updateProjectRequest,
   updateSectionRequest,
   type ProjectList,
@@ -184,6 +186,29 @@ export function useUpdateSectionMutation(actorId: string, workspaceId: string) {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.projectTaskLists(actorId, workspaceId, section.projectId),
       });
+    },
+  });
+}
+
+export function useArchivedProjectsQuery(actorId: string, workspaceId: string) {
+  return useQuery({
+    queryKey: queryKeys.archivedProjects(actorId, workspaceId),
+    queryFn: async ({ signal }) => (await fetchProjects(workspaceId, signal, true)).projects.filter(project => project.archivedAt !== null),
+  });
+}
+
+export interface PurgeProjectVariables extends IdempotentVariables {
+  projectId: string;
+  input: PurgeProjectInput;
+}
+
+export function usePurgeProjectMutation(actorId: string, workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useIdempotentMutation({
+    prepare: ({ projectId, input }: PurgeProjectVariables) => purgeProjectRequest(workspaceId, projectId, input),
+    onSuccess: () => {
+      void invalidateProjectList(queryClient, actorId, workspaceId);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.workspace(actorId, workspaceId) });
     },
   });
 }

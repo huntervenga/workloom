@@ -3,6 +3,8 @@ import {
   createSectionInputSchema,
   projectListResponseSchema,
   projectResponseSchema,
+  purgeProjectInputSchema,
+  purgeResponseSchema,
   sectionListResponseSchema,
   sectionResponseSchema,
   taskStatusListResponseSchema,
@@ -10,6 +12,7 @@ import {
   updateSectionInputSchema,
   type CreateProjectInput,
   type CreateSectionInput,
+  type PurgeProjectInput,
   type ProjectDto,
   type SectionDto,
   type TaskStatusDto,
@@ -122,4 +125,15 @@ export async function updateSection(
   options: MutationOptions,
 ): Promise<SectionDto> {
   return (await sendMutation(updateSectionRequest(workspaceId, sectionId, input), options)).data;
+}
+
+/** Permanent delete (owner or admin): the exact project name must be typed back. */
+export function purgeProjectRequest(workspaceId: string, projectId: string, input: PurgeProjectInput) {
+  return prepareMutation({
+    method: 'POST',
+    path: `${projectPath(workspaceId, projectId)}/purge`,
+    input,
+    inputSchema: purgeProjectInputSchema,
+    responseSchema: purgeResponseSchema,
+  });
 }

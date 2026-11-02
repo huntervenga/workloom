@@ -29,6 +29,7 @@ import { usePersonalTablePreference } from '../features/task-table/usePersonalTa
 import { useTableExpansionState } from '../features/task-table/useTableExpansionState';
 import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/task-comments';
 import { ProjectActions } from '../features/projects/ProjectActions';
+import { ArchiveProjectButton } from '../features/projects/ProjectArchive';
 import { QuickTaskAdd, QuickTaskDraftPreview, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
 import { withPendingEdit, type PendingEdit } from '../features/tasks/pendingEdit';
 import { InlineTaskEdit, type InlineCloseReason, type InlineSaveIntent } from '../features/tasks/InlineTaskEdit';
@@ -1148,6 +1149,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             <TaskDefaultsDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <ProjectRulesDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
+            {canEdit ? <ArchiveProjectButton actorId={actorId} workspaceId={workspace.id} project={project} onChanged={next => { if (next.archivedAt !== null) navigate(projectsHref); }} /> : null}
             <FieldManagerDialog onConfigurePlanningCheck={planningChecks.configureField} initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
         </ProjectActions>
       </header>

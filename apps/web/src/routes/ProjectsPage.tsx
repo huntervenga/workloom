@@ -1,7 +1,7 @@
 import { AsanaImportButton } from '../features/asana-import/AsanaImportButton';
 import { useTranslation } from '../i18n';
-import { Button, Skeleton, StateCard } from '@workloom/ui';
-import { Eye, FolderKanban, Plus } from 'lucide-react';
+import { Button, Skeleton, StateCard, buttonClassName } from '@workloom/ui';
+import { Archive, Eye, FolderKanban, Plus } from 'lucide-react';
 import { useState } from 'react';
 
 import { ProjectListTable } from '../features/projects/ProjectListTable';
@@ -10,6 +10,7 @@ import { useProjectsQuery } from '../features/projects/queries';
 import { formatProjectCount } from '../lib/format';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { QueryErrorState } from '../shared/QueryErrorState';
+import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { useWorkspaceContext } from './WorkspaceLayout';
 
 export function ProjectsPage() {
@@ -42,6 +43,7 @@ export function ProjectsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Link to={`/w/${workspace.id}/projects/archive`} className={buttonClassName({ variant: 'ghost' })}><Archive size={16} aria-hidden="true" />{t('projects.archive.openArchive')}</Link>
           <AsanaImportButton actorId={actorId} workspaceId={workspace.id} isOwner={workspace.role === 'owner'} />
           {canEdit ? (
             <CreateProjectDialog

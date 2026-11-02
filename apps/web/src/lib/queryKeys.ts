@@ -16,6 +16,7 @@ export const queryKeys = {
   memberships: (actorId: string, workspaceId: string) =>
     ['actor', actorId, 'workspace', workspaceId, 'memberships'] as const,
   projectList: (actorId: string, workspaceId: string) => ['actor', actorId, 'workspace', workspaceId, 'projects'] as const,
+  archivedProjects: (actorId: string, workspaceId: string) => ['actor', actorId, 'workspace', workspaceId, 'projects', 'archived'] as const,
   /** Prefix of the project itself and its sections and statuses. */
   project: (actorId: string, workspaceId: string, projectId: string) =>
     ['actor', actorId, 'workspace', workspaceId, 'project', projectId] as const,
