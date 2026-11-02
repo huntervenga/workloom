@@ -87,4 +87,20 @@ describe('independently saved Projects field', () => {
     await ui.user.click(screen.getByRole('option', { name: targetSection.name }));
     await waitFor(() => expect(api.calls.find(call => call.method === 'PATCH')?.body).toEqual({ expectedRevision: placement.revision, sectionId: targetSection.id }));
   });
+  it('shows no Restore buttons: a project the task left is offered again in Add, and choosing it restores the detached placement', async () => {
+    const detached = { ...placement, archivedAt: task.createdAt };
+    const api = installFakeApi({
+      [`GET ${root}/projects`]: () => ok([home, target]),
+      [`GET ${root}/tasks/${task.id}/placements`]: () => ok([homePlacement, detached]),
+      [`POST ${root}/task-project-placements/${placement.id}/restore`]: () => ok({ ...placement, revision: 8 }),
+    });
+    function Rows() { const commands = usePlacementCommands(anna.id, alpha.id); return <TaskProjectsField actorId={anna.id} task={task} homeProject={home} writable commands={commands} />; }
+    const ui = renderFieldUi(<Rows />); cleanups.push(() => { ui.unmount(); ui.client.clear(); });
+    const add = await screen.findByRole('combobox', { name: 'Add to project' });
+    await waitFor(() => expect(add).toBeEnabled());
+    expect(screen.queryByRole('button', { name: /Restore/ })).not.toBeInTheDocument();
+    await ui.user.click(add);
+    await ui.user.click(screen.getByRole('option', { name: target.name }));
+    await waitFor(() => expect(api.calls.find(call => call.method === 'POST')?.body).toEqual({ expectedRevision: detached.revision }));
+  });
 });

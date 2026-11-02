@@ -46,7 +46,8 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
   const active = placements.isSuccess ? placements.data.filter(item => item.archivedAt === null && item.projectId !== homeProject.id) : [];
   const projectName = (id: string) => projects.isSuccess ? projects.data.projects.find(item => item.id === id)?.name ?? t('placements.unavailableProject') : t('placements.unavailableProject');
   const archived = placements.isSuccess ? placements.data.filter(item => item.archivedAt !== null && item.projectId !== homeProject.id) : [];
-  const present = new Set([homeProject.id, ...active.map(item => item.projectId), ...archived.map(item => item.projectId)]);
+  // A project the task was removed from (or moved out of) is offered again: choosing it restores the detached placement.
+  const present = new Set([homeProject.id, ...active.map(item => item.projectId)]);
   const candidates = projects.isSuccess ? projects.data.projects.filter(item => item.archivedAt === null && !present.has(item.id)) : [];
   // A target project with the "one project only" rule refuses tasks from elsewhere, so it must not be offered.
   const targetRules = useQueries({ queries: candidates.map(item => ({ queryKey: projectRulesKey(actorId, task.workspaceId, item.id), queryFn: ({ signal }: { signal: AbortSignal }) => fetchProjectRules(task.workspaceId, item.id, signal), retry: false, staleTime: 30_000 })) });
@@ -69,10 +70,13 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
       <div className="max-w-[45%] shrink-0"><LinkedSection actorId={actorId} item={item} blocked={blocked} commands={commands} /></div>
       <Button size="sm" variant="ghost" disabled={blocked} aria-label={t('placements.removeFrom', { p0: projectName(item.projectId) })} onClick={() => commands.mutate({ command: { kind: 'detach', placementId: item.id, input: { expectedRevision: item.revision } } })}><X size={14} aria-hidden="true" /></Button>
     </div>)}
-    {archived.map(item => <Button key={item.id} size="sm" variant="ghost" disabled={blocked} onClick={() => commands.mutate({ command: { kind: 'restore', placementId: item.id, input: { expectedRevision: item.revision } } })}>{t('placements.restoreTo', { p0: projectName(item.projectId) })}</Button>)}
     {placements.isError || projects.isError ? <div className="space-y-1"><p role="status" className="text-xs text-muted">{t('placements.loadFailed')}</p><Button size="sm" variant="ghost" onClick={() => { void placements.refetch(); void projects.refetch(); }}>{t('placements.reload')}</Button></div> : null}
     {writable && !keepsOneProject && task.visibility === 'workspace' && task.meetingId === null && task.archivedAt === null ? <ChoicePicker compact searchable className={compactPicker} label={t('placements.add')} placeholder={`+ ${t('placements.add')}`} value="" options={choices} disabled={blocked || choices.length === 0} onValueChange={projectId => {
-      if (!blocked && choices.some(choice => choice.value === projectId)) commands.mutate({ command: { kind: 'attach', taskId: task.id, input: { projectId, expectedTaskRevision: task.revision } } });
+      if (blocked || !choices.some(choice => choice.value === projectId)) return;
+      const detached = archived.find(item => item.projectId === projectId);
+      commands.mutate({ command: detached
+        ? { kind: 'restore', placementId: detached.id, input: { expectedRevision: detached.revision } }
+        : { kind: 'attach', taskId: task.id, input: { projectId, expectedTaskRevision: task.revision } } });
     }} /> : null}
     {!keepsOneProject && candidates.length > 0 && choices.length === 0 && targetRules.every(rule => rule.isSuccess) ? <p role="note" className="text-xs text-amber-900">{t('placements.targetsKeepOneProject')}</p> : null}
     {homeRules.data?.config.lockMoves === true ? <p className="text-xs text-muted">{t('placements.transfer.locked')}</p> : null}
