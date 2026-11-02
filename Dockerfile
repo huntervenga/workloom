@@ -16,7 +16,7 @@ COPY --from=build --chown=node:node /app/apps/api/dist ./apps/api/dist
 COPY --from=build --chown=node:node /app/apps/web/dist ./apps/web/dist
 COPY --from=build --chown=node:node /app/scripts/hosted-migrate.mjs ./scripts/hosted-migrate.mjs
 # Hosted mode loads the browser Asana importer at startup, together with the two modules it imports.
-COPY --from=build --chown=node:node /app/scripts/asana-browser-import.mjs /app/scripts/asana-import-files.mjs /app/scripts/import-asana-project.mjs ./scripts/
+COPY --from=build --chown=node:node /app/scripts/asana-browser-import.mjs /app/scripts/asana-import-files.mjs /app/scripts/import-asana-project.mjs /app/scripts/asana-assignee-resolutions.mjs ./scripts/
 USER node
 EXPOSE 8080
 CMD ["node", "apps/api/dist/main.js"]
