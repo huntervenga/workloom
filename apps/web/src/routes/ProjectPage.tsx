@@ -31,7 +31,7 @@ import { CommentCommandRecovery, useTaskCommentsWorkspace } from '../features/ta
 import { ProjectActions } from '../features/projects/ProjectActions';
 import { ArchiveProjectButton } from '../features/projects/ProjectArchive';
 import { QuickTaskAdd, QuickTaskDraftPreview, type QuickAddCloseReason } from '../features/tasks/QuickTaskAdd';
-import { withPendingEdit, type PendingEdit } from '../features/tasks/pendingEdit';
+import { pendingEditsOfBulk, withPendingEdit, type PendingEdit } from '../features/tasks/pendingEdit';
 import { InlineTaskEdit, type InlineCloseReason, type InlineSaveIntent } from '../features/tasks/InlineTaskEdit';
 import { TaskCommandRecovery } from '../features/tasks/TaskCommandRecovery';
 import { SaveFeedback } from '../shared/SaveFeedback';
@@ -1336,7 +1336,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             query={tasks}
             deletedTaskIds={deletedTaskIds}
             tagCatalog={tags.data}
-            pendingEdit={commands.update.pendingCommand ? { taskId: commands.update.pendingCommand.variables.taskId, input: commands.update.pendingCommand.variables.input } : null}
+            pendingEdit={[...(commands.update.pendingCommand ? [{ taskId: commands.update.pendingCommand.variables.taskId, input: commands.update.pendingCommand.variables.input }] : []), ...pendingEditsOfBulk(commands.bulk.pendingCommand?.variables.input)]}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
             workspace={workspace}
@@ -1446,7 +1446,7 @@ interface TaskListProps {
   query: ReturnType<typeof useTaskListQuery>;
   deletedTaskIds: ReadonlySet<string>;
   /** The sent, unanswered update: its row shows the new values meanwhile. */
-  pendingEdit?: PendingEdit | null | undefined;
+  pendingEdit?: PendingEdit | readonly PendingEdit[] | null | undefined;
   /** Workspace tags, to name the tags a pending edit sent. */
   tagCatalog?: readonly TagDto[] | undefined;
   filtered: boolean;
@@ -1514,7 +1514,7 @@ function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, pr
 
   const loadedScope = loadedTaskScope(query.data);
   const keptScope = deletedTaskIds.size === 0 ? loadedScope : { ...loadedScope, tasks: withoutDeletedTasks(loadedScope.tasks, deletedTaskIds) };
-  const scope = pendingEdit ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit, tagCatalog) } : keptScope;
+  const scope = pendingEdit && (!Array.isArray(pendingEdit) || pendingEdit.length > 0) ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit, tagCatalog) } : keptScope;
   const dateIssues = completedDateIssues(project, scope.tasks, table.statuses);
   const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, { kind: issue.kind, finished: issue.finished }] as const));
   return (

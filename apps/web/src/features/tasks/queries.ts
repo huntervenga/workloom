@@ -182,7 +182,26 @@ export function tagsWouldRegress(next: TaskDto, known: readonly TagDto[]): boole
  * including an embedded tag against the cached detail or workspace tags, in which case the
  * newer cached data stays and the detail is refetched. Task lists refetch too.
  */
+/**
+ * The server's confirmed task replaces its older copy in the loaded lists at once. Lists are only invalidated after a
+ * write, and a large project's list takes a second or more to come back; until then the table would show the old
+ * values again after the pending edit stopped being displayed. Only a newer revision replaces, and the invalidation
+ * that follows still reconciles order, grouping and projections.
+ */
+export function patchConfirmedTaskInLists(queryClient: QueryClient, actorId: string, workspaceId: string, task: TaskDto): void {
+  const listPrefix = queryKeys.projectTaskLists(actorId, workspaceId, task.projectId);
+  queryClient.setQueriesData<InfiniteData<TaskPage>>({
+    queryKey: listPrefix,
+    predicate: query => query.queryKey.length === listPrefix.length + 1 && typeof query.queryKey[listPrefix.length] === 'object',
+  }, data => {
+    if (!data || !Array.isArray(data.pages) || !data.pages.every(page => Array.isArray(page.tasks))) return data;
+    if (!data.pages.some(page => page.tasks.some(item => item.id === task.id && item.revision < task.revision))) return data;
+    return { ...data, pages: data.pages.map(page => ({ ...page, tasks: page.tasks.map(item => item.id === task.id && item.revision < task.revision ? { ...item, ...task } : item) })) };
+  });
+}
+
 export function storeTask(queryClient: QueryClient, actorId: string, workspaceId: string, task: TaskDto) {
+  patchConfirmedTaskInLists(queryClient, actorId, workspaceId, task);
   void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'schedule'] });
   // Status/archive changes affect authoritative dependency projections, including other projects.
   void queryClient.invalidateQueries({ queryKey: [...queryKeys.workspace(actorId, workspaceId), 'dependencies'] });
@@ -387,6 +406,7 @@ export function useBulkUpdateTasksMutation(actorId: string, workspaceId: string)
 export function storeConfirmedTasks(client: QueryClient, actorId: string, workspaceId: string, tasks: readonly TaskDto[], sharedEstimate = false) {
   const knownTags = client.getQueryData<TagDto[]>(queryKeys.tags(actorId, workspaceId)) ?? [];
   for (const task of tasks) {
+    patchConfirmedTaskInLists(client, actorId, workspaceId, task);
     const key = queryKeys.task(actorId, workspaceId, task.id);
     const cached = client.getQueryData<TaskDto>(key);
     if (!cached) continue;

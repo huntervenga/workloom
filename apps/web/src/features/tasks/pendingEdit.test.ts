@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '../task-table/taskTableFixtures';
-import { withPendingEdit } from './pendingEdit';
+import { pendingEditsOfBulk, withPendingEdit } from './pendingEdit';
 
 describe('withPendingEdit', () => {
   const first = makeTask({ id: 'a', title: 'Old', position: 0 });
@@ -32,5 +32,15 @@ describe('withPendingEdit', () => {
     expect(shown[0]?.tags.map(tag => tag.id)).toEqual(['tag-kept', 'tag-new']);
     expect(withPendingEdit([tagged], { taskId: 'c', input: { expectedRevision: 1, tagIds: [] } })[0]?.tags).toEqual([]);
     expect(tagged.tags).toEqual([kept]);
+  });
+
+  it('shows several pending edits at once, and a bulk update gives each of its tasks the sent priority and tags', () => {
+    const tag = { id: 'tag-1', workspaceId: 'ws-1', name: 'One', color: null, revision: 1, archivedAt: null };
+    const edits = pendingEditsOfBulk({ projectId: 'p', tasks: [{ taskId: 'a', expectedRevision: 1 }, { taskId: 'b', expectedRevision: 1 }], changes: { tagIds: ['tag-1'], priority: 'high' } });
+    const shown = withPendingEdit(tasks, edits, [tag]);
+    expect(shown.map(task => [task.priority, task.tags.map(t => t.id)])).toEqual([['high', ['tag-1']], ['high', ['tag-1']]]);
+    expect(pendingEditsOfBulk({ projectId: 'p', tasks: [{ taskId: 'a', expectedRevision: 1 }], changes: { statusId: 's' } })).toEqual([]);
+    expect(pendingEditsOfBulk(null)).toEqual([]);
+    expect(withPendingEdit(tasks, [])).toBe(tasks);
   });
 });
