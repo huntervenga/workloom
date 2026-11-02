@@ -12,7 +12,7 @@ const homeProject={id:home,workspaceId:ws,name:'Home',revision:1,archivedAt:null
 const apps:ReturnType<typeof Fastify>[]=[];
 afterEach(async()=>{await Promise.all(apps.splice(0).map(app=>app.close()));});
 function harness(){
- const placements={listProjectRows:vi.fn(async()=>({items:[{placement:row,canonicalTask:task,canonicalStatus:status,homeProject}],nextCursor:'opaque.cursor' as string|null})),listTaskPlacements:vi.fn(async()=>[row]),attachTaskProject:vi.fn(async()=>row),updateTaskProjectPlacement:vi.fn(async()=>row),detachTaskProjectPlacement:vi.fn(async()=>({...row,archivedAt:now,revision:2})),restoreTaskProjectPlacement:vi.fn(async()=>row)} satisfies TaskProjectPlacementApplication;
+ const placements={listProjectRows:vi.fn(async()=>({items:[{placement:row,canonicalTask:task,canonicalStatus:status,homeProject}],nextCursor:'opaque.cursor' as string|null})),listTaskPlacements:vi.fn(async()=>[row]),attachTaskProject:vi.fn(async()=>row),transferTaskProject:vi.fn(async()=>({task:{...task,projectId:project},movedTaskIds:[taskId],carriedValues:1,notCarried:[{fieldName:'Fact',count:2}]})),updateTaskProjectPlacement:vi.fn(async()=>row),detachTaskProjectPlacement:vi.fn(async()=>({...row,archivedAt:now,revision:2})),restoreTaskProjectPlacement:vi.fn(async()=>row)} satisfies TaskProjectPlacementApplication;
  const app=Fastify();apps.push(app);app.setErrorHandler((error,_request,reply)=>{const value=error as {code?:string};return reply.code(value.code==='VALIDATION_FAILED'?400:500).send({code:value.code});});
  registerTaskRoutes(app,{identity:{mode:'dev',resolveActor:async()=>({userId:id(8),displayName:'Trusted',kind:'fixture'})},tasks:{placements} as unknown as TaskApplication});return {app,placements};
 }
@@ -23,4 +23,19 @@ describe('project placement HTTP adapter source candidate',()=>{
  it('requires a stable mutation key and parses placement identity independently of canonical task',async()=>{const {app,placements}=harness();const url=`/api/v1/workspaces/${ws}/task-project-placements/${placementId}`;expect((await app.inject({method:'PATCH',url,payload:{expectedRevision:1,position:9}})).statusCode).toBe(400);expect((await app.inject({method:'PATCH',url,headers:{'idempotency-key':'move'},payload:{expectedRevision:1,position:9}})).statusCode).toBe(200);expect(placements.updateTaskProjectPlacement).toHaveBeenCalledWith(expect.anything(),placementId,{expectedRevision:1,position:9});});
  it('exposes archived placements and explicit detach/restore endpoints',async()=>{const {app,placements}=harness();expect((await app.inject({url:`/api/v1/workspaces/${ws}/tasks/${taskId}/placements`})).statusCode).toBe(200);for(const action of ['detach','restore'])expect((await app.inject({method:'POST',url:`/api/v1/workspaces/${ws}/task-project-placements/${placementId}/${action}`,headers:{'idempotency-key':action},payload:{expectedRevision:1}})).statusCode).toBe(200);expect(placements.detachTaskProjectPlacement).toHaveBeenCalledWith(expect.anything(),placementId,{expectedRevision:1});expect(placements.restoreTaskProjectPlacement).toHaveBeenCalledWith(expect.anything(),placementId,{expectedRevision:1});});
  it('fails response validation rather than relabeling a target-project status as canonical',async()=>{const {app,placements}=harness();placements.listProjectRows.mockResolvedValueOnce({items:[{placement:row,canonicalTask:task,canonicalStatus:{...status,projectId:project},homeProject}],nextCursor:null});const response=await app.inject({url:`/api/v1/workspaces/${ws}/projects/${project}/rows`});expect(response.statusCode).toBe(500);});
+});
+
+describe('task home transfer HTTP route',()=>{
+ it('passes the parsed body with the trusted actor and key, and answers with the moved result',async()=>{
+  const {app,placements}=harness();
+  const reply=await app.inject({method:'POST',url:`/api/v1/workspaces/${ws}/tasks/${taskId}/transfer-project`,headers:{'idempotency-key':'transfer-1'},payload:{expectedRevision:4,projectId:project}});
+  expect(reply.statusCode).toBe(200);expect(reply.json().data).toMatchObject({movedTaskIds:[taskId],carriedValues:1,notCarried:[{fieldName:'Fact',count:2}],task:{projectId:project}});
+  expect(placements.transferTaskProject).toHaveBeenCalledWith(expect.objectContaining({workspaceId:ws,idempotencyKey:'transfer-1'}),taskId,{expectedRevision:4,projectId:project});
+ });
+ it('rejects extra fields and a missing key before the service is called',async()=>{
+  const {app,placements}=harness();const url=`/api/v1/workspaces/${ws}/tasks/${taskId}/transfer-project`;
+  expect((await app.inject({method:'POST',url,headers:{'idempotency-key':'k'},payload:{expectedRevision:4,projectId:project,homeProjectId:home}})).statusCode).toBe(400);
+  expect((await app.inject({method:'POST',url,payload:{expectedRevision:4,projectId:project}})).statusCode).toBe(400);
+  expect(placements.transferTaskProject).not.toHaveBeenCalled();
+ });
 });

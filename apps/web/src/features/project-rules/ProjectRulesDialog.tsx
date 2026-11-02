@@ -30,20 +30,23 @@ function RulesEditor({ actorId, workspaceId, projectId, onClose }: { actorId: st
   </DialogShell>;
 }
 
-function RulesForm({ saved, save, holding, onClose }: { saved: { revision: number; config: { singleProject: boolean } }; save: ReturnType<typeof useSaveProjectRules>; holding: boolean; onClose: () => void }) {
+function RulesForm({ saved, save, holding, onClose }: { saved: { revision: number; config: { singleProject: boolean; lockMoves: boolean } }; save: ReturnType<typeof useSaveProjectRules>; holding: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const [singleProject, setSingleProject] = useState(saved.config.singleProject);
+  const [lockMoves, setLockMoves] = useState(saved.config.lockMoves);
   const pending = save.pendingCommand !== null;
-  return <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (!pending) save.mutate({ input: { expectedRevision: saved.revision, config: { singleProject } } }); }}>
+  return <form className="space-y-4" onSubmit={event => { event.preventDefault(); if (!pending) save.mutate({ input: { expectedRevision: saved.revision, config: { singleProject, lockMoves } } }); }}>
     <fieldset disabled={pending} className="space-y-2">
       <label className="flex items-start gap-3 text-sm"><input type="checkbox" className="mt-1" checked={singleProject} onChange={event => setSingleProject(event.target.checked)} />
         <span><span className="block font-medium text-ink">{t('projectRules.singleProject')}</span><span className="block text-xs text-muted">{t('projectRules.singleProjectHelp')}</span></span></label>
+      <label className="flex items-start gap-3 text-sm"><input type="checkbox" className="mt-1" checked={lockMoves} onChange={event => setLockMoves(event.target.checked)} />
+        <span><span className="block font-medium text-ink">{t('projectRules.lockMoves')}</span><span className="block text-xs text-muted">{t('projectRules.lockMovesHelp')}</span></span></label>
     </fieldset>
     <SaveFeedback error={save.error} uncertainError={save.uncertain?.error ?? null} subject="fieldValueSave" />
     <div className="flex flex-wrap justify-end gap-2">
       <Button type="button" variant="ghost" disabled={holding} onClick={onClose}>{t('projectRules.cancel')}</Button>
       {save.uncertain ? <Button type="button" onClick={() => save.retryUncertain()}>{t('projectRules.retry')}</Button> : null}
-      <Button type="submit" variant="primary" disabled={pending || singleProject === saved.config.singleProject}>{pending ? t('projectRules.saving') : t('projectRules.save')}</Button>
+      <Button type="submit" variant="primary" disabled={pending || (singleProject === saved.config.singleProject && lockMoves === saved.config.lockMoves)}>{pending ? t('projectRules.saving') : t('projectRules.save')}</Button>
     </div>
   </form>;
 }

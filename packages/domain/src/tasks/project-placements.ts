@@ -1,4 +1,4 @@
-import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,idSchema,projectRowsQuerySchema,taskProjectPlacementSchema,updateTaskProjectPlacementInputSchema,type AttachTaskProjectInput,type ChangeTaskProjectPlacementStateInput,type TaskDto,type TaskProjectPlacementDto} from '@workloom/contracts';
+import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,idSchema,projectRowsQuerySchema,taskProjectPlacementSchema,transferTaskProjectInputSchema,transferTaskProjectResultSchema,updateTaskProjectPlacementInputSchema,type AttachTaskProjectInput,type ChangeTaskProjectPlacementStateInput,type TaskDto,type TaskProjectPlacementDto,type TransferTaskProjectResult} from '@workloom/contracts';
 import {authorizeWorkspace} from '../access/access-queries.js';
 import type {CommandContext} from '../access/context.js';
 import {DomainError,notFoundError,unauthenticatedError} from '../errors.js';
@@ -15,6 +15,7 @@ function path(value:string):string {const p=idSchema.safeParse(value);if(!p.succ
 function context(value:CommandContext):CommandContext {const workspaceId=path(value.workspaceId),actor=idSchema.safeParse(value.actor.userId);if(!actor.success)throw unauthenticatedError();return {...value,workspaceId,actor:{...value.actor,userId:actor.data}};}
 function found<T>(value:T|null):T {if(value===null)throw notFoundError();return value;}
 function rule(message:string,field:string):never {throw new DomainError('DOMAIN_VALIDATION_FAILED',message,{details:{fields:[field]}});}
+function transferRule(message:string,reason:string,field:string):never {throw new DomainError('DOMAIN_VALIDATION_FAILED',message,{details:{fields:[field],transferReason:reason}});}
 function revision(current:number,expected:number):void {if(current!==expected)throw new DomainError('REVISION_CONFLICT','Reload the resource and retry.',{details:{currentRevision:current}});}
 function ordinary(task:TaskDto):void {if(task.meetingId)rule('Meeting and recurrence placements are outside this slice.','taskId');}
 const MAX_POSITION=2_147_483_647;
@@ -95,6 +96,53 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
    const sectionId=input.sectionId===undefined?row.sectionId:input.sectionId;await targetSection(scope,row.workspaceId,projectId,sectionId);const position=input.position??row.position;if(sectionId===row.sectionId&&position===row.position)return row;
    const next={...row,sectionId,position,revision:row.revision+1,updatedAt:now};await scope.placements.save(next);await record(scope,next,'updated',row);return next;
   });},
+  /**
+   * The only way a task's home project changes. The whole subtree moves; hours, plans and reports follow the new home
+   * from now on (saved baselines and snapshots are never rewritten). The former home keeps a detached placement, so
+   * the immutable history of its field values stays attached to something that exists.
+   */
+  async transferTaskProject(ctx,taskId,raw){
+   const input=parse(transferTaskProjectInputSchema,raw),normalized=context(ctx),key=normalized.idempotencyKey,command='task.project.transfer' as const;
+   if(key===undefined||! /^[\x21-\x7e]{1,128}$/.test(key))throw new DomainError('VALIDATION_FAILED','A valid Idempotency-Key is required.');
+   const id=path(taskId),payloadHash=tools.digest(canonicalJson({command,target:id,input}));
+   const outcome=await writer.run(normalized,'task.edit',async scope=>{
+    const ws=normalized.workspaceId,repo=scope.repository;
+    // Current targets exist before any replay; every state-dependent rule runs after it, so a committed transfer replays.
+    const task=found(await repo.findTask(ws,id));found(await repo.findProject(ws,task.projectId));
+    const targetProject=await repo.findProject(ws,input.projectId);if(targetProject===null)throw notFoundError();
+    const existing=await repo.findIdempotency(ws,normalized.actor.userId,command,key);
+    if(existing){if(existing.payloadHash!==payloadHash)throw new DomainError('IDEMPOTENCY_KEY_REUSED','This key belongs to a different request.');if(isCommittedPlanningRejection(existing.result))return existing.result;return parse(transferTaskProjectResultSchema,existing.result);}
+    const rejected=await scope.planningGuard.check({family:'task_placement',command,target:{taskId:task.id,projectId:targetProject.id},input});
+    const now=scope.barrierAt.toISOString();
+    const result=rejected??await (async():Promise<TransferTaskProjectResult>=>{
+     revision(task.revision,input.expectedRevision);ordinary(task);
+     if(task.archivedAt!==null)transferRule('The task is archived.','archived','taskId');
+     if(task.parentTaskId!==null)transferRule('A subtask always stays with its parent. Move the parent task instead.','subtask','taskId');
+     if(targetProject.id===task.projectId)transferRule('The task is already in this project.','same_project','projectId');
+     if(targetProject.archivedAt!==null)transferRule('The project is archived.','archived','projectId');
+     if(found(await repo.findProject(ws,task.projectId)).archivedAt!==null)transferRule('The home project is archived.','archived','homeProjectId');
+     const find=repo.findProjectRules;
+     if(find){
+      const [target,home]=await Promise.all([find.call(repo,ws,targetProject.id),find.call(repo,ws,task.projectId)]);
+      if(home?.config.lockMoves)transferRule('The task\'s project does not allow moving tasks out of it.','locked_from','projectId');
+      if(target?.config.lockMoves)transferRule('This project does not allow moving tasks into it.','locked_to','projectId');
+     }
+     if(input.sectionId!==undefined)await targetSection(scope,ws,targetProject.id,input.sectionId);
+     const moved=await scope.placements.transferTree({workspaceId:ws,taskId:task.id,targetProjectId:targetProject.id,sectionId:input.sectionId,now});
+     const after=await repo.findTasksByIds(ws,moved.movedTaskIds),byId=new Map(after.map(t=>[t.id,t]));
+     for(const movedId of moved.movedTaskIds){
+      const current=byId.get(movedId);if(!current)throw notFoundError();
+      await scope.recordChange({entityType:'task',entityId:movedId,entityRevision:current.revision,action:'project_transferred',
+       diff:{projectId:{from:task.projectId,to:targetProject.id}},
+       ...(movedId===task.id?{outbox:{type:'task.project_transferred',payload:{taskId:task.id,fromProjectId:task.projectId,toProjectId:targetProject.id,movedTasks:moved.movedTaskIds.length}}}:{})});
+     }
+     const root=byId.get(task.id);if(!root)throw notFoundError();
+     return {task:root,movedTaskIds:moved.movedTaskIds,carriedValues:moved.carriedValues,notCarried:moved.notCarried};
+    })();
+    await repo.insertIdempotency({workspaceId:ws,actorUserId:normalized.actor.userId,command,idempotencyKey:key,payloadHash,result,createdAt:now});return result;
+   });
+   return parse(transferTaskProjectResultSchema,unwrapPlanningOutcome(outcome));
+  },
   detachTaskProjectPlacement:(ctx,id,input)=>changeState(ctx,id,input,true),restoreTaskProjectPlacement:(ctx,id,input)=>changeState(ctx,id,input,false),
  };
 }

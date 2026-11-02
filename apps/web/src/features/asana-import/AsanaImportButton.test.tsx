@@ -181,7 +181,7 @@ describe('local Asana upload', () => {
     const view = renderImport(); await choose(view); await view.user.click(screen.getByRole('button', { name: 'Check files' }));
     await view.user.click(await screen.findByRole('button', { name: 'Turn the rule off and check again' }));
     await waitFor(() => expect(puts).toHaveLength(2));
-    expect(puts[0]).toEqual({ expectedRevision: 3, config: { singleProject: false } });
+    expect(puts[0]).toEqual({ expectedRevision: 3, config: { singleProject: false, lockMoves: false } });
     expect(await screen.findByRole('button', { name: 'Import project' })).toBeInTheDocument();
   });
   it('names the projects whose one-project rule blocks the import', async () => {

@@ -1,8 +1,9 @@
 import {
   attachTaskProjectInputSchema, changeTaskProjectPlacementStateInputSchema,
   projectRowsResponseSchema, taskProjectPlacementResponseSchema, taskProjectPlacementsResponseSchema,
+  transferTaskProjectInputSchema, transferTaskProjectResponseSchema,
   updateTaskProjectPlacementInputSchema,
-  type AttachTaskProjectInput, type ChangeTaskProjectPlacementStateInput,
+  type AttachTaskProjectInput, type TransferTaskProjectInput, type ChangeTaskProjectPlacementStateInput,
   type ProjectRowDto, type UpdateTaskProjectPlacementInput,
 } from '@workloom/contracts';
 import { ApiError, apiGet, prepareMutation } from '../../lib/api';
@@ -30,4 +31,7 @@ export function placementRequest(workspaceId: string, command: PlacementCommand)
   const path = `${base}/task-project-placements/${encodeURIComponent(command.placementId)}`;
   if (command.kind === 'update') return prepareMutation({ method: 'PATCH', path, input: command.input, inputSchema: updateTaskProjectPlacementInputSchema, responseSchema: taskProjectPlacementResponseSchema });
   return prepareMutation({ method: 'POST', path: `${path}/${command.kind}`, input: command.input, inputSchema: changeTaskProjectPlacementStateInputSchema, responseSchema: taskProjectPlacementResponseSchema });
+}
+export function transferRequest(workspaceId: string, taskId: string, input: TransferTaskProjectInput) {
+  return prepareMutation({ method: 'POST', path: `${workspacePath(workspaceId)}/tasks/${encodeURIComponent(taskId)}/transfer-project`, input, inputSchema: transferTaskProjectInputSchema, responseSchema: transferTaskProjectResponseSchema });
 }

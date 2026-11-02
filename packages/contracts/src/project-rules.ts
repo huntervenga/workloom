@@ -9,8 +9,10 @@ import { envelopeSchema } from './common/envelope.js';
 export const projectRulesConfigSchema = z.strictObject({
   /** A task of this project cannot also be placed in another project, and no task can be added to it from elsewhere. */
   singleProject: z.boolean(),
+  /** Tasks cannot be moved into this project from another one, nor out of it into another one. Stored older rules read as off. */
+  lockMoves: z.boolean().default(false),
 });
-export const EMPTY_PROJECT_RULES = { singleProject: false } as const;
+export const EMPTY_PROJECT_RULES = { singleProject: false, lockMoves: false } as const;
 
 export const projectRulesSchema = z.strictObject({ workspaceId: idSchema, projectId: idSchema, revision: z.number().int().nonnegative(), config: projectRulesConfigSchema });
 export const setProjectRulesInputSchema = z.strictObject({ expectedRevision: z.number().int().nonnegative(), config: projectRulesConfigSchema });

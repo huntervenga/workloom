@@ -183,7 +183,7 @@ export function createPlanningMutationGuard(scope:PlanningWriteScope,tools:Pick<
       case 'task_placement': {
         // Metadata-only: due freezes/census still cover canonical home and target project.
         switch(intent.command){
-          case 'task.project.attach':case 'task.project.update':case 'task.project.detach':case 'task.project.restore':break;
+          case 'task.project.attach':case 'task.project.update':case 'task.project.detach':case 'task.project.restore':case 'task.project.transfer':break;
           default:never(intent);
         }
         const task=await repo.tasks.findTask(ws,intent.target.taskId);

@@ -30,5 +30,41 @@
   "multiProjectWarning": "This task is in more than one project. Its time and estimate are counted once, in the project where it lives and in the period of its due date — not in each project. To carry unfinished work into another week, use “Complete and continue in another project” instead.",
   "targetsKeepOneProject": "Every other project keeps its tasks in one project only, so none accepts this task. Turn off \"Task can belong to only one project\" in the Project rules of the project you want to add it to.",
   "oneProjectHint": "This project keeps every task in one project only.",
-  "failedRule": "The task could not be added there. A project rule keeps each task in one project: check the rules of this task's project and of the project you chose."
+  "failedRule": "The task could not be added there. A project rule keeps each task in one project: check the rules of this task's project and of the project you chose.",
+  "transfer": {
+    "action": "Move to another project…",
+    "title": "Move to another project",
+    "pick": "Project to move to",
+    "intro": "“{{title}}” and all its subtasks move to {{project}}, which becomes their home project. The old project no longer shows them.",
+    "effects": "From now on its hours, plans and reports count in the new project, and the old one stops counting them. Saved reports and baselines are not rewritten. Statuses and sections are matched by name, and custom fields with the same name and type go along with their values; other values stay with the old project.",
+    "confirm": "Move task",
+    "cancel": "Cancel",
+    "moving": "Moving the task…",
+    "done": "Moved to {{project}}.",
+    "carried": "{{count}} custom field values moved with it.",
+    "notCarried": "Not moved, no matching field in the new project: {{fields}}.",
+    "failed": "The task was not moved. Nothing was changed. Reload the task and try again.",
+    "reason": "The task could not be moved: {{reason}}",
+    "unknown": "The result of the move is unknown. Retry the same move.",
+    "retry": "Retry the same move",
+    "close": "Close",
+    "subtask": "A subtask moves together with its parent task.",
+    "locked": "This project does not allow moving tasks.",
+    "noTargets": "There is no other project to move to.",
+    "reasons": {
+      "archived": "The task or one of the projects is archived.",
+      "subtask": "A subtask moves together with its parent task. Move the parent instead.",
+      "same_project": "The task is already in this project.",
+      "locked_from": "The task's project does not allow moving tasks out of it.",
+      "locked_to": "The target project does not allow moving tasks into it.",
+      "too_many": "The task has too many subtasks to move at once.",
+      "plans": "The task has planned hours in its project. Remove them first.",
+      "work_logs": "The task has recorded work in its project, which cannot be moved.",
+      "baseline": "The task is part of a frozen plan or baseline.",
+      "meeting": "The task belongs to a meeting or a recurring series.",
+      "shared_package": "The task shares its work package with tasks that are not moving.",
+      "split_package": "The task's work package was split or replaced.",
+      "no_status": "The target project has no status in the same group as the task's status."
+    }
+  }
 }

@@ -2,12 +2,14 @@
   "open": "Project rules",
   "title": "Project rules",
   "description": "Optional rules for this project. Each one only limits what can be done from now on; nothing that exists is changed.",
-  "loading": "Loading the rules\u2026",
+  "loading": "Loading the rules…",
   "loadFailed": "The rules could not be loaded.",
   "singleProject": "A task can belong to only one project",
-  "singleProjectHelp": "Tasks of this project cannot also be placed in other projects, and tasks from other projects cannot be added to it.",
+  "singleProjectHelp": "Tasks of this project cannot also be placed in other projects, and tasks from other projects cannot be added to it. Moving a task to another project is still possible.",
   "cancel": "Cancel",
   "save": "Save rules",
-  "saving": "Saving\u2026",
-  "retry": "Retry the same save"
+  "saving": "Saving…",
+  "retry": "Retry the same save",
+  "lockMoves": "Tasks cannot be moved to or from this project",
+  "lockMovesHelp": "Nobody can move a task into this project from another one, or out of it into another one."
 }

@@ -2,7 +2,8 @@ import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@
 import { isUuid } from '../../lib/format';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
-import { fetchProjectRows, fetchTaskPlacements, placementRequest, type PlacementCommand, type ProjectRowsPage } from './api';
+import type { TransferTaskProjectInput } from '@workloom/contracts';
+import { fetchProjectRows, fetchTaskPlacements, placementRequest, transferRequest, type PlacementCommand, type ProjectRowsPage } from './api';
 
 // Rows share the task family: a canonical task edit invalidates every visible placement.
 export const placementKeys = {
@@ -39,3 +40,11 @@ export function usePlacementCommands(actorId: string, workspaceId: string) {
   });
 }
 export type PlacementCommands = ReturnType<typeof usePlacementCommands>;
+/** Moves a task and its subtasks to another project. It touches reports and counters everywhere, so every workspace read is refreshed. */
+export function useTransferTaskProject(actorId: string, workspaceId: string) {
+  const client = useQueryClient();
+  return useIdempotentMutation({
+    prepare: ({ taskId, input }: IdempotentVariables & { taskId: string; input: TransferTaskProjectInput }) => transferRequest(workspaceId, taskId, input),
+    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.workspace(actorId, workspaceId) }); },
+  });
+}

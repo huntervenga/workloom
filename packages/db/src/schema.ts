@@ -1439,7 +1439,7 @@ export const externalImportReferences=pgTable('external_import_references',{
  ownedRevisions:jsonb('owned_revisions').$type<ImportOwnedRevisions>().notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull(),
 },t=>[
  primaryKey({columns:[t.workspaceId,t.sourceNamespace,t.externalId]}),
- foreignKey({name:'external_import_references_task_fk',columns:[t.workspaceId,t.projectId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.projectId,tasks.id]}),
+ foreignKey({name:'external_import_references_task_fk',columns:[t.workspaceId,t.taskId],foreignColumns:[tasks.workspaceId,tasks.id]}),
  foreignKey({name:'external_import_references_import_fk',columns:[t.workspaceId,t.projectId,t.importId,t.sourceNamespace],foreignColumns:[projectImports.workspaceId,projectImports.projectId,projectImports.id,projectImports.sourceNamespace]}),
  check('external_import_references_shape_check',sql`char_length(${t.sourceNamespace}) BETWEEN 1 AND 160 AND char_length(${t.externalId}) BETWEEN 1 AND 254 AND ${t.sourceDigest} ~ '^[a-f0-9]{64}$' AND jsonb_typeof(${t.ownedRevisions})='object' AND (${t.ownedRevisions} ?& ARRAY['taskRevision','participantsRevision','workPackageRevision','fields']) IS TRUE`),
 ]);

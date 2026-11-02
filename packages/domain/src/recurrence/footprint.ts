@@ -37,7 +37,7 @@ export async function resolveRecurrenceAffectedProjects(scope:RecurrenceFootprin
   case 'attachment':case 'comment':case 'table_preference':case 'cutoff':case 'generic_report':case 'planning_check':case 'task_defaults':case 'project_rules':case 'summary_template':return none;
   case 'task_placement':
    switch(i.command){
-    case 'task.project.attach':case 'task.project.update':case 'task.project.detach':case 'task.project.restore':return projects(await taskProject(i.target.taskId),(await repo.tasks.findProject(ws,i.target.projectId))?.id);
+    case 'task.project.attach':case 'task.project.update':case 'task.project.detach':case 'task.project.restore':case 'task.project.transfer':return projects(await taskProject(i.target.taskId),(await repo.tasks.findProject(ws,i.target.projectId))?.id);
     default:return never(i);
    }
   case 'import':return i.command==='import.csv.stage'?none:projects(i.target.projectId);

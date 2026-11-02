@@ -9,6 +9,7 @@ import { useProjectsQuery } from '../projects/queries';
 import { fetchProjectRules } from '../project-rules/api';
 import { projectRulesKey, useProjectRules } from '../project-rules/queries';
 import { useTaskPlacementsQuery, type PlacementCommands } from './queries';
+import { TransferTaskDialog } from './TransferTaskDialog';
 
 export function TaskProjectsField({ actorId, task, homeProject, writable, commands }: { actorId: string; task: TaskDto; homeProject: ProjectDto; writable: boolean; commands: PlacementCommands }) {
   const { t } = useTranslation();
@@ -39,6 +40,9 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
       if (!blocked && choices.some(choice => choice.value === projectId)) commands.mutate({ command: { kind: 'attach', taskId: task.id, input: { projectId, expectedTaskRevision: task.revision } } });
     }} /> : null}
     {!keepsOneProject && candidates.length > 0 && choices.length === 0 && targetRules.every(rule => rule.isSuccess) ? <p role="note" className="text-xs text-amber-900">{t('placements.targetsKeepOneProject')}</p> : null}
+    {writable && task.visibility === 'workspace' && homeRules.data?.config.lockMoves !== true
+      ? <TransferTaskDialog actorId={actorId} task={task} homeProject={homeProject} projects={projects.isSuccess ? projects.data.projects : []} disabled={blocked} /> : null}
+    {homeRules.data?.config.lockMoves === true ? <p className="text-xs text-muted">{t('placements.transfer.locked')}</p> : null}
     <p className="text-xs text-muted">{keepsOneProject ? t('placements.oneProjectHint') : t('placements.sharedHint')}</p>
   </div>;
 }

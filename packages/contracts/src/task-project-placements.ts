@@ -11,6 +11,16 @@ export const projectRowSchema=z.object({placement:taskProjectPlacementSchema,can
  if(row.placement.taskId!==row.canonicalTask.id||row.placement.workspaceId!==row.canonicalTask.workspaceId||row.placement.homeProjectId!==row.canonicalTask.projectId||row.homeProject.id!==row.canonicalTask.projectId||row.homeProject.workspaceId!==row.canonicalTask.workspaceId||row.canonicalStatus.id!==row.canonicalTask.statusId||row.canonicalStatus.projectId!==row.canonicalTask.projectId||row.canonicalStatus.workspaceId!==row.canonicalTask.workspaceId)ctx.addIssue({code:'custom',message:'The row must preserve canonical task, home project and status identity.'});
 });
 export const attachTaskProjectInputSchema=z.object({projectId:idSchema,expectedTaskRevision:revisionSchema,sectionId:idSchema.nullable().optional(),position:positionSchema.optional()}).strict();
+/** Moves a task, with all its subtasks, to another project: the target becomes its home project. */
+export const transferTaskProjectInputSchema=z.object({expectedRevision:revisionSchema,projectId:idSchema,sectionId:idSchema.nullable().optional()}).strict();
+export const transferTaskProjectResultSchema=z.object({
+ task:taskSchema,movedTaskIds:z.array(idSchema).min(1).max(1000),
+ /** Custom-field values that were copied into the target project's matching fields. */
+ carriedValues:z.number().int().min(0),
+ /** Values with no matching field (or option) in the target; they stay with the former project's detached placement. */
+ notCarried:z.array(z.object({fieldName:z.string().min(1).max(160),count:z.number().int().min(1)}).strict()).max(200),
+}).strict();
+export const transferTaskProjectResponseSchema=envelopeSchema(transferTaskProjectResultSchema);
 export const updateTaskProjectPlacementInputSchema=z.object({expectedRevision:revisionSchema,sectionId:idSchema.nullable().optional(),position:positionSchema.optional()}).strict().refine(input=>input.sectionId!==undefined||input.position!==undefined,{message:'A placement change is required.'});
 export const changeTaskProjectPlacementStateInputSchema=z.object({expectedRevision:revisionSchema}).strict();
 export const projectRowsQuerySchema=z.object({cursor:z.string().min(1).max(4096).optional(),limit:z.coerce.number().int().min(1).max(200).default(100),includeArchived:z.union([z.boolean(),z.enum(['true','false'])]).optional().transform(value=>value===true||value==='true')}).strict();
@@ -20,6 +30,8 @@ export const projectRowsResponseSchema=envelopeSchema(z.array(projectRowSchema))
 export type TaskProjectPlacementDto=z.infer<typeof taskProjectPlacementSchema>;
 export type ProjectRowDto=z.infer<typeof projectRowSchema>;
 export type AttachTaskProjectInput=z.infer<typeof attachTaskProjectInputSchema>;
+export type TransferTaskProjectInput=z.infer<typeof transferTaskProjectInputSchema>;
+export type TransferTaskProjectResult=z.infer<typeof transferTaskProjectResultSchema>;
 export type UpdateTaskProjectPlacementInput=z.infer<typeof updateTaskProjectPlacementInputSchema>;
 export type ChangeTaskProjectPlacementStateInput=z.infer<typeof changeTaskProjectPlacementStateInputSchema>;
 export type ProjectRowsQuery=z.infer<typeof projectRowsQuerySchema>;

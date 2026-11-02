@@ -27,6 +27,10 @@ const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
  */
 const duplicationReasons = ['meeting_or_unknown_task_type','archived_task','invalid_task_tree','too_many_tasks','linked_task','archived_source','meeting_parent_requires_added_scope','source_project_too_large','field_unavailable','todo_status_missing','section_order_full','attachment_storage_unavailable'] as const;
 export type DuplicationReason = typeof duplicationReasons[number];
+const transferReasons = ['archived', 'subtask', 'same_project', 'locked_from', 'locked_to', 'too_many', 'plans', 'work_logs', 'baseline', 'meeting', 'shared_package', 'split_package', 'no_status'] as const;
+/** Why a task move was refused: a fixed classification, never server text. */
+export type TransferReason = typeof transferReasons[number];
+function isTransferReason(value: unknown): value is TransferReason { return transferReasons.some(reason => reason === value); }
 const invitationReasons = ['email_unverified', 'email_mismatch', 'member_conflict', 'pending_claimed'] as const;
 export type InvitationReason = typeof invitationReasons[number];
 function isInvitationReason(value: unknown): value is InvitationReason { return invitationReasons.some(reason => reason === value); }
@@ -62,10 +66,11 @@ export class ApiError extends Error {
   readonly ruleProjects:readonly { id: string; name: string }[];
   /** Bounded duplication rejection classification; no task names, values or raw details. */
   readonly duplicationReason:DuplicationReason|null;
+  readonly transferReason: TransferReason | null;
   /** Fixed invitation classification; never stores recipient addresses or raw server details. */
   readonly invitationReason: InvitationReason | null;
 
-  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean;completionFieldNames?:readonly string[];missingMailboxes?:readonly string[];assigneeConflict?:AssigneeConflict|null;ruleProjects?:readonly { id: string; name: string }[];duplicationReason?:DuplicationReason|null;invitationReason?:InvitationReason|null }) {
+  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean;completionFieldNames?:readonly string[];missingMailboxes?:readonly string[];assigneeConflict?:AssigneeConflict|null;ruleProjects?:readonly { id: string; name: string }[];duplicationReason?:DuplicationReason|null;transferReason?: TransferReason | null;invitationReason?:InvitationReason|null }) {
     super(`Workloom API request failed: ${init.kind}${init.status === null ? '' : ` (${init.status})`}`);
     this.name = 'ApiError';
     this.kind = init.kind;
@@ -78,6 +83,7 @@ export class ApiError extends Error {
     this.missingMailboxes=init.code==='ASANA_IMPORT_MAPPING_REQUIRED'?(init.missingMailboxes??[]).slice(0,20):[];
     this.completionFieldNames=this.completionFieldsRequired?(init.completionFieldNames??[]).slice(0,10):[];
     this.invitationReason=this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&isInvitationReason(init.invitationReason)?init.invitationReason:null;
+    this.transferReason = this.status === 422 && this.code === 'DOMAIN_VALIDATION_FAILED' && isTransferReason(init.transferReason) ? init.transferReason : null;
     this.duplicationReason=this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&isDuplicationReason(init.duplicationReason)?init.duplicationReason:null;
     this.fieldPolicyReason = this.code === 'FIELD_LOCKED' ? (init.fieldPolicyReason ?? null) : null;
   }
@@ -154,6 +160,7 @@ export async function apiRequest(path: string, options: ApiRequestOptions = {}):
       assigneeConflict:envelope.assigneeConflict,
       ruleProjects:envelope.ruleProjects,
       duplicationReason:envelope.duplicationReason,
+      transferReason: envelope.transferReason,
       invitationReason:envelope.invitationReason,
       requestId: safeToken(envelope.requestId ?? response.headers.get('x-request-id'), SAFE_REQUEST_ID),
     });
@@ -263,9 +270,9 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean;completionFieldNames:string[];missingMailboxes:string[];assigneeConflict:AssigneeConflict|null;ruleProjects:{ id: string; name: string }[];duplicationReason:DuplicationReason|null;invitationReason:InvitationReason|null } {
+function readErrorEnvelope(payload: unknown): { transferReason: TransferReason | null; code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean;completionFieldNames:string[];missingMailboxes:string[];assigneeConflict:AssigneeConflict|null;ruleProjects:{ id: string; name: string }[];duplicationReason:DuplicationReason|null;invitationReason:InvitationReason|null } {
   const parsed = errorResponseSchema.safeParse(payload);
-  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false,completionFieldNames:[],missingMailboxes:[],assigneeConflict:null,ruleProjects:[],duplicationReason:null,invitationReason:null };
+  if (!parsed.success) return { transferReason: null, code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false,completionFieldNames:[],missingMailboxes:[],assigneeConflict:null,ruleProjects:[],duplicationReason:null,invitationReason:null };
   const envelope: unknown = parsed.data;
   const error = isRecord(envelope) ? envelope['error'] : undefined;
   const meta = isRecord(envelope) ? envelope['meta'] : undefined;
@@ -274,6 +281,7 @@ function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknow
   return {
     invitationReason:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&isRecord(details)&&isInvitationReason(details['invitationReason'])?details['invitationReason']:null,
     duplicationReason:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&isRecord(details)&&isDuplicationReason(details['duplicationReason'])?details['duplicationReason']:null,
+    transferReason: isRecord(error) && error['code'] === 'DOMAIN_VALIDATION_FAILED' && isRecord(details) && isTransferReason(details['transferReason']) ? details['transferReason'] : null,
     completionFieldsRequired:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&reason==='completion_fields_required',
     completionFieldNames:isRecord(details)&&Array.isArray(details['fieldNames'])?details['fieldNames'].filter((name):name is string=>typeof name==='string'&&name.length>0&&name.length<=120).slice(0,10):[],
     missingMailboxes:isRecord(details)&&Array.isArray(details['mailboxes'])?details['mailboxes'].filter((mail):mail is string=>typeof mail==='string'&&mail.length>0&&mail.length<=254).slice(0,20):[],

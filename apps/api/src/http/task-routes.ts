@@ -1,6 +1,6 @@
 import {
   archiveTaskInputSchema,
-  attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,updateTaskProjectPlacementInputSchema,projectRowsQuerySchema,projectRowsResponseSchema,taskProjectPlacementResponseSchema,taskProjectPlacementsResponseSchema,
+  attachTaskProjectInputSchema,transferTaskProjectInputSchema,transferTaskProjectResponseSchema,changeTaskProjectPlacementStateInputSchema,updateTaskProjectPlacementInputSchema,projectRowsQuerySchema,projectRowsResponseSchema,taskProjectPlacementResponseSchema,taskProjectPlacementsResponseSchema,
   bulkUpdateTasksInputSchema,
   bulkTaskUpdateResponseSchema,
   createProjectInputSchema,
@@ -173,6 +173,11 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskRouteDependen
     app.post(`${BASE}/tasks/:taskId/placements`,async(request,reply)=>{
       const {params,input,ctx}=await write(request,taskParamsSchema,attachTaskProjectInputSchema);
       return sendData(request,reply,taskProjectPlacementResponseSchema,await placements.attachTaskProject(ctx,params.taskId,input),{statusCode:201});
+    });
+    // Changes the task's home project (with its subtasks); hours and reports follow the new home from now on.
+    app.post(`${BASE}/tasks/:taskId/transfer-project`,async(request,reply)=>{
+      const {params,input,ctx}=await write(request,taskParamsSchema,transferTaskProjectInputSchema);
+      return sendData(request,reply,transferTaskProjectResponseSchema,await placements.transferTaskProject(ctx,params.taskId,input));
     });
     app.patch(`${BASE}/task-project-placements/:placementId`,async(request,reply)=>{
       const {params,input,ctx}=await write(request,placementParams,updateTaskProjectPlacementInputSchema);
