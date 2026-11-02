@@ -66,7 +66,7 @@ test('the result of skipping a middle task still passes the full plan preparatio
  const src=syntheticSource(wsId,memberId),data=JSON.parse(src.jsonText),csv=parseSourceCsv(src.csvText);
  const root=data.data.find(t=>(t.subtasks??[]).length>=2),middle=root.subtasks[0],deep=root.subtasks[1];
  // Three levels: root > middle > deep, with deep also listed on its own, and the middle task owned by a person to skip.
- root.subtasks=root.subtasks.filter(t=>t.gid!==deep.gid);deep.parent={gid:middle.gid,name:middle.name};middle.subtasks=[deep];const own=structuredClone(deep);own.memberships=structuredClone(root.memberships);data.data.push(own);
+ root.subtasks=root.subtasks.filter(t=>t.gid!==deep.gid);deep.parent={gid:middle.gid,name:middle.name};middle.subtasks=[deep];const own=JSON.parse(JSON.stringify(deep));own.memberships=JSON.parse(JSON.stringify(root.memberships));data.data.push(own);
  for(const row of csv.rows){if(row['Task ID']===deep.gid)row['Parent task']=middle.name;if(row['Task ID']===middle.gid){row['Assignee']='Skipped Person';row['Assignee Email']='skip@x.test';}}
  const text=[csv.headers,...csv.rows.map(r=>csv.headers.map(h=>r[h]))].map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n')+'\r\n';
  const out=applyAssigneeResolutions(JSON.stringify(data),text,{'skip@x.test':{action:'skip'}});
