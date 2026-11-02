@@ -1,7 +1,7 @@
 import { screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
-import { alpha, anna, deferred, failure, installFakeApi, ok } from '../../test/fakeApi';
+import { alpha, anna, deferred, failure, installFakeApi, json, ok } from '../../test/fakeApi';
 import { queryKeys } from '../../lib/queryKeys';
 import { renderFieldUi } from '../fields/test/fixtures';
 import { WorkspaceNavigationProvider } from '../workspace/WorkspaceNavigation';
@@ -30,7 +30,34 @@ async function choose(view: ReturnType<typeof renderImport>) {
   await view.user.upload(screen.getByLabelText('Asana CSV export'), rawFile('project.csv', new TextEncoder().encode('Name\nПривет')));
 }
 
+const owner = '93000000-0000-4000-8000-000000000001';
+const refusal = (people: { email: string; name: string; taskCount: number }[]) => new Response(JSON.stringify({ error: { code: 'ASANA_IMPORT_MAPPING_REQUIRED', message: 'x', retryable: false, details: { people, targets: [{ membershipId: owner, label: 'Hunter Venga' }] } }, meta: { requestId: 'req_test_err' } }), { status: 422, headers: { 'content-type': 'application/json' } });
+
+const PID1 = 'e1000000-0000-4000-8000-000000000031';
+const PID2 = 'e1000000-0000-4000-8000-000000000033';
 describe('local Asana upload', () => {
+  it('keeps every decision across checks when the server asks about different people each time', async () => {
+    let attempt = 0;
+    const api = installFakeApi({ ...routes(), [`POST ${base}/preview`]: () => {
+      attempt += 1;
+      if (attempt === 1) return refusal([{ email: 'nik@x.test', name: 'Nikolay P', taskCount: 11 }]);
+      if (attempt === 2) return refusal([{ email: 'andrei@x.test', name: 'Andrey A', taskCount: 5 }, { email: 'pavel@x.test', name: 'Pavel I', taskCount: 3 }]);
+      return ok({ uploadId, preview });
+    } });
+    const view = renderImport();
+    await choose(view);
+    await view.user.click(screen.getByRole('button', { name: 'Check files' }));
+    await view.user.selectOptions(await screen.findByLabelText('What to do with the tasks of Nikolay P'), 'skip');
+    await view.user.click(screen.getByRole('button', { name: 'Check files with these choices' }));
+    await view.user.selectOptions(await screen.findByLabelText('What to do with the tasks of Andrey A'), 'reassign');
+    await view.user.selectOptions(screen.getByLabelText('Teammate for the tasks of Andrey A'), owner);
+    // Nikolay is still listed with his earlier choice.
+    expect(screen.getByLabelText('What to do with the tasks of Nikolay P')).toHaveValue('skip');
+    await view.user.click(screen.getByRole('button', { name: 'Check files with these choices' }));
+    expect(await screen.findByRole('heading', { name: 'Delivery week' })).toBeInTheDocument();
+    const last = api.calls.filter(call => call.method === 'POST').at(-1)?.body as { assigneeActions: Record<string, unknown> };
+    expect(last.assigneeActions).toEqual({ 'nik@x.test': { action: 'skip' }, 'andrei@x.test': { action: 'reassign', membershipId: owner }, 'pavel@x.test': { action: 'unassign' } });
+  });
   it('never probes capability for a non-owner', async () => {
     const api = installFakeApi(routes()); const view = renderImport(false);
     await waitFor(() => expect(view.client.isFetching()).toBe(0));
@@ -134,10 +161,34 @@ describe('local Asana upload', () => {
     await view.user.keyboard('{Escape}');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Import project' })).toBeDisabled();
-    expect(screen.getByRole('status')).toHaveTextContent('closing cannot cancel');
+    expect(screen.getByRole('status')).toHaveTextContent('Importing the project');
     hold.resolve(ok(result));
     expect(await screen.findByRole('link', { name: 'Open project' })).toBeInTheDocument();
     expect(api.calls.filter(call => call.path.endsWith('/apply'))).toHaveLength(1);
+  });
+  it('turns the one-project rule off in the named projects and checks again', async () => {
+    const rulesPath = (id: string) => `/api/v1/workspaces/${alpha.id}/projects/${id}/rules`;
+    const puts: unknown[] = [];
+    let previews = 0;
+    const rule = (id: string) => ({ workspaceId: alpha.id, projectId: id, revision: 3, config: { singleProject: true } });
+    installFakeApi({
+      ...routes(),
+      [`POST ${base}/preview`]: () => (++previews === 1 ? json(422, { error: { code: 'ASANA_IMPORT_PROJECT_RULE', message: 'x', retryable: false, details: { projects: [{ id: PID1, name: 'Week 31' }, { id: PID2, name: 'Week 33' }] } }, meta: { requestId: 'r' } }) : ok({ uploadId, preview })),
+      [`GET ${rulesPath(PID1)}`]: () => ok(rule(PID1)), [`GET ${rulesPath(PID2)}`]: () => ok(rule(PID2)),
+      [`PUT ${rulesPath(PID1)}`]: request => { puts.push(request.body); return ok({ ...rule(PID1), revision: 4, config: { singleProject: false } }); },
+      [`PUT ${rulesPath(PID2)}`]: request => { puts.push(request.body); return ok({ ...rule(PID2), revision: 4, config: { singleProject: false } }); },
+    });
+    const view = renderImport(); await choose(view); await view.user.click(screen.getByRole('button', { name: 'Check files' }));
+    await view.user.click(await screen.findByRole('button', { name: 'Turn the rule off and check again' }));
+    await waitFor(() => expect(puts).toHaveLength(2));
+    expect(puts[0]).toEqual({ expectedRevision: 3, config: { singleProject: false } });
+    expect(await screen.findByRole('button', { name: 'Import project' })).toBeInTheDocument();
+  });
+  it('names the projects whose one-project rule blocks the import', async () => {
+    const api = installFakeApi({ ...routes(), [`POST ${base}/preview`]: () => json(422, { error: { code: 'ASANA_IMPORT_PROJECT_RULE', message: 'x', retryable: false, details: { projects: [{ id: PID1, name: 'Week 31' }, { id: PID2, name: 'Week 33' }] } }, meta: { requestId: 'req_rule' } }) });
+    const view = renderImport(); await choose(view); await view.user.click(screen.getByRole('button', { name: 'Check files' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Projects to change: Week 31, Week 33.');
+    expect(api.calls.filter(call => call.path.endsWith('/apply'))).toHaveLength(0);
   });
   it('does not upload files if the actor changes while their bytes are being read', async () => {
     const hold = deferred<ArrayBuffer>();

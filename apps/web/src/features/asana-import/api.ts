@@ -17,7 +17,11 @@ export interface AsanaImportResult {
 export interface PreviewInput {
   jsonBase64: string; csvBase64: string;
   preserveMilestones: boolean; preserveExternalDependencies: boolean;
+  /** What to do with the tasks of people who are not on the Members page, keyed by their Asana e-mail. */
+  assigneeActions?: Record<string, AssigneeAction>;
+  skipShared?: boolean;
 }
+export type AssigneeAction = { action: 'skip' | 'unassign' } | { action: 'reassign'; membershipId: string };
 export const asanaImportPath = (workspaceId: string) => `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/dev/asana-import`;
 const count = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 const text = (value: unknown): value is string => typeof value === 'string' && value.length <= 20_000;

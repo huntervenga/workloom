@@ -30,6 +30,18 @@ const invitationReasons = ['email_unverified', 'email_mismatch', 'member_conflic
 export type InvitationReason = typeof invitationReasons[number];
 function isInvitationReason(value: unknown): value is InvitationReason { return invitationReasons.some(reason => reason === value); }
 function isDuplicationReason(value:unknown):value is DuplicationReason { return duplicationReasons.some(reason=>reason===value); }
+export interface AssigneeConflict {
+  people: { email: string; name: string; taskCount: number }[];
+  targets: { membershipId: string; label: string }[];
+}
+function readAssigneeConflict(details: Record<string, unknown>): AssigneeConflict | null {
+  const { people, targets } = details;
+  if (!Array.isArray(people) || !Array.isArray(targets)) return null;
+  const cleanPeople = people.flatMap(item => isRecord(item) && typeof item['email'] === 'string' && typeof item['name'] === 'string' && typeof item['taskCount'] === 'number' ? [{ email: item['email'].slice(0, 254), name: item['name'].slice(0, 200), taskCount: item['taskCount'] }] : []).slice(0, 50);
+  const cleanTargets = targets.flatMap(item => isRecord(item) && typeof item['membershipId'] === 'string' && isUuid(item['membershipId']) && typeof item['label'] === 'string' ? [{ membershipId: item['membershipId'], label: item['label'].slice(0, 200) }] : []).slice(0, 200);
+  return cleanPeople.length > 0 ? { people: cleanPeople, targets: cleanTargets } : null;
+}
+
 export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly status: number | null;
@@ -41,12 +53,18 @@ export class ApiError extends Error {
   readonly completionFieldsRequired:boolean;
   /** Names of the fields the completion check found empty: short project-authored labels, nothing else from the response. */
   readonly completionFieldNames:readonly string[];
+  /** E-mail addresses an Asana import could not match to a teammate (a mapping refusal only; at most 20). */
+  readonly missingMailboxes:readonly string[];
+  /** An Asana import's unmatched people and the teammates their tasks could go to (mapping refusal only). */
+  readonly assigneeConflict:AssigneeConflict|null;
+  /** Names of projects that keep every task in one project and hold tasks of an Asana import (rule refusal only; at most 20). */
+  readonly ruleProjects:readonly { id: string; name: string }[];
   /** Bounded duplication rejection classification; no task names, values or raw details. */
   readonly duplicationReason:DuplicationReason|null;
   /** Fixed invitation classification; never stores recipient addresses or raw server details. */
   readonly invitationReason: InvitationReason | null;
 
-  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean;completionFieldNames?:readonly string[];duplicationReason?:DuplicationReason|null;invitationReason?:InvitationReason|null }) {
+  constructor(init: { kind: ApiErrorKind; status: number | null; code?: string | null; requestId?: string | null; fieldPolicyReason?:'deadline'|'change_limit'|null;completionFieldsRequired?:boolean;completionFieldNames?:readonly string[];missingMailboxes?:readonly string[];assigneeConflict?:AssigneeConflict|null;ruleProjects?:readonly { id: string; name: string }[];duplicationReason?:DuplicationReason|null;invitationReason?:InvitationReason|null }) {
     super(`Workloom API request failed: ${init.kind}${init.status === null ? '' : ` (${init.status})`}`);
     this.name = 'ApiError';
     this.kind = init.kind;
@@ -54,6 +72,9 @@ export class ApiError extends Error {
     this.code = init.code ?? null;
     this.requestId = init.requestId ?? null;
     this.completionFieldsRequired = this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&init.completionFieldsRequired===true;
+    this.ruleProjects=init.code==='ASANA_IMPORT_PROJECT_RULE'?(init.ruleProjects??[]).slice(0,20):[];
+    this.assigneeConflict=init.code==='ASANA_IMPORT_MAPPING_REQUIRED'?init.assigneeConflict??null:null;
+    this.missingMailboxes=init.code==='ASANA_IMPORT_MAPPING_REQUIRED'?(init.missingMailboxes??[]).slice(0,20):[];
     this.completionFieldNames=this.completionFieldsRequired?(init.completionFieldNames??[]).slice(0,10):[];
     this.invitationReason=this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&isInvitationReason(init.invitationReason)?init.invitationReason:null;
     this.duplicationReason=this.status===422&&this.code==='DOMAIN_VALIDATION_FAILED'&&isDuplicationReason(init.duplicationReason)?init.duplicationReason:null;
@@ -127,6 +148,9 @@ export async function apiRequest(path: string, options: ApiRequestOptions = {}):
       fieldPolicyReason:envelope.fieldPolicyReason,
       completionFieldsRequired:envelope.completionFieldsRequired,
       completionFieldNames:envelope.completionFieldNames,
+      missingMailboxes:envelope.missingMailboxes,
+      assigneeConflict:envelope.assigneeConflict,
+      ruleProjects:envelope.ruleProjects,
       duplicationReason:envelope.duplicationReason,
       invitationReason:envelope.invitationReason,
       requestId: safeToken(envelope.requestId ?? response.headers.get('x-request-id'), SAFE_REQUEST_ID),
@@ -237,9 +261,9 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean;completionFieldNames:string[];duplicationReason:DuplicationReason|null;invitationReason:InvitationReason|null } {
+function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknown; fieldPolicyReason:'deadline'|'change_limit'|null;completionFieldsRequired:boolean;completionFieldNames:string[];missingMailboxes:string[];assigneeConflict:AssigneeConflict|null;ruleProjects:{ id: string; name: string }[];duplicationReason:DuplicationReason|null;invitationReason:InvitationReason|null } {
   const parsed = errorResponseSchema.safeParse(payload);
-  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false,completionFieldNames:[],duplicationReason:null,invitationReason:null };
+  if (!parsed.success) return { code: null, requestId: null, fieldPolicyReason:null,completionFieldsRequired:false,completionFieldNames:[],missingMailboxes:[],assigneeConflict:null,ruleProjects:[],duplicationReason:null,invitationReason:null };
   const envelope: unknown = parsed.data;
   const error = isRecord(envelope) ? envelope['error'] : undefined;
   const meta = isRecord(envelope) ? envelope['meta'] : undefined;
@@ -250,6 +274,9 @@ function readErrorEnvelope(payload: unknown): { code: unknown; requestId: unknow
     duplicationReason:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&isRecord(details)&&isDuplicationReason(details['duplicationReason'])?details['duplicationReason']:null,
     completionFieldsRequired:isRecord(error)&&error['code']==='DOMAIN_VALIDATION_FAILED'&&reason==='completion_fields_required',
     completionFieldNames:isRecord(details)&&Array.isArray(details['fieldNames'])?details['fieldNames'].filter((name):name is string=>typeof name==='string'&&name.length>0&&name.length<=120).slice(0,10):[],
+    missingMailboxes:isRecord(details)&&Array.isArray(details['mailboxes'])?details['mailboxes'].filter((mail):mail is string=>typeof mail==='string'&&mail.length>0&&mail.length<=254).slice(0,20):[],
+    assigneeConflict:isRecord(details)?readAssigneeConflict(details):null,
+    ruleProjects:isRecord(details)&&Array.isArray(details['projects'])?details['projects'].flatMap((item):{ id: string; name: string }[]=>isRecord(item)&&typeof item['id']==='string'&&typeof item['name']==='string'&&item['name'].length>0&&item['name'].length<=200?[{ id: item['id'], name: item['name'] }]:[]).slice(0,20):[],
     fieldPolicyReason:isRecord(error)&&error['code']==='FIELD_LOCKED'&&(reason==='deadline'||reason==='change_limit')?reason:null,
     code: isRecord(error) ? error['code'] : null,
     requestId: isRecord(meta) ? meta['requestId'] : null,
