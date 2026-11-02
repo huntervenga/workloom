@@ -9,7 +9,7 @@ import { useProjectsQuery } from '../projects/queries';
 import { fetchProjectRules } from '../project-rules/api';
 import { projectRulesKey, useProjectRules } from '../project-rules/queries';
 import { useTaskPlacementsQuery, type PlacementCommands } from './queries';
-import { TransferTaskDialog } from './TransferTaskDialog';
+import { HomeProjectPicker } from './HomeProjectPicker';
 
 export function TaskProjectsField({ actorId, task, homeProject, writable, commands }: { actorId: string; task: TaskDto; homeProject: ProjectDto; writable: boolean; commands: PlacementCommands }) {
   const { t } = useTranslation();
@@ -22,6 +22,7 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
   // A denied/failed refetch hides retained membership metadata and disables all writes.
   const current = placements.isSuccess && !placements.isFetching && projects.isSuccess && !projects.isFetching;
   const blocked = !writable || task.visibility !== 'workspace' || task.archivedAt !== null || !current || commands.isError || commands.pendingCommand !== null || commands.uncertain !== null || commands.hasOtherProtectedCommands();
+  const canMove = writable && task.visibility === 'workspace' && task.meetingId === null && task.archivedAt === null && task.parentTaskId === null && homeRules.data?.config.lockMoves !== true && projects.isSuccess;
   const active = placements.isSuccess ? placements.data.filter(item => item.archivedAt === null && item.projectId !== homeProject.id) : [];
   const projectName = (id: string) => projects.isSuccess ? projects.data.projects.find(item => item.id === id)?.name ?? t('placements.unavailableProject') : t('placements.unavailableProject');
   const archived = placements.isSuccess ? placements.data.filter(item => item.archivedAt !== null && item.projectId !== homeProject.id) : [];
@@ -31,7 +32,8 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
   const targetRules = useQueries({ queries: candidates.map(item => ({ queryKey: projectRulesKey(actorId, task.workspaceId, item.id), queryFn: ({ signal }: { signal: AbortSignal }) => fetchProjectRules(task.workspaceId, item.id, signal), retry: false, staleTime: 30_000 })) });
   const choices = candidates.filter((_, index) => targetRules[index]?.data?.config.singleProject !== true).map(item => ({ value: item.id, label: item.name }));
   return <div className="min-w-0 space-y-2" aria-label={t('placements.projects')}>
-    <div className="flex min-h-9 flex-wrap items-center gap-2"><span>{homeProject.name}</span><span className="rounded bg-canvas px-1.5 py-0.5 text-xs text-muted">{t('placements.home')}</span></div>
+    {canMove ? <HomeProjectPicker actorId={actorId} task={task} homeProject={homeProject} projects={projects.isSuccess ? projects.data.projects : []} disabled={blocked} />
+      : <div className="flex min-h-9 flex-wrap items-center gap-2"><span>{homeProject.name}</span><span className="rounded bg-canvas px-1.5 py-0.5 text-xs text-muted">{t('placements.home')}</span></div>}
     {active.length > 0 ? <p role="note" data-multi-project-warning="" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">{t('placements.multiProjectWarning')}</p> : null}
     {active.map(item => <div key={item.id} className="flex min-w-0 items-center gap-2"><span className="min-w-0 flex-1 truncate">{projectName(item.projectId)}</span><Button size="sm" variant="ghost" disabled={blocked} aria-label={t('placements.removeFrom', { p0: projectName(item.projectId) })} onClick={() => commands.mutate({ command: { kind: 'detach', placementId: item.id, input: { expectedRevision: item.revision } } })}>{t('placements.remove')}</Button></div>)}
     {archived.map(item => <Button key={item.id} size="sm" variant="ghost" disabled={blocked} onClick={() => commands.mutate({ command: { kind: 'restore', placementId: item.id, input: { expectedRevision: item.revision } } })}>{t('placements.restoreTo', { p0: projectName(item.projectId) })}</Button>)}
@@ -40,9 +42,8 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
       if (!blocked && choices.some(choice => choice.value === projectId)) commands.mutate({ command: { kind: 'attach', taskId: task.id, input: { projectId, expectedTaskRevision: task.revision } } });
     }} /> : null}
     {!keepsOneProject && candidates.length > 0 && choices.length === 0 && targetRules.every(rule => rule.isSuccess) ? <p role="note" className="text-xs text-amber-900">{t('placements.targetsKeepOneProject')}</p> : null}
-    {writable && task.visibility === 'workspace' && homeRules.data?.config.lockMoves !== true
-      ? <TransferTaskDialog actorId={actorId} task={task} homeProject={homeProject} projects={projects.isSuccess ? projects.data.projects : []} disabled={blocked} /> : null}
     {homeRules.data?.config.lockMoves === true ? <p className="text-xs text-muted">{t('placements.transfer.locked')}</p> : null}
+    {task.parentTaskId !== null ? <p className="text-xs text-muted">{t('placements.transfer.subtask')}</p> : null}
     <p className="text-xs text-muted">{keepsOneProject ? t('placements.oneProjectHint') : t('placements.sharedHint')}</p>
   </div>;
 }
