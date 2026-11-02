@@ -215,29 +215,23 @@ describe('task dates and existing tags', () => {
     expect(calls[0]?.body).toEqual({ expectedRevision: source.revision, tagIds: [newTag.id] });
   });
 
-  it('opens a tag link without selecting it or saving the task draft', async () => {
+  it('toggles a tag when its name is clicked, without opening a link or saving the task draft', async () => {
     const { calls } = installFakeApi({});
     const ui = inline('tagIds');
-    const link = screen.getByRole('link', { name: 'Delivery' });
-    expect(link).toHaveAttribute('href', `/app/w/${alpha.id}/tags/${newTag.id}`);
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    expect(link).toHaveAttribute('title', 'Open tag Delivery in a new tab');
-    await ui.user.click(link);
-    expect(screen.getByRole('checkbox', { name: 'Delivery' })).not.toBeChecked();
+    expect(screen.queryByRole('link', { name: 'Delivery' })).not.toBeInTheDocument();
+    await ui.user.click(screen.getByText('Delivery'));
+    expect(screen.getByRole('checkbox', { name: 'Delivery' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Design' })).toBeChecked();
     expect(screen.getByRole('dialog', { name: 'Edit tags' })).toBeInTheDocument();
     expect(calls).toHaveLength(0);
   });
 
-  it('excludes archived tags from a new task while keeping an assigned archived tag linked', () => {
+  it('excludes archived tags from a new task while keeping an assigned archived tag selectable', () => {
     const ui = renderFieldUi(<TaskTagPicker tags={[oldTag, archived]} values={[]} onChange={vi.fn()} />);
     expect(screen.queryByRole('checkbox', { name: /Old tag/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /Old tag/ })).not.toBeInTheDocument();
     ui.unmount();
     renderFieldUi(<TaskTagPicker tags={[oldTag, archived]} values={[archived.id]} onChange={vi.fn()} />);
     expect(screen.getByRole('checkbox', { name: 'Old tag (archived)' })).toBeChecked();
-    expect(screen.getByRole('link', { name: 'Old tag (archived)' })).toHaveAttribute('href', `/app/w/${alpha.id}/tags/${archived.id}`);
   });
 
   it('keeps held archived and missing tags removable, without offering new archived assignments', async () => {
