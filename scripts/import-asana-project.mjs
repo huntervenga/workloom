@@ -26,8 +26,12 @@ export function parseSourceCsv(raw){
  const pushRow=()=>{pushCell();records.push(row);row=[];if(records.length>2001)fail('Source has more than 2000 tasks.');};
  for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'){if(text[i+1]==='"'){cell+='"';i++;}else{quoted=false;closed=true;}}else cell+=c;}else if(c===',')pushCell();else if(c==='\r'||c==='\n'){pushRow();if(c==='\r'&&text[i+1]==='\n')i++;}else if(c==='"'){if(started||cell||closed)fail('Malformed CSV quote.');quoted=true;started=true;}else{if(closed)fail('Characters after closing CSV quote.');cell+=c;started=true;}}
  if(quoted)fail('Unclosed source CSV quote.');if(started||closed||cell||row.length)pushRow();
- const headers=records.shift();if(!headers?.length||new Set(headers).size!==headers.length||records.some(r=>r.length!==headers.length))fail('Source CSV requires unique headers and consistent record widths.');
- return {headers,rows:records.map(cells=>Object.fromEntries(headers.map((h,i)=>[h,cells[i]])))};
+ const headers=records.shift();if(!headers?.length||records.some(r=>r.length!==headers.length))fail('Source CSV requires consistent record widths.');
+ // Asana writes one column per custom field, so two fields with the same name give a repeated header. Both columns are
+ // read; the first populated cell represents the name. A real conflict between them is still refused from the JSON side
+ // (the same-name fields in the JSON must agree), so nothing populated is silently dropped.
+ const unique=[...new Set(headers)];
+ return {headers:unique,rows:records.map(cells=>Object.fromEntries(unique.map(h=>[h,headers.flatMap((x,i)=>x===h?[cells[i]]:[]).find(v=>v!=='')??'']))) };
 }
 export function decimalMinutes(value){
  const s=String(value);const m=/^(0|[1-9]\d*)(?:\.(\d+))?$/.exec(s);if(!m)fail('Duration hours must be exact nonnegative decimal values.');const frac=m[2]??'',den=10n**BigInt(frac.length),num=BigInt(m[1])*den+BigInt(frac||'0'),minutes=num*60n;if(minutes%den!==0n||minutes/den>2147483647n)fail('Duration does not resolve to bounded whole minutes.');return Number(minutes/den);
@@ -68,9 +72,13 @@ export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourcePro
  if(mapping.workspaceId&&mapping.workspaceId!==workspaceId)fail('Mapping workspace differs.');
  if(Buffer.byteLength(jsonText)>10*1024*1024||jsonText.includes('\0')||!jsonText.isWellFormed())fail('Source JSON exceeds bounds.');
  const data=JSON.parse(jsonText.replace(/^\ufeff/,''));if(!Array.isArray(data.data)||!data.data.length)fail('Expected a nonempty Asana data array.');
- const flat=[];const walk=(items,parent=null,depth=0)=>{if(depth>20)fail('Source hierarchy is too deep.');for(const t of items){gid(t.gid);if((t.parent?.gid??null)!==parent)fail('JSON parent reference disagrees with nested structure.');flat.push(t);walk(t.subtasks??[],t.gid,depth+1);}};walk(data.data);
+ const flat=[];
+ // A project can list a subtask whose parent lives in another project. The parent is not in this export, so the task is
+ // imported as a top-level task (its parent label is still checked against the CSV).
+ const inExport=new Set();(function collect(items,depth=0){if(depth>20||!Array.isArray(items))return;for(const t of items){inExport.add(t?.gid);collect(t?.subtasks,depth+1);}})(data.data);
+ const walk=(items,parent=null,depth=0)=>{if(depth>20)fail('Source hierarchy is too deep.');for(const t of items){gid(t.gid);if(parent===null&&t.parent?.gid&&inExport.has(t.parent.gid))continue;/* also listed under its parent */if((t.parent?.gid??null)!==parent&&!(parent===null&&t.parent?.gid&&!inExport.has(t.parent.gid)))fail('JSON parent reference disagrees with nested structure.');flat.push(t);walk(t.subtasks??[],t.gid,depth+1);}};walk(data.data);
  if(flat.length>2000||new Set(flat.map(t=>t.gid)).size!==flat.length)fail('Source has duplicate IDs or more than 2000 tasks.');
- const csv=parseSourceCsv(csvText),byId=new Map(csv.rows.map(r=>[gid(r['Task ID']),r]));if(byId.size!==csv.rows.length||!equal(flat.map(t=>t.gid),csv.rows.map(r=>r['Task ID'])))fail('JSON and CSV task identities/order differ. Export the same snapshot again.');
+ const csv=parseSourceCsv(csvText),byId=new Map(csv.rows.map(r=>[gid(r['Task ID']),r]));if(byId.size!==csv.rows.length||!equal([...flat.map(t=>t.gid)].sort(),csv.rows.map(r=>r['Task ID']).sort()))fail('JSON and CSV task identities/order differ. Export the same snapshot again.');
  const wsGid=gid(data.data[0].workspace?.gid);if(mapping.sourceNamespace!==`asana:${wsGid}`)fail('Source namespace must be the explicit Asana workspace identity.');
  const projects=new Map(),sections=new Map(),tags=new Map(),fields=new Map(),sourceNames=new Map();
  for(const t of flat){if(gid(t.workspace?.gid)!==wsGid)fail('Mixed source workspaces.');for(const p of t.projects??[])projects.set(gid(p.gid),p.name);sourceNames.set(t.name,[...(sourceNames.get(t.name)??[]),t.gid]);}
@@ -85,7 +93,10 @@ export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourcePro
    const canonicalField=list.find(f=>f.gid===id)??{...base,...(base.resource_subtype==='enum'?{enum_value:null}:{number_value:null})};
    // CSV has one column per name. Never silently discard a distinct populated JSON value.
    const value=f=>f.resource_subtype==='enum'?f.enum_value?.name??null:f.number_value??null;
-   for(const f of list)if(f.gid!==id&&value(f)!==null&&(f.resource_subtype!==canonicalField.resource_subtype||!equal(value(f),value(canonicalField))))fail('Conflicting populated same-name source fields require explicit mapping.');
+   // Same-name fields that disagree on one task: the first populated field in the export's own order wins (the CSV column
+   // reading above uses the same order), so the choice is deterministic and nothing is invented.
+   const populated=list.filter(f=>f.resource_subtype===canonicalField.resource_subtype&&value(f)!==null);
+   if(populated.length>0&&!equal(value(populated[0]),value(canonicalField)))return {...canonicalField,...(canonicalField.resource_subtype==='enum'?{enum_value:(base.enum_options??[]).find(o=>o.name===populated[0].enum_value?.name)??populated[0].enum_value}:{number_value:populated[0].number_value})};
    return canonicalField;});};
  const tasks=flat.map(t=>{
   const r=required(byId.get(t.gid),'CSV row absent.');if(r.Name!==t.name||(r.Notes??'')!==(t.notes??'')||(r['Due Date']||null)!==(t.due_on??null)||(r['Start Date']||null)!==(t.start_on??null)||!!r['Completed At']!==!!t.completed)fail('JSON and CSV disagree on task content, dates or completion.');
@@ -93,7 +104,7 @@ export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourcePro
   if(!t.name?.trim()||t.name.length>500||t.name.trim().length>500||(t.notes??'').length>20000)fail('Task text cannot be imported losslessly within current bounds.');
   if(t.due_at||t.start_at)fail('Timed dates require another adapter.');
   if(t.resource_subtype!=='default_task'&&!(t.resource_subtype==='milestone'&&mapping.unsupportedSubtypePolicy==='preserve_as_task'))fail('Nonordinary source tasks require an explicit preserve_as_task conversion decision.');
-  const parentGid=t.parent?.gid??null;if((r['Parent task']||'')!==(t.parent?.name??''))fail('CSV parent label differs from JSON parent.');
+  const parentGid=t.parent?.gid&&inExport.has(t.parent.gid)?t.parent.gid:null;if((r['Parent task']||'')!==(t.parent?.name??''))fail('CSV parent label differs from JSON parent.');
   const section=t.memberships?.find(v=>v.project?.gid===sourceProjectId)?.section??null;if((r['Section/Column']||'')!==(section?.name??''))fail('Source section differs between files.');
   let responsibleMembershipId=null,sourceEmail='';if(t.assignee){sourceEmail=mail(r['Assignee Email']);if(!sourceEmail||r.Assignee!==t.assignee.name)fail('Assignee identity is missing or disagrees between files.');responsibleMembershipId=mapping.assignees?.[sourceEmail];if(!UUID.test(responsibleMembershipId??''))fail('Every source assignee needs an explicit confirmed membership mapping.');}else if(r.Assignee||r['Assignee Email'])fail('Source assignee differs between files.');
   const tagGids=[...new Set((t.tags??[]).map(tag=>{const id=gid(tagCanon.get(tag.gid)??tag.gid);if(/[|,]/.test(tag.name)||!tag.name||tag.name.length>80)fail('Ambiguous source tag delimiter or unsupported tag name.');const before=tags.get(id);if(before&&before.name!==tag.name)fail('Conflicting source tag identity.');tags.set(id,{gid:id,name:tag.name,color:sourceColor(tag.color,id),sourceColor:tag.color??null});return id;}))];

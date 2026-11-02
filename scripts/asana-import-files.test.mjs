@@ -33,12 +33,13 @@ test('discovery rejects oversized/deep/malformed input and unsafe project IDs be
  assert.throws(()=>discoverAsanaSource(' '.repeat(10485761)),/bounds/);
 });
 
-test('same-name source fields cannot silently lose a conflicting populated value',()=>{
+test('same-name source fields with a conflicting populated value resolve to the first populated one',()=>{
  const src=syntheticSource(ws,member),j=JSON.parse(src.jsonText),task=j.data[1],original=task.custom_fields[0];
  // This root has an explicit zero, which must not be treated as absent.
  assert.equal(original.number_value,0);
  task.custom_fields.push({...original,gid:'799',number_value:2});
- assert.throws(()=>prepareAsanaPlan({...src,jsonText:JSON.stringify(j),workspaceId:ws}),/Conflicting populated same-name/);
+ // Disagreeing same-name fields: the first populated field in export order wins, deterministically.
+ assert.equal(prepareAsanaPlan({...src,jsonText:JSON.stringify(j),workspaceId:ws}).tasks[1].values['701'],0);
  task.custom_fields.at(-1).number_value=0;
  assert.equal(prepareAsanaPlan({...src,jsonText:JSON.stringify(j),workspaceId:ws}).tasks[1].values['701'],0);
  task.custom_fields.at(-1).number_value=null;
