@@ -61,11 +61,14 @@ export function createPlanningRepository(source:Database|WorkloomExecutor):Plann
         fieldRepo.listFields(ws,projectId),
         db.select().from(packageBaselines).where(and(eq(packageBaselines.workspaceId,ws),eq(packageBaselines.projectId,projectId))),
       ]);
-      const projected=await Promise.all(taskRows.map(t=>taskRepo.findTask(ws,t.id)));
-      const allTasks=projected.filter(t=>t!==null);
+      // One bulk read instead of one full projection per task; the task order (position, id) is kept.
+      const found=new Map((await taskRepo.findTasksByIds(ws,taskRows.map(t=>t.id))).map(t=>[t.id,t]));
+      const allTasks=taskRows.map(t=>found.get(t.id)).filter((t):t is NonNullable<typeof t>=>t!==undefined);
+      const baselineOf=new Map<string,string>();for(const b of baselineRows)if(!baselineOf.has(b.workPackageId))baselineOf.set(b.workPackageId,b.id);
+      const titleOf=new Map<string,string>();for(const t of allTasks)if(!titleOf.has(t.workPackageId))titleOf.set(t.workPackageId,t.title);
       const values=await fieldRepo.listProjectValues(ws,projectId,taskRows.map(t=>t.id));
       return {
-        packages:packageRows.map(p=>({id:p.id,projectId:p.projectId,revision:p.revision,estimateMinutes:p.estimateMinutes,createdAt:iso(p.createdAt),packageBaselineId:baselineRows.find(b=>b.workPackageId===p.id)?.id??null,title:allTasks.find(t=>t.workPackageId===p.id)?.title??'Пакет задач'})),
+        packages:packageRows.map(p=>({id:p.id,projectId:p.projectId,revision:p.revision,estimateMinutes:p.estimateMinutes,createdAt:iso(p.createdAt),packageBaselineId:baselineOf.get(p.id)??null,title:titleOf.get(p.id)??'Пакет задач'})),
         tasks:allTasks,fields,values,
         memberships:memberRows.map(({membership:m,displayName})=>({id:m.id,workspaceId:m.workspaceId,userId:m.userId,displayName,role:m.role})),
         activeMembershipIds:memberRows.filter(r=>r.membership.state==='active').map(r=>r.membership.id),

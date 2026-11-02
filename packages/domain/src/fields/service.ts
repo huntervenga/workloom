@@ -438,7 +438,9 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
       requireFound(await reader.tasks.findProject(ws, id));
       // Every requested task must exist before any project check, so no partial result leaks.
       const tasks: TaskDto[] = [];
-      for (const taskId of query.taskIds) tasks.push(requireFound(await reader.tasks.findTask(ws, taskId)));
+      // One bulk read (up to 200 ids) instead of one full projection per task; the first missing id in request order fails.
+      const found = new Map((await reader.tasks.findTasksByIds(ws, query.taskIds)).map((task) => [task.id.toLowerCase(), task]));
+      for (const taskId of query.taskIds) tasks.push(requireFound(found.get(taskId.toLowerCase()) ?? null));
       for (const task of tasks) await requireTaskProjectPlacement(reader, ws, task, id, 'taskIds');
       return reader.listProjectValues(ws, id, query.taskIds);
     },
