@@ -14,7 +14,15 @@ export interface PendingEdit {
  * estimate and description need more than the input; those wait for the confirmed answer. Tags are named from
  * the row's own tags or the workspace catalog; an id known to neither is left out of the display.
  */
-export function withPendingEdit<T extends TaskDto>(tasks: readonly T[], pending: PendingEdit | readonly PendingEdit[] | null | undefined, tagCatalog: readonly TagDto[] = []): readonly T[] {
+/** Which fields that would move a row between groups may also be shown early (the caller knows the current view). */
+export interface PendingEditShow {
+  /** Off in the Board, where a status is the lane the card sits in. */
+  status?: boolean;
+  /** Off when rows are grouped by assignee. */
+  responsible?: boolean;
+}
+
+export function withPendingEdit<T extends TaskDto>(tasks: readonly T[], pending: PendingEdit | readonly PendingEdit[] | null | undefined, tagCatalog: readonly TagDto[] = [], show: PendingEditShow = {}): readonly T[] {
   const edits = pending === null || pending === undefined ? [] : Array.isArray(pending) ? pending as readonly PendingEdit[] : [pending as PendingEdit];
   if (edits.length === 0) return tasks;
   const byTask = new Map(edits.map(edit => [edit.taskId, edit.input] as const));
@@ -27,6 +35,10 @@ export function withPendingEdit<T extends TaskDto>(tasks: readonly T[], pending:
       ...task,
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.priority !== undefined ? { priority: input.priority } : {}),
+      ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+      ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
+      ...(show.status === true && input.statusId !== undefined ? { statusId: input.statusId } : {}),
+      ...(show.responsible === true && input.responsibleMembershipId !== undefined ? { responsibleMembershipId: input.responsibleMembershipId } : {}),
       ...(input.tagIds !== undefined ? { tags: input.tagIds.flatMap(id => task.tags.find(tag => tag.id === id) ?? tagCatalog.find(tag => tag.id === id) ?? []) } : {}),
     };
     return next;
@@ -34,10 +46,12 @@ export function withPendingEdit<T extends TaskDto>(tasks: readonly T[], pending:
   return changed ? shown : tasks;
 }
 
-/** The display fields a sent selection-wide (bulk) update gives each of its tasks; an undo batch shows nothing early. */
+/** The display fields a sent selection-wide (bulk) update gives each of its tasks; an undo batch shows nothing early. Sections, estimates and custom fields wait for the answer. */
 export function pendingEditsOfBulk(input: BulkUpdateTasksInput | null | undefined): readonly PendingEdit[] {
   if (!input || input.changes.restore !== undefined) return [];
-  const { priority, tagIds } = input.changes;
-  if (priority === undefined && tagIds === undefined) return [];
-  return input.tasks.map(row => ({ taskId: row.taskId, input: { expectedRevision: row.expectedRevision, ...(priority !== undefined ? { priority } : {}), ...(tagIds !== undefined ? { tagIds } : {}) } }));
+  const { priority, tagIds, dueDate, startDate, statusId, responsibleMembershipId } = input.changes;
+  if ([priority, tagIds, dueDate, startDate, statusId, responsibleMembershipId].every(value => value === undefined)) return [];
+  return input.tasks.map(row => ({ taskId: row.taskId, input: { expectedRevision: row.expectedRevision,
+    ...(priority !== undefined ? { priority } : {}), ...(tagIds !== undefined ? { tagIds } : {}), ...(dueDate !== undefined ? { dueDate } : {}), ...(startDate !== undefined ? { startDate } : {}),
+    ...(statusId !== undefined ? { statusId } : {}), ...(responsibleMembershipId !== undefined ? { responsibleMembershipId } : {}) } }));
 }

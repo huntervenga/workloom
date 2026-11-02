@@ -19,9 +19,12 @@ describe('withPendingEdit', () => {
     expect(first.title).toBe('Old');
   });
 
-  it('leaves fields that regroup rows or keep their own draft to the confirmed answer', () => {
-    const shown = withPendingEdit(tasks, { taskId: 'a', input: { expectedRevision: 1, statusId: 'next', sectionId: 'other', responsibleMembershipId: null, dueDate: '2026-10-30' } });
-    expect(shown[0]).toMatchObject({ statusId: first.statusId, sectionId: first.sectionId, responsibleMembershipId: first.responsibleMembershipId, dueDate: first.dueDate, title: 'Old' });
+  it('shows dates early, and status or assignee only where the view lets rows regroup, never the section', () => {
+    const input = { expectedRevision: 1, statusId: 'next', sectionId: 'other', responsibleMembershipId: null, dueDate: '2026-10-30', startDate: '2026-10-28' };
+    const plain = withPendingEdit(tasks, { taskId: 'a', input });
+    expect(plain[0]).toMatchObject({ statusId: first.statusId, sectionId: first.sectionId, responsibleMembershipId: first.responsibleMembershipId, dueDate: '2026-10-30', startDate: '2026-10-28', title: 'Old' });
+    const shown = withPendingEdit(tasks, { taskId: 'a', input }, [], { status: true, responsible: true });
+    expect(shown[0]).toMatchObject({ statusId: 'next', responsibleMembershipId: null, sectionId: first.sectionId, dueDate: '2026-10-30' });
   });
 
   it('shows sent tags by name from the row or the catalog, drops unknown ids, and does not touch the stored tags', () => {
@@ -39,7 +42,7 @@ describe('withPendingEdit', () => {
     const edits = pendingEditsOfBulk({ projectId: 'p', tasks: [{ taskId: 'a', expectedRevision: 1 }, { taskId: 'b', expectedRevision: 1 }], changes: { tagIds: ['tag-1'], priority: 'high' } });
     const shown = withPendingEdit(tasks, edits, [tag]);
     expect(shown.map(task => [task.priority, task.tags.map(t => t.id)])).toEqual([['high', ['tag-1']], ['high', ['tag-1']]]);
-    expect(pendingEditsOfBulk({ projectId: 'p', tasks: [{ taskId: 'a', expectedRevision: 1 }], changes: { statusId: 's' } })).toEqual([]);
+    expect(pendingEditsOfBulk({ projectId: 'p', tasks: [{ taskId: 'a', expectedRevision: 1 }], changes: { sectionId: 's' } })).toEqual([]);
     expect(pendingEditsOfBulk(null)).toEqual([]);
     expect(withPendingEdit(tasks, [])).toBe(tasks);
   });

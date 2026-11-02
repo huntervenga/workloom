@@ -1514,8 +1514,9 @@ function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, pr
 
   const loadedScope = loadedTaskScope(query.data);
   const keptScope = deletedTaskIds.size === 0 ? loadedScope : { ...loadedScope, tasks: withoutDeletedTasks(loadedScope.tasks, deletedTaskIds) };
-  const scope = pendingEdit && (!Array.isArray(pendingEdit) || pendingEdit.length > 0) ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit, tagCatalog) } : keptScope;
-  const dateIssues = completedDateIssues(project, scope.tasks, table.statuses);
+  const scope = pendingEdit && (!Array.isArray(pendingEdit) || pendingEdit.length > 0) ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit, tagCatalog, { status: !boardMode, responsible: table.grouping !== 'assignee' }) } : keptScope;
+  // Banners about completion dates describe stored data, never a value that is only shown early.
+  const dateIssues = completedDateIssues(project, keptScope.tasks, table.statuses);
   const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, { kind: issue.kind, finished: issue.finished }] as const));
   return (
     <div className="space-y-3">
