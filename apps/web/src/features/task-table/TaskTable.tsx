@@ -175,7 +175,7 @@ export interface TaskTableProps {
  * The scroller container gives desktop names room while leaving medium/mobile browsing usable.
  * A surrounding layout may narrow it through `--task-title-width`; the column and minimum width share it.
  */
-const titleWidth = 'var(--task-title-width, clamp(280px, 42cqw, 460px))';
+const titleWidth = 'var(--task-title-width,clamp(280px,32vw,460px))';
 const noCustomColumns: readonly TaskTableCustomColumn[] = [];
 
 /**

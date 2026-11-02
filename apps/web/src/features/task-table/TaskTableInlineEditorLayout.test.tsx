@@ -28,7 +28,7 @@ function colWidths(): string[] {
   return [...screen.getByRole('table').querySelectorAll('col')].map(col => col.style.width);
 }
 
-const defaultTitleWidth = (otherWidth: number) => `max(var(--task-title-width, clamp(280px, 42cqw, 460px)),calc(100cqw - ${otherWidth}px))`;
+const defaultTitleWidth = (otherWidth: number) => `max(var(--task-title-width,clamp(280px,32vw,460px)),calc(100cqw - ${otherWidth}px))`;
 const baseWidths = columnIds.map(id => id === 'title' ? defaultTitleWidth(baseMinWidth - 460) : `${widths[id]}px`);
 
 describe('fixed grid while a cell editor is open', () => {

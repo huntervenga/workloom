@@ -19,11 +19,11 @@ export function CompletedDateBanner({ project, issues, tasks, partial, onOpenTas
   const byId = new Map(tasks.map(task => [task.id, task]));
   const kindText = (issue: DateIssue) => issue.kind === 'missing' && !issue.finished ? t('projectDates.kindOpenMissing') : issue.kind === 'missing' ? t('projectDates.kindMissing') : issue.kind === 'before' ? t('projectDates.kindBefore') : t('projectDates.kindAfter');
   return <section role="status" aria-label={t('projectDates.title')} className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <p className="flex items-center gap-2 font-medium"><CalendarX size={16} aria-hidden="true" />{t(finishedIssues.length > 0 ? 'projectDates.summary' : 'projectDates.summaryOpen', { count: finishedIssues.length > 0 ? finishedIssues.length : openUndated, from: project.dateRange.from, to: project.dateRange.to })}</p>
-      <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? t('projectDates.hide') : t('projectDates.show')}</Button>
+    <div className="flex items-center justify-between gap-2">
+      <p className="flex min-w-0 items-center gap-2 font-medium"><CalendarX size={16} className="shrink-0" aria-hidden="true" /><span className="min-w-0 truncate">{t(finishedIssues.length > 0 ? 'projectDates.summary' : 'projectDates.summaryOpen', { count: finishedIssues.length > 0 ? finishedIssues.length : openUndated, from: project.dateRange.from, to: project.dateRange.to })}</span></p>
+      <Button size="sm" variant="ghost" className="shrink-0" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? t('projectDates.hide') : t('projectDates.show')}</Button>
     </div>
-    <p className="text-xs">{finishedIssues.length > 0 ? t('projectDates.breakdown', { missing, outside }) : ''}{finishedIssues.length > 0 && openUndated > 0 ? ' ' : ''}{openUndated > 0 ? t('projectDates.openUndated', { count: openUndated }) : ''}{partial ? ` ${t('projectDates.partial')}` : ''}</p>
+    <p className="truncate text-xs" title={[finishedIssues.length > 0 ? t('projectDates.breakdown', { missing, outside }) : '', openUndated > 0 ? t('projectDates.openUndated', { count: openUndated }) : ''].filter(Boolean).join(' ')}>{finishedIssues.length > 0 ? t('projectDates.breakdown', { missing, outside }) : ''}{finishedIssues.length > 0 && openUndated > 0 ? ' ' : ''}{openUndated > 0 ? t('projectDates.openUndated', { count: openUndated }) : ''}{partial ? ` ${t('projectDates.partial')}` : ''}</p>
     {open ? <ul className="space-y-1">{issues.slice(0, LIST_LIMIT).map(issue => {
       const task = byId.get(issue.taskId);
       return <li key={issue.taskId}><button type="button" className="text-left underline decoration-dotted" onClick={() => onOpenTask(issue.taskId)}>{task?.title ?? issue.taskId}</button><span className="ml-2 text-xs">{kindText(issue)}{task?.dueDate ? ` (${task.dueDate})` : ''}</span></li>;

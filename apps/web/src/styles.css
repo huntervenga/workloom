@@ -74,15 +74,15 @@
 }
 
 /*
- * Only an open task pane reserves its width, and only on the main page: the Topbar keeps its
- * full width and height, so nothing above the page shifts when the pane opens or closes.
+ * An open task pane covers the right edge of the page on the main page only: the Topbar keeps its
+ * full width and height, and the page keeps its width and scrolls sideways, so nothing re-flows.
  */
 @media (min-width: 1280px) {
-  body:has(.task-panel[data-task-panel][data-state="open"]) .app-shell-workspace {
-    --task-title-width: 300px;
-  }
   body:has(.task-panel[data-task-panel][data-state="open"]) .app-shell-workspace > .app-shell-main {
     padding-right: calc(var(--task-pane-width) + 1rem);
+    /* Keep the page exactly as wide as without the pane (sidebar is 15rem): the pane covers its right edge and
+       the page scrolls sideways, instead of squeezing and re-wrapping the toolbar, banners and table. */
+    min-width: calc(100vw - 15rem + var(--task-pane-width) + 1rem);
   }
 }
 
