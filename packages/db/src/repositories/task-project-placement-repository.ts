@@ -41,6 +41,10 @@ async function transferTree(db:WorkloomExecutor,plan:{workspaceId:string;taskId:
   ['a split or replaced work package','split_package',sql`select count(*) n from work_packages where workspace_id=${ws} and ((id=any(${packageIds}) and source_package_id is not null and source_package_id<>all(${packageIds})) or (source_package_id=any(${packageIds}) and id<>all(${packageIds})))`],
  ];
  for(const [label,reason,query] of tied)if(await count(query)>0)blocked(`This task is tied to its project by ${label}. Resolve that first; nothing was changed.`,reason);
+ // The one-project rule is about the whole moving tree: a subtask that is still placed elsewhere blocks it as well.
+ if(await count(sql`select count(*) n from project_rules where workspace_id=${ws} and project_id=${target} and config->>'singleProject'='true'`)>0
+  &&await count(sql`select count(*) n from task_project_placements where workspace_id=${ws} and task_id=any(${taskIds}) and archived_at is null and project_id<>home_project_id and project_id<>${target}`)>0)
+  blocked('This project keeps every task in one project only, and a task or subtask is still placed in other projects. Remove it from them first.','single_project');
  // Statuses: the same name in the same group, else the first status of the group.
  const sourceStatus=rows<{id:string;name:string;grp:string}>(await db.execute(sql`select id::text id, name, "group"::text grp from task_statuses where workspace_id=${ws} and project_id=${home}`));
  const targetStatus=rows<{id:string;name:string;grp:string}>(await db.execute(sql`select id::text id, name, "group"::text grp from task_statuses where workspace_id=${ws} and project_id=${target} order by position, id`));

@@ -58,8 +58,12 @@ export function applyAssigneeResolutions(jsonText,csvText,resolutions,skipTaskId
  };
  data.data=rebuild(data.data,null);
  // A task the export lists in more than one place (inside its parent and on its own) must not appear twice once a skipped
- // ancestor made it move up: its original entry stays, the moved copy goes.
- {const plain=new Set(),collect=list=>{for(const t of list??[]){if(!promoted.has(t))plain.add(t.gid);collect(t.subtasks);}};collect(data.data);
+ // ancestor made it move up. The plan reader treats a nested entry as the real one and ignores a top-level copy whose parent
+ // is in the export, so: the moved copy stays, and the old top-level copy (whose parent is now gone) is dropped.
+ {const movedGids=new Set([...promoted].map(t=>t.gid)),top=new Set(data.data);
+  const stale=t=>top.has(t)&&!promoted.has(t)&&movedGids.has(t.gid)&&skip.has(t.parent?.gid);
+  data.data=data.data.filter(t=>!stale(t));
+  const plain=new Set(),collect=list=>{for(const t of list??[]){if(!promoted.has(t))plain.add(t.gid);collect(t.subtasks);}};collect(data.data);
   const seen=new Set(),prune=list=>{const kept=[];for(const t of list??[]){if(promoted.has(t)&&(plain.has(t.gid)||seen.has(t.gid)))continue;if(promoted.has(t))seen.add(t.gid);t.subtasks=prune(t.subtasks);kept.push(t);}return kept;};data.data=prune(data.data);}
  const byName=new Map();for(const [gid,name] of names)byName.set(name,[...(byName.get(name)??[]),gid]);
  const rows=[];

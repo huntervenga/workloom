@@ -60,4 +60,15 @@ describe('project dropdown of a task', () => {
     await screen.findByRole('button', { name: 'Dismiss' }).then(button => button.click());
     await waitFor(() => expect(screen.queryByText(`Moved to ${target.name}.`)).not.toBeInTheDocument());
   });
+  it('sends the task\'s current revision, not the one the earlier move answered with, after the task changed meanwhile', async () => {
+    const bodies: unknown[] = [];
+    installFakeApi({ [url]: request => { bodies.push(request.body); return moved(); } });
+    // The move answered with revision 2; the title was edited afterwards, so the pane now holds revision 3.
+    transferNotices.set(task.id, { fromProjectId: home.id, result: { task: { ...task, projectId: target.id, revision: 2 }, movedTaskIds: [task.id], carriedValues: 0, notCarried: [] } });
+    const ui = renderFieldUi(<HomeProjectPicker actorId={anna.id} task={{ ...task, projectId: target.id, revision: 3 }} homeProject={target} projects={[home, target]} disabled={false} />);
+    await ui.user.click(screen.getByRole('button', { name: `Move back to ${home.name}` }));
+    await waitFor(() => expect(bodies).toEqual([{ expectedRevision: 3, projectId: home.id }]));
+    // A plain dropdown choice afterwards uses the pane's revision as well.
+    await ui.user.click(screen.getByRole('combobox', { name: 'Project' }));
+  });
 });
