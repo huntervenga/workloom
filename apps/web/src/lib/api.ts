@@ -1,4 +1,5 @@
 import { errorResponseSchema } from '@workloom/contracts';
+import { recordOwnChanges } from './ownChanges';
 import { isUuid } from './format';
 import { canonicalJson } from './idempotency';
 
@@ -138,6 +139,7 @@ export async function apiRequest(path: string, options: ApiRequestOptions = {}):
     throw new ApiError({ kind: 'network', status: null });
   }
 
+  recordOwnChanges(response.headers.get('x-workloom-change-seq'));
   const payload = await readJson(response);
   if (!response.ok) {
     const envelope = readErrorEnvelope(payload);

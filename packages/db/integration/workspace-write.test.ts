@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FIXTURE_MEMBERSHIP_IDS, FIXTURE_USER_IDS, FIXTURE_WORKSPACE_IDS } from '../src/fixtures.js';
 import { runMigrations } from '../src/migrations.js';
 import { seedDemoData } from '../src/seed/demo-seed.js';
+import { observeWorkspaceCommits, type CommittedWorkspaceChange } from '../src/transactions/commit-observer.js';
 import { createWorkspaceWriteRunner, runWorkspaceWrite } from '../src/transactions/workspace-write.js';
 import { createThrowawayDatabase, type ThrowawayDatabase } from './support.js';
 
@@ -75,6 +76,23 @@ describe('workspace write barrier on real PostgreSQL', () => {
     expect(audit.every((row) => row.actor_membership_id === FIXTURE_MEMBERSHIP_IDS.teamMemberA && row.source === 'web')).toBe(true);
     const outbox = await target.database.sql<{ type: string; dispatched_at: Date | null }[]>`select type, dispatched_at from outbox_events`;
     expect(outbox).toEqual([{ type: 'probe.updated', dispatched_at: null }]);
+  });
+
+  it('reports the committed change sequence to an observer, only after commit and never for a rollback or a read-only command', async () => {
+    const seen: CommittedWorkspaceChange[] = [];
+    const before = await changeSeq();
+    await observeWorkspaceCommits(change => seen.push(change), async () => {
+      await runWorkspaceWrite(target.database, context(FIXTURE_USER_IDS.memberA), 'task.edit', async (scope) => {
+        await scope.recordChange({ entityType: 'probe', entityId: ENTITY_ID, action: 'updated', entityRevision: 3 });
+      });
+      await runWorkspaceWrite(target.database, context(FIXTURE_USER_IDS.memberA), 'task.edit', async () => undefined);
+      await expect(runWorkspaceWrite(target.database, context(FIXTURE_USER_IDS.memberA), 'task.edit', async (scope) => {
+        await scope.recordChange({ entityType: 'probe', entityId: ENTITY_ID, action: 'updated', entityRevision: 4 });
+        throw new Error('rolled back');
+      })).rejects.toThrow('rolled back');
+    });
+    expect(seen).toEqual([{ workspaceId: FIXTURE_WORKSPACE_IDS.team, changeSeq: String(before + 1n) }]);
+    expect(await changeSeq()).toBe(before + 1n);
   });
 
   it('rolls back every write of a failed command', async () => {

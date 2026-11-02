@@ -1,4 +1,5 @@
 import { createAttachmentStore, type AttachmentStore } from '@workloom/db';
+import { registerOwnCommitHeader } from './http/own-commit-header.js';
 import { createAttachmentStorage, type AttachmentStorage } from './attachments/storage.js';
 import { registerAttachmentRoutes, registerAttachmentMaintenance } from './http/attachment-routes.js';
 import {hostedAsanaImportEnabled,managedLocalAsanaTarget,registerLocalAsanaImportRoutes,type LocalAsanaImporter} from './http/local-asana-import-routes.js';
@@ -357,6 +358,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
       throw new HttpError(429, 'RATE_LIMITED', 'Too many requests. Wait a moment and try again.', { retryAfterSeconds: denied.retryAfterSeconds }, { retryable: true });
     }
   };
+  registerOwnCommitHeader(app);
   app.addHook('onRequest', async (request, reply) => {
     reply.header('x-request-id', request.id);
     reply.header('x-content-type-options', 'nosniff');

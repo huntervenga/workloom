@@ -19,6 +19,17 @@ export function isWorkspaceLiveKey(key: QueryKey, actorId: string, workspaceId: 
   return !((branch === 'planning' || branch === 'workCategories') && key[scope.length + 1] === 'run');
 }
 
+/**
+ * A head advance that only holds our own writes refetches nothing, but queries nobody is looking at must still not
+ * be served from cache as fresh later, so they are marked stale (no network).
+ */
+export function markInactiveWorkspaceQueriesStale(client: QueryClient, actorId: string, workspaceId: string): void {
+  void client.invalidateQueries({
+    predicate: query => isWorkspaceLiveKey(query.queryKey, actorId, workspaceId) && !query.isActive(),
+    refetchType: 'none',
+  });
+}
+
 export interface WorkspaceRefreshResult {
   complete: boolean;
   followUp: boolean;

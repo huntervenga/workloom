@@ -7,7 +7,8 @@ import { queryKeys } from '../../lib/queryKeys';
 import { WorkspaceHeadRechecks } from '../../lib/workspaceHeadRechecks';
 import { fetchWorkspaceChangeHead, WorkspaceHeadBindingError, workspaceChangeHeadKey } from './workspaceChangeHead';
 import { WorkspaceLiveRefreshController } from './workspaceLiveRefreshController';
-import { refreshWorkspaceLiveQueries } from './workspaceLiveQueries';
+import { markInactiveWorkspaceQueriesStale, refreshWorkspaceLiveQueries } from './workspaceLiveQueries';
+import { ownChangesCover } from '../../lib/ownChanges';
 import { isWorkspaceRefreshProtected, observeWorkspaceRefreshInteraction, setWorkspaceRefreshComposing } from './workspaceRefreshInteraction';
 
 function ownMembership(client: QueryClient, actorId: string, workspaceId: string): string | null {
@@ -51,6 +52,8 @@ export function useWorkspaceLiveRefresh(actorId: string, workspaceId: string | n
       refresh: (signal, safe, proof) => refreshWorkspaceLiveQueries(client, actorId, workspaceId, signal, safe, proof),
       protected: () => isWorkspaceRefreshProtected(client, composing),
       recheckAccess,
+      ownChanges: ownChangesCover,
+      acknowledgeOwn: () => markInactiveWorkspaceQueriesStale(client, actorId, workspaceId),
       rejectedHead: error => {
         if (!(error instanceof WorkspaceHeadBindingError)) return;
         if (error.binding === 'actor') rechecks.identity();

@@ -12,6 +12,10 @@ interface RefreshDependencies {
   protected: () => boolean;
   recheckAccess: () => void;
   rejectedHead: (error: unknown) => void;
+  /** True when every change in (fromSeq, toSeq] was committed by this browser's own writes. */
+  ownChanges?: (workspaceId: string, fromSeq: string, toSeq: string) => boolean;
+  /** Called when a head advance was recognised as only our own writes and no content refresh runs. */
+  acknowledgeOwn?: () => void;
 }
 
 /** One visible, non-overlapping GET cycle and one coalesced content catch-up per mounted scope. */
@@ -99,7 +103,13 @@ export class WorkspaceLiveRefreshController {
         }
         this.observedHead = head;
         this.authorized = true;
-        if (!sameWorkspaceHead(this.appliedHead, head)) this.pending = true;
+        if (!sameWorkspaceHead(this.appliedHead, head)) {
+          if (this.onlyOwnChanges(head)) {
+            // Our own writes already refreshed what they touched; a full catch-up would repeat every read.
+            this.appliedHead = head;
+            this.dependencies.acknowledgeOwn?.();
+          } else this.pending = true;
+        }
         if (workspaceAccessChanged(previous, head)) this.dependencies.recheckAccess();
         this.catchUp();
       } catch (error) {
@@ -120,6 +130,14 @@ export class WorkspaceLiveRefreshController {
         }
       }
     })();
+  }
+
+  /** Nothing is waiting, and only the change sequence moved, across writes that all came from this browser. */
+  private onlyOwnChanges(head: WorkspaceChangeHeadDto): boolean {
+    const applied = this.appliedHead;
+    if (!this.dependencies.ownChanges || applied === null || this.pending || this.refresh !== null) return false;
+    if (!sameWorkspaceHead({ ...applied, changeSeq: head.changeSeq }, head)) return false;
+    return this.dependencies.ownChanges(head.workspaceId, applied.changeSeq, head.changeSeq);
   }
 
   private catchUp(): void {

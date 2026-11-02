@@ -18,16 +18,17 @@ function held<T>() {
 }
 async function settle() { for (let index = 0; index < 12; index++) await Promise.resolve(); }
 const controllers: WorkspaceLiveRefreshController[] = [];
-function setup() {
+function setup(own?: (workspaceId: string, from: string, to: string) => boolean) {
   const readHead = vi.fn<(signal: AbortSignal, previous: WorkspaceChangeHeadDto | null) => Promise<WorkspaceChangeHeadDto>>().mockResolvedValue(head());
   const refresh = vi.fn<(signal: AbortSignal, safe: () => boolean) => Promise<WorkspaceRefreshResult>>()
     .mockResolvedValue({ complete: true, followUp: false });
   const protectedState = { active: false };
   const recheckAccess = vi.fn();
   const rejectedHead = vi.fn();
-  const controller = new WorkspaceLiveRefreshController({ readHead, refresh, protected: () => protectedState.active, recheckAccess, rejectedHead });
+  const acknowledgeOwn = vi.fn();
+  const controller = new WorkspaceLiveRefreshController({ readHead, refresh, protected: () => protectedState.active, recheckAccess, rejectedHead, ...(own ? { ownChanges: own, acknowledgeOwn } : {}) });
   controllers.push(controller);
-  return { controller, readHead, refresh, protectedState, recheckAccess, rejectedHead };
+  return { controller, readHead, refresh, protectedState, recheckAccess, rejectedHead, acknowledgeOwn };
 }
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => { controllers.splice(0).forEach(controller => controller.stop()); vi.useRealTimers(); });
@@ -149,5 +150,32 @@ describe('workspace live refresh lifecycle', () => {
     const s = setup(); s.refresh.mockResolvedValueOnce({ complete: true, followUp: true });
     s.controller.setVisible(true); await settle();
     expect(s.refresh).toHaveBeenCalledTimes(2); expect(s.controller.pending).toBe(false);
+  });
+});
+
+describe('own writes do not trigger a full catch-up', () => {
+  it('applies a head that moved only by our own writes without refreshing, and refreshes when a foreign change is in between', async () => {
+    const own = vi.fn((_workspace: string, from: string, to: string) => from === '0' && to === '1');
+    const s = setup(own); s.controller.setVisible(true); await settle();
+    expect(s.refresh).toHaveBeenCalledTimes(1);
+    s.readHead.mockResolvedValue(head('1'));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(own).toHaveBeenCalledWith(WORKSPACE, '0', '1');
+    expect(s.refresh).toHaveBeenCalledTimes(1);
+    expect(s.acknowledgeOwn).toHaveBeenCalledTimes(1);
+    expect(s.controller.appliedHead?.changeSeq).toBe('1');
+    expect(s.controller.pending).toBe(false);
+    s.readHead.mockResolvedValue(head('3'));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(s.refresh).toHaveBeenCalledTimes(2);
+    expect(s.controller.appliedHead?.changeSeq).toBe('3');
+  });
+  it('never skips when access or the permission epoch moved with the change', async () => {
+    const own = vi.fn(() => true);
+    const s = setup(own); s.controller.setVisible(true); await settle();
+    s.readHead.mockResolvedValue(head('1', { permissionEpoch: '1' }));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(s.refresh).toHaveBeenCalledTimes(2);
+    expect(s.acknowledgeOwn).not.toHaveBeenCalled();
   });
 });

@@ -16,6 +16,7 @@ import { isDatabase, type Database, type WorkloomExecutor, type WorkloomTransact
 import { isDatabaseUnavailableError } from '../database-errors.js';
 import { createAccessRepository } from '../repositories/access-repository.js';
 import { auditEvents, outboxEvents, workspaces } from '../schema.js';
+import { reportCommittedWorkspaceChange } from './commit-observer.js';
 
 export interface DbWorkspaceWriteScope extends WorkspaceWriteScope {
   /** The open transaction. Every mutation of the command must use it. */
@@ -68,8 +69,9 @@ export async function runWorkspaceWrite<T>(
   const lockTimeoutMs = Math.max(1, Math.trunc(options.lockTimeoutMs ?? 5_000));
   const statementTimeoutMs = Math.max(1, Math.trunc(options.statementTimeoutMs ?? 15_000));
 
+  let committedSeq: bigint | undefined;
   try {
-    return await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       await tx.execute(sql`
         select set_config('lock_timeout', ${`${lockTimeoutMs}ms`}, true),
                set_config('statement_timeout', ${`${statementTimeoutMs}ms`}, true)
@@ -177,8 +179,12 @@ export async function runWorkspaceWrite<T>(
         return await work(scope);
       } finally {
         open = false;
+        committedSeq = changeSeq;
       }
     });
+    // Only a top-level transaction is committed here; one nested in a caller's transaction commits with the caller.
+    if (committedSeq !== undefined && isDatabase(source)) reportCommittedWorkspaceChange({ workspaceId: context.workspaceId, changeSeq: committedSeq.toString() });
+    return result;
   } catch (error) {
     if (!isDomainError(error) && isDatabaseUnavailableError(error)) {
       throw temporarilyUnavailableError(error);
