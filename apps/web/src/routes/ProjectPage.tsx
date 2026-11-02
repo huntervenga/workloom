@@ -55,6 +55,7 @@ import type {
   MembershipDto,
   ProjectDto,
   SectionDto,
+  TagDto,
   TaskDto,
   TaskFieldData,
   TaskFieldDefinitionDto,
@@ -1334,6 +1335,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             dragScope={taskPresentationKey}
             query={tasks}
             deletedTaskIds={deletedTaskIds}
+            tagCatalog={tags.data}
             pendingEdit={commands.update.pendingCommand ? { taskId: commands.update.pendingCommand.variables.taskId, input: commands.update.pendingCommand.variables.input } : null}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
@@ -1445,6 +1447,8 @@ interface TaskListProps {
   deletedTaskIds: ReadonlySet<string>;
   /** The sent, unanswered update: its row shows the new values meanwhile. */
   pendingEdit?: PendingEdit | null | undefined;
+  /** Workspace tags, to name the tags a pending edit sent. */
+  tagCatalog?: readonly TagDto[] | undefined;
   filtered: boolean;
   project: ProjectDto;
   workspace: WorkspaceDto;
@@ -1484,7 +1488,7 @@ interface TaskListProps {
   onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
-function TaskList({ query, deletedTaskIds, pendingEdit, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
+function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
   const { t } = useTranslation();
   if (query.isPending) {
     return (
@@ -1510,7 +1514,7 @@ function TaskList({ query, deletedTaskIds, pendingEdit, filtered, project, works
 
   const loadedScope = loadedTaskScope(query.data);
   const keptScope = deletedTaskIds.size === 0 ? loadedScope : { ...loadedScope, tasks: withoutDeletedTasks(loadedScope.tasks, deletedTaskIds) };
-  const scope = pendingEdit ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit) } : keptScope;
+  const scope = pendingEdit ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit, tagCatalog) } : keptScope;
   const dateIssues = completedDateIssues(project, scope.tasks, table.statuses);
   const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, { kind: issue.kind, finished: issue.finished }] as const));
   return (

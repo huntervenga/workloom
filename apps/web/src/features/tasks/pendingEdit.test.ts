@@ -23,4 +23,14 @@ describe('withPendingEdit', () => {
     const shown = withPendingEdit(tasks, { taskId: 'a', input: { expectedRevision: 1, statusId: 'next', sectionId: 'other', responsibleMembershipId: null, dueDate: '2026-10-30' } });
     expect(shown[0]).toMatchObject({ statusId: first.statusId, sectionId: first.sectionId, responsibleMembershipId: first.responsibleMembershipId, dueDate: first.dueDate, title: 'Old' });
   });
+
+  it('shows sent tags by name from the row or the catalog, drops unknown ids, and does not touch the stored tags', () => {
+    const kept = { id: 'tag-kept', workspaceId: 'ws-1', name: 'Kept', color: null, revision: 1, archivedAt: null };
+    const added = { ...kept, id: 'tag-new', name: 'New' };
+    const tagged = makeTask({ id: 'c', tags: [kept] });
+    const shown = withPendingEdit([tagged], { taskId: 'c', input: { expectedRevision: 1, tagIds: ['tag-kept', 'tag-new', 'tag-gone'] } }, [added]);
+    expect(shown[0]?.tags.map(tag => tag.id)).toEqual(['tag-kept', 'tag-new']);
+    expect(withPendingEdit([tagged], { taskId: 'c', input: { expectedRevision: 1, tagIds: [] } })[0]?.tags).toEqual([]);
+    expect(tagged.tags).toEqual([kept]);
+  });
 });
