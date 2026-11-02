@@ -628,6 +628,12 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   const selected = ctx.selectedTaskIds.includes(task.id);
   // A pointer click on the name opens at the clicked character; keyboard activation keeps the default.
   const editTitle = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (event.detail > 0 && ctx.selectRow) {
+      // Asana-style: Shift/Ctrl/Cmd + click on the name only selects (a range or a toggle) and never starts editing;
+      // a plain click moves the selection to this row and starts editing it.
+      ctx.selectRow(task.id, event);
+      if (event.shiftKey || event.metaKey || event.ctrlKey) return;
+    }
     const caret = event.detail > 0 ? titleCaretFromPoint(event.currentTarget, event.clientX, event.clientY) : undefined;
     if (caret === undefined) ctx.onEditTaskField?.(task, 'title');
     else ctx.onEditTaskField?.(task, 'title', caret);
@@ -689,7 +695,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
               <span className="flex max-w-[35%] min-w-0 shrink-0 items-center gap-1 overflow-hidden">{meta}</span>
               {/* Everything right of the name opens the task; it never wraps the row's other controls. */}
               <button type="button" data-task-open-area={task.id} aria-label={t('taskTable.taskTable.openTask', { title: task.title })} title={t('taskTable.taskTable.openDetails')}
-                onClick={() => ctx.onOpenTask(task.id)} onFocus={relayTabFromEditor}
+                onClick={event => { if (event.detail > 0 && (!selected || event.shiftKey || event.metaKey || event.ctrlKey)) ctx.selectRow?.(task.id, event); ctx.onOpenTask(task.id); }} onFocus={relayTabFromEditor}
                 className="group/open flex h-8 min-w-4 flex-1 items-center justify-end rounded px-1 text-subtle outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
                 <PanelRightOpen size={14} aria-hidden="true" className="opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible/open:opacity-100" />
               </button>

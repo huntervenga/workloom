@@ -1165,7 +1165,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         <span className="min-w-0 flex-1">{t(bulkInline.completionNotice.key, bulkInline.completionNotice.params)}</span>
         <Button size="sm" variant="ghost" onClick={bulkInline.dismissNotice}>{t('bulkInline.dismiss')}</Button>
       </div></TaskFeedbackLayer> : null}
-      {(toolbarSelection.ids.length > 0 || bulkHeld) && writable ? <BulkTaskToolbar key={`${actorId}:${workspace.id}:${project.id}`} projectId={project.id}
+      {(toolbarSelection.ids.length > 1 || bulkHeld) && writable ? <BulkTaskToolbar key={`${actorId}:${workspace.id}:${project.id}`} projectId={project.id}
         count={toolbarSelection.ids.length} hiddenCount={toolbarSelection.ids.filter(id => !shownTasks.some(task => task.id === id)).length}
         onClearHidden={() => setSelectedTaskIds(before => before.filter(id => { const visible = shownTasks.some(task => task.id === id); if (!visible) selectionLedger.current.delete(id); return visible; }))} onReload={async () => {
           const scope = selectionScope;

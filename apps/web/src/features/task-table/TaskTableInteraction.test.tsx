@@ -38,9 +38,16 @@ describe('normal row interaction', () => {
     expect(gutter('Alpha')).toHaveAttribute('aria-pressed', 'true');
     await user.keyboard('{Meta>}'); await user.click(gutter('Charlie')); await user.keyboard('{/Meta}');
     expect(gutter('Charlie')).toHaveAttribute('aria-pressed', 'false');
+    // A plain click on the name moves the selection to that row (and starts editing it).
     await user.click(screen.getByRole('button', { name: 'Bravo' }));
-    expect(gutter('Alpha')).toHaveAttribute('aria-pressed', 'true');
-    expect(gutter('Bravo')).toHaveAttribute('aria-pressed', 'false');
+    expect(gutter('Alpha')).toHaveAttribute('aria-pressed', 'false');
+    expect(gutter('Bravo')).toHaveAttribute('aria-pressed', 'true');
+    // Shift+click on another name selects the range between them and does not start editing.
+    await user.keyboard('{Shift>}');
+    await user.click(screen.getByRole('button', { name: 'Charlie' }));
+    await user.keyboard('{/Shift}');
+    expect(gutter('Bravo')).toHaveAttribute('aria-pressed', 'true');
+    expect(gutter('Charlie')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('shows a floating task card at the pointer and drops into the explicit assignee group', async () => {
