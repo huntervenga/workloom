@@ -65,7 +65,7 @@ export default defineConfig(
     // Root tooling scripts run on Node.
     files: ['**/*.{js,mjs,cjs}'],
     languageOptions: {
-      globals: { console: 'readonly', process: 'readonly', URL: 'readonly' },
+      globals: { console: 'readonly', process: 'readonly', URL: 'readonly', fetch: 'readonly', AbortSignal: 'readonly', setTimeout: 'readonly', structuredClone: 'readonly' },
     },
   },
   {

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Pushing to main deploys production (Railway builds main). Run the deploy checks first; SKIP_PREDEPLOY=1 skips them.
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ] && [ -z "$SKIP_PREDEPLOY" ]; then
+    echo "pre-push: main deploys production, running npm run predeploy ..."
+    npm run predeploy || { echo "pre-push: predeploy checks failed; nothing was pushed. (SKIP_PREDEPLOY=1 to override)"; exit 1; }
+  fi
+done
+exit 0

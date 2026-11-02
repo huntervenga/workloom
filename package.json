@@ -35,7 +35,10 @@
     "check:localization": "node scripts/check-localization.mjs",
     "db:test:up": "node scripts/local-test-postgres.mjs up",
     "db:test:down": "node scripts/local-test-postgres.mjs down",
-    "db:test:status": "node scripts/local-test-postgres.mjs status"
+    "db:test:status": "node scripts/local-test-postgres.mjs status",
+    "predeploy": "node scripts/check-deploy-image.mjs && node scripts/check-migration-safety.mjs && node scripts/check-boundaries.mjs && node scripts/check-localization.mjs && npm run typecheck && eslint packages apps/api/src apps/web/src scripts --ignore-pattern \"apps/web/public/**\" && node --test scripts/check-deploy-image.test.mjs scripts/check-migration-safety.test.mjs scripts/hosted-migrate.test.mjs",
+    "smoke:prod": "node scripts/smoke-hosted.mjs",
+    "hooks:install": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
