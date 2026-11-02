@@ -19,13 +19,17 @@ const gid=v=>typeof v==='string'&&GID.test(v)?v:fail('Source IDs must be nonempt
 const mail=v=>typeof v==='string'?v.trim().toLowerCase():'';
 export function decodeSource(bytes){return new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);}
 /** Source parser is bounded separately from each unchanged 50-row Workloom import artifact. */
-export function parseSourceCsv(raw){
+export function parseCsvRecords(raw){
  if(Buffer.byteLength(raw)>10*1024*1024||raw.includes('\0')||!raw.isWellFormed())fail('Source CSV exceeds adapter bounds or contains unsafe Unicode.');
  const text=raw.replace(/^\ufeff/,'');const records=[];let row=[],cell='',quoted=false,closed=false,started=false;
  const pushCell=()=>{if(cell.length>20000)fail('Source cell exceeds 20000 characters.');row.push(cell);if(row.length>100)fail('Source has too many columns.');cell='';closed=false;started=false;};
  const pushRow=()=>{pushCell();records.push(row);row=[];if(records.length>2001)fail('Source has more than 2000 tasks.');};
  for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'){if(text[i+1]==='"'){cell+='"';i++;}else{quoted=false;closed=true;}}else cell+=c;}else if(c===',')pushCell();else if(c==='\r'||c==='\n'){pushRow();if(c==='\r'&&text[i+1]==='\n')i++;}else if(c==='"'){if(started||cell||closed)fail('Malformed CSV quote.');quoted=true;started=true;}else{if(closed)fail('Characters after closing CSV quote.');cell+=c;started=true;}}
  if(quoted)fail('Unclosed source CSV quote.');if(started||closed||cell||row.length)pushRow();
+ return records;
+}
+export function parseSourceCsv(raw){
+ const records=parseCsvRecords(raw);
  const headers=records.shift();if(!headers?.length||records.some(r=>r.length!==headers.length))fail('Source CSV requires consistent record widths.');
  // Asana writes one column per custom field, so two fields with the same name give a repeated header. Both columns are
  // read; the first populated cell represents the name. A real conflict between them is still refused from the JSON side
@@ -125,7 +129,7 @@ export function prepareAsanaPlan({jsonText,csvText,mapping,workspaceId,sourcePro
  const summary={tasks:tasks.length,roots:tasks.filter(t=>!t.parentGid).length,subtasks:tasks.filter(t=>t.parentGid).length,sections:sections.size,tags:tags.size,fields:fields.size,completed:tasks.filter(t=>t.status==='done').length,assigned:tasks.filter(t=>t.responsibleMembershipId).length,dependencies:edges.size,descriptions:tasks.filter(t=>t.description).length,dueDates:tasks.filter(t=>t.dueDate).length,startDates:tasks.filter(t=>t.startDate).length,taggedTasks:tasks.filter(t=>t.tagGids.length).length,provenanceOnly:{sourceTimestampSets:flat.length,permalinks:flat.filter(t=>t.permalink_url).length,followerSets:flat.filter(t=>t.followers?.length).length,extraProjectMemberships:flat.filter(t=>(t.memberships??[]).some(m=>m.project?.gid!==sourceProjectId)).length,comments:'not_exported',history:'not_exported',attachments:'not_exported'},batches:Math.ceil(tasks.length/50),durationFields:Object.fromEntries([...fields.values()].filter(f=>f.type==='duration').map(f=>[f.gid,{name:f.name,filled:tasks.filter(t=>t.values[f.gid]!==null&&t.values[f.gid]!==undefined).length,explicitZeros:tasks.filter(t=>t.values[f.gid]===0).length,minutes:tasks.reduce((sum,t)=>sum+(t.values[f.gid]??0),0),rootMinutes:tasks.filter(t=>!t.parentGid).reduce((sum,t)=>sum+(t.values[f.gid]??0),0)}]))};
  if(unresolvedDependencies.length)summary.provenanceOnly.unresolvedExternalDependencies=unresolvedDependencies.length;
  const converted=flat.filter(t=>t.resource_subtype==='milestone').length;if(converted)summary.provenanceOnly.milestonesPreservedAsOrdinaryTasks=converted;
- return {version:1,workspaceId,sourceProjectId,...(unresolvedDependencies.length?{unresolvedDependencies}:{}),identityMapping:{assignees:mapping.assignees??{},approvedEmailAliases:mapping.approvedEmailAliases??{}},sourceWorkspaceId:wsGid,sourceNamespace:mapping.sourceNamespace,projectName,sections:[...sections.values()],tags:[...tags.values()],fields:[...fields.values()],tasks,dependencies:[...edges.values()],summary,sourceDigests:{json:sha(jsonText),csv:sha(csvText),mapping:sha(canonical(mapping))}};
+ return {version:1,workspaceId,sourceProjectId,...(unresolvedDependencies.length?{unresolvedDependencies}:{}),identityMapping:{assignees:mapping.assignees??{},approvedEmailAliases:mapping.approvedEmailAliases??{},...(mapping.reassigned?.length?{reassigned:[...mapping.reassigned].sort()}:{})},sourceWorkspaceId:wsGid,sourceNamespace:mapping.sourceNamespace,projectName,sections:[...sections.values()],tags:[...tags.values()],fields:[...fields.values()],tasks,dependencies:[...edges.values()],summary,sourceDigests:{json:sha(jsonText),csv:sha(csvText),mapping:sha(canonical(mapping))}};
 }
 function csvEncode(headers,rows){const cell=v=>'"'+String(v??'').replaceAll('"','""')+'"';return [headers,...rows].map(r=>r.map(cell).join(',')).join('\r\n')+'\r\n';}
 export function canonicalBatches(plan,resources){
@@ -157,7 +161,9 @@ export function validateMemberMapping(plan,owner,members){
  const sourcePeople=new Map(plan.tasks.filter(t=>t.sourceEmail).map(t=>[t.sourceEmail,t.responsibleMembershipId]));
  const aliases=plan.identityMapping.approvedEmailAliases,configured=plan.identityMapping.assignees;
  if(Object.keys(configured).some(email=>!sourcePeople.has(email))||Object.keys(aliases).some(email=>!sourcePeople.has(email)))fail('Unused source identity mapping or approval alias.');
- if(new Set(sourcePeople.values()).size!==sourcePeople.size)fail('Different source people cannot silently share a target membership.');
+ // People the owner explicitly handed over to a teammate may share that teammate with someone else from the export.
+ const handedOver=new Set(plan.identityMapping.reassigned??[]),ordinary=[...sourcePeople].filter(([email])=>!handedOver.has(email));
+ if(new Set(ordinary.map(([,id])=>id)).size!==ordinary.length)fail('Different source people cannot silently share a target membership.');
  const usedAliases=new Set();
  for(const [email,id]of sourcePeople){const member=members.find(m=>m.id===id);if(!member||configured[email]!==id)fail('A mapped person is absent or revoked in this workspace.');
   if(id===owner.membershipId){if(member.user_id!==owner.userId||aliases[email]!=='workspace-owner')fail('Mapping the source owner requires the explicit workspace-owner alias pinned to the current owner.');usedAliases.add(email);}
