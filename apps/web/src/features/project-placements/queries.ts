@@ -2,7 +2,8 @@ import { useInfiniteQuery, useQuery, useQueryClient, type InfiniteData } from '@
 import { isUuid } from '../../lib/format';
 import { queryKeys } from '../../lib/queryKeys';
 import { useIdempotentMutation, type IdempotentVariables } from '../../lib/useIdempotentMutation';
-import type { TransferTaskProjectInput } from '@workloom/contracts';
+import { useSyncExternalStore } from 'react';
+import type { TransferTaskProjectInput, TransferTaskProjectResult } from '@workloom/contracts';
 import { fetchProjectRows, fetchTaskPlacements, placementRequest, transferRequest, type PlacementCommand, type ProjectRowsPage } from './api';
 
 // Rows share the task family: a canonical task edit invalidates every visible placement.
@@ -40,11 +41,30 @@ export function usePlacementCommands(actorId: string, workspaceId: string) {
   });
 }
 export type PlacementCommands = ReturnType<typeof usePlacementCommands>;
+/**
+ * What the last move of a task did. It lives outside any component: the task form remounts when the new project's data
+ * loads, and the result, the unmoved fields and the way back must survive that.
+ */
+export interface TransferNotice { result: TransferTaskProjectResult; fromProjectId: string }
+const notices = new Map<string, TransferNotice>();
+const noticeListeners = new Set<() => void>();
+const publishNotices = () => { for (const listener of noticeListeners) listener(); };
+export const transferNotices = {
+  set(taskId: string, notice: TransferNotice) { notices.set(taskId, notice); publishNotices(); },
+  clear(taskId: string) { if (notices.delete(taskId)) publishNotices(); },
+  get: (taskId: string): TransferNotice | undefined => notices.get(taskId),
+  subscribe(listener: () => void) { noticeListeners.add(listener); return () => { noticeListeners.delete(listener); }; },
+};
+export function useTransferNotice(taskId: string): TransferNotice | undefined {
+  return useSyncExternalStore(transferNotices.subscribe, () => transferNotices.get(taskId), () => undefined);
+}
+
 /** Moves a task and its subtasks to another project. It touches reports and counters everywhere, so every workspace read is refreshed. */
 export function useTransferTaskProject(actorId: string, workspaceId: string) {
   const client = useQueryClient();
   return useIdempotentMutation({
-    prepare: ({ taskId, input }: IdempotentVariables & { taskId: string; input: TransferTaskProjectInput }) => transferRequest(workspaceId, taskId, input),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: queryKeys.workspace(actorId, workspaceId) }); },
+    prepare: ({ taskId, input }: IdempotentVariables & { taskId: string; input: TransferTaskProjectInput; fromProjectId: string }) => transferRequest(workspaceId, taskId, input),
+    // Recorded here, not by the caller, so it still happens if the form that sent the move has been replaced meanwhile.
+    onSuccess: (result, variables) => { transferNotices.set(variables.taskId, { result, fromProjectId: variables.fromProjectId }); void client.invalidateQueries({ queryKey: queryKeys.workspace(actorId, workspaceId) }); },
   });
 }

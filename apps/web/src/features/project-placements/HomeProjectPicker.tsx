@@ -1,11 +1,11 @@
-import type { ProjectDto, TaskDto, TransferTaskProjectResult } from '@workloom/contracts';
+import type { ProjectDto, TaskDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
-import { useState } from 'react';
+import { X } from 'lucide-react';
 import { useTranslation } from '../../i18n';
 import { ApiError, type TransferReason } from '../../lib/api';
 import { ChoicePicker } from '../../shared/ChoicePicker';
 import { SaveFeedback } from '../../shared/SaveFeedback';
-import { useTransferTaskProject } from './queries';
+import { transferNotices, useTransferNotice, useTransferTaskProject } from './queries';
 
 const reasonText = (t: (key: `${string}.${string}`) => string, reason: TransferReason): string => {
   switch (reason) {
@@ -22,6 +22,7 @@ const reasonText = (t: (key: `${string}.${string}`) => string, reason: TransferR
     case 'shared_package': return t('placements.transfer.reasons.shared_package');
     case 'split_package': return t('placements.transfer.reasons.split_package');
     case 'no_status': return t('placements.transfer.reasons.no_status');
+    case 'single_project': return t('placements.transfer.reasons.single_project');
   }
 };
 
@@ -34,7 +35,9 @@ export function HomeProjectPicker({ actorId, task, homeProject, projects, disabl
 }) {
   const { t } = useTranslation();
   const transfer = useTransferTaskProject(actorId, task.workspaceId);
-  const [moved, setMoved] = useState<{ result: TransferTaskProjectResult; fromId: string } | null>(null);
+  const notice = useTransferNotice(task.id);
+  // Shown only while the task is still where that move left it (or the pane has not reloaded it yet).
+  const moved = notice && (homeProject.id === notice.result.task.projectId || homeProject.id === notice.fromProjectId) ? { result: notice.result, fromId: notice.fromProjectId } : null;
   // Until the pane reloads the task, the picker keeps showing where the task went.
   const shownId = moved && homeProject.id !== moved.result.task.projectId ? moved.result.task.projectId : homeProject.id;
   const nameOf = (id: string) => projects.find(project => project.id === id)?.name ?? homeProject.name;
@@ -42,7 +45,7 @@ export function HomeProjectPicker({ actorId, task, homeProject, projects, disabl
   const reason = transfer.error instanceof ApiError ? transfer.error.transferReason : null;
   const send = (projectId: string, fromId: string, revision: number) => {
     if (holding || transfer.uncertain !== null) return;
-    transfer.mutate({ taskId: task.id, input: { expectedRevision: revision, projectId } }, { onSuccess: result => setMoved({ result, fromId }) });
+    transfer.mutate({ taskId: task.id, input: { expectedRevision: revision, projectId }, fromProjectId: fromId });
   };
   const options = projects.filter(project => project.archivedAt === null || project.id === shownId).map(project => ({ value: project.id, label: project.name }));
   return <div className="min-w-0 space-y-1.5">
@@ -50,7 +53,8 @@ export function HomeProjectPicker({ actorId, task, homeProject, projects, disabl
       onValueChange={projectId => { if (projectId !== shownId && options.some(option => option.value === projectId)) send(projectId, shownId, moved?.result.task.revision ?? task.revision); }} />
     {holding ? <p role="status" className="text-xs text-muted">{t('placements.transfer.moving')}</p> : null}
     {moved && !holding ? <div role="status" className="space-y-1 text-xs text-muted">
-      <p className="font-medium text-ink">{t('placements.transfer.done', { project: nameOf(moved.result.task.projectId) })}</p>
+      <div className="flex items-center gap-1"><p className="min-w-0 flex-1 font-medium text-ink">{t('placements.transfer.done', { project: nameOf(moved.result.task.projectId) })}</p>
+        <Button size="sm" variant="ghost" aria-label={t('placements.transfer.dismiss')} onClick={() => transferNotices.clear(task.id)}><X size={14} aria-hidden="true" /></Button></div>
       {moved.result.carriedValues > 0 ? <p>{t('placements.transfer.carried', { count: moved.result.carriedValues })}</p> : null}
       {moved.result.notCarried.length > 0 ? <p className="text-amber-900">{t('placements.transfer.notCarried', { fields: moved.result.notCarried.map(item => `${item.fieldName} (${item.count})`).join(', ') })}</p> : null}
       <Button size="sm" variant="ghost" disabled={disabled} onClick={() => send(moved.fromId, moved.result.task.projectId, moved.result.task.revision)}>{t('placements.transfer.back', { project: nameOf(moved.fromId) })}</Button>
@@ -58,6 +62,6 @@ export function HomeProjectPicker({ actorId, task, homeProject, projects, disabl
     {reason ? <p role="alert" className="text-xs text-red-700">{t('placements.transfer.reason', { reason: reasonText(t, reason) })}</p> : null}
     {transfer.error && !reason && !transfer.uncertain ? <p role="alert" className="text-xs text-red-700">{t('placements.transfer.failed')}</p> : null}
     <SaveFeedback error={null} uncertainError={transfer.uncertain?.error ?? null} subject="projectSave" />
-    {transfer.uncertain ? <Button size="sm" variant="ghost" onClick={() => transfer.retryUncertain({ onSuccess: result => setMoved({ result, fromId: homeProject.id }) })}>{t('placements.transfer.retry')}</Button> : null}
+    {transfer.uncertain ? <Button size="sm" variant="ghost" onClick={() => transfer.retryUncertain()}>{t('placements.transfer.retry')}</Button> : null}
   </div>;
 }

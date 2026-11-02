@@ -4,7 +4,9 @@ import type {Capability} from '../access/capabilities.js';
 import type {TaskCursorAnchor,TaskRepository,TaskTools,TaskWriteScope} from './ports.js';
 /** One task and all its subtasks moving to another project. `sectionId` undefined maps the section by name. */
 export interface TaskTransferPlan {readonly workspaceId:string;readonly taskId:string;readonly targetProjectId:string;readonly sectionId:string|null|undefined;readonly now:string}
-export interface TaskTransferOutcome {readonly movedTaskIds:string[];readonly carriedValues:number;readonly notCarried:{fieldName:string;count:number}[]}
+/** A value of the old project that has a matching field in the target; the command writes it through the shared field primitive. */
+export interface TaskTransferValue {readonly taskId:string;readonly fieldId:string;readonly fieldName:string;readonly value:{readonly type:string;readonly value:unknown}}
+export interface TaskTransferOutcome {readonly movedTaskIds:string[];readonly values:TaskTransferValue[];/** Values with no matching field or option in the target. */readonly notCarried:{fieldName:string;count:number}[]}
 export interface TaskProjectPlacementRepository {
  /** Inside the write transaction only: re-homes the whole subtree atomically, or throws a DomainError naming what blocks it. */
  transferTree(plan:TaskTransferPlan):Promise<TaskTransferOutcome>;

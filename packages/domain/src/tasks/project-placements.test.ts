@@ -16,17 +16,17 @@ function harness(){
  const projects=new Map([home,target].map(n=>[n,project(n)]));
  const status:TaskStatusDto={id:statusId,workspaceId:ws,projectId:home,name:'In progress',group:'in_progress',position:1,revision:1};
  const homeRow:TaskProjectPlacementDto={id:taskId,workspaceId:ws,taskId,projectId:home,homeProjectId:home,sectionId:null,position:3,revision:1,archivedAt:null,createdAt:now,updatedAt:now};
-const locked=new Set<string>();
+const locked=new Set<string>(),single=new Set<string>();
  let rows=new Map([[homeRow.id,homeRow]]),receipts=new Map<string,IdempotencyRecord>(),role:'owner'|'viewer'='owner',revoked=false,guardResult:CommittedPlanningRejection|null=null;
  const events:ChangeEventInput[]=[],intents:PlanningMutationIntent[]=[];
  const access=():WorkspaceAccessRecord|null=>revoked?null:{workspace:{id:ws,name:'Test',timezone:'UTC',weekStart:1},membership:{id:id(8),workspaceId:ws,userId:user,displayName:'Owner',role,state:'active',revision:1}};
- const repo={access:{findWorkspaceAccess:async()=>access()},findTask:vi.fn(async(w:string,t:string)=>w===ws&&t===taskId?canonical:null),findProject:vi.fn(async(w:string,p:string)=>w===ws?projects.get(p)??null:null),findStatus:vi.fn(async()=>status),findTasksByIds:vi.fn(async(w:string,ids:readonly string[])=>w===ws&&ids.includes(taskId)?[canonical]:[]),findProjectRules:vi.fn(async(_w:string,p:string)=>({workspaceId:ws,projectId:p,revision:1,config:{singleProject:false,lockMoves:locked.has(p)}})),findSection:vi.fn(async(_w:string,s:string)=>({id:s,workspaceId:ws,projectId:home,archivedAt:null})),permissionEpoch:async()=>revoked?'revoked':'epoch',findIdempotency:vi.fn(async(_w:string,a:string,c:string,k:string)=>receipts.get(`${a}:${c}:${k}`)??null),insertIdempotency:async(r:IdempotencyRecord)=>{receipts.set(`${r.actorUserId}:${r.command}:${r.idempotencyKey}`,r);}} as unknown as TaskRepository;
- const placements:TaskProjectPlacementRepository={transferTree:vi.fn(async plan=>{canonical.projectId=plan.targetProjectId;canonical.revision+=1;return {movedTaskIds:[taskId],carriedValues:2,notCarried:[{fieldName:'Fact',count:1}]};}),find:async(w,p)=>w===ws?rows.get(p)??null:null,findForTaskProject:async(w,t,p)=>[...rows.values()].find(r=>r.workspaceId===w&&r.taskId===t&&r.projectId===p)??null,listForTask:async(w,t,take)=>[...rows.values()].filter(r=>r.workspaceId===w&&r.taskId===t).slice(0,take),listProject:async(w,p,archived,after,take)=>[...rows.values()].filter(r=>r.workspaceId===w&&r.projectId===p&&(archived||r.archivedAt===null)&&(!after||!('position' in after)||r.position>after.position||(r.position===after.position&&r.id>after.id))).sort((a,b)=>a.position-b.position||a.id.localeCompare(b.id)).slice(0,take),maxPosition:async()=>3,insert:async row=>{rows.set(row.id,row);},save:async row=>{rows.set(row.id,row);}};
+ const repo={access:{findWorkspaceAccess:async()=>access()},findTask:vi.fn(async(w:string,t:string)=>w===ws&&t===taskId?canonical:null),findProject:vi.fn(async(w:string,p:string)=>w===ws?projects.get(p)??null:null),findStatus:vi.fn(async()=>status),findTasksByIds:vi.fn(async(w:string,ids:readonly string[])=>w===ws&&ids.includes(taskId)?[canonical]:[]),findProjectRules:vi.fn(async(_w:string,p:string)=>({workspaceId:ws,projectId:p,revision:1,config:{singleProject:single.has(p),lockMoves:locked.has(p)}})),findSection:vi.fn(async(_w:string,s:string)=>({id:s,workspaceId:ws,projectId:home,archivedAt:null})),permissionEpoch:async()=>revoked?'revoked':'epoch',findIdempotency:vi.fn(async(_w:string,a:string,c:string,k:string)=>receipts.get(`${a}:${c}:${k}`)??null),insertIdempotency:async(r:IdempotencyRecord)=>{receipts.set(`${r.actorUserId}:${r.command}:${r.idempotencyKey}`,r);}} as unknown as TaskRepository;
+ const placements:TaskProjectPlacementRepository={transferTree:vi.fn(async plan=>{canonical.projectId=plan.targetProjectId;canonical.revision+=1;return {movedTaskIds:[taskId],values:[{taskId,fieldId:id(60),fieldName:'Estimate',value:{type:'duration',value:60}}],notCarried:[{fieldName:'Fact',count:1}]};}),find:async(w,p)=>w===ws?rows.get(p)??null:null,findForTaskProject:async(w,t,p)=>[...rows.values()].find(r=>r.workspaceId===w&&r.taskId===t&&r.projectId===p)??null,listForTask:async(w,t,take)=>[...rows.values()].filter(r=>r.workspaceId===w&&r.taskId===t).slice(0,take),listProject:async(w,p,archived,after,take)=>[...rows.values()].filter(r=>r.workspaceId===w&&r.projectId===p&&(archived||r.archivedAt===null)&&(!after||!('position' in after)||r.position>after.position||(r.position===after.position&&r.id>after.id))).sort((a,b)=>a.position-b.position||a.id.localeCompare(b.id)).slice(0,take),maxPosition:async()=>3,insert:async row=>{rows.set(row.id,row);},save:async row=>{rows.set(row.id,row);}};
  const writer:TaskProjectPlacementUnitOfWork={async run(ctx,capability,work){authorizeLoadedAccess(access(),capability);const oldRows=new Map(rows),oldReceipts=new Map(receipts),oldEvents=events.length;try{return await work({context:ctx,barrierAt:new Date(now),repository:repo,placements,statusTransitions:{assertTransition:async()=>{throw new Error('Placement commands must not write status.');}},planningGuard:{check:async(intent:PlanningMutationIntent)=>{intents.push(intent);return guardResult;}},recordChange:async(event:ChangeEventInput)=>{events.push(event);return {changeSeq:1n,eventOrdinal:events.length};}} as unknown as TaskProjectPlacementWriteScope);}catch(e){rows=oldRows;receipts=oldReceipts;events.splice(oldEvents);throw e;}}};
  const tools:TaskTools={newId:()=>id(20),digest:value=>value,encodeCursor:value=>JSON.stringify(value),decodeCursor:value=>JSON.parse(value)};
  const app=createTaskProjectPlacementApplication({reader:placements,tasks:repo,writer,tools});
  const ctx=(key='first'):CommandContext=>({workspaceId:ws,actor:{userId:user,displayName:'Owner',kind:'fixture'},source:'web',requestId:'test',idempotencyKey:key});
- return {app,locked,canonical,placements,repo,projects,events,intents,ctx,setRevoked:()=>{revoked=true;},setViewer:()=>{role='viewer';},setGuard:(result:CommittedPlanningRejection)=>{guardResult=result;}};
+ return {app,locked,single,canonical,placements,repo,projects,events,intents,ctx,setRevoked:()=>{revoked=true;},setViewer:()=>{role='viewer';},setGuard:(result:CommittedPlanningRejection)=>{guardResult=result;}};
 }
 describe('canonical shared task project placements (source candidate)',()=>{
  it('attaches one presence without changing any canonical field or accounting identity',async()=>{const h=harness(),before=JSON.parse(JSON.stringify(h.canonical));const row=await h.app.attachTaskProject(h.ctx(),taskId,{projectId:target,expectedTaskRevision:4});expect(row).toMatchObject({taskId,projectId:target,homeProjectId:home,revision:1});expect(h.canonical).toEqual(before);expect(h.events).toHaveLength(1);expect(h.intents).toEqual([{family:'task_placement',command:'task.project.attach',target:{taskId,projectId:target},input:{projectId:target,expectedTaskRevision:4}}]);});
@@ -48,7 +48,8 @@ describe('home project transfer',()=>{
  const input=(over:Record<string,unknown>={})=>({expectedRevision:4,projectId:target,...over});
  it('moves the task once, records one audit event and one outbox event, and replays without repeating',async()=>{
   const h=harness();const first=await h.app.transferTaskProject(h.ctx('t1'),taskId,input());
-  expect(first).toMatchObject({movedTaskIds:[taskId],carriedValues:2,notCarried:[{fieldName:'Fact',count:1}],task:{id:taskId,projectId:target}});
+  // No field repository in this scope: the matching value cannot be written, so it is reported with the unmatched ones.
+  expect(first).toMatchObject({movedTaskIds:[taskId],carriedValues:0,notCarried:[{fieldName:'Estimate',count:1},{fieldName:'Fact',count:1}],task:{id:taskId,projectId:target}});
   expect(h.events.filter(e=>e.action==='project_transferred')).toHaveLength(1);expect(h.events[0]?.outbox?.type).toBe('task.project_transferred');
   expect(await h.app.transferTaskProject(h.ctx('t1'),taskId,input())).toEqual(first);
   expect(h.events.filter(e=>e.action==='project_transferred')).toHaveLength(1);expect(h.placements.transferTree).toHaveBeenCalledTimes(1);
@@ -70,4 +71,15 @@ describe('home project transfer',()=>{
   h=harness();h.setGuard({__workloomPlanningOutcome:'rejected',code:'FIELD_LOCKED',details:{committed:true,baselineIds:[id(89)]}});
   await expect(h.app.transferTaskProject(h.ctx(),taskId,input())).rejects.toMatchObject({code:'FIELD_LOCKED'});expect(h.placements.transferTree).not.toHaveBeenCalled();
  });
+describe('transfer and the one-project rule',()=>{
+ it('refuses a one-project target while the task is still placed elsewhere, but accepts it once those are gone or detached',async()=>{
+  const h=harness();h.single.add(target);
+  const linked:TaskProjectPlacementDto={id:id(70),workspaceId:ws,taskId,projectId:id(9),homeProjectId:home,sectionId:null,position:1,revision:1,archivedAt:null,createdAt:now,updatedAt:now};
+  await h.placements.insert(linked);
+  await expect(h.app.transferTaskProject(h.ctx('s1'),taskId,{expectedRevision:4,projectId:target})).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED',details:{transferReason:'single_project'}});
+  expect(h.placements.transferTree).not.toHaveBeenCalled();
+  await h.placements.save({...linked,archivedAt:now,revision:2});
+  await expect(h.app.transferTaskProject(h.ctx('s2'),taskId,{expectedRevision:4,projectId:target})).resolves.toMatchObject({task:{projectId:target}});
+ });
+});
 });

@@ -57,9 +57,11 @@
       "meeting": "The task belongs to a meeting or a recurring series.",
       "shared_package": "The task shares its work package with tasks that are not moving.",
       "split_package": "The task's work package was split or replaced.",
-      "no_status": "The target project has no status in the same group as the task's status."
+      "no_status": "The target project has no status in the same group as the task's status.",
+      "single_project": "The target project keeps every task in one project only, and the task is still placed in other projects. Remove it from them first."
     },
-    "back": "Move back to {{project}}"
+    "back": "Move back to {{project}}",
+    "dismiss": "Dismiss"
   },
   "noSection": "No section",
   "sectionIn": "Section in this project"

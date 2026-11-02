@@ -1,9 +1,11 @@
-import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,idSchema,projectRowsQuerySchema,taskProjectPlacementSchema,transferTaskProjectInputSchema,transferTaskProjectResultSchema,updateTaskProjectPlacementInputSchema,type AttachTaskProjectInput,type ChangeTaskProjectPlacementStateInput,type TaskDto,type TaskProjectPlacementDto,type TransferTaskProjectResult} from '@workloom/contracts';
+import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,idSchema,projectRowsQuerySchema,taskProjectPlacementSchema,transferTaskProjectInputSchema,transferTaskProjectResultSchema,updateTaskProjectPlacementInputSchema,type AttachTaskProjectInput,type ChangeTaskProjectPlacementStateInput,type TaskDto,type TaskProjectPlacementDto,type TaskFieldData,type TransferTaskProjectResult} from '@workloom/contracts';
 import {authorizeWorkspace} from '../access/access-queries.js';
 import type {CommandContext} from '../access/context.js';
 import {DomainError,notFoundError,unauthenticatedError} from '../errors.js';
 import {isCommittedPlanningRejection,unwrapPlanningOutcome} from '../planning/freeze.js';
 import {canonicalJson} from './service.js';
+import {setTaskFieldValueInScope} from '../fields/service.js';
+import type {TaskFieldWriteScope} from '../fields/ports.js';
 import type {TaskProjectPlacementApplication,TaskProjectPlacementCommand,TaskProjectPlacementDependencies,TaskProjectPlacementWriteScope} from './project-placement-ports.js';
 
 interface Parser<T>{safeParse(value:unknown):{success:true;data:T}|{success:false;error:{issues:readonly {path:readonly PropertyKey[]}[]}}}
@@ -127,8 +129,24 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
       if(home?.config.lockMoves)transferRule('The task\'s project does not allow moving tasks out of it.','locked_from','projectId');
       if(target?.config.lockMoves)transferRule('This project does not allow moving tasks into it.','locked_to','projectId');
      }
+     // The rule is about the placements that remain: a "one project only" target cannot receive a task that is still shown elsewhere.
+     if((await find?.call(repo,ws,targetProject.id))?.config.singleProject){
+      const others=(await scope.placements.listForTask(ws,task.id,501)).filter(item=>item.archivedAt===null&&item.projectId!==task.projectId&&item.projectId!==targetProject.id);
+      if(others.length>0)transferRule('This project keeps every task in one project only, and the task is still placed in other projects. Remove it from them first.','single_project','projectId');
+     }
      if(input.sectionId!==undefined)await targetSection(scope,ws,targetProject.id,input.sectionId);
      const moved=await scope.placements.transferTree({workspaceId:ws,taskId:task.id,targetProjectId:targetProject.id,sectionId:input.sectionId,now});
+     // Values go through the shared field primitive, so locks, policies, history and audit apply as for any other write.
+     const lost=new Map(moved.notCarried.map(item=>[item.fieldName,item.count] as const)),fields=scope.fieldRepository;let carriedValues=0;
+     for(const item of moved.values){
+      const lose=()=>{lost.set(item.fieldName,(lost.get(item.fieldName)??0)+1);};
+      if(!fields){lose();continue;}
+      const field=await fields.findField(ws,item.fieldId),current=await fields.findValue(ws,task.id===item.taskId?task.id:item.taskId,item.fieldId);
+      if(!field){lose();continue;}
+      const fieldScope={context:scope.context,access:scope.access,barrierAt:scope.barrierAt,recordChange:scope.recordChange,planningGuard:scope.planningGuard,repository:fields} as TaskFieldWriteScope;
+      try{await setTaskFieldValueInScope(fieldScope,item.taskId,item.fieldId,{expectedRevision:current?.revision??0,expectedDefinitionRevision:field.revision,value:item.value as TaskFieldData},tools);carriedValues+=1;}
+      catch(error){if(error instanceof DomainError)lose();else throw error;}
+     }
      const after=await repo.findTasksByIds(ws,moved.movedTaskIds),byId=new Map(after.map(t=>[t.id,t]));
      for(const movedId of moved.movedTaskIds){
       const current=byId.get(movedId);if(!current)throw notFoundError();
@@ -137,7 +155,7 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
        ...(movedId===task.id?{outbox:{type:'task.project_transferred',payload:{taskId:task.id,fromProjectId:task.projectId,toProjectId:targetProject.id,movedTasks:moved.movedTaskIds.length}}}:{})});
      }
      const root=byId.get(task.id);if(!root)throw notFoundError();
-     return {task:root,movedTaskIds:moved.movedTaskIds,carriedValues:moved.carriedValues,notCarried:moved.notCarried};
+     return {task:root,movedTaskIds:moved.movedTaskIds,carriedValues,notCarried:[...lost].map(([fieldName,count])=>({fieldName,count})).sort((a,b)=>a.fieldName.localeCompare(b.fieldName))};
     })();
     await repo.insertIdempotency({workspaceId:ws,actorUserId:normalized.actor.userId,command,idempotencyKey:key,payloadHash,result,createdAt:now});return result;
    });

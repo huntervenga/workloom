@@ -49,3 +49,12 @@ test('a subtask listed inside a skipped parent and on its own is kept once',()=>
  const gids=[];const visit=list=>{for(const t of list){gids.push(t.gid);visit(t.subtasks)}};visit(JSON.parse(out.jsonText).data);
  assert.deepEqual(gids,['12']);
 });
+
+test('a nested subtask also listed on its own is kept once when a middle task is skipped and its parent is kept',()=>{
+ const deep=task('23','Deep',{parent:{gid:'22',name:'Middle'}});
+ const dupJson=JSON.stringify({data:[task('21','Root',{subtasks:[task('22','Middle',{parent:{gid:'21',name:'Root'},subtasks:[deep]})]}),deep]});
+ const dupCsv='Task ID,Name,Assignee,Assignee Email,Parent task,Blocked By (Dependencies)\n21,Root,,,,\n22,Middle,Bob,bob@x.test,Root,\n23,Deep,,,Middle,\n';
+ const out=applyAssigneeResolutions(dupJson,dupCsv,{'bob@x.test':{action:'skip'}});
+ const gids=[];const visit=list=>{for(const t of list){gids.push(t.gid);visit(t.subtasks)}};visit(JSON.parse(out.jsonText).data);
+ assert.deepEqual([...gids].sort(),['21','23']);
+});
