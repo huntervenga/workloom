@@ -32,8 +32,22 @@ class PresentationStore {
  private captures = (lease: Lease) => [lease.me, lease.workspace, lease.members, ...lease.projects.values()];
  private emit = () => { for (const listener of this.listeners) listener(); };
  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+ /**
+  * Every query-cache event notifies every subscribed component, and each one re-validates the leases; safe() scans the
+  * whole DOM, so a large project paid hundreds of scans per refresh. Within one synchronous turn the DOM cannot change
+  * under us, so the first answer is reused until the next microtask checkpoint.
+  */
+ private safeTurn = new Map<() => boolean, boolean>();
+ private isSafe(safe: () => boolean): boolean {
+  const known = this.safeTurn.get(safe);
+  if (known !== undefined) return known;
+  const value = safe();
+  if (this.safeTurn.size === 0) queueMicrotask(() => this.safeTurn.clear());
+  this.safeTurn.set(safe, value);
+  return value;
+ }
  private valid(lease: Lease): boolean {
-  if (lease.signal.aborted || !lease.safe()) return false;
+  if (lease.signal.aborted || !this.isSafe(lease.safe)) return false;
   const cache = this.client.getQueryCache(), head = this.client.getQueryState<WorkspaceChangeHeadDto>(queryKeys.workspaceChangeHead(lease.actorId, lease.workspaceId));
   if (head?.status !== 'success' || head.isInvalidated || head.fetchFailureCount > 0 || head.fetchStatus === 'paused' || !head.data || !sameAuthority(head.data, lease.head)) return false;
   return this.captures(lease).every(captured => cache.get(captured.query.queryHash) === captured.query && captured.query.state.status === 'success' && captured.query.state.fetchFailureCount === 0 && captured.query.state.fetchStatus !== 'paused' && fingerprint(captured.query.state.data) === captured.fingerprint &&
