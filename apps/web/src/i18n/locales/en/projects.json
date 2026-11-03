@@ -172,7 +172,11 @@
     "releaseRulesHelp": "This switches “one project only” off in the projects listed above. You can turn it back on in their Project rules afterwards.",
     "leaveOut": "Leave these tasks out of the new project",
     "leaveOutHelp": "Tasks that already exist in your other projects stay only there. They are not copied or duplicated, and everything else is imported.",
-    "skipShared": "Leave out tasks that already exist in other projects"
+    "skipShared": "Leave out tasks that already exist in other projects",
+    "skipArchivedTags": "Leave out archived tags (they are taken off the imported tasks)",
+    "archivedTagsError": "A tag this export needs is archived or was changed in Workloom. Restore it on the Tags page, or leave the archived tags out of the imported tasks.",
+    "leaveOutArchivedTags": "Leave out archived tags and check again",
+    "warningArchivedTags": "Archived tags left off the imported tasks: {{count}}."
   },
   "archive": {
     "archiveProject": "Archive project",

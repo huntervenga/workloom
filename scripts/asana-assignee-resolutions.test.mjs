@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {listAssignees,applyAssigneeResolutions} from './asana-assignee-resolutions.mjs';
+import {listAssignees,applyAssigneeResolutions,listExportTags,removeTags} from './asana-assignee-resolutions.mjs';
 import {prepareAsanaPlan,parseSourceCsv} from './import-asana-project.mjs';
 import {syntheticSource} from './import-asana-project.test-fixture.mjs';
 
@@ -76,4 +76,18 @@ test('the result of skipping a middle task still passes the full plan preparatio
  const plan=prepareAsanaPlan({...src,jsonText:out.jsonText,csvText:out.csvText,workspaceId:wsId});
  assert.equal(new Set(plan.tasks.map(t=>t.gid)).size,plan.tasks.length);
  assert.equal(plan.tasks.find(t=>t.gid===deep.gid).parentGid,root.gid);
+});
+
+test('tags can be taken off every task in both files, and the rest of the export is untouched',()=>{
+ const tagged=(gid,name,tags,extra={})=>task(gid,name,{tags,...extra});
+ const a={gid:'t1',name:'1 point'},b={gid:'t2',name:'bug'};
+ const j=JSON.stringify({data:[tagged('31','One',[a,b],{subtasks:[tagged('32','Child',[a])]}),tagged('33','Two',[b])]});
+ const c='Task ID,Name,Assignee,Assignee Email,Parent task,Tags\n31,One,,,,"1 point,bug"\n32,Child,,,One,1 point\n33,Two,,,,bug\n';
+ assert.deepEqual([...listExportTags(j)],[['t1','1 point'],['t2','bug']]);
+ const out=removeTags(j,c,['t1']);
+ assert.deepEqual(out.removed,['1 point']);
+ const data=JSON.parse(out.jsonText).data;
+ assert.deepEqual(data[0].tags.map(t=>t.gid),['t2']);assert.deepEqual(data[0].subtasks[0].tags,[]);assert.deepEqual(data[1].tags.map(t=>t.gid),['t2']);
+ assert.ok(!out.csvText.includes('1 point'));assert.ok(out.csvText.includes('bug'));
+ const same=removeTags(j,c,[]);assert.equal(same.jsonText,j);assert.equal(same.csvText,c);
 });

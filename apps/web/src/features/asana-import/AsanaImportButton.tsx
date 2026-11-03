@@ -30,7 +30,7 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const [json, setJson] = useState<File | null>(null), [csv, setCsv] = useState<File | null>(null);
-  const [milestones, setMilestones] = useState(false), [external, setExternal] = useState(false), [skipShared, setSkipShared] = useState(false);
+  const [milestones, setMilestones] = useState(false), [external, setExternal] = useState(false), [skipShared, setSkipShared] = useState(false), [skipArchivedTags, setSkipArchivedTags] = useState(false);
   const [upload, setUpload] = useState<AsanaUpload | null>(null);
   const [result, setResult] = useState<AsanaImportResult | null>(null);
   const [busy, setBusy] = useState<'preview' | 'apply' | null>(null);
@@ -45,8 +45,8 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
   const applyKey = useRef<string | null>(null);
   const oversized = (json?.size ?? 0) > MAX_ASANA_FILE_BYTES || (csv?.size ?? 0) > MAX_ASANA_FILE_BYTES;
   const currentActor = () => (client.getQueryData(queryKeys.me) as { actor?: { id?: string } } | undefined)?.actor?.id === actorId;
-  const check = async (actions?: Record<string, AssigneeChoice>, leaveOut = skipShared) => {
-    if (!json || !csv || oversized || inFlight.current || upload) return;
+  const check = async (actions?: Record<string, AssigneeChoice>, leaveOut = skipShared, archivedOut = skipArchivedTags, restart = false) => {
+    if (!json || !csv || oversized || inFlight.current || (upload && !restart)) return;
     inFlight.current = true; setBusy('preview'); setError(null);
     try {
       // The files may have been chosen in the wrong fields; sort them by what they contain.
@@ -55,7 +55,7 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
       setFilesProblem(false);
       const [jsonBase64, csvBase64] = await Promise.all([fileBase64(ordered.json), fileBase64(ordered.csv)]);
       if (!currentActor()) throw new ApiError({ kind: 'unauthenticated', status: 401 });
-      const next = await previewAsanaImport(workspaceId, actorId, { jsonBase64, csvBase64, preserveMilestones: milestones, preserveExternalDependencies: external, ...(leaveOut ? { skipShared: true } : {}), ...(actions && Object.keys(actions).length > 0 ? { assigneeActions: toActions(actions) } : {}) }, crypto.randomUUID());
+      const next = await previewAsanaImport(workspaceId, actorId, { jsonBase64, csvBase64, preserveMilestones: milestones, preserveExternalDependencies: external, ...(leaveOut ? { skipShared: true } : {}), ...(archivedOut ? { skipArchivedTags: true } : {}), ...(actions && Object.keys(actions).length > 0 ? { assigneeActions: toActions(actions) } : {}) }, crypto.randomUUID());
       if (currentActor()) { setUpload(next); applyKey.current = crypto.randomUUID(); }
     } catch (caught) {
       setError(caught);
@@ -86,6 +86,7 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_PROJECT_RULE' ? 'projects.asanaImport.projectRuleError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_REVIEW_REQUIRED' ? 'projects.asanaImport.reviewError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_ARCHIVED' ? 'projects.asanaImport.archivedError'
+    : error instanceof ApiError && error.code === 'ASANA_IMPORT_ARCHIVED_TAGS' ? 'projects.asanaImport.archivedTagsError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_BUSY' ? 'projects.asanaImport.busyError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_EXTERNAL_DEPENDENCY' ? 'projects.asanaImport.externalDependencyError'
     : error instanceof ApiError && error.code === 'ASANA_IMPORT_MILESTONE_OPTION' ? 'projects.asanaImport.milestoneOptionError'
@@ -112,13 +113,15 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
   const projectId = result?.projectId ?? upload?.preview.existingProjectId;
   const importAnother = () => {
     if (!projectId || uncertain || inFlight.current) return;
-    setJson(null); setCsv(null); setMilestones(false); setExternal(false); setSkipShared(false); resetDecisions();
+    setJson(null); setCsv(null); setMilestones(false); setExternal(false); setSkipShared(false); setSkipArchivedTags(false); resetDecisions();
     setUpload(null); setResult(null); setError(null); setUncertain(false);
     applyKey.current = null;
   };
   const warningLabel = (warning: string) => {
     if (warning === 'source_history') return t('projects.asanaImport.warningHistory');
     if (warning === 'linked_fields') return t('projects.asanaImport.warningLinked');
+    const skippedTags = /^skipped_archived_tags:(\d{1,8})$/.exec(warning);
+    if (skippedTags) return t('projects.asanaImport.warningArchivedTags', { count: Number(skippedTags[1]) });
     const count = /^(milestones_as_tasks|external_dependencies):(\d{1,8})$/.exec(warning);
     if (count?.[1] === 'milestones_as_tasks') return t('projects.asanaImport.warningMilestones', { count: Number(count[2]) });
     if (count?.[1] === 'external_dependencies') return t('projects.asanaImport.warningExternal', { count: Number(count[2]) });
@@ -143,6 +146,7 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
         <details className="rounded-lg border border-line p-3 text-sm"><summary className="cursor-pointer font-medium text-ink">{t('projects.asanaImport.advanced')}</summary><div className="mt-3 space-y-3 text-muted">
           <label className="flex items-start gap-2"><input type="checkbox" checked={milestones} disabled={busy !== null} onChange={event => setMilestones(event.target.checked)} />{t('projects.asanaImport.milestones')}</label>
           <label className="flex items-start gap-2"><input type="checkbox" checked={external} disabled={busy !== null} onChange={event => setExternal(event.target.checked)} />{t('projects.asanaImport.external')}</label>
+          <label className="flex items-start gap-2"><input type="checkbox" checked={skipArchivedTags} disabled={busy !== null} onChange={event => setSkipArchivedTags(event.target.checked)} />{t('projects.asanaImport.skipArchivedTags')}</label>
           <label className="flex items-start gap-2"><input type="checkbox" checked={skipShared} disabled={busy !== null} onChange={event => setSkipShared(event.target.checked)} />{t('projects.asanaImport.skipShared')}</label>
         </div></details>
       </> : <>
@@ -161,7 +165,7 @@ function AsanaImportDialog({ actorId, workspaceId, available }: Props & { availa
         <p className="text-sm text-muted">{t(result ? 'projects.asanaImport.success' : projectId ? 'projects.asanaImport.existing' : 'projects.asanaImport.reviewHelp')}</p>
       </>}
       {conflict ? <UnmatchedAssignees conflict={conflict} choices={choices} onChange={setChoices} disabled={busy !== null} /> : null}
-      {error && !(error instanceof ApiError && error.assigneeConflict) ? <p role="alert" className="rounded-lg border border-red-400/50 bg-red-100/20 p-3 text-sm text-ink">{t(errorKey)}{missingEmails ? ` ${t('projects.asanaImport.missingEmails', { emails: missingEmails })}` : ''}{ruleProjects ? ` ${t('projects.asanaImport.ruleProjects', { projects: ruleProjects })}` : ''}{ruleList.length > 0 ? <span className="mt-2 block"><Button size="sm" variant="primary" disabled={busy !== null} onClick={() => { void releaseRules(); }}>{t('projects.asanaImport.releaseRules')}</Button><span className="mt-1 block text-xs text-muted">{t('projects.asanaImport.releaseRulesHelp')}</span><Button size="sm" className="mt-3" disabled={busy !== null} onClick={() => { setSkipShared(true); void check(choicesComplete(choices) ? choices : undefined, true); }}>{t('projects.asanaImport.leaveOut')}</Button><span className="mt-1 block text-xs text-muted">{t('projects.asanaImport.leaveOutHelp')}</span></span> : null}</p> : null}
+      {error && !(error instanceof ApiError && error.assigneeConflict) ? <p role="alert" className="rounded-lg border border-red-400/50 bg-red-100/20 p-3 text-sm text-ink">{t(errorKey)}{missingEmails ? ` ${t('projects.asanaImport.missingEmails', { emails: missingEmails })}` : ''}{ruleProjects ? ` ${t('projects.asanaImport.ruleProjects', { projects: ruleProjects })}` : ''}{ruleList.length > 0 ? <span className="mt-2 block"><Button size="sm" variant="primary" disabled={busy !== null} onClick={() => { void releaseRules(); }}>{t('projects.asanaImport.releaseRules')}</Button><span className="mt-1 block text-xs text-muted">{t('projects.asanaImport.releaseRulesHelp')}</span><Button size="sm" className="mt-3" disabled={busy !== null} onClick={() => { setSkipShared(true); void check(choicesComplete(choices) ? choices : undefined, true); }}>{t('projects.asanaImport.leaveOut')}</Button><span className="mt-1 block text-xs text-muted">{t('projects.asanaImport.leaveOutHelp')}</span></span> : null}{error instanceof ApiError && error.code === 'ASANA_IMPORT_ARCHIVED_TAGS' ? <span className="mt-2 block"><Button size="sm" variant="primary" disabled={busy !== null} onClick={() => { setSkipArchivedTags(true); setUpload(null); applyKey.current = null; void check(choicesComplete(choices) ? choices : undefined, skipShared, true, true); }}>{t('projects.asanaImport.leaveOutArchivedTags')}</Button></span> : null}</p> : null}
 
       </div>
       <div className="mt-4 flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-line bg-surface pt-4">

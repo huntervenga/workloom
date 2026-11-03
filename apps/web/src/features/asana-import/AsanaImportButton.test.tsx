@@ -184,6 +184,32 @@ describe('local Asana upload', () => {
     expect(puts[0]).toEqual({ expectedRevision: 3, config: { singleProject: false, lockMoves: false } });
     expect(await screen.findByRole('button', { name: 'Import project' })).toBeInTheDocument();
   });
+  it('offers to leave archived tags out when the import stops on one, and checks again with the option on', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    installFakeApi({
+      ...routes(),
+      [`POST ${base}/preview`]: request => { bodies.push(request.body as Record<string, unknown>); return ok({ uploadId, preview: { ...preview, warnings: bodies.length > 1 ? ['skipped_archived_tags:5'] : [] } }); },
+      [`POST ${base}/${uploadId}/apply`]: () => json(422, { error: { code: 'ASANA_IMPORT_ARCHIVED_TAGS', message: 'x', retryable: false }, meta: { requestId: 'r' } }),
+    });
+    const view = renderImport(); await choose(view); await view.user.click(screen.getByRole('button', { name: 'Check files' }));
+    await view.user.click(await screen.findByRole('button', { name: 'Import project' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('A tag this export needs is archived or was changed in Workloom.');
+    await view.user.click(screen.getByRole('button', { name: 'Leave out archived tags and check again' }));
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[0]?.['skipArchivedTags']).toBeUndefined();
+    expect(bodies[1]?.['skipArchivedTags']).toBe(true);
+    expect(await screen.findByText('Archived tags left off the imported tasks: 5.')).toBeInTheDocument();
+  });
+  it('sends the option when the box in the advanced options is ticked', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    installFakeApi({ ...routes(), [`POST ${base}/preview`]: request => { bodies.push(request.body as Record<string, unknown>); return ok({ uploadId, preview }); } });
+    const view = renderImport(); await choose(view);
+    await view.user.click(screen.getByText('Advanced import options'));
+    await view.user.click(screen.getByRole('checkbox', { name: /Leave out archived tags/ }));
+    await view.user.click(screen.getByRole('button', { name: 'Check files' }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]?.['skipArchivedTags']).toBe(true);
+  });
   it('names the projects whose one-project rule blocks the import', async () => {
     const api = installFakeApi({ ...routes(), [`POST ${base}/preview`]: () => json(422, { error: { code: 'ASANA_IMPORT_PROJECT_RULE', message: 'x', retryable: false, details: { projects: [{ id: PID1, name: 'Week 31' }, { id: PID2, name: 'Week 33' }] } }, meta: { requestId: 'req_rule' } }) });
     const view = renderImport(); await choose(view); await view.user.click(screen.getByRole('button', { name: 'Check files' }));

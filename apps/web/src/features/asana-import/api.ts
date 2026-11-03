@@ -20,6 +20,8 @@ export interface PreviewInput {
   /** What to do with the tasks of people who are not on the Members page, keyed by their Asana e-mail. */
   assigneeActions?: Record<string, AssigneeAction>;
   skipShared?: boolean;
+  /** Archived tags the export needs are taken off the imported tasks instead of stopping the import. */
+  skipArchivedTags?: boolean;
 }
 export type AssigneeAction = { action: 'skip' | 'unassign' } | { action: 'reassign'; membershipId: string };
 export const asanaImportPath = (workspaceId: string) => `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/dev/asana-import`;

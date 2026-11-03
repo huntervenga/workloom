@@ -81,3 +81,29 @@ export function applyAssigneeResolutions(jsonText,csvText,resolutions,skipTaskId
  }
  return {jsonText:JSON.stringify(data),csvText:[headers,...rows].map(r=>r.map(quote).join(',')).join('\n')+'\n',skipped:skip.size,unassigned};
 }
+
+/** Tags of the export (gid → name), as the JSON lists them on its tasks and subtasks. */
+export function listExportTags(jsonText){
+ const tags=new Map();
+ walk(JSON.parse(jsonText.replace(/^\ufeff/,'')).data,t=>{for(const tag of t.tags??[])if(tag?.gid&&typeof tag.name==='string')tags.set(String(tag.gid),tag.name);});
+ return tags;
+}
+
+/**
+ * Takes the given tags (by gid) off every task in both files, so the importer sees an export in which they never existed.
+ * The Tags column of the CSV holds names, so exactly the names of the removed tags are taken out of each cell.
+ * Returns the removed names in first-seen order.
+ */
+export function removeTags(jsonText,csvText,gids){
+ const wanted=new Set([...gids].map(String));
+ if(wanted.size===0)return {jsonText,csvText,removed:[]};
+ const data=JSON.parse(jsonText.replace(/^\ufeff/,'')),names=new Map();
+ walk(data.data,t=>{if(!Array.isArray(t.tags))return;t.tags=t.tags.filter(tag=>{if(wanted.has(String(tag?.gid))){names.set(String(tag.gid),tag.name);return false;}return true;});});
+ const dropped=new Set(names.values());
+ const records=parseCsvRecords(csvText),headers=records.shift(),col=headers.indexOf('Tags');
+ const rows=records.map(row=>{
+  if(col<0||!row[col])return row;
+  const copy=[...row];copy[col]=row[col].split(',').filter(name=>!dropped.has(name.trim())).join(',');return copy;
+ });
+ return {jsonText:JSON.stringify(data),csvText:[headers,...rows].map(r=>r.map(quote).join(',')).join('\n')+'\n',removed:[...names.values()]};
+}
