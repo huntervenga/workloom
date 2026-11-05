@@ -110,7 +110,7 @@ describe('task activity stream', () => {
     await screen.findByText('Comment posted.');
     await waitFor(() => expect(order()).toEqual([rowId(1), rowId(502)]));
     expect(entry(rowId(502)).querySelector('p')?.textContent).toBe(body);
-    expect(document.querySelector('b')).toBeNull(); expect(document.querySelector('a[href="https://example.test"]')).toBeNull();
+    expect(document.querySelector('b')).toBeNull(); expect(entry(rowId(502)).querySelector('a')).toHaveAttribute('href', 'https://example.test');
     expect(screen.getByLabelText('Comment')).toHaveValue('');
     expect(writes(calls)).toHaveLength(1); expect(writes(calls)[0]?.path).toBe(commentsPath); expect(writes(calls)[0]?.body).toEqual({ body });
     expect(timelineGets(calls)).toHaveLength(2);

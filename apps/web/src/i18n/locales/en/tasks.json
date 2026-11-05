@@ -1,4 +1,5 @@
 {
+  "referencePreview": "Linked work",
   "tagDialogs": {
     "enterATagName": "Enter a tag name.",
     "nameMustBeValueCharactersOrFewer": "Name must be {{p0}} characters or fewer.",

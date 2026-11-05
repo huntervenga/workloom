@@ -2,7 +2,7 @@ export type DescriptionPart = { kind: 'text'; text: string } | { kind: 'link'; h
 
 const URL_PATTERN = /https?:\/\/[^\s<>"']+/gi;
 const TRAILING = /[.,;:!?)\]}]+$/;
-const TASK_PATH = /\/projects\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/i;
+const PROJECT_PATH = /^\/(?:app\/)?w\/([^/]+)\/projects\/([0-9a-f-]{36})\/?$/i;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Splits a description into plain text and http(s) links; punctuation that ends a sentence stays outside the link. */
@@ -22,11 +22,25 @@ export function splitDescription(text: string): DescriptionPart[] {
 
 export const hasDescriptionLinks = (text: string): boolean => splitDescription(text).some(part => part.kind === 'link');
 
-/** A link to a task of this service (`…/projects/<project>?task=<task>`), or null for any other address. */
+export interface ProjectReference {
+  workspaceReference: string;
+  projectId: string;
+  taskId: string | null;
+}
+
+/** Only canonical same-origin project or task URLs are eligible for title resolution. */
+export function parseProjectReference(href: string, origin: string): ProjectReference | null {
+  try {
+    const url = new URL(href);
+    if (url.origin !== origin || url.username || url.password) return null;
+    const match = PROJECT_PATH.exec(url.pathname);
+    const workspace = match?.[1], projectId = match?.[2], taskId = url.searchParams.get('task');
+    if (!workspace || !projectId || !UUID.test(projectId) || (taskId !== null && !UUID.test(taskId))) return null;
+    return { workspaceReference: decodeURIComponent(workspace), projectId: projectId.toLowerCase(), taskId: taskId?.toLowerCase() ?? null };
+  } catch { return null; }
+}
+
 export function parseTaskLink(href: string, origin: string): { projectId: string; taskId: string } | null {
-  let url: URL;
-  try { url = new URL(href); } catch { return null; }
-  if (url.origin !== origin) return null;
-  const taskId = url.searchParams.get('task'), project = TASK_PATH.exec(url.pathname);
-  return taskId !== null && UUID.test(taskId) && project?.[1] ? { projectId: project[1].toLowerCase(), taskId: taskId.toLowerCase() } : null;
+  const reference = parseProjectReference(href, origin);
+  return reference?.taskId ? { projectId: reference.projectId, taskId: reference.taskId } : null;
 }

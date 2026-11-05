@@ -568,7 +568,11 @@ function DescriptionField({ id, errorId, value, error, onChange, onCommit, commi
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (editing) input.current?.focus(); }, [editing]);
   const reading = !editing && hasDescriptionLinks(value);
-  return <div>
+  return <div onBlur={event => {
+    if (reading || event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+    onCommit();
+    setEditing(false);
+  }}>
     <label htmlFor={id} className={labelClassName}>{t('tasks.taskFields.description')}</label>
     {reading
       ? <div role="textbox" tabIndex={0} aria-readonly="true" aria-label={t('tasks.taskFields.description')} data-description-links=""
@@ -586,7 +590,6 @@ function DescriptionField({ id, errorId, value, error, onChange, onCommit, commi
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
           onChange={event => onChange(event.target.value)}
-          onBlur={() => { onCommit(); setEditing(false); }}
           onKeyDown={event => {
             // Enter stays a newline; Ctrl/Cmd+Enter makes the description final.
             if (!commitOnCtrlEnter || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
@@ -594,6 +597,7 @@ function DescriptionField({ id, errorId, value, error, onChange, onCommit, commi
             onCommit();
           }}
         />}
+    {!reading && hasDescriptionLinks(value) ? <LinkedDescription text={value} preview /> : null}
     <FieldError id={errorId} message={error} />
   </div>;
 }

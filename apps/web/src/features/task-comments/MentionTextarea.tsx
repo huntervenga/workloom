@@ -1,3 +1,4 @@
+import { LinkedDescription } from '../tasks/LinkedDescription';
 import { useQueryClient } from '@tanstack/react-query';
 import { useId, useRef, useState, useSyncExternalStore, type ComponentProps } from 'react';
 import type { MembershipDto } from '@workloom/contracts';
@@ -41,6 +42,7 @@ export function MentionTextarea({ actorId, workspaceId, value, onValueChange, ..
         else if ((event.key === 'Enter' || event.key === 'Tab') && !event.metaKey && !event.ctrlKey && !event.nativeEvent.isComposing) { event.preventDefault(); const member = suggestions[picked]; if (member) choose(member); }
         else if (event.key === 'Escape') { event.stopPropagation(); setCaret(0); }
       }} />
+    <LinkedDescription text={value} preview />
     {suggestions.length > 0 ? <ul id={listId} role="listbox" aria-label={t('comments.mentionList')} className="max-h-40 overflow-y-auto rounded-lg border border-line bg-surface text-sm shadow-sm">
       {suggestions.map((member, index) => <li key={member.id} role="option" aria-selected={index === picked} className={`cursor-pointer px-3 py-1.5 ${index === picked ? 'bg-accent-soft text-ink' : 'text-ink-soft'}`} onMouseDown={event => { event.preventDefault(); choose(member); }}>{member.displayName}</li>)}
     </ul> : null}
