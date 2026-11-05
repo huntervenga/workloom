@@ -1,3 +1,5 @@
+import { useOutletContext } from 'react-router';
+import { MentionTextarea } from '../task-comments/MentionTextarea';
 import { t, useTranslation } from '../../i18n';
 import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto, TaskStatusGroup } from '@workloom/contracts';
 import { TextInput, cn, inputClassName } from '@workloom/ui';
@@ -564,10 +566,21 @@ export function TaskFields({
 
 function DescriptionField({ id, errorId, value, error, onChange, onCommit, commitOnCtrlEnter }: { id: string; errorId: string; value: string; error: TaskDraftIssue | undefined; onChange: (value: string) => void; onCommit: () => void; commitOnCtrlEnter: boolean }) {
   const { t } = useTranslation();
+  const scope = useOutletContext<{ actorId: string; workspace: { id: string } } | null>();
   const [editing, setEditing] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { if (editing) input.current?.focus(); }, [editing]);
   const reading = !editing && hasDescriptionLinks(value);
+  const editorProps = {
+    ref: input, id, className: inputClassName('mt-1.5 h-auto min-h-20 py-2 leading-relaxed'),
+    rows: 3, placeholder: t('tasks.taskFields.descriptionPlaceholder'), value, maxLength: TASK_DESCRIPTION_MAX,
+    'aria-invalid': error ? true : undefined, 'aria-describedby': error ? errorId : undefined,
+    onKeyDown: (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (!commitOnCtrlEnter || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
+      event.preventDefault();
+      onCommit();
+    },
+  };
   return <div onBlur={event => {
     if (reading || event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
     onCommit();
@@ -579,25 +592,8 @@ function DescriptionField({ id, errorId, value, error, onChange, onCommit, commi
           className={inputClassName('mt-1.5 h-auto min-h-20 cursor-text whitespace-pre-wrap break-words py-2 leading-relaxed')}
           onClick={event => { if (!(event.target instanceof Element && event.target.closest('a'))) setEditing(true); }}
           onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setEditing(true); } }}><LinkedDescription text={value} /></div>
-      : <textarea
-          ref={input}
-          id={id}
-          className={inputClassName('mt-1.5 h-auto min-h-20 py-2 leading-relaxed')}
-          rows={3}
-          placeholder={t('tasks.taskFields.descriptionPlaceholder')}
-          value={value}
-          maxLength={TASK_DESCRIPTION_MAX}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          onChange={event => onChange(event.target.value)}
-          onKeyDown={event => {
-            // Enter stays a newline; Ctrl/Cmd+Enter makes the description final.
-            if (!commitOnCtrlEnter || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            onCommit();
-          }}
-        />}
-    {!reading && hasDescriptionLinks(value) ? <LinkedDescription text={value} preview /> : null}
+      : scope ? <MentionTextarea {...editorProps} actorId={scope.actorId} workspaceId={scope.workspace.id} mentionPeople={false} onValueChange={onChange} />
+        : <textarea {...editorProps} onChange={event => onChange(event.target.value)} />}
     <FieldError id={errorId} message={error} />
   </div>;
 }

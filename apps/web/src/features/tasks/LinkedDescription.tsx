@@ -29,17 +29,19 @@ function ReferenceLink({ href, scope, projectId, taskId, preview }: { href: stri
 }
 
 /** Saved text keeps its original URL. Only currently readable internal targets get a named link. */
-export function LinkedDescription({ text, preview = false }: { text: string; preview?: boolean }) {
+export function LinkedDescription({ text, preview = false, internalOnly = false }: { text: string; preview?: boolean; internalOnly?: boolean }) {
   const scope = useOutletContext<Scope | null>();
   const { t } = useTranslation();
   const seen = new Set<string>();
   const parts = splitDescription(text);
+  if (internalOnly && !parts.some(part => part.kind === 'link' && scope &&
+    parseProjectReference(part.href, window.location.origin))) return <>{text}</>;
   let resolved = 0;
   const content = parts.map((part, index) => {
     if (part.kind === 'text') return preview ? null : <span key={index}>{part.text}</span>;
     const reference = scope ? parseProjectReference(part.href, window.location.origin) : null;
     const local = scope && reference && resolveWorkspaceReference(reference.workspaceReference, [scope.workspace]);
-    if (!scope || !reference || !local || resolved >= MAX_RESOLVED_LINKS) return preview ? null : <WebLink key={index} href={part.href} />;
+    if (!scope || !reference || !local || resolved >= MAX_RESOLVED_LINKS) return preview ? null : internalOnly ? <span key={index}>{part.href}</span> : <WebLink key={index} href={part.href} />;
     const key = reference.taskId ?? reference.projectId;
     if (preview && seen.has(key)) return null;
     seen.add(key);

@@ -42,7 +42,7 @@ export function suggestMembers(members: readonly Mentionable[], query: string, l
 }
 
 /** Replaces the typed "@query" with "@Name " and returns the new text and caret. */
-export function insertMention(body: string, start: number, caret: number, name: string): { body: string; caret: number } {
-  const inserted = `@${name.trim()} `;
+export function insertMention(body: string, start: number, caret: number, name: string, person = true): { body: string; caret: number } {
+  const inserted = `${person ? '@' : ''}${name.trim()} `;
   return { body: body.slice(0, start) + inserted + body.slice(caret), caret: start + inserted.length };
 }

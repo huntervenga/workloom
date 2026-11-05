@@ -107,7 +107,7 @@ export function TaskActivityStream({ task, controller, writable, canRetry, timez
           <span className="font-medium text-ink">{item.comment.authorDisplayNameSnapshot}</span>
           <time dateTime={item.occurredAt} className="text-muted">{time(item.occurredAt)}</time>
         </div>
-        <p className="mt-1.5 whitespace-pre-wrap break-words pl-8 text-sm text-ink"><LinkedDescription text={item.comment.body} /></p>
+        <p className="mt-1.5 whitespace-pre-wrap break-words pl-8 text-sm text-ink"><LinkedDescription internalOnly text={item.comment.body} /></p>
       </li>
     : <li key={item.id} data-task-activity-id={item.id} className="px-1">{activity(item)}</li>;
 
