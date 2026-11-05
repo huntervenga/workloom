@@ -562,6 +562,21 @@ export const taskListQuerySchema = z.strictObject({
   cursor: z.string().min(1).max(2048).optional(),
 });
 
+export const taskSearchQuerySchema = z.strictObject({
+  q: z.string().trim().min(2).max(200),
+});
+export type TaskSearchQuery = z.infer<typeof taskSearchQuerySchema>;
+export const taskSearchResultSchema = z.object({
+  id: idSchema,
+  title: z.string(),
+  projectId: idSchema,
+  projectName: z.string(),
+  statusName: z.string(),
+  statusGroup: taskStatusGroupSchema,
+});
+export type TaskSearchResult = z.infer<typeof taskSearchResultSchema>;
+export const taskSearchResponseSchema = envelopeSchema(z.array(taskSearchResultSchema).max(20));
+
 export const projectResponseSchema = envelopeSchema(projectSchema);
 export const projectListResponseSchema = envelopeSchema(z.array(projectSchema));
 export const sectionResponseSchema = envelopeSchema(sectionSchema);

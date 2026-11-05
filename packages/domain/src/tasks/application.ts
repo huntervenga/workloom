@@ -16,6 +16,8 @@ import type {
   TagDto,
   TaskDto,
   TaskListQuery,
+  TaskSearchQuery,
+  TaskSearchResult,
   TaskStatusDto,
   UpdateProjectInput,
   UpdateSectionInput,
@@ -63,6 +65,7 @@ export interface TaskApplication {
   updateTag(context: CommandContext, tagId: string, input: UpdateTagInput): Promise<TagDto>;
 
   listTasks(context: CommandContext, input: TaskListQuery): Promise<TaskPage>;
+  searchTasks(context: CommandContext, input: TaskSearchQuery): Promise<TaskSearchResult[]>;
   getTask(context: CommandContext, taskId: string): Promise<TaskDto>;
   createTask(context: CommandContext, input: CreateTaskInput): Promise<TaskDto>;
   updateTask(context: CommandContext, taskId: string, input: UpdateTaskInput): Promise<TaskDto>;

@@ -9,6 +9,7 @@ import type {
   ProjectRulesDto,
   TaskDto,
   TaskListQuery,
+  TaskSearchResult,
   TaskParticipantDto,
   TaskStatusDto,
 } from '@workloom/contracts';
@@ -117,6 +118,7 @@ export interface TaskRepository {
    * (active and inactive) and tag DTOs.
    */
   findTask(workspaceId: string, taskId: string): Promise<TaskDto | null>;
+  searchTasks(workspaceId: string, query: string, take: number): Promise<TaskSearchResult[]>;
   findTasksByIds(workspaceId:string,taskIds:readonly string[]):Promise<TaskDto[]>;
   /**
    * Tasks matching `input`, in manual `(position,id)` or due `(dueDate NULLS LAST,id)` order after `after`.

@@ -197,6 +197,7 @@ function harness() {
     saveWorkPackage: unused,
     findTasksByIds: async (ws, ids) => ids.map((id) => scoped(db.state.tasks.get(id), ws)).filter((task) => task !== null && task !== undefined),
     findTask: async (ws, id) => scoped(db.state.tasks.get(id), ws),
+    searchTasks: unused,
     listTasks: unused,
     insertTaskCore: unused,
     saveTaskCore: unused,
