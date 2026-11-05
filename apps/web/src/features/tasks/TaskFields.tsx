@@ -217,7 +217,8 @@ export function TaskFields({
   };
 
   const orderedStatuses = [...statuses].sort((a, b) => a.position - b.position);
-  const statusKnown = statuses.some((status) => status.id === draft.statusId);
+  const statusGroup = statuses.find(status => status.id === draft.statusId)?.group;
+  const statusKnown = statusGroup !== undefined;
   const sectionOptions = [...sections]
     .filter((section) => section.archivedAt === null || section.id === draft.sectionId)
     .sort((a, b) => a.position - b.position);
@@ -463,7 +464,7 @@ export function TaskFields({
                 onValueChange={(value) => choose({ responsibleMembershipId: value === '' ? null : value })} />
             </dd>
             <dt className={rowLabel}>{t('autosave.fields.dates')}</dt>
-            <dd className="min-w-0"><TaskCompactDateField startDate={draft.startDate ?? ''} dueDate={draft.dueDate} disabled={disabled}
+            <dd className="min-w-0"><TaskCompactDateField startDate={draft.startDate ?? ''} dueDate={draft.dueDate} disabled={disabled} finished={statusGroup === 'done' || statusGroup === 'cancelled'}
               errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }}
               onDraftChange={onChange} onCommit={dates => choose(dates)} /></dd>
             {projectsSection ? null : <>

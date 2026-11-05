@@ -1,7 +1,8 @@
-import { sqlCalendarDateSchema } from '@workloom/contracts';
+import { calendarDateLabel, TaskDateLabel } from './TaskDateLabel';
+import { useWorkspaceDay } from '../workspace/WorkspaceDay';
 import { CalendarDays } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { formatDate, useTranslation } from '../../i18n';
+import { useTranslation } from '../../i18n';
 import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { CellPopover } from './CellPopover';
 import { TaskDateInput, keepFocusOnPopoverPress } from './TaskDateInput';
@@ -13,17 +14,10 @@ function inCoveringDialog(target: EventTarget | null, owner: HTMLElement | null)
   const dialog = target.closest('[role="dialog"],[role="alertdialog"]');
   return dialog !== null && !dialog.contains(owner);
 }
-function carrier(value: string) {
-  const [year = 0, month = 1, day = 1] = value.split('-').map(Number);
-  const date = new Date(0);
-  date.setUTCHours(0, 0, 0, 0);
-  date.setUTCFullYear(year, month - 1, day);
-  return date;
-}
-
 /** The table calendar, anchored to a compact value. Leaving saves; Escape cancels typing. */
-export function TaskCompactDateField({ startDate, dueDate, disabled = false, errors, onCommit, onDraftChange }: Dates & {
+export function TaskCompactDateField({ startDate, dueDate, disabled = false, finished = false, errors, onCommit, onDraftChange }: Dates & {
   disabled?: boolean;
+  finished?: boolean;
   errors?: { startDate?: string | undefined; dueDate?: string | undefined };
   onCommit: (dates: Dates) => void;
   /** Stage only: the parent owns the opening base, retained drafts and navigation protection. */
@@ -61,15 +55,7 @@ export function TaskCompactDateField({ startDate, dueDate, disabled = false, err
     window.addEventListener('keydown', claimEscape, true);
     return () => { document.removeEventListener('pointerdown', outside); window.removeEventListener('keydown', claimEscape, true); };
   }, [open, close]);
-  const short = (value: string) => {
-    if (!sqlCalendarDateSchema.safeParse(value).success) return value;
-    const date = carrier(value);
-    return formatDate(date, date.getUTCFullYear() === new Date().getFullYear()
-      ? { day: 'numeric', month: 'short', timeZone: 'UTC' }
-      : { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
-  };
-  const text = startDate && dueDate ? t('taskTable.dates.range', { start: short(startDate), due: short(dueDate) })
-    : dueDate ? short(dueDate) : startDate ? t('taskTable.dates.startOnly', { start: short(startDate) }) : t('tasks.taskFields.noDueDate');
+  const today = useWorkspaceDay();
   return <div ref={root} className="min-w-0" onMouseDown={keepFocusOnPopoverPress}
     onBlur={event => {
       // Chrome may run a microtask between focusout and focusin with body active.
@@ -85,7 +71,9 @@ export function TaskCompactDateField({ startDate, dueDate, disabled = false, err
     <button ref={trigger} type="button" disabled={disabled} aria-label={t('tasks.dates.edit')} aria-haspopup="dialog" aria-expanded={open}
       className="flex min-h-8 max-w-full items-center gap-2 rounded px-1.5 text-left text-sm text-ink-soft hover:bg-canvas focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-60"
       onClick={() => { if (open) close(true); else { const dates = { startDate, dueDate }; opening.current = { dates, commit: onCommit, stage: onDraftChange }; draftRef.current = dates; setDraft(dates); openRef.current = true; setOpen(true); } }}>
-      <CalendarDays size={16} className="shrink-0 text-muted" aria-hidden="true" /><span className="truncate">{text}</span>
+      <CalendarDays size={16} className="shrink-0 text-muted" aria-hidden="true" />{startDate ? <span className="truncate">{dueDate ? calendarDateLabel(startDate, today) : t('taskTable.dates.startOnly', { start: calendarDateLabel(startDate, today) })}</span> : null}
+      {startDate && dueDate ? <span aria-hidden="true">–</span> : null}
+      {dueDate ? <TaskDateLabel date={dueDate} today={today} finished={finished} /> : !startDate ? <span>{t('tasks.taskFields.noDueDate')}</span> : null}
     </button>
     {open ? <CellPopover anchor={trigger.current} role="dialog" ariaLabel={t('tasks.dates.edit')} className="max-h-[calc(100dvh-16px)] overflow-y-auto">
       <TaskDateInput startDate={draft.startDate} dueDate={draft.dueDate} autoFocus disabled={disabled} errors={errors}

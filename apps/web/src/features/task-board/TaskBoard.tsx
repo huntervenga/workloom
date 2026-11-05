@@ -1,3 +1,4 @@
+import { TaskDateLabel } from '../tasks/TaskDateLabel';
 import type { MembershipDto, TaskDto, TaskStatusDto } from '@workloom/contracts';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { Badge, Button, cn } from '@workloom/ui';
@@ -78,14 +79,12 @@ const handleChrome = "absolute right-1 top-1 flex size-7 items-center justify-ce
 
 /** Card chrome (padding reserved for the top-right handle) is identical for every card in every drag state and in the ghost. */
 function TaskCard({ card, props, status, editor, canDrag, dragDisabled, drag, onDrag, insertion, preview = false }: { card: BoardCard; props: TaskBoardProps; status: TaskStatusDto | null; editor: ReactNode; canDrag: boolean; dragDisabled: boolean; drag: BoardDragState | null; onDrag: (task: TaskDto, event: ReactPointerEvent<HTMLButtonElement>) => void; insertion?: 'before' | 'after' | undefined; preview?: boolean }) {
-  const { t, formatDate } = useTranslation();
+  const { t } = useTranslation();
   const { task, parent } = card;
   const id = useId();
   const hasEditor = editor !== null && editor !== undefined && editor !== false;
   const assignee = props.members.find(member => member.id === task.responsibleMembershipId);
   const person = task.responsibleMembershipId === null ? t('board.unassigned') : assignee?.displayName ?? t('board.memberUnavailable');
-  const overdue = props.today !== undefined && task.dueDate !== null && task.dueDate < props.today && (status?.group === 'todo' || status?.group === 'in_progress');
-  const due = task.dueDate === null ? t('board.noDueDate') : t('board.dueDate', { date: formatDate(new Date(`${task.dueDate}T12:00:00Z`), { dateStyle: 'medium', timeZone: 'UTC' }) });
   return <li data-board-card={preview ? undefined : task.id} className={cn("relative min-w-0 rounded-lg border bg-surface", preview ? "border-accent shadow-xl" : "border-line shadow-xs", drag?.task.id === task.id && "opacity-50")} onClick={event => {
     if (hasEditor || event.defaultPrevented || !(event.target instanceof Element) || !event.currentTarget.contains(event.target) || event.target.closest('button,input,textarea,select,a,label,summary,[role="button"],[contenteditable="true"]')) return;
     props.onOpenTask(task.id);
@@ -105,7 +104,7 @@ function TaskCard({ card, props, status, editor, canDrag, dragDisabled, drag, on
       {props.draftTaskIds?.has(task.id) ? <Badge tone="muted">{t('board.draftKept')}</Badge> : null}
     </div> : null}
     <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
-      <dl className="min-w-0 text-xs [overflow-wrap:anywhere]"><dt className="sr-only">{t('board.due')}</dt><dd className={overdue ? 'text-amber-800' : 'text-muted'}>{due}{overdue ? <span className="ml-1 font-medium">{t('board.overdue')}</span> : null}</dd></dl>
+      <dl className="min-w-0 text-xs [overflow-wrap:anywhere]"><dt className="sr-only">{t('board.due')}</dt><dd className="text-muted">{task.dueDate === null ? t('board.noDueDate') : <TaskDateLabel showOverdue date={task.dueDate} today={props.today} finished={status?.group !== 'todo' && status?.group !== 'in_progress'} />}</dd></dl>
       {!hasEditor && props.writable && canEditTaskInline(task) ? preview ? <Button size="sm" variant="ghost" className="shrink-0" tabIndex={-1}>{t('board.changeStatus')}</Button> : <Button size="sm" variant="ghost" className="shrink-0" data-task-cell={`${task.id}:statusId`} disabled={props.isStatusEditBusy?.(task)} aria-describedby={`${id}-title`} onClick={() => props.onEditStatus(task)}>{t('board.changeStatus')}</Button> : null}
     </div>
     {task.tags.length ? <div className="flex min-w-0 flex-wrap gap-1">{task.tags.slice(0, 3).map(tag => <TagBadge key={tag.id} tag={tag} />)}{task.tags.length > 3 ? <span className="text-xs text-muted">+{task.tags.length - 3}</span> : null}</div> : null}

@@ -6,6 +6,7 @@ import { Button, StateCard, buttonClassName } from '@workloom/ui';
 import { ArrowLeft, Lock } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, Outlet, useOutletContext, useLocation, useNavigate } from 'react-router';
+import { WorkspaceDayProvider } from '../features/workspace/WorkspaceDay';
 import { useWorkspaceRoute } from '../features/workspace/WorkspaceNavigation';
 import { canonicalWorkspacePath } from '../features/workspace/workspaceRouting';
 import { useMe } from '../features/identity/identity';
@@ -61,7 +62,7 @@ export function WorkspaceLayout() {
     );
   }
 
-  return <Outlet context={{ actorId, workspace: workspace.data } satisfies WorkspaceOutletContext} />;
+  return <WorkspaceDayProvider timezone={workspace.data.timezone}><Outlet context={{ actorId, workspace: workspace.data } satisfies WorkspaceOutletContext} /></WorkspaceDayProvider>;
 }
 
 function WorkspaceUnavailable({ onRetry, retrying = false }: { onRetry?: (() => void) | undefined; retrying?: boolean }) {

@@ -1,3 +1,4 @@
+import { useWorkspaceDay } from '../workspace/WorkspaceDay';
 import { sqlCalendarDateSchema } from '@workloom/contracts';
 import { cn } from '@workloom/ui';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -81,7 +82,7 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const [expanded, setExpanded] = useState(initialShowStart || startDate !== '');
   const [active, setActive] = useState<'startDate' | 'dueDate'>('dueDate');
-  const today = Temporal.Now.plainDateISO().toString();
+  const today = useWorkspaceDay();
   const initial = valid(dueDate) ? dueDate : valid(startDate) ? startDate : today;
   const [viewMonth, setViewMonth] = useState(() => monthOf(initial));
   const [cursor, setCursor] = useState(initial);

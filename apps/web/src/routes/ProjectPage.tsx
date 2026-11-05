@@ -1,3 +1,4 @@
+import { useWorkspaceDay } from '../features/workspace/WorkspaceDay';
 import { queryOptions, skipToken, useQueries } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
 import { WorkspaceLink as Link, useWorkspaceNavigate as useNavigate } from '../features/workspace/WorkspaceNavigation';
@@ -123,20 +124,6 @@ import { useWorkspaceContext } from './WorkspaceLayout';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
-/** Today's calendar date in the workspace time zone, or undefined if the zone is unknown here. */
-function todayIn(timeZone: string): string | undefined {
-  try {
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(
-      new Date(),
-    );
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
-    const [year, month, day] = [part('year'), part('month'), part('day')];
-    return year && month && day ? `${year}-${month}-${day}` : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 interface FieldColumn {
   field: TaskFieldDefinitionDto;
   width: number;
@@ -248,6 +235,7 @@ interface ProjectContentProps {
 }
 
 function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectContentProps) {
+  const workspaceToday = useWorkspaceDay();
   const acquireDragProtection = usePointerRowDragProtection();
   const { t, locale } = useTranslation();
   const sections = useSectionsQuery(actorId, workspace.id, project.id);
@@ -1028,7 +1016,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const anchorId = request.insertionAnchor?.taskId ?? request.insertion?.anchorTaskId ?? null;
     const siblings = loaded.filter(task => (task.sectionId ?? null) === (request.parent?.sectionId ?? request.sectionId ?? null) && task.parentTaskId === parentId).sort((left, right) => left.position - right.position);
     const above = anchorId !== null ? (request.insertionAnchor?.placement ?? request.insertion?.placement) === 'before' ? null : loaded.find(task => task.id === anchorId) ?? null : siblings[siblings.length - 1] ?? null;
-    const today = todayIn(workspace.timezone);
+    const today = workspaceToday;
     const startValues = startValuesFromDefaults(config, above, { today, subtask: request.parent !== null });
     const startFields = startFieldsFromDefaults(config, above, { today, fields: fieldDefinitions.data ?? [], valueOf: (taskId, fieldId) => valueByKey.get(fieldValueKey(taskId, fieldId))?.value });
     return Object.keys(startValues).length === 0 && Object.keys(startFields).length === 0 ? request
@@ -1339,7 +1327,6 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             pendingEdit={[...(commands.update.pendingCommand ? [{ taskId: commands.update.pendingCommand.variables.taskId, input: commands.update.pendingCommand.variables.input }] : []), ...pendingEditsOfBulk(commands.bulk.pendingCommand?.variables.input)]}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
-            workspace={workspace}
             sections={sections.data}
             statuses={statuses.data}
             members={members.data}
@@ -1451,7 +1438,6 @@ interface TaskListProps {
   tagCatalog?: readonly TagDto[] | undefined;
   filtered: boolean;
   project: ProjectDto;
-  workspace: WorkspaceDto;
   sections: readonly SectionDto[];
   statuses: readonly TaskStatusDto[];
   members: readonly MembershipDto[];
@@ -1488,7 +1474,8 @@ interface TaskListProps {
   onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
-function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
+function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, project, boardMode, ...table }: TaskListProps) {
+  const workspaceToday = useWorkspaceDay();
   const { t } = useTranslation();
   if (query.isPending) {
     return (
@@ -1521,11 +1508,11 @@ function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, pr
   return (
     <div className="space-y-3">
       {!boardMode ? <CompletedDateBanner project={project} issues={dateIssues} tasks={scope.tasks} partial={filtered || !scope.complete} onOpenTask={table.onOpenTask} /> : null}
-      {boardMode ? <TaskBoard onMoveCard={table.sortMode === 'manual' ? table.onMoveBoardCard : undefined} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={table.sortMode === 'manual' ? orderBoardTaskHeads(scope.tasks, 'manual').sort((left, right) => compareTaskRows(left, right, 'manual')) : orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} isStatusEditBusy={task => table.isTaskFieldEditBusy?.(task, 'statusId') === true} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
+      {boardMode ? <TaskBoard onMoveCard={table.sortMode === 'manual' ? table.onMoveBoardCard : undefined} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={table.sortMode === 'manual' ? orderBoardTaskHeads(scope.tasks, 'manual').sort((left, right) => compareTaskRows(left, right, 'manual')) : orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={workspaceToday} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} isStatusEditBusy={task => table.isTaskFieldEditBusy?.(task, 'statusId') === true} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={scope.tasks}
         partial={filtered || !scope.complete}
-        today={todayIn(workspace.timezone)}
+        today={workspaceToday}
         dateIssues={dateIssueKinds}
         caption={t('projects.projectPage.tasksInValue', { p0: project.name })}
       />}
