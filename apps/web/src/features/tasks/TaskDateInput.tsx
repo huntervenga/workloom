@@ -6,6 +6,8 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { Temporal } from 'temporal-polyfill';
 import { useTranslation } from '../../i18n';
 import { CellPopover } from './CellPopover';
+import { calendarDateLabel } from './TaskDateLabel';
+import { shiftDay } from '../schedule/dates';
 
 export interface TaskDateInputProps {
   startDate: string;
@@ -139,6 +141,13 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
     requestAnimationFrame(() => buttons.current.get(next)?.focus({ preventScroll: true }));
   };
   const days = Array.from({ length: month.daysInMonth }, (_, index) => month.with({ day: index + 1 }).toString());
+  const dayOfWeek = Temporal.PlainDate.from(today).dayOfWeek;
+  const presets = [
+    { label: t('tasks.dates.today'), date: today },
+    { label: t('tasks.dates.tomorrow'), date: shiftDay(today, 1) },
+    { label: t('tasks.dates.nextWeekday'), date: shiftDay(today, dayOfWeek === 5 ? 3 : dayOfWeek === 6 ? 2 : 1) },
+    { label: t('tasks.dates.nextMonday'), date: shiftDay(today, 8 - dayOfWeek) },
+  ];
   const calendar = <>
     <section aria-label={t('tasks.dates.calendar')} className="w-64 max-w-full min-w-0 border-t border-line pt-2">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -158,9 +167,12 @@ export function TaskDateInput({ startDate, dueDate, onChange, disabled = false, 
           {format.number.format(Temporal.PlainDate.from(value).day)}
         </button>)}
       </div>
-      <div className="mt-2 flex justify-between gap-2 border-t border-line pt-2 text-xs">
-        <button type="button" disabled={disabled} className="rounded px-1 py-1 font-medium text-accent-ink hover:bg-canvas disabled:text-muted" onClick={() => choose(active, today)}>{t('tasks.dates.today')}</button>
-        <button type="button" disabled={disabled || selected === '' && !allowEmptyClear} className="rounded px-1 py-1 text-muted hover:bg-canvas disabled:text-subtle" onClick={clear}>{t(active === 'startDate' ? 'tasks.dates.clearStart' : 'tasks.dates.clearDue')}</button>
+      <div className="mt-2 grid gap-0.5 border-t border-line pt-2 text-xs">
+        {presets.map(({ label, date }) => date === null ? null : <button key={label} type="button" disabled={disabled}
+          aria-label={label} title={calendarDateLabel(date, today, true)}
+          className="flex items-center justify-between gap-2 rounded px-1.5 py-1.5 text-left font-medium text-accent-ink hover:bg-canvas disabled:text-muted"
+          onClick={() => choose(active, date)}><span>{label}</span><span className="text-muted">{calendarDateLabel(date, today)}</span></button>)}
+        <button type="button" disabled={disabled || selected === '' && !allowEmptyClear} className="rounded px-1.5 py-1.5 text-left text-muted hover:bg-canvas disabled:text-subtle" onClick={clear}>{t(active === 'startDate' ? 'tasks.dates.clearStart' : 'tasks.dates.clearDue')}</button>
       </div>
     </section>
   </>;
