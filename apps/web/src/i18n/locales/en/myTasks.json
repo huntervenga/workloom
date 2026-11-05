@@ -35,10 +35,12 @@
   "errorStatus": "Tasks could not be loaded.",
   "nothingAssignedTitle": "You have no open tasks",
   "nothingAssignedDescription": "Tasks assigned to you, or where you take part, appear here from every project. Open a project to create one.",
+  "noTasksToday": "No tasks due today",
+  "noLoadedTasksToday": "No tasks due today in loaded results",
   "bucket": {
     "overdue": "Overdue",
-    "today": "Today",
-    "week": "This week",
+    "todayDate": "Today · {{date}}",
+    "tomorrow": "Tomorrow",
     "later": "Later",
     "none": "No due date"
   }
