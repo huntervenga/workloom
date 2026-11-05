@@ -54,7 +54,7 @@ export const taskDraftKeys = [
 
 export type TaskDraftKey = (typeof taskDraftKeys)[number];
 
-export type TaskDraftIssueKey = 'tasks.taskDraft.enterATaskName' | 'tasks.taskDraft.nameMustBeValueCharactersOrFewer' | 'tasks.taskDraft.descriptionMustBe20000CharactersOrFewer' | 'tasks.taskDraft.enterAValidDate' | 'tasks.taskDraft.enterAValidDateBetweenYears0001And' | 'tasks.taskDraft.dueDateMustBeOnOrAfterThe' | 'tasks.taskDraft.checkTheCompletedFields' | EstimateValidationKey;
+export type TaskDraftIssueKey = 'tasks.taskDraft.enterATaskName' | 'tasks.taskDraft.nameMustBeValueCharactersOrFewer' | 'tasks.taskDraft.descriptionMustBe20000CharactersOrFewer' | 'tasks.taskDraft.enterAValidDate' | 'tasks.taskDraft.enterAValidDateBetweenYears0001And' | 'tasks.taskDraft.dueDateMustBeOnOrAfterThe' | 'tasks.taskDraft.checkTheCompletedFields' | 'tasks.quickAdd.pasteInvalid' | 'tasks.quickAdd.pasteTooMany' | EstimateValidationKey;
 export interface TaskDraftIssue { key: TaskDraftIssueKey; params?: TranslationParameters }
 export type TaskDraftErrors = Partial<Record<'title' | 'description' | 'startDate' | 'dueDate' | 'estimate' | 'form', TaskDraftIssue>>;
 

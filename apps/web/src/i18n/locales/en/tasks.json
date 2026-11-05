@@ -227,6 +227,11 @@
     "checkTheCompletedFields": "Check the completed fields."
   },
   "quickAdd": {
+    "pasteTitle": "Preview pasted tasks",
+    "pasteHint": "One task per line. Tab-separated columns are title, assignee name and due date (YYYY-MM-DD).",
+    "pasteInvalid": "Check the task title, assignee and due date on line {{line}}.",
+    "pasteTooMany": "Paste up to 20 tasks at a time.",
+    "pasteCreate": "Create {{count}} tasks",
     "submittedTitle": "Submitted task: {{title}}",
     "discardRejected": "Discard rejected task",
     "existingDraft": "A task draft is already saved on this page. Resume it to keep all its details.",

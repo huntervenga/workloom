@@ -1,3 +1,5 @@
+import { DialogShell } from '../../shared/DialogShell';
+import { parseQuickPaste, type PastedTask } from './quickPaste';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { MembershipDto, SectionDto, TagDto, TaskDto, TaskFieldDefinitionDto, TaskStatusDto } from '@workloom/contracts';
 import { Button, cn } from '@workloom/ui';
@@ -166,6 +168,15 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   // still waiting to be sent and a row whose own tag create is unresolved stay put.
   const leave = useRef<() => void>(() => undefined);
   const enqueuedByRow = useRef(false);
+  const pasteOpen = useRef(false);
+  const [pasted, setPasted] = useState<PastedTask[] | null>(null);
+  const closePaste = () => {
+    setPasted(null);
+    window.requestAnimationFrame(() => {
+      titleRef.current?.focus({ preventScroll: true });
+      pasteOpen.current = false;
+    });
+  };
   leave.current = () => {
     if (pending || uncertain || hasFeedback || commands.quick.queue.length > 0 || ownTagHeld()) return;
     if (!dirty) { onClose('blur'); return; }
@@ -181,7 +192,7 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
   const inside = (node: unknown) => node instanceof Element && (node.closest('[data-quick-draft]')?.getAttribute('data-quick-draft') === id || node.closest('[data-choice-picker-menu]') !== null || controlledByRow(node));
   // Checked once focus settles, so moves into the row's own lists or menu never close it.
   const checkLeft = (row: Element | null) => window.setTimeout(() => {
-    if (!mounted.current || menuActive.current || !row?.isConnected || inside(document.activeElement)) return;
+    if (!mounted.current || menuActive.current || pasteOpen.current || !row?.isConnected || inside(document.activeElement)) return;
     leave.current();
   }, 0);
   const leaveRow = (event: FocusEvent<HTMLElement>) => { if (!inside(event.relatedTarget)) checkLeft(event.currentTarget); };
@@ -273,14 +284,10 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
     setErrors({});
     setInitialIssues([]);
   };
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (event.target !== event.currentTarget || !writable) return;
-    // Only this row waits for its own tag create; other rows and tasks continue.
-    if (ownTagHeld()) { setWaitsForTag(true); return; }
+  const evaluate = (candidate: CreateSession) => {
     // Every built-in and staged value is checked first; any issue keeps the whole row and sends nothing.
-    const result = buildCreateInput(projectId, draft, quickCreateOptions(session));
-    const cells = session.initialCells;
+    const result = buildCreateInput(projectId, candidate.draft, quickCreateOptions(candidate));
+    const cells = candidate.initialCells;
     const checked = cells !== undefined && hasInitialTaskCells(cells)
       ? validateInitialTaskCells(cells, { definitions: props.initialFields, currentContext: props.initialTimeContext, sharesParentPackage })
       : null;
@@ -294,16 +301,64 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
       if (extras.ok) initial = extras.input;
       else Object.assign(nextErrors, extras.errors);
     }
-    if (!result.ok || cellIssues.length > 0 || Object.keys(nextErrors).length > 0) { setErrors(nextErrors); setInitialIssues(cellIssues); return; }
+    return !result.ok || cellIssues.length > 0 || Object.keys(nextErrors).length > 0
+      ? { ok: false as const, errors: nextErrors, cellIssues }
+      : { ok: true as const, input: result.input, initial };
+  };
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (event.target !== event.currentTarget || !writable || pasteOpen.current) return;
+    if (ownTagHeld()) { setWaitsForTag(true); return; }
+    const result = evaluate(session);
+    if (!result.ok) { setErrors(result.errors); setInitialIssues(result.cellIssues); return; }
     // Clear only the submitted input, synchronously, before its ACK. A later confirmation
     // never edits this next buffer or restores focus after the person moves elsewhere.
     // A continuing row's next task follows the one just queued, whatever ID it gets.
-    const next = commands.enqueueQuickCreate(session, result.input, resultAnchor => freshQuickSession(sectionId, statusId, nextQuickRequest(session.request, resultAnchor)), onCreated, initial);
+    const next = commands.enqueueQuickCreate(session, result.input, resultAnchor => freshQuickSession(sectionId, statusId, nextQuickRequest(session.request, resultAnchor)), onCreated, result.initial);
     enqueuedByRow.current = true;
     setSession(next);
     setErrors({});
     setInitialIssues([]);
   };
+  const pastedSession = (base: CreateSession, task: PastedTask): CreateSession => ({
+    ...base, draft: { ...base.draft, title: task.title,
+      ...(task.responsibleMembershipId ? { responsibleMembershipId: task.responsibleMembershipId } : {}),
+      ...(task.dueDate ? { dueDate: task.dueDate } : {}) },
+  });
+  const pasteIssues = pasted?.flatMap((task, index) => evaluate(pastedSession(session, task)).ok ? [] : [index + 1]) ?? [];
+  const confirmPaste = () => {
+    if (!pasted || pasteIssues.length || !writable || dirty || ownTagHeld() || blockedUnknown || commands.quick.paused) return;
+    const submissions = pasted.map(task => {
+      const candidate = pastedSession(session, task);
+      return { candidate, checked: evaluate(candidate) };
+    });
+    if (!submissions.every(entry => entry.checked.ok)) return;
+    let next = session;
+    for (const { candidate, checked } of submissions) {
+      if (!checked.ok) return;
+      const placed = { ...next, draft: candidate.draft, initialCells: candidate.initialCells };
+      next = commands.enqueueQuickCreate(placed, checked.input,
+        anchor => freshQuickSession(sectionId, statusId, nextQuickRequest(placed.request, anchor)), onCreated, checked.initial);
+    }
+    setSession(next);
+    setErrors({});
+    setInitialIssues([]);
+    closePaste();
+  };
+  const pasteDialog = pasted ? <DialogShell open title={t('tasks.quickAdd.pasteTitle')} description={t('tasks.quickAdd.pasteHint')}
+    onOpenChange={open => { if (!open) closePaste(); }}>
+    <ol className="max-h-64 space-y-1 overflow-y-auto text-sm">
+      {pasted.map((item, index) => <li key={index} className="rounded border border-line p-2">
+        <span className="block break-words">{item.title}</span>
+        <span className="text-xs text-muted">{[item.assigneeName, item.dueDate].filter(Boolean).join(' · ')}</span>
+      </li>)}
+    </ol>
+    {pasteIssues.length ? <p role="alert" className="mt-2 text-sm text-danger">{t('tasks.quickAdd.pasteInvalid', { line: pasteIssues[0] ?? 1 })}</p> : null}
+    <div className="mt-3 flex gap-2">
+      <Button type="button" disabled={pasteIssues.length > 0} onClick={confirmPaste}>{t('tasks.quickAdd.pasteCreate', { count: pasted.length })}</Button>
+      <Button type="button" variant="ghost" onClick={closePaste}>{t('common.cancel')}</Button>
+    </div>
+  </DialogShell> : null;
   const initialIssueName = (issue: InitialTaskCellsIssue) => issue.kind === 'field'
     ? props.initialFields?.find(field => field.id === issue.fieldId)?.name ?? session.initialCells?.fields[issue.fieldId]?.field.name ?? null
     : null;
@@ -353,9 +408,20 @@ export function QuickTaskAdd(props: QuickTaskAddProps) {
     {fullRow
       ? <span aria-hidden="true" className="inline-flex size-7 shrink-0 items-center justify-center"><span className="size-[18px] rounded-full border border-line-strong" /></span>
       : <span aria-hidden="true" className="mr-1 inline-flex size-4 shrink-0 rounded-full border border-dashed border-line-strong" />}
+    {pasteDialog}
     <input ref={titleRef} autoFocus aria-label={t('tasks.taskFields.taskName')} aria-invalid={Boolean(errors.title) || undefined} aria-describedby={describedBy}
       placeholder={t('tasks.quickAdd.titlePlaceholder')} autoComplete="off" maxLength={TASK_TITLE_MAX} readOnly={frozen} aria-disabled={frozen || undefined}
       value={draft.title} onChange={event => change({ title: event.target.value })}
+      onPaste={event => {
+        if (frozen || dirty || blockedUnknown || ownTagHeld() || commands.quick.paused) return;
+        const result = parseQuickPaste(event.clipboardData.getData('text/plain'), props.members ?? []);
+        if (result.kind === 'single') return;
+        event.preventDefault();
+        if (result.kind === 'invalid') { setErrors({ title: taskDraftIssue('tasks.quickAdd.pasteInvalid', { line: result.line }) }); return; }
+        if (result.kind === 'tooMany') { setErrors({ title: taskDraftIssue('tasks.quickAdd.pasteTooMany') }); return; }
+        pasteOpen.current = true;
+        setPasted(result.tasks);
+      }}
       className={fullRow
         ? 'block h-8 w-full min-w-0 flex-1 rounded bg-transparent px-1 text-sm text-ink outline-none placeholder:text-subtle focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-soft read-only:text-muted aria-[invalid=true]:ring-2 aria-[invalid=true]:ring-inset aria-[invalid=true]:ring-red-300'
         : 'block h-8 w-full min-w-0 flex-1 rounded border border-accent-line bg-surface px-2 text-sm text-ink outline-none ring-2 ring-accent-soft placeholder:text-subtle read-only:bg-canvas read-only:text-muted aria-[invalid=true]:border-red-300'} />

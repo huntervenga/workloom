@@ -376,3 +376,27 @@ it('retains an unsent draft when its tag label is held inside a focusable shell'
   expect(ui.commands().createSession.current?.draft.tagIds).toEqual([TAG_ID]);
   expect(calls).toHaveLength(0);
 });
+
+it('reviews a pasted task list before sending, then keeps its confirmed insertion order', async () => {
+  let nextId = X_ID;
+  const { calls } = installFakeApi({ [`POST ${rootPath}/tasks`]: request => {
+    const id = nextId;
+    nextId = Y_ID;
+    return created({ ...task, id, sectionId: SECTION, title: titleOf(request.body) });
+  } });
+  const ui = row(afterB);
+  const person = alphaMembers[0];
+  if (!person) throw new Error('Missing synthetic assignee');
+  fireEvent.paste(screen.getByLabelText('Task name'), {
+    clipboardData: { getData: () => `First\nSecond\t${person.displayName}\t2027-03-15` },
+  });
+  const preview = within(await screen.findByRole('dialog', { name: 'Preview pasted tasks' }));
+  expect(preview.getByText('First')).toBeVisible();
+  expect(preview.getByText('Second')).toBeVisible();
+  expect(calls.filter(call => call.method === 'POST')).toHaveLength(0);
+  await ui.user.click(preview.getByRole('button', { name: 'Create 2 tasks' }));
+  await waitFor(() => expect(ui.onCreated).toHaveBeenCalledTimes(2));
+  const writes = calls.filter(call => call.method === 'POST');
+  expect(writes[0]?.body).toMatchObject({ title: 'First', sectionId: SECTION, insertion: { anchorTaskId: B_ID, placement: 'after' } });
+  expect(writes[1]?.body).toMatchObject({ title: 'Second', sectionId: SECTION, dueDate: '2027-03-15', responsibleMembershipId: person.id, insertion: { anchorTaskId: X_ID, placement: 'after' } });
+});
