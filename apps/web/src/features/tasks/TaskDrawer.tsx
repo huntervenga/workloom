@@ -1,3 +1,4 @@
+import { TaskStructureActions } from './TaskStructureActions';
 import { useRememberWork } from '../work-shortcuts/shortcuts';
 import { TaskAttachments } from '../attachments/TaskAttachments';
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
@@ -772,6 +773,9 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           </p>
         ) : null}
       </form>
+      {canEdit && latest.meetingId === null ? <TaskStructureActions actorId={actorId} task={latest} statuses={props.statuses}
+        commands={commands} disabled={busy || locked || unsent || !props.hierarchyCurrent || phase !== 'idle' && phase !== 'saved'}
+        onOpenTask={onOpenTask} /> : null}
       <TaskAttachments actorId={actorId} workspaceId={workspace.id} taskId={taskId} writable={canEdit} members={members} />
       {subtasks}
       {props.activity}

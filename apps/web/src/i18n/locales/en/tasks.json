@@ -1,4 +1,16 @@
 {
+  "structure": {
+    "change": "Change task hierarchy",
+    "description": "Choose a parent in this project. The task keeps its work package, hours and history.",
+    "findParent": "Find parent task",
+    "noParents": "No matching tasks in this project.",
+    "makeSubtask": "Make subtask",
+    "makeTopLevel": "Make top-level task",
+    "sharedEstimate": "This subtask shares its parent’s work package and cannot be detached from it here.",
+    "followUp": "Create follow-up",
+    "followUpDescription": "Create a separate task in this project, with a link back to “{{title}}”.",
+    "followUpLink": "Follow-up to {{url}}"
+  },
   "referencePreview": "Linked work",
   "tagDialogs": {
     "enterATagName": "Enter a tag name.",
