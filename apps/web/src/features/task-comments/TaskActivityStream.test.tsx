@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { alpha, anna, created, deferred, failure, installFakeApi, json, type FakeRequest } from '../../test/fakeApi';
 import { renderFieldUi } from '../fields/test/fixtures';
 import { MEMBER_ID, rootPath, task } from '../planning/test/fixtures';
+import { FollowUpDialog } from '../tasks/TaskStructureActions';
+import { useTaskCommands } from '../tasks/useTaskCommands';
+import { homeStatus } from '../project-placements/testFixtures';
 import { TaskActivityStream } from './TaskActivityStream';
 import { discussionKeys } from './queries';
 import { useTaskCommentsWorkspace, type TaskCommentsWorkspace } from './useTaskCommentsWorkspace';
@@ -62,6 +65,39 @@ describe('task activity stream', () => {
     expect(calls).toHaveLength(1); expect(calls[0]?.path).toBe(timelinePath);
     expect(calls[0]?.searchParams.get('limit')).toBe('50'); expect(calls[0]?.searchParams.has('cursor')).toBe(false);
     expect(screen.getByText('Start of this task’s history.')).toBeVisible();
+  });
+
+  it('creates a task with the chosen comment and its original task link', async () => {
+    const first = commentRow(1, 'First comment', SEQ.oldest);
+    const chosen = commentRow(2, 'The chosen comment', SEQ.newest);
+    const newId = rowId(99);
+    const { calls } = installFakeApi({
+      [`GET ${timelinePath}`]: () => page([chosen, first]),
+      [`POST ${rootPath}/tasks`]: () => created({ ...task, id: newId, title: 'Follow-up' }),
+    });
+    const open = vi.fn();
+    function Example() {
+      const controller = useTaskCommentsWorkspace(anna.id, alpha.id);
+      const commands = useTaskCommands(anna.id, alpha.id);
+      const [comment, setComment] = useState<string | null>(null);
+      return <>
+        <TaskActivityStream task={task} controller={controller} writable canRetry timezone={alpha.timezone} onOpenTask={open} onFollowUp={setComment} />
+        {comment !== null ? <FollowUpDialog task={task} commands={commands} statuses={[homeStatus]} disabled={false}
+          comment={comment} close={() => setComment(null)} onOpenTask={open} /> : null}
+      </>;
+    }
+    const { user } = renderFieldUi(<Example />);
+    await screen.findByText(chosen.comment.body);
+    await user.click(within(entry(chosen.comment.id)).getByRole('button', { name: 'Create task from comment' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Create task from comment' }));
+    await user.type(dialog.getByLabelText('Task name'), 'Follow-up');
+    await user.click(dialog.getByRole('button', { name: 'Create task from comment' }));
+    await waitFor(() => expect(open).toHaveBeenCalledWith(newId));
+    expect(writes(calls)[0]?.body).toMatchObject({
+      title: 'Follow-up',
+      projectId: task.projectId,
+      description: expect.stringContaining(`?task=${task.id}\n\n${chosen.comment.body}`),
+    });
   });
 
   it('shows only the loading status before the first page, never the empty state', async () => {

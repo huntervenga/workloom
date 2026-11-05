@@ -1,4 +1,4 @@
-import { TaskStructureActions } from './TaskStructureActions';
+import { FollowUpDialog, TaskStructureActions } from './TaskStructureActions';
 import { useRememberWork } from '../work-shortcuts/shortcuts';
 import { TaskAttachments } from '../attachments/TaskAttachments';
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
@@ -30,7 +30,7 @@ import { Badge, Button, Skeleton, StateCard } from '@workloom/ui';
 import { CompleteSplitButton } from './CompleteSplitButton';
 import { CopyTaskLink } from './CopyTaskLink';
 import { Archive, ArchiveRestore, Copy, Lock, MoreHorizontal, RefreshCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent } from 'react';
 import { ApiError } from '../../lib/api';
 import { describeError } from '../../lib/errors';
 import { isUuid } from '../../lib/format';
@@ -374,7 +374,6 @@ function TaskDetail(props: TaskDrawerProps & { taskId: string; detail: ReturnTyp
         {...props}
         hierarchyCurrent={!detail.isFetching&&!detail.isError}
         latest={task}
-        activity={props.commentsController && task.meetingId === null ? <TaskActivityStream key={taskId} task={task} controller={props.commentsController} writable={props.writable} canRetry={workspace.role !== 'viewer'} timezone={workspace.timezone} onOpenTask={props.onOpenTask} /> : null}
       />
     </>
   );
@@ -424,8 +423,7 @@ function useLookups(props: TaskDrawerProps, extra: readonly TagDto[]) {
 
 type TaskCommandName = 'update' | 'archive' | 'restore';
 
-/** `activity` comes last in the same scroller, after the task form and the subtasks. */
-function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurrent:boolean; activity?: ReactNode }) {
+function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurrent:boolean }) {
   const { t } = useTranslation();
   const {
     actorId,
@@ -495,6 +493,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
 
   const archived = base.archivedAt !== null;
   const canEdit = writable && !archived;
+  const [followUpComment, setFollowUpComment] = useState<string | null>(null);
   const locked = lockedCommand !== null;
   const shownError = shownMutation?.error ?? null;
   const conflict = shownError instanceof ApiError && shownError.kind === 'conflict';
@@ -778,7 +777,11 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
         onOpenTask={onOpenTask} /> : null}
       <TaskAttachments actorId={actorId} workspaceId={workspace.id} taskId={taskId} writable={canEdit} members={members} />
       {subtasks}
-      {props.activity}
+      {props.commentsController && latest.meetingId === null ? <TaskActivityStream task={latest} controller={props.commentsController}
+        writable={writable} canRetry={workspace.role !== 'viewer'} timezone={workspace.timezone} onOpenTask={onOpenTask}
+        onFollowUp={canEdit ? setFollowUpComment : undefined} /> : null}
+      {canEdit && followUpComment !== null ? <FollowUpDialog task={latest} statuses={props.statuses} commands={commands}
+        disabled={busy || locked || unsent} onOpenTask={onOpenTask} comment={followUpComment} close={() => setFollowUpComment(null)} /> : null}
     </div>
 
       {/* No Save, Draft or Discard for ordinary edits: only the save state, and a Retry for a held lock. */}

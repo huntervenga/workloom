@@ -75,24 +75,26 @@ function StructureDialog({ actorId, task, commands, close, disabled }: Props & {
   </DialogShell>;
 }
 
-function FollowUpDialog({ task, statuses, commands, close, disabled, onOpenTask }: Props & { close: () => void }) {
+export function FollowUpDialog({ task, statuses, commands, close, disabled, onOpenTask, comment }: Omit<Props, 'actorId'> & { close: () => void; comment?: string }) {
   const { t } = useTranslation();
   const [title, setTitle] = useState('');
   const [sent, setSent] = useState(false);
   const create = commands.create;
   const held = sent && (create.pendingCommand !== null || create.uncertain !== null);
   const status = statuses.find(item => item.group === 'todo') ?? statuses.find(item => item.group === 'in_progress');
+  const label = t(comment === undefined ? 'tasks.structure.followUp' : 'tasks.structure.followUpComment');
   const saved = (created: TaskDto) => { close(); onOpenTask(created.id); };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!title.trim() || held || disabled || !status || create.hasOtherProtectedCommands()) return;
     setSent(true);
+    const source = t('tasks.structure.followUpLink', { url: taskLink(window.location.origin, task.workspaceId, task.projectId, task.id) });
     create.mutate({ input: {
       title: title.trim(), projectId: task.projectId, statusId: status.id, sectionId: task.sectionId,
-      description: t('tasks.structure.followUpLink', { url: taskLink(window.location.origin, task.workspaceId, task.projectId, task.id) }),
+      description: comment === undefined ? source : `${source}\n\n${comment}`,
     } }, { onSuccess: saved });
   };
-  return <DialogShell open title={t('tasks.structure.followUp')} description={t('tasks.structure.followUpDescription', { title: task.title })}
+  return <DialogShell open title={label} description={t(comment === undefined ? 'tasks.structure.followUpDescription' : 'tasks.structure.followUpCommentDescription', { title: task.title })}
     onOpenChange={open => { if (!open && !held) close(); }}>
     <form className="space-y-3" onSubmit={submit}>
       <label className="grid gap-1 text-sm">{t('tasks.taskFields.taskName')}
@@ -100,7 +102,7 @@ function FollowUpDialog({ task, statuses, commands, close, disabled, onOpenTask 
       </label>
       {sent ? <SaveFeedback error={create.error} uncertainError={create.uncertain?.error ?? null} subject="taskSave" /> : null}
       {sent && create.uncertain ? <Button type="button" disabled={create.pendingCommand !== null} onClick={() => create.retryUncertain({ onSuccess: saved })}>{t('common.retry')}</Button> :
-        <Button type="submit" disabled={held || disabled || !status || !title.trim()}>{t('tasks.structure.followUp')}</Button>}
+        <Button type="submit" disabled={held || disabled || !status || !title.trim()}>{label}</Button>}
     </form>
   </DialogShell>;
 }

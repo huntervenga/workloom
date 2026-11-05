@@ -18,14 +18,14 @@ const problemKeys = { blank: 'comments.problem.blank', tooLong: 'comments.proble
 const unavailable = (error: unknown) => isAccessDenied(error) || error instanceof ApiError && error.kind === 'unauthenticated';
 
 export interface TaskActivityStreamProps {
-  task: TaskDto; controller: TaskCommentsWorkspace; writable: boolean; canRetry: boolean; timezone: string; onOpenTask: (taskId: string) => void;
+  task: TaskDto; controller: TaskCommentsWorkspace; writable: boolean; canRetry: boolean; timezone: string; onOpenTask: (taskId: string) => void; onFollowUp?: (comment: string) => void;
 }
 
 /**
  * One chronological feed of comments and activity with the composer below it. Mount it outside
  * any task edit form: it owns its own comment form, and the draft lives in the page controller.
  */
-export function TaskActivityStream({ task, controller, writable, canRetry, timezone, onOpenTask }: TaskActivityStreamProps) {
+export function TaskActivityStream({ task, controller, writable, canRetry, timezone, onOpenTask, onFollowUp }: TaskActivityStreamProps) {
   const { t, formatDate } = useTranslation();
   const client = useQueryClient();
   const id = useId();
@@ -106,6 +106,8 @@ export function TaskActivityStream({ task, controller, writable, canRetry, timez
           <UserAvatar name={item.comment.authorDisplayNameSnapshot} seed={item.comment.authorUserId} avatarUrl={item.comment.authorAvatarUrl ?? null} size="sm" />
           <span className="font-medium text-ink">{item.comment.authorDisplayNameSnapshot}</span>
           <time dateTime={item.occurredAt} className="text-muted">{time(item.occurredAt)}</time>
+          {canPost && onFollowUp ? <button type="button" className="ml-auto rounded px-1.5 py-1 text-muted hover:bg-accent-soft hover:text-accent-ink"
+            onClick={() => onFollowUp(item.comment.body)}>{t('tasks.structure.followUpComment')}</button> : null}
         </div>
         <p className="mt-1.5 whitespace-pre-wrap break-words pl-8 text-sm text-ink"><LinkedDescription internalOnly text={item.comment.body} /></p>
       </li>

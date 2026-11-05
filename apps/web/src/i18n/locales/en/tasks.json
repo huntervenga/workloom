@@ -9,6 +9,8 @@
     "sharedEstimate": "This subtask shares its parent’s work package and cannot be detached from it here.",
     "followUp": "Create follow-up",
     "followUpDescription": "Create a separate task in this project, with a link back to “{{title}}”.",
+    "followUpComment": "Create task from comment",
+    "followUpCommentDescription": "Create a task in this project with a copy of the comment and a link to “{{title}}”.",
     "followUpLink": "Follow-up to {{url}}"
   },
   "referencePreview": "Linked work",
