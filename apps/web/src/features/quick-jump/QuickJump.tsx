@@ -1,3 +1,4 @@
+import { QuickCreateDialog } from './QuickCreateDialog';
 import { useShortcutItems } from '../work-shortcuts/WorkShortcuts';
 import { Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -10,24 +11,27 @@ import { useWorkspaceNavigate } from '../workspace/WorkspaceNavigation';
 import { filterJumpItems, type JumpItem } from './quickJumpItems';
 
 /** Ctrl/Cmd+K: jump to a page, a project, or a workspace task by typing part of its name. */
-export function QuickJump({ actorId, workspaceId }: { actorId: string; workspaceId: string }) {
+export function QuickJump({ actorId, workspaceId, canCreate = false }: { actorId: string; workspaceId: string; canCreate?: boolean }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (creating || event.isComposing || event.defaultPrevented) return;
       if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'k') { event.preventDefault(); setOpen(true); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [creating]);
   return <>
     <Button size="sm" variant="ghost" aria-label={t('quickJump.open')} title={t('quickJump.openHint')} onClick={() => setOpen(true)}><Search size={16} aria-hidden="true" /></Button>
     {/* Nothing is read until the palette is opened. */}
-    {open ? <QuickJumpDialog actorId={actorId} workspaceId={workspaceId} onClose={() => setOpen(false)} /> : null}
+    {open ? <QuickJumpDialog actorId={actorId} workspaceId={workspaceId} onClose={() => setOpen(false)} onCreate={canCreate ? () => { setOpen(false); setCreating(true); } : undefined} /> : null}
+    {creating ? <QuickCreateDialog actorId={actorId} workspaceId={workspaceId} onClose={() => setCreating(false)} /> : null}
   </>;
 }
 
-function QuickJumpDialog({ actorId, workspaceId, onClose }: { actorId: string; workspaceId: string; onClose: () => void }) {
+function QuickJumpDialog({ actorId, workspaceId, onClose, onCreate }: { actorId: string; workspaceId: string; onClose: () => void; onCreate: (() => void) | undefined }) {
   const { t } = useTranslation();
   const navigate = useWorkspaceNavigate();
   const [query, setQuery] = useState('');
@@ -39,6 +43,7 @@ function QuickJumpDialog({ actorId, workspaceId, onClose }: { actorId: string; w
   const items = useMemo(() => {
     const base = `/w/${workspaceId}`;
     const pages: JumpItem[] = [
+      ...(onCreate ? [{ key: 'command:create', label: t('quickJump.createTask'), hint: t('quickJump.command'), to: '' }] : []),
       { key: 'page:overview', label: t('quickJump.overview'), hint: t('quickJump.page'), to: base },
       { key: 'page:inbox', label: t('quickJump.inbox'), hint: t('quickJump.page'), to: `${base}/inbox` },
       { key: 'page:my-tasks', label: t('quickJump.myTasks'), hint: t('quickJump.page'), to: `${base}/my-tasks` },
@@ -56,9 +61,9 @@ function QuickJumpDialog({ actorId, workspaceId, onClose }: { actorId: string; w
     const recentKeys = new Set(recent.map(item => item.key));
     const recentItems = recent.map(item => ({ ...item, hint: t('quickJump.recent') }));
     return [...recentItems, ...filterJumpItems([...projectItems, ...pages], query).filter(item => !recentKeys.has(item.key)), ...taskItems];
-  }, [workspaceId, projects.data, search.results, recent, query, t]);
+  }, [workspaceId, projects.data, search.results, recent, query, t, onCreate]);
 
-  const go = (item: JumpItem | undefined) => { if (!item) return; onClose(); void navigate(item.to); };
+  const go = (item: JumpItem | undefined) => { if (!item) return; if (item.key === 'command:create') { onCreate?.(); return; } onClose(); void navigate(item.to); };
   const current = Math.min(active, Math.max(items.length - 1, 0));
   useEffect(() => { listRef.current?.children[current]?.scrollIntoView?.({ block: 'nearest' }); }, [current]);
 
