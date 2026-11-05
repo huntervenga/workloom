@@ -1,3 +1,6 @@
+import { taskLink } from '../features/tasks/CopyTaskLink';
+import { taskCompletion } from '../features/tasks/taskCompletion';
+import type { RowShortcut } from '../features/task-table/rowShortcuts';
 import { FavoriteWorkButton } from '../features/work-shortcuts/WorkShortcuts';
 import { useRememberWork } from '../features/work-shortcuts/shortcuts';
 import { useWorkspaceDay } from '../features/workspace/WorkspaceDay';
@@ -17,7 +20,7 @@ import { BulkTaskToolbar } from '../features/task-table/BulkTaskToolbar';
 import { useBulkInlineEdit } from '../features/task-table/useBulkInlineEdit';
 import { captureDraftPlacement, type DraftPlacementSnapshot } from '../features/task-table/draftPlacement';
 import { ChoicePicker } from '../shared/ChoicePicker';
-import { DialogReturnFocus } from '../shared/DialogShell';
+import { DialogReturnFocus, DialogShell } from '../shared/DialogShell';
 import { useDesktopTaskPane } from '../shared/TaskPanelFrame';
 import { compareTaskRows, orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
 import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
@@ -307,6 +310,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     inlineGeneration.current += 1;
     for (const dispose of inlineLeases.current) dispose();
   }, []);
+  const [showRowShortcuts, setShowRowShortcuts] = useState(false);
   const [grouping, setGrouping] = useState<TaskGroupingMode>('section');
   const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean }; titleCaret?: number | undefined } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
@@ -876,6 +880,48 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     bulkInline.capture(task, field, focusClaim);
     setActiveInline({ taskId: task.id, field, focusClaim, titleCaret });
   };
+  const runRowShortcut = (task: TaskDto, action: RowShortcut, row: HTMLTableRowElement) => {
+    if (action === 'help') { setShowRowShortcuts(true); return true; }
+    if (action === 'copy') {
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(taskLink(window.location.origin, workspace.id, task.projectId, task.id));
+          setAnnouncement(message('copyTaskLink.copied'));
+        } catch { setAnnouncement(message('copyTaskLink.failed')); }
+      })();
+      return true;
+    }
+    if (!writable || !canEditTaskInline(task) || activeInline || creating || unresolvedTaskCommand(commands)) return false;
+    if (action === 'assign' || action === 'date') {
+      const field = action === 'assign' ? 'responsibleMembershipId' : 'dueDate';
+      if (!row.querySelector(`[data-task-cell="${task.id}:${field}"]`)) return false;
+      startInline(task, field);
+      return true;
+    }
+    if (commands.editSessions.current.has(task.id)) { openTask(task.id); return true; }
+    if (action === 'assignMe') {
+      if (task.projectId !== project.id || bulkInline.selectsMany(task.id)) return false;
+      const me = members.isSuccess ? members.data.find(member => member.userId === actorId && !member.pending) : undefined;
+      if (!me || me.id === task.responsibleMembershipId || commands.update.hasOtherProtectedCommands()) return false;
+      commands.update.mutate({ taskId: task.id, input: { expectedRevision: task.revision, responsibleMembershipId: me.id } }, {
+        onSuccess: () => setAnnouncement(message('tasks.taskDrawer.taskSaved')),
+      });
+      return true;
+    }
+    if (!completionWritable) return false;
+    const choice = taskCompletion(task, statuses.data ?? []);
+    if (!choice.eligible || choice.choices.length === 0) return false;
+    if (!choice.direct) {
+      if (!row.querySelector(`[data-task-cell="${task.id}:statusId"]`)) return false;
+      startInline(task, 'statusId');
+      return true;
+    }
+    const next = choice.choices[0];
+    if (!next) return false;
+    const source = row.querySelector<HTMLButtonElement>('[data-task-completion]');
+    if (!bulkInline.complete(task, next.id)) completion.choose(task, next.id, source);
+    return true;
+  };
   const closeInline = (task: TaskDto, field: TaskInlineField, reason: InlineCloseReason = 'cancel') => {
     invalidateInlineSave();
     setActiveInline(null);
@@ -1149,6 +1195,19 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       {planningChecks.dialogs}
       {bulkContinueTasks ? <BulkContinueDialog actorId={actorId} workspaceId={workspace.id} tasks={bulkContinueTasks} currentProjectId={project.id} onClose={() => setBulkContinueTasks(null)} onFinished={() => { selectionLedger.current.clear(); setSelectedTaskIds([]); }} /> : null}
       {continueTask ? <ContinueInProjectDialog actorId={actorId} workspaceId={workspace.id} task={continueTask} currentProjectId={project.id} onClose={() => setContinueTask(null)} /> : null}
+      {showRowShortcuts ? <DialogShell open title={t('taskTable.shortcuts.title')} description={t('taskTable.shortcuts.description')} onOpenChange={setShowRowShortcuts}>
+        <dl className="space-y-2 text-sm">
+          {([
+            ['A', t('taskTable.shortcuts.assign')],
+            ['M', t('taskTable.shortcuts.assignMe')],
+            ['D', t('taskTable.shortcuts.date')],
+            ['C', t('taskTable.shortcuts.complete')],
+            ['L', t('taskTable.shortcuts.copy')],
+          ] as const).map(([keys, label]) => <div key={keys} className="flex items-center justify-between gap-3">
+            <dt>{label}</dt><dd><kbd className="rounded border border-line bg-canvas px-1.5 py-1 text-xs">{t('taskTable.shortcuts.shiftKey', { key: keys })}</kbd></dd>
+          </div>)}
+        </dl>
+      </DialogShell> : null}
       <PlacementCommandFeedback commands={placementCommands} actorId={actorId} workspaceId={workspace.id} />
 
       {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <TaskFeedbackLayer><div role="status" className="fixed right-3 top-20 z-[60] max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm shadow-lg">
@@ -1308,6 +1367,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             collapsedGroupKeys={collapsedGroupKeys}
             onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
+            onRowShortcut={runRowShortcut}
             isTaskFieldEditBusy={(task, field) => field !== 'title' && bulkInline.selectsMany(task.id) && bulkInline.busy}
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
@@ -1449,6 +1509,7 @@ interface TaskListProps {
   columnIds: readonly string[];
   layoutScope: ComponentProps<typeof TaskTable>['layoutScope'];
   onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;
+  onRowShortcut?: ComponentProps<typeof TaskTable>['onRowShortcut'];
   isTaskFieldEditBusy?: ComponentProps<typeof TaskTable>['isTaskFieldEditBusy'];
   renderTaskFieldEditor: NonNullable<ComponentProps<typeof TaskTable>['renderTaskFieldEditor']>;
   activeFieldEditor: ComponentProps<typeof TaskTable>['activeFieldEditor'];

@@ -1,3 +1,4 @@
+import { rowShortcut, type RowShortcut } from './rowShortcuts';
 import { calendarDateLabel, TaskDateLabel } from '../tasks/TaskDateLabel';
 import { isTabKeyDown, isTabWalkBackward, openOnTabFromSameRow } from './tabWalk';
 import { TagBadge } from '../tasks/TagBadge';
@@ -92,6 +93,7 @@ export interface TaskTableProps {
   onCreateSection?: (() => void) | undefined;
   selectedTaskIds?: readonly string[] | undefined;
   selectionDisabled?: boolean | undefined;
+  onRowShortcut?: ((task: TaskDto, action: RowShortcut, row: HTMLTableRowElement) => boolean) | undefined;
   dragScope?: string | undefined;
   onSelectionChange?: ((ids: string[]) => void) | undefined;
   onSelectTask?: ((id: string, selected: boolean) => void) | undefined;
@@ -497,6 +499,7 @@ interface RowContext {
   renderTaskFieldEditor: TaskTableProps['renderTaskFieldEditor'];
   renderCompletionAction: TaskTableProps['renderCompletionAction'];
   renderTaskIndicator: TaskTableProps['renderTaskIndicator'];
+  onRowShortcut: TaskTableProps['onRowShortcut'];
   draftTaskIds: ReadonlySet<string>;
   /** Grid line classes of a visible column, shared by its header and body cells. */
   columnLine: (id: string) => string | undefined;
@@ -753,7 +756,11 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   };
   return <tr data-task-row={task.id} data-task-drop={drop} data-task-dragging={ctx.draggingTaskId === task.id ? '' : undefined}
     onContextMenu={openMenuFromRow}
-    onKeyDown={event => { if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') openMenuFromRow(event); }}
+    onKeyDown={event => {
+      if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') { openMenuFromRow(event); return; }
+      const action = rowShortcut(event.nativeEvent, event.currentTarget);
+      if (action && ctx.onRowShortcut?.(task, action, event.currentTarget)) { event.preventDefault(); event.stopPropagation(); }
+    }}
     aria-selected={ctx.selectRow ? selected : undefined}
     className={cn('group h-10 border-t border-line hover:bg-canvas/70 [counter-increment:task-row]', selected && 'bg-selection', drop === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]', drop === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]', ctx.draggingTaskId === task.id && 'opacity-60')}>{ctx.columnIds.map(id => {
     const custom = ctx.customColumns.find(column => column.id === id);
@@ -932,7 +939,7 @@ export function TaskTable({
   onOpenTask,
   onCreateTask,
   onCreateChild,
-  onRenameSection, onDuplicateTask, onDeleteTask, onDuplicateSection,
+  onRenameSection, onDuplicateTask, onDeleteTask, onDuplicateSection, onRowShortcut,
   writable = false,
   partial = false,
   today,
@@ -1168,7 +1175,7 @@ export function TaskTable({
     trailingColumn,
     onEditTaskField: writable ? onEditTaskField : undefined,
     isTaskFieldEditBusy,
-    renderTaskFieldEditor, renderCompletionAction, renderTaskIndicator, draftTaskIds,
+    renderTaskFieldEditor, renderCompletionAction, renderTaskIndicator, onRowShortcut, draftTaskIds,
     columnLine,
     activeFieldEditor: activeFieldEditor && taskById.has(activeFieldEditor.taskId) ? activeFieldEditor : undefined,
   };
