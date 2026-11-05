@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import type { InboxItemDto } from '@workloom/contracts';
 import { describe, expect, it } from 'vitest';
 import { alpha, alphaMembers, anna, installFakeApi, json, renderApp, singleActorRoutes } from '../../test/fakeApi';
@@ -44,4 +44,24 @@ describe('inbox', () => {
     await user.click(await screen.findByRole('link', { name: /Inbox/ }));
     expect(await screen.findByText('Nothing new')).toBeInTheDocument();
   });
+});
+
+it('saves, marks unread, archives and restores an individual event', async () => {
+  const event = { ...item(28, 'assigned', new Date(Date.now() - 3 * 86_400_000).toISOString()), kind: 'date_changed' as const };
+  installFakeApi({ ...singleActorRoutes(anna, [alpha], { [alpha.id]: alphaMembers }), [`GET ${path}`]: () => page([event]) });
+  const { user } = renderApp(`/w/${alpha.id}/inbox`);
+  const link = await screen.findByRole('link', { name: /changed the due date for “Task 28”/ });
+  const itemRow = link.closest('li');
+  if (!itemRow) throw new Error('Missing inbox item');
+  await user.click(within(itemRow).getByRole('button', { name: 'Save for later' }));
+  await user.click(screen.getByRole('button', { name: 'Saved' }));
+  expect(screen.getByRole('link', { name: /Task 28/ })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Mark as unread' }));
+  expect(await screen.findByLabelText('1 new in your inbox')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Archive item' }));
+  expect(screen.queryByLabelText('1 new in your inbox')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Archive' }));
+  await user.click(screen.getByRole('button', { name: 'Restore to inbox' }));
+  await user.click(screen.getByRole('button', { name: 'Activity' }));
+  expect(screen.getByRole('link', { name: /Task 28/ })).toBeVisible();
 });

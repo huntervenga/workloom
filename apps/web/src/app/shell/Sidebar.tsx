@@ -1,3 +1,4 @@
+import { inboxItemState, useInboxItemStates } from '../../features/inbox/itemState';
 import { SidebarFavorites } from '../../features/work-shortcuts/WorkShortcuts';
 import { WorkspaceLink as Link, WorkspaceNavLink as NavLink, useCanonicalWorkspaceTo } from '../../features/workspace/WorkspaceNavigation';
 import { t, useTranslation } from '../../i18n';
@@ -41,7 +42,13 @@ function InboxBadge({ actorId, workspaceId }: { actorId: string; workspaceId: st
   const { t } = useTranslation();
   const inbox = useInboxQuery(actorId, workspaceId);
   const seenAt = useSeenAt(actorId, workspaceId);
-  const count = unreadItems(inbox.data ?? [], seenAt).length;
+  const states = useInboxItemStates(actorId, workspaceId);
+  const items = inbox.isSuccess ? inbox.data : [];
+  const newest = new Set(unreadItems(items, seenAt).map(item => item.id));
+  const count = items.filter(item => {
+    const state = inboxItemState(states, item);
+    return !state.archived && (state.unread ?? newest.has(item.id));
+  }).length;
   if (count === 0) return null;
   return <span aria-label={t('inbox.badge', { count })} className="ml-auto rounded-full bg-accent px-1.5 text-xs font-medium text-white">{count > 99 ? '99+' : count}</span>;
 }
