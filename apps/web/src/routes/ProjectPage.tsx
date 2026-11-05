@@ -1,3 +1,5 @@
+import { FavoriteWorkButton } from '../features/work-shortcuts/WorkShortcuts';
+import { useRememberWork } from '../features/work-shortcuts/shortcuts';
 import { useWorkspaceDay } from '../features/workspace/WorkspaceDay';
 import { queryOptions, skipToken, useQueries } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
@@ -235,6 +237,7 @@ interface ProjectContentProps {
 }
 
 function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectContentProps) {
+  useRememberWork(actorId, workspace.id, 'project', project.archivedAt === null ? project.id : null);
   const workspaceToday = useWorkspaceDay();
   const acquireDragProtection = usePointerRowDragProtection();
   const { t, locale } = useTranslation();
@@ -1124,6 +1127,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           <BackToProjects href={projectsHref} />
           <div className="flex min-w-0 items-center gap-2">
             <h1 title={project.name} className="min-w-0 truncate text-xl font-semibold tracking-tight text-ink">{project.name}</h1>
+            {project.archivedAt === null ? <FavoriteWorkButton actorId={actorId} workspaceId={workspace.id} target={{ kind: 'project', id: project.id }} /> : null}
             <ProjectDateRange actorId={actorId} workspaceId={workspace.id} project={project} writable={canEdit && project.archivedAt === null}/>
             {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
           </div>

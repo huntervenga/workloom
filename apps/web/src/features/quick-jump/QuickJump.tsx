@@ -1,3 +1,4 @@
+import { useShortcutItems } from '../work-shortcuts/WorkShortcuts';
 import { Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button, TextInput } from '@workloom/ui';
@@ -33,6 +34,7 @@ function QuickJumpDialog({ actorId, workspaceId, onClose }: { actorId: string; w
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
   const projects = useProjectsQuery(actorId, workspaceId);
+  const recent = useShortcutItems(actorId, workspaceId, 'recent', query.trim() === '');
   const search = useTaskSearch(actorId, workspaceId, query);
   const items = useMemo(() => {
     const base = `/w/${workspaceId}`;
@@ -51,8 +53,10 @@ function QuickJumpDialog({ actorId, workspaceId, onClose }: { actorId: string; w
       key: `task:${task.id}`, label: task.title, hint: `${task.projectName} · ${task.statusName}`,
       to: `${base}/projects/${task.projectId}?task=${task.id}`,
     }));
-    return [...filterJumpItems([...projectItems, ...pages], query), ...taskItems];
-  }, [workspaceId, projects.data, search.results, query, t]);
+    const recentKeys = new Set(recent.map(item => item.key));
+    const recentItems = recent.map(item => ({ ...item, hint: t('quickJump.recent') }));
+    return [...recentItems, ...filterJumpItems([...projectItems, ...pages], query).filter(item => !recentKeys.has(item.key)), ...taskItems];
+  }, [workspaceId, projects.data, search.results, recent, query, t]);
 
   const go = (item: JumpItem | undefined) => { if (!item) return; onClose(); void navigate(item.to); };
   const current = Math.min(active, Math.max(items.length - 1, 0));

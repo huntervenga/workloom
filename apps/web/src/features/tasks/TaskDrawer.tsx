@@ -1,3 +1,4 @@
+import { useRememberWork } from '../work-shortcuts/shortcuts';
 import { TaskAttachments } from '../attachments/TaskAttachments';
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import * as Menu from '@radix-ui/react-dropdown-menu';
@@ -223,6 +224,7 @@ export function TaskDrawer(props: TaskDrawerProps) {
   };
   const localPlacementCommands = usePlacementCommands(actorId, workspace.id);
   const detail = useTaskQuery(actorId, workspace.id, taskId ?? '');
+  useRememberWork(actorId, workspace.id, 'task', detail.isSuccess && detail.data.archivedAt === null ? detail.data.id : null);
   const foreign = detail.data !== undefined && detail.data.workspaceId === workspace.id && detail.data.projectId !== project.id;
   const homeId = foreign && !detail.isError ? detail.data?.projectId ?? '' : '';
   const home = useProjectQuery(actorId, workspace.id, homeId);

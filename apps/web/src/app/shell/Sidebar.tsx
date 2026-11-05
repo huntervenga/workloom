@@ -1,3 +1,4 @@
+import { SidebarFavorites } from '../../features/work-shortcuts/WorkShortcuts';
 import { WorkspaceLink as Link, WorkspaceNavLink as NavLink, useCanonicalWorkspaceTo } from '../../features/workspace/WorkspaceNavigation';
 import { t, useTranslation } from '../../i18n';
 import type { MeDto } from '@workloom/contracts';
@@ -185,6 +186,7 @@ export function SidebarContent({ me, workspaceId, role, onNavigate, onSettings }
         </nav>
 
         {/* Only for a workspace the current actor has opened; its role is known from that read. */}
+        {workspaceId && role ? <SidebarFavorites actorId={me.actor.id} workspaceId={workspaceId} onNavigate={onNavigate} /> : null}
         {workspaceId && role ? <SidebarProjects actorId={me.actor.id} workspaceId={workspaceId} onNavigate={onNavigate} /> : null}
 
         <div className="mt-auto">
