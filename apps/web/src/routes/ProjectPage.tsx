@@ -1,3 +1,5 @@
+import type { ProjectViewSettings } from '@workloom/contracts';
+import { ProjectViewsDialog } from '../features/projects/ProjectViewsDialog';
 import { taskLink } from '../features/tasks/CopyTaskLink';
 import { taskCompletion } from '../features/tasks/taskCompletion';
 import type { RowShortcut } from '../features/task-table/rowShortcuts';
@@ -310,6 +312,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     inlineGeneration.current += 1;
     for (const dispose of inlineLeases.current) dispose();
   }, []);
+  const [showSavedViews, setShowSavedViews] = useState(false);
   const [showRowShortcuts, setShowRowShortcuts] = useState(false);
   const [grouping, setGrouping] = useState<TaskGroupingMode>('section');
   const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean }; titleCaret?: number | undefined } | null>(null);
@@ -340,6 +343,28 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const tableMode = !boardMode && !graphMode && !ganttMode && !importMode;
   const showTaskFilters = tableMode || boardMode || ganttMode;
   const importId = searchParams.get('import') ?? '';
+  const currentView: ProjectViewSettings = {
+    view: boardMode ? 'board' : graphMode ? 'graph' : ganttMode ? 'gantt' : 'table',
+    grouping, sort: sortMode, search: searchText,
+    completion: urlFilters.completion, statusId: urlFilters.statusId || null,
+    participantMembershipId: urlFilters.participantMembershipId || null, tagId: urlFilters.tagId || null,
+    includeArchived: urlFilters.includeArchived,
+  };
+  const applySavedView = (settings: ProjectViewSettings) => {
+    invalidateInlineSave();
+    setGrouping(settings.grouping);
+    setSearchText(settings.search);
+    setSearchParams(before => {
+      const next = patchTaskFilterParams(before, readTaskFilterParams(before), {
+        completion: settings.completion, statusId: settings.statusId ?? '',
+        participantMembershipId: settings.participantMembershipId ?? '', tagId: settings.tagId ?? '',
+        includeArchived: settings.includeArchived,
+      }) ?? new URLSearchParams(before);
+      if (settings.view === 'table') next.delete('view'); else next.set('view', settings.view);
+      if (settings.sort === 'manual') next.delete('sort'); else next.set('sort', settings.sort);
+      return next;
+    });
+  };
   const selectImport = useCallback((id: string) => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'import'); if (id) next.set('import', id); else next.delete('import'); return next; }), [setSearchParams]);
   const imports = useImportWorkspace(actorId, workspace.id, project.id, isUuid(importId) ? importId : '', selectImport);
 
@@ -1260,8 +1285,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         <Button ref={graphMode ? activeViewControl : undefined} size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
         <Button ref={ganttMode ? activeViewControl : undefined} size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
         <Link to={`/w/${workspace.id}/projects/${project.id}/reports`} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>{t('genericReports.reports')}</Link>
+        {!importMode ? <Button type="button" size="sm" variant="ghost" onClick={() => setShowSavedViews(true)}>{t('projects.savedViews.title')}</Button> : null}
         {canManageImports ? <Button ref={importMode ? activeViewControl : undefined} size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
       </nav>
+      {showSavedViews ? <ProjectViewsDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id}
+        canManage={project.archivedAt === null && (workspace.role === 'owner' || workspace.role === 'admin')}
+        settings={currentView} onApply={applySavedView} onClose={() => setShowSavedViews(false)} /> : null}
 
       <div role="status" aria-live="polite" className="sr-only">
         {announcement ? t(announcement.key, announcement.params) : null}

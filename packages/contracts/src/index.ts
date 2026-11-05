@@ -72,3 +72,5 @@ export * from './user-settings.js';
 export * from './user-avatars.js';
 
 export * from './attachments.js';
+
+export * from './project-views.js';

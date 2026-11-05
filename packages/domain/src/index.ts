@@ -231,3 +231,6 @@ export * from './user-avatars.js';
 
 export { createAttachmentApplication, attachmentDto } from './attachments/service.js';
 export type { AttachmentApplication, AttachmentRecord, AttachmentRepository, AttachmentTools, AttachmentUnitOfWork, AttachmentWriteScope } from './attachments/ports.js';
+
+export { createProjectViewsService } from './project-views/service.js';
+export type { ProjectViewsApplication, ProjectViewsScope } from './project-views/service.js';

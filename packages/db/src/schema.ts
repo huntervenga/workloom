@@ -1,3 +1,4 @@
+import type { SavedProjectView } from '@workloom/contracts';
 import type {SharedActivityDto,SharedActivityContributionDto,SharedActivityHistoryDto,SummaryTemplateDefinitionDto,SummaryTemplateBindingDto} from '@workloom/contracts';
 import type {PlanningCheckConfigDto,PlanningCheckSettingsDto,PlanningCheckCheckpointDto} from '@workloom/contracts';
 import type {LeaveSettingsDto,LeaveProfileDto,LeaveRequestDto,LeaveAdjustmentDto} from '@workloom/contracts';
@@ -910,8 +911,22 @@ export const projectRules = pgTable('project_rules', {
   foreignKey({ name: 'project_rules_project_fk', columns: [t.workspaceId, t.projectId], foreignColumns: [projects.workspaceId, projects.id] }),
 ]);
 
+export const projectViews = pgTable('project_views', {
+  workspaceId: uuid('workspace_id').notNull(),
+  projectId: uuid('project_id').notNull(),
+  revision: integer('revision').notNull(),
+  views: jsonb('views').$type<SavedProjectView[]>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
+}, table => [
+  primaryKey({ name: 'project_views_pkey', columns: [table.workspaceId, table.projectId] }),
+  foreignKey({ name: 'project_views_project_fk', columns: [table.workspaceId, table.projectId], foreignColumns: [projects.workspaceId, projects.id] }).onDelete('cascade'),
+  check('project_views_revision_check', sql`${table.revision} > 0`),
+  check('project_views_views_check', sql`jsonb_typeof(${table.views}) = 'array'`),
+]);
+
 /** Tables the running application requires; readiness fails if any is missing. */
 export const REQUIRED_TABLES = [
+  'project_views',
   'workspace_slug_aliases',
   'shared_activities','shared_activity_versions','shared_activity_contributions','shared_activity_contribution_versions',
   'summary_templates','summary_template_versions','summary_template_bindings','summary_template_binding_versions',

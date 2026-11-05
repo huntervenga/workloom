@@ -1,4 +1,20 @@
 {
+  "savedViews": {
+    "title": "Saved views",
+    "description": "Keep your current view, filters, grouping and sort so you can return to them.",
+    "personal": "Personal · this browser",
+    "team": "Shared with the team",
+    "empty": "No saved views",
+    "loading": "Loading team views…",
+    "retry": "Retry loading team views",
+    "name": "View name",
+    "share": "Share with the team",
+    "save": "Save current view",
+    "remove": "Remove",
+    "removeNamed": "Remove view {{name}}",
+    "invalid": "Use a unique name. Each list can hold up to 24 views.",
+    "reload": "Reload team views"
+  },
   "list": {
     "name": "Name",
     "created": "Created",
