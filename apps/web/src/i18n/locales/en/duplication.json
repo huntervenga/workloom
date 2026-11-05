@@ -1,4 +1,7 @@
 {
+  "dateAnchor": "Move earliest copied date to",
+  "dateAnchorHint": "Optional. All copied start dates and due dates shift by the same number of calendar days.",
+  "dateShiftPreview": "Earliest date: {{from}} → {{to}}.",
   "taskAction": "Duplicate task",
   "sectionAction": "Duplicate section",
   "sectionActions": "Section actions for {{name}}",
@@ -58,6 +61,8 @@
   "createdSection": "Section duplicated",
   "taskActions": "More task actions",
   "errors": {
+    "noDates": "The selected tasks have no copied dates to shift.",
+    "dateRange": "The new anchor moves a task date outside the supported range.",
     "permission": "You do not have permission to duplicate this selection. Ask an owner or administrator.",
     "sourceUnavailable": "The original is unavailable or no longer visible. Close this dialog and reopen it from the project.",
     "stale": "The original changed. Refresh the preview before duplicating.",

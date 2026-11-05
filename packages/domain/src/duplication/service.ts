@@ -1,3 +1,4 @@
+import { Temporal } from 'temporal-polyfill';
 import {resolveSummaryTemplate,summaryBindingTaskScope} from '../summary-templates/resolution.js';
 import * as C from '@workloom/contracts';
 import type { AttachmentRecord } from '../attachments/ports.js';
@@ -21,6 +22,7 @@ interface Source {
   values: C.TaskFieldValueDto[]; status: C.TaskStatusDto | null;
   aggregates: C.GenericAggregateSettingsDto | null; checks: C.PlanningCheckSettingsDto | null;
   preview: C.DuplicationPreviewDto;
+  shiftedDates: ReadonlyMap<string, { startDate: string | null; dueDate: string | null }>;
 }
 const MAX_POSITION = 2_147_483_647;
 const found = <T>(value: T | null): T => { if (value === null) throw notFoundError(); return value; };
@@ -50,6 +52,22 @@ export function selectDuplicationTree(rows: readonly C.TaskDto[], roots: readonl
   for (const root of ordered(roots)) visit(root);
   return result;
 }
+export function shiftedSectionDates(rows: readonly C.TaskDto[], anchor: string) {
+  const earliest = rows.flatMap(row => [row.startDate ?? null, row.dueDate]).filter((date): date is string => date !== null).sort()[0];
+  if (!earliest) invalid('no_dates_to_shift');
+  const days = Temporal.PlainDate.from(anchor).since(Temporal.PlainDate.from(earliest), { largestUnit: 'days' }).days;
+  const shift = (value: string | null) => {
+    if (value === null) return null;
+    const date = Temporal.PlainDate.from(value).add({ days }).toString();
+    if (!C.sqlCalendarDateSchema.safeParse(date).success) invalid('shifted_dates_out_of_range');
+    return date;
+  };
+  return {
+    preview: { from: earliest, to: anchor, days },
+    dates: new Map(rows.map(row => [row.id, { startDate: shift(row.startDate ?? null), dueDate: shift(row.dueDate) }])),
+  };
+}
+
 export function createDuplicationApplication(deps: DuplicationDependencies): DuplicationApplication {
   async function authorizeTarget(scope: DuplicationScope, kind: Kind, id: string, input: Input) {
     const repo = scope.repository.tasks, ws = scope.context.workspaceId;
@@ -99,6 +117,9 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       if (placements.some(row => row.sectionId === id && row.homeProjectId !== project.id && row.archivedAt === null)) invalid('linked_task');
     }
     const rows = includeTasks ? selectDuplicationTree(allRows, roots, input.copy.subtasks) : [];
+    const anchor = 'dateAnchor' in input ? input.dateAnchor : undefined;
+    if (anchor !== undefined && (!includeTasks || !input.copy.dates)) invalid('no_dates_to_shift');
+    const shift = anchor === undefined ? null : shiftedSectionDates(rows, anchor);
     if(rows.length&&(await scope.sharedActivityTaskIds?.(rows.map(r=>r.id))??[]).length)invalid('shared_activity_requires_explicit_copy');
     const attachments = await scope.attachments.listReady(ws, rows.map(row => row.id));
     if (attachments.some(row => row.storageId !== deps.attachmentCopies?.storageId)) invalid('attachment_storage_unavailable');
@@ -119,8 +140,8 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
     // Entire inventory protects hierarchy and insertion order, selected values protect independent revisions.
     // No server clock in this digest: unchanged previews remain usable until a semantic source changes.
     const sourceVersion = deps.digest(canonicalJson({ kind, id, input, project, sourceTask, sourceSection, allRows, sections, fields, values, attachments, statuses, aggregates, checks,...(binding?{binding}:{}), actor: scope.context.actor.userId, epoch: await repo.permissionEpoch(ws) }));
-    const preview: C.DuplicationPreviewDto = { kind, sourceId: id, projectId: project.id, sourceVersion, name: inputName, taskCount: rows.length, attachmentCount: attachments.length, customValueCount: values.length, copyableFields: fields, settings };
-    return { kind, id, project, sourceTask, sourceSection, rows, allRows, sections, fields, values, attachments, status, aggregates, checks, preview };
+    const preview: C.DuplicationPreviewDto = { kind, sourceId: id, projectId: project.id, sourceVersion, name: inputName, taskCount: rows.length, attachmentCount: attachments.length, customValueCount: values.length, copyableFields: fields, settings, ...(shift ? { dateShift: shift.preview } : {}) };
+    return { kind, id, project, sourceTask, sourceSection, rows, allRows, sections, fields, values, attachments, status, aggregates, checks, preview, shiftedDates: shift?.dates ?? new Map() };
   }
   async function preview(ctx: CommandContext, kind: Kind, id: string, input: Input) {
     return deps.read(normalize(ctx), 'task.edit', async scope => (await source(scope, kind, id, input)).preview);
@@ -183,6 +204,7 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       const parentTaskId = copiedParent?.id ?? (root ? row.parentTaskId : null);
       const separatePackage = oldParent !== null && oldParent.workPackageId !== row.workPackageId;
       const fields = selected.values.filter(value => value.taskId === row.id);
+      const shifted = selected.shiftedDates.get(row.id);
       const created = await createTaskInScope(taskScope, {
         // Copies are new work: use the project's first To do status for every copied task.
         projectId, title: root && 'title' in input ? input.title : row.title, statusId: found(selected.status).id,
@@ -190,7 +212,8 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
         ...(parentTaskId !== null && separatePackage ? { workScope: 'added_scope' as const } : {}),
         description: input.copy.description ? row.description : '', responsibleMembershipId: input.copy.assignee ? row.responsibleMembershipId : null,
         participantMembershipIds: input.copy.participants ? row.participants.filter(member => member.active).map(member => member.membershipId) : [],
-        startDate: input.copy.dates ? row.startDate ?? null : null, dueDate: input.copy.dates ? row.dueDate : null,
+        startDate: shifted ? shifted.startDate : input.copy.dates ? row.startDate ?? null : null,
+        dueDate: shifted ? shifted.dueDate : input.copy.dates ? row.dueDate : null,
         priority: input.copy.priority ? row.priority : 'none', tagIds: input.copy.tags ? row.tags.map(tag => tag.id) : [],
         ...(root ? { insertion: { anchorTaskId: row.id, placement: 'after' as const } } : {}),
       }, deps, fields.map(value => ({ fieldId: value.fieldId, value: value.value })));

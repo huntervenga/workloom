@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
 import { sectionSchema } from './tasks.js';
+import { sqlCalendarDateSchema } from './common/sql-date.js';
 import { taskFieldDefinitionSchema } from './fields.js';
 import { genericHeaderWidgetRuleSchema } from './generic-reports.js';
 import { planningCheckRuleSchema } from './planning-checks.js';
@@ -16,7 +17,7 @@ export const duplicationCopyOptionsSchema = z.strictObject({
   customFieldIds: z.array(idSchema).max(DUPLICATION_LIMITS.maxFields).refine(ids => new Set(ids).size === ids.length, 'Choose each field once.').transform(ids => [...ids].sort()),
 });
 export const duplicateTaskPreviewInputSchema = z.strictObject({ projectId: idSchema, title: z.string().trim().min(1).max(500), copy: duplicationCopyOptionsSchema });
-export const duplicateSectionPreviewInputSchema = z.strictObject({ name: z.string().trim().min(1).max(160), includeTasks: z.boolean(), includeSettings: z.boolean(), templateMode:z.enum(['keep_link','independent']).optional(),templatePerson:summaryTemplatePersonSchema.optional(), copy: duplicationCopyOptionsSchema });
+export const duplicateSectionPreviewInputSchema = z.strictObject({ name: z.string().trim().min(1).max(160), includeTasks: z.boolean(), includeSettings: z.boolean(), templateMode:z.enum(['keep_link','independent']).optional(),templatePerson:summaryTemplatePersonSchema.optional(), dateAnchor: sqlCalendarDateSchema.optional(), copy: duplicationCopyOptionsSchema });
 export const duplicateTaskInputSchema = duplicateTaskPreviewInputSchema.extend({ expectedSourceVersion: version });
 export const duplicateSectionInputSchema = duplicateSectionPreviewInputSchema.extend({ expectedSourceVersion: version });
 export const duplicationPreviewSchema = z.strictObject({
@@ -24,6 +25,7 @@ export const duplicationPreviewSchema = z.strictObject({
   name: z.string(), taskCount: z.number().int().min(0).max(DUPLICATION_LIMITS.maxTasks), customValueCount: z.number().int().nonnegative(),
   attachmentCount: z.number().int().min(0).max(DUPLICATION_LIMITS.maxTasks * 5).optional(),
   copyableFields: z.array(taskFieldDefinitionSchema),
+  dateShift: z.strictObject({ from: sqlCalendarDateSchema, to: sqlCalendarDateSchema, days: z.number().int() }).optional(),
   settings: z.strictObject({
     aggregateRevision: z.number().int().nonnegative(), checksRevision: z.number().int().nonnegative(),
     headerWidgets: z.array(genericHeaderWidgetRuleSchema), balanceChecks: z.array(planningCheckRuleSchema),templateBinding:summaryTemplateBindingSchema.optional(),
