@@ -1,4 +1,5 @@
-import { useOutletContext } from 'react-router';
+import { rememberProjectReturn } from '../projects/projectReturn';
+import { useLocation, useOutletContext } from 'react-router';
 import { ArrowUpRight } from 'lucide-react';
 import { useTranslation } from '../../i18n';
 import { useProjectQuery } from '../projects/queries';
@@ -16,13 +17,18 @@ function WebLink({ href }: { href: string }) {
 }
 
 function ReferenceLink({ href, scope, projectId, taskId, preview }: { href: string; scope: Scope; projectId: string; taskId: string | null; preview: boolean }) {
+  const location = useLocation();
   const task = useTaskQuery(scope.actorId, scope.workspace.id, taskId ?? '');
   const project = useProjectQuery(scope.actorId, scope.workspace.id, taskId === null ? projectId : '');
   const entity = taskId === null ? project.isSuccess ? project.data : null : task.isSuccess ? task.data : null;
   if (!entity || entity.workspaceId !== scope.workspace.id) return preview ? null : <WebLink href={href} />;
   const home = taskId !== null && 'projectId' in entity ? entity.projectId : projectId;
   const to = `/w/${scope.workspace.id}/projects/${home}${taskId === null ? '' : `?task=${taskId}`}`;
-  return <WorkspaceLink className="break-words rounded bg-accent-soft px-1 text-accent-ink hover:underline" to={to}>
+  return <WorkspaceLink className="break-words rounded bg-accent-soft px-1 text-accent-ink hover:underline" to={to}
+    onClick={event => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      rememberProjectReturn(scope.actorId, scope.workspace.id, location.key);
+    }}>
     <ArrowUpRight size={12} aria-hidden="true" className="mr-0.5 inline align-baseline" />
     {'title' in entity ? entity.title : entity.name}
   </WorkspaceLink>;

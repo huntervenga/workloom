@@ -1,3 +1,4 @@
+import { useProjectReturn } from '../features/projects/projectReturn';
 import type { ProjectViewSettings } from '@workloom/contracts';
 import { ProjectViewsDialog } from '../features/projects/ProjectViewsDialog';
 import { taskLink } from '../features/tasks/CopyTaskLink';
@@ -1172,6 +1173,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     for (const id of selectionLedger.current.keys()) if (!ids.includes(id)) selectionLedger.current.delete(id);
     setSelectedTaskIds(ids);
   };
+  useProjectReturn(actorId, workspace.id, tableMode && tasks.isSuccess && !bulkHeld, changeSelection);
   // A neutral Escape the table left unhandled; an open editor, quick row, drawer or held batch keeps the selection.
   const clearSelectionByEscape = () => {
     if (selectedTaskIds.length === 0 || bulkHeld || activeInline !== null || quickAddSection !== undefined || creating !== null) return false;
