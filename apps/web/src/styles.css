@@ -110,3 +110,36 @@
 .task-title-input:not(:focus) { box-shadow: none; }
 .task-title-input:hover { border-color: var(--color-line); }
 .task-title-input:focus { border-color: var(--color-accent-line); }
+
+.description-frame {
+  min-height: 6rem;
+  max-height: min(65dvh, 36rem);
+  overflow: auto;
+}
+
+.description-plain-input {
+  field-sizing: content;
+  resize: none;
+}
+
+.description-rich-input {
+  min-height: inherit;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.description-rich-input p {
+  margin: 0;
+  min-height: 1lh;
+}
+
+.description-inline-file.ProseMirror-selectednode {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.description-rich-link {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

@@ -17,9 +17,11 @@ function TaskLink({ href, scope, projectId, taskId }: { href: string; scope: Sco
 export function LinkedDescription({ text }: { text: string }) {
   const scope = useOutletContext<Scope | undefined>();
   return <>{splitDescription(text).map((part, index) => {
-    if (part.kind === 'text') return <span key={index}>{part.text}</span>;
+    if (part.kind === 'text') return <span key={index} data-description-length={part.text.length}>{part.text}</span>;
     const task = scope ? parseTaskLink(part.href, window.location.origin) : null;
-    if (scope && task) return <TaskLink key={index} href={part.href} scope={scope} {...task} />;
-    return <a key={index} className={linkClassName} href={part.href} target="_blank" rel="noopener noreferrer">{part.href}</a>;
+    return <span key={index} data-description-length={part.href.length} data-description-link="">
+      {scope && task ? <TaskLink href={part.href} scope={scope} {...task} />
+        : <a className={linkClassName} href={part.href} target="_blank" rel="noopener noreferrer">{part.href}</a>}
+    </span>;
   })}</>;
 }

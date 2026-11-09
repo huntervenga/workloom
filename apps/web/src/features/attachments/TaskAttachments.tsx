@@ -12,7 +12,7 @@ import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
 import { attachmentDownloadUrl, attachmentPreviewUrl, fetchAttachment, fetchAttachmentFeatures, fetchAttachments, removeAttachment, reserveAttachment, uploadAttachment } from './api';
 
 interface Props { actorId: string; workspaceId: string; taskId: string; writable: boolean; members?: readonly MembershipDto[]; children: ReactNode }
-interface Draft { file: File; inDescription?: true | undefined; key: string; row?: TaskAttachmentDto; controller: AbortController; cancelled: boolean; progress: number; phase: 'queued' | 'uploading' | 'error' | 'done'; }
+interface Draft { file: File; onReady?: ((id: string) => void) | undefined; key: string; row?: TaskAttachmentDto; controller: AbortController; cancelled: boolean; progress: number; phase: 'queued' | 'uploading' | 'error' | 'done'; }
 const keys = (props: Props) => ['attachments', props.actorId, props.workspaceId, props.taskId] as const;
 
 interface AttachmentSurface {
@@ -27,6 +27,7 @@ interface AttachmentSurface {
   disabledReason: string | null;
   dropTarget: 'task' | 'description' | null;
   choose(): void;
+  insert(files: FileList, onReady: (id: string) => void): void;
   preview(id: string): void;
   download(row: TaskAttachmentDto): Promise<boolean>;
   remove(row: TaskAttachmentDto): Promise<void>;
@@ -80,7 +81,7 @@ function AttachmentPanel(props: Props) {
         draft.phase = 'uploading'; redraw();
         try {
           // Exact reserve replay recovers a lost response without reserving another slot.
-          const reserve = () => reserveAttachment(workspaceId, taskId, actorId, draft.file, draft.key, draft.controller.signal, draft.inDescription);
+          const reserve = () => reserveAttachment(workspaceId, taskId, actorId, draft.file, draft.key, draft.controller.signal);
           draft.row = await reserve();
           if (draft.cancelled) { await cancelServer(draft); continue; }
           if (['failed', 'expired', 'deleted'].includes(draft.row.state)) {
@@ -90,6 +91,7 @@ function AttachmentPanel(props: Props) {
           if (draft.row.state === 'uploading') throw new ApiError({ kind: 'conflict', status: 409 });
           if (draft.row.state !== 'ready') draft.row = await uploadAttachment(workspaceId, taskId, actorId, draft.row, draft.file, draft.controller.signal, value => { draft.progress = value; redraw(); });
           if (draft.cancelled) await cancelServer(draft);
+          else if (alive.current) draft.onReady?.(draft.row.id);
           draft.phase = 'done';
         } catch (caught) {
           draft.phase = 'error';
@@ -103,7 +105,7 @@ function AttachmentPanel(props: Props) {
     : !features.data.enabled ? t('attachments.notConfigured')
     : list.isError ? t('attachments.loadFailed') : !list.data ? t('attachments.loading') : list.data.remainingSlots === 0 ? t('attachments.limit')
     : !list.data.canUpload ? t('attachments.readOnly') : sending.current ? t('attachments.uploading') : null;
-  const select = (files: FileList | null, inDescription?: true) => {
+  const select = (files: FileList | null, onReady?: (id: string) => void) => {
     if (!files?.length || sending.current) return;
     const picked = Array.from(files);
     setProblemKind(null);
@@ -112,7 +114,7 @@ function AttachmentPanel(props: Props) {
     if (picked.some(file => file.size > features.data.limits.maxFileSizeBytes)) { setProblemKind('tooLarge'); return; }
     if (picked.some(file => !attachmentNameSchema.safeParse(file.name).success)) { setProblemKind('invalidName'); return; }
     drafts.current = [...drafts.current.filter(draft => !draft.cancelled && draft.phase === 'error'),
-      ...picked.map(file => ({ file, inDescription, key: crypto.randomUUID(), controller: new AbortController(), cancelled: false, progress: 0, phase: 'queued' as const }))];
+      ...picked.map(file => ({ file, onReady, key: crypto.randomUUID(), controller: new AbortController(), cancelled: false, progress: 0, phase: 'queued' as const }))];
     redraw(); void send();
   };
   const onFileDrop = useEffectEvent(select);
@@ -134,7 +136,7 @@ function AttachmentPanel(props: Props) {
       setDropTarget(null);
       if (!hasFiles(event) || !(event.target instanceof Node) || !panel.contains(event.target)) return;
       event.preventDefault();
-      onFileDrop(event.dataTransfer?.files ?? null, location(event.target) === 'description' ? true : undefined);
+      if (location(event.target) === 'task') onFileDrop(event.dataTransfer?.files ?? null);
     };
     const leave = (event: DragEvent) => {
       if (!hasFiles(event) || event.relatedTarget instanceof Node && panel.contains(event.relatedTarget)) return;
@@ -180,7 +182,7 @@ function AttachmentPanel(props: Props) {
   const ready = visible.filter(row => row.state === 'ready');
   const surface: AttachmentSurface = {
     actorId, workspaceId, taskId, members: props.members, rows: ready, enabled: features.data?.enabled === true,
-    canDelete: writable && list.data?.canDelete === true, busy, disabledReason, dropTarget, choose: () => input.current?.click(),
+    canDelete: writable && list.data?.canDelete === true, busy, disabledReason, dropTarget, choose: () => input.current?.click(), insert: select,
     preview: setPreviewId, download, remove,
   };
   const feedback = (features.isError || list.isError || error || drafts.current.some(draft => !draft.cancelled && draft.phase !== 'done'));
@@ -218,19 +220,10 @@ export function AttachFileButton() {
   </span>;
 }
 
-export function AttachmentDescription({ children }: { children: ReactNode }) {
-  const { t } = useTranslation();
+export function DescriptionInlineFile({ id }: { id: string }) {
   const surface = useTaskAttachments();
-  if (!surface) return children;
-  const active = surface.dropTarget === 'description';
-  const rows = surface.rows.filter(row => row.inDescription);
-  return <div data-attachment-description="" className="relative rounded-lg">
-    {children}
-    {rows.length ? <div className="mt-2 flex flex-wrap gap-2">{rows.map(row => <AttachmentCard key={row.id} row={row} inline />)}</div> : null}
-    {active ? <div role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg border-2 border-dashed border-accent bg-surface/90 px-2">
-      <span className="flex items-center gap-2 text-sm font-medium text-accent"><FileUp size={17} aria-hidden="true" />{t('attachments.dropDescription')}</span>
-    </div> : null}
-  </div>;
+  const row = surface?.rows.find(file => file.id === id);
+  return row ? <AttachmentCard row={row} inline /> : null;
 }
 
 export function AttachmentTimelineEntry({ item, time }: { item: Extract<TaskTimelineItemDto, { type: 'attachment' }>; time: string }) {

@@ -1,19 +1,17 @@
-import { AttachmentDescription } from '../attachments/TaskAttachments';
 import { t, useTranslation } from '../../i18n';
-import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto, TaskStatusGroup } from '@workloom/contracts';
-import { TextInput, cn, inputClassName } from '@workloom/ui';
+import { descriptionPlainText, type MembershipDto, type SectionDto, type TagDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup } from '@workloom/contracts';
+import { TextInput, cn } from '@workloom/ui';
 import { X } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { formatEstimate, parseEstimateInput } from '../task-table';
 import { TagLink } from '../tags/TagLink';
-import { LinkedDescription } from './LinkedDescription';
-import { hasDescriptionLinks } from './descriptionLinks';
+import { TaskDescriptionField } from './TaskDescriptionField';
 import { tagColor } from './tagColors';
 import { TaskDateInput } from './TaskDateInput';
 import { TaskCompactDateField } from './TaskCompactDateField';
 import { TaskParticipantPicker } from './TaskParticipantPicker';
-import { TASK_DESCRIPTION_MAX, TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors, type TaskDraftIssue, type TaskDraftKey } from './taskDraft';
+import { TASK_TITLE_MAX, type TaskDraft, type TaskDraftErrors, type TaskDraftIssue, type TaskDraftKey } from './taskDraft';
 
 export const priorityLabels: Record<TaskPriority, string> = {
   get none() { return t('tasks.taskFields.noPriority'); },
@@ -58,8 +56,10 @@ export function formatDraftValue(key: TaskDraftKey, draft: TaskDraft, lookups: T
   switch (key) {
     case 'title':
       return draft.title.trim();
-    case 'description':
-      return draft.description === '' ? t('tasks.taskFields.noDescription') : draft.description.length > 160 ? `${draft.description.slice(0, 160)}…` : draft.description;
+    case 'description': {
+      const text = descriptionPlainText(draft.description);
+      return text === '' ? t('tasks.taskFields.noDescription') : text.length > 160 ? `${text.slice(0, 160)}…` : text;
+    }
     case 'statusId':
       return lookups.statuses.find((status) => status.id === draft.statusId)?.name ?? t('tasks.taskFields.statusUnavailable');
     case 'sectionId':
@@ -335,7 +335,8 @@ export function TaskFields({
             errors={{ startDate: errors.startDate ? t(errors.startDate.key, errors.startDate.params) : undefined, dueDate: errors.dueDate ? t(errors.dueDate.key, errors.dueDate.params) : undefined }} />
         </div>);
   const descriptionField = (
-    <DescriptionField id={ids.description} errorId={ids.descriptionError} value={draft.description} error={errors.description}
+    <TaskDescriptionField id={ids.description} errorId={ids.descriptionError} value={draft.description}
+      error={errors.description ? <FieldError id={ids.descriptionError} message={errors.description} /> : null} disabled={disabled ?? false} saved={saved}
       onChange={value => onChange({ description: value })} onCommit={() => commit('description')} commitOnCtrlEnter={onCommit !== undefined} />
   );
   const sectionField = (<div>
@@ -515,7 +516,7 @@ export function TaskFields({
         {dependenciesField}
         {moreFields}
         {showLegacyEstimate ? <div className="space-y-1.5">{estimateHint}{estimateSupplement}</div> : null}
-        <AttachmentDescription><fieldset disabled={disabled} className="min-w-0">{descriptionField}</fieldset></AttachmentDescription>
+        {descriptionField}
         {secondaryActions}
       </div>
     );
@@ -560,40 +561,4 @@ export function TaskFields({
 </details>
     </div>
   );
-}
-
-function DescriptionField({ id, errorId, value, error, onChange, onCommit, commitOnCtrlEnter }: { id: string; errorId: string; value: string; error: TaskDraftIssue | undefined; onChange: (value: string) => void; onCommit: () => void; commitOnCtrlEnter: boolean }) {
-  const { t } = useTranslation();
-  const [editing, setEditing] = useState(false);
-  const input = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { if (editing) input.current?.focus(); }, [editing]);
-  const reading = !editing && hasDescriptionLinks(value);
-  return <div>
-    <label htmlFor={id} className={labelClassName}>{t('tasks.taskFields.description')}</label>
-    {reading
-      ? <div role="textbox" tabIndex={0} aria-readonly="true" aria-label={t('tasks.taskFields.description')} data-description-links=""
-          className={inputClassName('mt-1.5 h-auto min-h-20 cursor-text whitespace-pre-wrap break-words py-2 leading-relaxed')}
-          onClick={event => { if (!(event.target instanceof Element && event.target.closest('a'))) setEditing(true); }}
-          onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setEditing(true); } }}><LinkedDescription text={value} /></div>
-      : <textarea
-          ref={input}
-          id={id}
-          className={inputClassName('mt-1.5 h-auto min-h-20 py-2 leading-relaxed')}
-          rows={3}
-          placeholder={t('tasks.taskFields.descriptionPlaceholder')}
-          value={value}
-          maxLength={TASK_DESCRIPTION_MAX}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          onChange={event => onChange(event.target.value)}
-          onBlur={() => { onCommit(); setEditing(false); }}
-          onKeyDown={event => {
-            // Enter stays a newline; Ctrl/Cmd+Enter makes the description final.
-            if (!commitOnCtrlEnter || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            onCommit();
-          }}
-        />}
-    <FieldError id={errorId} message={error} />
-  </div>;
 }

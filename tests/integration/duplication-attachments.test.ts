@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { DuplicationCopyOptions } from '@workloom/contracts';
+import { descriptionAttachmentLine, descriptionWithFiles, type DuplicationCopyOptions } from '@workloom/contracts';
 import type { AttachmentRecord, CommandContext } from '@workloom/domain';
 import { createAttachmentStore, createDatabase, createDuplicationApplication, createTaskApplication,
   runMigrations, seedDemoData, FIXTURE_WORKSPACE_IDS as W, FIXTURE_USER_IDS as U, FIXTURE_MEMBERSHIP_IDS as M,
@@ -62,6 +62,10 @@ describe('independent attachment copies with real PostgreSQL and synthetic stora
     for (let i = 0; i < 5; i++) originals.push(await ready(f.task.id, `picture-${i}.png`));
     const child = await f.tasks.createTask(ctx(), { projectId: f.project.id, sectionId: f.section.id, parentTaskId: f.task.id, title: 'Child', statusId: f.done.id });
     const childFile = await ready(child.id, 'video.mp4');
+    await f.tasks.updateTask(ctx(), child.id, { expectedRevision: child.revision,
+      description: descriptionWithFiles(`Before
+${descriptionAttachmentLine(childFile.id)}
+After`) });
     await store.application.reserve(ctx(), child.id, { fileName: 'unfinished.txt', sizeBytes: 3, expectedActorId: U.owner }, storageId);
     const preview = await f.duplicates.previewTask(ctx(), f.task.id, f.input);
     expect(preview.attachmentCount).toBe(6);
@@ -79,7 +83,11 @@ describe('independent attachment copies with real PostgreSQL and synthetic stora
     }
     const newChild = await f.tasks.getTask(ctx(), required(result.taskIds.find(id => id !== rootId)));
     expect(newChild).toMatchObject({ parentTaskId: rootId, statusId: f.todo.id, attachmentCount: 1 });
-    expect((await store.application.list(ctx(), newChild.id)).items[0]?.fileName).toBe(childFile.fileName);
+    const copiedChildFile = required((await store.application.list(ctx(), newChild.id)).items[0]);
+    expect(copiedChildFile.fileName).toBe(childFile.fileName);
+    expect(newChild.description).toBe(descriptionWithFiles(`Before
+${descriptionAttachmentLine(copiedChildFile.id)}
+After`));
     const jobs = await store.claimCleanup(storageId);
     for (const job of jobs) { objects.delete(job.objectKey); await store.completeCleanup(job, true); }
     expect(jobs.filter(job => originals.some(row => row.id === job.id))).toHaveLength(5);

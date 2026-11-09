@@ -176,6 +176,7 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       section = await createSectionInScope(taskScope, projectId, { name: input.name, position: sourcePosition + 1 }, deps);
     }
     const mapping = new Map<string, C.TaskDto>();
+    const copiedAttachmentIds = new Map(prepared.map(({ sourceId, row }) => [sourceId, row.id]));
     for (const row of selected.rows) {
       const oldParent = row.parentTaskId === null ? null : selected.allRows.find(parent => parent.id === row.parentTaskId) ?? null;
       const copiedParent = row.parentTaskId === null ? null : mapping.get(row.parentTaskId) ?? null;
@@ -188,7 +189,7 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
         projectId, title: root && 'title' in input ? input.title : row.title, statusId: found(selected.status).id,
         sectionId: section?.id ?? row.sectionId, parentTaskId,
         ...(parentTaskId !== null && separatePackage ? { workScope: 'added_scope' as const } : {}),
-        description: input.copy.description ? row.description : '', responsibleMembershipId: input.copy.assignee ? row.responsibleMembershipId : null,
+        description: input.copy.description ? C.remapDescriptionFiles(row.description, copiedAttachmentIds) : '', responsibleMembershipId: input.copy.assignee ? row.responsibleMembershipId : null,
         participantMembershipIds: input.copy.participants ? row.participants.filter(member => member.active).map(member => member.membershipId) : [],
         startDate: input.copy.dates ? row.startDate ?? null : null, dueDate: input.copy.dates ? row.dueDate : null,
         priority: input.copy.priority ? row.priority : 'none', tagIds: input.copy.tags ? row.tags.map(tag => tag.id) : [],
