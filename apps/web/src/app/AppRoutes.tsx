@@ -24,6 +24,7 @@ const ReportsPage = createAsyncRoute(() => import('../routes/ReportsPage').then(
 const WorkspaceReportsPage = createAsyncRoute(() => import('../routes/WorkspaceReportsPage').then(module => ({ default: module.WorkspaceReportsPage })), 'workspaceReports.loading');
 const WeeklyPage = createAsyncRoute(() => import('../routes/WeeklyPage').then(module => ({ default: module.WeeklyPage })), 'shell.loadingWeek');
 const TimeOffPage = createAsyncRoute(() => import('../routes/TimeOffPage').then(module => ({ default: module.TimeOffPage })), 'timeOff.loading');
+const ConnectAppPage = createAsyncRoute(() => import('../features/oauth/ConnectAppPage').then(module => ({ default: module.ConnectAppPage })), 'oauth.loading');
 const IntegrationsPage = createAsyncRoute(() => import('../routes/IntegrationsPage').then(module => ({ default: module.IntegrationsPage })), 'shell.loadingIntegrations');
 
 export function AppRoutes() {
@@ -41,6 +42,7 @@ export function AppRoutes() {
       <Route path="join" element={<JoinInvitationPage />} />
       <Route element={<AppShell />}>
         <Route index element={<HomeRedirect />} />
+        <Route path="connect" element={<ConnectAppPage />} />
         <Route path="w/:workspaceId" element={<WorkspaceLayout />}>
           <Route index element={<OverviewPage />} />
           <Route path="inbox" element={<InboxPage />} />

@@ -1,12 +1,12 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
-  API_TOKEN_LIMITS, API_TOKEN_PATTERN, API_TOKEN_PREFIX, apiTokenSchema, createApiTokenInputSchema,
+  API_TOKEN_LIMITS, API_TOKEN_PREFIX, apiTokenSchema, createApiTokenInputSchema, isBearerCredential,
   type ApiTokenDto, type ApiTokenScope, type CreateApiTokenInput, type CreatedApiTokenDto,
 } from '@workloom/contracts';
 import { DomainError, notFoundError, unauthenticatedError } from '@workloom/domain';
 import type { WorkloomExecutor } from '../client.js';
-import { apiTokens, users } from '../schema.js';
+import { apiTokens, oauthTokens, users } from '../schema.js';
 
 export const hashApiToken = (token: string): string => createHash('sha256').update(token, 'utf8').digest('hex');
 
@@ -15,9 +15,9 @@ export function generateApiToken(): { id: string; token: string; hash: string; p
   return { id: randomUUID(), token, hash: hashApiToken(token), prefix: token.slice(0, 12) };
 }
 
-/** Syntax only; a malformed value never reaches the database. */
+/** Syntax only; a malformed value never reaches the database. Accepts personal and connected-app access tokens. */
 export function parseApiToken(value: string): string {
-  if (!API_TOKEN_PATTERN.test(value)) throw unauthenticatedError();
+  if (!isBearerCredential(value)) throw unauthenticatedError();
   return hashApiToken(value);
 }
 
@@ -48,9 +48,17 @@ export async function databaseNow(tx: WorkloomExecutor): Promise<Date> {
 /** Loads the principal for a token hash if the token is valid right now; otherwise throws UNAUTHENTICATED. */
 export async function loadPrincipal(tx: WorkloomExecutor, tokenHash: string, at: Date, lockForWrite = false): Promise<ApiPrincipal> {
   const query = tx.select({ token: apiTokens, displayName: users.displayName, kind: users.kind })
-    .from(apiTokens).innerJoin(users, eq(users.id, apiTokens.userId)).where(eq(apiTokens.tokenHash, tokenHash)).limit(1);
+    .from(apiTokens).innerJoin(users, eq(users.id, apiTokens.userId)).where(and(eq(apiTokens.tokenHash, tokenHash), isNull(apiTokens.oauthClientId))).limit(1);
   // A write holds the token row in share mode so a concurrent revoke waits for it instead of racing it.
-  const [row] = await (lockForWrite ? query.for('share', { of: apiTokens }) : query);
+  let [row] = await (lockForWrite ? query.for('share', { of: apiTokens }) : query);
+  if (!row) {
+    // A connected-app access token resolves to its grant, which carries scopes, owner, expiry and revocation.
+    const app = tx.select({ token: apiTokens, displayName: users.displayName, kind: users.kind, accessExpiresAt: oauthTokens.expiresAt })
+      .from(oauthTokens).innerJoin(apiTokens, eq(apiTokens.id, oauthTokens.apiTokenId)).innerJoin(users, eq(users.id, apiTokens.userId))
+      .where(and(eq(oauthTokens.tokenHash, tokenHash), eq(oauthTokens.kind, 'access'))).limit(1);
+    const [found] = await (lockForWrite ? app.for('share', { of: apiTokens }) : app);
+    if (found && found.accessExpiresAt.getTime() > at.getTime()) row = found;
+  }
   if (!row || row.token.revokedAt !== null || row.token.expiresAt.getTime() <= at.getTime()) throw unauthenticatedError();
   return {
     tokenId: row.token.id, tokenName: row.token.name, userId: row.token.userId, displayName: row.displayName,

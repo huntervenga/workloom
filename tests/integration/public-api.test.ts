@@ -283,11 +283,14 @@ describe('personal access tokens, public API and MCP', () => {
     expect(init.text()).toContain('workloom');
 
     const list = json<Rpc>(await mcp(owner.token, rpc('tools/list', {}, 2))).result.tools.map(t => t.name);
-    expect(list).toEqual(expect.arrayContaining(['whoami', 'list_tasks', 'create_task', 'update_task', 'set_task_status']));
+    expect(list).toEqual(expect.arrayContaining(['whoami', 'list_tasks', 'create_task', 'update_task', 'set_task_status', 'list_fields', 'set_task_fields', 'time_summary']));
+    expect(init.text()).toContain('Estimation');
     const readOnly = await issue(h.owner, { name: 'ro-mcp', scopes: ['read'] });
     const roList = json<Rpc>(await mcp(readOnly.token, rpc('tools/list', {}, 3))).result.tools.map(t => t.name);
     expect(roList).toContain('list_tasks');
     expect(roList).not.toContain('create_task');
+    expect(roList).toEqual(expect.arrayContaining(['list_fields', 'time_summary']));
+    expect(roList).not.toContain('set_task_fields');
 
     const name = need((await h.owner.tasks.listProjects()).find(p => p.id === projectId)).name;
     const created = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'create_task', arguments: { project: name, title: 'From an agent', assignee: 'me', operationKey: 'agent-1' } }, 4))).result;

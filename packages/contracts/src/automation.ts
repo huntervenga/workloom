@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { idSchema } from './common/ids.js';
 import { sqlCalendarDateSchema } from './common/sql-date.js';
+import { taskFieldTypeSchema } from './fields.js';
 import { minutesSchema, taskPrioritySchema, taskStatusGroupSchema, utcTimestampSchema } from './tasks.js';
 import { workspaceRoleSchema } from './workspaces.js';
 
@@ -12,6 +13,14 @@ import { workspaceRoleSchema } from './workspaces.js';
 export const API_TOKEN_PREFIX = 'wlm_pat_';
 export const API_TOKEN_PATTERN = /^wlm_pat_[A-Za-z0-9_-]{43}$/;
 export const API_TOKEN_LIMITS = { tokensPerUser: 50, maxDays: 365, defaultDays: 90, pageSize: 200, bodyBytes: 256 * 1024 } as const;
+
+/** Connected apps (OAuth) get short-lived access tokens and rotating refresh tokens of their own shape. */
+export const OAUTH_ACCESS_TOKEN_PREFIX = 'wlm_oat_';
+export const OAUTH_REFRESH_TOKEN_PREFIX = 'wlm_ort_';
+export const OAUTH_ACCESS_TOKEN_PATTERN = /^wlm_oat_[A-Za-z0-9_-]{43}$/;
+export const OAUTH_REFRESH_TOKEN_PATTERN = /^wlm_ort_[A-Za-z0-9_-]{43}$/;
+/** A bearer credential accepted by the public API and MCP: a personal access token or a connected-app access token. */
+export const isBearerCredential = (value: string): boolean => API_TOKEN_PATTERN.test(value) || OAUTH_ACCESS_TOKEN_PATTERN.test(value);
 
 export const apiTokenScopeSchema = z.enum(['read', 'tasks:write']);
 export type ApiTokenScope = z.infer<typeof apiTokenScopeSchema>;
@@ -99,8 +108,152 @@ export const publicTaskListQuerySchema = z.strictObject({
   sort: z.enum(['updated', 'due', 'created']).default('updated'),
   limit: z.coerce.number().int().min(1).max(API_TOKEN_LIMITS.pageSize).default(50),
   cursor: z.string().min(1).max(2048).optional(),
+  /** Adds the custom field values of each task's home project (for example Estimation and Fact). */
+  includeFields: bool.optional(),
 });
 export type PublicTaskListQuery = z.infer<typeof publicTaskListQuerySchema>;
+
+/** A custom field as automation sees it: options by name, so callers never need option ids. */
+export const publicFieldSchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  type: taskFieldTypeSchema,
+  locked: z.boolean(),
+  options: z.array(z.object({ id: idSchema, name: z.string() })),
+});
+export type PublicFieldDto = z.infer<typeof publicFieldSchema>;
+
+/**
+ * A field value in a friendly form: duration in minutes (plus `hours`), select values and people
+ * by name. `value: null` is an explicit clear; a field that was never filled is `set: false`.
+ */
+export const publicFieldValueSchema = z.object({
+  fieldId: idSchema,
+  name: z.string(),
+  type: taskFieldTypeSchema,
+  set: z.boolean(),
+  value: z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.null()]),
+  hours: z.number().nullable().optional(),
+});
+export type PublicFieldValueDto = z.infer<typeof publicFieldValueSchema>;
+
+/**
+ * Durations accept minutes as a number, or text such as `90m`, `1.5h`, `1h 30m` or `1:30`.
+ * Select options and people are names (or ids); a multi-select takes a list; `null` clears.
+ */
+export const publicFieldValueInputSchema = z.union([z.string().max(10_000), z.number(), z.boolean(), z.array(z.string().max(200)).max(100), z.null()]);
+export type PublicFieldValueInput = z.infer<typeof publicFieldValueInputSchema>;
+
+const MAX_DURATION_MINUTES = 2_147_483_647;
+/** Parses the friendly duration forms into whole minutes; `null` when the text is not a duration. */
+export function parseDurationMinutes(input: number | string): number | null {
+  if (typeof input === 'number') return Number.isInteger(input) && input >= 0 && input <= MAX_DURATION_MINUTES ? input : null;
+  const text = input.trim().toLowerCase().replace(/,/g, '.');
+  if (text === '') return null;
+  let minutes: number;
+  const clock = /^(\d{1,6}):([0-5]\d)$/.exec(text);
+  if (clock) minutes = Number(clock[1]) * 60 + Number(clock[2]);
+  else if (/^\d+$/.test(text)) minutes = Number(text);
+  else {
+    const units = /^(?:(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours|ч|час|часа|часов))?\s*(?:(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes|м|мин|минут|минуты))?$/.exec(text);
+    if (!units || (units[1] === undefined && units[2] === undefined)) return null;
+    minutes = Number(units[1] ?? 0) * 60 + Number(units[2] ?? 0);
+  }
+  if (!Number.isFinite(minutes) || minutes < 0 || minutes > MAX_DURATION_MINUTES) return null;
+  const rounded = Math.round(minutes);
+  return Math.abs(rounded - minutes) < 1e-9 ? rounded : null;
+}
+
+const fieldChange = z.strictObject({ field: ref, value: publicFieldValueInputSchema });
+export const publicSetTaskFieldsSchema = z.strictObject({
+  items: z.array(z.strictObject({
+    taskId: idSchema,
+    /** Whose fields to write; defaults to the task's home project. Use it for a task shown in another project. */
+    project: ref.optional(),
+    values: z.array(fieldChange).min(1).max(20),
+  })).min(1).max(100),
+  /** Resolve and report every change without writing anything. */
+  dryRun: z.boolean().optional(),
+}).superRefine((input, ctx) => {
+  const seen = new Set<string>();
+  for (const [index, item] of input.items.entries()) {
+    const key = `${item.taskId}\0${(item.project ?? '').toLowerCase()}`;
+    if (seen.has(key)) ctx.addIssue({ code: 'custom', path: ['items', index, 'taskId'], message: 'List each task (and project) once.' });
+    seen.add(key);
+    const fields = item.values.map(change => change.field.toLowerCase());
+    if (new Set(fields).size !== fields.length) ctx.addIssue({ code: 'custom', path: ['items', index, 'values'], message: 'Set each field once per task.' });
+  }
+});
+export type PublicSetTaskFields = z.infer<typeof publicSetTaskFieldsSchema>;
+
+export const publicFieldChangeResultSchema = z.object({
+  field: z.string(),
+  fieldId: idSchema.nullable(),
+  type: taskFieldTypeSchema.nullable(),
+  before: publicFieldValueSchema.shape.value.nullable(),
+  after: publicFieldValueSchema.shape.value.nullable(),
+  /** `changed` was written (or would be, in a dry run); `failed` carries the reason and wrote nothing. */
+  status: z.enum(['changed', 'unchanged', 'failed']),
+  error: z.object({ code: z.string(), message: z.string() }).optional(),
+});
+export const publicSetTaskFieldsResultSchema = z.object({
+  dryRun: z.boolean(),
+  items: z.array(z.object({
+    taskId: idSchema,
+    title: z.string().nullable(),
+    project: z.object({ id: idSchema, name: z.string() }).nullable(),
+    changes: z.array(publicFieldChangeResultSchema),
+  })),
+  summary: z.object({ changed: z.number().int(), unchanged: z.number().int(), failed: z.number().int() }),
+});
+export type PublicSetTaskFieldsResult = z.infer<typeof publicSetTaskFieldsResultSchema>;
+
+export const publicTimeSummaryQuerySchema = z.strictObject({
+  project: ref,
+  /** Inclusive range for the expected hours; defaults to the project's date range. */
+  from: date.optional(),
+  to: date.optional(),
+  /** People to report; defaults to everyone who has a task in the project, plus the caller. */
+  people: csv(100).optional(),
+  planField: ref.default('Estimation'),
+  factField: ref.default('Fact'),
+  includeTasks: bool.default(true),
+}).refine(input => (input.from === undefined) === (input.to === undefined), 'Pass both from and to, or neither.')
+  .refine(input => input.from === undefined || input.to === undefined || input.from <= input.to, 'from must not be after to.');
+export type PublicTimeSummaryQuery = z.infer<typeof publicTimeSummaryQuerySchema>;
+
+const minutesOrNull = z.number().int().nullable();
+export const publicTimeSummaryTaskSchema = z.object({
+  taskId: idSchema, title: z.string(), status: z.string(), statusGroup: taskStatusGroupSchema,
+  parentTaskId: idSchema.nullable(), planMinutes: minutesOrNull, factMinutes: minutesOrNull,
+});
+export const publicTimeSummaryPersonSchema = z.object({
+  membershipId: idSchema,
+  displayName: z.string(),
+  /** False when the person has no work schedule; then the expected values are null. */
+  scheduleKnown: z.boolean(),
+  scheduledMinutes: minutesOrNull,
+  holidayMinutes: minutesOrNull,
+  absenceMinutes: minutesOrNull,
+  /** Working time minus holidays and time off in the range: the hours this person is expected to report. */
+  expectedMinutes: minutesOrNull,
+  planMinutes: z.number().int(),
+  factMinutes: z.number().int(),
+  /** expected − fact; positive means fact still has to grow to reach the norm. */
+  factGapMinutes: minutesOrNull,
+  tasks: z.array(publicTimeSummaryTaskSchema).optional(),
+});
+export const publicTimeSummarySchema = z.object({
+  project: z.object({ id: idSchema, name: z.string() }),
+  from: z.string(), to: z.string(), rangeSource: z.enum(['project', 'input']),
+  planField: z.object({ id: idSchema, name: z.string() }),
+  factField: z.object({ id: idSchema, name: z.string() }),
+  people: z.array(publicTimeSummaryPersonSchema),
+  unassigned: z.object({ planMinutes: z.number().int(), factMinutes: z.number().int(), tasks: z.array(publicTimeSummaryTaskSchema).optional() }),
+  totals: z.object({ expectedMinutes: z.number().int(), planMinutes: z.number().int(), factMinutes: z.number().int() }),
+  notes: z.array(z.string()),
+});
+export type PublicTimeSummaryDto = z.infer<typeof publicTimeSummarySchema>;
 
 export const taskViewSchema = z.object({
   id: idSchema,
@@ -122,6 +275,8 @@ export const taskViewSchema = z.object({
   archived: z.boolean(),
   createdAt: utcTimestampSchema,
   updatedAt: utcTimestampSchema,
+  /** Present only when fields were requested: values of the task's home project fields. */
+  fields: z.array(publicFieldValueSchema).optional(),
 });
 export type TaskView = z.infer<typeof taskViewSchema>;
 
@@ -147,7 +302,7 @@ export type PublicMeDto = z.infer<typeof publicMeSchema>;
 
 /** Shared by the remote MCP tools: `workspace` may be omitted when the user has exactly one workspace. */
 const workspaceRef = ref.optional();
-export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status'] as const;
+export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'list_fields', 'set_task_fields', 'time_summary'] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 const operationKey = z.string().regex(/^[\x21-\x7e]{1,128}$/).optional();
 export const MCP_TOOL_INPUTS = {
@@ -165,8 +320,25 @@ export const MCP_TOOL_INPUTS = {
     tag: z.array(ref).max(20).optional(), q: z.string().trim().min(1).max(200).optional(),
     dueBefore: date.optional(), dueAfter: date.optional(), open: z.boolean().optional(), includeArchived: z.boolean().optional(),
     sort: z.enum(['updated', 'due', 'created']).optional(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().max(2048).optional(),
+    includeFields: z.boolean().optional().describe('Add custom field values such as Estimation and Fact to every task.'),
   }),
   get_task: z.strictObject({ workspace: workspaceRef, taskId: idSchema }),
+  list_fields: z.strictObject({ workspace: workspaceRef, project: ref }),
+  set_task_fields: z.strictObject({
+    workspace: workspaceRef,
+    items: publicSetTaskFieldsSchema.shape.items,
+    dryRun: z.boolean().optional().describe('Report what would change without writing. Use it to show the user a plan first.'),
+    operationKey,
+  }),
+  time_summary: z.strictObject({
+    workspace: workspaceRef,
+    project: ref.describe('Project name or UUID, usually the week project.'),
+    from: date.optional(), to: date.optional(),
+    people: z.array(ref).max(100).optional().describe('Names, membership ids or "me". Default: everyone with a task in the project plus you.'),
+    planField: ref.optional().describe('Plan field name; default "Estimation".'),
+    factField: ref.optional().describe('Fact field name; default "Fact".'),
+    includeTasks: z.boolean().optional(),
+  }),
   create_task: publicTaskCreateSchema.extend({ workspace: workspaceRef, operationKey }),
   update_task: z.strictObject({ workspace: workspaceRef, taskId: idSchema, changes: publicTaskUpdateSchema, operationKey }),
   set_task_status: z.strictObject({ workspace: workspaceRef, taskId: idSchema, status: ref, operationKey }),
@@ -174,4 +346,21 @@ export const MCP_TOOL_INPUTS = {
 export const MCP_TOOL_SCOPE: Readonly<Record<McpToolName, ApiTokenScope>> = {
   whoami: 'read', list_workspaces: 'read', list_projects: 'read', get_project: 'read', list_members: 'read', list_tags: 'read',
   list_tasks: 'read', get_task: 'read', create_task: 'tasks:write', update_task: 'tasks:write', set_task_status: 'tasks:write',
+  list_fields: 'read', set_task_fields: 'tasks:write', time_summary: 'read',
 };
+
+/** What the consent page shows about a pending connected-app authorization. */
+export const oauthConsentSchema = z.object({
+  client: z.object({ id: z.string(), name: z.string(), redirectUri: z.string(), redirectHost: z.string() }),
+  scopes: z.array(apiTokenScopeSchema),
+  user: z.object({ displayName: z.string() }),
+});
+export type OAuthConsentDto = z.infer<typeof oauthConsentSchema>;
+export const oauthDecisionInputSchema = z.strictObject({
+  /** The original authorization query string, without the leading "?". */
+  request: z.string().min(1).max(4096),
+  decision: z.enum(['approve', 'deny']),
+});
+export type OAuthDecisionInput = z.infer<typeof oauthDecisionInputSchema>;
+export const oauthDecisionSchema = z.object({ redirectTo: z.string() });
+export type OAuthDecisionDto = z.infer<typeof oauthDecisionSchema>;

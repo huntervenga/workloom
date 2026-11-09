@@ -127,6 +127,8 @@ Use Projects, then Import, to upload an Asana JSON export together with its CSV.
 
 Create a personal access token on the Integrations page. The REST API lives under `/api/public/v1`, its documentation is served at `/docs`, and the remote MCP endpoint is `/mcp`. Tokens are stored as hashes only, and each request is limited to the intersection of the token scope and the user's current role. See [docs/120](docs/120-public-api-and-mcp.md).
 
+claude.ai (web, Desktop and mobile), Claude Code and Codex can also connect to `/mcp` with a browser sign-in (OAuth) instead of a token; see [docs/132](docs/132-oauth-connected-apps.md). An agent can also keep weekly time: `list_fields`, `set_task_fields` (custom field values by name, with a `dryRun` preview) and `time_summary` (Estimation and Fact per person against the hours expected from Time off). See [docs/131](docs/131-agent-time-tools.md).
+
 ## Adding a language
 
 1. Copy the namespace JSON files from `apps/web/src/i18n/locales/en/` into a folder named with a valid language tag, for example `apps/web/src/i18n/locales/de/` or `fr-CA/`.

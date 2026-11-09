@@ -1,0 +1,17 @@
+{
+  "title": "Connect an app",
+  "loading": "Checking the connection request…",
+  "heading": "Connect {{name}} to Workloom",
+  "signedInAs": "Signed in as {{name}}.",
+  "willAllow": "The app will act as you, with no more access than you have:",
+  "scopeRead": "Read your workspaces, projects, members, tasks and their fields",
+  "scopeWrite": "Create and update tasks and their fields, such as Estimation and Fact",
+  "redirectNotice": "After you approve, Workloom returns you to {{host}}. Approve only if you started this connection there yourself.",
+  "revokeHint": "You can disconnect the app at any time on the Integrations page.",
+  "approve": "Allow access",
+  "connecting": "Connecting…",
+  "deny": "Cancel",
+  "failed": "The connection could not be completed. Start it again from the app.",
+  "invalidTitle": "This connection request is not valid",
+  "invalidDescription": "It may have expired or been changed. Start the connection again from the app you are connecting."
+}

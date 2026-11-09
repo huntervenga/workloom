@@ -26,6 +26,8 @@ import {
   createTeamApplication,
   createLocalMcpApplication,
   createAutomationApplication,
+  createOAuthApplication,
+  type OAuthApplication,
   createProjectRulesApplication,
   createPurgeApplication,
   createTaskDefaultsApplication,
@@ -81,6 +83,7 @@ import { registerTaskDefaultsRoutes } from './http/task-defaults-routes.js';
 import { registerApiTokenRoutes } from './http/api-token-routes.js';
 import { PUBLIC_API_PREFIX, registerPublicApiRoutes } from './http/public-api-routes.js';
 import { MCP_MAX_BATCH, MCP_PATH, registerMcpHttp } from './http/mcp-http.js';
+import { isOAuthServerPath, protectedResourceMetadataUrl, registerOAuthRoutes } from './http/oauth-routes.js';
 import { registerPlanningRoutes } from './http/planning-routes.js';
 import { registerRecurrenceRoutes } from './http/recurrence-routes.js';
 import { registerScheduleRoutes } from './http/schedule-routes.js';
@@ -168,6 +171,7 @@ export interface AppDependencies {
   readonly localMcpApplication?: LocalMcpApplication;
   /** Personal access tokens, the public REST API and the remote MCP share this one core. */
   readonly automationApplication?: AutomationApplication;
+  readonly oauthApplication?: OAuthApplication;
   readonly taskDefaultsApplication?: TaskDefaultsApplication;
   readonly projectRulesApplication?: ProjectRulesApplication;
   readonly purgeApplication?: PurgeApplication;
@@ -282,6 +286,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   const purgeApplication=dependencies.purgeApplication??(database===undefined?undefined:createPurgeApplication(database));
   const taskDefaultsApplication=dependencies.taskDefaultsApplication??(database===undefined?undefined:createTaskDefaultsApplication(database));
   const automationApplication=dependencies.automationApplication??(database===undefined?undefined:createAutomationApplication(database));
+  const oauthApplication=dependencies.oauthApplication??(database===undefined?undefined:createOAuthApplication(database));
   const localMcpApplication=dependencies.localMcpApplication??(database===undefined?undefined:createLocalMcpApplication(database,{enableTaskWrites:true}));
   const devSessions = dependencies.devSessions ?? createDevSessionStore({ ttlMs: DEV_SESSION_TTL_SECONDS * 1000 });
 
@@ -345,10 +350,12 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     },
   };
 
+  /** Public origin for OAuth issuer and resource URLs: the canonical app origin when hosted, the loopback API locally. */
+  const oauthIssuer = () => config.sharedAuth?.appOrigin ?? `http://127.0.0.1:${guardOptions.getPort()}`;
   const sessionRouteLimiter = createRateLimiter({ limit: 120, windowMs: 60_000 });
   const publicLimiter = createPublicRateLimiter({ tokenLimit: 300, addressLimit: 600, windowMs: 60_000 });
   const publicBearer = (authorization: string | string[] | undefined) =>
-    /^Bearer (wlm_pat_[A-Za-z0-9_-]{43})$/.exec(typeof authorization === 'string' ? authorization : '')?.[1];
+    /^Bearer (wlm_(?:pat|oat)_[A-Za-z0-9_-]{43})$/.exec(typeof authorization === 'string' ? authorization : '')?.[1];
   const enforcePublicLimit = (request: { readonly ip: string; readonly headers: { readonly authorization?: string | string[] | undefined } }, reply: { header(name: string, value: string): unknown }, cost = 1) => {
     // Always retain an address ceiling. Otherwise rotating well-formed but invalid token strings creates unlimited fresh buckets.
     const bearer = publicBearer(request.headers.authorization);
@@ -370,7 +377,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
     assertAllowedHost(request, guardOptions);
     // Bearer-only surfaces never read cookies, so the browser cross-site guard does not apply to them.
     const path = request.url.split('?', 1)[0] ?? '';
-    if (!(path.startsWith(`${PUBLIC_API_PREFIX}/`) || path === MCP_PATH)) {
+    if (!(path.startsWith(`${PUBLIC_API_PREFIX}/`) || path === MCP_PATH || isOAuthServerPath(path))) {
       assertTrustedOrigin(request, guardOptions);
       // Sign-in, invitation acceptance and workspace creation are reachable by anyone with (or without) a session: bound them per address.
       if (path.startsWith('/api/v1/auth/') || path.startsWith('/api/v1/invitations') || (request.method === 'POST' && path === '/api/v1/workspaces')) {
@@ -510,8 +517,9 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if (automationApplication !== undefined) {
     registerApiTokenRoutes(app, { identity, automation: automationApplication });
     registerPublicApiRoutes(app, { automation: automationApplication });
-    registerMcpHttp(app, { automation: automationApplication });
+    registerMcpHttp(app, { automation: automationApplication, resourceMetadataUrl: () => protectedResourceMetadataUrl(oauthIssuer()) });
   }
+  if (oauthApplication !== undefined) registerOAuthRoutes(app, { oauth: oauthApplication, identity, issuer: oauthIssuer });
   if (config.appEnv === 'local' && config.authMode === 'dev') {
     registerDevRoutes(app, routeDeps);
   }

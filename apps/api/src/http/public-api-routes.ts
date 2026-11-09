@@ -1,6 +1,7 @@
 import {
   envelopeSchema, idSchema, publicMeSchema, publicMemberSchema, publicProjectDetailSchema, publicProjectSchema, publicTagSchema,
   publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicWorkspaceSchema, taskViewSchema, API_TOKEN_LIMITS,
+  publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTimeSummarySchema,
 } from '@workloom/contracts';
 import type { AutomationApplication } from '@workloom/db';
 import { DomainError, unauthenticatedError } from '@workloom/domain';
@@ -15,6 +16,7 @@ const ws = z.object({ ws: z.string().min(1).max(200) });
 const wsProject = ws.extend({ project: z.string().min(1).max(200) });
 const wsTask = ws.extend({ taskId: idSchema });
 const IDEMPOTENCY = /^[\x21-\x7e]{1,128}$/;
+const taskQuery = z.strictObject({ includeFields: z.enum(['true', 'false']).transform(value => value === 'true').optional() });
 
 export interface PublicApiDependencies { readonly automation: AutomationApplication }
 
@@ -74,9 +76,26 @@ export function registerPublicApiRoutes(app: FastifyInstance, deps: PublicApiDep
     return sendData(request, reply, envelopeSchema(taskViewSchema.array()), page.items, { nextCursor: page.nextCursor });
   });
   app.get(`${base}/workspaces/:ws/tasks/:taskId`, async (request, reply) => {
-    parseInput(empty, request.query);
+    const query = parseInput(taskQuery, request.query);
     const p = parseInput(wsTask, request.params);
-    return sendData(request, reply, envelopeSchema(taskViewSchema), await automation.getTask(bearerToken(request), p.ws, p.taskId));
+    return sendData(request, reply, envelopeSchema(taskViewSchema), await automation.getTask(bearerToken(request), p.ws, p.taskId, { includeFields: query.includeFields === true }));
+  });
+  app.get(`${base}/workspaces/:ws/projects/:project/fields`, async (request, reply) => {
+    parseInput(empty, request.query);
+    const p = parseInput(wsProject, request.params);
+    return sendData(request, reply, envelopeSchema(publicFieldSchema.array()), await automation.listFields(bearerToken(request), p.ws, p.project), { list: true });
+  });
+  app.get(`${base}/workspaces/:ws/projects/:project/time-summary`, async (request, reply) => {
+    const p = parseInput(wsProject, request.params);
+    const query = typeof request.query === 'object' && request.query !== null ? request.query : {};
+    return sendData(request, reply, envelopeSchema(publicTimeSummarySchema), await automation.timeSummary(bearerToken(request), p.ws, { ...query, project: p.project }));
+  });
+  app.post(`${base}/workspaces/:ws/task-fields`, write, async (request, reply) => {
+    parseInput(empty, request.query);
+    const p = parseInput(ws, request.params);
+    const input = parseInput(publicSetTaskFieldsSchema, request.body);
+    const result = await automation.setTaskFields(bearerToken(request), p.ws, input, { requestId: request.id, idempotencyKey: idempotencyKey(request) });
+    return sendData(request, reply, envelopeSchema(publicSetTaskFieldsResultSchema), result);
   });
   app.post(`${base}/workspaces/:ws/tasks`, write, async (request, reply) => {
     parseInput(empty, request.query);

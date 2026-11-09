@@ -153,7 +153,10 @@ curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/members</code></td><td>read</td><td>People tasks can be assigned to.</td></tr>
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tags</code></td><td>read</td><td>Tags.</td></tr>
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tasks</code></td><td>read</td><td>List and filter tasks (below).</td></tr>
-    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tasks/{taskId}</code></td><td>read</td><td>One task.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tasks/{taskId}</code></td><td>read</td><td>One task. Add <code>?includeFields=true</code> for its custom field values.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/projects/{project}/fields</code></td><td>read</td><td>Custom fields of a project with their types and option names.</td></tr>
+    <tr><td><span class="method">GET</span><code>/workspaces/{ws}/projects/{project}/time-summary</code></td><td>read</td><td>Per person: Estimation and Fact totals and the hours expected in the range (below).</td></tr>
+    <tr><td><span class="method post">POST</span><code>/workspaces/{ws}/task-fields</code></td><td>tasks:write</td><td>Set custom field values by name for up to 100 tasks (below).</td></tr>
     <tr><td><span class="method post">POST</span><code>/workspaces/{ws}/tasks</code></td><td>tasks:write</td><td>Create a task.</td></tr>
     <tr><td><span class="method patch">PATCH</span><code>/workspaces/{ws}/tasks/{taskId}</code></td><td>tasks:write</td><td>Change a task, including its status.</td></tr>
   </tbody>
@@ -222,6 +225,10 @@ curl -s -G "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks" -H "Authorization
   --data-urlencode "project=Platform,Billing" --data-urlencode "open=true" \
   --data-urlencode "dueBefore=2026-12-31" --data-urlencode "sort=due"</code></pre>
 
+<h3 id="fields">Custom fields and time</h3>
+<p><code>POST /workspaces/{ws}/task-fields</code> sets values by field name: <code>{"items":[{"taskId":"…","values":[{"field":"Fact","value":"1h 30m"}]}],"dryRun":true}</code>. Durations take whole minutes or text such as <code>90m</code>, <code>1.5h</code>, <code>1h 30m</code> or <code>1:30</code>; select options and people take names; <code>null</code> clears a value. With <code>dryRun</code> nothing is written and the answer lists every change with its <code>before</code> and <code>after</code>. Each value is saved separately, so check <code>summary.failed</code> and the <code>error</code> of a failed change. An item may name a <code>project</code> to write the fields of a task shown in another project; the default is the task's home project. <code>GET /workspaces/{ws}/tasks?includeFields=true</code> adds the values to listed tasks.</p>
+<p><code>GET /workspaces/{ws}/projects/{project}/time-summary</code> sums the duration fields <code>Estimation</code> and <code>Fact</code> (change with <code>planField</code>, <code>factField</code>) over the tasks of the project, per assignee, next to <code>expectedMinutes</code>: the person's work schedule in the range minus holidays and approved time off. <code>factGapMinutes</code> is expected minus fact. The range is the project's date range unless <code>from</code> and <code>to</code> are given; <code>people</code> narrows the list (<code>me</code> works). Without a work schedule the expected values are <code>null</code>.</p>
+
 <h3 id="errors">Errors</h3>
 <table>
   <thead><tr><th>HTTP</th><th><code>error.code</code></th><th>Meaning</th></tr></thead>
@@ -240,14 +247,17 @@ curl -s -G "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks" -H "Authorization
 <p>Send <code>Idempotency-Key: &lt;unique string, up to 128 printable ASCII characters&gt;</code> on <code>POST</code> (and <code>PATCH</code>) when a request may be retried after a timeout. Repeating the same key with the same body returns the original result instead of creating a second task; the same key with a different body is <code>409 IDEMPOTENCY_KEY_REUSED</code>. Without a key every call is treated as new.</p>
 
 <h2 id="mcp">MCP server</h2>
-<p>Workloom exposes the same operations as <a href="https://modelcontextprotocol.io">Model Context Protocol</a> tools over <strong>Streamable HTTP</strong>. The endpoint is stateless and authenticates every call with your personal token.</p>
+<p>Workloom exposes the same operations as <a href="https://modelcontextprotocol.io">Model Context Protocol</a> tools over <strong>Streamable HTTP</strong>. The endpoint is stateless and authenticates every call either with your personal token or with a connected-app sign-in (OAuth), which clients such as claude.ai and Claude Code start by themselves.</p>
+
+<h3 id="claude-ai">claude.ai, Claude Desktop and the Claude mobile app</h3>
+<p>In claude.ai open <strong>Settings → Connectors → Add custom connector</strong>, enter <code><span class="origin">https://your-workloom</span>/mcp</code> and leave the OAuth client fields empty. Claude opens Workloom: sign in and choose <strong>Allow access</strong>. Add the connector on the web or in Claude Desktop; it then appears in the mobile app of the same account. The connection appears on your Integrations page, where <strong>Revoke</strong> disconnects it at once. Access tokens last one hour and refresh automatically; after a year, connect again.</p>
 <pre><code>URL:     <span class="origin">https://your-workloom</span>/mcp
 Header:  Authorization: Bearer wlm_pat_…</code></pre>
 <p>Create the token with <code>read</code> for a read-only assistant, or <code>read</code> + <code>tasks:write</code> to let it create and update tasks. The tool list a client sees depends on the token: a read-only token does not even list the write tools.</p>
 
 <h3 id="claude">Claude Code</h3>
-<pre><code>claude mcp add --transport http workloom <span class="origin">https://your-workloom</span>/mcp \
-  --header "Authorization: Bearer $WORKLOOM_TOKEN"</code></pre>
+<pre><code>claude mcp add --transport http workloom <span class="origin">https://your-workloom</span>/mcp</code></pre>
+<p>Run <code>/mcp</code> in Claude Code and choose <strong>Authenticate</strong> to sign in through the browser. To use a personal token instead, add <code>--header "Authorization: Bearer $WORKLOOM_TOKEN"</code>.</p>
 <p>Then ask: “Show my open Workloom tasks in Platform” or “Create a task in Platform: rotate the staging keys, due Friday, assigned to me”. Use <code>/mcp</code> inside Claude Code to check the connection.</p>
 
 <h3 id="codex">Codex</h3>
@@ -281,8 +291,11 @@ codex</code></pre>
     <tr><td><code>get_project</code></td><td>read</td><td>Sections and statuses of a project (name or UUID).</td></tr>
     <tr><td><code>list_members</code></td><td>read</td><td>People you can assign.</td></tr>
     <tr><td><code>list_tags</code></td><td>read</td><td>Tags.</td></tr>
-    <tr><td><code>list_tasks</code></td><td>read</td><td>Filter by <code>project[]</code>, <code>section[]</code>, <code>status[]</code>, <code>statusGroup[]</code>, <code>assignee[]</code> (<code>"me"</code>), <code>tag[]</code>, <code>q</code>, <code>dueBefore</code>, <code>dueAfter</code>, <code>open</code>, <code>sort</code>, <code>limit</code>, <code>cursor</code>. Returns <code>tasks</code> and <code>nextCursor</code>.</td></tr>
-    <tr><td><code>get_task</code></td><td>read</td><td>One task by ID.</td></tr>
+    <tr><td><code>list_tasks</code></td><td>read</td><td>Filter by <code>project[]</code>, <code>section[]</code>, <code>status[]</code>, <code>statusGroup[]</code>, <code>assignee[]</code> (<code>"me"</code>), <code>tag[]</code>, <code>q</code>, <code>dueBefore</code>, <code>dueAfter</code>, <code>open</code>, <code>sort</code>, <code>limit</code>, <code>cursor</code>, <code>includeFields</code>. Returns <code>tasks</code> and <code>nextCursor</code>.</td></tr>
+    <tr><td><code>get_task</code></td><td>read</td><td>One task by ID, with its custom field values.</td></tr>
+    <tr><td><code>list_fields</code></td><td>read</td><td>Custom fields of a project (for example Estimation and Fact).</td></tr>
+    <tr><td><code>time_summary</code></td><td>read</td><td>Per person: Estimation and Fact totals and the expected hours of the range. See <a href="#fields">Custom fields and time</a>.</td></tr>
+    <tr><td><code>set_task_fields</code></td><td>tasks:write</td><td>Set field values by name for one or more tasks; <code>dryRun</code> shows the plan first.</td></tr>
     <tr><td><code>create_task</code></td><td>tasks:write</td><td>Same fields as the REST create.</td></tr>
     <tr><td><code>update_task</code></td><td>tasks:write</td><td><code>taskId</code> and <code>changes</code> (same fields as the REST update).</td></tr>
     <tr><td><code>set_task_status</code></td><td>tasks:write</td><td><code>taskId</code> and <code>status</code> (name or UUID).</td></tr>

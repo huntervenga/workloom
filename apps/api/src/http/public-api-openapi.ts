@@ -1,4 +1,4 @@
-import { publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, taskViewSchema, createApiTokenInputSchema } from '@workloom/contracts';
+import { publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummarySchema, taskViewSchema, createApiTokenInputSchema } from '@workloom/contracts';
 import { z } from 'zod';
 
 const json = (schema: z.ZodType, io: 'input' | 'output' = 'output') => {
@@ -21,6 +21,8 @@ const errors = {
 const wsParam = { name: 'ws', in: 'path', required: true, description: 'Workspace slug or UUID.', schema: { type: 'string' } };
 const taskParam = { name: 'taskId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } };
 const idemHeader = { name: 'Idempotency-Key', in: 'header', required: false, description: 'Makes a retry safe: the same key with the same body returns the first result.', schema: { type: 'string', maxLength: 128 } };
+const projectParam = { name: 'project', in: 'path', required: true, description: 'Project UUID or exact name.', schema: { type: 'string' } };
+const summaryParams = ['from', 'to', 'people', 'planField', 'factField', 'includeTasks'].map(name => ({ name, in: 'query', required: false, schema: { type: 'string' } }));
 const queryParams = Object.entries((json(publicTaskListQuerySchema, 'input').properties ?? {}) as Record<string, unknown>).map(([name, schema]) => ({ name, in: 'query', required: false, schema }));
 
 export const PUBLIC_API_OPENAPI = {
@@ -40,8 +42,11 @@ export const PUBLIC_API_OPENAPI = {
       get: { summary: 'List tasks. Repeat a parameter or comma-separate values; assignee=me means yours.', parameters: [wsParam, ...queryParams], responses: { '200': ok('OK', envelope({ type: 'array', items: { $ref: '#/components/schemas/Task' } }, true)), ...errors } },
       post: { summary: 'Create a task', parameters: [wsParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TaskCreate' } } } }, responses: { '201': ok('Created', envelope({ $ref: '#/components/schemas/Task' })), ...errors } },
     },
+    '/workspaces/{ws}/projects/{project}/fields': { get: { summary: 'Custom fields of a project, with option names', parameters: [wsParam, projectParam], responses: { '200': ok('OK', envelope({ type: 'array', items: json(publicFieldSchema) }, true)), ...errors } } },
+    '/workspaces/{ws}/projects/{project}/time-summary': { get: { summary: 'Per person: Estimation and Fact sums and the hours expected in the range (schedule minus holidays and time off)', parameters: [wsParam, projectParam, ...summaryParams], responses: { '200': ok('OK', envelope(json(publicTimeSummarySchema))), ...errors } } },
+    '/workspaces/{ws}/task-fields': { post: { summary: 'Set custom field values by name for up to 100 tasks; dryRun reports without writing', parameters: [wsParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: json(publicSetTaskFieldsSchema, 'input') } } }, responses: { '200': ok('OK', envelope(json(publicSetTaskFieldsResultSchema))), ...errors } } },
     '/workspaces/{ws}/tasks/{taskId}': {
-      get: { summary: 'Get a task', parameters: [wsParam, taskParam], responses: { '200': ok('OK', envelope({ $ref: '#/components/schemas/Task' })), ...errors } },
+      get: { summary: 'Get a task; includeFields=true adds custom field values', parameters: [wsParam, taskParam, { name: 'includeFields', in: 'query', required: false, schema: { type: 'string', enum: ['true', 'false'] } }], responses: { '200': ok('OK', envelope({ $ref: '#/components/schemas/Task' })), ...errors } },
       patch: { summary: 'Change a task: status, section, assignee, dates, tags, …', parameters: [wsParam, taskParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TaskUpdate' } } } }, responses: { '200': ok('OK', envelope({ $ref: '#/components/schemas/Task' })), ...errors } },
     },
   },

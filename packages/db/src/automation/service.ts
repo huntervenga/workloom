@@ -1,7 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
-  publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, taskViewSchema, updateTaskInputSchema,
+  publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummaryQuerySchema, taskViewSchema, updateTaskInputSchema,
+  type PublicFieldDto, type PublicFieldValueDto, type PublicSetTaskFieldsResult, type PublicTimeSummaryDto, type TaskFieldData, type TaskFieldDefinitionDto, type TaskFieldValueDto,
   type ApiTokenDto, type ApiTokenScope, type CreateApiTokenInput, type CreatedApiTokenDto, type PublicMeDto, type PublicMemberDto,
   type PublicProjectDetailDto, type PublicProjectDto, type PublicTagDto, type PublicTaskCreate, type PublicTaskListQuery, type PublicTaskUpdate,
   type PublicWorkspaceDto, type TaskView, type UpdateTaskInput, type TaskDto,
@@ -11,6 +12,9 @@ import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
 import { createAccessRepository } from '../repositories/access-repository.js';
 import { createTaskRepository } from '../repositories/task-repository.js';
 import { createTaskApplication } from '../tasks/task-application.js';
+import { createTaskFieldApplication } from '../fields/task-field-application.js';
+import { createLeaveApplication } from '../leave/application.js';
+import { resolveField, sameTypedValue, toPublicField, toPublicFieldValue, toPublicValue, toTypedValue, type PersonLookup } from './fields.js';
 import { createWorkspaceWriteRunner } from '../transactions/workspace-write.js';
 import { workspaceSlugAliases, workspaces, memberships } from '../schema.js';
 import { isUuid, matchRefs, resolveRef, resolveRefs } from './refs.js';
@@ -38,7 +42,13 @@ export interface AutomationApplication {
   listMembers(token: string, workspace: string | undefined): Promise<PublicMemberDto[]>;
   listTags(token: string, workspace: string | undefined): Promise<PublicTagDto[]>;
   listTasks(token: string, workspace: string | undefined, query: PublicTaskListQuery): Promise<{ items: TaskView[]; nextCursor: string | null }>;
-  getTask(token: string, workspace: string | undefined, taskId: string): Promise<TaskView>;
+  getTask(token: string, workspace: string | undefined, taskId: string, options?: { readonly includeFields?: boolean }): Promise<TaskView>;
+  /** Custom fields of a project, with option names. */
+  listFields(token: string, workspace: string | undefined, project: string): Promise<PublicFieldDto[]>;
+  /** Writes custom field values by field name for up to 100 tasks; each value is its own field command. */
+  setTaskFields(token: string, workspace: string | undefined, input: unknown, options: WriteOptions): Promise<PublicSetTaskFieldsResult>;
+  /** Plan and fact per person in a project, next to the hours each person is expected to work in the range. */
+  timeSummary(token: string, workspace: string | undefined, query: unknown): Promise<PublicTimeSummaryDto>;
   createTask(token: string, workspace: string | undefined, input: PublicTaskCreate, options: WriteOptions): Promise<TaskView>;
   updateTask(token: string, workspace: string | undefined, taskId: string, input: PublicTaskUpdate, options: WriteOptions): Promise<TaskView>;
 }
@@ -136,6 +146,49 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
     return (await listWorkspaceMembers(createAccessRepository(s.tx), s.context)).map(member => ({ id: member.id, name: member.displayName, userId: member.userId, role: member.role }));
   }
 
+  const fieldApp = (tx: WorkloomExecutor) => createTaskFieldApplication(tx, { cursorSecret });
+
+  async function peopleLookup(s: ReadScope): Promise<PersonLookup> {
+    const people = await membersOf(s);
+    const names = new Map(people.map(person => [person.id.toLowerCase(), person.name]));
+    return { name: id => names.get(id.toLowerCase()) ?? 'Unknown member', resolve: value => resolvePerson(s, value, people, 'person') };
+  }
+
+  async function activeFields(s: ReadScope, projectId: string): Promise<TaskFieldDefinitionDto[]> {
+    return (await fieldApp(s.tx).listFields(s.context, projectId)).filter(field => field.archivedAt === null);
+  }
+
+  /** Current value rows by task id, then field id, for tasks placed in the project. */
+  async function projectValues(s: ReadScope, projectId: string, taskIds: readonly string[]): Promise<Map<string, Map<string, TaskFieldValueDto>>> {
+    const out = new Map<string, Map<string, TaskFieldValueDto>>();
+    const unique = [...new Set(taskIds.map(id => id.toLowerCase()))];
+    for (let start = 0; start < unique.length; start += 200) {
+      const rows = await fieldApp(s.tx).listProjectValues(s.context, projectId, { taskIds: unique.slice(start, start + 200) });
+      for (const row of rows) {
+        const taskId = row.taskId.toLowerCase();
+        const byField = out.get(taskId) ?? new Map<string, TaskFieldValueDto>();
+        byField.set(row.fieldId.toLowerCase(), row);
+        out.set(taskId, byField);
+      }
+    }
+    return out;
+  }
+
+  /** Adds the values of each task's home project fields. */
+  async function withFields(s: ReadScope, views: readonly TaskView[]): Promise<TaskView[]> {
+    if (views.length === 0) return [];
+    const lookup = await peopleLookup(s);
+    const byProject = new Map<string, TaskView[]>();
+    for (const view of views) byProject.set(view.project.id, [...(byProject.get(view.project.id) ?? []), view]);
+    const fieldsByTask = new Map<string, PublicFieldValueDto[]>();
+    for (const [projectId, list] of byProject) {
+      const fields = await activeFields(s, projectId);
+      const values = await projectValues(s, projectId, list.map(view => view.id));
+      for (const view of list) fieldsByTask.set(view.id, fields.map(field => toPublicFieldValue(field, values.get(view.id.toLowerCase())?.get(field.id.toLowerCase()), lookup)));
+    }
+    return views.map(view => ({ ...view, fields: fieldsByTask.get(view.id) ?? [] }));
+  }
+
   /** Assignee references: `me`, a membership id, a user id or an exact display name. */
   function resolvePerson(s: ReadScope, value: string, people: readonly { id: string; name: string; userId: string }[], field = 'assignee') {
     if (value.toLowerCase() === 'me') return s.myMembershipId;
@@ -178,21 +231,239 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
   }
 
   /** Revalidates the token under the workspace barrier, so a revoke committed earlier always wins. */
+  function tokenInScope(hash: string, workspaceId: string, userId: string) {
+    return async (scope: { readonly tx: WorkloomExecutor; readonly context: CommandContext; readonly barrierAt: Date }) => {
+      const principal = await loadPrincipal(scope.tx, hash, scope.barrierAt, true);
+      requireScope(principal, 'tasks:write');
+      if (principal.userId !== userId || scope.context.workspaceId !== workspaceId || (principal.workspaceIds !== null && !principal.workspaceIds.includes(workspaceId))) throw notFoundError();
+      return { apiTokenId: principal.tokenId };
+    };
+  }
   function writeApp(hash: string, workspaceId: string, userId: string) {
-    return createTaskApplication(source, {
-      ...options, cursorSecret,
-      authorizeInScope: async scope => {
-        const principal = await loadPrincipal(scope.tx, hash, scope.barrierAt, true);
-        requireScope(principal, 'tasks:write');
-        if (principal.userId !== userId || scope.context.workspaceId !== workspaceId || (principal.workspaceIds !== null && !principal.workspaceIds.includes(workspaceId))) throw notFoundError();
-        return { apiTokenId: principal.tokenId };
-      },
-    });
+    return createTaskApplication(source, { ...options, cursorSecret, authorizeInScope: tokenInScope(hash, workspaceId, userId) });
+  }
+  function fieldWriteApp(hash: string, workspaceId: string, userId: string) {
+    return createTaskFieldApplication(source, { ...options, cursorSecret, authorizeInScope: tokenInScope(hash, workspaceId, userId) });
   }
 
   async function prepared<T>(token: string, workspace: string | undefined, work: (s: ReadScope, hash: string) => Promise<T>): Promise<T> {
     const hash = parseApiToken(token);
     return authorizedRead(token, 'tasks:write', workspace, 'task.edit', s => work(s, hash));
+  }
+
+  type FieldChangeResult = PublicSetTaskFieldsResult['items'][number]['changes'][number];
+  interface FieldWrite {
+    readonly itemIndex: number; readonly changeIndex: number;
+    readonly taskId: string; readonly projectId: string; readonly fieldId: string;
+    readonly expectedRevision: number; readonly expectedDefinitionRevision: number; readonly value: TaskFieldData;
+  }
+  interface FieldPlan { readonly result: PublicSetTaskFieldsResult; readonly writes: readonly FieldWrite[] }
+
+  const summarize = (items: PublicSetTaskFieldsResult['items']): PublicSetTaskFieldsResult['summary'] => {
+    const all = items.flatMap(item => item.changes);
+    return { changed: all.filter(change => change.status === 'changed').length, unchanged: all.filter(change => change.status === 'unchanged').length, failed: all.filter(change => change.status === 'failed').length };
+  };
+  const failure = (field: string, error: DomainError): FieldChangeResult => ({ field, fieldId: null, type: null, before: null, after: null, status: 'failed', error: { code: error.code, message: error.message } });
+  const knownRejection = (error: unknown): error is DomainError => isDomainError(error) && !error.retryable;
+
+  /** Resolves every change against current values. Known per-task or per-field problems become `failed` entries. */
+  async function planFieldWrites(s: ReadScope, input: ReturnType<typeof publicSetTaskFieldsSchema.parse>, dryRun: boolean): Promise<FieldPlan> {
+    const app = taskApp(s.tx);
+    const lookup = await peopleLookup(s);
+    const projects = await projectItems(s);
+    const fieldsByProject = new Map<string, TaskFieldDefinitionDto[]>();
+    const items: PublicSetTaskFieldsResult['items'] = [];
+    const writes: FieldWrite[] = [];
+    for (const [itemIndex, item] of input.items.entries()) {
+      let title: string | null = null;
+      let target: { id: string; name: string } | null = null;
+      let fields: TaskFieldDefinitionDto[];
+      let values: Map<string, TaskFieldValueDto>;
+      let taskId = item.taskId;
+      try {
+        const task = await app.getTask(s.context, item.taskId);
+        title = task.title; taskId = task.id;
+        if (task.archivedAt !== null) throw new DomainError('DOMAIN_VALIDATION_FAILED', 'Restore the task before editing its fields.');
+        const projectId = item.project === undefined ? task.projectId : resolveRef('project', item.project, projects).id;
+        const project = projects.find(row => row.id === projectId) ?? { id: projectId, name: (await app.getProject(s.context, projectId)).name };
+        target = { id: project.id, name: project.name };
+        fields = fieldsByProject.get(projectId) ?? await activeFields(s, projectId);
+        fieldsByProject.set(projectId, fields);
+        values = (await projectValues(s, projectId, [task.id])).get(task.id.toLowerCase()) ?? new Map();
+      } catch (error) {
+        if (!knownRejection(error)) throw error;
+        items.push({ taskId, title, project: target, changes: item.values.map(change => failure(change.field, error)) });
+        continue;
+      }
+      const changes: FieldChangeResult[] = [];
+      for (const change of item.values) {
+        try {
+          const field = resolveField(fields, change.field);
+          if (field.locked) throw new DomainError('FIELD_LOCKED', `${field.name} is locked in this project.`);
+          const row = values.get(field.id.toLowerCase());
+          const current = row?.value ?? null;
+          const next = toTypedValue(field, change.value, lookup);
+          // An absent row and an explicit clear are distinct, but clearing a never-filled value changes nothing.
+          const unchanged = row ? sameTypedValue(current, next) : next.value === null;
+          changes.push({ field: field.name, fieldId: field.id, type: field.type, before: toPublicValue(field, current, lookup), after: toPublicValue(field, next, lookup), status: unchanged ? 'unchanged' : 'changed' });
+          if (!unchanged) writes.push({ itemIndex, changeIndex: changes.length - 1, taskId, projectId: target.id, fieldId: field.id, expectedRevision: row?.revision ?? 0, expectedDefinitionRevision: field.revision, value: next });
+        } catch (error) {
+          if (!knownRejection(error)) throw error;
+          changes.push(failure(change.field, error));
+        }
+      }
+      items.push({ taskId, title, project: target, changes });
+    }
+    return { result: { dryRun, items, summary: summarize(items) }, writes };
+  }
+
+  async function setTaskFields(token: string, workspace: string | undefined, rawInput: unknown, writeOptions: WriteOptions): Promise<PublicSetTaskFieldsResult> {
+    const parsed = publicSetTaskFieldsSchema.safeParse(rawInput);
+    if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid field changes.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+    const input = parsed.data;
+    if (input.dryRun === true) return authorizedRead(token, 'read', workspace, READ_CAPABILITY, s => planFieldWrites(s, input, true).then(plan => plan.result));
+
+    const owner = await prepared(token, workspace, async (s, hash) => ({ hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions) }));
+    const key = owner.context.idempotencyKey;
+    if (!key) throw new DomainError('VALIDATION_FAILED', 'A valid Idempotency-Key is required.');
+    const command = 'public.task_fields.set';
+    const payloadHash = createHash('sha256').update(JSON.stringify({ items: input.items })).digest('hex');
+    const conflict = () => new DomainError('IDEMPOTENCY_KEY_REUSED', 'This key was used for other field changes.');
+    const runner = createWorkspaceWriteRunner(source, { ...options, authorizeInScope: tokenInScope(owner.hash, owner.workspaceId, owner.userId) });
+    const barrier = <T>(work: (s: ReadScope) => Promise<T>) => runner.run(owner.context, 'task.edit', async scope => {
+      const principal = await loadPrincipal(scope.tx, owner.hash, scope.barrierAt, true);
+      return work({ tx: scope.tx, principal, workspaceId: owner.workspaceId, context: owner.context, role: scope.access.membership.role, myMembershipId: scope.access.membership.id });
+    });
+    const receipt = async (s: ReadScope, name: string) => {
+      const found = await createTaskRepository(s.tx).findIdempotency(owner.workspaceId, owner.userId, name, key);
+      if (found && found.payloadHash !== payloadHash) throw conflict();
+      return found;
+    };
+    const store = (s: ReadScope, name: string, result: unknown) => databaseNow(s.tx).then(now => createTaskRepository(s.tx).insertIdempotency({
+      workspaceId: owner.workspaceId, actorUserId: owner.userId, command: name, idempotencyKey: key, payloadHash, result, createdAt: now.toISOString() }));
+
+    // The resolved plan (names, expected revisions, typed values) is pinned under the caller key, so a retry
+    // repeats exactly the same field commands and each replays its own durable receipt.
+    const initial = await barrier(async s => {
+      const done = await receipt(s, command);
+      if (done) return { done: done.result as PublicSetTaskFieldsResult };
+      const claimed = await receipt(s, command + '.plan');
+      if (claimed) return { plan: claimed.result as FieldPlan };
+      const plan = await planFieldWrites(s, input, false);
+      await store(s, command + '.plan', plan);
+      return { plan };
+    });
+    if ('done' in initial && initial.done) return publicSetTaskFieldsResultSchema.parse(initial.done);
+    const plan = (initial as { plan: FieldPlan }).plan;
+    const result = publicSetTaskFieldsResultSchema.parse(JSON.parse(JSON.stringify(plan.result)));
+    const writer = fieldWriteApp(owner.hash, owner.workspaceId, owner.userId);
+    for (const write of plan.writes) {
+      const internalKey = createHash('sha256').update(`${key}\0${command}\0${write.taskId}\0${write.projectId}\0${write.fieldId}`).digest('hex');
+      try {
+        await writer.setTaskValue({ ...owner.context, idempotencyKey: internalKey }, write.taskId, write.fieldId,
+          { expectedRevision: write.expectedRevision, expectedDefinitionRevision: write.expectedDefinitionRevision, value: write.value });
+      } catch (error) {
+        if (!knownRejection(error)) throw error;
+        const change = result.items[write.itemIndex]?.changes[write.changeIndex];
+        if (change) { change.status = 'failed'; change.error = { code: error.code, message: error.message }; }
+      }
+    }
+    const final: PublicSetTaskFieldsResult = { ...result, summary: summarize(result.items) };
+    return barrier(async s => {
+      const done = await receipt(s, command);
+      if (done) return publicSetTaskFieldsResultSchema.parse(done.result);
+      await store(s, command, final);
+      return final;
+    });
+  }
+
+  async function timeSummary(token: string, workspace: string | undefined, rawQuery: unknown): Promise<PublicTimeSummaryDto> {
+    const parsed = publicTimeSummaryQuerySchema.safeParse(rawQuery);
+    if (!parsed.success) throw new DomainError('VALIDATION_FAILED', parsed.error.issues[0]?.message ?? 'Invalid time summary query.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+    const query = parsed.data;
+    const base = await authorizedRead(token, 'read', workspace, READ_CAPABILITY, async s => {
+      const app = taskApp(s.tx);
+      const project = await app.getProject(s.context, resolveRef('project', query.project, await projectItems(s)).id);
+      const range = query.from !== undefined && query.to !== undefined ? { from: query.from, to: query.to, source: 'input' as const }
+        : project.dateRange ? { from: project.dateRange.from, to: project.dateRange.to, source: 'project' as const } : null;
+      if (!range) throw new DomainError('VALIDATION_FAILED', `Project "${project.name}" has no date range. Pass from and to.`, { details: { field: 'from', reason: 'required' } });
+      const fields = await activeFields(s, project.id);
+      const planField = resolveField(fields, query.planField, 'planField');
+      const factField = resolveField(fields, query.factField, 'factField');
+      for (const field of [planField, factField]) if (field.type !== 'duration') throw new DomainError('VALIDATION_FAILED', `${field.name} is a ${field.type} field, not a duration.`, { details: { field: field.id === planField.id ? 'planField' : 'factField', reason: 'not_duration' } });
+      const rows = [];
+      let cursor: string | undefined;
+      for (let page = 0; ; page += 1) {
+        if (page === 10) throw new DomainError('VALIDATION_FAILED', 'The project has more than 2000 tasks; a time summary covers at most 2000.');
+        if (!app.placements) throw new Error('Project rows are unavailable.');
+        const result = await app.placements.listProjectRows(s.context, project.id, { limit: 200, includeArchived: false, ...(cursor ? { cursor } : {}) });
+        rows.push(...result.items);
+        if (!result.nextCursor) break;
+        cursor = result.nextCursor;
+      }
+      const live = rows.filter(row => row.canonicalTask.archivedAt === null && row.placement.archivedAt === null);
+      const values = await projectValues(s, project.id, live.map(row => row.canonicalTask.id));
+      const people = await membersOf(s);
+      const selected = query.people ? [...new Set(query.people.map(value => resolvePerson(s, value, people, 'people')))] : null;
+      return { project, range, planField, factField, live, values, people, selected, context: s.context, me: s.myMembershipId };
+    });
+
+    const minutes = (taskId: string, fieldId: string): number | null => {
+      const value = base.values.get(taskId.toLowerCase())?.get(fieldId.toLowerCase())?.value;
+      return value?.type === 'duration' ? value.value : null;
+    };
+    const tasks = base.live.map(row => ({
+      assignee: row.canonicalTask.responsibleMembershipId?.toLowerCase() ?? null,
+      view: {
+        taskId: row.canonicalTask.id, title: row.canonicalTask.title, status: row.canonicalStatus.name, statusGroup: row.canonicalStatus.group,
+        parentTaskId: row.canonicalTask.parentTaskId, planMinutes: minutes(row.canonicalTask.id, base.planField.id), factMinutes: minutes(row.canonicalTask.id, base.factField.id),
+      },
+    }));
+    const active = new Map(base.people.map(person => [person.id.toLowerCase(), person]));
+    const chosen = base.selected ?? [...new Set([...tasks.flatMap(task => task.assignee && active.has(task.assignee) ? [task.assignee] : []), ...(base.me ? [base.me.toLowerCase()] : [])])];
+    const ids = chosen.map(id => id.toLowerCase()).filter(id => active.has(id)).slice(0, 100);
+    const notes = [
+      'Each task counts its own stored values; table rollups of subtasks into parents are not added again.',
+      'Time belongs to the task assignee.',
+    ];
+    if (chosen.length > 100) notes.push('Only the first 100 people are included.');
+    let capacity: Awaited<ReturnType<ReturnType<typeof createLeaveApplication>['availability']>> | null = null;
+    if (ids.length > 0) {
+      try {
+        capacity = await createLeaveApplication(source).availability(base.context, { startDate: base.range.from, endDate: base.range.to, people: { kind: 'selected', membershipIds: ids } });
+        if (!capacity.settingsConfigured) notes.push('Time off and working schedules are not configured in this workspace, so expected hours are unknown.');
+      } catch (error) {
+        if (!knownRejection(error)) throw error;
+        notes.push(`Expected hours are unavailable: ${error.message}`);
+      }
+    }
+    const sum = (list: readonly (number | null)[]) => list.reduce<number>((total, value) => total + (value ?? 0), 0);
+    const people = ids.map(id => {
+      const own = tasks.filter(task => task.assignee === id).map(task => task.view);
+      const known = capacity?.members.find(member => member.membershipId.toLowerCase() === id);
+      const scheduleKnown = capacity !== null && capacity.settingsConfigured && known?.scheduleKnown === true;
+      const expected = scheduleKnown ? known?.availableMinutes ?? null : null;
+      const fact = sum(own.map(task => task.factMinutes));
+      return {
+        membershipId: id, displayName: active.get(id)?.name ?? 'Unknown member', scheduleKnown,
+        scheduledMinutes: scheduleKnown ? known?.scheduledMinutes ?? null : null,
+        holidayMinutes: scheduleKnown ? known?.holidayMinutes ?? null : null,
+        absenceMinutes: scheduleKnown ? known?.absenceMinutes ?? null : null,
+        expectedMinutes: expected, planMinutes: sum(own.map(task => task.planMinutes)), factMinutes: fact,
+        factGapMinutes: expected === null ? null : expected - fact,
+        ...(query.includeTasks ? { tasks: own } : {}),
+      };
+    }).sort((a, b) => a.displayName.localeCompare(b.displayName));
+    const unassignedTasks = tasks.filter(task => task.assignee === null).map(task => task.view);
+    return {
+      project: { id: base.project.id, name: base.project.name },
+      from: base.range.from, to: base.range.to, rangeSource: base.range.source,
+      planField: { id: base.planField.id, name: base.planField.name }, factField: { id: base.factField.id, name: base.factField.name },
+      people,
+      unassigned: { planMinutes: sum(unassignedTasks.map(task => task.planMinutes)), factMinutes: sum(unassignedTasks.map(task => task.factMinutes)), ...(query.includeTasks ? { tasks: unassignedTasks } : {}) },
+      totals: { expectedMinutes: sum(people.map(person => person.expectedMinutes)), planMinutes: sum(people.map(person => person.planMinutes)), factMinutes: sum(people.map(person => person.factMinutes)) },
+      notes,
+    };
   }
 
   return {
@@ -259,16 +530,25 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         }
         filter.assigneeIds = ids;
       }
-      return listTaskViews(s.tx, s.workspaceId, query, filter, s.myMembershipId);
+      const page = await listTaskViews(s.tx, s.workspaceId, query, filter, s.myMembershipId);
+      return query.includeFields ? { ...page, items: await withFields(s, page.items) } : page;
     }),
 
-    getTask: (token, workspace, taskId) => authorizedRead(token, 'read', workspace, READ_CAPABILITY, async s => {
+    getTask: (token, workspace, taskId, readOptions) => authorizedRead(token, 'read', workspace, READ_CAPABILITY, async s => {
       if (!isUuid(taskId)) throw notFoundError();
       await taskApp(s.tx).getTask(s.context, taskId.toLowerCase());
       const view = await loadTaskView(s.tx, s.workspaceId, taskId.toLowerCase());
       if (!view) throw notFoundError();
-      return view;
+      return readOptions?.includeFields ? (await withFields(s, [view]))[0] ?? view : view;
     }),
+
+    listFields: (token, workspace, project) => authorizedRead(token, 'read', workspace, READ_CAPABILITY, async s => {
+      const found = resolveRef('project', project, await projectItems(s));
+      return (await activeFields(s, found.id)).map(toPublicField);
+    }),
+
+    setTaskFields: (token, workspace, rawInput, writeOptions) => setTaskFields(token, workspace, rawInput, writeOptions),
+    timeSummary: (token, workspace, rawQuery) => timeSummary(token, workspace, rawQuery),
 
     async createTask(token, workspace, rawInput, writeOptions) {
       const parsed = publicTaskCreateSchema.safeParse(rawInput);

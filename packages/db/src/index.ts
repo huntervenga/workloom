@@ -112,6 +112,7 @@ export {createLocalMcpApplication} from './local-mcp/application.js';
 
 export { createAutomationApplication, type AutomationApplication, type WriteOptions as AutomationWriteOptions } from './automation/service.js';
 export { generateApiToken, hashApiToken, parseApiToken } from './automation/tokens.js';
+export { createOAuthApplication, isAllowedRedirectUri, redirectUriMatches, parseScopes, OAuthError, OAUTH_LIMITS, OAUTH_HOSTED_REDIRECT_URIS, type OAuthApplication, type AuthorizationRequest, type TokenResponse } from './automation/oauth.js';
 export { createInboxApplication } from './inbox/application.js';
 export { createProjectRulesApplication } from './project-rules/application.js';
 export { createPurgeApplication, type PurgeApplication, type PurgeResult } from './purge/application.js';

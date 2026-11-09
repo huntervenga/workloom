@@ -881,10 +881,45 @@ export const apiTokens = pgTable('api_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  /** Set when the row is the grant of a connected app (OAuth); its access and refresh tokens live in oauth_tokens. */
+  oauthClientId: text('oauth_client_id'),
 }, t => [
   unique('api_tokens_hash_unique').on(t.tokenHash),
   index('api_tokens_user_idx').on(t.userId, t.createdAt),
 ]);
+
+/** Dynamically registered OAuth clients (public clients, PKCE only). */
+export const oauthClients = pgTable('oauth_clients', {
+  id: text('id').primaryKey(),
+  clientName: text('client_name').notNull(),
+  redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+});
+
+/** Single-use authorization codes; only the hash is stored. */
+export const oauthAuthorizationCodes = pgTable('oauth_authorization_codes', {
+  codeHash: text('code_hash').primaryKey(),
+  clientId: text('client_id').notNull().references(() => oauthClients.id),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  redirectUri: text('redirect_uri').notNull(),
+  codeChallenge: text('code_challenge').notNull(),
+  scopes: jsonb('scopes').$type<string[]>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  apiTokenId: uuid('api_token_id').references(() => apiTokens.id),
+}, t => [index('oauth_codes_expiry_idx').on(t.expiresAt)]);
+
+/** Access and refresh tokens of a connected-app grant (an api_tokens row); only hashes are stored. */
+export const oauthTokens = pgTable('oauth_tokens', {
+  tokenHash: text('token_hash').primaryKey(),
+  apiTokenId: uuid('api_token_id').notNull().references(() => apiTokens.id),
+  kind: text('kind').$type<'access' | 'refresh'>().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+}, t => [index('oauth_tokens_grant_idx').on(t.apiTokenId)]);
 
 /** Starting values for new tasks of one project; a missing row means no defaults. */
 export const projectTaskDefaults = pgTable('project_task_defaults', {
@@ -923,6 +958,7 @@ export const REQUIRED_TABLES = [
   'shared_auth_identities', 'shared_auth_sessions', 'shared_auth_login_attempts',
   'local_mcp_credentials',
   'api_tokens',
+  'oauth_clients', 'oauth_authorization_codes', 'oauth_tokens',
   'project_task_defaults',
   'project_rules',
   'task_comment_mentions',
