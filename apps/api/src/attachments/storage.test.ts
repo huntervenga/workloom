@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto';
 import { inspect } from 'node:util';
 import { Readable } from 'node:stream';
 import { S3Client, CopyObjectCommand, PutObjectCommand, HeadObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import type { AttachmentRecord } from '@workloom/domain';
+import type { AttachmentRecord, AvatarRecord } from '@workloom/domain';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { attachmentFeature, loadAttachmentConfig } from './config.js';
 import { createAttachmentStorage, downloadDisposition, SignedDownloadCache } from './storage.js';
+import { createAvatarStorage } from '../avatars/storage.js';
 
 const env = { ATTACHMENTS_S3_BUCKET: 'private-files', ATTACHMENTS_S3_REGION: 'auto', ATTACHMENTS_S3_ENDPOINT: 'https://objects.example.test',
   ATTACHMENTS_S3_FORCE_PATH_STYLE: 'true', AWS_ACCESS_KEY_ID: 'test-access', AWS_SECRET_ACCESS_KEY: 'test-secret' };
@@ -40,6 +41,42 @@ describe('optional attachment storage', () => {
       await expect(storage.copy({ ...source, storageId: 'other' }, destination, new AbortController().signal)).rejects.toMatchObject({ code: 'TEMPORARILY_UNAVAILABLE' });
       expect(send).toHaveBeenCalledTimes(1);
     } finally { storage.close(); }
+  });
+
+  it('does not send R2 version headers back as object version selectors', async () => {
+    const settings = configured({ ATTACHMENTS_S3_ENDPOINT: 'https://example.eu.r2.cloudflarestorage.com' });
+    const storage = createAttachmentStorage(settings);
+    const avatars = createAvatarStorage(settings);
+    const existing = { ...row(storage.storageId), state: 'ready' as const, versionId: 'stored-r2-version', fileName: 'photo.png' };
+    const destination = { ...existing, objectKey: 'attachments/copied' };
+    const avatar: AvatarRecord = { id: existing.id, userId: existing.uploadedByUserId, expectedRevision: 0,
+      storageId: storage.storageId, objectKey: 'avatars/test/photo.webp', versionId: 'stored-r2-version',
+      state: 'ready', writeDeadline: existing.uploadExpiresAt };
+    const send = vi.spyOn(S3Client.prototype, 'send').mockImplementation(async command => {
+      if (command instanceof PutObjectCommand) {
+        if (command.input.Body instanceof Readable) for await (const chunk of command.input.Body) void chunk;
+        return { VersionId: 'r2-put-version' };
+      }
+      if (command instanceof CopyObjectCommand) {
+        expect(command.input.CopySource).toBe('private-files/attachments/test/random');
+        return { CopyObjectResult: { ETag: 'copied' }, VersionId: 'r2-copy-version' };
+      }
+      expect(command instanceof HeadObjectCommand || command instanceof DeleteObjectCommand).toBe(true);
+      expect((command as HeadObjectCommand | DeleteObjectCommand).input.VersionId).toBeUndefined();
+      return { VersionId: 'r2-head-version' };
+    });
+    try {
+      expect(new URL((await storage.signDownload(existing)).url).searchParams.has('versionId')).toBe(false);
+      expect(new URL((await storage.signPreview(existing)).url).searchParams.has('versionId')).toBe(false);
+      expect(new URL(await avatars.url(avatar)).searchParams.has('versionId')).toBe(false);
+      const signal = new AbortController().signal;
+      expect(await storage.upload(existing, Readable.from([Buffer.from('abc')]), signal)).toMatchObject({ versionId: null });
+      expect(await storage.copy(existing, destination, signal)).toEqual({ versionId: null });
+      expect(await avatars.upload(avatar, Buffer.from('webp'))).toBeNull();
+      await storage.remove(existing.objectKey, existing.versionId);
+      await avatars.remove(avatar.objectKey, avatar.versionId);
+      expect(send).toHaveBeenCalledTimes(7);
+    } finally { storage.close(); avatars.close(); }
   });
 
   it('does not accept incomplete copy responses or expose storage errors', async () => {

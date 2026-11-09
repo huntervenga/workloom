@@ -55,12 +55,13 @@ export function createAttachmentStorage(settings: AttachmentS3Settings): Attachm
   });
   async function sign(row: AttachmentRecord, media?: AttachmentMedia): Promise<AttachmentDownload> {
     if (row.storageId !== settings.storageId) throw temporarilyUnavailableError();
-    const key = JSON.stringify([row.objectKey, row.versionId, row.fileName, media?.contentType ?? 'download']);
+    const versionId = settings.objectVersionId(row.versionId);
+    const key = JSON.stringify([row.objectKey, versionId, row.fileName, media?.contentType ?? 'download']);
     return cache.get(key, async () => {
       try {
         const signedAt = new Date();
         const url = await getSignedUrl(client, new GetObjectCommand({ Bucket: value.bucket, Key: row.objectKey,
-          ...(row.versionId ? { VersionId: row.versionId } : {}),
+          ...(versionId ? { VersionId: versionId } : {}),
           // Signed response overrides also work for existing application/octet-stream objects.
           ...(media ? { ResponseContentType: media.contentType, ResponseContentDisposition: 'inline', ResponseCacheControl: 'private, no-store' } : {}),
         }), { expiresIn: value.ttlSeconds, signingDate: signedAt });
@@ -96,22 +97,23 @@ export function createAttachmentStorage(settings: AttachmentS3Settings): Attachm
         if (transferError instanceof HttpError) throw transferError;
         const stored = results[1];
         if (results[0].status !== 'fulfilled' || stored.status !== 'fulfilled' || signal.aborted) throw temporarilyUnavailableError();
-        return { checksum: digest.digest('hex'), versionId: stored.value.VersionId ?? null };
+        return { checksum: digest.digest('hex'), versionId: settings.objectVersionId(stored.value.VersionId) };
       } finally { signal.removeEventListener('abort', abort); }
     },
     async copy(source, destination, signal) {
       if (source.storageId !== settings.storageId || destination.storageId !== settings.storageId
         || source.state !== 'ready' || source.objectKey === destination.objectKey) throw temporarilyUnavailableError();
       const path = [value.bucket, ...source.objectKey.split('/')].map(part => encodeURIComponent(part).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)).join('/');
+      const sourceVersionId = settings.objectVersionId(source.versionId);
       try {
         const result = await client.send(new CopyObjectCommand({ Bucket: value.bucket, Key: destination.objectKey,
-          CopySource: path + (source.versionId ? `?versionId=${encodeURIComponent(source.versionId)}` : ''),
+          CopySource: path + (sourceVersionId ? `?versionId=${encodeURIComponent(sourceVersionId)}` : ''),
           MetadataDirective: 'REPLACE', ContentType: 'application/octet-stream',
           ContentDisposition: downloadDisposition(destination.fileName), CacheControl: 'private, no-store',
         }), { abortSignal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) });
         // The SDK detects embedded errors in HTTP 200 copy responses. Require a complete success body too.
         if (!result.CopyObjectResult?.ETag || signal.aborted) throw temporarilyUnavailableError();
-        return { versionId: result.VersionId ?? null };
+        return { versionId: settings.objectVersionId(result.VersionId) };
       } catch { throw temporarilyUnavailableError(); }
     },
     signDownload: row => sign(row),
@@ -126,9 +128,10 @@ export function createAttachmentStorage(settings: AttachmentS3Settings): Attachm
     async remove(objectKey, versionId) {
       // Resolve an unknown version after an ambiguous PUT result; never use an unscoped bucket sweep.
       const signal = AbortSignal.timeout(20_000);
+      const requestedVersionId = settings.objectVersionId(versionId);
       try {
-        const found = await client.send(new HeadObjectCommand({ Bucket: value.bucket, Key: objectKey, ...(versionId ? { VersionId: versionId } : {}) }), { abortSignal: signal });
-        const version = versionId ?? found.VersionId;
+        const found = await client.send(new HeadObjectCommand({ Bucket: value.bucket, Key: objectKey, ...(requestedVersionId ? { VersionId: requestedVersionId } : {}) }), { abortSignal: signal });
+        const version = requestedVersionId ?? settings.objectVersionId(found.VersionId);
         await client.send(new DeleteObjectCommand({ Bucket: value.bucket, Key: objectKey, ...(version ? { VersionId: version } : {}) }), { abortSignal: signal });
       } catch (error) { if (!missing(error)) throw temporarilyUnavailableError(); }
     },

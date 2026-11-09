@@ -24,16 +24,17 @@ export function createAvatarStorage(settings: AttachmentS3Settings): AvatarStora
       try {
         const result = await client.send(new PutObjectCommand({ Bucket: value.bucket, Key: row.objectKey, Body: body, ContentLength: body.length,
           ContentType: 'image/webp', ContentDisposition: 'inline', CacheControl: 'private, no-store' }), { abortSignal: AbortSignal.timeout(45_000) });
-        return result.VersionId ?? null;
+        return settings.objectVersionId(result.VersionId);
       } catch { throw temporarilyUnavailableError(); }
     },
     async url(row) {
       check(row);
-      const result = await cache.get(JSON.stringify([row.objectKey, row.versionId]), async () => {
+      const versionId = settings.objectVersionId(row.versionId);
+      const result = await cache.get(JSON.stringify([row.objectKey, versionId]), async () => {
         try {
           const signedAt = new Date();
           const url = await getSignedUrl(client, new GetObjectCommand({ Bucket: value.bucket, Key: row.objectKey,
-            ...(row.versionId ? { VersionId: row.versionId } : {}), ResponseContentType: 'image/webp', ResponseContentDisposition: 'inline', ResponseCacheControl: 'private, no-store' }),
+            ...(versionId ? { VersionId: versionId } : {}), ResponseContentType: 'image/webp', ResponseContentDisposition: 'inline', ResponseCacheControl: 'private, no-store' }),
           { expiresIn: value.ttlSeconds, signingDate: signedAt });
           return { url, expiresAt: new Date(signedAt.getTime() + value.ttlSeconds * 1000).toISOString() };
         } catch { throw temporarilyUnavailableError(); }
@@ -43,9 +44,10 @@ export function createAvatarStorage(settings: AttachmentS3Settings): AvatarStora
     async remove(objectKey, versionId) {
       if (!objectKey.startsWith('avatars/')) throw temporarilyUnavailableError();
       const signal = AbortSignal.timeout(20_000);
+      const requestedVersionId = settings.objectVersionId(versionId);
       try {
-        const object = await client.send(new HeadObjectCommand({ Bucket: value.bucket, Key: objectKey, ...(versionId ? { VersionId: versionId } : {}) }), { abortSignal: signal });
-        const version = versionId ?? object.VersionId;
+        const object = await client.send(new HeadObjectCommand({ Bucket: value.bucket, Key: objectKey, ...(requestedVersionId ? { VersionId: requestedVersionId } : {}) }), { abortSignal: signal });
+        const version = requestedVersionId ?? settings.objectVersionId(object.VersionId);
         await client.send(new DeleteObjectCommand({ Bucket: value.bucket, Key: objectKey, ...(version ? { VersionId: version } : {}) }), { abortSignal: signal });
         cache.clear();
       } catch (error) { if (!(error instanceof Error && ['NotFound', 'NoSuchKey', 'NoSuchVersion'].includes(error.name))) throw temporarilyUnavailableError(); }

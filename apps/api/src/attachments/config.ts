@@ -10,11 +10,18 @@ interface Settings {
 export class AttachmentS3Settings {
   readonly #value: Settings;
   readonly storageId: string;
+  readonly #supportsObjectVersions: boolean;
   constructor(value: Settings) {
     this.#value = value;
+    const host = value.endpoint ? new URL(value.endpoint).hostname : '';
+    this.#supportsObjectVersions = !host.endsWith('.r2.cloudflarestorage.com');
     this.storageId = createHash('sha256').update(JSON.stringify([value.endpoint ?? 'aws', value.region, value.bucket, value.forcePathStyle])).digest('hex');
   }
   values(): Readonly<Settings> { return this.#value; }
+  /** R2 returns version headers but rejects versioned requests. Our object keys are unique per write. */
+  objectVersionId(versionId: string | null | undefined): string | null {
+    return this.#supportsObjectVersions ? versionId ?? null : null;
+  }
   toJSON() { return '[redacted attachment storage settings]'; }
   [Symbol.for('nodejs.util.inspect.custom')]() { return this.toJSON(); }
 }
