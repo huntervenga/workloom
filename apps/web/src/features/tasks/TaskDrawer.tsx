@@ -1,4 +1,4 @@
-import { TaskAttachments } from '../attachments/TaskAttachments';
+import { AttachFileButton, AttachmentActivityFallback, TaskAttachments } from '../attachments/TaskAttachments';
 import { WorkspaceLink as Link } from '../workspace/WorkspaceNavigation';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 
@@ -601,7 +601,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
       <div className="flex flex-wrap items-start justify-between gap-2"><h3 className="text-sm font-medium text-ink">{t('tasks.subtasks.heading')}</h3>{subtaskActions}</div>
     </section> : null;
 
-  return (<>
+  return (<TaskAttachments actorId={actorId} workspaceId={workspace.id} taskId={taskId} writable={canEdit} members={members}>
     {/* One scroller for the whole task: its form, then subtasks and activity with their own forms.
         The actions stay in the footer below and submit the form by ID. */}
     <div className={`mt-1 ${formBodyClassName}`}>
@@ -719,7 +719,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
               ) : null}
 
             </>}
-            topActions={writable && !archived && !locked && props.onCompleteTask && props.onContinueTask && !latest.meetingId ? <CompleteSplitButton task={latest} statuses={props.statuses} busy={busy} onComplete={props.onCompleteTask} onContinue={props.onContinueTask} /> : null}
+            topActions={<>{writable && !archived && !locked && props.onCompleteTask && props.onContinueTask && !latest.meetingId ? <CompleteSplitButton task={latest} statuses={props.statuses} busy={busy} onComplete={props.onCompleteTask} onContinue={props.onContinueTask} /> : null}<div className="ml-auto"><AttachFileButton /></div></>}
             secondaryActions={writable && !archived && !locked ? (
               retained ? <p className="text-xs text-muted">{t('autosave.archive.waitForSave')}</p> : (
                 <div className="flex flex-wrap items-center gap-2"><CopyTaskLink workspaceId={latest.workspaceId} projectId={latest.projectId} taskId={latest.id} /><Button size="sm" aria-disabled={busy || undefined} onClick={runArchive}><Archive size={16} aria-hidden="true" />{t('tasks.taskDrawer.archive')}</Button>{props.onDuplicateTask && latest.meetingId === null ? <Menu.Root modal={false}><Menu.Trigger asChild><Button type="button" size="sm" variant="ghost" disabled={busy} aria-label={t('duplication.taskActions')}><MoreHorizontal size={16} aria-hidden="true"/></Button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-44 rounded-lg border border-line bg-surface p-1 shadow-lg" onCloseAutoFocus={event=>event.preventDefault()}><Menu.Item className="flex cursor-pointer items-center gap-2 rounded px-3 py-2 text-sm text-ink outline-none data-[highlighted]:bg-canvas" onSelect={()=>props.onDuplicateTask?.(latest)}><Copy size={14} aria-hidden="true"/>{t('duplication.taskAction')}</Menu.Item></Menu.Content></Menu.Portal></Menu.Root> : null}</div>
@@ -770,9 +770,8 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
           </p>
         ) : null}
       </form>
-      <TaskAttachments actorId={actorId} workspaceId={workspace.id} taskId={taskId} writable={canEdit} members={members} />
       {subtasks}
-      {props.activity}
+      {props.activity ?? <AttachmentActivityFallback />}
     </div>
 
       {/* No Save, Draft or Discard for ordinary edits: only the save state, and a Retry for a held lock. */}
@@ -789,7 +788,7 @@ function TaskEditForm(props: TaskDrawerProps & { latest: TaskDto; hierarchyCurre
             {t('tasks.taskDrawer.restore')}</Button>
         ) : null}
       </div>
-  </>);
+  </TaskAttachments>);
 }
 
 /**

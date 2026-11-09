@@ -5,7 +5,7 @@ import { workspacePath } from '../workspace/queries';
 export const attachmentPath = (workspaceId: string, taskId: string) => `${workspacePath(workspaceId)}/tasks/${encodeURIComponent(taskId)}/attachments`;
 export const fetchAttachmentFeatures = async (signal?: AbortSignal) => (await apiGet('/api/v1/features', serverFeaturesResponseSchema, signal)).data.features.taskAttachments;
 export const fetchAttachments = async (workspaceId: string, taskId: string, signal?: AbortSignal) =>
-  (await apiGet(attachmentPath(workspaceId, taskId), taskAttachmentsResponseSchema.refine(result => result.data.items.every(row => row.workspaceId === workspaceId && row.taskId === taskId)), signal)).data;
+  (await apiGet(`${attachmentPath(workspaceId, taskId)}?placement=1`, taskAttachmentsResponseSchema.refine(result => result.data.items.every(row => row.workspaceId === workspaceId && row.taskId === taskId)), signal)).data;
 export const fetchAttachment = async (workspaceId: string, taskId: string, id: string) =>
   (await apiGet(`${attachmentPath(workspaceId, taskId)}/${id}`, taskAttachmentResponseSchema.refine(result => result.data.id === id && result.data.taskId === taskId && result.data.workspaceId === workspaceId))).data;
 
@@ -15,8 +15,8 @@ async function writeAttachment(workspaceId: string, taskId: string, path: string
   if (!parsed.success || parsed.data.data.workspaceId !== workspaceId || parsed.data.data.taskId !== taskId) throw new ApiError({ kind: 'invalid_response', status: response.status });
   return parsed.data.data;
 }
-export const reserveAttachment = (workspaceId: string, taskId: string, actorId: string, file: File, key: string, signal?: AbortSignal) =>
-  writeAttachment(workspaceId, taskId, attachmentPath(workspaceId, taskId), 'POST', { fileName: file.name, sizeBytes: file.size, expectedActorId: actorId }, key, signal);
+export const reserveAttachment = (workspaceId: string, taskId: string, actorId: string, file: File, key: string, signal?: AbortSignal, inDescription?: true) =>
+  writeAttachment(workspaceId, taskId, attachmentPath(workspaceId, taskId), 'POST', { fileName: file.name, sizeBytes: file.size, expectedActorId: actorId, ...(inDescription ? { inDescription } : {}) }, key, signal);
 export const removeAttachment = (workspaceId: string, taskId: string, actorId: string, row: TaskAttachmentDto, key: string) =>
   writeAttachment(workspaceId, taskId, `${attachmentPath(workspaceId, taskId)}/${row.id}`, 'DELETE', { expectedRevision: row.revision, expectedActorId: actorId }, key);
 export async function attachmentDownloadUrl(workspaceId: string, taskId: string, id: string) {

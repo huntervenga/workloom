@@ -37,10 +37,11 @@ export function createTaskCommentsApplication(unit: TaskCommentsUnitOfWork, tool
       await target(repo, ctx.workspaceId, id);
       const permissionEpoch = await repo.permissionEpoch(ctx.workspaceId);
       const binding = { version: 1, workspaceId: ctx.workspaceId, taskId: id, actorUserId: ctx.actor.userId, membershipId: access.membership.id, permissionEpoch, limit: query.limit } as const;
+      const attachments = query.attachments;
       let cursor: TaskTimelineCursor | null = null;
       if (query.cursor !== undefined) {
         cursor = tools.decodeCursor(query.cursor);
-        if (cursor.kind !== kind || cursor.version !== binding.version || cursor.workspaceId !== binding.workspaceId || cursor.taskId !== binding.taskId || cursor.actorUserId !== binding.actorUserId || cursor.membershipId !== binding.membershipId || cursor.permissionEpoch !== binding.permissionEpoch || cursor.limit !== binding.limit) throw invalid('cursor');
+        if (cursor.kind !== kind || cursor.version !== binding.version || cursor.workspaceId !== binding.workspaceId || cursor.taskId !== binding.taskId || cursor.actorUserId !== binding.actorUserId || cursor.membershipId !== binding.membershipId || cursor.permissionEpoch !== binding.permissionEpoch || cursor.limit !== binding.limit || (cursor.kind === 'task-timeline' && cursor.attachments !== attachments)) throw invalid('cursor');
       }
       if (kind === 'task-comments') {
         const after = cursor?.kind === 'task-comments' ? { createdAt: cursor.createdAt, id: cursor.id } : null;
@@ -49,8 +50,9 @@ export function createTaskCommentsApplication(unit: TaskCommentsUnitOfWork, tool
       }
       const after = cursor && cursor.kind !== 'task-comments' ? { changeSeq: cursor.changeSeq, eventOrdinal: cursor.eventOrdinal } : null;
       if (kind === 'task-timeline') {
-        const rows = await repo.listTimeline(ctx.workspaceId, id, after, query.limit + 1), items = rows.slice(0, query.limit), last = items.at(-1);
-        return { kind, items, nextCursor: rows.length > query.limit && last ? tools.encodeCursor({ ...binding, kind, changeSeq: last.changeSeq, eventOrdinal: last.eventOrdinal }) : null } as const;
+        const rows = attachments ? await repo.listTimeline(ctx.workspaceId, id, after, query.limit + 1, true) : await repo.listTimeline(ctx.workspaceId, id, after, query.limit + 1);
+        const items = rows.slice(0, query.limit), last = items.at(-1);
+        return { kind, items, nextCursor: rows.length > query.limit && last ? tools.encodeCursor({ ...binding, kind, ...(attachments ? { attachments } : {}), changeSeq: last.changeSeq, eventOrdinal: last.eventOrdinal }) : null } as const;
       }
       const rows = await repo.listActivity(ctx.workspaceId, id, after, query.limit + 1), items = rows.slice(0, query.limit), last = items.at(-1);
       return { kind, items, nextCursor: rows.length > query.limit && last ? tools.encodeCursor({ ...binding, kind, changeSeq: last.changeSeq, eventOrdinal: last.eventOrdinal }) : null } as const;

@@ -58,16 +58,21 @@ const accepts = (schema: { safeParse(value: unknown): { success: boolean } }, va
 
 describe('timeline API types', () => {
   it('exposes the discriminated item and avatar types', () => {
-    expectTypeOf<TaskTimelineItemDto['type']>().toEqualTypeOf<'comment' | 'activity'>();
+    expectTypeOf<TaskTimelineItemDto['type']>().toEqualTypeOf<'comment' | 'activity' | 'attachment'>();
     expectTypeOf<TaskCommentDto['authorAvatarUrl']>().toEqualTypeOf<string | null | undefined>();
     expectTypeOf<TaskActivityDto['actorAvatarUrl']>().toEqualTypeOf<string | null | undefined>();
     expectTypeOf<Extract<TaskTimelineItemDto, { type: 'activity' }>['actorAvatarUrl']>().toEqualTypeOf<string | null | undefined>();
   });
 
-  it('parses both item kinds and rejects unknown kinds', () => {
+  it('parses supported item kinds and rejects unknown kinds', () => {
     const parsed: TaskTimelineItemDto = taskTimelineItemSchema.parse(commentItem);
     expect(parsed.type === 'comment' && parsed.comment.body).toBe('Looks good.');
     expect(accepts(taskTimelineItemSchema, activityItem)).toBe(true);
+    const attachment = { type: 'attachment', id: ACTIVITY, workspaceId: WORKSPACE, taskId: TASK, changeSeq: '3',
+      eventOrdinal: 1, occurredAt: AT, attachmentId: OTHER, action: 'created',
+      actorUserId: USER, actorMembershipId: MEMBERSHIP, actorDisplayName: 'Ada' };
+    expect(taskTimelineItemSchema.parse(attachment)).toEqual(attachment);
+    expect(accepts(taskTimelineItemSchema, { ...attachment, url: 'https://example.com/private' })).toBe(false);
     expect(accepts(taskTimelineItemSchema, { ...activityItem, type: 'system' })).toBe(false);
     expect(accepts(taskTimelineItemSchema, { ...commentItem, kind: 'updated' })).toBe(false);
   });

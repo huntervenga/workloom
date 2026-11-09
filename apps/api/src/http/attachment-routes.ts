@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import {
   MAX_ATTACHMENT_BYTES, MAX_AVATAR_BYTES, attachmentDownloadResponseSchema, attachmentPreviewResponseSchema, deleteAttachmentInputSchema, idSchema,
-  reserveAttachmentInputSchema, serverFeaturesResponseSchema, taskAttachmentResponseSchema, taskAttachmentsResponseSchema,
+  reserveAttachmentInputSchema, serverFeaturesResponseSchema, taskAttachmentResponseSchema, taskAttachmentsResponseSchema, type TaskAttachmentDto,
 } from '@workloom/contracts';
 import { toCommandContext, temporarilyUnavailableError, unauthenticatedError, type AttachmentRecord, type CommandContext } from '@workloom/domain';
 import type { AttachmentStore } from '@workloom/db';
@@ -16,6 +16,14 @@ import { createRateLimiter } from './rate-limit.js';
 import { readIdempotencyKey } from './task-routes.js';
 
 const base = '/api/v1/workspaces/:workspaceId/tasks/:taskId/attachments';
+// Older tabs use strict DTOs. Only clients that request placement metadata receive it.
+function present(row: TaskAttachmentDto, request: FastifyRequest): TaskAttachmentDto {
+  const query = request.query;
+  if (!row.inDescription || (query && typeof query === 'object' && 'placement' in query && query.placement === '1')) return row;
+  const legacy = { ...row };
+  delete legacy.inDescription;
+  return legacy;
+}
 const paramsSchema = z.strictObject({ workspaceId: idSchema, taskId: idSchema, attachmentId: idSchema.optional() });
 interface Dependencies { avatarAvailable?: boolean; identity: IdentityAdapter; config?: AttachmentConfig | undefined; store?: AttachmentStore | undefined; storage?: AttachmentStorage | undefined }
 
@@ -53,17 +61,17 @@ export function registerAttachmentRoutes(app: FastifyInstance, deps: Dependencie
     routes.get(base, async (request, reply) => {
       const { ctx, taskId } = await context(request);
       const data = await service.list(ctx, taskId);
-      return sendData(request, reply, taskAttachmentsResponseSchema, { ...data, canUpload: data.canUpload && feature.enabled });
+      return sendData(request, reply, taskAttachmentsResponseSchema, { ...data, items: data.items.map(row => present(row, request)), canUpload: data.canUpload && feature.enabled });
     });
     routes.get(`${base}/:attachmentId`, async (request, reply) => {
       const { ctx, taskId, attachmentId } = await context(request);
-      return sendData(request, reply, taskAttachmentResponseSchema, await service.get(ctx, taskId, attachmentId ?? ''));
+      return sendData(request, reply, taskAttachmentResponseSchema, present(await service.get(ctx, taskId, attachmentId ?? ''), request));
     });
     routes.post(base, async (request, reply) => {
       const { ctx, taskId } = await context(request, readIdempotencyKey(request));
       const input = parseInput(reserveAttachmentInputSchema, request.body);
       if (!limiter.check(ctx.actor.userId).allowed) throw new HttpError(429, 'RATE_LIMITED', 'Too many upload attempts. Retry shortly.');
-      return sendData(request, reply, taskAttachmentResponseSchema, await service.reserve(ctx, taskId, input, storage().storageId), { statusCode: 201 });
+      return sendData(request, reply, taskAttachmentResponseSchema, present(await service.reserve(ctx, taskId, input, storage().storageId), request), { statusCode: 201 });
     });
     routes.post(`${base}/:attachmentId/download-url`, async (request, reply) => {
       const { ctx, taskId, attachmentId } = await context(request);
@@ -82,7 +90,7 @@ export function registerAttachmentRoutes(app: FastifyInstance, deps: Dependencie
       const input = parseInput(deleteAttachmentInputSchema, request.body);
       const result = await service.remove(ctx, taskId, attachmentId ?? '', input);
       deps.storage?.invalidate(result.id);
-      return sendData(request, reply, taskAttachmentResponseSchema, result);
+      return sendData(request, reply, taskAttachmentResponseSchema, present(result, request));
     });
 
     await routes.register(async binary => {
@@ -124,7 +132,7 @@ export function registerAttachmentRoutes(app: FastifyInstance, deps: Dependencie
           const actor = await deps.identity.resolveActor(request);
           if (actor.userId !== item.ctx.actor.userId) throw unauthenticatedError();
           const updated = await service.finishUpload({ ...item.ctx, actor }, item.row, result);
-          return sendData(request, reply, taskAttachmentResponseSchema, updated);
+          return sendData(request, reply, taskAttachmentResponseSchema, present(updated, request));
         } catch (error) {
           await store.failUpload(item.row).catch(() => undefined); // pre-recorded cleanup still survives a DB outage
           throw error;

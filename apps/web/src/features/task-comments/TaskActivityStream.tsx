@@ -7,6 +7,7 @@ import { ApiError, isAccessDenied } from '../../lib/api';
 import { QueryErrorState } from '../../shared/QueryErrorState';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { UserAvatar } from '../../shared/UserAvatar';
+import { AttachmentTimelineEntry } from '../attachments/TaskAttachments';
 import { TIMELINE_PAGE_SIZE } from './api';
 import { chronological, describeChange, detailNote, headline, type ActivityItem, type ChangeLine, type Shown } from './presentation';
 import { discussionKeys, invalidateTaskTimelines, useTimelineQuery } from './queries';
@@ -108,6 +109,7 @@ export function TaskActivityStream({ task, controller, writable, canRetry, timez
         </div>
         <p className="mt-1.5 whitespace-pre-wrap break-words pl-8 text-sm text-ink">{item.comment.body}</p>
       </li>
+    : item.type === 'attachment' ? <AttachmentTimelineEntry key={item.id} item={item} time={time(item.occurredAt)} />
     : <li key={item.id} data-task-activity-id={item.id} className="px-1">{activity(item)}</li>;
 
   return <section aria-label={t('activity.heading')} className="flex min-h-0 flex-col gap-3 text-ink">

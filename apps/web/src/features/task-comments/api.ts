@@ -30,7 +30,7 @@ export const timelineRowsInContext = (rows: readonly TaskTimelineItemDto[], work
   rows.every(row => inContext(row, workspaceId, taskId) && (row.type !== 'comment' || inContext(row.comment, workspaceId, taskId)));
 /** One server-ordered page (changeSeq, eventOrdinal DESC) of comments and activity under a single cursor. */
 export async function fetchTimeline(workspaceId: string, taskId: string, cursor: string | null, signal?: AbortSignal): Promise<TimelinePage<TaskTimelineItemDto>> {
-  const result = await apiGet(`${path(workspaceId, taskId)}/timeline?${params('timeline', cursor)}`, taskTimelineResponseSchema.refine(result => timelineRowsInContext(result.data, workspaceId, taskId)), signal);
+  const result = await apiGet(`${path(workspaceId, taskId)}/timeline?${params('timeline', cursor)}&attachments=1`, taskTimelineResponseSchema.refine(result => timelineRowsInContext(result.data, workspaceId, taskId)), signal);
   return { rows: result.data, nextCursor: result.meta.nextCursor };
 }
 export function createCommentRequest(workspaceId: string, taskId: string, input: CreateTaskCommentInput) {

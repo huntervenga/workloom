@@ -23,7 +23,7 @@ export function createTaskCommentsRepository(db: WorkloomExecutor): TaskComments
       // Current author avatar, validated provider or authenticated upload URL; never stored with the comment.
       return rows.map(({ comment, avatarUrl }): TaskCommentDto => ({ ...comment, createdAt: comment.createdAt.toISOString(), authorAvatarUrl: safeAvatarUrl(avatarUrl) }));
     },
-    listTimeline(workspaceId, taskId, after, take) { return listTimeline(db, workspaceId, taskId, after, take); },
+    listTimeline(workspaceId, taskId, after, take, includeAttachments) { return listTimeline(db, workspaceId, taskId, after, take, includeAttachments); },
     async listActivity(workspaceId, taskId, after, take) {
       bounded(take);
       const rows = await db.select({ id: auditEvents.id, workspaceId: auditEvents.workspaceId, taskId: auditEvents.entityId, action: auditEvents.action, actorUserId: auditEvents.actorUserId, actorMembershipId: auditEvents.actorMembershipId, actorDisplayName: users.displayName, occurredAt: auditEvents.recordedAt, changeSeq: auditEvents.changeSeq, eventOrdinal: auditEvents.eventOrdinal })

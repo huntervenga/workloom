@@ -2,12 +2,12 @@ import { StrictMode } from 'react';
 import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AttachmentFeature, TaskAttachmentDto, TaskAttachmentList } from '@workloom/contracts';
 import { ApiError } from '../../lib/api';
 import { queryKeys } from '../../lib/queryKeys';
 import * as api from './api';
-import { TaskAttachments } from './TaskAttachments';
+import { AttachFileButton, AttachmentActivityFallback, AttachmentDescription, TaskAttachments } from './TaskAttachments';
 
 vi.mock('./api', () => ({ fetchAttachmentFeatures: vi.fn(), fetchAttachments: vi.fn(), fetchAttachment: vi.fn(), reserveAttachment: vi.fn(),
   removeAttachment: vi.fn(), uploadAttachment: vi.fn(), attachmentDownloadUrl: vi.fn(), attachmentPreviewUrl: vi.fn() }));
@@ -16,8 +16,17 @@ const feature: AttachmentFeature = { enabled: true, reason: null, limits: { maxF
 const attachment: TaskAttachmentDto = { id: '10000000-0000-4000-8000-000000000004', workspaceId: props.workspaceId, taskId: props.taskId, uploadedByUserId: props.actorId,
   fileName: 'report.txt', sizeBytes: 3, state: 'ready', revision: 3, createdAt: new Date().toISOString(), uploadExpiresAt: new Date(Date.now() + 60_000).toISOString() };
 let list: TaskAttachmentList;
+const onIntersect: IntersectionObserverCallback[] = [];
+afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => {
   vi.resetAllMocks();
+  // Keep automatic offscreen thumbnails out of modal tests; the drop test explicitly reveals them.
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: IntersectionObserverCallback) { onIntersect.push(callback); }
+    observe() { /* revealed by the test */ }
+    disconnect() { /* no browser observer */ }
+  });
+  onIntersect.length = 0;
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
   vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => undefined);
   vi.mocked(api.attachmentPreviewUrl).mockResolvedValue({ attachmentId: attachment.id, kind: 'image', contentType: 'image/png',
@@ -32,7 +41,13 @@ beforeEach(() => {
 });
 function mount(strict = false, writable = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const panel = <TaskAttachments {...props} writable={writable} />;
+  const panel = <aside data-task-panel="">
+    <TaskAttachments {...props} writable={writable}>
+      <AttachFileButton />
+      <AttachmentDescription><textarea aria-label="Description" /></AttachmentDescription>
+      <AttachmentActivityFallback />
+    </TaskAttachments>
+  </aside>;
   const result = render(<QueryClientProvider client={client}>{strict ? <StrictMode>{panel}</StrictMode> : panel}</QueryClientProvider>);
   const input = result.container.querySelector('input[type=file]');
   if (!input) throw new Error('File selector missing.');
@@ -46,7 +61,7 @@ describe('task attachments', () => {
     expect(await screen.findByText('Configure file storage on the server to attach files.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Attach file' })).toBeDisabled();
     expect(api.reserveAttachment).not.toHaveBeenCalled();
-    expect(await screen.findByRole('button', { name: 'Preview photo.png' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'photo.png' })).toBeDisabled();
     expect(api.attachmentPreviewUrl).not.toHaveBeenCalled();
   });
 
@@ -56,9 +71,37 @@ describe('task attachments', () => {
     const file = new File(['abc'], 'report.txt');
     fireEvent.change(input, { target: { files: [file] } });
     expect(await screen.findByRole('button', { name: 'Download report.txt' })).toBeEnabled();
-    expect(api.reserveAttachment).toHaveBeenCalledWith(props.workspaceId, props.taskId, props.actorId, file, expect.any(String), expect.any(AbortSignal));
+    expect(api.reserveAttachment).toHaveBeenCalledWith(props.workspaceId, props.taskId, props.actorId, file, expect.any(String), expect.any(AbortSignal), undefined);
     expect(api.uploadAttachment).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+  });
+
+  it('routes an image dropped on the description to inline placement and keeps a normal drop out of it', async () => {
+    const { container } = mount();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach file' })).toBeEnabled());
+    const description = screen.getByRole('textbox', { name: 'Description' });
+    const file = new File(['png'], 'screenshot.png', { type: 'image/png' });
+    const transfer = { types: ['Files'], files: [file], dropEffect: 'none' };
+    const inline = { ...attachment, fileName: file.name, inDescription: true as const };
+    vi.mocked(api.uploadAttachment).mockImplementationOnce(async () => { list = { ...list, items: [inline], remainingSlots: 4 }; return inline; });
+    fireEvent.dragOver(description, { dataTransfer: transfer });
+    expect(screen.getByRole('status')).toHaveTextContent('Drop files to add to the description');
+    fireEvent.drop(description, { dataTransfer: transfer });
+    expect(api.reserveAttachment).toHaveBeenCalledWith(props.workspaceId, props.taskId, props.actorId, file, expect.any(String), expect.any(AbortSignal), true);
+    const inlineArea = description.closest('[data-attachment-description]') as HTMLElement;
+    await within(inlineArea).findByRole('button', { name: 'Preview screenshot.png' });
+    await act(async () => { for (const reveal of onIntersect) reveal([{ isIntersecting: true }] as IntersectionObserverEntry[], {} as IntersectionObserver); });
+    expect(within(inlineArea).getByRole('img', { name: 'screenshot.png' })).toBeInTheDocument();
+    expect(screen.getByText('You added an attachment')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Attach file' })).toBeEnabled());
+    const text = new File(['text'], 'readme.txt');
+    const panel = container.querySelector('[data-task-panel]') as HTMLElement;
+    fireEvent.dragOver(panel, { dataTransfer: { types: ['text/plain'] } });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.dragOver(panel, { dataTransfer: { types: ['Files'], files: [text] } });
+    expect(screen.getByRole('status')).toHaveTextContent('Drop files to attach to this task');
+    fireEvent.drop(panel, { dataTransfer: { types: ['Files'], files: [text] } });
+    expect(api.reserveAttachment).toHaveBeenLastCalledWith(props.workspaceId, props.taskId, props.actorId, text, expect.any(String), expect.any(AbortSignal), undefined);
   });
 
   it('rejects too many files and oversize files before reserving a server slot', async () => {

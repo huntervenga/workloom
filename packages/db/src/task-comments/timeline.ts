@@ -24,7 +24,7 @@ const head = sql`a.change_seq, a.event_ordinal, a.recorded_at, a.action, a.actor
 const order = (take: number) => sql`order by a.change_seq desc, a.event_ordinal desc limit ${take}`;
 const otherTask = (id: SQL) => sql`(select jsonb_build_object('id', o.id, 'title', o.title) from tasks o where o.workspace_id = a.workspace_id and o.id = ${uuidOf(id)} and o.visibility = 'workspace')`;
 
-export function timelineStatement(workspaceId: string, taskId: string, after: TaskActivityAnchor | null, take: number): SQL {
+export function timelineStatement(workspaceId: string, taskId: string, after: TaskActivityAnchor | null, take: number, includeAttachments?: true): SQL {
   if (!Number.isSafeInteger(take) || take < 1 || take > MAX_ROWS) throw new TypeError('Task timeline pages are bounded to 101 read rows.');
   const keyset = after ? sql`and (a.change_seq, a.event_ordinal) < (${after.changeSeq}::bigint, ${after.eventOrdinal}::integer)` : sql``;
   const activity = sql`jsonb_build_object('v', a.diff->'activity'->'v', 'status', a.diff->'activity'->'status', 'section', a.diff->'activity'->'section', 'responsible', a.diff->'activity'->'responsible', 'tags', a.diff->'activity'->'tags', 'participants', a.diff->'activity'->'participants')`;
@@ -95,6 +95,15 @@ export function timelineStatement(workspaceId: string, taskId: string, after: Ta
       left join memberships wm on wm.workspace_id = w.workspace_id and wm.id = w.membership_id
       left join users wu on wu.id = wm.user_id
       ${actor} ${order(take)})
+    ${includeAttachments ? sql`union all
+      (select 'attachment', a.id, ${head}, jsonb_build_object('id', f.id)
+       from t join task_attachments f on f.workspace_id = ${workspaceId}::uuid and f.task_id = t.id
+       join audit_events a on a.workspace_id = f.workspace_id and a.entity_type = 'task_attachment' and a.entity_id = f.id
+         and a.diff->>'taskId' = t.id::text
+         and (a.action = 'created' or (a.action = 'deleted' and exists (
+           select 1 from audit_events added where added.workspace_id = a.workspace_id and added.entity_type = 'task_attachment'
+             and added.entity_id = f.id and added.action = 'created' and added.diff->>'taskId' = t.id::text))) ${keyset}
+       ${actor} ${order(take)})` : sql``}
   ) u order by change_seq desc, event_ordinal desc limit ${take}`;
 }
 
@@ -275,6 +284,10 @@ export function mapTimelineRow(row: TimelineRow, workspaceId: string, taskId: st
     const comment = taskCommentSchema.parse({ ...payload, createdAt: iso(payload.createdAt as string), authorAvatarUrl: avatar });
     return taskTimelineItemSchema.parse({ type: 'comment', id: row.item_id, ...position, comment });
   }
+  if (row.src === 'attachment') return taskTimelineItemSchema.parse({
+    type: 'attachment', id: row.item_id, ...position, attachmentId: payload.id, action: row.action,
+    actorUserId: row.actor_user_id, actorMembershipId: row.actor_membership_id, actorDisplayName: row.actor_display_name, actorAvatarUrl: safeAvatarUrl(row.actor_avatar_url),
+  });
   const out: Mapped = { changes: [], partial: false };
   let kind: string = row.action;
   if (row.src === 'task') { if (row.action === 'updated' || row.action === 'schedule_updated') taskChanges(payload, out); }
@@ -294,8 +307,8 @@ export function mapTimelineRow(row: TimelineRow, workspaceId: string, taskId: st
   });
 }
 
-export async function listTimeline(db: WorkloomExecutor, workspaceId: string, taskId: string, after: TaskActivityAnchor | null, take: number): Promise<TaskTimelineItemDto[]> {
-  const result = await (db as unknown as { execute(query: SQL): Promise<unknown> }).execute(timelineStatement(workspaceId, taskId, after, take));
+export async function listTimeline(db: WorkloomExecutor, workspaceId: string, taskId: string, after: TaskActivityAnchor | null, take: number, includeAttachments?: true): Promise<TaskTimelineItemDto[]> {
+  const result = await (db as unknown as { execute(query: SQL): Promise<unknown> }).execute(timelineStatement(workspaceId, taskId, after, take, includeAttachments));
   const rows = (Array.isArray(result) ? result : (result as { rows: unknown[] }).rows) as TimelineRow[];
   if (rows.length > take) throw new Error('Task timeline statement exceeded its bound.');
   return rows.map(row => mapTimelineRow(row, workspaceId, taskId));

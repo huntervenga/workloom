@@ -1850,6 +1850,7 @@ export const taskAttachments = pgTable('task_attachments', {
   slot: smallint('slot').notNull(), revision: integer('revision').notNull(),
   storageId: text('storage_id').notNull(), objectKey: text('object_key').notNull().unique(),
   versionId: text('version_id'), checksum: text('checksum'),
+  inDescription: boolean('in_description').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
   uploadExpiresAt: timestamp('upload_expires_at', { withTimezone: true }).notNull(),
 }, t => [

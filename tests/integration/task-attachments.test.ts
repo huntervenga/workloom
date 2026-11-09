@@ -125,12 +125,22 @@ describe('durable task attachments', () => {
       const base = `/api/v1/workspaces/${workspaceId}/tasks/${taskId}/attachments`;
       const file = Buffer.alloc(65_536, 97);
       const reserved = await app.inject({ method: 'POST', url: base, headers: { ...headers, 'idempotency-key': randomUUID() },
-        payload: { expectedActorId: FIXTURE_USER_IDS.owner, fileName: 'stream.html', sizeBytes: file.length } });
+        payload: { expectedActorId: FIXTURE_USER_IDS.owner, fileName: 'stream.html', sizeBytes: file.length, inDescription: true } });
       expect(reserved.statusCode).toBe(201);
       const id: string = reserved.json().data.id;
       const uploaded = await app.inject({ method: 'PUT', url: `${base}/${id}/content`, headers: { ...headers, 'content-type': 'application/octet-stream', 'x-workloom-expected-actor': FIXTURE_USER_IDS.owner }, payload: file });
       expect(uploaded.statusCode).toBe(200);
       expect(uploaded.json().data.state).toBe('ready');
+      const placed = await app.inject({ method: 'GET', url: `${base}?placement=1`, headers });
+      expect(placed.json().data.items).toContainEqual(expect.objectContaining({ id, inDescription: true }));
+      const oldList = await app.inject({ method: 'GET', url: base, headers });
+      expect(oldList.json().data.items.find((item: { id: string }) => item.id === id)).not.toHaveProperty('inDescription');
+      const timeline = base.replace(/attachments$/, 'timeline');
+      const optedIn = await app.inject({ method: 'GET', url: `${timeline}?attachments=1`, headers });
+      expect(optedIn.statusCode).toBe(200);
+      expect(optedIn.json().data).toContainEqual(expect.objectContaining({ type: 'attachment', attachmentId: id, action: 'created' }));
+      const oldTimeline = await app.inject({ method: 'GET', url: timeline, headers });
+      expect(oldTimeline.json().data).not.toContainEqual(expect.objectContaining({ type: 'attachment' }));
       expect(writes).toHaveLength(1);
       expect(writes[0]?.body).toEqual(file);
       expect(writes[0]?.type).toBe('application/octet-stream');
@@ -140,8 +150,11 @@ describe('durable task attachments', () => {
       const signed = new URL(link.json().data.url);
       expect(signed.searchParams.get('versionId')).toBe('sdk-version');
       expect(signed.searchParams.get('X-Amz-Expires')).toBe('3600');
-      // Removal still works when storage is temporarily unavailable; cleanup is durable.
+      // Removing the file hides the download but keeps both audit events in the chronological feed.
       await clear();
+      const history = await app.inject({ method: 'GET', url: `${timeline}?attachments=1`, headers });
+      expect(history.json().data.filter((item: { attachmentId?: string }) => item.attachmentId === id).map((item: { action: string }) => item.action)).toEqual(['deleted', 'created']);
+
     } finally {
       await app.close();
       await new Promise<void>((resolve, reject) => objects.close(error => error ? reject(error) : resolve()));

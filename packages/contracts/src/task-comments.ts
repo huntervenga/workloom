@@ -30,7 +30,7 @@ export const taskCommentSchema = z.strictObject({
 const pageQuery = { limit: z.coerce.number().int().min(1).max(100).default(50), cursor: z.string().min(1).max(2048).optional() };
 export const taskCommentsQuerySchema = z.strictObject(pageQuery);
 export const taskActivityQuerySchema = z.strictObject(pageQuery);
-export const taskTimelineQuerySchema = z.strictObject(pageQuery);
+export const taskTimelineQuerySchema = z.strictObject({ ...pageQuery, attachments: z.literal('1').optional() });
 export const taskCommentResponseSchema = envelopeSchema(taskCommentSchema);
 const pageMeta = responseMetaSchema.extend({ nextCursor: z.string().nullable() });
 export const taskCommentsResponseSchema = envelopeSchema(z.array(taskCommentSchema).max(100)).extend({ meta: pageMeta });
@@ -208,14 +208,19 @@ const timelineActivityItemSchema = z.strictObject({
     ctx.addIssue({ code: 'custom', path: ['changes'], message: 'Uncaptured activity lists no changes.' });
   }
 });
-export const taskTimelineItemSchema = z.discriminatedUnion('type', [timelineCommentItemSchema, timelineActivityItemSchema]);
+const timelineAttachmentItemSchema = z.strictObject({
+  type: z.literal('attachment'), ...timelineItemBase, attachmentId: idSchema,
+  action: z.enum(['created', 'deleted']),
+  actorUserId: idSchema, actorMembershipId: idSchema, actorDisplayName: displayNameSchema, actorAvatarUrl: avatarUrlSchema,
+});
+export const taskTimelineItemSchema = z.discriminatedUnion('type', [timelineCommentItemSchema, timelineActivityItemSchema, timelineAttachmentItemSchema]);
 export const taskTimelineResponseSchema = envelopeSchema(z.array(taskTimelineItemSchema).max(100)).extend({ meta: pageMeta });
 
 export type CreateTaskCommentInput = z.infer<typeof createTaskCommentInputSchema>;
 export type TaskCommentDto = z.infer<typeof taskCommentSchema>;
 export type TaskCommentsQueryInput = z.input<typeof taskCommentsQuerySchema>;
 export type TaskActivityQueryInput = z.input<typeof taskActivityQuerySchema>;
-export type TaskTimelineQuery = z.infer<typeof taskCommentsQuerySchema>;
+export type TaskTimelineQuery = z.infer<typeof taskTimelineQuerySchema>;
 export type TaskTimelineQueryInput = z.input<typeof taskTimelineQuerySchema>;
 export type TaskActivityDto = z.infer<typeof taskActivitySchema>;
 export type TaskActivityLabelRef = z.infer<typeof taskActivityLabelRefSchema>;

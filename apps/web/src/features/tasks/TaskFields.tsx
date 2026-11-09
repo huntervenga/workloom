@@ -1,3 +1,4 @@
+import { AttachmentDescription } from '../attachments/TaskAttachments';
 import { t, useTranslation } from '../../i18n';
 import type { MembershipDto, SectionDto, TagDto, TaskPriority, TaskStatusDto, TaskStatusGroup } from '@workloom/contracts';
 import { TextInput, cn, inputClassName } from '@workloom/ui';
@@ -514,7 +515,7 @@ export function TaskFields({
         {dependenciesField}
         {moreFields}
         {showLegacyEstimate ? <div className="space-y-1.5">{estimateHint}{estimateSupplement}</div> : null}
-        <fieldset disabled={disabled} className="min-w-0">{descriptionField}</fieldset>
+        <AttachmentDescription><fieldset disabled={disabled} className="min-w-0">{descriptionField}</fieldset></AttachmentDescription>
         {secondaryActions}
       </div>
     );

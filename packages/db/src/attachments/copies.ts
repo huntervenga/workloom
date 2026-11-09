@@ -18,7 +18,7 @@ export function createDuplicationAttachments(db: WorkloomExecutor): DuplicationA
       const rows = await db.select().from(taskAttachments).where(and(eq(taskAttachments.workspaceId, workspaceId),
         inArray(taskAttachments.taskId, [...taskIds]), eq(taskAttachments.state, 'ready')))
         .orderBy(taskAttachments.taskId, taskAttachments.createdAt, taskAttachments.id);
-      return rows.map(row => ({ ...row, createdAt: row.createdAt.toISOString(), uploadExpiresAt: row.uploadExpiresAt.toISOString() }));
+      return rows.map(row => ({ ...row, inDescription: row.inDescription ? true as const : undefined, createdAt: row.createdAt.toISOString(), uploadExpiresAt: row.uploadExpiresAt.toISOString() }));
     },
     async adopt(row) {
       // A cleanup lease or elapsed write deadline can never be turned back into a live attachment.

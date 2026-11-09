@@ -12,7 +12,8 @@ import type { AttachmentApplication, AttachmentRecord, AttachmentRepository, Att
 const active = (row: AttachmentRecord) => ['pending', 'uploading', 'ready'].includes(row.state);
 export function attachmentDto(row: AttachmentRecord): TaskAttachmentDto {
   const { id, workspaceId, taskId, uploadedByUserId, fileName, sizeBytes, state, revision, createdAt, uploadExpiresAt } = row;
-  return { id, workspaceId, taskId, uploadedByUserId, fileName, sizeBytes, state, revision, createdAt, uploadExpiresAt };
+  return { id, workspaceId, taskId, uploadedByUserId, fileName, sizeBytes, state, revision, createdAt, uploadExpiresAt,
+    ...(row.inDescription ? { inDescription: true } : {}) };
 }
 function id(value: string): string {
   const parsed = idSchema.safeParse(value);
@@ -121,6 +122,7 @@ export function createAttachmentApplication(unit: AttachmentUnitOfWork, tools: A
         const attachmentId = tools.newId();
         const row: AttachmentRecord = { id: attachmentId, workspaceId: ctx.workspaceId, taskId, uploadedByUserId: ctx.actor.userId,
           fileName: parsed.data.fileName, sizeBytes: parsed.data.sizeBytes, state: 'pending', revision: 1, slot, storageId,
+          ...(parsed.data.inDescription ? { inDescription: true } : {}),
           objectKey: `attachments/${ctx.workspaceId}/${attachmentId}/${tools.newId()}`, versionId: null, checksum: null,
           createdAt: scope.barrierAt.toISOString(), uploadExpiresAt: new Date(scope.barrierAt.getTime() + ATTACHMENT_UPLOAD_TTL_MS).toISOString() };
         await scope.repository.insert(row);

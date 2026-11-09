@@ -1,6 +1,10 @@
 {
   "title": "Attachments",
   "attach": "Attach file",
+  "dropTask": "Drop files to attach to this task",
+  "dropDescription": "Drop files to add to the description",
+  "activityAdded": "{{name}} added an attachment",
+  "activityRemoved": "{{name}} removed an attachment",
   "count": "{{p0}}/{{p1}}",
   "limits": "Up to {{p0}} files, {{p1}} MB each.",
   "notConfigured": "Configure file storage on the server to attach files.",

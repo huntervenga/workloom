@@ -288,6 +288,13 @@
       "when": 1792480000016,
       "tag": "0040_user_theme_names",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792480000017,
+      "tag": "0041_description_attachments",
+      "breakpoints": true
     }
   ]
 }

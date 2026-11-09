@@ -12,7 +12,7 @@ interface CursorBinding {
   readonly version: 1; readonly workspaceId: string; readonly taskId: string;
   readonly actorUserId: string; readonly membershipId: string; readonly permissionEpoch: string; readonly limit: number;
 }
-export type TaskTimelineCursor = (CursorBinding & TaskCommentAnchor & { readonly kind: 'task-comments' }) | (CursorBinding & TaskActivityAnchor & { readonly kind: 'task-activity' }) | (CursorBinding & TaskActivityAnchor & { readonly kind: 'task-timeline' });
+export type TaskTimelineCursor = (CursorBinding & TaskCommentAnchor & { readonly kind: 'task-comments' }) | (CursorBinding & TaskActivityAnchor & { readonly kind: 'task-activity' }) | (CursorBinding & TaskActivityAnchor & { readonly kind: 'task-timeline'; readonly attachments?: '1' });
 export interface CommentTarget { readonly id: string; readonly projectId: string; readonly visibility: 'workspace'; readonly archivedAt: string | null; readonly projectArchivedAt: string | null }
 export interface TaskCommentsRepository {
   readonly access: AccessRepository;
@@ -21,7 +21,7 @@ export interface TaskCommentsRepository {
   listComments(workspaceId: string, taskId: string, after: TaskCommentAnchor | null, take: number): Promise<TaskCommentDto[]>;
   listActivity(workspaceId: string, taskId: string, after: TaskActivityAnchor | null, take: number): Promise<TaskActivityDto[]>;
   /** One bounded keyset statement over comments and typed activity, `(changeSeq, eventOrdinal)` DESC, at most 101 rows. */
-  listTimeline(workspaceId: string, taskId: string, after: TaskActivityAnchor | null, take: number): Promise<TaskTimelineItemDto[]>;
+  listTimeline(workspaceId: string, taskId: string, after: TaskActivityAnchor | null, take: number, includeAttachments?: true): Promise<TaskTimelineItemDto[]>;
   insertComment(comment: TaskCommentDto): Promise<void>;
   /** Records who the comment names. Anyone who is not an active member of the workspace is skipped, never an error. */
   insertMentions(workspaceId: string, commentId: string, membershipIds: readonly string[], createdAt: string): Promise<void>;

@@ -8,7 +8,8 @@ const canonicalId = (value: unknown) => { const result = idSchema.safeParse(valu
 const invalid = () => new DomainError('VALIDATION_FAILED', 'Reload the task discussion.', { details: { fields: ['cursor'] } });
 function valid(value: Record<string, unknown>, expires: boolean): boolean {
   const anchor = value.kind === 'task-comments' ? ['createdAt', 'id'] : value.kind === 'task-activity' || value.kind === 'task-timeline' ? ['changeSeq', 'eventOrdinal'] : [];
-  const keys = [...common, ...anchor, ...(expires ? ['expiresAt'] : [])];
+  const attachmentProjection = value.kind === 'task-timeline' && value.attachments === '1';
+  const keys = [...common, ...anchor, ...(attachmentProjection ? ['attachments'] : []), ...(expires ? ['expiresAt'] : [])];
   if (!anchor.length || Object.keys(value).length !== keys.length || !keys.every(key => Object.hasOwn(value, key))) return false;
   if (value.version !== 1 || !['workspaceId', 'taskId', 'actorUserId', 'membershipId'].every(key => canonicalId(value[key])) || !integerText(value.permissionEpoch) || !Number.isSafeInteger(value.limit) || (value.limit as number) < 1 || (value.limit as number) > 100) return false;
   return value.kind === 'task-comments' ? canonicalId(value.id) && utcTimestampSchema.safeParse(value.createdAt).success && new Date(value.createdAt as string).toISOString() === value.createdAt : integerText(value.changeSeq, true) && Number.isSafeInteger(value.eventOrdinal) && (value.eventOrdinal as number) > 0 && (value.eventOrdinal as number) <= 2147483647;

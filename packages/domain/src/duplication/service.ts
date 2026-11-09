@@ -202,7 +202,7 @@ export function createDuplicationApplication(deps: DuplicationDependencies): Dup
       const taskId = found(mapping.get(attachment.taskId) ?? null).id;
       const rejection = await guard.check({ family: 'attachment', command: 'attachment.copy', target: { taskId }, input: { sourceAttachmentId: attachment.id } });
       if (rejection) throw new Error('Attachment metadata guard unexpectedly rejected a copy.');
-      const row = { ...staged.row, taskId };
+      const row = { ...staged.row, taskId, inDescription: input.copy.description ? staged.row.inDescription : undefined };
       await scope.attachments.adopt(row);
       await scope.recordChange({ entityType: 'task_attachment', entityId: row.id, entityRevision: row.revision,
         action: 'created', diff: { taskId }, outbox: { type: 'attachment.created', payload: { taskId, attachmentId: row.id } } });

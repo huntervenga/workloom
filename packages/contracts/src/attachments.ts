@@ -26,6 +26,7 @@ export const reserveAttachmentInputSchema = z.strictObject({
   fileName: attachmentNameSchema,
   sizeBytes: z.number().int().min(0).max(MAX_ATTACHMENT_BYTES),
   expectedActorId: idSchema,
+  inDescription: z.literal(true).optional(),
 });
 export const deleteAttachmentInputSchema = z.strictObject({
   expectedRevision: z.number().int().positive(), expectedActorId: idSchema,
@@ -35,6 +36,7 @@ export const taskAttachmentSchema = z.strictObject({
   fileName: attachmentNameSchema, sizeBytes: z.number().int().min(0).max(MAX_ATTACHMENT_BYTES),
   state: attachmentStateSchema, revision: z.number().int().positive(),
   createdAt: utcTimestampSchema, uploadExpiresAt: utcTimestampSchema,
+  inDescription: z.literal(true).optional(),
 });
 export const taskAttachmentListSchema = z.strictObject({
   items: z.array(taskAttachmentSchema).max(MAX_TASK_ATTACHMENTS),

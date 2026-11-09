@@ -5,7 +5,7 @@ import { attachmentStorageObjects, taskAttachments } from '../schema.js';
 import { createTaskCommentsRepository } from '../task-comments/repository.js';
 
 const fromRow = (row: typeof taskAttachments.$inferSelect): AttachmentRecord => ({
-  ...row, createdAt: row.createdAt.toISOString(), uploadExpiresAt: row.uploadExpiresAt.toISOString(),
+  ...row, inDescription: row.inDescription ? true as const : undefined, createdAt: row.createdAt.toISOString(), uploadExpiresAt: row.uploadExpiresAt.toISOString(),
 });
 export function createAttachmentRepository(db: WorkloomExecutor): AttachmentRepository {
   const shared = createTaskCommentsRepository(db);
