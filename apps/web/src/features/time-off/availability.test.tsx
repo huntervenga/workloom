@@ -46,7 +46,7 @@ describe('neutral time off availability', () => {
     const source = availability(); source.startDate = '2026-10-23'; source.endDate = '2026-10-26'; source.companyHolidays = []; source.intervals = [MEMBER,OTHER].map(membershipId => ({membershipId,startDate:source.startDate,endDate:source.endDate}));
     source.days = [MEMBER,OTHER].flatMap(membershipId => ['2026-10-23','2026-10-24','2026-10-25','2026-10-26'].map((date,index) => { const minutes = membershipId === MEMBER ? index === 0 || index === 3 ? 480 : 0 : index === 1 ? 240 : 0; return {membershipId,date,scheduledMinutes:minutes,holidayMinutes:0,absenceMinutes:minutes,availableMinutes:0}; }));
     const { container } = render(<TimeOffCalendar availability={source} members={overview().members}/>);
-    for (const date of ['2026-10-24','2026-10-25']) for (const cell of container.querySelectorAll(`[data-calendar-date="${date}"]`)) expect(cell).toHaveClass('bg-[#e2e8f0]', '[[data-theme=dark]_&]:bg-[#334155]');
+    for (const date of ['2026-10-24','2026-10-25']) for (const cell of container.querySelectorAll(`[data-calendar-date="${date}"]`)) expect(cell).toHaveClass('bg-calendar-weekend');
     const first = screen.getByRole('row', {name:new RegExp(required(overview().members[0]).displayName)});
     expect(within(first).getByRole('img',{name:'2026-10-24: Non-working day'})).not.toHaveClass('bg-accent');
     expect(within(first).queryByRole('img',{name:'2026-10-25: Unavailable'})).not.toBeInTheDocument();

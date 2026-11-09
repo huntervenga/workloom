@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
 
-export const userThemeSchema = z.enum(['default', 'dark', 'light']);
+/** Theme names are validated here; the database only checks their shape, so a new theme needs no migration. */
+export const userThemeSchema = z.enum(['default', 'dark', 'light', 'omnissiah']);
 export const userPreferencesSchema = z.object({ version: z.literal(1), theme: userThemeSchema });
 export const userSettingsSchema = z.object({
   userId: idSchema,

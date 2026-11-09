@@ -7,7 +7,7 @@ const classes = (...names: string[]) => names.join(' ');
 const BAND_CLASS = {
   good: classes('bg-emerald-500/20', 'text-emerald-800'),
   fair: classes('bg-amber-500/20', 'text-amber-900'),
-  poor: classes('bg-rose-500/20', 'text-rose-900', '[[data-theme=dark]_&]:text-rose-200'),
+  poor: classes('bg-rose-500/20', 'text-rose-900', 'dark-theme:text-rose-200'),
   none: 'text-muted',
 } as const;
 

@@ -22,9 +22,11 @@ function tokens(block: string): Record<string, string> {
 
 const lightBlocks = [...sharedCss.matchAll(/@theme(?: static)? \{([\s\S]*?)\n\}/g)].map(match => match[1] ?? '');
 const light = tokens(lightBlocks.join('\n'));
-const darkBlock = /:root:is\(\[data-theme="dark"\], \[data-theme="default-dark"\]\) \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '';
+const darkBlock = /:root:is\(\[data-theme="dark"\], \[data-theme="default-dark"\], \[data-theme="omnissiah"\]\) \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '';
 const dark = tokens(darkBlock);
 const neutral = { ...dark, ...tokens(/:root\[data-theme="dark"\] \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '') };
+const omnissiahBlock = /:root\[data-theme="omnissiah"\] \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '';
+const omnissiah = { ...dark, ...tokens(omnissiahBlock) };
 
 function luminance(hex: string): number {
   const channel = (offset: number) => {
@@ -72,7 +74,7 @@ describe('shared theme tokens', () => {
   });
 
   it('keeps text, focus and selection distinguishable in both palettes', () => {
-    for (const palette of [light, dark, neutral]) {
+    for (const palette of [light, dark, neutral, omnissiah]) {
       const p = (name: string) => palette[`color-${name}`] as string;
       expect(contrast(p('ink'), p('canvas'))).toBeGreaterThanOrEqual(7);
       expect(contrast(p('ink'), p('surface'))).toBeGreaterThanOrEqual(7);
@@ -92,11 +94,11 @@ describe('shared theme tokens', () => {
       for (const stroke of ['graph-edge-unresolved', 'graph-edge-resolved']) expect(contrast(p(stroke), p('surface'))).toBeGreaterThanOrEqual(3);
       for (const stroke of ['gantt-compatible', 'gantt-conflict']) expect(contrast(p(stroke), p('gantt-weekend'))).toBeGreaterThanOrEqual(3);
     }
-    for (const line of ['success-line', 'danger-line', 'warning-line']) expect(contrast(dark[`color-${line}`] as string, dark['color-surface'] as string)).toBeGreaterThanOrEqual(3);
+    for (const palette of [dark, omnissiah]) for (const line of ['success-line', 'danger-line', 'warning-line']) expect(contrast(palette[`color-${line}`] as string, palette['color-surface'] as string)).toBeGreaterThanOrEqual(3);
   });
 
   it('keeps muted secondary text readable on every surface it sits on, below ink-soft, in both palettes', () => {
-    for (const [paletteName, palette] of [['light', light], ['dark', dark], ['neutral', neutral]] as const) {
+    for (const [paletteName, palette] of [['light', light], ['dark', dark], ['neutral', neutral], ['omnissiah', omnissiah]] as const) {
       const p = (name: string) => palette[`color-${name}`] as string;
       // Completed titles and secondary row text use muted, including on selected and hovered rows.
       for (const background of ['canvas', 'surface', 'surface-hover', 'selection', 'tag-surface']) {
@@ -143,6 +145,21 @@ describe('shared theme tokens', () => {
     expect(names.length).toBeGreaterThanOrEqual(12);
     expect(values).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
     for (const name of names) expect({ name, light: light[name] !== undefined, dark: dark[name] !== undefined }).toEqual({ name, light: true, dark: true });
+  });
+});
+
+describe('Omnissiah palette', () => {
+  it('overrides every core role with the warm palette and keeps brass fills readable under white text', () => {
+    expect(omnissiahBlock).not.toBe('');
+    for (const name of ['canvas', 'surface', 'ink', 'ink-soft', 'muted', 'subtle', 'line', 'line-strong', 'accent', 'accent-strong', 'accent-ink', 'accent-soft', 'accent-line', 'focus', 'selection', 'surface-hover', 'tag-surface', 'tag-ink', 'chart-plan', 'chart-fact', 'chart-track', 'gantt-weekend', 'calendar-weekend']) {
+      expect({ name, own: tokens(omnissiahBlock)[`color-${name}`] !== undefined }).toEqual({ name, own: true });
+    }
+    expect([omnissiah['color-canvas'], omnissiah['color-accent-ink']]).toEqual(['#121010', '#e0a95a']);
+    const o = (name: string) => omnissiah[`color-${name}`] as string;
+    for (const [text, background] of [['slate-600', 'surface'], ['slate-700', 'slate-100'], ['ink', 'slate-200'], ['indigo-700', 'indigo-50'], ['indigo-900', 'indigo-100']] as const) {
+      expect({ text, background, ok: contrast(o(text), o(background)) >= 4.5 }).toEqual({ text, background, ok: true });
+    }
+    expect(omnissiahBlock).not.toContain('!important');
   });
 });
 

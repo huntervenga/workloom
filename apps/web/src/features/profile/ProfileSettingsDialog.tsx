@@ -46,6 +46,7 @@ export function ProfileSettingsDialog({ me, onClose }: { me: MeDto; onClose: () 
     { value: 'default' as const, name: t('profile.themeDefault'), description: t('profile.themeDefaultHint') },
     { value: 'dark' as const, name: t('profile.themeDark'), description: t('profile.themeDarkHint') },
     { value: 'light' as const, name: t('profile.themeLight'), description: t('profile.themeLightHint') },
+    { value: 'omnissiah' as const, name: t('profile.themeOmnissiah'), description: t('profile.themeOmnissiahHint') },
   ];
   return <DialogShell open title={t('profile.settings')} description={t('profile.description')} onOpenChange={open => { if (!open) onClose(); }}>
     <div className="mt-5 space-y-5">

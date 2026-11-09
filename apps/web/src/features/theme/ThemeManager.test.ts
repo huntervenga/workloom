@@ -19,6 +19,15 @@ describe('server-controlled theme presentation', () => {
     expect(b.doc.documentElement.style.colorScheme).toBe('dark');
     b.system(false); expect(manager.getTheme()).toBe('light'); stop(); expect(b.listeners.size).toBe(0);
   });
+  it('applies Omnissiah as a dark palette with its own browser chrome colour', () => {
+    const b = browser(false), manager = createThemeManager(b.env);
+    const meta = b.doc.createElement('meta'); meta.setAttribute('name', 'theme-color'); meta.setAttribute('data-light', '#f8fafc'); meta.setAttribute('data-dark', '#0b1120'); b.doc.head.append(meta);
+    manager.start(); manager.setTheme('omnissiah');
+    expect(b.doc.documentElement.dataset.theme).toBe('omnissiah');
+    expect(b.doc.documentElement.style.colorScheme).toBe('dark');
+    expect(meta.getAttribute('content')).toBe('#121010');
+    b.system(true); expect(manager.getTheme()).toBe('omnissiah');
+  });
   it('applies explicit server settings independently of the system and without storage', () => {
     const b = browser(true), manager = createThemeManager(b.env); manager.start();
     const changed = vi.fn(); const unsubscribe = manager.subscribe(changed);

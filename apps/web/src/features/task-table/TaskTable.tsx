@@ -419,7 +419,7 @@ function TagsCell({ tags }: { tags: readonly TagDto[] }) {
 function DueDateCell({ startDate, dueDate, today, finished, issue = null }: { startDate: string | null; dueDate: string | null; today: string | undefined; finished: boolean; issue?: DateIssueInfo | null }) {
   const { t } = useTranslation();
   const warning = issue === null ? null : issue.kind === 'missing' ? t(issue.finished ? 'taskTable.dates.issueMissing' : 'taskTable.dates.issueMissingOpen') : issue.kind === 'before' ? t('taskTable.dates.issueBefore') : t('taskTable.dates.issueAfter');
-  if (dueDate === null && startDate === null) return warning === null ? <Empty label={t('taskTable.taskTable.noDueDate')} /> : <span data-date-issue={issue?.kind} title={warning} className="block truncate font-medium text-rose-700 [[data-theme=dark]_&]:text-rose-300">{t('taskTable.taskTable.noDueDate')}<span className="sr-only"> {warning}</span></span>;
+  if (dueDate === null && startDate === null) return warning === null ? <Empty label={t('taskTable.taskTable.noDueDate')} /> : <span data-date-issue={issue?.kind} title={warning} className="block truncate font-medium text-rose-700 dark-theme:text-rose-300">{t('taskTable.taskTable.noDueDate')}<span className="sr-only"> {warning}</span></span>;
   const referenceYear = today === undefined ? new Date().getFullYear() : calendarDate(today).getUTCFullYear();
   const short = (value: string) => { const date = calendarDate(value); return date.getUTCFullYear() === referenceYear ? dayMonthFormat.format(date) : fullDateFormat.format(date); };
   const long = (value: string) => longDateFormat.format(calendarDate(value));

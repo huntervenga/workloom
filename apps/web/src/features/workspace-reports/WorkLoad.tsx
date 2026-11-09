@@ -8,7 +8,7 @@ const classes = (...names: string[]) => names.join(' ');
 const LOAD_CLASS: Record<LoadBand, string> = {
   good: classes('bg-emerald-500/20', 'text-emerald-800'),
   fair: classes('bg-amber-500/20', 'text-amber-900'),
-  low: classes('bg-rose-500/20', 'text-rose-900', '[[data-theme=dark]_&]:text-rose-200'),
+  low: classes('bg-rose-500/20', 'text-rose-900', 'dark-theme:text-rose-200'),
   none: 'text-muted',
 };
 const percent = (ratio: number) => `${Math.round(ratio * 100)}%`;
@@ -82,7 +82,7 @@ export function UnfinishedWork({ result, today, workspaceId }: { result: Workspa
     <div className="space-y-2">{people.filter(person => person.pastDue.length > 0).map(person => {
       const limit = shown[person.key] ?? 5, list = person.pastDue.slice(0, limit);
       return <details key={person.key} className="rounded-lg bg-canvas px-3 py-2 text-xs">
-        <summary className="cursor-pointer font-medium">{person.name} · <span className="text-rose-700 [[data-theme=dark]_&]:text-rose-300">{t('workspaceReports.unfinished.overdue', { count: person.pastDue.length })}</span></summary>
+        <summary className="cursor-pointer font-medium">{person.name} · <span className="text-rose-700 dark-theme:text-rose-300">{t('workspaceReports.unfinished.overdue', { count: person.pastDue.length })}</span></summary>
         <ul className="mt-2 space-y-1">{list.map(task => <li key={task.taskId}>
           <Link className="hover:underline" to={`/w/${workspaceId}/projects/${task.projectId}?task=${task.taskId}`}>{t('workspaceReports.unfinished.task', { title: task.title, project: task.projectName, due: task.due })}</Link>
         </li>)}</ul>

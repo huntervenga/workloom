@@ -81,7 +81,7 @@ export const userSettings = pgTable('user_settings', {
 }, () => [
   check('user_settings_revision', sql`revision >= 1`),
   check('user_settings_time', sql`isfinite(updated_at)`),
-  check('user_settings_document', sql`(jsonb_typeof(settings) = 'object' and settings->'version' = '1'::jsonb and jsonb_typeof(settings->'theme') = 'string' and settings->>'theme' in ('default', 'dark', 'light') and octet_length(settings::text) <= 16384) is true`),
+  check('user_settings_document', sql`(jsonb_typeof(settings) = 'object' and settings->'version' = '1'::jsonb and jsonb_typeof(settings->'theme') = 'string' and settings->>'theme' ~ '^[a-z][a-z0-9-]{0,39}$' and octet_length(settings::text) <= 16384) is true`),
 ]);
 
 /** The workspace row doubles as the write barrier (SELECT … FOR UPDATE). */

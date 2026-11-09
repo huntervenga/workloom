@@ -3,8 +3,11 @@
 
 @source "../../../packages/ui/src";
 
+/* Any dark palette (Default on a dark system, Dark, Omnissiah). */
+@custom-variant dark-theme (&:where([data-theme="dark"] *, [data-theme="default-dark"] *, [data-theme="omnissiah"] *));
+
 /* React Flow reads these documented overrides; the light theme keeps the library defaults. */
-:root:is([data-theme="dark"], [data-theme="default-dark"]) .react-flow {
+:root:is([data-theme="dark"], [data-theme="default-dark"], [data-theme="omnissiah"]) .react-flow {
   --xy-background-color: var(--color-canvas);
   --xy-background-pattern-color: var(--color-line-strong);
   --xy-node-color: var(--color-ink);

@@ -1,7 +1,9 @@
 import type { UserTheme } from '@workloom/contracts';
 
-/** default-dark preserves the original blue palette; dark is the explicit neutral palette. */
-export type Theme = 'light' | 'dark' | 'default-dark';
+/** default-dark preserves the original blue palette; dark is the explicit neutral palette; omnissiah is the warm brass one. */
+export type Theme = 'light' | 'dark' | 'default-dark' | 'omnissiah';
+/** Browser chrome colour for explicit dark palettes; light and default-dark read it from the page meta. */
+const CHROME: Partial<Record<Theme, string>> = { dark: '#0d1117', omnissiah: '#121010' };
 export interface ThemeEnvironment {
   readonly document?: Document | undefined;
   matchMedia?: ((query: string) => MediaQueryList) | undefined;
@@ -15,7 +17,7 @@ export interface ThemeManager {
 }
 export const DARK_QUERY = '(prefers-color-scheme: dark)';
 export function parseTheme(value: unknown): UserTheme | null {
-  return value === 'default' || value === 'dark' || value === 'light' ? value : null;
+  return value === 'default' || value === 'dark' || value === 'light' || value === 'omnissiah' ? value : null;
 }
 
 /** Presentation only. The signed-in user's API settings are the sole persistence source. */
@@ -31,7 +33,7 @@ export function createThemeManager(browser?: ThemeEnvironment | null): ThemeMana
       doc.documentElement.setAttribute('data-theme', theme);
       doc.documentElement.style.colorScheme = theme === 'light' ? 'light' : 'dark';
       const meta = doc.querySelector('meta[name="theme-color"]');
-      const color = theme === 'dark' ? '#0d1117' : meta?.getAttribute(`data-${theme === 'default-dark' ? 'dark' : 'light'}`);
+      const color = CHROME[theme] ?? meta?.getAttribute(`data-${theme === 'default-dark' ? 'dark' : 'light'}`);
       if (meta && color) meta.setAttribute('content', color);
     }
     for (const listener of listeners) listener();

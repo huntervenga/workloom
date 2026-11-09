@@ -47,6 +47,7 @@
   --color-gantt-compatible: #475569;
   --color-gantt-conflict: #c2410c;
   --color-gantt-weekend: #f1f5f9;
+  --color-calendar-weekend: #e2e8f0;
 
   --color-chart-plan: #6366f1;
   --color-chart-fact: #0d9488;
@@ -60,7 +61,7 @@
   }
 
   /* Opaque surfaces, not an inversion: primary buttons keep their accent fill and white text. */
-  :root:is([data-theme="dark"], [data-theme="default-dark"]) {
+  :root:is([data-theme="dark"], [data-theme="default-dark"], [data-theme="omnissiah"]) {
     color-scheme: dark;
 
     --color-canvas: #0b1120;
@@ -97,6 +98,7 @@
     --color-gantt-compatible: #94a3b8;
     --color-gantt-conflict: #fb923c;
     --color-gantt-weekend: #172033;
+    --color-calendar-weekend: #334155;
 
     --color-chart-plan: #a5b4fc;
     --color-chart-fact: #5eead4;
@@ -187,6 +189,69 @@
     --color-slate-700: #c9d1d9;
   }
 
+  /*
+   * Omnissiah: the Adeptus Mechanicus palette - soot, bone, brass, crimson and copper, with steel,
+   * verdigris and olive for the cool roles. Fills under white text use a deeper brass; brass text
+   * and focus use the bright brass of the palette.
+   */
+  :root[data-theme="omnissiah"] {
+    --color-canvas: #121010;
+    --color-surface: #1b1715;
+    --color-ink: #e6d3b3;
+    --color-ink-soft: #d9c4a3;
+    --color-muted: #b39a7d;
+    --color-subtle: #8a7863;
+    --color-line: #2f2823;
+    --color-line-strong: #4a3d31;
+
+    --color-accent: #9a5f22;
+    --color-accent-strong: #83501c;
+    --color-accent-ink: #e0a95a;
+    --color-accent-soft: #2c1f14;
+    --color-accent-line: #5c4022;
+
+    --color-focus: #e0a95a;
+    --color-selection: #3a2418;
+    --color-text-selection: #e0a95a;
+    --color-text-selection-ink: #121010;
+    --color-surface-hover: #241f1b;
+    --color-tag-surface: #2a2420;
+    --color-tag-ink: #d9c4a3;
+
+    --color-success-soft: #1f2414;
+    --color-success-line: #a7b57a;
+    --color-danger-soft: #3a1714;
+    --color-danger-line: #d65f4c;
+    --color-warning-line: #e0a95a;
+
+    --color-graph-edge-unresolved: #e0a95a;
+    --color-graph-edge-resolved: #9aafbc;
+    --color-gantt-compatible: #b8a283;
+    --color-gantt-conflict: #d65f4c;
+    --color-gantt-weekend: #191513;
+    --color-calendar-weekend: #2a2420;
+
+    --color-chart-plan: #e0a95a;
+    --color-chart-fact: #96b4a5;
+    --color-chart-track: #2f2823;
+    --color-chart-missing: #8a7863;
+
+    --color-indigo-50: #2c1f14;
+    --color-indigo-100: #3a2818;
+    --color-indigo-700: #e0a95a;
+    --color-indigo-900: #f3cba2;
+    --color-indigo-950: #f8e2c8;
+
+    --color-slate-50: #1b1715;
+    --color-slate-100: #241f1b;
+    --color-slate-200: #2f2823;
+    --color-slate-300: #4a3d31;
+    --color-slate-400: #6e6052;
+    --color-slate-500: #8a7863;
+    --color-slate-600: #b8a283;
+    --color-slate-700: #d9c4a3;
+  }
+
   html {
     font-family: var(--font-sans);
     background-color: var(--color-canvas);
@@ -227,11 +292,11 @@
  * utility's specificity, so hover and state variants still win.
  */
 @layer utilities {
-  :where(:root:is([data-theme="dark"], [data-theme="default-dark"])) .bg-white {
+  :where(:root:is([data-theme="dark"], [data-theme="default-dark"], [data-theme="omnissiah"])) .bg-white {
     background-color: var(--color-surface);
   }
 
-  :where(:root:is([data-theme="dark"], [data-theme="default-dark"])) .text-emerald-600 {
+  :where(:root:is([data-theme="dark"], [data-theme="default-dark"], [data-theme="omnissiah"])) .text-emerald-600 {
     color: #34d399;
   }
 }
