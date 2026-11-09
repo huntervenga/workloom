@@ -22,6 +22,7 @@ import {
   sectionSchema,
   tagSchema,
   taskListQuerySchema,
+  taskSearchQuerySchema,
   taskSchema,
   updateProjectInputSchema,
   updateSectionInputSchema,
@@ -370,6 +371,12 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
               : { version: 1, ...binding, position: last.position, id: last.id })
           : null;
       return { items, nextCursor };
+    },
+
+    async searchTasks(context, input) {
+      const { q } = parseInput(taskSearchQuerySchema, input);
+      const ctx = await authorizeRead(context);
+      return reader.searchTasks(ctx.workspaceId, q, 20);
     },
 
     async getTask(context: CommandContext, taskId: string): Promise<TaskDto> {

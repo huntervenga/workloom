@@ -23,7 +23,7 @@ const leaveRefSchema = z.strictObject({
 export const inboxItemSchema = z.strictObject({
   /** The audit event or comment this item comes from; stable, so the browser can remember what it showed. */
   id: idSchema,
-  kind: z.enum(['assigned', 'comment', 'mention', 'leave_decided', 'leave_pending']),
+  kind: z.enum(['assigned', 'date_changed', 'comment', 'mention', 'leave_decided', 'leave_pending']),
   at: utcTimestampSchema,
   actorName: z.string(),
   task: taskRefSchema.nullable(),

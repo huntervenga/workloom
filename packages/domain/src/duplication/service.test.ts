@@ -2,7 +2,7 @@ import type * as C from '@workloom/contracts';
 import { describe, expect, it, vi } from 'vitest';
 import type { CommandContext } from '../access/context.js';
 import type { DuplicationDependencies, DuplicationScope } from './ports.js';
-import { createDuplicationApplication, selectDuplicationTree } from './service.js';
+import { createDuplicationApplication, selectDuplicationTree, shiftedSectionDates } from './service.js';
 import { createPlanningMutationGuard } from '../planning/freeze.js';
 import { resolveRecurrenceAffectedProjects } from '../recurrence/footprint.js';
 import type { RecurrenceFootprintScope } from '../recurrence/footprint.js';
@@ -106,4 +106,14 @@ describe('linked section duplication choices',()=>{
  it('creates independent concrete settings with new widget identities when independence is explicit',async()=>{const f=linkedFixture(),input={name:'Copy',includeTasks:false,includeSettings:true,templateMode:'independent' as const,copy},preview=await f.app.previewSection(context,id(3),input);await f.app.duplicateSection(context,id(3),{...input,expectedSourceVersion:preview.sourceVersion});expect(f.savedBindings).toEqual([]);const originalWidget=required(required(f.aggregate.headerWidgets?.[0]).widgets[0]),copiedWidget=required(required(f.aggregate.headerWidgets?.[1]).widgets[0]);expect(originalWidget.key).toBe('tasks');expect(copiedWidget.key).not.toBe('tasks');expect(copiedWidget).toMatchObject({kind:'measure',measure:{operation:'count_tasks'}});});
  it('rejects retained links at the active-binding limit before any section write',async()=>{const f=linkedFixture();Object.assign(f.scope.templates??{},{bindings:async()=>Array.from({length:100},(_,index)=>({...f.binding,id:id(200+index),group:index===0?f.binding.group:{kind:'section',sectionId:id(500+index)}}))});await expect(f.app.previewSection(context,id(3),{name:'Copy',includeTasks:false,includeSettings:true,templateMode:'keep_link',copy})).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED',details:{duplicationReason:'template_binding_limit'}});expect(f.sections).toEqual([]);expect(f.writes).not.toHaveBeenCalled();});
  it('refuses configured shared activity task copies without silently producing ordinary duplicates',async()=>{const f=fixture();Object.assign(f.scope,{sharedActivityTaskIds:async()=>[id(20)]});await expect(f.app.previewTask(context,id(20),{projectId,title:'Copy',copy})).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED',details:{duplicationReason:'shared_activity_requires_explicit_copy'}});expect(f.writes).not.toHaveBeenCalled();});
+});
+
+it('moves all copied dates from the earliest date and rejects overflow before creating anything', () => {
+  const a = { ...row(12), startDate: '2026-12-29', dueDate: '2027-01-03' };
+  const b = { ...row(13), dueDate: '2027-01-10' };
+  const shifted = shiftedSectionDates([a, b], '2027-02-26');
+  expect(shifted.preview).toEqual({ from: '2026-12-29', to: '2027-02-26', days: 59 });
+  expect(shifted.dates.get(a.id)).toEqual({ startDate: '2027-02-26', dueDate: '2027-03-03' });
+  expect(shifted.dates.get(b.id)).toEqual({ startDate: null, dueDate: '2027-03-10' });
+  expect(() => shiftedSectionDates([a, b], '9999-12-31')).toThrow();
 });

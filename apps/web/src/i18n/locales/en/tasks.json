@@ -1,4 +1,19 @@
 {
+  "structure": {
+    "change": "Change task hierarchy",
+    "description": "Choose a parent in this project. The task keeps its work package, hours and history.",
+    "findParent": "Find parent task",
+    "noParents": "No matching tasks in this project.",
+    "makeSubtask": "Make subtask",
+    "makeTopLevel": "Make top-level task",
+    "sharedEstimate": "This subtask shares its parent’s work package and cannot be detached from it here.",
+    "followUp": "Create follow-up",
+    "followUpDescription": "Create a separate task in this project, with a link back to “{{title}}”.",
+    "followUpComment": "Create task from comment",
+    "followUpCommentDescription": "Create a task in this project with a copy of the comment and a link to “{{title}}”.",
+    "followUpLink": "Follow-up to {{url}}"
+  },
+  "referencePreview": "Linked work",
   "tagDialogs": {
     "enterATagName": "Enter a tag name.",
     "nameMustBeValueCharactersOrFewer": "Name must be {{p0}} characters or fewer.",
@@ -226,6 +241,11 @@
     "checkTheCompletedFields": "Check the completed fields."
   },
   "quickAdd": {
+    "pasteTitle": "Preview pasted tasks",
+    "pasteHint": "One task per line. Tab-separated columns are title, assignee name and due date (YYYY-MM-DD).",
+    "pasteInvalid": "Check the task title, assignee and due date on line {{line}}.",
+    "pasteTooMany": "Paste up to 20 tasks at a time.",
+    "pasteCreate": "Create {{count}} tasks",
     "submittedTitle": "Submitted task: {{title}}",
     "discardRejected": "Discard rejected task",
     "existingDraft": "A task draft is already saved on this page. Resume it to keep all its details.",
@@ -315,6 +335,9 @@
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
     "today": "Today",
+    "tomorrow": "Tomorrow",
+    "nextWeekday": "Next weekday",
+    "nextMonday": "Next Monday",
     "clearStart": "Clear start date",
     "clearDue": "Clear due date",
     "choosingStart": "Choosing start date",

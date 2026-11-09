@@ -20,6 +20,8 @@ import {
   tagResponseSchema,
   taskListQuerySchema,
   taskListResponseSchema,
+  taskSearchQuerySchema,
+  taskSearchResponseSchema,
   taskResponseSchema,
   taskStatusListResponseSchema,
   updateProjectInputSchema,
@@ -194,6 +196,12 @@ export function registerTaskRoutes(app: FastifyInstance, deps: TaskRouteDependen
   }
 
   // Tasks
+  app.get(`${BASE}/task-search`, async (request, reply) => {
+    const { ctx } = await read(request, workspaceParamsSchema);
+    const query = parseInput(taskSearchQuerySchema, request.query);
+    return sendData(request, reply, taskSearchResponseSchema, await deps.tasks.searchTasks(ctx, query));
+  });
+
   app.get(`${BASE}/tasks`, async (request, reply) => {
     const { workspaceId } = parseInput(workspaceParamsSchema, request.params);
     const query = parseInput(taskListQuerySchema, request.query);

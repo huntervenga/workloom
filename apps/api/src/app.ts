@@ -29,6 +29,7 @@ import {
   createOAuthApplication,
   type OAuthApplication,
   createProjectRulesApplication,
+  createProjectViewsApplication,
   createPurgeApplication,
   createTaskDefaultsApplication,
   createProjectCopyApplication,
@@ -96,6 +97,7 @@ import { registerTeamRoutes } from './http/team-routes.js';
 import { registerSecurityHeaders } from './http/security-headers.js';
 import { createPublicRateLimiter, createRateLimiter } from './http/rate-limit.js';
 import { registerInboxRoutes } from './http/inbox-routes.js';
+import { registerProjectViewsRoutes } from './http/project-views-routes.js';
 import { registerProjectRulesRoutes } from './http/project-rules-routes.js';
 import { registerPurgeRoutes } from './http/purge-routes.js';
 import { registerMyTasksRoutes } from './http/my-tasks-routes.js';
@@ -511,6 +513,7 @@ export async function createApp(config: AppConfig, dependencies: AppDependencies
   if(localCredentialApplication!==undefined&&localMcpApplication!==undefined){registerLocalMcpRoutes(app,{identity,credentials:localCredentialApplication,mcp:localMcpApplication,guards:guardOptions});}
   if (taskContinuationApplication !== undefined) registerTaskContinuationRoutes(app, { identity, continuation: taskContinuationApplication });
   if (projectCopyApplication !== undefined) registerProjectCopyRoutes(app, { identity, copies: projectCopyApplication });
+  if (database !== undefined) registerProjectViewsRoutes(app, { identity, views: createProjectViewsApplication(database) });
   if (projectRulesApplication !== undefined) registerProjectRulesRoutes(app, { identity, rules: projectRulesApplication });
   if (purgeApplication !== undefined) registerPurgeRoutes(app, { identity, purge: purgeApplication });
   if (taskDefaultsApplication !== undefined) registerTaskDefaultsRoutes(app, { identity, defaults: taskDefaultsApplication });

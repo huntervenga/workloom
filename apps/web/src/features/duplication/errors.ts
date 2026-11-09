@@ -17,6 +17,8 @@ export function duplicationErrorText(error:unknown):string {
   case'todo_status_missing':return t('duplication.errors.todoMissing');
   case'archived_task':case'archived_source':return t('duplication.errors.archived');
   case'invalid_task_tree':return t('duplication.errors.hierarchy');
+  case'no_dates_to_shift':return t('duplication.errors.noDates');
+  case'shifted_dates_out_of_range':return t('duplication.errors.dateRange');
   case'section_order_full':return t('duplication.errors.sectionOrder');
   default:return t('duplication.previewFailed');
  }

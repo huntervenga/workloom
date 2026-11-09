@@ -126,8 +126,8 @@ describe('normal row interaction', () => {
   it('displays date-only ranges and start-only dates without widening the normal cell', () => {
     render(<TaskTable tasks={[{ ...a, startDate: '2027-01-02', dueDate: '2027-01-04' }, { ...b, startDate: '2027-02-01' }]} sections={[]} statuses={statuses} members={[anna]} writable
       today="2027-01-01" onOpenTask={vi.fn()} onCreateTask={vi.fn()} onCreateChild={vi.fn()} />);
-    expect(within(row(a.id)).getByLabelText('Start date: January 2, 2027; due date: January 4, 2027')).toHaveTextContent('Jan 2 – Jan 4');
-    expect(within(row(b.id)).getByLabelText('From February 1, 2027')).toHaveTextContent('From Feb 1');
+    expect(within(row(a.id)).getByLabelText('Start date: Saturday, January 2, 2027; due date: Monday, January 4, 2027')).toHaveTextContent(/Sat, Jan 2\s*–\s*Mon, Jan 4/);
+    expect(within(row(b.id)).getByLabelText('From Monday, February 1, 2027')).toHaveTextContent('From Mon, Feb 1');
   });
 
   it('keeps scrolling a held pointer, recomputes the insertion target, and cancels the frame on Escape', async () => {

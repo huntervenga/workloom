@@ -1,3 +1,12 @@
+import { useProjectReturn } from '../features/projects/projectReturn';
+import type { ProjectViewSettings } from '@workloom/contracts';
+import { ProjectViewsDialog } from '../features/projects/ProjectViewsDialog';
+import { taskLink } from '../features/tasks/CopyTaskLink';
+import { taskCompletion } from '../features/tasks/taskCompletion';
+import type { RowShortcut } from '../features/task-table/rowShortcuts';
+import { FavoriteWorkButton } from '../features/work-shortcuts/WorkShortcuts';
+import { useRememberWork } from '../features/work-shortcuts/shortcuts';
+import { useWorkspaceDay } from '../features/workspace/WorkspaceDay';
 import { queryOptions, skipToken, useQueries } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
 import { WorkspaceLink as Link, useWorkspaceNavigate as useNavigate } from '../features/workspace/WorkspaceNavigation';
@@ -14,7 +23,7 @@ import { BulkTaskToolbar } from '../features/task-table/BulkTaskToolbar';
 import { useBulkInlineEdit } from '../features/task-table/useBulkInlineEdit';
 import { captureDraftPlacement, type DraftPlacementSnapshot } from '../features/task-table/draftPlacement';
 import { ChoicePicker } from '../shared/ChoicePicker';
-import { DialogReturnFocus } from '../shared/DialogShell';
+import { DialogReturnFocus, DialogShell } from '../shared/DialogShell';
 import { useDesktopTaskPane } from '../shared/TaskPanelFrame';
 import { compareTaskRows, orderBoardTaskHeads, type TaskSortMode } from '../features/task-table/taskOrdering';
 import { buildTableGroups, assigneeGroupKey, type TaskGroupingMode } from '../features/task-table/taskGrouping';
@@ -122,20 +131,6 @@ import { QueryErrorState } from '../shared/QueryErrorState';
 import { useWorkspaceContext } from './WorkspaceLayout';
 
 const SEARCH_DEBOUNCE_MS = 250;
-
-/** Today's calendar date in the workspace time zone, or undefined if the zone is unknown here. */
-function todayIn(timeZone: string): string | undefined {
-  try {
-    const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(
-      new Date(),
-    );
-    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
-    const [year, month, day] = [part('year'), part('month'), part('day')];
-    return year && month && day ? `${year}-${month}-${day}` : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 interface FieldColumn {
   field: TaskFieldDefinitionDto;
@@ -248,6 +243,8 @@ interface ProjectContentProps {
 }
 
 function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectContentProps) {
+  useRememberWork(actorId, workspace.id, 'project', project.archivedAt === null ? project.id : null);
+  const workspaceToday = useWorkspaceDay();
   const acquireDragProtection = usePointerRowDragProtection();
   const { t, locale } = useTranslation();
   const sections = useSectionsQuery(actorId, workspace.id, project.id);
@@ -316,6 +313,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     inlineGeneration.current += 1;
     for (const dispose of inlineLeases.current) dispose();
   }, []);
+  const [showSavedViews, setShowSavedViews] = useState(false);
+  const [showRowShortcuts, setShowRowShortcuts] = useState(false);
   const [grouping, setGrouping] = useState<TaskGroupingMode>('section');
   const [activeInline, setActiveInline] = useState<{ taskId: string; field: TaskInlineField; focusClaim: { current: boolean }; titleCaret?: number | undefined } | null>(null);
   const [announcement, setAnnouncement] = useState<TranslationMessage | null>(null);
@@ -345,6 +344,28 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const tableMode = !boardMode && !graphMode && !ganttMode && !importMode;
   const showTaskFilters = tableMode || boardMode || ganttMode;
   const importId = searchParams.get('import') ?? '';
+  const currentView: ProjectViewSettings = {
+    view: boardMode ? 'board' : graphMode ? 'graph' : ganttMode ? 'gantt' : 'table',
+    grouping, sort: sortMode, search: searchText,
+    completion: urlFilters.completion, statusId: urlFilters.statusId || null,
+    participantMembershipId: urlFilters.participantMembershipId || null, tagId: urlFilters.tagId || null,
+    includeArchived: urlFilters.includeArchived,
+  };
+  const applySavedView = (settings: ProjectViewSettings) => {
+    invalidateInlineSave();
+    setGrouping(settings.grouping);
+    setSearchText(settings.search);
+    setSearchParams(before => {
+      const next = patchTaskFilterParams(before, readTaskFilterParams(before), {
+        completion: settings.completion, statusId: settings.statusId ?? '',
+        participantMembershipId: settings.participantMembershipId ?? '', tagId: settings.tagId ?? '',
+        includeArchived: settings.includeArchived,
+      }) ?? new URLSearchParams(before);
+      if (settings.view === 'table') next.delete('view'); else next.set('view', settings.view);
+      if (settings.sort === 'manual') next.delete('sort'); else next.set('sort', settings.sort);
+      return next;
+    });
+  };
   const selectImport = useCallback((id: string) => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'import'); if (id) next.set('import', id); else next.delete('import'); return next; }), [setSearchParams]);
   const imports = useImportWorkspace(actorId, workspace.id, project.id, isUuid(importId) ? importId : '', selectImport);
 
@@ -885,6 +906,48 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     bulkInline.capture(task, field, focusClaim);
     setActiveInline({ taskId: task.id, field, focusClaim, titleCaret });
   };
+  const runRowShortcut = (task: TaskDto, action: RowShortcut, row: HTMLTableRowElement) => {
+    if (action === 'help') { setShowRowShortcuts(true); return true; }
+    if (action === 'copy') {
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(taskLink(window.location.origin, workspace.id, task.projectId, task.id));
+          setAnnouncement(message('copyTaskLink.copied'));
+        } catch { setAnnouncement(message('copyTaskLink.failed')); }
+      })();
+      return true;
+    }
+    if (!writable || !canEditTaskInline(task) || activeInline || creating || unresolvedTaskCommand(commands)) return false;
+    if (action === 'assign' || action === 'date') {
+      const field = action === 'assign' ? 'responsibleMembershipId' : 'dueDate';
+      if (!row.querySelector(`[data-task-cell="${task.id}:${field}"]`)) return false;
+      startInline(task, field);
+      return true;
+    }
+    if (commands.editSessions.current.has(task.id)) { openTask(task.id); return true; }
+    if (action === 'assignMe') {
+      if (task.projectId !== project.id || bulkInline.selectsMany(task.id)) return false;
+      const me = members.isSuccess ? members.data.find(member => member.userId === actorId && !member.pending) : undefined;
+      if (!me || me.id === task.responsibleMembershipId || commands.update.hasOtherProtectedCommands()) return false;
+      commands.update.mutate({ taskId: task.id, input: { expectedRevision: task.revision, responsibleMembershipId: me.id } }, {
+        onSuccess: () => setAnnouncement(message('tasks.taskDrawer.taskSaved')),
+      });
+      return true;
+    }
+    if (!completionWritable) return false;
+    const choice = taskCompletion(task, statuses.data ?? []);
+    if (!choice.eligible || choice.choices.length === 0) return false;
+    if (!choice.direct) {
+      if (!row.querySelector(`[data-task-cell="${task.id}:statusId"]`)) return false;
+      startInline(task, 'statusId');
+      return true;
+    }
+    const next = choice.choices[0];
+    if (!next) return false;
+    const source = row.querySelector<HTMLButtonElement>('[data-task-completion]');
+    if (!bulkInline.complete(task, next.id)) completion.choose(task, next.id, source);
+    return true;
+  };
   const closeInline = (task: TaskDto, field: TaskInlineField, reason: InlineCloseReason = 'cancel') => {
     invalidateInlineSave();
     setActiveInline(null);
@@ -1028,7 +1091,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const anchorId = request.insertionAnchor?.taskId ?? request.insertion?.anchorTaskId ?? null;
     const siblings = loaded.filter(task => (task.sectionId ?? null) === (request.parent?.sectionId ?? request.sectionId ?? null) && task.parentTaskId === parentId).sort((left, right) => left.position - right.position);
     const above = anchorId !== null ? (request.insertionAnchor?.placement ?? request.insertion?.placement) === 'before' ? null : loaded.find(task => task.id === anchorId) ?? null : siblings[siblings.length - 1] ?? null;
-    const today = todayIn(workspace.timezone);
+    const today = workspaceToday;
     const startValues = startValuesFromDefaults(config, above, { today, subtask: request.parent !== null });
     const startFields = startFieldsFromDefaults(config, above, { today, fields: fieldDefinitions.data ?? [], valueOf: (taskId, fieldId) => valueByKey.get(fieldValueKey(taskId, fieldId))?.value });
     return Object.keys(startValues).length === 0 && Object.keys(startFields).length === 0 ? request
@@ -1110,6 +1173,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     for (const id of selectionLedger.current.keys()) if (!ids.includes(id)) selectionLedger.current.delete(id);
     setSelectedTaskIds(ids);
   };
+  useProjectReturn(actorId, workspace.id, tableMode && tasks.isSuccess && !bulkHeld, changeSelection);
   // A neutral Escape the table left unhandled; an open editor, quick row, drawer or held batch keeps the selection.
   const clearSelectionByEscape = () => {
     if (selectedTaskIds.length === 0 || bulkHeld || activeInline !== null || quickAddSection !== undefined || creating !== null) return false;
@@ -1136,6 +1200,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
           <BackToProjects href={projectsHref} />
           <div className="flex min-w-0 items-center gap-2">
             <h1 title={project.name} className="min-w-0 truncate text-xl font-semibold tracking-tight text-ink">{project.name}</h1>
+            {project.archivedAt === null ? <FavoriteWorkButton actorId={actorId} workspaceId={workspace.id} target={{ kind: 'project', id: project.id }} /> : null}
             <ProjectDateRange actorId={actorId} workspaceId={workspace.id} project={project} writable={canEdit && project.archivedAt === null}/>
             {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
           </div>
@@ -1157,6 +1222,19 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       {planningChecks.dialogs}
       {bulkContinueTasks ? <BulkContinueDialog actorId={actorId} workspaceId={workspace.id} tasks={bulkContinueTasks} currentProjectId={project.id} onClose={() => setBulkContinueTasks(null)} onFinished={() => { selectionLedger.current.clear(); setSelectedTaskIds([]); }} /> : null}
       {continueTask ? <ContinueInProjectDialog actorId={actorId} workspaceId={workspace.id} task={continueTask} currentProjectId={project.id} onClose={() => setContinueTask(null)} /> : null}
+      {showRowShortcuts ? <DialogShell open title={t('taskTable.shortcuts.title')} description={t('taskTable.shortcuts.description')} onOpenChange={setShowRowShortcuts}>
+        <dl className="space-y-2 text-sm">
+          {([
+            ['A', t('taskTable.shortcuts.assign')],
+            ['M', t('taskTable.shortcuts.assignMe')],
+            ['D', t('taskTable.shortcuts.date')],
+            ['C', t('taskTable.shortcuts.complete')],
+            ['L', t('taskTable.shortcuts.copy')],
+          ] as const).map(([keys, label]) => <div key={keys} className="flex items-center justify-between gap-3">
+            <dt>{label}</dt><dd><kbd className="rounded border border-line bg-canvas px-1.5 py-1 text-xs">{t('taskTable.shortcuts.shiftKey', { key: keys })}</kbd></dd>
+          </div>)}
+        </dl>
+      </DialogShell> : null}
       <PlacementCommandFeedback commands={placementCommands} actorId={actorId} workspaceId={workspace.id} />
 
       {savedAssignment && savedAssignment.generation === inlineGeneration.current && shownTasks.some(task => task.id === savedAssignment.taskId && task.revision === savedAssignment.revision && task.responsibleMembershipId === savedAssignment.membershipId && canEditTaskInline(task)) && completionWritable && grouping === 'assignee' && !boardMode && !graphMode && !ganttMode && !importMode && taskId === null && creating === null ? <TaskFeedbackLayer><div role="status" className="fixed right-3 top-20 z-[60] max-w-[calc(100vw-1.5rem)] flex flex-wrap items-center gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-sm shadow-lg">
@@ -1209,8 +1287,12 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
         <Button ref={graphMode ? activeViewControl : undefined} size="sm" variant={graphMode ? 'primary' : 'ghost'} aria-current={graphMode ? 'page' : undefined} onClick={showGraph}>{selectedTaskIds.length ? t('projects.projectPage.selectedGraphValue', { p0: selectedTaskIds.length }) : t('projects.projectPage.graph')}</Button>
         <Button ref={ganttMode ? activeViewControl : undefined} size="sm" variant={ganttMode ? 'primary' : 'ghost'} aria-current={ganttMode ? 'page' : undefined} onClick={() => setSearchParams(before => { const next = new URLSearchParams(before); next.set('view', 'gantt'); return next; })}>{t('projects.projectPage.timeline')}</Button>
         <Link to={`/w/${workspace.id}/projects/${project.id}/reports`} className={buttonClassName({ variant: 'ghost', size: 'sm' })}>{t('genericReports.reports')}</Link>
+        {!importMode ? <Button type="button" size="sm" variant="ghost" onClick={() => setShowSavedViews(true)}>{t('projects.savedViews.title')}</Button> : null}
         {canManageImports ? <Button ref={importMode ? activeViewControl : undefined} size="sm" variant={importMode ? 'primary' : 'ghost'} aria-current={importMode ? 'page' : undefined} onClick={() => selectImport(importId)}>{t('projects.projectPage.cSVImport')}</Button> : null}
       </nav>
+      {showSavedViews ? <ProjectViewsDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id}
+        canManage={project.archivedAt === null && (workspace.role === 'owner' || workspace.role === 'admin')}
+        settings={currentView} onApply={applySavedView} onClose={() => setShowSavedViews(false)} /> : null}
 
       <div role="status" aria-live="polite" className="sr-only">
         {announcement ? t(announcement.key, announcement.params) : null}
@@ -1316,6 +1398,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             collapsedGroupKeys={collapsedGroupKeys}
             onGroupCollapsedChange={changeGroupCollapsed}
             onEditTaskField={startInline}
+            onRowShortcut={runRowShortcut}
             isTaskFieldEditBusy={(task, field) => field !== 'title' && bulkInline.selectsMany(task.id) && bulkInline.busy}
             draftTaskIds={draftTaskIds}
             activeFieldEditor={activeInline ? { taskId: activeInline.taskId, field: activeInline.field } : undefined}
@@ -1339,7 +1422,6 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             pendingEdit={[...(commands.update.pendingCommand ? [{ taskId: commands.update.pendingCommand.variables.taskId, input: commands.update.pendingCommand.variables.input }] : []), ...pendingEditsOfBulk(commands.bulk.pendingCommand?.variables.input)]}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
-            workspace={workspace}
             sections={sections.data}
             statuses={statuses.data}
             members={members.data}
@@ -1451,7 +1533,6 @@ interface TaskListProps {
   tagCatalog?: readonly TagDto[] | undefined;
   filtered: boolean;
   project: ProjectDto;
-  workspace: WorkspaceDto;
   sections: readonly SectionDto[];
   statuses: readonly TaskStatusDto[];
   members: readonly MembershipDto[];
@@ -1459,6 +1540,7 @@ interface TaskListProps {
   columnIds: readonly string[];
   layoutScope: ComponentProps<typeof TaskTable>['layoutScope'];
   onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;
+  onRowShortcut?: ComponentProps<typeof TaskTable>['onRowShortcut'];
   isTaskFieldEditBusy?: ComponentProps<typeof TaskTable>['isTaskFieldEditBusy'];
   renderTaskFieldEditor: NonNullable<ComponentProps<typeof TaskTable>['renderTaskFieldEditor']>;
   activeFieldEditor: ComponentProps<typeof TaskTable>['activeFieldEditor'];
@@ -1488,7 +1570,8 @@ interface TaskListProps {
   onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
-function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, project, workspace, boardMode, ...table }: TaskListProps) {
+function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, project, boardMode, ...table }: TaskListProps) {
+  const workspaceToday = useWorkspaceDay();
   const { t } = useTranslation();
   if (query.isPending) {
     return (
@@ -1521,11 +1604,11 @@ function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, pr
   return (
     <div className="space-y-3">
       {!boardMode ? <CompletedDateBanner project={project} issues={dateIssues} tasks={scope.tasks} partial={filtered || !scope.complete} onOpenTask={table.onOpenTask} /> : null}
-      {boardMode ? <TaskBoard onMoveCard={table.sortMode === 'manual' ? table.onMoveBoardCard : undefined} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={table.sortMode === 'manual' ? orderBoardTaskHeads(scope.tasks, 'manual').sort((left, right) => compareTaskRows(left, right, 'manual')) : orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={todayIn(workspace.timezone)} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} isStatusEditBusy={task => table.isTaskFieldEditBusy?.(task, 'statusId') === true} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
+      {boardMode ? <TaskBoard onMoveCard={table.sortMode === 'manual' ? table.onMoveBoardCard : undefined} dragBlocked={table.moveBlocked || table.activeFieldEditor !== undefined} dragContextKey={table.dragScope} acquireDragProtection={table.acquireDragProtection} renderCompletionAction={table.renderCompletionAction} tasks={table.sortMode === 'manual' ? orderBoardTaskHeads(scope.tasks, 'manual').sort((left, right) => compareTaskRows(left, right, 'manual')) : orderBoardTaskHeads(scope.tasks, table.sortMode)} statuses={table.statuses} members={table.members} partial={filtered || !scope.complete} writable={table.writable} today={workspaceToday} draftTaskIds={table.draftTaskIds} caption={t('projects.projectPage.tasksInValue', { p0: project.name })} onOpenTask={table.onOpenTask} onEditStatus={task => table.onEditTaskField(task, 'statusId')} isStatusEditBusy={task => table.isTaskFieldEditBusy?.(task, 'statusId') === true} renderStatusEditor={task => table.renderTaskFieldEditor(task, 'statusId') ?? null} /> : <TaskTable
         {...table}
         tasks={scope.tasks}
         partial={filtered || !scope.complete}
-        today={todayIn(workspace.timezone)}
+        today={workspaceToday}
         dateIssues={dateIssueKinds}
         caption={t('projects.projectPage.tasksInValue', { p0: project.name })}
       />}

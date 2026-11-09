@@ -164,6 +164,7 @@ function harness() {
       const row = scoped(db.state.tasks.get(id), ws);
       return row === null ? null : project(row);
     },
+    searchTasks: async () => [],
     async listTasks(ws, input, after, take) {
       db.listInputs.push(input);
       return [...db.state.tasks.values()]

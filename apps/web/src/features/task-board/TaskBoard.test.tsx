@@ -104,7 +104,7 @@ describe('independent loaded-task board', () => {
     const tasks = [makeTask({ id: 'past', title: 'Past due', responsibleMembershipId: person.id, dueDate: '2026-10-05' }), makeTask({ id: 'done', title: 'Done past due', statusId: done.id, responsibleMembershipId: 'missing-person', dueDate: '2026-10-05' }), makeTask({ id: 'none', title: 'No date' })];
     const { props, rerender } = renderBoard({ tasks, members: [person], today: '2026-10-16' });
     expect(screen.getAllByText('Overdue')).toHaveLength(1);
-    expect(screen.getAllByText('Due Oct 5, 2026')).toHaveLength(2);
+    expect(screen.getAllByText('Mon, Oct 5')).toHaveLength(2);
     expect(screen.getByText('Known person')).toBeInTheDocument();
     expect(screen.getByText('Assigned person unavailable')).toBeInTheDocument();
     expect(screen.getByText('Unassigned')).toBeInTheDocument();
@@ -123,7 +123,7 @@ describe('independent loaded-task board', () => {
     const metadata = within(card);
     expect(metadata.getByText(person.displayName)).toBeInTheDocument();
     expect(metadata.getByText('Assignee', { selector: 'dt' })).toHaveClass('sr-only');
-    expect(metadata.getByText('Due Oct 5, 2026')).toBeInTheDocument();
+    expect(metadata.getByText('Mon, Oct 5')).toBeInTheDocument();
     expect(metadata.getByText('Overdue')).toBeInTheDocument();
     const completion = metadata.getByRole('button', { name: `Complete ${task.title}` });
     const status = metadata.getByRole('button', { name: 'Change status' });

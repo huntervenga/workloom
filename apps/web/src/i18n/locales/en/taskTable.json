@@ -1,4 +1,14 @@
 {
+  "shortcuts": {
+    "title": "Task keyboard shortcuts",
+    "shiftKey": "Shift + {{key}}",
+    "description": "Use these shortcuts when focus is on a task row. Press ? to open this guide.",
+    "assign": "Choose assignee",
+    "assignMe": "Assign this task to me",
+    "date": "Edit due date",
+    "complete": "Complete or reopen",
+    "copy": "Copy task link"
+  },
   "rowActions": {
     "trigger": "Task actions: {{title}}",
     "openDetails": "Open details",

@@ -73,3 +73,5 @@ export * from './user-avatars.js';
 
 export * from './attachments.js';
 export * from './description-attachments.js';
+
+export * from './project-views.js';

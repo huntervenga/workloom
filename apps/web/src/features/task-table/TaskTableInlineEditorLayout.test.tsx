@@ -16,7 +16,7 @@ const main = makeSection({ id: 'main', name: 'Launch preparation' });
 const owner = makeMember({ id: 'owner', userId: 'user-owner', displayName: 'Synthetic Owner' });
 const launch = makeTask({ id: 'launch', title: 'Prepare the launch checklist', sectionId: main.id, responsibleMembershipId: owner.id, priority: 'high', estimateMinutes: 180 });
 const columnIds = ['title', 'status', 'responsible', 'dueDate', 'priority', 'estimate'] as const;
-const widths: Record<string, number> = { title: 460, status: 144, responsible: 176, dueDate: 128, priority: 96, estimate: 128 };
+const widths: Record<string, number> = { title: 460, status: 144, responsible: 176, dueDate: 176, priority: 96, estimate: 128 };
 const baseMinWidth = columnIds.reduce((sum, id) => sum + (widths[id] ?? 0), 0);
 const editorFields: readonly TaskInlineField[] = ['title', 'statusId', 'responsibleMembershipId', 'dueDate', 'priority', 'estimate'];
 

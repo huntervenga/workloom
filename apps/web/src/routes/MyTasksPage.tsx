@@ -1,3 +1,5 @@
+import { calendarDateLabel, TaskDateLabel } from '../features/tasks/TaskDateLabel';
+import { useWorkspaceDay } from '../features/workspace/WorkspaceDay';
 import { WorkspaceLink as Link } from '../features/workspace/WorkspaceNavigation';
 import { AttachmentCount } from '../features/attachments/AttachmentCount';
 import { useMyTasksLens } from '../features/my-tasks/navigation';
@@ -7,7 +9,7 @@ import { Fragment, useState, type FormEvent } from 'react';
 
 import { useTranslation } from '../i18n';
 import { uniqueLoadedMyTasks } from '../features/my-tasks/api';
-import { dueBucket, localToday } from '../features/my-tasks/dueBuckets';
+import { dueBucket } from '../features/my-tasks/dueBuckets';
 import { useMyTasksQuery } from '../features/my-tasks/queries';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 import { QueryErrorState } from '../shared/QueryErrorState';
@@ -15,7 +17,7 @@ import { useWorkspaceContext } from './WorkspaceLayout';
 
 export function MyTasksPage() {
   const { actorId, workspace } = useWorkspaceContext();
-  const { t, formatDate } = useTranslation();
+  const { t } = useTranslation();
   const lens = useMyTasksLens();
   const { filters } = lens;
   const appliedSearch = filters.search ?? '';
@@ -37,11 +39,24 @@ export function MyTasksPage() {
   };
   // Nothing narrowed the list, so an empty result means the person simply has no open work yet.
   // Open work is grouped by how soon it is due; closed or archived lists keep their plain order.
-  const today = localToday();
+  const today = useWorkspaceDay();
   const grouped = filters.completion === 'open' && !filters.includeArchived;
-  const bucketLabels = { overdue: t('myTasks.bucket.overdue'), today: t('myTasks.bucket.today'), week: t('myTasks.bucket.week'), later: t('myTasks.bucket.later'), none: t('myTasks.bucket.none') } as const;
-  const bucketOf = (row: (typeof items)[number]) => dueBucket(row.task.dueDate, today);
+  const bucketLabels = {
+    overdue: t('myTasks.bucket.overdue'),
+    today: t('myTasks.bucket.todayDate', { date: calendarDateLabel(today, today) }),
+    tomorrow: t('myTasks.bucket.tomorrow'),
+    later: t('myTasks.bucket.later'),
+    none: t('myTasks.bucket.none'),
+  };
+  const buckets = (Object.keys(bucketLabels) as Array<keyof typeof bucketLabels>).map(key => ({
+    key,
+    label: bucketLabels[key],
+    rows: grouped ? items.filter(row => dueBucket(row.task.dueDate, today) === key) : [],
+  }));
+  const noToday = !query.hasNextPage || items.some(row => row.task.dueDate === null || row.task.dueDate > today)
+    ? t('myTasks.noTasksToday') : t('myTasks.noLoadedTasksToday');
   const untouched = filters.relation === 'all' && filters.completion === 'open' && !filters.includeArchived && search.trim() === '';
+  const renderRow = (row: (typeof items)[number]) => <li key={row.task.id}><Link to={`/w/${workspace.id}/projects/${row.task.projectId}?task=${row.task.id}`} aria-label={t('myTasks.openTask', { title: row.task.title })} className="grid min-w-0 gap-1.5 px-4 py-3 transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent md:grid-cols-[minmax(0,1fr)_10rem_9rem_7rem] md:items-center md:gap-3"><div className="flex min-w-0 items-start gap-2"><CheckCheck size={16} aria-hidden="true" className={row.status.group === 'done' || row.status.group === 'cancelled' ? 'mt-0.5 shrink-0 text-emerald-600' : 'mt-0.5 shrink-0 text-subtle'} /><span className="min-w-0 flex-1 break-words text-sm font-medium text-ink">{row.task.title}</span><AttachmentCount count={row.task.attachmentCount} /><ArrowUpRight size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-subtle md:hidden" /></div><span className="truncate pl-6 text-xs text-muted md:pl-0" title={row.project.name}>{row.project.name}</span><span className="flex flex-wrap items-center gap-1.5 pl-6 md:pl-0"><Badge tone={row.status.group === 'done' ? 'accent' : 'neutral'}>{row.status.name}</Badge>{row.task.archivedAt || row.project.archivedAt ? <Badge tone="muted">{t('myTasks.archived')}</Badge> : null}</span><span className="pl-6 text-xs text-muted md:pl-0">{row.task.dueDate ? <TaskDateLabel date={row.task.dueDate} today={today} finished={row.status.group === 'done' || row.status.group === 'cancelled'} /> : t('myTasks.noDueDate')}</span></Link></li>;
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -57,11 +72,17 @@ export function MyTasksPage() {
         <p role="status">{query.isError ? t('myTasks.errorStatus') : query.isPending ? t('myTasks.loading') : t('myTasks.loadedCount', { count: items.length })}</p>
         <label className="flex items-center gap-1.5"><input type="checkbox" checked={filters.includeArchived} onChange={event => lens.changeArchived(event.target.checked)} />{t('myTasks.includeArchived')}</label>
       </div>
-      {query.isError ? <QueryErrorState error={query.error} subject="tasks" retrying={query.isFetching} onRetry={() => void query.refetch()} /> : query.isPending ? <div aria-label={t('myTasks.loading')} className="space-y-2 rounded-xl border border-line bg-surface p-4">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-10 w-full" />)}</div> : items.length === 0 ? <StateCard icon={<Inbox size={18} aria-hidden="true" />} title={untouched ? t('myTasks.nothingAssignedTitle') : t('myTasks.emptyTitle')} description={untouched ? t('myTasks.nothingAssignedDescription') : t('myTasks.emptyDescription')} /> : (
+      {query.isError ? <QueryErrorState error={query.error} subject="tasks" retrying={query.isFetching} onRetry={() => void query.refetch()} /> : query.isPending ? <div aria-label={t('myTasks.loading')} className="space-y-2 rounded-xl border border-line bg-surface p-4">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-10 w-full" />)}</div> : items.length === 0 ? <>{grouped ? <p className="text-sm font-medium text-muted">{bucketLabels.today}</p> : null}<StateCard icon={<Inbox size={18} aria-hidden="true" />} title={untouched ? t('myTasks.nothingAssignedTitle') : t('myTasks.emptyTitle')} description={untouched ? t('myTasks.nothingAssignedDescription') : t('myTasks.emptyDescription')} /></> : (
         <div className="overflow-hidden rounded-xl border border-line bg-surface">
           <div aria-hidden="true" className="hidden grid-cols-[minmax(0,1fr)_10rem_9rem_7rem] gap-3 border-b border-line bg-canvas/70 px-4 py-2 text-xs font-medium text-muted md:grid"><span>{t('myTasks.taskColumn')}</span><span>{t('myTasks.projectColumn')}</span><span>{t('myTasks.statusColumn')}</span><span>{t('myTasks.dueColumn')}</span></div>
           <ul aria-label={t('myTasks.listLabel')} className="divide-y divide-line">
-            {items.map((row, index) => <Fragment key={row.task.id}>{grouped && bucketOf(row) !== (index > 0 && items[index - 1] ? bucketOf(items[index - 1] as typeof row) : null) ? <li role="presentation" className="bg-canvas/70 px-4 py-1.5 text-xs font-semibold tracking-wide text-muted uppercase">{bucketLabels[bucketOf(row)]}</li> : null}<li><Link to={`/w/${workspace.id}/projects/${row.task.projectId}?task=${row.task.id}`} aria-label={t('myTasks.openTask', { title: row.task.title })} className="grid min-w-0 gap-1.5 px-4 py-3 transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent md:grid-cols-[minmax(0,1fr)_10rem_9rem_7rem] md:items-center md:gap-3"><div className="flex min-w-0 items-start gap-2"><CheckCheck size={16} aria-hidden="true" className={row.status.group === 'done' || row.status.group === 'cancelled' ? 'mt-0.5 shrink-0 text-emerald-600' : 'mt-0.5 shrink-0 text-subtle'} /><span className="min-w-0 flex-1 break-words text-sm font-medium text-ink">{row.task.title}</span><AttachmentCount count={row.task.attachmentCount} /><ArrowUpRight size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-subtle md:hidden" /></div><span className="truncate pl-6 text-xs text-muted md:pl-0" title={row.project.name}>{row.project.name}</span><span className="flex flex-wrap items-center gap-1.5 pl-6 md:pl-0"><Badge tone={row.status.group === 'done' ? 'accent' : 'neutral'}>{row.status.name}</Badge>{row.task.archivedAt || row.project.archivedAt ? <Badge tone="muted">{t('myTasks.archived')}</Badge> : null}</span><span className="pl-6 text-xs text-muted md:pl-0">{row.task.dueDate ? formatDate(row.task.dueDate, { month: 'short', day: 'numeric', year: 'numeric' }) : t('myTasks.noDueDate')}</span></Link></li></Fragment>)}
+            {grouped ? buckets.map(bucket => bucket.key !== 'today' && bucket.rows.length === 0 ? null : <Fragment key={bucket.key}>
+              <li role="presentation" className="bg-canvas/70 px-4 py-1.5 text-xs font-semibold tracking-wide text-muted uppercase">
+                {bucket.label}
+                {bucket.key === 'today' && bucket.rows.length === 0 ? <span className="ml-2 font-normal normal-case">{noToday}</span> : null}
+              </li>
+              {bucket.rows.map(renderRow)}
+            </Fragment>) : items.map(renderRow)}
           </ul>
         </div>
       )}

@@ -30,6 +30,17 @@ export function createInboxReadRepository(db: WorkloomExecutor): InboxReadReposi
             and ((a.action = 'updated' and a.diff -> 'responsibleMembershipId' ->> 'to' = ${membershipId})
               or (a.action = 'created' and a.diff ->> 'responsibleMembershipId' = ${membershipId}))
           union all
+          select a.id, 'date_changed', a.recorded_at, a.actor_user_id, a.entity_id, null::text,
+                 null::uuid, null::text, null::text, null::text, null::text
+          from audit_events a
+          join tasks t on t.workspace_id = a.workspace_id and t.id = a.entity_id
+          where a.workspace_id = ${workspaceId} and a.entity_type = 'task' and a.action in ('updated', 'schedule_updated')
+            and a.recorded_at > now() - make_interval(days => ${windowDays})
+            and a.actor_membership_id <> ${membershipId}
+            and a.diff ? 'dueDate'
+            and (a.diff -> 'dueDate' -> 'from') is distinct from (a.diff -> 'dueDate' -> 'to')
+            and t.responsible_membership_id = ${membershipId}
+          union all
           select c.id, 'comment', c.created_at, c.author_user_id, c.task_id, left(c.body, 240), null, null, null, null, null
           from task_comments c
           join tasks t on t.workspace_id = c.workspace_id and t.id = c.task_id

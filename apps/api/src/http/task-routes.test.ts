@@ -125,6 +125,7 @@ const tasks: TaskApplication = {
   listTags: recorder('listTags', () => [tag]),
   createTag: recorder('createTag', () => tag),
   updateTag: recorder('updateTag', () => tag),
+  searchTasks: recorder('searchTasks', () => []),
   listTasks: recorder('listTasks', () => ({ items: [task], nextCursor: SERVICE_CURSOR })),
   getTask: recorder('getTask', () => task),
   createTask: recorder('createTask', () => task),

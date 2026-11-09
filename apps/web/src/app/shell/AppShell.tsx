@@ -205,7 +205,7 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
           workspaceName={currentWorkspace?.name ?? null}
           menu={<MobileNav>{(close) => sidebar(close)}</MobileNav>}
           localMode={!shared}
-          search={workspaceId ? <QuickJump actorId={actorId} workspaceId={workspaceId} /> : undefined}
+          search={workspaceId ? <QuickJump key={`${actorId}:${workspaceId}`} actorId={actorId} workspaceId={workspaceId} canCreate={currentWorkspace !== null && currentWorkspace.role !== 'viewer'} /> : undefined}
           account={<ProfileMenu me={me} onSettings={() => setSettingsOpen(true)} />}
         />
         <main

@@ -27,3 +27,20 @@ describe('passive mention membership cache', () => {
     expect(screen.getByRole('option', { name: 'Вера Образцова' })).toBeInTheDocument();
   });
 });
+
+it('inserts a selected task reference by stable URL', async () => {
+  const target = {
+    id: 'a0000000-0000-4000-8000-000000000001', title: 'Release checklist',
+    projectId: 'a0000000-0000-4000-8000-000000000002', projectName: 'Operations', statusName: 'Done', statusGroup: 'done',
+  };
+  installFakeApi({
+    [`GET /api/v1/workspaces/${alpha.id}/memberships`]: () => ok(alphaMembers),
+    [`GET /api/v1/workspaces/${alpha.id}/task-search`]: () => ok([target]),
+  });
+  const ui = renderFieldUi(<Example />);
+  const textarea = screen.getByLabelText('Comment');
+  await ui.user.type(textarea, 'See @release');
+  expect(await screen.findByRole('option', { name: /Release checklist.*Operations/ })).toBeInTheDocument();
+  await ui.user.keyboard('{Enter}');
+  expect(textarea).toHaveValue(`See ${window.location.origin}/app/w/${alpha.id}/projects/${target.projectId}?task=${target.id} `);
+});

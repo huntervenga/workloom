@@ -640,6 +640,25 @@ export function createTaskRepository(source: Database | WorkloomExecutor): TaskR
       return task ?? null;
     },
 
+    async searchTasks(workspaceId, query, take) {
+      const contains = likeContains(query);
+      const prefix = contains.slice(1);
+      const titleMatch = sql`${tasks.title} ilike ${contains} escape '\\'`;
+      return db.select({
+        id: tasks.id, title: tasks.title, projectId: projects.id, projectName: projects.name,
+        statusName: taskStatuses.name, statusGroup: taskStatuses.group,
+      }).from(tasks)
+        .innerJoin(projects, and(eq(projects.workspaceId, tasks.workspaceId), eq(projects.id, tasks.projectId)))
+        .innerJoin(taskStatuses, and(eq(taskStatuses.workspaceId, tasks.workspaceId), eq(taskStatuses.projectId, tasks.projectId), eq(taskStatuses.id, tasks.statusId)))
+        .where(and(eq(tasks.workspaceId, workspaceId), isNull(tasks.archivedAt), isNull(projects.archivedAt),
+          or(titleMatch, sql`${tasks.description} ilike ${contains} escape '\\'`)))
+        .orderBy(sql`case
+          when lower(${tasks.title}) = lower(${query}) then 0
+          when ${tasks.title} ilike ${prefix} escape '\\' then 1
+          when ${titleMatch} then 2 else 3 end`, desc(tasks.updatedAt), asc(tasks.id))
+        .limit(take);
+    },
+
     async listTasks(workspaceId, input, after, take) {
       if (!Number.isSafeInteger(take) || take < 0) {
         throw new TypeError('listTasks needs a non-negative integer take.');

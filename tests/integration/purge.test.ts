@@ -1,7 +1,7 @@
 // Real PostgreSQL + real API process: permanent delete of a task and of a whole project.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { purgeResponseSchema, taskResponseSchema } from '@workloom/contracts';
+import { projectViewsResponseSchema, purgeResponseSchema, taskResponseSchema } from '@workloom/contracts';
 import { expectEnvelope } from './support/p1a.js';
 import { planningHarness, type PlanningHarness } from './support/p2a-fixture.js';
 import { requireTestDatabaseUrl } from './support/test-database-url.js';
@@ -38,9 +38,17 @@ describe('permanent delete', () => {
   it('removes a project with its tasks, keeps other projects and records the purge', async () => {
     const { project, keep, make, makeKept } = await setup();
     const a = await make('Inside A'), b = await make('Inside B'), outside = await makeKept('Outside');
+    const viewsPath = `/projects/${project.id}/saved-views`;
+    const view = { id: randomUUID(), name: 'Open tasks', settings: {
+      view: 'table', grouping: 'section', sort: 'manual', search: '', completion: 'open',
+      statusId: null, participantMembershipId: null, tagId: null, includeArchived: false,
+    } };
+    expect(expectEnvelope(await h.owner.put(viewsPath, { expectedRevision: 0, views: [view] }), 200, projectViewsResponseSchema).data.revision).toBe(1);
+    expect(expectEnvelope(await h.viewer.get(viewsPath), 200, projectViewsResponseSchema).data.views).toEqual([view]);
     expect((await h.owner.post(`/projects/${project.id}/purge`, { confirmName: 'nope' })).status).toBe(400);
     const done = expectEnvelope(await h.owner.post(`/projects/${project.id}/purge`, { confirmName: project.name }), 200, purgeResponseSchema).data;
     expect(done.deleted['projects']).toBe(1);
+    expect(done.deleted['project_views']).toBe(1);
     expect(done.deleted['tasks']).toBe(2);
     expect((await h.owner.get(`/tasks/${a.id}`)).status).toBe(404);
     expect((await h.owner.get(`/tasks/${b.id}`)).status).toBe(404);

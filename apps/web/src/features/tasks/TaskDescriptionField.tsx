@@ -1,9 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type ReactNode, type RefObject } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type DragEvent, type ReactNode, type RefObject } from 'react';
 import { descriptionAttachmentLine, descriptionBody, descriptionPlainText, descriptionWithFiles, isDescriptionWithFiles } from '@workloom/contracts';
 import { inputClassName } from '@workloom/ui';
 import { FileUp } from 'lucide-react';
+import { useOutletContext } from 'react-router';
 import { useTranslation } from '../../i18n';
 import { useTaskAttachments } from '../attachments/TaskAttachments';
+import { MentionTextarea } from '../task-comments/MentionTextarea';
 import { LinkedDescription } from './LinkedDescription';
 import type { RichDescriptionHandle } from './RichDescriptionEditor';
 import { hasDescriptionLinks } from './descriptionLinks';
@@ -47,6 +49,7 @@ export function TaskDescriptionField(props: Props) {
   const { id, value, error, errorId, disabled, saved, onChange, onCommit, commitOnCtrlEnter } = props;
   const { t } = useTranslation();
   const surface = useTaskAttachments();
+  const scope = useOutletContext<{ actorId: string; workspace: { id: string } } | null>();
   const [editing, setEditing] = useState(false);
   const [fileDoesNotFit, setFileDoesNotFit] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -107,6 +110,17 @@ export function TaskDescriptionField(props: Props) {
 
   const labelId = `${id}-label`;
   const dropActive = saved && !disabled && surface?.dropTarget === 'description';
+  const plainInput: ComponentProps<'textarea'> = {
+    ref: input, id, className: inputClassName('description-frame description-plain-input mt-1.5 h-auto py-2 leading-relaxed'),
+    rows: 3, placeholder: t('tasks.taskFields.descriptionPlaceholder'), value, maxLength: TASK_DESCRIPTION_MAX, disabled,
+    'aria-invalid': error ? true : undefined, 'aria-describedby': error ? errorId : undefined,
+    onBlur: () => { onCommit(); setEditing(false); },
+    onKeyDown: event => {
+      if (!commitOnCtrlEnter || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
+      event.preventDefault();
+      onCommit();
+    },
+  };
   return <div data-attachment-description={saved && !disabled ? '' : undefined} onDrop={drop} className="relative min-w-0">
     <label id={labelId} htmlFor={id} className="text-sm font-medium text-ink">{t('tasks.taskFields.description')}</label>
     {rich ? <Suspense fallback={<div aria-busy="true" className="description-frame mt-1.5 whitespace-pre-wrap break-words rounded-lg border border-line bg-surface px-3 py-2 text-sm leading-relaxed">{descriptionPlainText(effectiveValue)}</div>}>
@@ -119,16 +133,9 @@ export function TaskDescriptionField(props: Props) {
           onKeyDown={event => { if (!disabled && event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setEditing(true); } }}>
           <LinkedDescription text={value} />
         </div>
-        : <textarea ref={input} id={id} className={inputClassName('description-frame description-plain-input mt-1.5 h-auto py-2 leading-relaxed')}
-          rows={3} placeholder={t('tasks.taskFields.descriptionPlaceholder')} value={value} maxLength={TASK_DESCRIPTION_MAX} disabled={disabled}
-          aria-invalid={error ? true : undefined} aria-describedby={error ? errorId : undefined}
-          onChange={event => stage(event.target.value)}
-          onBlur={() => { onCommit(); setEditing(false); }}
-          onKeyDown={event => {
-            if (!commitOnCtrlEnter || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey) || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            onCommit();
-          }} />}
+        : scope ? <MentionTextarea {...plainInput} value={value} actorId={scope.actorId} workspaceId={scope.workspace.id}
+          mentionPeople={false} onValueChange={stage} />
+          : <textarea {...plainInput} onChange={event => stage(event.target.value)} />}
     {dropActive ? <div role="status" className="pointer-events-none absolute inset-0 rounded-lg ring-2 ring-accent">
       <span className="absolute top-0 right-0 flex items-center gap-1 rounded-md border border-line bg-surface px-2 py-1 text-xs text-accent shadow-sm">
         <FileUp size={14} aria-hidden="true" />{t('attachments.dropDescription')}

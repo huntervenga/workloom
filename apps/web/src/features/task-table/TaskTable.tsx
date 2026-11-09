@@ -1,3 +1,5 @@
+import { rowShortcut, type RowShortcut } from './rowShortcuts';
+import { calendarDateLabel, TaskDateLabel } from '../tasks/TaskDateLabel';
 import { isTabKeyDown, isTabWalkBackward, openOnTabFromSameRow } from './tabWalk';
 import { TagBadge } from '../tasks/TagBadge';
 import { AttachmentCount } from '../attachments/AttachmentCount';
@@ -7,7 +9,7 @@ import { selectTaskRows, type SelectionModifiers } from './taskSelection';
 import { revealTaskRow, selectionKeyIntent } from './taskSelectionNavigation';
 import { resolveDraftPlacement, type DraftPlacementSnapshot } from './draftPlacement';
 import { canEditTaskInline, canMoveTaskSection, isCurrentEstimateProjection, type TaskInlineField } from '../tasks/tableEditing';
-import { t, useTranslation, formatDate } from '../../i18n';
+import { t, useTranslation } from '../../i18n';
 import type {
   MembershipDto,
   SectionDto,
@@ -91,6 +93,7 @@ export interface TaskTableProps {
   onCreateSection?: (() => void) | undefined;
   selectedTaskIds?: readonly string[] | undefined;
   selectionDisabled?: boolean | undefined;
+  onRowShortcut?: ((task: TaskDto, action: RowShortcut, row: HTMLTableRowElement) => boolean) | undefined;
   dragScope?: string | undefined;
   onSelectionChange?: ((ids: string[]) => void) | undefined;
   onSelectTask?: ((id: string, selected: boolean) => void) | undefined;
@@ -294,23 +297,6 @@ function formatSubtaskCount(count: number): string {
   return t('taskTable.taskTable.subtaskCount', { count });
 }
 
-const dayMonthFormat = { format: (date: Date) => formatDate(date, { day: 'numeric', month: 'short', timeZone: 'UTC' }) };
-const fullDateFormat = { format: (date: Date) => formatDate(date, {
-  day: '2-digit',
-  month: '2-digit',
-  year: 'numeric',
-  timeZone: 'UTC',
-}) };
-const longDateFormat = { format: (date: Date) => formatDate(date, { dateStyle: 'long', timeZone: 'UTC' }) };
-
-function calendarDate(value: string): Date {
-  const [year = 0, month = 1, day = 1] = value.split('-').map(Number);
-  const date = new Date(0);
-  date.setUTCHours(0, 0, 0, 0);
-  date.setUTCFullYear(year, month - 1, day);
-  return date;
-}
-
 function Empty({ label }: { label: string }) {
   useTranslation();
   return (
@@ -420,16 +406,14 @@ function DueDateCell({ startDate, dueDate, today, finished, issue = null }: { st
   const { t } = useTranslation();
   const warning = issue === null ? null : issue.kind === 'missing' ? t(issue.finished ? 'taskTable.dates.issueMissing' : 'taskTable.dates.issueMissingOpen') : issue.kind === 'before' ? t('taskTable.dates.issueBefore') : t('taskTable.dates.issueAfter');
   if (dueDate === null && startDate === null) return warning === null ? <Empty label={t('taskTable.taskTable.noDueDate')} /> : <span data-date-issue={issue?.kind} title={warning} className="block truncate font-medium text-rose-700 dark-theme:text-rose-300">{t('taskTable.taskTable.noDueDate')}<span className="sr-only"> {warning}</span></span>;
-  const referenceYear = today === undefined ? new Date().getFullYear() : calendarDate(today).getUTCFullYear();
-  const short = (value: string) => { const date = calendarDate(value); return date.getUTCFullYear() === referenceYear ? dayMonthFormat.format(date) : fullDateFormat.format(date); };
-  const long = (value: string) => longDateFormat.format(calendarDate(value));
-  const text = startDate !== null && dueDate !== null ? t('taskTable.dates.range', { start: short(startDate), due: short(dueDate) })
-    : dueDate !== null ? short(dueDate) : t('taskTable.dates.startOnly', { start: short(startDate ?? dueDate ?? '') });
+  const long = (value: string) => calendarDateLabel(value, today, true);
   const label = startDate !== null && dueDate !== null ? t('taskTable.dates.rangeLabel', { start: long(startDate), due: long(dueDate) })
-    : dueDate !== null ? long(dueDate) : t('taskTable.dates.startOnly', { start: long(startDate ?? dueDate ?? '') });
-  const overdue = today !== undefined && !finished && dueDate !== null && dueDate < today;
-  return <span title={warning === null ? label : `${label} — ${warning}`} aria-label={warning === null ? label : `${label}. ${warning}`} data-date-issue={issue?.kind} className={cn('block truncate tabular-nums', warning !== null ? 'font-medium text-amber-700 underline decoration-dotted' : overdue ? 'font-medium text-rose-700' : 'text-ink-soft')}>
-    {text}{overdue ? <span className="sr-only">{t('taskTable.taskTable.overdue')}</span> : null}
+    : dueDate !== null ? long(dueDate) : t('taskTable.dates.startOnly', { start: long(startDate ?? '') });
+  return <span title={warning === null ? label : `${label} — ${warning}`} aria-label={warning === null ? label : `${label}. ${warning}`} data-date-issue={issue?.kind}
+    className={cn('flex min-w-0 items-baseline gap-1 truncate tabular-nums', warning !== null ? 'font-medium text-amber-700 underline decoration-dotted' : 'text-ink-soft')}>
+    {startDate !== null ? <span className="min-w-0 truncate">{dueDate === null ? t('taskTable.dates.startOnly', { start: calendarDateLabel(startDate, today) }) : calendarDateLabel(startDate, today)}</span> : null}
+    {startDate !== null && dueDate !== null ? <span aria-hidden="true">–</span> : null}
+    {dueDate !== null ? <TaskDateLabel date={dueDate} today={today} finished={finished || warning !== null} /> : null}
   </span>;
 }
 
@@ -515,6 +499,7 @@ interface RowContext {
   renderTaskFieldEditor: TaskTableProps['renderTaskFieldEditor'];
   renderCompletionAction: TaskTableProps['renderCompletionAction'];
   renderTaskIndicator: TaskTableProps['renderTaskIndicator'];
+  onRowShortcut: TaskTableProps['onRowShortcut'];
   draftTaskIds: ReadonlySet<string>;
   /** Grid line classes of a visible column, shared by its header and body cells. */
   columnLine: (id: string) => string | undefined;
@@ -771,7 +756,11 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   };
   return <tr data-task-row={task.id} data-task-drop={drop} data-task-dragging={ctx.draggingTaskId === task.id ? '' : undefined}
     onContextMenu={openMenuFromRow}
-    onKeyDown={event => { if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') openMenuFromRow(event); }}
+    onKeyDown={event => {
+      if ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu') { openMenuFromRow(event); return; }
+      const action = rowShortcut(event.nativeEvent, event.currentTarget);
+      if (action && ctx.onRowShortcut?.(task, action, event.currentTarget)) { event.preventDefault(); event.stopPropagation(); }
+    }}
     aria-selected={ctx.selectRow ? selected : undefined}
     className={cn('group h-10 border-t border-line hover:bg-canvas/70 [counter-increment:task-row]', selected && 'bg-selection', drop === 'before' && 'shadow-[inset_0_2px_0_var(--color-accent)]', drop === 'after' && 'shadow-[inset_0_-2px_0_var(--color-accent)]', ctx.draggingTaskId === task.id && 'opacity-60')}>{ctx.columnIds.map(id => {
     const custom = ctx.customColumns.find(column => column.id === id);
@@ -950,7 +939,7 @@ export function TaskTable({
   onOpenTask,
   onCreateTask,
   onCreateChild,
-  onRenameSection, onDuplicateTask, onDeleteTask, onDuplicateSection,
+  onRenameSection, onDuplicateTask, onDeleteTask, onDuplicateSection, onRowShortcut,
   writable = false,
   partial = false,
   today,
@@ -984,7 +973,7 @@ export function TaskTable({
     { id: 'status', label: t('taskTable.taskTable.status'), width: 144 },
     { id: 'responsible', label: t('taskTable.taskTable.assignee'), width: 176 },
     { id: 'participants', label: t('taskTable.taskTable.participants'), width: 96 },
-    { id: 'dueDate', label: t('taskTable.taskTable.dueDate'), width: 128 },
+    { id: 'dueDate', label: t('taskTable.taskTable.dueDate'), width: 176 },
     { id: 'tags', label: t('taskTable.taskTable.tags'), width: 128 },
     { id: 'priority', label: t('taskTable.taskTable.priority'), width: 96 },
     { id: 'estimate', label: t('taskTable.taskTable.teamEstimate'), width: 128 },
@@ -1186,7 +1175,7 @@ export function TaskTable({
     trailingColumn,
     onEditTaskField: writable ? onEditTaskField : undefined,
     isTaskFieldEditBusy,
-    renderTaskFieldEditor, renderCompletionAction, renderTaskIndicator, draftTaskIds,
+    renderTaskFieldEditor, renderCompletionAction, renderTaskIndicator, onRowShortcut, draftTaskIds,
     columnLine,
     activeFieldEditor: activeFieldEditor && taskById.has(activeFieldEditor.taskId) ? activeFieldEditor : undefined,
   };
