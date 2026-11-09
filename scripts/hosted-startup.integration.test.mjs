@@ -38,7 +38,9 @@ test('compiled hosted API upgrades the old schema before serving, repeats and re
     await writeFile(journalFile, JSON.stringify(journal));
     await runMigrations(db.url, { migrationsFolder: previousFolder, requireLoopback: true });
     await db.sql`INSERT INTO users (id, display_name, kind) VALUES ('00000000-0000-4000-8000-000000000001', 'Retained person', 'real')`;
-    const users = await db.sql`SELECT * FROM users`;
+    // Compare the fields that exist at the starting migration. Later releases may add columns.
+    const readOriginalUserFields = () => db.sql`SELECT id, display_name, kind, created_at, updated_at, avatar_url FROM users ORDER BY id`;
+    const users = await readOriginalUserFields();
     assert.equal((await db.sql`SELECT to_regclass('public.user_settings') AS name`)[0].name, null);
 
     const hook = join(folder, 'private-dns.mjs');
@@ -103,13 +105,14 @@ syncBuiltinESMExports();
       assert.equal(receipt.appliedCount, appliedCount);
       assert.equal(receipt.phase, 'startup');
       assert.equal(receipt.expectedCount, readExpectedMigrations().length);
-      assert.deepEqual(await db.sql`SELECT * FROM users`, users);
+      assert.deepEqual(await readOriginalUserFields(), users);
       assert.equal((await db.sql`SELECT count(*)::integer AS count FROM user_settings`)[0].count, 0);
       await stop(api.child);
     }
 
     await db.sql`UPDATE drizzle.__drizzle_migrations SET hash = ${'0'.repeat(64)} WHERE id = (SELECT min(id) FROM drizzle.__drizzle_migrations)`;
     const ledger = await db.sql`SELECT * FROM drizzle.__drizzle_migrations ORDER BY id`;
+    const upgradedUsers = await db.sql`SELECT * FROM users ORDER BY id`;
     const rejected = await launch();
     const [code] = await once(rejected.child, 'exit');
     assert.equal(code, 1);
@@ -118,7 +121,7 @@ syncBuiltinESMExports();
     });
     await assert.rejects(rawRequest(rejected.baseUrl, '/healthz/live'), { code: 'ECONNREFUSED' });
     assert.deepEqual(await db.sql`SELECT * FROM drizzle.__drizzle_migrations ORDER BY id`, ledger);
-    assert.deepEqual(await db.sql`SELECT * FROM users`, users);
+    assert.deepEqual(await db.sql`SELECT * FROM users ORDER BY id`, upgradedUsers);
   } finally {
     await Promise.all(children.map(stop));
     await db.drop();
