@@ -39,6 +39,7 @@ GET   /workspaces/{ws}/tasks               фильтры: project, section, sta
 GET   /workspaces/{ws}/tasks/{taskId}
 POST  /workspaces/{ws}/tasks               project обязателен; section/status/assignee/... необязательны
 PATCH /workspaces/{ws}/tasks/{taskId}      status, section, assignee, title, dates, tags, ...
+POST  /workspaces/{ws}/tasks/{taskId}/projects  показать задачу ещё в одном проекте (project, section)
 GET   /openapi.json
 ```
 
@@ -48,7 +49,7 @@ GET   /openapi.json
 
 ## MCP-инструменты
 
-`whoami`, `list_workspaces`, `list_projects`, `get_project`, `list_members`, `list_tags`, `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`. Схемы входа — те же Zod-схемы, что у REST (общий пакет contracts). Если у пользователя ровно один доступный workspace, параметр `workspace` можно опустить. Каждый вызов заново проверяет токен, scope и роль; `tools/list` показывает только разрешённые инструменты.
+`whoami`, `list_workspaces`, `list_projects`, `get_project`, `list_members`, `list_tags`, `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`, `add_task_to_project`. Схемы входа — те же Zod-схемы, что у REST (общий пакет contracts). Если у пользователя ровно один доступный workspace, параметр `workspace` можно опустить. Каждый вызов заново проверяет токен, scope и роль; `tools/list` показывает только разрешённые инструменты.
 
 ## Файлы
 

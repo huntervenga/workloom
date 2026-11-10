@@ -91,6 +91,27 @@ export const publicTaskUpdateSchema = z.strictObject({
 export type PublicTaskCreate = z.infer<typeof publicTaskCreateSchema>;
 export type PublicTaskUpdate = z.infer<typeof publicTaskUpdateSchema>;
 
+/**
+ * Adds an existing task to another project, for example a task from a backlog to the week project.
+ * The task keeps its home project, hours and field values; the target project only shows it too.
+ * A task already in the project is left as it is, and a placement removed earlier is restored.
+ */
+export const publicTaskAddToProjectSchema = z.strictObject({
+  project: ref,
+  /** Section in the target project; used only when the task is added or restored. */
+  section: ref.nullable().optional(),
+});
+export type PublicTaskAddToProject = z.infer<typeof publicTaskAddToProjectSchema>;
+export const publicTaskProjectSchema = z.object({
+  taskId: idSchema,
+  project: z.object({ id: idSchema, name: z.string() }),
+  section: z.object({ id: idSchema, name: z.string() }).nullable(),
+  /** The project is the task's home project, where its hours and fields belong. */
+  home: z.boolean(),
+  outcome: z.enum(['added', 'restored', 'unchanged']),
+});
+export type PublicTaskProjectDto = z.infer<typeof publicTaskProjectSchema>;
+
 const csv = (max: number) => z.union([z.string(), z.array(z.string())]).transform(value => (Array.isArray(value) ? value : value.split(',')).map(item => item.trim()).filter(Boolean)).pipe(z.array(ref).max(max));
 const bool = z.union([z.boolean(), z.enum(['true', 'false']).transform(value => value === 'true')]);
 export const publicTaskListQuerySchema = z.strictObject({
@@ -302,7 +323,7 @@ export type PublicMeDto = z.infer<typeof publicMeSchema>;
 
 /** Shared by the remote MCP tools: `workspace` may be omitted when the user has exactly one workspace. */
 const workspaceRef = ref.optional();
-export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'list_fields', 'set_task_fields', 'time_summary'] as const;
+export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'add_task_to_project', 'list_fields', 'set_task_fields', 'time_summary'] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 const operationKey = z.string().regex(/^[\x21-\x7e]{1,128}$/).optional();
 export const MCP_TOOL_INPUTS = {
@@ -342,10 +363,16 @@ export const MCP_TOOL_INPUTS = {
   create_task: publicTaskCreateSchema.extend({ workspace: workspaceRef, operationKey }),
   update_task: z.strictObject({ workspace: workspaceRef, taskId: idSchema, changes: publicTaskUpdateSchema, operationKey }),
   set_task_status: z.strictObject({ workspace: workspaceRef, taskId: idSchema, status: ref, operationKey }),
+  add_task_to_project: z.strictObject({
+    workspace: workspaceRef, taskId: idSchema,
+    project: ref.describe('Project name or UUID to add the task to, usually the week project.'),
+    section: ref.nullable().optional().describe('Section name or UUID in that project, for example the person\'s section.'),
+    operationKey,
+  }),
 } as const;
 export const MCP_TOOL_SCOPE: Readonly<Record<McpToolName, ApiTokenScope>> = {
   whoami: 'read', list_workspaces: 'read', list_projects: 'read', get_project: 'read', list_members: 'read', list_tags: 'read',
-  list_tasks: 'read', get_task: 'read', create_task: 'tasks:write', update_task: 'tasks:write', set_task_status: 'tasks:write',
+  list_tasks: 'read', get_task: 'read', create_task: 'tasks:write', update_task: 'tasks:write', set_task_status: 'tasks:write', add_task_to_project: 'tasks:write',
   list_fields: 'read', set_task_fields: 'tasks:write', time_summary: 'read',
 };
 

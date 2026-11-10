@@ -310,4 +310,53 @@ describe('personal access tokens, public API and MCP', () => {
     expect(denied.structuredContent.error.code).toBe('CAPABILITY_REQUIRED');
     expect((await call('/mcp', { token: owner.token, method: 'GET' })).status).toBe(405);
   });
+
+  it('adds an existing task to another project over REST and MCP without moving its home', async () => {
+    interface Placement { taskId: string; project: { id: string; name: string }; section: { name: string } | null; home: boolean; outcome: string }
+    const week = await h.owner.tasks.createProject(`Week ${Date.now()}`);
+    await h.owner.tasks.createSection(week.id, { name: 'Michael' });
+    const created = await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: projectId, title: 'Backlog item to plan' } });
+    expect(created.status, created.text()).toBe(201);
+    const task = env<TaskV>(created).data;
+    const path = `${ws()}/tasks/${task.id}/projects`;
+    const placed = async (body: unknown, key?: string) => call(path, { token: owner.token, method: 'POST', body, ...(key ? { headers: { 'idempotency-key': key } } : {}) });
+
+    const added = await placed({ project: week.name, section: 'michael' }, 'place-1');
+    expect(added.status, added.text()).toBe(201);
+    expect(env<Placement>(added).data).toEqual({ taskId: task.id, project: { id: week.id, name: week.name }, section: expect.objectContaining({ name: 'Michael' }), home: false, outcome: 'added' });
+    // Repeating is safe, and the task keeps its home project and revision.
+    const again = await placed({ project: week.id }, 'place-2');
+    expect(again.status, again.text()).toBe(200);
+    expect(env<Placement>(again).data).toMatchObject({ outcome: 'unchanged', section: { name: 'Michael' } });
+    expect(env<Placement>(await placed({ project: projectId })).data).toMatchObject({ outcome: 'unchanged', home: true });
+    const after = env<TaskV>(await call(`${ws()}/tasks/${task.id}`, { token: owner.token })).data;
+    expect(after.project.id).toBe(projectId);
+    expect(after.revision).toBe(task.revision);
+    const rows = await h.db.sql<{ id: string; revision: number }[]>`select id, revision from task_project_placements where task_id = ${task.id} and project_id = ${week.id}`;
+    expect(rows).toHaveLength(1);
+
+    // Removed from the week in the app, then put back by the tool.
+    const row = need(rows[0]);
+    const detached = await h.owner.tasks.post(`/task-project-placements/${row.id}/detach`, { expectedRevision: row.revision });
+    expect(detached.status, detached.text()).toBe(200);
+    const restored = await placed({ project: week.name });
+    expect(restored.status, restored.text()).toBe(200);
+    expect(env<Placement>(restored).data).toMatchObject({ outcome: 'restored', section: { name: 'Michael' } });
+
+    const unknown = await placed({ project: week.name, section: 'Nobody here' });
+    expect(unknown.status, unknown.text()).toBe(400);
+    expect(env(unknown).error?.details).toMatchObject({ field: 'section', reason: 'not_found' });
+    const viewer = await issue(h.viewer, { name: 'viewer placement' });
+    const refused = await call(path, { token: viewer.token, method: 'POST', body: { project: week.name } });
+    expect(refused.status, refused.text()).toBe(403);
+
+    const other = await h.owner.tasks.createProject(`Other ${Date.now()}`);
+    const tools = json<Rpc>(await mcp(owner.token, rpc('tools/list', {}, 20))).result.tools.map(t => t.name);
+    expect(tools).toContain('add_task_to_project');
+    const readOnly = await issue(h.owner, { name: 'ro placement', scopes: ['read'] });
+    expect(json<Rpc>(await mcp(readOnly.token, rpc('tools/list', {}, 21))).result.tools.map(t => t.name)).not.toContain('add_task_to_project');
+    const viaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'add_task_to_project', arguments: { taskId: task.id, project: other.name, operationKey: 'mcp-place-1' } }, 22))).result;
+    expect(viaMcp.isError, JSON.stringify(viaMcp)).toBeFalsy();
+    expect(viaMcp.structuredContent.result).toMatchObject({ taskId: task.id, project: { id: other.id }, section: null, home: false, outcome: 'added' });
+  });
 });

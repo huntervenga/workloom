@@ -1,11 +1,11 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
-  publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummaryQuerySchema, taskViewSchema, updateTaskInputSchema,
+  publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskProjectSchema, publicTaskUpdateSchema, publicTimeSummaryQuerySchema, taskViewSchema, updateTaskInputSchema,
   type PublicFieldDto, type PublicFieldValueDto, type PublicSetTaskFieldsResult, type PublicTimeSummaryDto, type TaskFieldData, type TaskFieldDefinitionDto, type TaskFieldValueDto,
   type ApiTokenDto, type ApiTokenScope, type CreateApiTokenInput, type CreatedApiTokenDto, type PublicMeDto, type PublicMemberDto,
   type PublicProjectDetailDto, type PublicProjectDto, type PublicTagDto, type PublicTaskCreate, type PublicTaskListQuery, type PublicTaskUpdate,
-  type PublicWorkspaceDto, type TaskView, type UpdateTaskInput, type TaskDto,
+  type PublicTaskAddToProject, type PublicTaskProjectDto, type PublicWorkspaceDto, type TaskView, type UpdateTaskInput, type TaskDto,
 } from '@workloom/contracts';
 import { attributedAssignees, authorizeWorkspace, capabilityRequiredError, DomainError, isDomainError, listWorkspaceMembers, notFoundError, type Capability, type CommandContext } from '@workloom/domain';
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
@@ -51,6 +51,8 @@ export interface AutomationApplication {
   timeSummary(token: string, workspace: string | undefined, query: unknown): Promise<PublicTimeSummaryDto>;
   createTask(token: string, workspace: string | undefined, input: PublicTaskCreate, options: WriteOptions): Promise<TaskView>;
   updateTask(token: string, workspace: string | undefined, taskId: string, input: PublicTaskUpdate, options: WriteOptions): Promise<TaskView>;
+  /** Shows an existing task in one more project (a placement); its home project, hours and fields stay where they are. */
+  addTaskToProject(token: string, workspace: string | undefined, taskId: string, input: PublicTaskAddToProject, options: WriteOptions): Promise<PublicTaskProjectDto>;
 }
 
 interface ReadScope {
@@ -733,6 +735,42 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         createdAt: updated.createdAt, updatedAt: updated.updatedAt,
       };
       return outcomeValue(await barrier(s => saveOutcome(s, { state: 'done', view: taskViewSchema.parse(view) })));
+    },
+    async addTaskToProject(token, workspace, taskId, rawInput, writeOptions) {
+      const parsed = publicTaskAddToProjectSchema.safeParse(rawInput);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid project placement.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      if (!isUuid(taskId)) throw notFoundError();
+      const targetId = taskId.toLowerCase();
+      // Names are resolved once under the caller's current access; each placement command rechecks access, revisions and project rules in its own transaction.
+      const plan = await prepared(token, workspace, async (s, hash) => {
+        const app = taskApp(s.tx);
+        if (!app.placements) throw new Error('Project placements are unavailable.');
+        const task = await app.getTask(s.context, targetId);
+        if (task.archivedAt !== null) throw new DomainError('DOMAIN_VALIDATION_FAILED', 'Restore the task before adding it to another project.');
+        const project = resolveRef('project', parsed.data.project, (await projectItems(s)).filter(item => !item.archived));
+        const sections = (await app.listSections(s.context, project.id)).filter(row => row.archivedAt === null).map(({ id, name }) => ({ id, name }));
+        const section = parsed.data.section === undefined || parsed.data.section === null ? null : resolveRef('section', parsed.data.section, sections);
+        const existing = (await app.placements.listTaskPlacements(s.context, targetId)).find(row => row.projectId === project.id) ?? null;
+        return { hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions), task, project, sections, section, existing };
+      });
+      const result = (outcome: PublicTaskProjectDto['outcome'], sectionId: string | null): PublicTaskProjectDto => publicTaskProjectSchema.parse({
+        taskId: plan.task.id, project: { id: plan.project.id, name: plan.project.name },
+        section: sectionId === null ? null : plan.sections.find(row => row.id === sectionId) ?? null,
+        home: plan.project.id === plan.task.projectId, outcome,
+      });
+      // Already shown there: nothing to write, so repeating the call is safe.
+      if (plan.project.id === plan.task.projectId) return result('unchanged', plan.task.sectionId);
+      if (plan.existing && plan.existing.archivedAt === null) return result('unchanged', plan.existing.sectionId);
+      const placements = writeApp(plan.hash, plan.workspaceId, plan.userId).placements;
+      if (!placements) throw new Error('Project placements are unavailable.');
+      const internalKey = (command: string) => createHash('sha256').update(`${plan.context.idempotencyKey ?? ''}\0public.task.project.${command}\0${targetId}\0${plan.project.id}`).digest('hex');
+      if (plan.existing) {
+        let row = await placements.restoreTaskProjectPlacement({ ...plan.context, idempotencyKey: internalKey('restore') }, plan.existing.id, { expectedRevision: plan.existing.revision });
+        if (plan.section && plan.section.id !== row.sectionId) row = await placements.updateTaskProjectPlacement({ ...plan.context, idempotencyKey: internalKey('section') }, row.id, { expectedRevision: row.revision, sectionId: plan.section.id });
+        return result('restored', row.sectionId);
+      }
+      const row = await placements.attachTaskProject({ ...plan.context, idempotencyKey: internalKey('attach') }, targetId, { projectId: plan.project.id, expectedTaskRevision: plan.task.revision, sectionId: plan.section?.id ?? null });
+      return result('added', row.sectionId);
     },
   };
 }

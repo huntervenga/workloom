@@ -1,4 +1,4 @@
-import { publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummarySchema, taskViewSchema, createApiTokenInputSchema } from '@workloom/contracts';
+import { publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummarySchema, taskViewSchema, createApiTokenInputSchema } from '@workloom/contracts';
 import { z } from 'zod';
 
 const json = (schema: z.ZodType, io: 'input' | 'output' = 'output') => {
@@ -49,5 +49,6 @@ export const PUBLIC_API_OPENAPI = {
       get: { summary: 'Get a task; includeFields=true adds custom field values', parameters: [wsParam, taskParam, { name: 'includeFields', in: 'query', required: false, schema: { type: 'string', enum: ['true', 'false'] } }], responses: { '200': ok('OK', envelope({ $ref: '#/components/schemas/Task' })), ...errors } },
       patch: { summary: 'Change a task: status, section, assignee, dates, tags, …', parameters: [wsParam, taskParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TaskUpdate' } } } }, responses: { '200': ok('OK', envelope({ $ref: '#/components/schemas/Task' })), ...errors } },
     },
+    '/workspaces/{ws}/tasks/{taskId}/projects': { post: { summary: 'Show an existing task in one more project, for example the week project. Its home project, hours and fields stay where they are; a task already there is unchanged, a removed placement is restored.', parameters: [wsParam, taskParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: json(publicTaskAddToProjectSchema, 'input') } } }, responses: { '201': ok('Added', envelope(json(publicTaskProjectSchema))), '200': ok('Already there or restored', envelope(json(publicTaskProjectSchema))), ...errors } } },
   },
 } as const;
