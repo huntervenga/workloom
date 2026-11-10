@@ -1,6 +1,6 @@
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useSyncExternalStore, type ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { House, X } from 'lucide-react';
 import { protectedCommandsFor } from '../../lib/protectedCommands';
 import type { ProjectDto, TaskDto, TaskProjectPlacementDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
@@ -10,7 +10,7 @@ import { useProjectsQuery, useSectionsQuery } from '../projects/queries';
 import { fetchProjectRules } from '../project-rules/api';
 import { projectRulesKey, useProjectRules } from '../project-rules/queries';
 import { useTaskPlacementsQuery, type PlacementCommands } from './queries';
-import { HomeProjectPicker } from './HomeProjectPicker';
+import { HomeSwitchFeedback, useHomeSwitch } from './HomeSwitch';
 
 const compactPicker = 'border-transparent! bg-transparent! px-1.5 shadow-none! hover:bg-canvas!';
 
@@ -37,6 +37,7 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
   const projects = useProjectsQuery(actorId, task.workspaceId);
   const homeRules = useProjectRules(actorId, task.workspaceId, homeProject.id);
   const keepsOneProject = homeRules.data?.config.singleProject === true;
+  const home = useHomeSwitch(actorId, task, homeProject);
   const registry = protectedCommandsFor(useQueryClient());
   useSyncExternalStore(registry.subscribe, registry.getSnapshot);
   // A denied/failed refetch hides retained membership metadata and disables all writes.
@@ -59,17 +60,18 @@ export function TaskProjectsField({ actorId, task, homeProject, writable, comman
       <span className="rounded bg-canvas px-1.5 text-xs text-muted tabular-nums">{1 + active.length}</span>
     </div>
     <div className="flex min-h-8 min-w-0 items-center gap-1">
-      <Swatch id={homeProject.id} />
-      {canMove ? <div className="min-w-0 flex-1"><HomeProjectPicker actorId={actorId} task={task} homeProject={homeProject} projects={projects.isSuccess ? projects.data.projects : []} disabled={blocked} /></div>
-        : <span className={nameStyle} title={t('placements.home')}>{homeProject.name}</span>}
+      <Swatch id={homeProject.id} /><span className={nameStyle}>{homeProject.name}</span>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent-ink" title={t('placements.homeHint')}><House size={12} aria-hidden="true" />{t('placements.homeBadge')}</span>
       {homeSectionPicker ? <div className="max-w-[45%] shrink-0">{homeSectionPicker}</div> : null}
     </div>
     {active.length > 0 ? <p role="note" data-multi-project-warning="" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-950">{t('placements.multiProjectWarning')}</p> : null}
     {active.map(item => <div key={item.id} className="flex min-h-8 min-w-0 items-center gap-1">
       <Swatch id={item.projectId} /><span className={nameStyle}>{projectName(item.projectId)}</span>
       <div className="max-w-[45%] shrink-0"><LinkedSection actorId={actorId} item={item} blocked={blocked} commands={commands} /></div>
+      {canMove ? <Button size="sm" variant="ghost" disabled={blocked || home.busy} title={t('placements.makeHome')} aria-label={t('placements.makeHomeIn', { p0: projectName(item.projectId) })} onClick={() => home.makeHome(item.projectId)}><House size={14} aria-hidden="true" /></Button> : null}
       <Button size="sm" variant="ghost" disabled={blocked} aria-label={t('placements.removeFrom', { p0: projectName(item.projectId) })} onClick={() => commands.mutate({ command: { kind: 'detach', placementId: item.id, input: { expectedRevision: item.revision } } })}><X size={14} aria-hidden="true" /></Button>
     </div>)}
+    <HomeSwitchFeedback task={task} home={home} nameOf={projectName} disabled={blocked} />
     {placements.isError || projects.isError ? <div className="space-y-1"><p role="status" className="text-xs text-muted">{t('placements.loadFailed')}</p><Button size="sm" variant="ghost" onClick={() => { void placements.refetch(); void projects.refetch(); }}>{t('placements.reload')}</Button></div> : null}
     {writable && !keepsOneProject && task.visibility === 'workspace' && task.meetingId === null && task.archivedAt === null ? <ChoicePicker compact searchable className={compactPicker} label={t('placements.add')} placeholder={`+ ${t('placements.add')}`} value="" options={choices} disabled={blocked || choices.length === 0} onValueChange={projectId => {
       if (blocked || !choices.some(choice => choice.value === projectId)) return;

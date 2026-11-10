@@ -81,5 +81,21 @@ describe('transfer and the one-project rule',()=>{
   await h.placements.save({...linked,archivedAt:now,revision:2});
   await expect(h.app.transferTaskProject(h.ctx('s2'),taskId,{expectedRevision:4,projectId:target})).resolves.toMatchObject({task:{projectId:target}});
  });
+ it('keeps the former home on request, and refuses that when either project keeps every task in one project only',async()=>{
+  let h=harness();
+  await expect(h.app.transferTaskProject(h.ctx('k1'),taskId,{expectedRevision:4,projectId:target,keepFormerHome:true})).resolves.toMatchObject({task:{projectId:target}});
+  expect(h.placements.transferTree).toHaveBeenCalledWith(expect.objectContaining({targetProjectId:target,keepFormerHome:true}));
+  h=harness();await h.app.transferTaskProject(h.ctx('k2'),taskId,{expectedRevision:4,projectId:target});
+  expect(h.placements.transferTree).toHaveBeenCalledWith(expect.objectContaining({keepFormerHome:false}));
+  h=harness();h.single.add(home);
+  await expect(h.app.transferTaskProject(h.ctx('k3'),taskId,{expectedRevision:4,projectId:target,keepFormerHome:true})).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED',details:{transferReason:'single_project_former'}});
+  expect(h.placements.transferTree).not.toHaveBeenCalled();
+  // Without keeping it, the former home's rule does not apply: the task simply leaves that project.
+  await expect(h.app.transferTaskProject(h.ctx('k4'),taskId,{expectedRevision:4,projectId:target})).resolves.toMatchObject({task:{projectId:target}});
+  // A one-project target would see the former home as another project the task is still in.
+  h=harness();h.single.add(target);
+  await expect(h.app.transferTaskProject(h.ctx('k5'),taskId,{expectedRevision:4,projectId:target,keepFormerHome:true})).rejects.toMatchObject({code:'DOMAIN_VALIDATION_FAILED',details:{transferReason:'single_project'}});
+  expect(h.placements.transferTree).not.toHaveBeenCalled();
+ });
 });
 });
