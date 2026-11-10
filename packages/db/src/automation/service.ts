@@ -7,7 +7,7 @@ import {
   type PublicProjectDetailDto, type PublicProjectDto, type PublicTagDto, type PublicTaskCreate, type PublicTaskListQuery, type PublicTaskUpdate,
   type PublicWorkspaceDto, type TaskView, type UpdateTaskInput, type TaskDto,
 } from '@workloom/contracts';
-import { authorizeWorkspace, capabilityRequiredError, DomainError, isDomainError, listWorkspaceMembers, notFoundError, type Capability, type CommandContext } from '@workloom/domain';
+import { attributedAssignees, authorizeWorkspace, capabilityRequiredError, DomainError, isDomainError, listWorkspaceMembers, notFoundError, type Capability, type CommandContext } from '@workloom/domain';
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
 import { createAccessRepository } from '../repositories/access-repository.js';
 import { createTaskRepository } from '../repositories/task-repository.js';
@@ -412,8 +412,10 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
       const value = base.values.get(taskId.toLowerCase())?.get(fieldId.toLowerCase())?.value;
       return value?.type === 'duration' ? value.value : null;
     };
+    // A subtask without its own assignee counts for its nearest assigned parent, as in Reports.
+    const assigneeOf = attributedAssignees(base.live.map(row => row.canonicalTask));
     const tasks = base.live.map(row => ({
-      assignee: row.canonicalTask.responsibleMembershipId?.toLowerCase() ?? null,
+      assignee: assigneeOf.get(row.canonicalTask.id.toLowerCase())?.toLowerCase() ?? null,
       view: {
         taskId: row.canonicalTask.id, title: row.canonicalTask.title, status: row.canonicalStatus.name, statusGroup: row.canonicalStatus.group,
         parentTaskId: row.canonicalTask.parentTaskId, planMinutes: minutes(row.canonicalTask.id, base.planField.id), factMinutes: minutes(row.canonicalTask.id, base.factField.id),
@@ -424,7 +426,7 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
     const ids = chosen.map(id => id.toLowerCase()).filter(id => active.has(id)).slice(0, 100);
     const notes = [
       'Each task counts its own stored values; table rollups of subtasks into parents are not added again.',
-      'Time belongs to the task assignee.',
+      'Time belongs to the task assignee; a subtask without one counts for its nearest assigned parent task.',
     ];
     if (chosen.length > 100) notes.push('Only the first 100 people are included.');
     let capacity: Awaited<ReturnType<ReturnType<typeof createLeaveApplication>['availability']>> | null = null;
