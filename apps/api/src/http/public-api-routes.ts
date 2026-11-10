@@ -1,7 +1,7 @@
 import {
   envelopeSchema, idSchema, publicMeSchema, publicMemberSchema, publicProjectDetailSchema, publicProjectSchema, publicTagSchema,
   publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicWorkspaceSchema, taskViewSchema, API_TOKEN_LIMITS,
-  publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTimeSummarySchema,
+  publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTimeSummarySchema, publicTaskAddToProjectSchema, publicTaskProjectSchema,
 } from '@workloom/contracts';
 import type { AutomationApplication } from '@workloom/db';
 import { DomainError, unauthenticatedError } from '@workloom/domain';
@@ -110,5 +110,12 @@ export function registerPublicApiRoutes(app: FastifyInstance, deps: PublicApiDep
     const input = parseInput(publicTaskUpdateSchema, request.body);
     const task = await automation.updateTask(bearerToken(request), p.ws, p.taskId, input, { requestId: request.id, idempotencyKey: idempotencyKey(request) });
     return sendData(request, reply, envelopeSchema(taskViewSchema), task);
+  });
+  app.post(`${base}/workspaces/:ws/tasks/:taskId/projects`, write, async (request, reply) => {
+    parseInput(empty, request.query);
+    const p = parseInput(wsTask, request.params);
+    const input = parseInput(publicTaskAddToProjectSchema, request.body);
+    const result = await automation.addTaskToProject(bearerToken(request), p.ws, p.taskId, input, { requestId: request.id, idempotencyKey: idempotencyKey(request) });
+    return sendData(request, reply, envelopeSchema(publicTaskProjectSchema), result, { statusCode: result.outcome === 'added' ? 201 : 200 });
   });
 }

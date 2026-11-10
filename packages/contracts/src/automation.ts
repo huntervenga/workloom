@@ -91,6 +91,40 @@ export const publicTaskUpdateSchema = z.strictObject({
 export type PublicTaskCreate = z.infer<typeof publicTaskCreateSchema>;
 export type PublicTaskUpdate = z.infer<typeof publicTaskUpdateSchema>;
 
+/**
+ * Adds an existing task to another project, for example a task from a backlog to the week project.
+ * Hours and custom fields count only in the task's home project, so the call can also make the target the home;
+ * the former home then stays among the task's projects. A task already in the project is left as it is there,
+ * and a placement removed earlier is restored.
+ */
+export const publicTaskAddToProjectSchema = z.strictObject({
+  project: ref,
+  /** Section in the target project; used when the task is added, restored or made at home there. */
+  section: ref.nullable().optional(),
+  /**
+   * true: the target becomes the home. false: the task is only shown there. Omitted: the target becomes the home when
+   * it has duration fields (tracks time) and the current home has none; when both track time the call asks for a choice.
+   */
+  home: z.boolean().optional(),
+});
+export type PublicTaskAddToProject = z.infer<typeof publicTaskAddToProjectSchema>;
+export const publicTaskProjectSchema = z.object({
+  taskId: idSchema,
+  project: z.object({ id: idSchema, name: z.string() }),
+  section: z.object({ id: idSchema, name: z.string() }).nullable(),
+  /** The project is now the task's home project, where its hours and fields count. */
+  home: z.boolean(),
+  homeProject: z.object({ id: idSchema, name: z.string() }),
+  outcome: z.enum(['added', 'restored', 'unchanged']),
+  /** The home moved to this project in this call; the former home stays among the task's projects. */
+  homeChanged: z.boolean(),
+  /** requested: home was given; time_fields: the target tracks time and the former home did not; already_home; kept: the home did not change. */
+  homeReason: z.enum(['requested', 'time_fields', 'already_home', 'kept']),
+  /** Custom field values copied to the new home (same field name and type); the former home keeps its own. */
+  copiedValues: z.number().int().min(0),
+});
+export type PublicTaskProjectDto = z.infer<typeof publicTaskProjectSchema>;
+
 const csv = (max: number) => z.union([z.string(), z.array(z.string())]).transform(value => (Array.isArray(value) ? value : value.split(',')).map(item => item.trim()).filter(Boolean)).pipe(z.array(ref).max(max));
 const bool = z.union([z.boolean(), z.enum(['true', 'false']).transform(value => value === 'true')]);
 export const publicTaskListQuerySchema = z.strictObject({
@@ -302,7 +336,7 @@ export type PublicMeDto = z.infer<typeof publicMeSchema>;
 
 /** Shared by the remote MCP tools: `workspace` may be omitted when the user has exactly one workspace. */
 const workspaceRef = ref.optional();
-export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'list_fields', 'set_task_fields', 'time_summary'] as const;
+export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'add_task_to_project', 'list_fields', 'set_task_fields', 'time_summary'] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 const operationKey = z.string().regex(/^[\x21-\x7e]{1,128}$/).optional();
 export const MCP_TOOL_INPUTS = {
@@ -342,10 +376,17 @@ export const MCP_TOOL_INPUTS = {
   create_task: publicTaskCreateSchema.extend({ workspace: workspaceRef, operationKey }),
   update_task: z.strictObject({ workspace: workspaceRef, taskId: idSchema, changes: publicTaskUpdateSchema, operationKey }),
   set_task_status: z.strictObject({ workspace: workspaceRef, taskId: idSchema, status: ref, operationKey }),
+  add_task_to_project: z.strictObject({
+    workspace: workspaceRef, taskId: idSchema,
+    project: ref.describe('Project name or UUID to add the task to, usually the week project.'),
+    section: ref.nullable().optional().describe('Section name or UUID in that project, for example the person\'s section.'),
+    home: z.boolean().optional().describe('true: hours and fields count in this project from now on (it becomes the home; the former home stays listed). false: only show the task there. Omit to let the server decide: the project becomes the home when it tracks time (has duration fields) and the current home does not; if both track time it asks you to choose, so ask the user.'),
+    operationKey,
+  }),
 } as const;
 export const MCP_TOOL_SCOPE: Readonly<Record<McpToolName, ApiTokenScope>> = {
   whoami: 'read', list_workspaces: 'read', list_projects: 'read', get_project: 'read', list_members: 'read', list_tags: 'read',
-  list_tasks: 'read', get_task: 'read', create_task: 'tasks:write', update_task: 'tasks:write', set_task_status: 'tasks:write',
+  list_tasks: 'read', get_task: 'read', create_task: 'tasks:write', update_task: 'tasks:write', set_task_status: 'tasks:write', add_task_to_project: 'tasks:write',
   list_fields: 'read', set_task_fields: 'tasks:write', time_summary: 'read',
 };
 

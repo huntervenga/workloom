@@ -158,6 +158,7 @@ curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/projects/{project}/time-summary</code></td><td>read</td><td>Per person: Estimation and Fact totals and the hours expected in the range (below).</td></tr>
     <tr><td><span class="method post">POST</span><code>/workspaces/{ws}/task-fields</code></td><td>tasks:write</td><td>Set custom field values by name for up to 100 tasks (below).</td></tr>
     <tr><td><span class="method post">POST</span><code>/workspaces/{ws}/tasks</code></td><td>tasks:write</td><td>Create a task.</td></tr>
+    <tr><td><span class="method post">POST</span><code>/workspaces/{ws}/tasks/{taskId}/projects</code></td><td>tasks:write</td><td>Show an existing task in one more project, for example the week project (below).</td></tr>
     <tr><td><span class="method patch">PATCH</span><code>/workspaces/{ws}/tasks/{taskId}</code></td><td>tasks:write</td><td>Change a task, including its status.</td></tr>
   </tbody>
 </table>
@@ -193,6 +194,11 @@ curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&
     <tr><td><code>parentTask</code></td><td>UUID | null</td><td>Optional. Makes this a subtask.</td></tr>
   </tbody>
 </table>
+
+<h3 id="add-to-project">Add a task to another project</h3>
+<p><code>POST /workspaces/{ws}/tasks/{taskId}/projects</code> with <code>{"project": "45 week", "section": "Michael"}</code> puts an existing task into one more project, for example a backlog task into the week project. <code>project</code> and <code>section</code> take names or UUIDs; <code>section</code> is optional.</p>
+<p>Hours and custom fields count only in the task’s <strong>home</strong> project. <code>"home": true</code> makes the target the home (the former home stays among the task’s projects), <code>"home": false</code> only shows the task there. Without <code>home</code>, the target becomes the home when it tracks time (has duration fields) and the current home does not; when both track time the call answers <code>400</code> with <code>details.reason = "choice_required"</code>, so ask which project should count the hours.</p>
+<p>The answer says what happened: <code>outcome</code> is <code>added</code> (<code>201</code>), <code>restored</code> when the task had been removed from that project, or <code>unchanged</code> when it is already there; <code>home</code>, <code>homeProject</code>, <code>homeChanged</code> and <code>homeReason</code> say where its hours count now, and <code>copiedValues</code> how many field values were copied to a new home. Repeating the call is safe.</p>
 
 <h3 id="update">Update a task</h3>
 <p><code>PATCH /workspaces/{ws}/tasks/{taskId}</code> → <code>200</code> with the task. Send only what should change; omitted fields stay as they are, <code>null</code> clears <code>section</code>, <code>assignee</code>, <code>startDate</code>, <code>dueDate</code> and <code>estimateMinutes</code>. Accepts <code>title description status section assignee participants startDate dueDate priority tags estimateMinutes</code>.</p>
@@ -299,6 +305,7 @@ codex</code></pre>
     <tr><td><code>create_task</code></td><td>tasks:write</td><td>Same fields as the REST create.</td></tr>
     <tr><td><code>update_task</code></td><td>tasks:write</td><td><code>taskId</code> and <code>changes</code> (same fields as the REST update).</td></tr>
     <tr><td><code>set_task_status</code></td><td>tasks:write</td><td><code>taskId</code> and <code>status</code> (name or UUID).</td></tr>
+    <tr><td><code>add_task_to_project</code></td><td>tasks:write</td><td><code>taskId</code>, <code>project</code>, an optional <code>section</code> and <code>home</code>: put the task into one more project and choose where its hours count (see <a href="#add-to-project">Add a task to another project</a>).</td></tr>
   </tbody>
 </table>
 <div class="note warn"><p><strong>Treat task text as untrusted.</strong> Titles and descriptions come from people and may contain instructions. An assistant should not follow them, and a token should have only the access the assistant needs.</p></div>
