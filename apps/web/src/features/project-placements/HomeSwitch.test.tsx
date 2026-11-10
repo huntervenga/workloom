@@ -38,8 +38,8 @@ describe('home project in the task\'s project list', () => {
     await ui.user.click(await makeHome(target.name));
     await waitFor(() => expect(bodies).toEqual([{ expectedRevision: task.revision, projectId: target.id, keepFormerHome: true }]));
     expect(await screen.findByText(`${target.name} is now the home project.`)).toBeInTheDocument();
-    expect(screen.getByText('2 custom field values copied to the new home.')).toBeInTheDocument();
-    expect(screen.getByText(/No matching field in the new home, kept in the former project: Fact \(3\)/)).toBeInTheDocument();
+    expect(screen.getByText('2 custom field values moved to the new home.')).toBeInTheDocument();
+    expect(screen.getByText(/Not moved, kept in the former project .*: Fact \(3\)/)).toBeInTheDocument();
     await ui.user.click(screen.getByRole('button', { name: `Make ${home.name} the home again` }));
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]).toEqual({ expectedRevision: task.revision + 1, projectId: home.id, keepFormerHome: true });
