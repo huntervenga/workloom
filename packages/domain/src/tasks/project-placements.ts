@@ -130,12 +130,15 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
       if(target?.config.lockMoves)transferRule('This project does not allow moving tasks into it.','locked_to','projectId');
      }
      // The rule is about the placements that remain: a "one project only" target cannot receive a task that is still shown elsewhere.
+     // Keeping the former home means it remains as well.
+     const keep=input.keepFormerHome===true;
      if((await find?.call(repo,ws,targetProject.id))?.config.singleProject){
-      const others=(await scope.placements.listForTask(ws,task.id,501)).filter(item=>item.archivedAt===null&&item.projectId!==task.projectId&&item.projectId!==targetProject.id);
+      const others=(await scope.placements.listForTask(ws,task.id,501)).filter(item=>item.archivedAt===null&&(keep||item.projectId!==task.projectId)&&item.projectId!==targetProject.id);
       if(others.length>0)transferRule('This project keeps every task in one project only, and the task is still placed in other projects. Remove it from them first.','single_project','projectId');
      }
+     if(keep&&(await find?.call(repo,ws,task.projectId))?.config.singleProject)transferRule('The task\'s current project keeps every task in one project only, so the task cannot stay there once another project is its home.','single_project_former','projectId');
      if(input.sectionId!==undefined)await targetSection(scope,ws,targetProject.id,input.sectionId);
-     const moved=await scope.placements.transferTree({workspaceId:ws,taskId:task.id,targetProjectId:targetProject.id,sectionId:input.sectionId,now});
+     const moved=await scope.placements.transferTree({workspaceId:ws,taskId:task.id,targetProjectId:targetProject.id,sectionId:input.sectionId,now,keepFormerHome:keep});
      // Values go through the shared field primitive, so locks, policies, history and audit apply as for any other write.
      const lost=new Map(moved.notCarried.map(item=>[item.fieldName,item.count] as const)),fields=scope.fieldRepository;let carriedValues=0;
      for(const item of moved.values){

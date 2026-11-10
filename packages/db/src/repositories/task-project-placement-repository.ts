@@ -16,7 +16,7 @@ const uuidArray=(values:readonly string[])=>sql`${'{'+values.join(',')+'}'}::uui
  * immutable history of its field values keeps its anchor. Anything bound to the old project's accounting that this
  * command cannot move safely blocks the transfer with a plain reason instead of being rewritten.
  */
-async function transferTree(db:WorkloomExecutor,plan:{workspaceId:string;taskId:string;targetProjectId:string;sectionId:string|null|undefined;now:string}) {
+async function transferTree(db:WorkloomExecutor,plan:{workspaceId:string;taskId:string;targetProjectId:string;sectionId:string|null|undefined;now:string;keepFormerHome?:boolean}) {
  const ws=plan.workspaceId,target=plan.targetProjectId,now=plan.now;
  const rows=<T>(result:unknown)=>result as T[];
  const tree=rows<TreeTask>(await db.execute(sql`
@@ -72,7 +72,7 @@ async function transferTree(db:WorkloomExecutor,plan:{workspaceId:string;taskId:
         from m where tasks.workspace_id=${ws} and tasks.id=m.id returning tasks.id),
   pl as (update task_project_placements p set
           id=case when p.project_id=${home} then gen_random_uuid() when p.project_id=${target} then p.task_id else p.id end,
-          archived_at=case when p.project_id=${home} then ${now}::timestamptz when p.project_id=${target} then null else p.archived_at end,
+          archived_at=case when p.project_id=${home} then ${plan.keepFormerHome===true?null:now}::timestamptz when p.project_id=${target} then null else p.archived_at end,
           section_id=case when p.project_id=${target} then m.section_id else p.section_id end,
           position=case when p.project_id=${target} then m.position else p.position end,
           home_project_id=${target}, revision=p.revision+1, updated_at=${now}::timestamptz

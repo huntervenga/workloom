@@ -27,7 +27,7 @@ const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
  */
 const duplicationReasons = ['meeting_or_unknown_task_type','archived_task','invalid_task_tree','too_many_tasks','linked_task','archived_source','meeting_parent_requires_added_scope','source_project_too_large','field_unavailable','todo_status_missing','section_order_full','no_dates_to_shift','shifted_dates_out_of_range','attachment_storage_unavailable'] as const;
 export type DuplicationReason = typeof duplicationReasons[number];
-const transferReasons = ['archived', 'subtask', 'same_project', 'locked_from', 'locked_to', 'too_many', 'plans', 'work_logs', 'baseline', 'meeting', 'shared_package', 'split_package', 'no_status', 'single_project'] as const;
+const transferReasons = ['archived', 'subtask', 'same_project', 'locked_from', 'locked_to', 'too_many', 'plans', 'work_logs', 'baseline', 'meeting', 'shared_package', 'split_package', 'no_status', 'single_project', 'single_project_former'] as const;
 /** Why a task move was refused: a fixed classification, never server text. */
 export type TransferReason = typeof transferReasons[number];
 function isTransferReason(value: unknown): value is TransferReason { return transferReasons.some(reason => reason === value); }

@@ -11,8 +11,12 @@ export const projectRowSchema=z.object({placement:taskProjectPlacementSchema,can
  if(row.placement.taskId!==row.canonicalTask.id||row.placement.workspaceId!==row.canonicalTask.workspaceId||row.placement.homeProjectId!==row.canonicalTask.projectId||row.homeProject.id!==row.canonicalTask.projectId||row.homeProject.workspaceId!==row.canonicalTask.workspaceId||row.canonicalStatus.id!==row.canonicalTask.statusId||row.canonicalStatus.projectId!==row.canonicalTask.projectId||row.canonicalStatus.workspaceId!==row.canonicalTask.workspaceId)ctx.addIssue({code:'custom',message:'The row must preserve canonical task, home project and status identity.'});
 });
 export const attachTaskProjectInputSchema=z.object({projectId:idSchema,expectedTaskRevision:revisionSchema,sectionId:idSchema.nullable().optional(),position:positionSchema.optional()}).strict();
-/** Moves a task, with all its subtasks, to another project: the target becomes its home project. */
-export const transferTaskProjectInputSchema=z.object({expectedRevision:revisionSchema,projectId:idSchema,sectionId:idSchema.nullable().optional()}).strict();
+/**
+ * Moves a task, with all its subtasks, to another project: the target becomes its home project.
+ * With keepFormerHome the former home stays in the task's projects as an ordinary placement, so changing
+ * the home is one step and the task stays visible where it was.
+ */
+export const transferTaskProjectInputSchema=z.object({expectedRevision:revisionSchema,projectId:idSchema,sectionId:idSchema.nullable().optional(),keepFormerHome:z.boolean().optional()}).strict();
 export const transferTaskProjectResultSchema=z.object({
  task:taskSchema,movedTaskIds:z.array(idSchema).min(1).max(1000),
  /** Custom-field values that were copied into the target project's matching fields. */

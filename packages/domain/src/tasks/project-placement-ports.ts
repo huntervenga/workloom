@@ -3,7 +3,7 @@ import type {CommandContext} from '../access/context.js';
 import type {Capability} from '../access/capabilities.js';
 import type {TaskCursorAnchor,TaskRepository,TaskTools,TaskWriteScope} from './ports.js';
 /** One task and all its subtasks moving to another project. `sectionId` undefined maps the section by name. */
-export interface TaskTransferPlan {readonly workspaceId:string;readonly taskId:string;readonly targetProjectId:string;readonly sectionId:string|null|undefined;readonly now:string}
+export interface TaskTransferPlan {readonly workspaceId:string;readonly taskId:string;readonly targetProjectId:string;readonly sectionId:string|null|undefined;readonly now:string;/** Keep the former home placements active instead of detaching them. */readonly keepFormerHome?:boolean}
 /** A value of the old project that has a matching field in the target; the command writes it through the shared field primitive. */
 export interface TaskTransferValue {readonly taskId:string;readonly fieldId:string;readonly fieldName:string;readonly value:{readonly type:string;readonly value:unknown}}
 export interface TaskTransferOutcome {readonly movedTaskIds:string[];readonly values:TaskTransferValue[];/** Values with no matching field or option in the target. */readonly notCarried:{fieldName:string;count:number}[]}
