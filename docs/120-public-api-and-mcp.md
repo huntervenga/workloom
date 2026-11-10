@@ -39,7 +39,7 @@ GET   /workspaces/{ws}/tasks               фильтры: project, section, sta
 GET   /workspaces/{ws}/tasks/{taskId}
 POST  /workspaces/{ws}/tasks               project обязателен; section/status/assignee/... необязательны
 PATCH /workspaces/{ws}/tasks/{taskId}      status, section, assignee, title, dates, tags, ...
-POST  /workspaces/{ws}/tasks/{taskId}/projects  показать задачу ещё в одном проекте (project, section)
+POST  /workspaces/{ws}/tasks/{taskId}/projects  задача ещё в одном проекте (project, section, home)
 GET   /openapi.json
 ```
 

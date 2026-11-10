@@ -747,30 +747,54 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         if (!app.placements) throw new Error('Project placements are unavailable.');
         const task = await app.getTask(s.context, targetId);
         if (task.archivedAt !== null) throw new DomainError('DOMAIN_VALIDATION_FAILED', 'Restore the task before adding it to another project.');
-        const project = resolveRef('project', parsed.data.project, (await projectItems(s)).filter(item => !item.archived));
+        const projects = await projectItems(s);
+        const project = resolveRef('project', parsed.data.project, projects.filter(item => !item.archived));
+        const home = projects.find(item => item.id === task.projectId) ?? { id: task.projectId, name: (await app.getProject(s.context, task.projectId)).name };
         const sections = (await app.listSections(s.context, project.id)).filter(row => row.archivedAt === null).map(({ id, name }) => ({ id, name }));
         const section = parsed.data.section === undefined || parsed.data.section === null ? null : resolveRef('section', parsed.data.section, sections);
         const existing = (await app.placements.listTaskPlacements(s.context, targetId)).find(row => row.projectId === project.id) ?? null;
-        return { hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions), task, project, sections, section, existing };
+        // A project tracks time when it has an active duration field, like the week projects' plan and fact.
+        const tracksTime = async (projectId: string) => (await activeFields(s, projectId)).some(field => field.type === 'duration');
+        const time = project.id === task.projectId ? null : { target: await tracksTime(project.id), home: await tracksTime(task.projectId) };
+        return { hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions), task, project, home, sections, section, existing, time };
       });
-      const result = (outcome: PublicTaskProjectDto['outcome'], sectionId: string | null): PublicTaskProjectDto => publicTaskProjectSchema.parse({
+      type Reason = PublicTaskProjectDto['homeReason'];
+      const result = (outcome: PublicTaskProjectDto['outcome'], sectionId: string | null, homeNow: boolean, homeReason: Reason, copiedValues = 0): PublicTaskProjectDto => publicTaskProjectSchema.parse({
         taskId: plan.task.id, project: { id: plan.project.id, name: plan.project.name },
         section: sectionId === null ? null : plan.sections.find(row => row.id === sectionId) ?? null,
-        home: plan.project.id === plan.task.projectId, outcome,
+        home: homeNow, homeProject: homeNow ? { id: plan.project.id, name: plan.project.name } : { id: plan.home.id, name: plan.home.name },
+        outcome, homeChanged: homeNow && plan.project.id !== plan.task.projectId, homeReason, copiedValues,
       });
-      // Already shown there: nothing to write, so repeating the call is safe.
-      if (plan.project.id === plan.task.projectId) return result('unchanged', plan.task.sectionId);
-      if (plan.existing && plan.existing.archivedAt === null) return result('unchanged', plan.existing.sectionId);
-      const placements = writeApp(plan.hash, plan.workspaceId, plan.userId).placements;
-      if (!placements) throw new Error('Project placements are unavailable.');
+      if (plan.project.id === plan.task.projectId) return result('unchanged', plan.task.sectionId, true, 'already_home');
+      // The home moves only when asked, or when the target tracks time and the current home does not.
+      // A subtask always shares its parent's home, so it is never moved by that rule.
+      const time = plan.time ?? { target: false, home: false };
+      let makeHome: boolean, reason: Reason;
+      if (parsed.data.home !== undefined) { makeHome = parsed.data.home; reason = makeHome ? 'requested' : 'kept'; }
+      else if (time.target && time.home) {
+        throw new DomainError('VALIDATION_FAILED', `Both "${plan.home.name}" (the current home) and "${plan.project.name}" track time. Pass home: true to count the task's hours in "${plan.project.name}" from now on, or home: false to only show it there.`,
+          { details: { field: 'home', reason: 'choice_required', homeProject: { id: plan.home.id, name: plan.home.name }, project: { id: plan.project.id, name: plan.project.name } } });
+      } else { makeHome = time.target && plan.task.parentTaskId === null; reason = makeHome ? 'time_fields' : 'kept'; }
+      const active = plan.existing !== null && plan.existing.archivedAt === null;
+      if (!makeHome && active) return result('unchanged', plan.existing?.sectionId ?? null, false, reason);
+      const commands = writeApp(plan.hash, plan.workspaceId, plan.userId).placements;
+      if (!commands) throw new Error('Project placements are unavailable.');
       const internalKey = (command: string) => createHash('sha256').update(`${plan.context.idempotencyKey ?? ''}\0public.task.project.${command}\0${targetId}\0${plan.project.id}`).digest('hex');
-      if (plan.existing) {
-        let row = await placements.restoreTaskProjectPlacement({ ...plan.context, idempotencyKey: internalKey('restore') }, plan.existing.id, { expectedRevision: plan.existing.revision });
-        if (plan.section && plan.section.id !== row.sectionId) row = await placements.updateTaskProjectPlacement({ ...plan.context, idempotencyKey: internalKey('section') }, row.id, { expectedRevision: row.revision, sectionId: plan.section.id });
-        return result('restored', row.sectionId);
+      if (makeHome) {
+        // One command: the target becomes the home (an existing or removed placement there turns into the home row),
+        // and the former home stays among the task's projects.
+        const sectionId = plan.section?.id ?? (active ? plan.existing?.sectionId ?? null : undefined);
+        const moved = await commands.transferTaskProject({ ...plan.context, idempotencyKey: internalKey('home') }, targetId,
+          { expectedRevision: plan.task.revision, projectId: plan.project.id, keepFormerHome: true, ...(sectionId !== undefined ? { sectionId } : {}) });
+        return result(active ? 'unchanged' : plan.existing ? 'restored' : 'added', moved.task.sectionId, true, reason, moved.carriedValues);
       }
-      const row = await placements.attachTaskProject({ ...plan.context, idempotencyKey: internalKey('attach') }, targetId, { projectId: plan.project.id, expectedTaskRevision: plan.task.revision, sectionId: plan.section?.id ?? null });
-      return result('added', row.sectionId);
+      if (plan.existing) {
+        let row = await commands.restoreTaskProjectPlacement({ ...plan.context, idempotencyKey: internalKey('restore') }, plan.existing.id, { expectedRevision: plan.existing.revision });
+        if (plan.section && plan.section.id !== row.sectionId) row = await commands.updateTaskProjectPlacement({ ...plan.context, idempotencyKey: internalKey('section') }, row.id, { expectedRevision: row.revision, sectionId: plan.section.id });
+        return result('restored', row.sectionId, false, reason);
+      }
+      const row = await commands.attachTaskProject({ ...plan.context, idempotencyKey: internalKey('attach') }, targetId, { projectId: plan.project.id, expectedTaskRevision: plan.task.revision, sectionId: plan.section?.id ?? null });
+      return result('added', row.sectionId, false, reason);
     },
   };
 }

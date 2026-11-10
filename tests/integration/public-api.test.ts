@@ -323,7 +323,8 @@ describe('personal access tokens, public API and MCP', () => {
 
     const added = await placed({ project: week.name, section: 'michael' }, 'place-1');
     expect(added.status, added.text()).toBe(201);
-    expect(env<Placement>(added).data).toEqual({ taskId: task.id, project: { id: week.id, name: week.name }, section: expect.objectContaining({ name: 'Michael' }), home: false, outcome: 'added' });
+    // Neither project tracks time, so the home stays where it is.
+    expect(env<Placement>(added).data).toEqual({ taskId: task.id, project: { id: week.id, name: week.name }, section: expect.objectContaining({ name: 'Michael' }), home: false, homeProject: { id: projectId, name: expect.any(String) }, outcome: 'added', homeChanged: false, homeReason: 'kept', copiedValues: 0 });
     // Repeating is safe, and the task keeps its home project and revision.
     const again = await placed({ project: week.id }, 'place-2');
     expect(again.status, again.text()).toBe(200);
@@ -358,5 +359,47 @@ describe('personal access tokens, public API and MCP', () => {
     const viaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'add_task_to_project', arguments: { taskId: task.id, project: other.name, operationKey: 'mcp-place-1' } }, 22))).result;
     expect(viaMcp.isError, JSON.stringify(viaMcp)).toBeFalsy();
     expect(viaMcp.structuredContent.result).toMatchObject({ taskId: task.id, project: { id: other.id }, section: null, home: false, outcome: 'added' });
+  });
+
+  it('makes a project that tracks time the home, keeps the former home listed, and asks for a choice when both track time', async () => {
+    interface Placement { project: { id: string }; home: boolean; homeProject: { id: string }; outcome: string; homeChanged: boolean; homeReason: string; copiedValues: number }
+    const duration = async (id: string) => { const res = await h.owner.tasks.post('/fields', { projectId: id, name: 'Hours Est', type: 'duration', historyEnabled: true, locked: false, options: [] }); expect(res.status, res.text()).toBeLessThan(300); };
+    const backlog = await h.owner.tasks.createProject(`Backlog ${Date.now()}`);
+    const week = await h.owner.tasks.createProject(`Week time ${Date.now()}`);
+    await duration(week.id);
+    const created = env<TaskV>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: backlog.id, title: 'Plan me this week' } })).data;
+    const path = `${ws()}/tasks/${created.id}/projects`;
+    const placed = (body: unknown) => call(path, { token: owner.token, method: 'POST', body });
+    const homeOf = async () => env<TaskV>(await call(`${ws()}/tasks/${created.id}`, { token: owner.token })).data.project.id;
+
+    // The backlog has no time fields and the week has: the week becomes the home, the backlog stays among its projects.
+    const moved = await placed({ project: week.name });
+    expect(moved.status, moved.text()).toBe(201);
+    expect(env<Placement>(moved).data).toMatchObject({ project: { id: week.id }, home: true, homeProject: { id: week.id }, outcome: 'added', homeChanged: true, homeReason: 'time_fields' });
+    expect(await homeOf()).toBe(week.id);
+    const listed = await h.db.sql<{ project_id: string; archived: boolean }[]>`select project_id::text, archived_at is not null as archived from task_project_placements where task_id = ${created.id}`;
+    expect(listed.map(row => `${row.project_id}:${row.archived}`).sort()).toEqual([`${backlog.id}:false`, `${week.id}:false`].sort());
+    expect(env<Placement>(await placed({ project: week.name })).data).toMatchObject({ outcome: 'unchanged', home: true, homeChanged: false, homeReason: 'already_home' });
+
+    // Hours are planned in the week; then the next week tracks time too, so the call asks which one counts the hours.
+    const fields = await call(`${ws()}/task-fields`, { token: owner.token, method: 'POST', body: { items: [{ taskId: created.id, project: week.id, values: [{ field: 'Hours Est', value: '2h' }] }] } });
+    expect(fields.status, fields.text()).toBe(200);
+    const next = await h.owner.tasks.createProject(`Next week ${Date.now()}`);
+    await duration(next.id);
+    const ask = await placed({ project: next.name });
+    expect(ask.status, ask.text()).toBe(400);
+    expect(env(ask).error?.details).toMatchObject({ field: 'home', reason: 'choice_required', homeProject: { id: week.id }, project: { id: next.id } });
+    expect(env<Placement>(await placed({ project: next.name, home: false })).data).toMatchObject({ outcome: 'added', home: false, homeProject: { id: week.id }, homeChanged: false, homeReason: 'kept' });
+    // Choosing it turns the existing placement into the home row and copies the matching value.
+    const chosen = await placed({ project: next.id, home: true });
+    expect(chosen.status, chosen.text()).toBe(200);
+    expect(env<Placement>(chosen).data).toMatchObject({ outcome: 'unchanged', home: true, homeChanged: true, homeReason: 'requested', copiedValues: 1 });
+    expect(await homeOf()).toBe(next.id);
+
+    // Over MCP the same choice is a tool argument.
+    const viaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'add_task_to_project', arguments: { taskId: created.id, project: backlog.name, home: true } }, 30))).result;
+    expect(viaMcp.isError, JSON.stringify(viaMcp)).toBeFalsy();
+    expect(viaMcp.structuredContent.result).toMatchObject({ project: { id: backlog.id }, home: true, homeChanged: true, outcome: 'unchanged' });
+    expect(await homeOf()).toBe(backlog.id);
   });
 });
