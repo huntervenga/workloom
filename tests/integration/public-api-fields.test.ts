@@ -124,4 +124,25 @@ describe('public API custom fields and weekly time summary', () => {
     expect(narrowed.people[0]?.tasks).toBeUndefined();
     await expect(f.app.timeSummary(w.token, f.workspaceId, { project: 'Week 45', factField: 'Kind' })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
+
+  it('counts an unassigned subtask for its parent assignee and keeps an explicit subtask assignee', async () => {
+    const f = await fixture(), w = await f.token(U.owner, ['read', 'tasks:write']);
+    const todo = must((await f.tasks.listStatuses(f.ctx(), f.project.id)).find(status => status.group === 'todo'));
+    const subtask = (parent: { id: string }, title: string, responsibleMembershipId: string | null) => f.tasks.createTask(f.ctx(), { projectId: f.project.id, statusId: todo.id, parentTaskId: parent.id, title, responsibleMembershipId });
+    const plain = await subtask(f.build, 'Build subtask', null), explicit = await subtask(f.build, 'Owner subtask', f.owner), orphan = await subtask(f.loose, 'Nobody subtask', null);
+    await f.app.setTaskFields(w.token, f.workspaceId, { items: [
+      { taskId: f.build.id, values: [{ field: 'Estimation', value: '1h' }] },
+      { taskId: plain.id, values: [{ field: 'Estimation', value: '2h' }, { field: 'Fact', value: '3h' }] },
+      { taskId: explicit.id, values: [{ field: 'Fact', value: '30m' }] },
+      { taskId: orphan.id, values: [{ field: 'Estimation', value: '15m' }] },
+    ] }, { requestId: randomUUID() });
+    const summary = await f.app.timeSummary(w.token, f.workspaceId, { project: 'Week 45' });
+    const member = must(summary.people.find(person => person.membershipId === f.member));
+    expect(member).toMatchObject({ planMinutes: 180, factMinutes: 180 });
+    expect(member.tasks?.map(task => task.title).sort()).toEqual(['Build feature', 'Build subtask', 'Design review']);
+    expect(must(summary.people.find(person => person.membershipId === f.owner))).toMatchObject({ planMinutes: 0, factMinutes: 30 });
+    expect(summary.unassigned).toMatchObject({ planMinutes: 15, factMinutes: 0 });
+    expect(summary.unassigned.tasks?.map(task => task.title).sort()).toEqual(['Nobody', 'Nobody subtask']);
+    expect(summary.totals).toMatchObject({ planMinutes: 180, factMinutes: 210 });
+  });
 });

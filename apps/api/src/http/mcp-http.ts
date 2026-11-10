@@ -26,7 +26,7 @@ const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   set_task_status: 'Move a task to another status by name or UUID, for example "In progress" or "Done".',
   list_fields: 'List the custom fields of a project (for example Estimation and Fact), with their types and option names.',
   set_task_fields: 'Set custom field values by field name for one or more tasks, for example {"field":"Fact","value":"1h 30m"}. Durations take minutes or text such as "90m", "1.5h", "1h 30m"; options and people take names; null clears. Run with dryRun first to show the user the plan, then repeat without dryRun. Each value is saved separately; check summary.failed.',
-  time_summary: 'For a project (usually the week project): per person, the sum of Estimation and Fact on their tasks and the hours they are expected to work in the range (work schedule minus holidays and time off). factGapMinutes = expected − fact. The range defaults to the project dates.',
+  time_summary: 'For a project (usually the week project): per person, the sum of Estimation and Fact on their tasks (a subtask without an assignee counts for the assignee of its parent task) and the hours they are expected to work in the range (work schedule minus holidays and time off). factGapMinutes = expected − fact. The range defaults to the project dates.',
 };
 
 /** Sent once on initialize; tells any client how this team uses Workloom for weekly time. */
