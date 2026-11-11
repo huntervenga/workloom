@@ -1,3 +1,4 @@
+export { type TaskTableLinkedRow } from './linkedRows';
 export { TaskTable, type TaskDropPlacement, type TaskTableCustomColumn, type TaskTableDraftRow, type TaskTableDraftRowState, type TaskTableProps, type TaskTableQuickAdd } from './TaskTable';
 export {
   MAX_ESTIMATE_MINUTES,

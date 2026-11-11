@@ -15,6 +15,7 @@ import { useProjectPlanningChecks } from '../features/planning-checks/useProject
 import { ProjectDateRange } from '../features/projects/ProjectDateRange';
 import { useColumnAggregates } from '../features/generic-reports/ColumnAggregates';
 import { LinkedProjectTasks } from '../features/project-placements/LinkedProjectTasks';
+import { useLinkedTableRows } from '../features/project-placements/useLinkedTableRows';
 import { PlacementCommandFeedback } from '../features/project-placements/PlacementCommandFeedback';
 import { usePlacementCommands } from '../features/project-placements/queries';
 import { BulkCustomFieldCell } from '../features/task-table/BulkCustomFieldCell';
@@ -459,6 +460,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     const field = fieldDefinitions.data.find(item => item.id === ref.fieldId && item.projectId === project.id && item.workspaceId === workspace.id && item.archivedAt === null);
     return field ? [{ field, width: projectColumns.data.columns.find(column => column.fieldId === field.id)?.width ?? 160 }] : [];
   });
+  // In the table, linked tasks sit in their sections (or assignee groups) among the project's own tasks.
+  const inlineLinkedRows = tableMode;
+  const linkedTableRows = useLinkedTableRows({ actorId, project, filters: { ...filters, search }, members: members.data ?? [], fields: fieldColumns, enabled: inlineLinkedRows });
   useEffect(() => {
     if (!activeInline) return;
     const column = taskInlineColumn(activeInline.field);
@@ -1428,6 +1432,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             layoutScope={{ actorId, workspaceId: workspace.id, projectId: project.id }}
             columnIds={visibleColumnIds}
             customColumns={[...timeColumns, ...customColumns]}
+            linkedRows={linkedTableRows.rows}
+            renderLinkedCell={linkedTableRows.renderCell}
             showLegacySummary={timeAvailable}
             renderColumnAggregate={ordinaryAggregates.renderColumn} showGroupAggregates={ordinaryAggregates.hasMeasures} showProjectAggregates={ordinaryAggregates.hasMeasures || ordinaryAggregates.canConfigure}
             renderGroupMetadata={group => <>{planningChecks.renderGroup(group)}{ordinaryAggregates.renderGroupMetadata(group)}</>}
@@ -1441,7 +1447,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             onDuplicateTask={writable ? duplication.openTask : undefined}
             onDuplicateSection={writable ? duplication.openSection : undefined}
           />}
-          {!importMode && !graphMode ? <LinkedProjectTasks customFields={fieldColumns} expansion={{ expandedTaskIds, collapsedGroupKeys, setTaskCollapsed: changeTaskCollapsed, setGroupCollapsed: changeGroupCollapsed }} actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
+          {!importMode && !graphMode ? <LinkedProjectTasks inline={inlineLinkedRows} customFields={fieldColumns} expansion={{ expandedTaskIds, collapsedGroupKeys, setTaskCollapsed: changeTaskCollapsed, setGroupCollapsed: changeGroupCollapsed }} actorId={actorId} project={project} sections={sections.data} members={members.data} filters={{ ...filters, search }} writable={writable && !bulkHeld} commands={commands} placementCommands={placementCommands} view={boardMode ? 'board' : ganttMode ? 'timeline' : 'table'} onOpenTask={openTask} windowStart={schedule.windowStart} windowSize={schedule.windowSize} sortByDue={sortMode === 'due_asc'} acquireDragProtection={acquireDragProtection} /> : null}
           <ProjectUndoSurface actorId={actorId} workspaceId={workspace.id} projectId={project.id} writable={writable} />
           <TaskDrawer
             onCompleteTask={(chosen, statusId, source) => { if (!bulkInline.complete(chosen, statusId)) completion.choose(chosen, statusId, source); }}
@@ -1537,6 +1543,8 @@ interface TaskListProps {
   statuses: readonly TaskStatusDto[];
   members: readonly MembershipDto[];
   customColumns: readonly TaskTableCustomColumn[];
+  linkedRows?: ComponentProps<typeof TaskTable>['linkedRows'];
+  renderLinkedCell?: ComponentProps<typeof TaskTable>['renderLinkedCell'];
   columnIds: readonly string[];
   layoutScope: ComponentProps<typeof TaskTable>['layoutScope'];
   onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;

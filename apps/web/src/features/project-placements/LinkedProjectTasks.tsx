@@ -30,6 +30,8 @@ interface LinkedProjectTasksProps {
   expansion?: TableExpansionControls;
   customFields?: readonly { field: TaskFieldDefinitionDto; width: number }[];
   windowStart: string; windowSize: number; sortByDue: boolean; acquireDragProtection?: (() => () => void) | undefined;
+  /** The project's table already shows these rows in their sections: only loading, errors and paging remain here. */
+  inline?: boolean | undefined;
 }
 /** The legacy home-task table and these canonical linked rows own distinct command identities. */
 export function LinkedProjectTasks(props: LinkedProjectTasksProps) {
@@ -54,6 +56,10 @@ export function LinkedProjectTasks(props: LinkedProjectTasksProps) {
   if (query.isError && !query.isFetchNextPageError) return <div role="status" className="space-y-2 text-sm"><p>{t('placements.rowsFailed')}</p><Button size="sm" onClick={() => void query.refetch()}>{t('placements.reload')}</Button></div>;
   if (!rows.length && !query.hasNextPage) return null;
   const current = query.isSuccess && !query.isFetching && !query.isError;
+  if (props.inline && props.view === 'table') return query.hasNextPage || query.isFetchNextPageError ? <div className="mt-3 space-y-2">
+    {query.hasNextPage ? <Button size="sm" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>{t('placements.loadMore')}</Button> : null}
+    {query.isFetchNextPageError ? <p role="alert" className="text-xs text-muted">{t('placements.rowsFailed')}</p> : null}
+  </div> : null;
   return <section className="mt-4 min-w-0 space-y-3 border-t border-line pt-3" aria-label={t('placements.linkedTasks')}>
     <div><h2 className="text-sm font-medium">{t('placements.linkedTasks')}</h2><p className="text-xs text-muted">{t('placements.accountingHint')}</p></div>
     {props.view === 'board' ? byHomeProject(rows).map(group => { const first = group[0]; return first ? <LinkedHomeBoard key={first.homeProject.id} {...props} rows={group} current={current} partial={query.hasNextPage} /> : null; }) : <div className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-line"><table className="w-full min-w-[85rem] table-fixed text-left text-sm"><colgroup><col className="w-80" /><col className="w-32" /><col className="w-40" /><col className="w-32" /><col className="w-32" />{fields.map(({ field, width }) => <col key={field.id} style={{ width }} />)}<col className="w-52" /><col className="w-72" /></colgroup><thead className="bg-canvas text-xs text-muted"><tr>

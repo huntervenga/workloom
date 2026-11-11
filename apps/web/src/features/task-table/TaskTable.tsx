@@ -22,12 +22,13 @@ import type {
 import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import * as RowMenu from '@radix-ui/react-menu';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2, TriangleAlert, UserRound } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, House, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2, TriangleAlert, UserRound } from 'lucide-react';
 import { useCallback, useId, useMemo, useRef, useState, Fragment, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import type { DateIssueInfo } from '../projects/dateConsistency';
-import { visibleTaskRows, type TaskTreeNode } from './taskTree';
-import { buildTableGroups, type TableTaskGroup, type TaskGroupingMode } from './taskGrouping';
+import { visibleTaskRows, type TaskGroup, type TaskTreeNode } from './taskTree';
+import { linkedRowBlocks, placeLinkedBlocks, type LinkedRowBlock, type TaskTableLinkedRow } from './linkedRows';
+import { assigneeGroupKey, buildTableGroups, type AssigneeTaskGroup, type TableTaskGroup, type TaskGroupingMode } from './taskGrouping';
 import { dedupeTasks } from './workPackages';
 import type { TaskSortMode } from './taskOrdering';
 import { summarizeWorkPackages, type WorkPackageSummary } from './workPackages';
@@ -101,6 +102,13 @@ export interface TaskTableProps {
   onClearSelection?: (() => boolean) | undefined;
   /** Loaded tasks of one project. The table never fetches or invents tasks. */
   tasks: readonly TaskDto[];
+  /**
+   * Tasks of other projects shown in this one. Each sits in its group (its section here, or its assignee),
+   * in its place in the order, marked as linked; it opens in the task pane and is not selected, dragged or edited here.
+   */
+  linkedRows?: readonly TaskTableLinkedRow[] | undefined;
+  /** A custom column's cell for a linked row; the table shows nothing there without it. */
+  renderLinkedCell?: ((row: TaskTableLinkedRow, columnId: string) => ReactNode) | undefined;
   /** Project sections; archived ones are shown only while loaded tasks sit in them. */
   sections: readonly SectionDto[];
   /** Project statuses, matched by `TaskDto.statusId`. */
@@ -769,6 +777,49 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   })}{ctx.trailingColumn ? <td data-task-column-menu-cell="" className={cellClassName} style={rowCellStyle(drop, selected)} /> : null}</tr>;
 }
 
+/** Linked rows share one opaque tint, the sticky title cell included, and a bar on the left edge. */
+const linkedRowTint = '[--linked-row-bg:color-mix(in_srgb,var(--color-accent-soft)_55%,var(--color-surface))]';
+const linkedRowStyle = { backgroundColor: 'var(--linked-row-bg)' };
+
+function LinkedTaskRow({ row, depth, ctx, renderCell }: { row: TaskTableLinkedRow; depth: number; ctx: RowContext; renderCell: TaskTableProps['renderLinkedCell'] }) {
+  const { t } = useTranslation();
+  const { task } = row;
+  const finished = row.status.group === 'done' || row.status.group === 'cancelled';
+  const participantIds = [...new Set(task.participants.filter(participant => participant.active).map(participant => participant.membershipId))];
+  const hint = t('placements.linkedRow.hint', { project: row.homeProject.name });
+  const plain = (content: ReactNode, align = 'text-left') => <span className={cn('flex h-8 min-w-0 items-center px-1.5', align)}>{content}</span>;
+  const td = (id: string, content: ReactNode, className?: string) => <td className={cn(cellClassName, ctx.columnLine(id), className)} style={linkedRowStyle}>{content}</td>;
+  const cells: Record<string, ReactNode> = {
+    title: <td className={titleCellClassName} style={{ paddingLeft: 12, ...linkedRowStyle }}>
+      <div className="relative flex h-10 min-w-0 items-center gap-1">
+        <span aria-hidden="true" className="absolute inset-y-1.5 -left-3 w-[3px] rounded-r bg-accent" />
+        <span className="mr-1 flex h-10 w-8 shrink-0 items-center justify-center text-accent-ink" title={hint}><Link2 size={14} aria-hidden="true" /></span>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5" style={{ paddingLeft: Math.min(depth, 2) * 20 }}>
+          <button type="button" data-linked-open={task.id} onClick={() => ctx.onOpenTask(task.id)} title={task.title}
+            aria-label={t('placements.linkedRow.open', { title: task.title, project: row.homeProject.name })}
+            className="min-w-0 truncate rounded text-left outline-none hover:text-accent-ink focus-visible:ring-2 focus-visible:ring-accent">{task.title}</button>
+          <span title={hint} className="inline-flex min-w-0 max-w-48 shrink items-center gap-1 rounded-full bg-surface px-1.5 py-px text-[11px] font-medium text-accent-ink ring-1 ring-inset ring-accent-line">
+            <House size={11} aria-hidden="true" className="shrink-0" /><span className="truncate">{row.homeProject.name}</span>
+          </span>
+        </div>
+      </div>
+    </td>,
+    status: td('status', plain(<span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[row.status.group])} /><span className="truncate">{row.status.name}</span></span>)),
+    responsible: td('responsible', plain(task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)),
+    participants: td('participants', plain(<ParticipantsCell membershipIds={participantIds} memberById={ctx.memberById} />)),
+    dueDate: td('dueDate', plain(<DueDateCell startDate={task.startDate ?? null} dueDate={task.dueDate} today={ctx.today} finished={finished} />)),
+    tags: td('tags', plain(<TagsCell tags={task.tags} />)),
+    priority: td('priority', plain(<PriorityCell priority={task.priority} />)),
+    // The team estimate belongs to the home project's work package; it is not repeated here.
+    estimate: td('estimate', null, cn('text-right lg:bg-surface', ctx.columnIds.at(-1) === 'estimate' && !ctx.trailingColumn && stickyEstimateClassName)),
+  };
+  return <tr data-linked-row={row.id} data-linked-task={task.id} className={cn('group h-10 border-t border-line', linkedRowTint)}>
+    {ctx.columnIds.map(id => <Fragment key={id}>{cells[id] ?? (ctx.customColumns.some(column => column.id === id)
+      ? td(id, <div className="flex h-10 min-w-0 items-center overflow-hidden">{renderCell?.(row, id) ?? null}</div>, 'min-w-0') : null)}</Fragment>)}
+    {ctx.trailingColumn ? <td className={cellClassName} style={linkedRowStyle} /> : null}
+  </tr>;
+}
+
 function groupTitle(group: TableTaskGroup): string {
   if (group.kind === 'assignee') return group.membershipId === null ? t('taskTable.taskTable.unassigned') : group.member?.displayName ?? t('taskTable.taskTable.memberUnavailable');
   if (group.kind === 'section' && group.section !== null) return group.section.name;
@@ -800,6 +851,7 @@ function GroupHeader({
   onRenameSection,
   onDuplicateSection,
   metadata,
+  linkedCount = 0,
 }: {
   /** Assignee group whose header is a group-end drop target; undefined when the header accepts no drop. */
   dropMembershipId: string | undefined;
@@ -817,6 +869,8 @@ function GroupHeader({
   onRenameSection: ((section: SectionDto) => void) | undefined;
   onDuplicateSection: ((section: SectionDto) => void) | undefined;
   metadata?: ReactNode;
+  /** Linked tasks shown in this section: they count as its tasks too. */
+  linkedCount?: number;
 }) {
   const { t } = useTranslation();
   const duplicateFocus = useRef(false);
@@ -824,7 +878,8 @@ function GroupHeader({
   const archived = section !== null && section.archivedAt !== null;
   // An expanded group offers its own persistent Add task row at the end instead.
   const canCreate = collapsed && acceptsNewTasks(group, writable);
-  const countText = partial ? t('taskTable.taskTable.loadedValue2', { p0: formatTaskCount(group.taskCount) }) : formatTaskCount(group.taskCount);
+  const shownCount = group.taskCount + linkedCount;
+  const countText = partial ? t('taskTable.taskTable.loadedValue2', { p0: formatTaskCount(shownCount) }) : formatTaskCount(shownCount);
   const assignee = group.kind === 'assignee';
   const disclosureLabel = assignee
     ? disclosurePosition === undefined
@@ -851,7 +906,7 @@ function GroupHeader({
             <span className="truncate" title={disclosureTitle}>{disclosureTitle}</span>
           </button>
           <span className="shrink-0 text-xs text-muted tabular-nums">
-            <span aria-hidden="true">{group.taskCount}</span>
+            <span aria-hidden="true">{shownCount}</span>
             <span className="sr-only">, {countText}</span>
           </span>
           {archived ? <Badge tone="muted">{t('taskTable.taskTable.archivedSection')}</Badge> : null}
@@ -933,6 +988,8 @@ export function TaskTable({
   selectedTaskIds = [],
   onSelectTask, onSelectionChange, onClearSelection, selectionDisabled = false, dragScope,
   tasks,
+  linkedRows,
+  renderLinkedCell,
   sections,
   statuses,
   members,
@@ -988,8 +1045,34 @@ export function TaskTable({
   const loadedGroups = useMemo(() => buildTableGroups(tasks, sections, members, grouping, locale, sortMode, writable && onMoveTask !== undefined && sortMode === 'manual'), [tasks, sections, members, grouping, locale, sortMode, writable, onMoveTask]);
   // Retain a captured empty group while its unsent row owns this presentation.
   const capturedPlacement = quickAdd?.placement;
-  const groups = useMemo<readonly TableTaskGroup[]>(() => capturedPlacement && !loadedGroups.some(group => group.key === capturedPlacement.groupKey)
+  const capturedGroups = useMemo<readonly TableTaskGroup[]>(() => capturedPlacement && !loadedGroups.some(group => group.key === capturedPlacement.groupKey)
     ? [...loadedGroups, { ...capturedPlacement.group, roots: [], taskCount: 0 }] : loadedGroups, [loadedGroups, capturedPlacement]);
+  const linkedByGroup = useMemo(() => linkedRows?.length ? linkedRowBlocks(linkedRows, sortMode, grouping) : new Map<string | null, LinkedRowBlock[]>(), [grouping, linkedRows, sortMode]);
+  const linkedGroupKey = (group: TableTaskGroup) => group.kind === 'assignee' ? group.membershipId : group.sectionId;
+  // A group that holds only linked tasks still needs its place: an archived, unknown or no section, or a person.
+  const groups = useMemo<readonly TableTaskGroup[]>(() => {
+    if (linkedByGroup.size === 0) return capturedGroups;
+    if (grouping === 'assignee') {
+      const present = new Set(capturedGroups.map(group => group.kind === 'assignee' ? group.membershipId : undefined));
+      const extra = [...linkedByGroup.keys()].filter(id => !present.has(id)).map((membershipId): AssigneeTaskGroup => ({
+        kind: 'assignee', key: assigneeGroupKey(membershipId), membershipId, member: membershipId === null ? null : members.find(member => member.id === membershipId) ?? null,
+        section: null, sectionId: null, roots: [], taskCount: 0 }));
+      if (extra.length === 0) return capturedGroups;
+      // «Unassigned» stays last, as in the project's own grouping.
+      const people = [...capturedGroups.filter(group => !(group.kind === 'assignee' && group.membershipId === null)), ...extra.filter(group => group.membershipId !== null)];
+      return [...people, ...capturedGroups.filter(group => group.kind === 'assignee' && group.membershipId === null), ...extra.filter(group => group.membershipId === null)];
+    }
+    const present = new Set(capturedGroups.map(group => group.sectionId));
+    const extra = [...linkedByGroup.keys()].filter(id => !present.has(id)).map((sectionId): TaskGroup => {
+      if (sectionId === null) return { key: 'no-section', kind: 'no_section', section: null, sectionId: null, roots: [], taskCount: 0 };
+      const section = sections.find(item => item.id === sectionId);
+      return section ? { key: `section:${sectionId}`, kind: 'section', section, sectionId, roots: [], taskCount: 0 } : { key: `missing:${sectionId}`, kind: 'missing_section', section: null, sectionId, roots: [], taskCount: 0 };
+    });
+    if (extra.length === 0) return capturedGroups;
+    // «No section» stays last, as in the project's own grouping.
+    const last = capturedGroups.at(-1)?.kind === 'no_section' ? capturedGroups.length - 1 : capturedGroups.length;
+    return [...capturedGroups.slice(0, last), ...extra.filter(group => group.sectionId !== null), ...capturedGroups.slice(last), ...extra.filter(group => group.sectionId === null)];
+  }, [capturedGroups, linkedByGroup, sections, members, grouping]);
   const taskById = useMemo(() => new Map(dedupeTasks(tasks).map(task => [task.id, task])), [tasks]);
   // Widths never depend on an open editor: the grid stays still while any cell is edited.
   const otherColumnsWidth = columns.reduce((sum, column) => sum + (column.id === 'title' ? 0 : column.width), trailingColumn ? 44 : 0);
@@ -1254,6 +1337,15 @@ export function TaskTable({
           // One keyed block among the rows: when the list grows above it, the block (and its
           // unsent input, focus and selection) stays mounted instead of being recreated.
           if (!collapsed && anchored?.groupKey === group.key) items.splice(anchored.end, 0, <Fragment key={quickAdd?.placement?.blockKey ?? 'quick-add'}>{quickRows(group, anchored.depth)}</Fragment>);
+          // Linked tasks take their place among the root tasks of their group, after an open quick-add row.
+          const linkedBlocks = collapsed ? undefined : linkedByGroup.get(linkedGroupKey(group));
+          if (linkedBlocks?.length) {
+            const placed = [...placeLinkedBlocks(rows, linkedBlocks, sortMode)].sort((a, b) => b[0] - a[0]);
+            for (const [index, blocks] of placed) {
+              const at = index + (anchored?.groupKey === group.key && index >= anchored.end ? 1 : 0);
+              items.splice(at, 0, ...blocks.flatMap(block => block.rows.map(({ row, depth }) => <LinkedTaskRow key={`linked:${row.id}`} row={row} depth={depth} ctx={ctx} renderCell={renderLinkedCell} />)));
+            }
+          }
           const emptyRow = !collapsed && items.length === 0;
           // A null-anchor group-end drop is drawn on the empty-group row, otherwise on the header.
           const groupEnd = group.kind === 'assignee' && drag?.target?.taskId === null && drag.target.responsibleMembershipId === group.membershipId;
@@ -1278,6 +1370,7 @@ export function TaskTable({
                 onRenameSection={onRenameSection}
                 onDuplicateSection={onDuplicateSection}
                 metadata={renderGroupMetadata?.(group)}
+                linkedCount={(linkedByGroup.get(linkedGroupKey(group)) ?? []).reduce((sum, block) => sum + block.rows.length, 0)}
               />
               {collapsed ? null : emptyRow
                 ? <tr data-task-group-drop={group.kind === 'assignee' ? group.membershipId ?? '' : undefined} data-task-drop={groupEnd ? 'after' : undefined} className={cn('h-10 border-t border-line', groupEnd && 'shadow-[inset_0_-2px_0_var(--color-accent)]')}><td colSpan={columnCount} className="h-10 py-0 pr-3 pl-[42px] text-sm text-muted" style={dropCellStyle(groupEnd ? 'after' : undefined)}>{group.kind === 'assignee' && moveEnabled ? t('taskTable.move.emptyGroup', { name: groupTitle(group) }) : partial ? t('taskTable.taskTable.noLoadedTasksInThisSection') : t('taskTable.taskTable.noTasksYet')}</td></tr>

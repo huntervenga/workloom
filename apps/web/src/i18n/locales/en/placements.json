@@ -25,6 +25,10 @@
   "loadingRows": "Loading linked tasks…",
   "rowsFailed": "Linked tasks could not be fully loaded.",
   "linkedTasks": "Tasks linked from other projects",
+  "linkedRow": {
+    "hint": "Linked from {{project}}: hours and custom fields count there. Open the task to change its section here or remove it from this project.",
+    "open": "Open {{title}}, linked from {{project}}"
+  },
   "accountingHint": "Task details and status are shared. Custom fields belong to each project.",
   "loadMore": "Load more project rows",
   "homeHierarchy": "Hierarchy stays in the home project.",
