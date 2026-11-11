@@ -1,10 +1,10 @@
-import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,idSchema,projectRowsQuerySchema,taskProjectPlacementSchema,transferTaskProjectInputSchema,transferTaskProjectResultSchema,updateTaskProjectPlacementInputSchema,type AttachTaskProjectInput,type ChangeTaskProjectPlacementStateInput,type TaskDto,type TaskProjectPlacementDto,type TaskFieldData,type TransferTaskProjectResult} from '@workloom/contracts';
+import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,idSchema,projectRowsQuerySchema,taskProjectPlacementSchema,transferTaskProjectInputSchema,transferTaskProjectResultSchema,updateTaskProjectPlacementInputSchema,type AttachTaskProjectInput,type ChangeTaskProjectPlacementStateInput,type TaskDto,type TaskProjectPlacementDto,type SetTaskFieldValueInput,type TaskFieldData,type TransferTaskProjectResult} from '@workloom/contracts';
 import {authorizeWorkspace} from '../access/access-queries.js';
 import type {CommandContext} from '../access/context.js';
 import {DomainError,notFoundError,unauthenticatedError} from '../errors.js';
 import {isCommittedPlanningRejection,unwrapPlanningOutcome} from '../planning/freeze.js';
 import {canonicalJson} from './service.js';
-import {setTaskFieldValueInScope} from '../fields/service.js';
+import {preflightTaskFieldValueInScope,setTaskFieldValueInScope} from '../fields/service.js';
 import type {TaskFieldWriteScope} from '../fields/ports.js';
 import type {TaskProjectPlacementApplication,TaskProjectPlacementCommand,TaskProjectPlacementDependencies,TaskProjectPlacementWriteScope} from './project-placement-ports.js';
 
@@ -141,14 +141,26 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
      const moved=await scope.placements.transferTree({workspaceId:ws,taskId:task.id,targetProjectId:targetProject.id,sectionId:input.sectionId,now,keepFormerHome:keep});
      // Values go through the shared field primitive, so locks, policies, history and audit apply as for any other write.
      const lost=new Map(moved.notCarried.map(item=>[item.fieldName,item.count] as const)),fields=scope.fieldRepository;let carriedValues=0;
+     const fieldScope=fields?{context:scope.context,access:scope.access,barrierAt:scope.barrierAt,recordChange:scope.recordChange,planningGuard:scope.planningGuard,repository:fields} as TaskFieldWriteScope:null;
      for(const item of moved.values){
       const lose=()=>{lost.set(item.fieldName,(lost.get(item.fieldName)??0)+1);};
-      if(!fields){lose();continue;}
-      const field=await fields.findField(ws,item.fieldId),current=await fields.findValue(ws,task.id===item.taskId?task.id:item.taskId,item.fieldId);
+      if(!fields||!fieldScope){lose();continue;}
+      const field=await fields.findField(ws,item.fieldId),current=await fields.findValue(ws,item.taskId,item.fieldId);
       if(!field){lose();continue;}
-      const fieldScope={context:scope.context,access:scope.access,barrierAt:scope.barrierAt,recordChange:scope.recordChange,planningGuard:scope.planningGuard,repository:fields} as TaskFieldWriteScope;
+      // A project counts the tasks it shows by its own fields, linked ones too. So when the former home stays among the
+      // task's projects the value moves: it is cleared there. If it cannot be cleared (a lock, a field rule), it stays
+      // in the former home and is not copied, so it is never counted twice.
+      let clear:SetTaskFieldValueInput|null=null;
+      if(keep&&item.value.value!==null){
+       const source=await fields.findField(ws,item.sourceFieldId),held=await fields.findValue(ws,item.taskId,item.sourceFieldId);
+       if(!source||!held){lose();continue;}
+       clear={expectedRevision:held.revision,expectedDefinitionRevision:source.revision,value:{type:source.type,value:null} as TaskFieldData};
+       try{await preflightTaskFieldValueInScope(fieldScope,item.taskId,item.sourceFieldId,clear);}
+       catch(error){if(error instanceof DomainError){lose();continue;}throw error;}
+      }
       try{await setTaskFieldValueInScope(fieldScope,item.taskId,item.fieldId,{expectedRevision:current?.revision??0,expectedDefinitionRevision:field.revision,value:item.value as TaskFieldData},tools);carriedValues+=1;}
-      catch(error){if(error instanceof DomainError)lose();else throw error;}
+      catch(error){if(error instanceof DomainError){lose();continue;}throw error;}
+      if(clear)await setTaskFieldValueInScope(fieldScope,item.taskId,item.sourceFieldId,clear,tools);
      }
      const after=await repo.findTasksByIds(ws,moved.movedTaskIds),byId=new Map(after.map(t=>[t.id,t]));
      for(const movedId of moved.movedTaskIds){

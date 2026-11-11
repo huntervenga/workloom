@@ -120,7 +120,7 @@ export const publicTaskProjectSchema = z.object({
   homeChanged: z.boolean(),
   /** requested: home was given; time_fields: the target tracks time and the former home did not; already_home; kept: the home did not change. */
   homeReason: z.enum(['requested', 'time_fields', 'already_home', 'kept']),
-  /** Custom field values copied to the new home (same field name and type); the former home keeps its own. */
+  /** Custom field values moved to the new home (same field name and type): written there and cleared in the former home. */
   copiedValues: z.number().int().min(0),
 });
 export type PublicTaskProjectDto = z.infer<typeof publicTaskProjectSchema>;

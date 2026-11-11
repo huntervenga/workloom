@@ -88,7 +88,8 @@ async function transferTree(db:WorkloomExecutor,plan:{workspaceId:string;taskId:
    or exists (select 1 from task_project_placements p where p.workspace_id=t.workspace_id and p.task_id=t.id and p.home_project_id<>t.project_id))`);
  if(bad>0)throw new Error('Task transfer left an inconsistent home placement.');
  // Values that have a matching field (same name and type) in the target are returned for the command to write through
- // the shared field primitive (locks, policies, history); the rest stays with the detached placement.
+ // the shared field primitive (locks, policies, history); the rest stays with the former placement. When the former home
+ // stays active the command also clears the carried values there, so the hours are not counted in both projects.
  const sourceFields=rows<{id:string;name:string;type:string}>(await db.execute(sql`select id::text id, name, type::text type from task_field_definitions where workspace_id=${ws} and project_id=${home}`));
  const targetFields=rows<{id:string;name:string;type:string;version:string}>(await db.execute(sql`select id::text id, name, type::text type, definition_version_id::text version from task_field_definitions where workspace_id=${ws} and project_id=${target} and archived_at is null`));
  const options=rows<{id:string;field_id:string;name:string;archived:boolean}>(await db.execute(sql`select id::text id, field_id::text field_id, name, (archived_at is not null) archived from task_field_options where workspace_id=${ws} and project_id in (${home},${target})`));
@@ -101,7 +102,7 @@ async function transferTree(db:WorkloomExecutor,plan:{workspaceId:string;taskId:
   return label===undefined?null:options.find(item=>item.field_id===targetFieldId&&!item.archived&&item.name.trim().toLowerCase()===label)?.id??null;
  };
  const values=rows<{task_id:string;field_id:string;field_type:string;value:{value:unknown}}>(await db.execute(sql`select task_id::text task_id, field_id::text field_id, field_type::text field_type, value from task_field_values where workspace_id=${ws} and project_id=${home} and task_id=any(${taskIds})`));
- const carried:{taskId:string;fieldId:string;fieldName:string;value:{type:string;value:unknown}}[]=[],lost=new Map<string,number>();
+ const carried:{taskId:string;fieldId:string;sourceFieldId:string;fieldName:string;value:{type:string;value:unknown}}[]=[],lost=new Map<string,number>();
  for(const row of values){
   const source=sourceFields.find(field=>field.id===row.field_id),mapped=mappedField.get(row.field_id);
   const lose=()=>{const name=source?.name??'?';lost.set(name,(lost.get(name)??0)+1);};
@@ -112,7 +113,7 @@ async function transferTree(db:WorkloomExecutor,plan:{workspaceId:string;taskId:
    if(row.field_type==='single_select'){const option=typeof next==='string'?optionTarget(next,row.field_id,mapped.id):null;if(option===null){lose();continue;}next=option;}
    else{const mappedOptions=(Array.isArray(next)?next:[]).map(item=>typeof item==='string'?optionTarget(item,row.field_id,mapped.id):null);if(mappedOptions.some(item=>item===null)||mappedOptions.length===0){lose();continue;}next=mappedOptions;}
   }
-  carried.push({taskId:row.task_id,fieldId:mapped.id,fieldName:mapped.name,value:{type:row.field_type,value:next}});
+  carried.push({taskId:row.task_id,fieldId:mapped.id,sourceFieldId:row.field_id,fieldName:mapped.name,value:{type:row.field_type,value:next}});
  }
  return {movedTaskIds:ids,values:carried,notCarried:[...lost].map(([fieldName,n])=>({fieldName,count:n})).sort((x,y)=>x.fieldName.localeCompare(y.fieldName))};
 }
