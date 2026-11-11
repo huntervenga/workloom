@@ -1158,6 +1158,17 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     });
   };
 
+  // A linked task moves in the project's shared order through its placement; its home and own tasks keep their order.
+  const linkedMoveBlocked = moveBlocked || placementCommands.pendingCommand !== null || placementCommands.uncertain !== null;
+  const moveLinked: NonNullable<ComponentProps<typeof TaskTable>['onMoveLinked']> = (row, anchor, placement) => {
+    if (!completionWritable || sortMode !== 'manual') return;
+    if (linkedMoveBlocked) { setAnnouncement(message('taskTable.move.wait')); return; }
+    setAnnouncement(message('taskTable.move.moving', { title: row.task.title }));
+    placementCommands.mutate({ command: { kind: 'update', placementId: row.id, input: { expectedRevision: row.revision, anchor, placement } } }, {
+      onSuccess: () => setAnnouncement(message('taskTable.move.moved', { title: row.task.title })),
+    });
+  };
+
   // The open drawer's subtask rows show and retry their own reorder; the page shows every other one.
   const heldMoveTaskId = commands.move.uncertain?.variables.taskId ?? commands.move.variables?.taskId ?? null;
   const drawerShowsMove = taskId !== null && heldMoveTaskId !== null && (loadedSubtasks?.tasks.some(task => task.id === heldMoveTaskId) ?? false);
@@ -1434,6 +1445,8 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             customColumns={[...timeColumns, ...customColumns]}
             linkedRows={linkedTableRows.rows}
             renderLinkedCell={linkedTableRows.renderCell}
+            onMoveLinked={moveLinked}
+            linkedMoveBlocked={linkedMoveBlocked}
             showLegacySummary={timeAvailable}
             renderColumnAggregate={ordinaryAggregates.renderColumn} showGroupAggregates={ordinaryAggregates.hasMeasures} showProjectAggregates={ordinaryAggregates.hasMeasures || ordinaryAggregates.canConfigure}
             renderGroupMetadata={group => <>{planningChecks.renderGroup(group)}{ordinaryAggregates.renderGroupMetadata(group)}</>}
@@ -1545,6 +1558,8 @@ interface TaskListProps {
   customColumns: readonly TaskTableCustomColumn[];
   linkedRows?: ComponentProps<typeof TaskTable>['linkedRows'];
   renderLinkedCell?: ComponentProps<typeof TaskTable>['renderLinkedCell'];
+  onMoveLinked?: ComponentProps<typeof TaskTable>['onMoveLinked'];
+  linkedMoveBlocked?: boolean;
   columnIds: readonly string[];
   layoutScope: ComponentProps<typeof TaskTable>['layoutScope'];
   onEditTaskField: NonNullable<ComponentProps<typeof TaskTable>['onEditTaskField']>;

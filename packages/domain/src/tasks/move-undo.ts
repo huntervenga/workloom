@@ -32,6 +32,8 @@ export interface MoveUndoSource {
   readonly positions: readonly { readonly taskId: string; readonly position: number }[];
   readonly beforeFingerprint: string;
   readonly afterFingerprint: string;
+  /** Linked placements of the project the move renumbered (absent in older sources): their numbers before and after. */
+  readonly placements?: readonly { readonly placementId: string; readonly before: number; readonly after: number }[];
 }
 
 export function moveGroupOf(task: TaskDto): MoveUndoGroup {
@@ -81,6 +83,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 const isNullableText = (value: unknown): value is string | null => value === null || isText(value);
+const isPosition = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0;
 
 function parseGroup(value: unknown): MoveUndoGroup | null {
   if (!isRecord(value)) return null;
@@ -103,5 +106,14 @@ export function parseMoveUndoSource(value: unknown): MoveUndoSource | null {
   }
   if (new Set(rows.map((row) => row.taskId)).size !== rows.length || !rows.some((row) => row.taskId === taskId)) return null;
   if (affectedTaskIds.some(id => !rows.some(row => row.taskId === id))) return null;
-  return { v: 1, taskId, projectId, originalKey, before, after, positions: rows, affectedTaskIds, beforeFingerprint, afterFingerprint };
+  let placements: { placementId: string; before: number; after: number }[] | undefined;
+  if (value.placements !== undefined) {
+    if (!Array.isArray(value.placements) || value.placements.length > TASK_MOVE_UNDO_LIMITS.maxProjectTasks) return null;
+    placements = [];
+    for (const row of value.placements as unknown[]) {
+      if (!isRecord(row) || !isText(row.placementId) || !isPosition(row.before) || !isPosition(row.after)) return null;
+      placements.push({ placementId: row.placementId, before: row.before, after: row.after });
+    }
+  }
+  return { v: 1, taskId, projectId, originalKey, before, after, positions: rows, affectedTaskIds, beforeFingerprint, afterFingerprint, ...(placements ? { placements } : {}) };
 }

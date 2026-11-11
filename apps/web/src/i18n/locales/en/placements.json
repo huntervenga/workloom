@@ -27,7 +27,8 @@
   "linkedTasks": "Tasks linked from other projects",
   "linkedRow": {
     "hint": "Linked from {{project}}: hours and custom fields count there. Open the task to change its section here or remove it from this project.",
-    "open": "Open {{title}}, linked from {{project}}"
+    "open": "Open {{title}}, linked from {{project}}",
+    "moveHandle": "Move linked task: {{title}}"
   },
   "accountingHint": "Task details and status are shared. Custom fields belong to each project.",
   "loadMore": "Load more project rows",

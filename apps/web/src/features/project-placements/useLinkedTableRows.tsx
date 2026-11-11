@@ -27,7 +27,7 @@ export function useLinkedTableRows({ actorId, project, filters, members, fields,
   const { search, completion, statusId, participantMembershipId, tagId, includeArchived } = filters;
   const data = query.data;
   const rows = useMemo<TaskTableLinkedRow[]>(() => !enabled ? [] : linkedRows(loadedProjectRows(data), project.id, { search, completion, statusId, participantMembershipId, tagId, includeArchived }).map(row => ({
-    id: row.placement.id, task: row.canonicalTask, sectionId: row.placement.sectionId, position: row.placement.position,
+    id: row.placement.id, revision: row.placement.revision, task: row.canonicalTask, sectionId: row.placement.sectionId, position: row.placement.position,
     status: { name: row.canonicalStatus.name, group: row.canonicalStatus.group },
     homeProject: { id: row.homeProject.id, name: row.homeProject.name },
   })), [enabled, data, project.id, search, completion, statusId, participantMembershipId, tagId, includeArchived]);
