@@ -109,6 +109,13 @@ export interface TaskTableProps {
   linkedRows?: readonly TaskTableLinkedRow[] | undefined;
   /** A custom column's cell for a linked row; the table shows nothing there without it. */
   renderLinkedCell?: ((row: TaskTableLinkedRow, columnId: string) => ReactNode) | undefined;
+  /**
+   * Moves a linked row in the project's order, next to an own root task or another linked row (taking that
+   * row's section). Offered in manual order grouped by section. Nothing moves locally: the refetch shows it.
+   */
+  onMoveLinked?: ((row: TaskTableLinkedRow, anchor: { taskId: string } | { placementId: string }, placement: TaskDropPlacement) => void) | undefined;
+  /** A placement command is still being sent or unconfirmed: linked rows do not move until it resolves. */
+  linkedMoveBlocked?: boolean | undefined;
   /** Project sections; archived ones are shown only while loaded tasks sit in them. */
   sections: readonly SectionDto[];
   /** Project statuses, matched by `TaskDto.statusId`. */
@@ -781,18 +788,45 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
 const linkedRowTint = '[--linked-row-bg:color-mix(in_srgb,var(--color-accent-soft)_55%,var(--color-surface))]';
 const linkedRowStyle = { backgroundColor: 'var(--linked-row-bg)' };
 
-function LinkedTaskRow({ row, depth, ctx, renderCell }: { row: TaskTableLinkedRow; depth: number; ctx: RowContext; renderCell: TaskTableProps['renderLinkedCell'] }) {
+const LINKED_KEY_PREFIX = 'linked:';
+/** A linked row's key among the anchors of a move; own rows keep their task IDs. */
+const linkedRowKey = (placementId: string) => `${LINKED_KEY_PREFIX}${placementId}`;
+
+interface LinkedRowMove {
+  blocked: boolean;
+  /** Keyboard neighbours among the group's root rows, own and linked. */
+  previous: string | undefined;
+  next: string | undefined;
+  start: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  move: (anchorKey: string, placement: TaskDropPlacement) => void;
+  drop: TaskDropPlacement | undefined;
+  dragging: boolean;
+}
+
+function LinkedTaskRow({ row, depth, ctx, renderCell, move }: { row: TaskTableLinkedRow; depth: number; ctx: RowContext; renderCell: TaskTableProps['renderLinkedCell']; move: LinkedRowMove | null }) {
   const { t } = useTranslation();
   const { task } = row;
+  const cellStyle = { ...linkedRowStyle, ...dropCellStyle(move?.drop) };
   const finished = row.status.group === 'done' || row.status.group === 'cancelled';
   const participantIds = [...new Set(task.participants.filter(participant => participant.active).map(participant => participant.membershipId))];
   const hint = t('placements.linkedRow.hint', { project: row.homeProject.name });
   const plain = (content: ReactNode, align = 'text-left') => <span className={cn('flex h-8 min-w-0 items-center px-1.5', align)}>{content}</span>;
-  const td = (id: string, content: ReactNode, className?: string) => <td className={cn(cellClassName, ctx.columnLine(id), className)} style={linkedRowStyle}>{content}</td>;
+  const td = (id: string, content: ReactNode, className?: string) => <td className={cn(cellClassName, ctx.columnLine(id), className)} style={cellStyle}>{content}</td>;
   const cells: Record<string, ReactNode> = {
-    title: <td className={titleCellClassName} style={{ paddingLeft: 12, ...linkedRowStyle }}>
+    title: <td className={titleCellClassName} style={{ paddingLeft: 12, ...cellStyle }}>
       <div className="relative flex h-10 min-w-0 items-center gap-1">
         <span aria-hidden="true" className="absolute inset-y-1.5 -left-3 w-[3px] rounded-r bg-accent" />
+        {move ? <button type="button" data-linked-move-handle={row.id} aria-label={t('placements.linkedRow.moveHandle', { title: task.title })} title={t('taskTable.move.handleHint')}
+          aria-disabled={move.blocked || undefined} onPointerDown={move.start}
+          onKeyDown={event => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            const up = event.key === 'ArrowUp', anchor = up ? move.previous : move.next;
+            if (anchor && !move.blocked) move.move(anchor, up ? 'before' : 'after');
+          }}
+          className={cn('absolute -left-3 top-2 z-[2] flex h-6 w-3 cursor-grab touch-none items-center justify-center rounded bg-surface text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing', rowActionClassName, move.dragging && 'pointer-events-auto opacity-100')}>
+          <GripVertical size={12} aria-hidden="true" />
+        </button> : null}
         <span className="mr-1 flex h-10 w-8 shrink-0 items-center justify-center text-accent-ink" title={hint}><Link2 size={14} aria-hidden="true" /></span>
         <div className="flex min-w-0 flex-1 items-center gap-1.5" style={{ paddingLeft: Math.min(depth, 2) * 20 }}>
           <button type="button" data-linked-open={task.id} onClick={() => ctx.onOpenTask(task.id)} title={task.title}
@@ -813,10 +847,10 @@ function LinkedTaskRow({ row, depth, ctx, renderCell }: { row: TaskTableLinkedRo
     // The team estimate belongs to the home project's work package; it is not repeated here.
     estimate: td('estimate', null, cn('text-right lg:bg-surface', ctx.columnIds.at(-1) === 'estimate' && !ctx.trailingColumn && stickyEstimateClassName)),
   };
-  return <tr data-linked-row={row.id} data-linked-task={task.id} className={cn('group h-10 border-t border-line', linkedRowTint)}>
+  return <tr data-linked-row={row.id} data-linked-task={task.id} data-task-drop={move?.drop} className={cn('group h-10 border-t border-line', linkedRowTint, move?.dragging && 'opacity-60')}>
     {ctx.columnIds.map(id => <Fragment key={id}>{cells[id] ?? (ctx.customColumns.some(column => column.id === id)
       ? td(id, <div className="flex h-10 min-w-0 items-center overflow-hidden">{renderCell?.(row, id) ?? null}</div>, 'min-w-0') : null)}</Fragment>)}
-    {ctx.trailingColumn ? <td className={cellClassName} style={linkedRowStyle} /> : null}
+    {ctx.trailingColumn ? <td className={cellClassName} style={cellStyle} /> : null}
   </tr>;
 }
 
@@ -990,6 +1024,8 @@ export function TaskTable({
   tasks,
   linkedRows,
   renderLinkedCell,
+  onMoveLinked,
+  linkedMoveBlocked = false,
   sections,
   statuses,
   members,
@@ -1169,6 +1205,48 @@ export function TaskTable({
       commitMove(source, anchor, target.placement, target.responsibleMembershipId === undefined ? undefined : { responsibleMembershipId: target.responsibleMembershipId });
     },
   });
+  // Linked rows move in the project's shared order: next to an own root task or another linked root row.
+  const linkedMoveEnabled = onMoveLinked !== undefined && writable && sortMode === 'manual' && grouping === 'section';
+  const linkedByKey = useMemo(() => new Map((linkedRows ?? []).map(row => [linkedRowKey(row.id), row])), [linkedRows]);
+  const linkedRootKeys = useMemo(() => new Set([...linkedByGroup.values()].flat().map(block => linkedRowKey(block.root.id))), [linkedByGroup]);
+  // Anchors of a linked move: the loaded own tasks, and the linked rows under their own keys.
+  const linkedDragRows = useMemo(() => {
+    const rows = new Map(taskById);
+    for (const [key, row] of linkedByKey) rows.set(key, { ...row.task, id: key, sectionId: row.sectionId, parentTaskId: null });
+    return rows;
+  }, [taskById, linkedByKey]);
+  const linkedTargetAllowed = (sourceKey: string, anchor: TaskDto): boolean => anchor.id !== sourceKey && (linkedByKey.has(anchor.id)
+    ? linkedRootKeys.has(anchor.id) && activeSection(anchor.sectionId)
+    : anchor.parentTaskId === null && anchor.archivedAt === null && activeSection(anchor.sectionId));
+  const commitLinkedMove = (sourceKey: string, anchorKey: string, placement: TaskDropPlacement) => {
+    const row = linkedByKey.get(sourceKey), anchor = linkedDragRows.get(anchorKey);
+    if (!row || !anchor || !linkedMoveEnabled || linkedMoveBlocked || !linkedTargetAllowed(sourceKey, anchor)) return;
+    onMoveLinked?.(row, linkedByKey.has(anchorKey) ? { placementId: anchorKey.slice(LINKED_KEY_PREFIX.length) } : { taskId: anchorKey }, placement);
+  };
+  const { drag: linkedDrag, startDrag: startLinkedDrag } = usePointerRowDrag({
+    taskById: linkedDragRows, dropAllowed: (source, anchor) => linkedTargetAllowed(source.id, anchor), onMove: undefined,
+    blocked: linkedMoveBlocked || !linkedMoveEnabled, acquireProtection: acquireDragProtection, contextKey: `${dragScope ?? ''}:linked:${sortMode}`,
+    resolveDrop: (source, over, point) => {
+      const element = over?.closest<HTMLElement>('tr[data-task-row], tr[data-linked-row]');
+      const key = element?.dataset['linkedRow'] ? linkedRowKey(element.dataset['linkedRow']) : element?.dataset['taskRow'] ?? '';
+      const anchor = linkedDragRows.get(key);
+      if (!element || !anchor || !linkedTargetAllowed(source.id, anchor)) return null;
+      const rect = element.getBoundingClientRect();
+      return { taskId: key, placement: point.y < rect.top + rect.height / 2 ? 'before' : 'after' };
+    },
+    onDrop: (source, target) => { if (target.taskId) commitLinkedMove(source.id, target.taskId, target.placement); },
+  });
+  const linkedMoveOf = (row: TaskTableLinkedRow, sequence: readonly string[]): LinkedRowMove | null => {
+    const key = linkedRowKey(row.id), at = sequence.indexOf(key);
+    if (!linkedMoveEnabled || at < 0) return null;
+    return {
+      blocked: linkedMoveBlocked, previous: sequence[at - 1], next: sequence[at + 1],
+      start: event => startLinkedDrag(linkedDragRows.get(key) ?? { ...row.task, id: key }, event),
+      move: (anchorKey, placement) => commitLinkedMove(key, anchorKey, placement),
+      drop: linkedDrag?.target?.taskId === key ? linkedDrag.target.placement : drag?.target?.taskId === key ? drag.target.placement : undefined,
+      dragging: linkedDrag?.taskId === key,
+    };
+  };
   const selectionAnchor = useRef<string | null>(null);
   const [selectionLimit, setSelectionLimit] = useState(false);
   const visibleRowIds = () => groups.flatMap(group => collapsedGroups.has(group.key) ? [] : visibleTaskRows(group.roots, collapsedIds).map(node => node.task.id));
@@ -1235,7 +1313,7 @@ export function TaskTable({
   } : null;
 
   const ctx: RowContext = {
-    move, dropTarget: drag?.target ?? null, draggingTaskId: drag?.taskId ?? null,
+    move, dropTarget: drag?.target ?? linkedDrag?.target ?? null, draggingTaskId: drag?.taskId ?? null,
     grouping, taskById,
     selectedTaskIds,
     onSelectTask, selectRow, selectionKey, selectionDisabled,
@@ -1323,6 +1401,7 @@ export function TaskTable({
     <div ref={scrollRef} data-task-table-scroll="" data-task-range-select={rangeSelect.active ? '' : undefined} onKeyDown={clearSelectionOnEscape} className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', rangeSelect.active && 'select-none', className)}>
       {selectionLimit ? <div role="status" className="fixed right-3 bottom-24 z-[70] max-w-sm rounded-lg border border-line bg-surface p-3 text-sm shadow-lg">{t('taskTable.selection.limit')}<Button size="sm" variant="ghost" onClick={() => setSelectionLimit(false)}>{t('taskTable.selection.dismiss')}</Button></div> : null}
       {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} /> : null}
+      {linkedDrag ? <TaskDragPreview task={linkedDrag.task} pointer={linkedDrag.pointer} /> : null}
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth, width: minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? resolvedTitleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
@@ -1340,10 +1419,18 @@ export function TaskTable({
           // Linked tasks take their place among the root tasks of their group, after an open quick-add row.
           const linkedBlocks = collapsed ? undefined : linkedByGroup.get(linkedGroupKey(group));
           if (linkedBlocks?.length) {
-            const placed = [...placeLinkedBlocks(rows, linkedBlocks, sortMode)].sort((a, b) => b[0] - a[0]);
-            for (const [index, blocks] of placed) {
+            const placedAt = placeLinkedBlocks(rows, linkedBlocks, sortMode);
+            // Root rows of the group as shown, own and linked: the keyboard neighbours of a linked row.
+            const sequence: string[] = [];
+            for (let index = 0; index <= rows.length; index += 1) {
+              for (const block of placedAt.get(index) ?? []) sequence.push(linkedRowKey(block.root.id));
+              const node = rows[index];
+              if (node && node.depth === 0) sequence.push(node.task.id);
+            }
+            for (const [index, blocks] of [...placedAt].sort((a, b) => b[0] - a[0])) {
               const at = index + (anchored?.groupKey === group.key && index >= anchored.end ? 1 : 0);
-              items.splice(at, 0, ...blocks.flatMap(block => block.rows.map(({ row, depth }) => <LinkedTaskRow key={`linked:${row.id}`} row={row} depth={depth} ctx={ctx} renderCell={renderLinkedCell} />)));
+              items.splice(at, 0, ...blocks.flatMap(block => block.rows.map(({ row, depth }) => <LinkedTaskRow key={linkedRowKey(row.id)} row={row} depth={depth} ctx={ctx} renderCell={renderLinkedCell}
+                move={depth === 0 ? linkedMoveOf(row, sequence) : null} />)));
             }
           }
           const emptyRow = !collapsed && items.length === 0;

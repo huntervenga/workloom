@@ -8,6 +8,7 @@ import type {
   TaskDefaultsDto,
   ProjectRulesDto,
   TaskDto,
+  TaskProjectPlacementDto,
   TaskListQuery,
   TaskSearchResult,
   TaskParticipantDto,
@@ -154,9 +155,21 @@ export interface TaskRepository {
   insertIdempotency(row: IdempotencyRecord): Promise<void>;
 }
 
+/** Linked placements of a project, read and renumbered together with its own tasks. */
+export interface ProjectOrderPlacements {
+  listProject(workspaceId: string, projectId: string, includeArchived: boolean, after: TaskCursorAnchor | null, take: number): Promise<TaskProjectPlacementDto[]>;
+  /** Saves the row at `revision`, guarded by `revision - 1`. */
+  save(row: TaskProjectPlacementDto): Promise<void>;
+}
+
 export interface TaskWriteScope extends WorkspaceWriteScope {
   /** Same workspace-barrier transaction; required whenever a bulk custom field is requested. */
   readonly fieldRepository?: TaskFieldRepository;
+  /**
+   * Same transaction. With it, reordering a project's own tasks keeps the tasks of other projects shown
+   * there (linked placements) next to their neighbours; without it only own tasks are renumbered.
+   */
+  readonly placements?: ProjectOrderPlacements;
   readonly statusTransitions:TaskStatusTransitionPolicy;
   /** Required by every real composition; tests must inject an explicit policy fake. */
   readonly planningGuard: PlanningMutationGuard;

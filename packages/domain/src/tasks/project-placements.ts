@@ -1,9 +1,10 @@
-import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,idSchema,projectRowsQuerySchema,taskProjectPlacementSchema,transferTaskProjectInputSchema,transferTaskProjectResultSchema,updateTaskProjectPlacementInputSchema,type AttachTaskProjectInput,type ChangeTaskProjectPlacementStateInput,type TaskDto,type TaskProjectPlacementDto,type SetTaskFieldValueInput,type TaskFieldData,type TransferTaskProjectResult} from '@workloom/contracts';
+import {attachTaskProjectInputSchema,changeTaskProjectPlacementStateInputSchema,idSchema,projectRowsQuerySchema,taskProjectPlacementSchema,transferTaskProjectInputSchema,transferTaskProjectResultSchema,updateTaskProjectPlacementInputSchema,type AttachTaskProjectInput,type ChangeTaskProjectPlacementStateInput,type TaskDto,type UpdateTaskProjectPlacementInput,type TaskProjectPlacementDto,type SetTaskFieldValueInput,type TaskFieldData,type TransferTaskProjectResult} from '@workloom/contracts';
 import {authorizeWorkspace} from '../access/access-queries.js';
 import type {CommandContext} from '../access/context.js';
 import {DomainError,notFoundError,unauthenticatedError} from '../errors.js';
 import {isCommittedPlanningRejection,unwrapPlanningOutcome} from '../planning/freeze.js';
-import {canonicalJson} from './service.js';
+import {canonicalJson,listLinkedOrder,listProjectTaskOrder,saveProjectOrder} from './service.js';
+import {mergeProjectOrder,placeInProjectOrder} from './project-order.js';
 import {preflightTaskFieldValueInScope,setTaskFieldValueInScope} from '../fields/service.js';
 import type {TaskFieldWriteScope} from '../fields/ports.js';
 import type {TaskProjectPlacementApplication,TaskProjectPlacementCommand,TaskProjectPlacementDependencies,TaskProjectPlacementWriteScope} from './project-placement-ports.js';
@@ -64,6 +65,34 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
  async function record(scope:TaskProjectPlacementWriteScope,row:TaskProjectPlacementDto,action:string,before:TaskProjectPlacementDto|null):Promise<void>{
   await scope.recordChange({entityType:'task_project_placement',entityId:row.id,entityRevision:row.revision,action,diff:{taskId:row.taskId,projectId:row.projectId,homeProjectId:row.homeProjectId,sectionId:{from:before?.sectionId??null,to:row.sectionId},position:{from:before?.position??null,to:row.position},archivedAt:{from:before?.archivedAt??null,to:row.archivedAt}},outbox:{type:`task_project_placement.${action}`,payload:{workspaceId:row.workspaceId,placementId:row.id,taskId:row.taskId,projectId:row.projectId,homeProjectId:row.homeProjectId,revision:row.revision}}});
  }
+ /**
+  * Moves a linked placement in the project's shared order (own tasks and linked placements): next to an own root task
+  * or another linked placement, taking its section, or to the end of a section. Every row is renumbered by its rank,
+  * so the project's own tasks and other linked tasks keep the order people see.
+  */
+ async function moveInProjectOrder(scope:TaskProjectPlacementWriteScope,row:TaskProjectPlacementDto,input:UpdateTaskProjectPlacementInput,now:string):Promise<TaskProjectPlacementDto>{
+  const ws=row.workspaceId,projectId=row.projectId,anchor=input.anchor??null;
+  const own=await listProjectTaskOrder(scope.repository,ws,projectId),linked=await listLinkedOrder(scope,ws,projectId);
+  let sectionId=input.sectionId===undefined?row.sectionId:input.sectionId;
+  if(anchor!==null&&'taskId' in anchor){
+   const target=own.find(task=>task.id===anchor.taskId);
+   if(!target||target.archivedAt!==null)rule('The anchor is not an active task of this project.','anchor');
+   if(target.parentTaskId!==null)rule('A linked task goes next to a root task, not among its subtasks.','anchor');
+   sectionId=target.sectionId;
+  }else if(anchor!==null){
+   if(anchor.placementId===row.id)rule('A task cannot be placed next to itself.','anchor');
+   const target=linked.find(item=>item.id===anchor.placementId);
+   if(!target)rule('The anchor is not a task shown in this project.','anchor');
+   sectionId=target.sectionId;
+  }
+  await targetSection(scope,ws,projectId,sectionId);
+  const items=placeInProjectOrder(mergeProjectOrder(own,linked),{...row,sectionId},anchor,input.placement??'after',sectionId);
+  if(items===null)rule('The anchor is not in this project.','anchor');
+  const position=items.findIndex(item=>item.kind==='placement'&&item.row.id===row.id);
+  await saveProjectOrder(scope,items,now,row.id);
+  if(position===row.position&&sectionId===row.sectionId)return row;
+  const next={...row,sectionId,position,revision:row.revision+1,updatedAt:now};await scope.placements.save(next);await record(scope,next,'updated',row);return next;
+ }
  async function changeState(ctx:CommandContext,id:string,raw:ChangeTaskProjectPlacementStateInput,archived:boolean):Promise<TaskProjectPlacementDto>{
   const input=parse(changeTaskProjectPlacementStateInputSchema,raw);
   return mutate(ctx,archived?'task.project.detach':'task.project.restore',path(id),input,false,async(scope,task,current,projectId,now)=>{
@@ -95,6 +124,7 @@ export function createTaskProjectPlacementApplication(deps:TaskProjectPlacementD
   });},
   async updateTaskProjectPlacement(ctx,placementId,raw){const input=parse(updateTaskProjectPlacementInputSchema,raw);return mutate(ctx,'task.project.update',path(placementId),input,false,async(scope,task,current,projectId,now)=>{
    const row=found(current);if(row.projectId===row.homeProjectId)rule('Use the canonical task command to move its home row.','placementId');revision(row.revision,input.expectedRevision);await openTarget(scope,task,projectId);if(row.archivedAt!==null)rule('Restore the detached placement first.','placementId');
+   if(input.anchor!==undefined)return moveInProjectOrder(scope,row,input,now);
    const sectionId=input.sectionId===undefined?row.sectionId:input.sectionId;await targetSection(scope,row.workspaceId,projectId,sectionId);const position=input.position??row.position;if(sectionId===row.sectionId&&position===row.position)return row;
    const next={...row,sectionId,position,revision:row.revision+1,updatedAt:now};await scope.placements.save(next);await record(scope,next,'updated',row);return next;
   });},

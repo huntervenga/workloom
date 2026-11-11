@@ -74,6 +74,8 @@ import {
   type MoveUndoSource,
 } from './move-undo.js';
 import type { TaskApplicationDependencies, TaskCursorAnchor, TaskRepository, TaskWriteScope, WorkPackageRecord } from './ports.js';
+import { linkedPlacementsInOrder, mergeProjectOrder, type ProjectOrderItem } from './project-order.js';
+import type { TaskProjectPlacementDto } from '@workloom/contracts';
 
 const MAX_POSITION = 2_147_483_647;
 /** Same rule as the HTTP adapter: visible ASCII, 1–128 characters. */
@@ -714,7 +716,11 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         if (unchanged) return task;
         // Flat lane writes that keep the global order keep the numeric position, ties and gaps included; legacy moves always renumber.
         const renumber = !flatMode || orderChanged;
-        await repo.saveTaskCore({ ...task, sectionId, responsibleMembershipId, statusId, position: renumber ? order.indexOf(null) : task.position, revision: task.revision + 1, updatedAt: now });
+        // Tasks of other projects shown here keep their neighbours: they are renumbered together with the own tasks.
+        const linked = renumber ? await listLinkedOrder(scope, ws, task.projectId) : [];
+        const shared = linked.length > 0 ? mergeProjectOrder(order, linked) : null;
+        const position = !renumber ? task.position : shared ? shared.findIndex(item => item.kind === 'slot') : order.indexOf(null);
+        await repo.saveTaskCore({ ...task, sectionId, responsibleMembershipId, statusId, position, revision: task.revision + 1, updatedAt: now });
         const updated = await reloadTask(repo, ws, id);
         const diff = {
           ...changedFields(task, updated, statusMode ? ['statusId', 'position'] : assigneeMode ? ['sectionId', 'position', 'responsibleMembershipId'] : ['sectionId', 'position']),
@@ -724,13 +730,15 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
         const activityPair = { before: task, after: updated };
         const labels = await loadTaskActivityLabels(scope, [activityPair]);
         await record(scope, 'task', id, 'updated', updated.revision, taskActivityDiff(activityPair, diff, labels), taskEventIds(updated));
-        if (renumber) await saveShiftedTasks(scope, order, now);
+        if (shared) await saveProjectOrder(scope, shared, now);
+        else if (renumber) await saveShiftedTasks(scope, order, now);
         if (!captureUndo) return updated;
         // A no-op above returns without moveUndo: there is nothing to undo and no source is stored.
         // Same normalized actor, key and payload hash as the primary receipt that mutate writes next.
         const owner = normalizeContext(context);
         const receipt = { actorUserId: owner.actor.userId, key: owner.idempotencyKey, payloadHash: hash({ command: 'task.move', target: id, input: parsed }) };
-        return { ...updated, moveUndo: await saveMoveUndoSource(scope, hash, receipt, task, projectOrder, now) };
+        const movedPlacements = shared ? shared.flatMap((item, rank) => item.kind === 'placement' && item.row.position !== rank ? [{ placementId: item.row.id, before: item.row.position, after: rank }] : []) : [];
+        return { ...updated, moveUndo: await saveMoveUndoSource(scope, hash, receipt, task, projectOrder, now, movedPlacements) };
       }, captureUndo ? async scope => {
         const current = requireFound(await scope.repository.findTask(scope.context.workspaceId, id));
         requireFound(await scope.repository.findProject(scope.context.workspaceId, current.projectId));
@@ -1171,15 +1179,22 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
           await repo.insertWorkPackage(workPackage);
         }
         const workPackageId = workPackage?.id ?? requireParentPackage(parent);
+        // Tasks of other projects shown here share the order: an insertion keeps them next to their neighbours,
+        // and an appended task goes after them too.
+        const linked = order !== null || parsed.position === undefined ? await listLinkedOrder(scope, ws, projectId) : [];
+        const shared = order !== null && linked.length > 0 ? mergeProjectOrder(order, linked) : null;
         const position =
-          order !== null
+          shared !== null
+            ? shared.findIndex(item => item.kind === 'slot')
+            : order !== null
             ? order.indexOf(null)
             : parsed.position ??
-              nextPosition(
-                (await repo.listTasks(ws, { projectId, includeArchived: true, limit: 200 }, null, MAX_POSITION)).map(
+              nextPosition([
+                ...(await repo.listTasks(ws, { projectId, includeArchived: true, limit: 200 }, null, MAX_POSITION)).map(
                   (task) => task.position,
                 ),
-              );
+                ...linked.map(row => row.position),
+              ]);
 
         const id = newId();
         await repo.insertTaskCore({
@@ -1242,7 +1257,8 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
           }, labels),
           taskEventIds(task),
         );
-        if (order !== null) await saveShiftedTasks(scope, order, now);
+        if (shared !== null) await saveProjectOrder(scope, shared, now);
+        else if (order !== null) await saveShiftedTasks(scope, order, now);
         return task;
 }
 
@@ -1305,6 +1321,51 @@ async function saveShiftedTasks(scope: TaskWriteScope, order: readonly (TaskDto 
   }
 }
 
+/** Active linked placements of the project in display order; none without placement access (tests, other scopes). */
+export async function listLinkedOrder(scope: Pick<TaskWriteScope, 'placements'>, ws: string, projectId: string): Promise<TaskProjectPlacementDto[]> {
+  if (!scope.placements) return [];
+  return linkedPlacementsInOrder(await scope.placements.listProject(ws, projectId, false, null, MAX_LINKED_ORDER), projectId);
+}
+const MAX_LINKED_ORDER = 5000;
+
+/** The project's own tasks in their numeric order, archived ones included. */
+export function listProjectTaskOrder(repo: TaskRepository, ws: string, projectId: string): Promise<TaskDto[]> {
+  return listOrderScope(repo, ws, projectId);
+}
+
+/**
+ * Writes a project's shared order: every own task and linked placement gets its rank as its number.
+ * Unchanged rows are not written; a written row gets revision + 1 and one event, like a shifted task.
+ * The slot (a moving or new task) and `skipPlacementId` (a moving placement) are saved by the caller.
+ */
+export async function saveProjectOrder(scope: TaskWriteScope, items: readonly ProjectOrderItem[], now: string, skipPlacementId?: string): Promise<void> {
+  for (const [position, item] of items.entries()) {
+    if (item.kind === 'slot') continue;
+    if (item.kind === 'task') {
+      const row = item.task;
+      if (row.position === position) continue;
+      const revision = row.revision + 1;
+      await scope.repository.saveTaskCore({ ...row, position, revision, updatedAt: now });
+      await record(scope, 'task', row.id, 'updated', revision, { position: { from: row.position, to: position }, revision: { from: row.revision, to: revision } }, taskEventIds(row));
+      continue;
+    }
+    const row = item.row;
+    if (row.id === skipPlacementId || row.position === position || !scope.placements) continue;
+    await saveLinkedPosition(scope, row, position, now);
+  }
+}
+
+async function saveLinkedPosition(scope: TaskWriteScope, row: TaskProjectPlacementDto, position: number, now: string): Promise<void> {
+  if (!scope.placements) return;
+  const next = { ...row, position, revision: row.revision + 1, updatedAt: now };
+  await scope.placements.save(next);
+  await scope.recordChange({
+    entityType: 'task_project_placement', entityId: row.id, entityRevision: next.revision, action: 'updated',
+    diff: { taskId: row.taskId, projectId: row.projectId, homeProjectId: row.homeProjectId, position: { from: row.position, to: position } },
+    outbox: { type: 'task_project_placement.updated', payload: { workspaceId: row.workspaceId, placementId: row.id, taskId: row.taskId, projectId: row.projectId, homeProjectId: row.homeProjectId, revision: next.revision } },
+  });
+}
+
 // ---------------------------------------------------------------------------------------------
 // Move undo
 
@@ -1326,6 +1387,7 @@ async function saveMoveUndoSource(
   before: TaskDto,
   beforeOrder: readonly TaskDto[],
   now: string,
+  placements: readonly { placementId: string; before: number; after: number }[] = [],
 ): Promise<MoveUndoAck> {
   const { actorUserId, key, payloadHash } = receipt;
   if (key === undefined) throw new Error('A captured move needs its real Idempotency-Key.');
@@ -1344,6 +1406,7 @@ async function saveMoveUndoSource(
     positions: beforeOrder.map((row) => ({ taskId: row.id, position: row.position })),
     beforeFingerprint: orderFingerprint(hash, before.projectId, beforeOrder),
     afterFingerprint: orderFingerprint(hash, before.projectId, afterOrder),
+    ...(placements.length > 0 ? { placements } : {}),
   };
   await scope.repository.insertIdempotency({
     workspaceId: ws,
@@ -1391,6 +1454,14 @@ async function writeMoveRestore(
     await repo.saveTaskCore({ ...row, position: restored, revision, updatedAt: now });
     const rowDiff = { position: { from: row.position, to: restored }, revision: { from: row.revision, to: revision } };
     await record(scope, 'task', row.id, 'updated', revision, rowDiff, taskEventIds(row));
+  }
+  // Linked rows the move renumbered get their numbers back, unless something moved them since.
+  if (source.placements?.length) {
+    const current = new Map((await listLinkedOrder(scope, ws, task.projectId)).map(row => [row.id, row]));
+    for (const captured of source.placements) {
+      const row = current.get(captured.placementId);
+      if (row && row.position === captured.after && captured.before !== captured.after) await saveLinkedPosition(scope, row, captured.before, now);
+    }
   }
   const afterOrder = await listOrderScope(repo, ws, task.projectId);
   const fingerprint = orderFingerprint(hash, task.projectId, afterOrder);

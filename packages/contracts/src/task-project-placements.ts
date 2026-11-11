@@ -25,7 +25,18 @@ export const transferTaskProjectResultSchema=z.object({
  notCarried:z.array(z.object({fieldName:z.string().min(1).max(160),count:z.number().int().min(1)}).strict()).max(200),
 }).strict();
 export const transferTaskProjectResponseSchema=envelopeSchema(transferTaskProjectResultSchema);
-export const updateTaskProjectPlacementInputSchema=z.object({expectedRevision:revisionSchema,sectionId:idSchema.nullable().optional(),position:positionSchema.optional()}).strict().refine(input=>input.sectionId!==undefined||input.position!==undefined,{message:'A placement change is required.'});
+/** A place in the project's shared order: next to an own task or to another linked placement of the project. */
+export const placementOrderAnchorSchema=z.union([z.object({taskId:idSchema}).strict(),z.object({placementId:idSchema}).strict()]);
+/**
+ * `anchor` moves the placement in the project's shared order (own tasks and linked placements, renumbered together):
+ * before or after the anchor and into its section, or with `null` to the end of `sectionId` (or of its current section).
+ * `position` sets the raw number instead and cannot be combined with `anchor`.
+ */
+export const updateTaskProjectPlacementInputSchema=z.object({expectedRevision:revisionSchema,sectionId:idSchema.nullable().optional(),position:positionSchema.optional(),
+ anchor:placementOrderAnchorSchema.nullable().optional(),placement:z.enum(['before','after']).optional()}).strict()
+ .refine(input=>input.sectionId!==undefined||input.position!==undefined||input.anchor!==undefined,{message:'A placement change is required.'})
+ .refine(input=>input.anchor===undefined||input.position===undefined,{message:'Pass either an anchor or a position.',path:['position']})
+ .refine(input=>input.anchor===undefined||input.anchor===null||input.placement!==undefined,{message:'Say whether the placement goes before or after the anchor.',path:['placement']});
 export const changeTaskProjectPlacementStateInputSchema=z.object({expectedRevision:revisionSchema}).strict();
 export const projectRowsQuerySchema=z.object({cursor:z.string().min(1).max(4096).optional(),limit:z.coerce.number().int().min(1).max(200).default(100),includeArchived:z.union([z.boolean(),z.enum(['true','false'])]).optional().transform(value=>value===true||value==='true')}).strict();
 export const taskProjectPlacementResponseSchema=envelopeSchema(taskProjectPlacementSchema);

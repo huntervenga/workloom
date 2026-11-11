@@ -9,6 +9,8 @@ import type { TaskTreeNode } from './taskTree';
 export interface TaskTableLinkedRow {
   /** Placement ID: the row identity. */
   id: string;
+  /** Placement revision: guards a move of the row. */
+  revision: number;
   /** The canonical task; `projectId` is its home project. */
   task: TaskDto;
   /** Section and order in the viewed project. */
@@ -25,8 +27,9 @@ export interface LinkedRowBlock {
   rows: readonly { row: TaskTableLinkedRow; depth: number }[];
 }
 
+/** As the server merges the project's shared order: by number, then by placement ID. */
 const byPlacementOrder = (left: TaskTableLinkedRow, right: TaskTableLinkedRow) =>
-  left.position - right.position || left.task.createdAt.localeCompare(right.task.createdAt) || left.id.localeCompare(right.id);
+  left.position - right.position || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
 
 /** Orders a linked row against a task of the project, as the table orders its own rows. */
 function compareWithTask(row: TaskTableLinkedRow, task: TaskDto, sort: TaskSortMode): number {

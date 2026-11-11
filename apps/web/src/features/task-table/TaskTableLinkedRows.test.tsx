@@ -1,5 +1,5 @@
 import type { TaskDto } from '@workloom/contracts';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { TaskTable, type TaskTableProps } from './TaskTable';
@@ -14,7 +14,7 @@ const anna = makeMember({ id: 'm-anna', userId: 'u-anna', displayName: 'Анна
 const own = (id: string, position: number, sectionId: string | null = backlog.id, extra: Partial<TaskDto> = {}) =>
   makeTask({ id, title: `Own ${id}`, sectionId, position, workPackageId: `wp-${id}`, ...extra });
 const linked = (id: string, position: number, sectionId: string | null = backlog.id, task: Partial<TaskDto> = {}): TaskTableLinkedRow => ({
-  id: `placement-${id}`, sectionId, position,
+  id: `placement-${id}`, revision: 1, sectionId, position,
   task: makeTask({ id, title: `Linked ${id}`, projectId: 'home-project', sectionId: 'home-section', position: 0, workPackageId: `wp-${id}`, ...task }),
   status: { name: 'In review', group: 'in_progress' },
   homeProject: { id: 'home-project', name: '45 week' },
@@ -79,6 +79,56 @@ describe('linked rows in the task table', () => {
     });
     const row = document.querySelector('tr[data-linked-row="placement-x"]') as HTMLElement;
     expect(within(row).getByText('x:field-hours')).toBeInTheDocument();
+  });
+});
+
+describe('moving a linked row', () => {
+  const linkedRow = (id: string) => document.querySelector(`tr[data-linked-row="placement-${id}"]`) as HTMLElement;
+  const ownRow = (id: string) => document.querySelector(`tr[data-task-row="${id}"]`) as HTMLElement;
+
+  it('moves a linked row with the arrow keys next to its neighbours, own or linked', () => {
+    const onMoveLinked = vi.fn();
+    renderTable({ tasks: [own('a', 0), own('b', 2)], linkedRows: [linked('x', 1), linked('y', 5)], writable: true, onMoveLinked });
+    const handle = within(linkedRow('x')).getByRole('button', { name: 'Move linked task: Linked x' });
+    fireEvent.keyDown(handle, { key: 'ArrowUp' });
+    expect(onMoveLinked).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'placement-x' }), { taskId: 'a' }, 'before');
+    fireEvent.keyDown(handle, { key: 'ArrowDown' });
+    expect(onMoveLinked).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'placement-x' }), { taskId: 'b' }, 'after');
+    // y is last: its upper neighbour is the own task b, it has no lower one.
+    const last = within(linkedRow('y')).getByRole('button', { name: 'Move linked task: Linked y' });
+    fireEvent.keyDown(last, { key: 'ArrowDown' });
+    expect(onMoveLinked).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops a linked row on an own row or another linked row with the pointer', async () => {
+    const user = userEvent.setup(), onMoveLinked = vi.fn();
+    renderTable({ tasks: [own('a', 0), own('b', 2), own('c', 0, doing.id)], linkedRows: [linked('x', 1), linked('y', 5)], writable: true, onMoveLinked });
+    const handle = within(linkedRow('y')).getByRole('button', { name: 'Move linked task: Linked y' });
+    await user.pointer({ keys: '[MouseLeft>]', target: handle, coords: { clientX: 1, clientY: 1 } });
+    await user.pointer({ target: linkedRow('x'), coords: { clientX: 100, clientY: 100 } });
+    expect(screen.getByTestId('task-drag-preview')).toHaveTextContent('Linked y');
+    await user.pointer({ keys: '[/MouseLeft]', target: linkedRow('x'), coords: { clientX: 100, clientY: 100 } });
+    expect(onMoveLinked).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'placement-y' }), { placementId: 'placement-x' }, 'after');
+    // Into another section: next to its own task.
+    await user.pointer({ keys: '[MouseLeft>]', target: handle, coords: { clientX: 1, clientY: 1 } });
+    await user.pointer({ target: ownRow('c'), coords: { clientX: 100, clientY: 100 } });
+    await user.pointer({ keys: '[/MouseLeft]', target: ownRow('c'), coords: { clientX: 100, clientY: 100 } });
+    expect(onMoveLinked).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'placement-y' }), { taskId: 'c' }, 'after');
+  });
+
+  it('never drops a linked row among the subtasks of an own task', async () => {
+    const user = userEvent.setup(), onMoveLinked = vi.fn();
+    renderTable({ tasks: [own('a', 0), own('a1', 1, backlog.id, { parentTaskId: 'a' })], linkedRows: [linked('x', 3)], writable: true, onMoveLinked });
+    const handle = within(linkedRow('x')).getByRole('button', { name: 'Move linked task: Linked x' });
+    await user.pointer({ keys: '[MouseLeft>]', target: handle, coords: { clientX: 1, clientY: 1 } });
+    await user.pointer({ target: ownRow('a1'), coords: { clientX: 100, clientY: 100 } });
+    await user.pointer({ keys: '[/MouseLeft]', target: ownRow('a1'), coords: { clientX: 100, clientY: 100 } });
+    expect(onMoveLinked).not.toHaveBeenCalled();
+  });
+
+  it('offers no handle outside the manual section order or without a writer', () => {
+    renderTable({ tasks: [own('a', 0)], linkedRows: [linked('x', 1)], writable: true, onMoveLinked: vi.fn(), sortMode: 'due_asc' });
+    expect(screen.queryByRole('button', { name: 'Move linked task: Linked x' })).toBeNull();
   });
 });
 
