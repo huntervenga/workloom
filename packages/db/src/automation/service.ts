@@ -722,9 +722,12 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
           ?? [plan.view.assignee, ...plan.view.participants].find(member => member?.membershipId === membershipId)?.displayName
           ?? 'Unknown member' });
       // Data comes from the durable domain ACK; catalog labels come from the pinned plan, never a later mutable GET.
+      const section = updated.sectionId === null ? null : plan.sections.find(item => item.id === updated.sectionId) ?? plan.view.section;
       const view: TaskView = {
         ...plan.view, title: updated.title, description: updated.description,
-        section: updated.sectionId === null ? null : plan.sections.find(section => section.id === updated.sectionId) ?? plan.view.section,
+        section,
+        // Only the home entry can change here; a plan saved before `projects` existed has none.
+        ...(plan.view.projects ? { projects: plan.view.projects.map(item => item.home ? { ...item, section } : item) } : {}),
         status: plan.statuses.find(status => status.id === updated.statusId) ?? plan.view.status,
         assignee: updated.responsibleMembershipId === null ? null : person(updated.responsibleMembershipId),
         participants: updated.participants.filter(member => member.active).map(member => person(member.membershipId)),
@@ -765,7 +768,14 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         home: homeNow, homeProject: homeNow ? { id: plan.project.id, name: plan.project.name } : { id: plan.home.id, name: plan.home.name },
         outcome, homeChanged: homeNow && plan.project.id !== plan.task.projectId, homeReason, copiedValues,
       });
-      if (plan.project.id === plan.task.projectId) return result('unchanged', plan.task.sectionId, true, 'already_home');
+      const internalKey = (command: string) => createHash('sha256').update(`${plan.context.idempotencyKey ?? ''}\0public.task.project.${command}\0${targetId}\0${plan.project.id}`).digest('hex');
+      if (plan.project.id === plan.task.projectId) {
+        // Already at home here: a given section moves the task there, the same write as update_task's section.
+        if (!plan.section || plan.section.id === plan.task.sectionId) return result('unchanged', plan.task.sectionId, true, 'already_home');
+        const updated = await writeApp(plan.hash, plan.workspaceId, plan.userId).updateTask({ ...plan.context, idempotencyKey: internalKey('home-section') }, targetId,
+          updateTaskInputSchema.parse({ expectedRevision: plan.task.revision, sectionId: plan.section.id }));
+        return result('section_changed', updated.sectionId, true, 'already_home');
+      }
       // The home moves only when asked, or when the target tracks time and the current home does not.
       // A subtask always shares its parent's home, so it is never moved by that rule.
       const time = plan.time ?? { target: false, home: false };
@@ -776,10 +786,15 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
           { details: { field: 'home', reason: 'choice_required', homeProject: { id: plan.home.id, name: plan.home.name }, project: { id: plan.project.id, name: plan.project.name } } });
       } else { makeHome = time.target && plan.task.parentTaskId === null; reason = makeHome ? 'time_fields' : 'kept'; }
       const active = plan.existing !== null && plan.existing.archivedAt === null;
-      if (!makeHome && active) return result('unchanged', plan.existing?.sectionId ?? null, false, reason);
       const commands = writeApp(plan.hash, plan.workspaceId, plan.userId).placements;
       if (!commands) throw new Error('Project placements are unavailable.');
-      const internalKey = (command: string) => createHash('sha256').update(`${plan.context.idempotencyKey ?? ''}\0public.task.project.${command}\0${targetId}\0${plan.project.id}`).digest('hex');
+      if (!makeHome && active && plan.existing) {
+        // Already shown here: a given section moves the row to the end of that section in this project's order.
+        if (!plan.section || plan.section.id === plan.existing.sectionId) return result('unchanged', plan.existing.sectionId, false, reason);
+        const row = await commands.updateTaskProjectPlacement({ ...plan.context, idempotencyKey: internalKey('section') }, plan.existing.id,
+          { expectedRevision: plan.existing.revision, sectionId: plan.section.id, anchor: null });
+        return result('section_changed', row.sectionId, false, reason);
+      }
       if (makeHome) {
         // One command: the target becomes the home (an existing or removed placement there turns into the home row),
         // and the former home stays among the task's projects.
