@@ -245,6 +245,7 @@ export const projects = pgTable(
     name: text('name').notNull(),
     dateRangeFrom: date('date_range_from',{mode:'string'}),
     dateRangeTo: date('date_range_to',{mode:'string'}),
+    isTemplate: boolean('is_template').notNull().default(false),
     revision: integer('revision').notNull().default(1),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

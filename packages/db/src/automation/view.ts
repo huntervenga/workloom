@@ -100,6 +100,8 @@ export async function listTaskViews(tx: WorkloomExecutor, workspaceId: string, q
     if (filter.unassigned) parts.push(isNull(tasks.responsibleMembershipId));
     where.push(or(...parts) ?? sql`false`);
   }
+  // Without a project or section, a template's tasks (standard tasks for future weeks) are not listed.
+  if (!filter.projectIds && !filter.sectionIds) where.push(sql`not exists (select 1 from ${projects} pr where pr.workspace_id = ${tasks.workspaceId} and pr.id = ${tasks.projectId} and pr.is_template)`);
   if (!query.includeArchived) { where.push(isNull(tasks.archivedAt)); where.push(sql`not exists (select 1 from ${projects} pr where pr.workspace_id = ${tasks.workspaceId} and pr.id = ${tasks.projectId} and pr.archived_at is not null)`); }
   if (query.q) where.push(or(ilike(tasks.title, `%${escapeLike(query.q)}%`), ilike(tasks.description, `%${escapeLike(query.q)}%`)) ?? sql`false`);
   if (query.dueBefore) where.push(sql`${tasks.dueDate} <= ${query.dueBefore}::date`);

@@ -60,10 +60,10 @@ function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string
   const projects = useProjectsQuery(actorId, workspaceId);
   const location = useLocation();
   const canonical = useCanonicalWorkspaceTo();
-  // Newest period first (by project end date), undated ones after; only a handful are listed, the rest sit behind "All projects".
+  // Newest period first (by project end date), undated ones after, templates last; only a handful are listed, the rest sit behind "All projects".
   const all = (projects.data?.projects.filter(project => project.archivedAt === null) ?? [])
     .map((project, index) => ({ project, index }))
-    .sort((a, b) => (b.project.dateRange?.to ?? '').localeCompare(a.project.dateRange?.to ?? '') || a.index - b.index)
+    .sort((a, b) => Number(a.project.isTemplate === true) - Number(b.project.isTemplate === true) || (b.project.dateRange?.to ?? '').localeCompare(a.project.dateRange?.to ?? '') || a.index - b.index)
     .map(item => item.project);
   const active = all.slice(0, SIDEBAR_PROJECTS_SHOWN);
   return (
@@ -102,6 +102,7 @@ function SidebarProjects({ actorId, workspaceId, onNavigate }: { actorId: string
                   }}>
                   <Folder size={16} aria-hidden="true" className="shrink-0" />
                   <span className="min-w-0 truncate" title={project.name}>{project.name}</span>
+                  {project.isTemplate ? <span className="shrink-0 text-[11px] text-subtle">{t('projects.template.sidebarBadge')}</span> : null}
                 </NavLink>
               </li>
             );

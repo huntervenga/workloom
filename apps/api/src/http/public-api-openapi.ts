@@ -1,4 +1,4 @@
-import { publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummarySchema, taskViewSchema, createApiTokenInputSchema } from '@workloom/contracts';
+import { publicProjectCopySchema, publicProjectFromTemplateSchema, publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummarySchema, taskViewSchema, createApiTokenInputSchema } from '@workloom/contracts';
 import { z } from 'zod';
 
 const json = (schema: z.ZodType, io: 'input' | 'output' = 'output') => {
@@ -34,7 +34,10 @@ export const PUBLIC_API_OPENAPI = {
   paths: {
     '/me': { get: { summary: 'Who am I, token scopes and reachable workspaces', responses: { '200': ok('OK', envelope({ type: 'object' })), '401': errors['401'] } } },
     '/workspaces': { get: { summary: 'Workspaces reachable with this token', responses: { '200': ok('OK', envelope({ type: 'array', items: { type: 'object' } }, true)), '401': errors['401'] } } },
-    '/workspaces/{ws}/projects': { get: { summary: 'Active projects', parameters: [wsParam], responses: { '200': ok('OK', envelope({ type: 'array', items: { type: 'object' } }, true)), ...errors } } },
+    '/workspaces/{ws}/projects': {
+      get: { summary: 'Active projects; template projects carry template: true', parameters: [wsParam], responses: { '200': ok('OK', envelope({ type: 'array', items: { type: 'object' } }, true)), ...errors } },
+      post: { summary: 'Create a project from a template project: sections, fields, settings and tasks with every field value are cloned. With startDate every date moves by the distance from the template\'s first day. A retry with the same Idempotency-Key continues the same copy.', parameters: [wsParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: json(publicProjectFromTemplateSchema, 'input') } } }, responses: { '201': ok('Created', envelope(json(publicProjectCopySchema))), ...errors } },
+    },
     '/workspaces/{ws}/projects/{project}': { get: { summary: 'One project with its sections and statuses', parameters: [wsParam, { name: 'project', in: 'path', required: true, description: 'Project UUID or exact name.', schema: { type: 'string' } }], responses: { '200': ok('OK', envelope({ type: 'object' })), ...errors } } },
     '/workspaces/{ws}/members': { get: { summary: 'Members you can assign', parameters: [wsParam], responses: { '200': ok('OK', envelope({ type: 'array', items: { type: 'object' } }, true)), ...errors } } },
     '/workspaces/{ws}/tags': { get: { summary: 'Tags', parameters: [wsParam], responses: { '200': ok('OK', envelope({ type: 'array', items: { type: 'object' } }, true)), ...errors } } },

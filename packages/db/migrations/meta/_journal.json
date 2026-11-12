@@ -302,6 +302,13 @@
       "when": 1792480000018,
       "tag": "0042_project_views",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792480000019,
+      "tag": "0043_project_templates",
+      "breakpoints": true
     }
   ]
 }

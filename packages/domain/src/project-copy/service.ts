@@ -90,13 +90,16 @@ export function createProjectCopyService(deps: ProjectCopyDependencies): Project
       const layout = (list: readonly { fieldId: string; visible: boolean; width: number; position: number }[]) => JSON.stringify([...list].sort((a, b) => a.fieldId.localeCompare(b.fieldId)).map(({ fieldId, visible, width, position }) => [fieldId, visible, width, position]));
       if (columns.length > 0 && layout(columns) !== layout(currentColumns.columns)) await deps.fields.updateProjectColumns(step('columns'), created.id, { expectedRevision: currentColumns.revision, columns });
 
+      const clone = input.copy.tasks ? await copyTasks(deps, context, step, sourceId, created.id, ids, input.shiftDays) : null;
+
       // Optional settings: a failure is reported, and the project stays complete without that part.
       const optional = async (part: C.DuplicateProjectResult['warnings'][number]['part'], work: () => Promise<void>) => {
         try { await work(); } catch (error) {
           warnings.push({ part, message: error instanceof DomainError ? error.message : 'This part could not be copied.' });
         }
       };
-      const result: C.DuplicateProjectResult = { projectId: created.id, name: created.name, copied: { sections: sections.length, fields: fields.length, aggregates: false, checkRules: 0, defaults: false, reports: 0, workCategory: false }, warnings };
+      const result: C.DuplicateProjectResult = { projectId: created.id, name: created.name, copied: { sections: sections.length, fields: fields.length, aggregates: false, checkRules: 0, defaults: false, reports: 0, workCategory: false, ...(clone ? { tasks: clone.tasks } : {}) }, warnings };
+      if (clone?.skippedLockedFields.length) warnings.push({ part: 'tasks', message: `Values of locked fields were not copied: ${clone.skippedLockedFields.join(', ')}.` });
 
       if (input.copy.aggregates) await optional('aggregates', async () => {
         const settings = await deps.reports.getSettings(context, sourceId);
@@ -240,4 +243,95 @@ export function createProjectCopyService(deps: ProjectCopyDependencies): Project
       return { results };
     },
   };
+}
+
+/** The source project's own active tasks, parents before their subtasks, each level in project order. */
+async function cloneOrder(deps: ProjectCopyDependencies, context: CommandContext, sourceId: string): Promise<C.TaskDto[]> {
+  const rows: C.TaskDto[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await deps.tasks.listTasks(context, { projectId: sourceId, limit: 200, ...(cursor ? { cursor } : {}) });
+    rows.push(...page.items);
+    if (rows.length > C.PROJECT_COPY_MAX_TASKS) throw new DomainError('VALIDATION_FAILED', `A project with more than ${C.PROJECT_COPY_MAX_TASKS} tasks cannot be copied with its tasks.`);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  // Meeting tasks and tasks shown here from another home project are not this project's work; archived ones are gone.
+  const own = rows.filter(row => row.projectId.toLowerCase() === sourceId.toLowerCase() && row.archivedAt === null && !row.meetingId);
+  const children = new Map<string | null, C.TaskDto[]>();
+  for (const row of own) children.set(row.parentTaskId, [...(children.get(row.parentTaskId) ?? []), row]);
+  const ordered: C.TaskDto[] = [];
+  const visit = (parentId: string | null) => {
+    for (const row of [...(children.get(parentId) ?? [])].sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))) { ordered.push(row); visit(row.id); }
+  };
+  // A subtask whose parent is archived or elsewhere is never reached, as in the interface.
+  visit(null);
+  return ordered;
+}
+
+/**
+ * Clones the source project's tasks into the copy with the same commands the interface uses, one derived key per task
+ * and per value, so a resumed copy replays them instead of creating them twice. New tasks keep their source position,
+ * so the order (sections, subtasks, people) is the same. Values of locked fields cannot be written and are reported.
+ */
+async function copyTasks(
+  deps: ProjectCopyDependencies, context: CommandContext, step: (name: string) => CommandContext,
+  sourceId: string, targetId: string, ids: Map<string, string>, shiftDays: number,
+): Promise<{ tasks: number; skippedLockedFields: string[] }> {
+  const rows = await cloneOrder(deps, context, sourceId);
+  const [targetStatuses, targetFields, sourceFields] = await Promise.all([deps.tasks.listStatuses(context, targetId), deps.fields.listFields(context, targetId), deps.fields.listFields(context, sourceId)]);
+  const firstTodo = [...targetStatuses].filter(status => status.group === 'todo').sort((a, b) => a.position - b.position)[0];
+  const mapped = (id: string | null | undefined) => (id ? ids.get(id.toLowerCase()) ?? null : null);
+  const byId = new Map(rows.map(row => [row.id, row]));
+  for (const row of rows) {
+    const parent = row.parentTaskId === null ? null : byId.get(row.parentTaskId) ?? null;
+    const parentTaskId = parent === null ? null : mapped(parent.id);
+    // A subtask with its own estimate is a separate work package (added scope); a detail subtask shares its parent's.
+    const ownPackage = parent === null || parent.workPackageId !== row.workPackageId;
+    const statusId = mapped(row.statusId) ?? firstTodo?.id;
+    if (!statusId) throw new DomainError('VALIDATION_FAILED', 'The new project has no To do status.');
+    const copy = await deps.tasks.createTask(step(`task:${row.id}`), {
+      projectId: targetId, parentTaskId, title: row.title, description: C.remapDescriptionFiles(row.description, new Map()),
+      statusId, sectionId: mapped(row.sectionId),
+      responsibleMembershipId: row.responsibleMembershipId,
+      participantMembershipIds: row.participants.filter(member => member.active).map(member => member.membershipId),
+      startDate: row.startDate ? shiftDate(row.startDate, shiftDays) : null, dueDate: row.dueDate ? shiftDate(row.dueDate, shiftDays) : null,
+      priority: row.priority, tagIds: row.tags.filter(tag => tag.archivedAt === null).map(tag => tag.id),
+      position: row.position,
+      ...(ownPackage ? { estimateMinutes: row.estimateMinutes } : {}),
+      ...(parent !== null && ownPackage ? { workScope: 'added_scope' as const } : {}),
+    });
+    ids.set(row.id.toLowerCase(), copy.id);
+  }
+
+  const lockedNames = new Set<string>();
+  const targetById = new Map(targetFields.map(field => [field.id.toLowerCase(), field]));
+  const sourceById = new Map(sourceFields.map(field => [field.id.toLowerCase(), field]));
+  for (let start = 0; start < rows.length; start += 200) {
+    const chunk = rows.slice(start, start + 200).map(row => row.id);
+    const values = await deps.fields.listProjectValues(context, sourceId, { taskIds: chunk });
+    for (const value of [...values].sort((a, b) => a.taskId.localeCompare(b.taskId) || a.fieldId.localeCompare(b.fieldId))) {
+      const field = targetById.get(mapped(value.fieldId)?.toLowerCase() ?? '');
+      const taskId = mapped(value.taskId);
+      if (!field || !taskId || field.archivedAt !== null) continue;
+      const data = remapValue(value.value, ids, shiftDays);
+      if (data.value === null) continue;
+      if (field.locked) { lockedNames.add(sourceById.get(value.fieldId.toLowerCase())?.name ?? field.name); continue; }
+      await deps.fields.setTaskValue(step(`value:${value.taskId}:${value.fieldId}`), taskId, field.id, { expectedRevision: 0, expectedDefinitionRevision: field.revision, value: data });
+    }
+  }
+  return { tasks: rows.length, skippedLockedFields: [...lockedNames].sort() };
+}
+
+/** A field value aimed at the copy: options become the copied options, dates move with the project. */
+function remapValue(data: C.TaskFieldValueDto['value'], ids: ReadonlyMap<string, string>, shiftDays: number): C.TaskFieldValueDto['value'] {
+  switch (data.type) {
+    case 'single_select': return { type: 'single_select', value: data.value === null ? null : ids.get(data.value.toLowerCase()) ?? null };
+    case 'multi_select': {
+      if (data.value === null) return data;
+      const options = data.value.flatMap(option => { const copy = ids.get(option.toLowerCase()); return copy ? [copy] : []; });
+      return { type: 'multi_select', value: options.length ? options : null };
+    }
+    case 'date': return { type: 'date', value: data.value === null ? null : shiftDate(data.value, shiftDays) };
+    default: return data;
+  }
 }

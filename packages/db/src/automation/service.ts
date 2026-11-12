@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  publicProjectCopySchema, publicProjectFromTemplateSchema, type PublicProjectCopyDto,
   publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskProjectSchema, publicTaskUpdateSchema, publicTimeSummaryQuerySchema, taskViewSchema, updateTaskInputSchema,
   type PublicFieldDto, type PublicFieldValueDto, type PublicSetTaskFieldsResult, type PublicTimeSummaryDto, type TaskFieldData, type TaskFieldDefinitionDto, type TaskFieldValueDto,
   type ApiTokenDto, type ApiTokenScope, type CreateApiTokenInput, type CreatedApiTokenDto, type PublicMeDto, type PublicMemberDto,
@@ -14,6 +15,7 @@ import { createTaskRepository } from '../repositories/task-repository.js';
 import { createTaskApplication } from '../tasks/task-application.js';
 import { createTaskFieldApplication } from '../fields/task-field-application.js';
 import { createLeaveApplication } from '../leave/application.js';
+import { createProjectCopyApplication } from '../project-copy/application.js';
 import { resolveField, sameTypedValue, toPublicField, toPublicFieldValue, toPublicValue, toTypedValue, type PersonLookup } from './fields.js';
 import { createWorkspaceWriteRunner } from '../transactions/workspace-write.js';
 import { workspaceSlugAliases, workspaces, memberships } from '../schema.js';
@@ -53,6 +55,8 @@ export interface AutomationApplication {
   updateTask(token: string, workspace: string | undefined, taskId: string, input: PublicTaskUpdate, options: WriteOptions): Promise<TaskView>;
   /** Shows an existing task in one more project (a placement); its home project, hours and fields stay where they are. */
   addTaskToProject(token: string, workspace: string | undefined, taskId: string, input: PublicTaskAddToProject, options: WriteOptions): Promise<PublicTaskProjectDto>;
+  /** A new project cloned from a template project: structure, settings and tasks with their field values. */
+  createProjectFromTemplate(token: string, workspace: string | undefined, input: unknown, options: WriteOptions): Promise<PublicProjectCopyDto>;
 }
 
 interface ReadScope {
@@ -142,7 +146,7 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
   const taskApp = (tx: WorkloomExecutor) => createTaskApplication(tx, { cursorSecret });
 
   async function projectItems(s: ReadScope) {
-    return (await taskApp(s.tx).listProjects(s.context)).map(project => ({ id: project.id, name: project.name, archived: project.archivedAt !== null }));
+    return (await taskApp(s.tx).listProjects(s.context)).map(project => ({ id: project.id, name: project.name, archived: project.archivedAt !== null, ...(project.isTemplate ? { template: true } : {}) }));
   }
   async function membersOf(s: ReadScope) {
     return (await listWorkspaceMembers(createAccessRepository(s.tx), s.context)).map(member => ({ id: member.id, name: member.displayName, userId: member.userId, role: member.role }));
@@ -403,7 +407,8 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         if (!result.nextCursor) break;
         cursor = result.nextCursor;
       }
-      const live = rows.filter(row => row.canonicalTask.archivedAt === null && row.placement.archivedAt === null);
+      // A template's task shown here is not work of this project.
+      const live = rows.filter(row => row.canonicalTask.archivedAt === null && row.placement.archivedAt === null && row.homeProject.isTemplate !== true);
       const values = await projectValues(s, project.id, live.map(row => row.canonicalTask.id));
       const people = await membersOf(s);
       const selected = query.people ? [...new Set(query.people.map(value => resolvePerson(s, value, people, 'people')))] : null;
@@ -736,6 +741,33 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
       };
       return outcomeValue(await barrier(s => saveOutcome(s, { state: 'done', view: taskViewSchema.parse(view) })));
     },
+    async createProjectFromTemplate(token, workspace, rawInput, writeOptions) {
+      const parsed = publicProjectFromTemplateSchema.safeParse(rawInput);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid project from template.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      const input = parsed.data;
+      const plan = await prepared(token, workspace, async (s, hash) => {
+        const found = resolveRef('project', input.template, (await projectItems(s)).filter(item => !item.archived));
+        const template = await taskApp(s.tx).getProject(s.context, found.id);
+        if (template.isTemplate !== true) throw new DomainError('VALIDATION_FAILED', `"${template.name}" is not a template project. Mark it as a template in Workloom, or choose a project that list_projects shows with template: true.`, { details: { field: 'template' } });
+        const range = template.dateRange ?? null;
+        if (input.startDate !== undefined && range === null) throw new DomainError('VALIDATION_FAILED', `The template "${template.name}" has no dates, so there is nothing to move to ${input.startDate}. Omit startDate, or give the template a date range.`, { details: { field: 'startDate' } });
+        const day = (value: string) => Date.parse(`${value}T00:00:00Z`) / 86_400_000;
+        const shiftDays = input.startDate !== undefined && range !== null ? Math.round(day(input.startDate) - day(range.from)) : 0;
+        return { hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions), template, shiftDays };
+      });
+      // The copy is resumable: a retry with the same operation key continues it instead of creating a second project.
+      const key = createHash('sha256').update(`${plan.context.idempotencyKey ?? ''}\0public.project.from_template\0${plan.template.id}`).digest('hex');
+      const copies = createProjectCopyApplication(source, { authorizeInScope: tokenInScope(plan.hash, plan.workspaceId, plan.userId) });
+      const copy = await copies.duplicateProject({ ...plan.context, idempotencyKey: key }, plan.template.id, { name: input.name, shiftDays: plan.shiftDays, copy: { tasks: true } });
+      const created = await authorizedRead(token, 'tasks:write', plan.workspaceId, READ_CAPABILITY, s => taskApp(s.tx).getProject(s.context, copy.projectId));
+      return publicProjectCopySchema.parse({
+        project: { id: created.id, name: created.name, dateRange: created.dateRange ?? null },
+        template: { id: plan.template.id, name: plan.template.name },
+        copied: { sections: copy.copied.sections, fields: copy.copied.fields, tasks: copy.copied.tasks ?? 0 },
+        warnings: copy.warnings,
+      });
+    },
+
     async addTaskToProject(token, workspace, taskId, rawInput, writeOptions) {
       const parsed = publicTaskAddToProjectSchema.safeParse(rawInput);
       if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid project placement.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
@@ -755,7 +787,8 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         const existing = (await app.placements.listTaskPlacements(s.context, targetId)).find(row => row.projectId === project.id) ?? null;
         // A project tracks time when it has an active duration field, like the week projects' plan and fact.
         const tracksTime = async (projectId: string) => (await activeFields(s, projectId)).some(field => field.type === 'duration');
-        const time = project.id === task.projectId ? null : { target: await tracksTime(project.id), home: await tracksTime(task.projectId) };
+        // A template is never chosen as the home by itself: its hours are not counted anywhere.
+        const time = project.id === task.projectId ? null : { target: !project.template && await tracksTime(project.id), home: await tracksTime(task.projectId) };
         return { hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions), task, project, home, sections, section, existing, time };
       });
       type Reason = PublicTaskProjectDto['homeReason'];

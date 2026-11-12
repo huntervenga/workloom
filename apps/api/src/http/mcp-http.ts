@@ -15,7 +15,7 @@ export const MCP_PATH = '/mcp';
 const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   whoami: 'Show the Workloom user, the token scopes and the workspaces this token can reach.',
   list_workspaces: 'List workspaces (id, slug, name, your role).',
-  list_projects: 'List active projects of a workspace. Omit workspace if the token reaches only one.',
+  list_projects: 'List active projects of a workspace. Omit workspace if the token reaches only one. Template projects (template: true) hold standard tasks for new projects; they are not a week\'s work.',
   get_project: 'Show a project with its sections and statuses. project is a UUID or exact name.',
   list_members: 'List members that tasks can be assigned to.',
   list_tags: 'List tags.',
@@ -28,12 +28,14 @@ const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   list_fields: 'List the custom fields of a project (for example Estimation and Fact), with their types and option names.',
   set_task_fields: 'Set custom field values by field name for one or more tasks, for example {"field":"Fact","value":"1h 30m"}. Durations take minutes or text such as "90m", "1.5h", "1h 30m"; options and people take names; null clears. Run with dryRun first to show the user the plan, then repeat without dryRun. Each value is saved separately; check summary.failed.',
   time_summary: 'For a project (usually the week project): per person, the sum of Estimation and Fact on their tasks (a subtask without an assignee counts for the assignee of its parent task) and the hours they are expected to work in the range (work schedule minus holidays and time off). factGapMinutes = expected − fact. The range defaults to the project dates.',
+  create_project_from_template: 'Create a new project, usually the next week, from a template project: its sections, fields, settings and tasks with assignees, estimates and every field value are cloned. Give the template (name or UUID), the new name and the first day (startDate) of the new project; every date moves with it. Pass the same operationKey when retrying after an unknown outcome.',
 };
 
 /** Sent once on initialize; tells any client how this team uses Workloom for weekly time. */
 export const MCP_INSTRUCTIONS = [
   'Workloom is the team task tracker. Time lives in two duration fields on tasks: "Estimation" (plan) and "Fact" (actual).',
-  'Each week usually has its own project. Find it with list_projects; its date range is the week.',
+  'Each week usually has its own project. Find it with list_projects; its date range is the week. A project marked template: true is not a week: it holds the standard tasks every new week starts with.',
+  'When asked to create a new week: find the template with list_projects and call create_project_from_template with the week name and its first day.',
   'Every person is expected to report their working hours for the week: their schedule (full time is usually 40h, part time less) minus holidays and time off. time_summary returns these expected hours per person.',
   'When asked to add work: create tasks with create_task in the week project, assign them, then set Estimation (and Fact when the work is done) with set_task_fields.',
   'When the work already has a task in another project, put that task into the week project with add_task_to_project instead of creating a duplicate; the week then becomes its home so its hours count there. If the call asks to choose the home, ask the user which project should count the hours.',
@@ -85,6 +87,11 @@ async function run(automation: AutomationApplication, token: string, name: McpTo
     case 'set_task_status': {
       const { taskId, status } = a as Args<'set_task_status'>;
       return automation.updateTask(token, workspace, taskId, { status }, { requestId, idempotencyKey: key });
+    }
+    case 'create_project_from_template': {
+      const { workspace: _w, operationKey: _k, ...input } = a as Args<'create_project_from_template'>;
+      void _w; void _k;
+      return automation.createProjectFromTemplate(token, workspace, input, { requestId, idempotencyKey: key });
     }
     case 'add_task_to_project': {
       const { taskId, project, section, home } = a as Args<'add_task_to_project'>;

@@ -111,6 +111,11 @@ export const projectSchema = z.object({
   workspaceId: idSchema,
   name: nameSchema,
   dateRange: projectDateRangeSchema.nullable().optional(),
+  /**
+   * A template holds standard sections and tasks that are cloned into new projects (for example the tasks every week
+   * needs). Its tasks are not real work: workspace reports and time summaries leave them out. Absent means false.
+   */
+  isTemplate: z.boolean().optional(),
   revision: revisionSchema,
   archivedAt: utcTimestampSchema.nullable(),
   createdAt: utcTimestampSchema,
@@ -211,8 +216,9 @@ export const updateProjectInputSchema = z
     name: nameSchema.optional(),
     archived: z.boolean().optional(),
     dateRange: projectDateRangeSchema.nullable().optional(),
+    isTemplate: z.boolean().optional(),
   })
-  .refine((input) => hasAnyField(input, ['name', 'archived', 'dateRange']), noChangeError);
+  .refine((input) => hasAnyField(input, ['name', 'archived', 'dateRange', 'isTemplate']), noChangeError);
 
 export const createSectionInputSchema = z.strictObject({
   name: nameSchema,

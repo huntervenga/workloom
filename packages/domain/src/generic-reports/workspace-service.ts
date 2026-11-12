@@ -26,7 +26,7 @@ export async function queryWorkspaceReport(scope:GenericReportScope,input:C.Work
  // All reads occur under one authorized shared workspace barrier; no receipts or snapshots are written.
  for(const reference of input.sources){
   const report=await scope.reports.find(reference.reportId);if(!report||report.workspaceId!==scope.context.workspaceId)throw notFoundError();
-  const project=await scope.repository.tasks.findProject(scope.context.workspaceId,report.projectId);if(!project||project.archivedAt!==null||report.archivedAt!==null)throw notFoundError();
+  const project=await scope.repository.tasks.findProject(scope.context.workspaceId,report.projectId);if(!project||project.archivedAt!==null||project.isTemplate===true||report.archivedAt!==null)throw notFoundError();
   if(report.revision!==reference.expectedRevision)throw new DomainError('REVISION_CONFLICT','A source report changed. Reload workspace report sources.',{details:{currentRevision:report.revision}});
   if(seenProjects.has(report.projectId))invalid('Choose exactly one plan/actual mapping per home project.');seenProjects.add(report.projectId);
   const categoryFieldId=reference.categoryFieldId===undefined?(report.config.groupBy.kind==='category'?report.config.groupBy.fieldId:null):reference.categoryFieldId;

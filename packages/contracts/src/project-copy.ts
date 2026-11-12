@@ -3,9 +3,14 @@ import { idSchema } from './common/ids.js';
 import { envelopeSchema } from './common/envelope.js';
 
 /**
- * A copy of a project's structure and settings without its tasks, for the next week or cycle. Sections, ordinary fields
- * and their options, column layout are always copied; the rest can be switched off. Dates inside copied settings move by
- * `shiftDays` (7 for "next week").
+ * A copy of a project's structure and settings, for the next week or cycle. Sections, ordinary fields and their options,
+ * column layout are always copied; the rest can be switched off. Dates inside copied settings move by `shiftDays` (7 for
+ * "next week").
+ *
+ * `tasks` also clones the project's own active tasks with their subtasks: title, description, section, status,
+ * assignee, participants, tags, priority, estimate, dates moved by `shiftDays`, and every field value. Tasks shown here
+ * from another home project, attachments, comments and history are not copied. This is how a new week is made from a
+ * template project.
  */
 export const duplicateProjectInputSchema = z.strictObject({
   name: z.string().trim().min(1).max(160),
@@ -16,7 +21,8 @@ export const duplicateProjectInputSchema = z.strictObject({
     defaults: z.boolean().default(true),
     reports: z.boolean().default(true),
     workCategory: z.boolean().default(true),
-  }).default({ aggregates: true, checks: true, defaults: true, reports: true, workCategory: true }),
+    tasks: z.boolean().default(false),
+  }).default({ aggregates: true, checks: true, defaults: true, reports: true, workCategory: true, tasks: false }),
 });
 export const duplicateProjectResultSchema = z.strictObject({
   projectId: idSchema,
@@ -29,14 +35,18 @@ export const duplicateProjectResultSchema = z.strictObject({
     defaults: z.boolean(),
     reports: z.number().int().nonnegative(),
     workCategory: z.boolean(),
+    /** Tasks created, subtasks included. Absent in results stored before tasks could be copied. */
+    tasks: z.number().int().nonnegative().optional(),
   }),
   /** Optional parts that could not be copied; the new project is still complete without them. */
-  warnings: z.array(z.strictObject({ part: z.enum(['aggregates', 'checks', 'defaults', 'reports', 'workCategory']), message: z.string() })),
+  warnings: z.array(z.strictObject({ part: z.enum(['aggregates', 'checks', 'defaults', 'reports', 'workCategory', 'tasks']), message: z.string() })),
 });
 export const duplicateProjectResponseSchema = envelopeSchema(duplicateProjectResultSchema);
 export type DuplicateProjectInput = z.input<typeof duplicateProjectInputSchema>;
 export type DuplicateProjectParsed = z.infer<typeof duplicateProjectInputSchema>;
 export type DuplicateProjectResult = z.infer<typeof duplicateProjectResultSchema>;
+/** Most tasks (subtasks included) a project copy clones; a larger project is refused before anything is created. */
+export const PROJECT_COPY_MAX_TASKS = 500;
 
 /**
  * Copies one project's settings onto existing projects of the same workspace (for example week 41's checks and sums

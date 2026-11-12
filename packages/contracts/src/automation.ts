@@ -316,7 +316,8 @@ export type TaskView = z.infer<typeof taskViewSchema>;
 
 export const publicWorkspaceSchema = z.object({ id: idSchema, slug: z.string().nullable(), name: z.string(), role: workspaceRoleSchema, timezone: z.string() });
 export type PublicWorkspaceDto = z.infer<typeof publicWorkspaceSchema>;
-export const publicProjectSchema = z.object({ id: idSchema, name: z.string(), archived: z.boolean() });
+/** `template` is present (true) only on template projects: they hold standard tasks to clone, not real work. */
+export const publicProjectSchema = z.object({ id: idSchema, name: z.string(), archived: z.boolean(), template: z.boolean().optional() });
 export const publicProjectDetailSchema = publicProjectSchema.extend({
   sections: z.array(z.object({ id: idSchema, name: z.string() })),
   statuses: z.array(z.object({ id: idSchema, name: z.string(), group: taskStatusGroupSchema })),
@@ -334,9 +335,29 @@ export type PublicMemberDto = z.infer<typeof publicMemberSchema>;
 export type PublicTagDto = z.infer<typeof publicTagSchema>;
 export type PublicMeDto = z.infer<typeof publicMeSchema>;
 
+/**
+ * `POST /workspaces/{ws}/projects`: a new project cloned from a template project — its sections, fields, columns, settings
+ * and tasks with subtasks and every field value. With `startDate` every date (the project range, task dates, date
+ * values) moves by the distance from the template's first day to `startDate`; the template needs a date range then.
+ */
+export const publicProjectFromTemplateSchema = z.strictObject({
+  template: ref.describe('Template project name or UUID (list_projects marks templates with template: true).'),
+  name: z.string().trim().min(1).max(160).describe('Name of the new project, for example "46 week (since 16 November 2026) Hour-Based Planning".'),
+  startDate: date.optional().describe('First day of the new project (YYYY-MM-DD). Omit to keep the template\'s dates.'),
+});
+export type PublicProjectFromTemplate = z.infer<typeof publicProjectFromTemplateSchema>;
+export const publicProjectCopySchema = z.object({
+  project: z.object({ id: idSchema, name: z.string(), dateRange: z.object({ from: z.string(), to: z.string() }).nullable() }),
+  template: z.object({ id: idSchema, name: z.string() }),
+  copied: z.object({ sections: z.number().int().nonnegative(), fields: z.number().int().nonnegative(), tasks: z.number().int().nonnegative() }),
+  /** Parts that could not be copied, for example values of locked fields; the new project is complete without them. */
+  warnings: z.array(z.object({ part: z.string(), message: z.string() })),
+});
+export type PublicProjectCopyDto = z.infer<typeof publicProjectCopySchema>;
+
 /** Shared by the remote MCP tools: `workspace` may be omitted when the user has exactly one workspace. */
 const workspaceRef = ref.optional();
-export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'add_task_to_project', 'list_fields', 'set_task_fields', 'time_summary'] as const;
+export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'add_task_to_project', 'list_fields', 'set_task_fields', 'time_summary', 'create_project_from_template'] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 const operationKey = z.string().regex(/^[\x21-\x7e]{1,128}$/).optional();
 export const MCP_TOOL_INPUTS = {
@@ -383,11 +404,12 @@ export const MCP_TOOL_INPUTS = {
     home: z.boolean().optional().describe('true: hours and fields count in this project from now on (it becomes the home; the former home stays listed). false: only show the task there. Omit to let the server decide: the project becomes the home when it tracks time (has duration fields) and the current home does not; if both track time it asks you to choose, so ask the user.'),
     operationKey,
   }),
+  create_project_from_template: publicProjectFromTemplateSchema.extend({ workspace: workspaceRef, operationKey }),
 } as const;
 export const MCP_TOOL_SCOPE: Readonly<Record<McpToolName, ApiTokenScope>> = {
   whoami: 'read', list_workspaces: 'read', list_projects: 'read', get_project: 'read', list_members: 'read', list_tags: 'read',
   list_tasks: 'read', get_task: 'read', create_task: 'tasks:write', update_task: 'tasks:write', set_task_status: 'tasks:write', add_task_to_project: 'tasks:write',
-  list_fields: 'read', set_task_fields: 'tasks:write', time_summary: 'read',
+  list_fields: 'read', set_task_fields: 'tasks:write', time_summary: 'read', create_project_from_template: 'tasks:write',
 };
 
 /** What the consent page shows about a pending connected-app authorization. */

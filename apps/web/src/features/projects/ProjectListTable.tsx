@@ -85,7 +85,7 @@ export function ProjectListTable({ projects, actorId, workspaceId, timeZone, can
               <td className="whitespace-nowrap px-4 py-3 text-muted tabular-nums">{calendarDate(project.dateRange?.from)}</td>
               <td className="whitespace-nowrap px-4 py-3 text-muted tabular-nums">{calendarDate(project.dateRange?.to)}</td>
               <td className="whitespace-nowrap px-4 py-3">
-                {project.archivedAt ? <Badge tone="muted">{t('routes.archived')}</Badge> : <span className="text-muted">{t('projects.list.active')}</span>}
+                {project.archivedAt ? <Badge tone="muted">{t('routes.archived')}</Badge> : project.isTemplate ? <Badge tone="muted">{t('projects.projectPage.template')}</Badge> : <span className="text-muted">{t('projects.list.active')}</span>}
               </td>
               {canEdit ? (
                 <td className="px-3 py-2">
