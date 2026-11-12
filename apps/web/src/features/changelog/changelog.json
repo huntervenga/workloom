@@ -1,0 +1,82 @@
+{
+  "covers": "f391909d38bf98a514c47324b153c994ab9232d9",
+  "days": [
+    {
+      "date": "2026-11-12",
+      "items": [
+        "Project templates: mark a project as a template and create a new week from it with all its tasks (admins).",
+        "Every project now has time fields, Hours Est and Hours Fact. They can be hidden but not deleted.",
+        "\"Leave this page?\" now lists the unsaved drafts by name.",
+        "MCP: listing tasks by project includes tasks linked from other projects, and adding a task to a project can move it to a section.",
+        "What's new: this page lists what has changed in Workloom, and a short note offers to open it when something new arrives."
+      ]
+    },
+    {
+      "date": "2026-11-11",
+      "items": [
+        "Tasks shown from another project now sit in their sections in the table, marked as linked.",
+        "Linked tasks can be dragged and reordered together with the project's own tasks.",
+        "Making another project a task's home moves its field values, so hours are no longer counted twice."
+      ]
+    },
+    {
+      "date": "2026-11-10",
+      "items": [
+        "The task card shows one list of projects, with one home where hours count and a \"Make home\" action.",
+        "API and MCP: add an existing task to another project, for example from the backlog to a week, and choose its home.",
+        "Reports: hours of unassigned subtasks now count for the parent task's assignee."
+      ]
+    },
+    {
+      "date": "2026-11-09",
+      "items": [
+        "Drop files onto an open task to attach them. Files dropped into a description appear where you drop them, and attachments show in the task's activity.",
+        "AI assistants: new MCP tools for custom fields and weekly time, and apps can connect to Workloom's MCP by signing in instead of using a token.",
+        "A new dark profile theme, Omnissiah."
+      ]
+    },
+    {
+      "date": "2026-11-05",
+      "items": [
+        "My tasks has a Today section and a Tomorrow group.",
+        "Quick Jump searches all tasks you can see, and the command palette creates several tasks in a row.",
+        "Pin projects and reports, and get back to recent work quickly.",
+        "Inbox: save, archive and mark items as unread. Due date changes show there too.",
+        "Type to find and link tasks and projects in descriptions and comments. Workloom links show as task and project names.",
+        "Create linked follow-up tasks, also straight from a comment, and change a task's parent.",
+        "Save personal and shared views of a project, and paste several lines to create tasks in a section after a preview."
+      ]
+    },
+    {
+      "date": "2026-11-03",
+      "items": [
+        "Move a task with its subtasks to another project from the task pane, with a one-click way back.",
+        "The task pane shows a compact Projects block.",
+        "Asana import: choose to leave archived tags off the imported tasks."
+      ]
+    },
+    {
+      "date": "2026-11-02",
+      "items": [
+        "Select table rows by clicking task names or dragging over them. The bulk bar appears from two selected rows.",
+        "Changes to dates, status, assignee and tags show in the row at once, before the server answers.",
+        "Archive a project with a confirmation, find it on the Archive page, or delete it permanently.",
+        "Asana import: decide about assignees and shared tasks, and import again cleanly after a delete.",
+        "Faster live updates and project loading. Clicking a tag name in the tag picker now toggles the tag."
+      ]
+    },
+    {
+      "date": "2026-10-16",
+      "title": "Workloom launched",
+      "items": [
+        "Projects with sections, statuses, tags and custom fields. A task table you edit like a spreadsheet, plus Board, Timeline and Graph views.",
+        "Tasks with subtasks, dependencies, comments, attachments and history. Most edits can be undone.",
+        "Time: estimates and facts, time off and working schedules, and project and workspace reports.",
+        "My tasks, Inbox and Quick Jump to keep track of your work.",
+        "Members with roles and invitations.",
+        "Import from Asana.",
+        "A public API and MCP with personal access tokens, so AI assistants can read and update tasks."
+      ]
+    }
+  ]
+}

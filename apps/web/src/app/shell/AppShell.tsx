@@ -18,6 +18,7 @@ import { useSession } from '../session';
 import { MobileNav } from './MobileNav';
 import { QuickJump } from '../../features/quick-jump/QuickJump';
 import { SidebarContent } from './Sidebar';
+import { WhatsNewNote } from '../../features/changelog/WhatsNew';
 import { SwitchErrorNotice } from './SwitchErrorNotice';
 import { Topbar } from './Topbar';
 
@@ -220,6 +221,7 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
           {settingsOpen && sessionActive ? <ProfileSettingsDialog key={actorId} me={me} onClose={() => setSettingsOpen(false)} /> : null}
         </main>
       </div>
+      {workspaceId && sessionActive ? <WhatsNewNote actorId={actorId} workspaceId={workspaceId} /> : null}
     </div>
   );
 }
