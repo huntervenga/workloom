@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { CalendarDays } from 'lucide-react';
 import { Button, TextInput } from '@workloom/ui';
 import { updateProjectInputSchema, type ProjectDto } from '@workloom/contracts';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';
@@ -13,7 +13,7 @@ export function ProjectDateRange({ actorId, workspaceId, project, writable }: { 
  const command = useUpdateProjectMutation(actorId, workspaceId);
  const [draft, setDraft] = useState<{revision:number;from:string;to:string}|null>(null);
  const held=command.pendingCommand!==null||command.uncertain!==null;
- useProtectedDraft(draft!==null);
+ useProtectedDraft(draft!==null,translate('shell.draftProjectDates'));
  const dates=project.dateRange;
  const label=dates?t('genericReports.tableAggregates.projectRangeValue',{from:dates.from,to:dates.to}):t('genericReports.tableAggregates.projectDates');
  const input=draft?{expectedRevision:draft.revision,dateRange:draft.from||draft.to?{from:draft.from,to:draft.to}:null}:null;

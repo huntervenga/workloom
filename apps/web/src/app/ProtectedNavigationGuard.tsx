@@ -60,6 +60,8 @@ export function ProtectedNavigationGuard() {
   }, [registry,drafts]);
 
   const asking = blocker.state === 'blocked' ? 'route' : switchRequest ? 'switch' : null;
+  // Read when the question opens: each kept draft names itself, so the person knows what would be lost.
+  const draftNames = asking !== null && !protecting ? drafts.describe() : [];
   // Signing in or out asks the same question in its own words; dev switches keep theirs.
   const sessionAction = useSessionAction();
   const auth = asking === 'switch' ? sessionAction : null;
@@ -97,7 +99,9 @@ export function ProtectedNavigationGuard() {
         <p>
           {t(asking === 'switch' && auth === null ? 'shell.switchRetryHelp' : 'shell.leaveRetryHelp')}
         </p>
-        <p>{t('shell.stayToRetry')}</p></>:<p>{t('shell.draftLeaveHelp')}</p>}
+        <p>{t('shell.stayToRetry')}</p></>:<>{draftNames.length>0?<><p>{t('shell.unsavedList')}</p>
+        <ul className="list-disc space-y-1 pl-5 text-ink">{draftNames.map(name=><li key={name}>{name}</li>)}</ul></>:null}
+        <p>{t('shell.draftLeaveHelp')}</p></>}
       </div>
       <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button onClick={leave}>{leaveLabel}</Button>

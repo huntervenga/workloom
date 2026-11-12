@@ -2,7 +2,7 @@ import { updateTagInputSchema, type TagDto, type UpdateTagInput } from '@workloo
 import { Badge, Button, StateCard, TextInput, inputClassName } from '@workloom/ui';
 import { ArrowUpRight, LoaderCircle, Tags, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import { ApiError } from '../../lib/api';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { SaveFeedback } from '../../shared/SaveFeedback';
@@ -63,7 +63,7 @@ export function TagTable({ actorId, workspaceId, tags, canEdit, ready }: {
   const focusAfterClose = useRef<{ id: string; field: Field } | null>(null);
   const held = mutation.pendingCommand !== null || mutation.uncertain !== null;
   const frozen = !canEdit || held || reloading;
-  useProtectedDraft(edit !== null && changed(edit));
+  useProtectedDraft(edit !== null && changed(edit), translate('shell.draftTag'));
 
   useEffect(() => {
     if (!editing) return;

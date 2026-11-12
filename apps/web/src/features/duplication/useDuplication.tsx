@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, TextInput } from '@workloom/ui';
 import { duplicateTaskPreviewInputSchema, duplicateSectionPreviewInputSchema, type DuplicationCopyOptions, type GenericHeaderWidgetDto, type PlanningCheckRangeDto, type DuplicationResultDto, type MembershipDto, type SectionDto, type TaskDto, type TaskFieldDefinitionDto } from '@workloom/contracts';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import { DialogShell } from '../../shared/DialogShell';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
@@ -39,7 +39,7 @@ function DuplicationForm({target,command,onClose,onDone,...props}:DuplicationPro
  const confirmed=permitted&&valid&&currentInput&&command.error===null&&preview.isSuccess&&!preview.isFetching&&preview.data.projectId===props.projectId?preview.data:undefined;
  const fields=props.fields.filter(field=>field.workspaceId===props.workspaceId&&field.projectId===props.projectId&&field.archivedAt===null);
  const changed=dateAnchor!==''||name!==initialName||JSON.stringify(copy)!==JSON.stringify(defaultCopy())||!includeTasks||(target.kind==='section'&&includeSettings!==initialSettings)||(target.kind==='section'&&templateMode!=='independent');
- useProtectedDraft(changed&&!held);
+ useProtectedDraft(changed&&!held,translate('shell.draftDuplication'));
  const close=()=>{if(held){setCloseHeld(true);return;}onClose();};
  const submit=()=>{
   if(!confirmed||busy||protectedSave||command.hasOtherProtectedCommands())return;
