@@ -150,3 +150,7 @@ No registry or import needs editing: languages are discovered from the JSON file
 - [AGENTS.md](AGENTS.md) holds project rules for contributors and coding agents, plus the status of recent work.
 - Product spec: [docs/01](docs/01-product-spec.md). Architecture and technical decisions: [docs/02](docs/02-architecture.md).
 - Most documents under `docs/` are written in Russian and many are historical verification records. Where a record and the code disagree, the code and tests are authoritative.
+
+## License
+
+Workloom is released under the [MIT License](LICENSE).
