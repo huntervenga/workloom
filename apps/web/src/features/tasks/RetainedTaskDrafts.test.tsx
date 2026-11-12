@@ -107,6 +107,8 @@ it('keeps actual pending/unknown task writes in the existing command registry an
  await act(async()=>{await ui.router.navigate('/outside-repro');});let guard=await screen.findByRole('dialog',{name:'Leave this page?'});expect(guard).toHaveTextContent('The server may have saved');await ui.user.click(within(guard).getByRole('button',{name:'Stay'}));
  await act(async()=>gate.lose());await screen.findByText('A task command is unconfirmed. Its original values and key are kept.');expect(protectedCommandsFor(ui.client).protecting).toBe(true);
  await act(async()=>{await ui.router.navigate('/outside-repro');});guard=await screen.findByRole('dialog',{name:'Leave this page?'});expect(guard).toHaveTextContent('The server may have saved');await ui.user.click(within(guard).getByRole('button',{name:'Stay'}));
- await ui.user.click(screen.getByRole('button',{name:'Resume original editor'}));await ui.user.click(await screen.findByRole('button',{name:'Retry'}));await waitFor(()=>expect(protectedCommandsFor(ui.client).protecting).toBe(false));await waitFor(()=>expect(unload()).toBe(false));
+ await ui.user.click(screen.getByRole('button',{name:'Resume original editor'}));
+ // The drawer's attachment panel has its own Retry (its routes are not faked here); retry the task command in the task form.
+ const taskForm=(await screen.findByLabelText('Task name')).closest('form') as HTMLFormElement;await ui.user.click(await within(taskForm).findByRole('button',{name:'Retry'}));await waitFor(()=>expect(protectedCommandsFor(ui.client).protecting).toBe(false));await waitFor(()=>expect(unload()).toBe(false));
  const writes=ui.calls.filter(c=>c.method==='PATCH');expect(writes).toHaveLength(2);expect(writes[1]?.body).toEqual(writes[0]?.body);expect(writes[0]?.headers.get('Idempotency-Key')).toBeTruthy();expect(writes[1]?.headers.get('Idempotency-Key')).toBe(writes[0]?.headers.get('Idempotency-Key'));
 });

@@ -18,7 +18,9 @@ describe('fetchTimeline', () => {
     await expect(fetchTimeline(alpha.id, task.id, 'given/opaque+cursor=')).resolves.toEqual({ rows: [comment, activity], nextCursor: 'next/opaque+cursor=' });
     expect(calls).toHaveLength(1); expect(calls[0]?.method).toBe('GET'); expect(calls[0]?.path).toBe(timelinePath);
     expect(calls[0]?.searchParams.get('cursor')).toBe('given/opaque+cursor='); expect(calls[0]?.searchParams.get('limit')).toBe('50');
-    expect([...(calls[0]?.searchParams.keys() ?? [])].sort()).toEqual(['cursor', 'limit']);
+    // The drawer opts in to attachment rows; the contract accepts only the literal '1'.
+    expect(calls[0]?.searchParams.get('attachments')).toBe('1');
+    expect([...(calls[0]?.searchParams.keys() ?? [])].sort()).toEqual(['attachments', 'cursor', 'limit']);
   });
 
   it('omits the cursor for the newest window', async () => {

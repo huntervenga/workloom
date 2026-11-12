@@ -178,7 +178,7 @@ describe('saved task pane autosave', () => {
     // Refetch arrives after opening, before the first key: the editor still owns its original base.
     current = { ...task, revision: task.revision + 1, dueDate: '2027-04-02' };
     act(() => ui.client.setQueryData(queryKeys.task(anna.id, alpha.id, task.id), current));
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2027-03-21' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Due date' }), { target: { value: '2027-03-21' } });
     expect(protectedDraftsFor(ui.client).protecting).toBe(true);
     await ui.user.keyboard('{Enter}');
     await waitFor(() => expect(writes(ui.calls)).toHaveLength(1));
@@ -193,15 +193,15 @@ describe('saved task pane autosave', () => {
   it('protects raw calendar typing on keyboard routing, retains it on Stay, and Escape releases the draft without a write', async () => {
     const ui = setup();
     await ui.user.click(await screen.findByRole('button', { name: 'Edit dates' }));
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: 'raw invalid date' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Due date' }), { target: { value: 'raw invalid date' } });
     expect(protectedDraftsFor(ui.client).protecting).toBe(true);
     expect(unload()).toBe(true);
     await act(async () => { await ui.router.navigate('/keyboard-date-departure'); });
     const guard = await screen.findByRole('dialog', { name: 'Leave this page?' });
     expect(guard).toHaveTextContent('You have an unsaved draft');
     await ui.user.click(within(guard).getByRole('button', { name: 'Stay' }));
-    expect(screen.getByLabelText('Due date')).toHaveValue('raw invalid date');
-    screen.getByLabelText('Due date').focus();
+    expect(screen.getByRole('textbox', { name: 'Due date' })).toHaveValue('raw invalid date');
+    screen.getByRole('textbox', { name: 'Due date' }).focus();
     await ui.user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Edit dates' })).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: task.title })).toBeInTheDocument();

@@ -91,7 +91,7 @@ describe('selected-cell bulk inline editing', () => {
     await user.click(cell(/(due )?dates?/, second));
     await user.click(screen.getByRole('button', { name: '+ Start date' }));
     fireEvent.change(screen.getByLabelText('Start date'), { target: { value: '2027-03-10' } });
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2027-03-20' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Due date' }), { target: { value: '2027-03-20' } });
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await screen.findByText('Saved 2 selected tasks.');
     expect(writes(calls)).toHaveLength(1);
@@ -186,7 +186,7 @@ describe('selected-cell bulk inline editing', () => {
     const { calls } = installFakeApi(routes(rows => ({ [`POST ${bulkPath}`]: request => applied(rows, request) })));
     const { user } = renderApp(tablePath); await selectBoth(user);
     await user.click(cell(/(due )?dates?/, first));
-    fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2027-03-20' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Due date' }), { target: { value: '2027-03-20' } });
     // A selection event does not retarget the already-open cell; the mouse-down remains in its panel.
     fireEvent.click(gutter(third));
     await user.click(screen.getByRole('button', { name: 'Save' }));
@@ -348,7 +348,9 @@ describe('selected-cell bulk inline editing', () => {
   it('labels a selected title edit as single-task and never mass-renames', async () => {
     const { calls } = installFakeApi(routes(rows => ({ [`PATCH ${rootPath}/tasks/${first.id}`]: () => ok(rows.current[0] = { ...first, title: first.title + ' revised', revision: first.revision + 1 }) })));
     const { user } = renderApp(tablePath); await selectBoth(user);
-    await user.click(screen.getByRole('button', { name: first.title }));
+    // A pointer click on a name moves the selection to that row; keyboard activation edits the title with both still selected.
+    screen.getByRole('button', { name: first.title }).focus(); await user.keyboard('{Enter}');
+    expect(gutter(first)).toHaveAttribute('aria-pressed', 'true'); expect(gutter(second)).toHaveAttribute('aria-pressed', 'true');
     expect(within(screen.getByRole('form', { name: /in the task table$/ })).getByText('Editing this task only')).toBeVisible();
     await user.type(screen.getByRole('textbox', { name: 'Task name' }), ' revised'); await user.keyboard('{Enter}');
     await waitFor(() => expect(writes(calls)).toHaveLength(1));
@@ -397,8 +399,10 @@ describe('selection Escape beside the desktop task pane', () => {
   it('clears a neutral outside table selection while leaving the nonmodal pane open', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('1280'), media: query, onchange: null, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, dispatchEvent: () => true }));
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath); await selectBoth(user);
-    await user.click(screen.getByRole('button', { name: `Open task “${third.title}”` }));
+    // A pointer click would already move the selection to that row; open the pane from the keyboard so both stay selected.
+    screen.getByRole('button', { name: `Open task “${third.title}”` }).focus(); await user.keyboard('{Enter}');
     await screen.findByRole('dialog', { name: third.title });
+    expect(gutter(first)).toHaveAttribute('aria-pressed', 'true'); expect(gutter(second)).toHaveAttribute('aria-pressed', 'true');
     gutter(second).focus(); await user.keyboard('{Escape}');
     expect(gutter(first)).toHaveAttribute('aria-pressed', 'false'); expect(gutter(second)).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('dialog', { name: third.title })).toBeInTheDocument(); expect(writes(calls)).toHaveLength(0);
@@ -433,8 +437,10 @@ describe('neighboring table edits beside an existing desktop task pane', () => {
       [`POST ${bulkPath}`]: request => customApplied(rows, request, definition),
     })));
     const { user } = renderApp(tablePath); await selectBoth(user);
-    await user.click(screen.getByRole('button', { name: `Open task “${third.title}”` }));
+    // A pointer click right of a name moves the selection to that row; keyboard activation opens the pane and keeps both selected.
+    screen.getByRole('button', { name: `Open task “${third.title}”` }).focus(); await user.keyboard('{Enter}');
     const pane = await screen.findByRole('dialog', { name: third.title });
+    expect(gutter(first)).toHaveAttribute('aria-pressed', 'true'); expect(gutter(second)).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: `Edit Score for ${first.title}` }));
     const editor = screen.getByRole('textbox', { name: `Edit Score for ${first.title}` }).closest('[data-inline-field-cell]') as HTMLElement;
     expect(pane).not.toBeInTheDocument();

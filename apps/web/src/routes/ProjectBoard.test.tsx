@@ -5,6 +5,7 @@ import { alpha, alphaMembers, deferred, failure, installFakeApi, json, ok, rende
 import { lostResponse } from '../features/planning/test/fixtures';
 import { PROJECT_ID, rootPath, task, legacyTablePath, tablePath, tableRoutes } from '../features/work-categories/test/fixtures';
 import { chooseFilter, filterPicker } from '../features/tasks/test/filterPickers';
+import { calendarDateLabel } from '../features/tasks/TaskDateLabel';
 import { formatDate } from '../i18n';
 
 // Compile the large lazy route before the first DOM wait; these tests exercise its UI, not module loading.
@@ -171,7 +172,7 @@ describe('project Board integration', () => {
     const gate = deferred<Response>(); let current = task;
     const { calls } = installFakeApi(routes({ [`GET ${rootPath}/tasks`]: () => page([current]), [`GET ${rootPath}/tasks/${task.id}`]: () => ok(current), [`PATCH ${rootPath}/tasks/${task.id}`]: () => gate.promise }));
     const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` })); fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+    await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` })); fireEvent.change(screen.getByRole('textbox', { name: 'Due date' }), { target: { value: '2026-10-20' } });
     // The actual outside click: leaving the cell commits before Board replaces the table.
     await user.click(views().getByRole('button', { name: 'Board' })); await screen.findByRole('region', { name: 'Task status lanes' });
     expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
@@ -179,7 +180,10 @@ describe('project Board integration', () => {
     const write = calls.find(call => call.method === 'PATCH');
     expect(write?.body).toEqual({ expectedRevision: task.revision, dueDate: '2026-10-20' }); expect(write?.headers.get('Idempotency-Key')).toBeTruthy();
     const card = screen.getByRole('button', { name: task.title }).closest('li'); if (!card) throw new Error('Missing card');
-    expect(within(card).getByText('No due date')).toBeInTheDocument();
+    // The card shows the sent date before the server answers and flags the kept draft until the write is confirmed.
+    expect(within(card).queryByText('No due date')).not.toBeInTheDocument();
+    expect(within(card).getByTitle(calendarDateLabel('2026-10-20', undefined, true))).toBeInTheDocument();
+    expect(within(card).getByText('Draft kept')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resume original editor' }));
     const dialog = await screen.findByRole('dialog', { name: task.title });
     const dates = within(dialog).getByRole('button', { name: 'Edit dates' });
@@ -197,18 +201,18 @@ describe('project Board integration', () => {
     const confirmedCard = screen.getByRole('button', { name: task.title }).closest('li'); if (!confirmedCard) throw new Error('Missing confirmed card');
     await waitFor(() => expect(within(confirmedCard).queryByText('No due date')).not.toBeInTheDocument());
     await user.click(views().getByRole('button', { name: 'Tasks' })); await screen.findByRole('table');
-    // The saved cell labels its date with the long UTC calendar form instead of a <time> element.
-    const savedDue = formatDate(new Date(Date.UTC(2026, 9, 20)), { dateStyle: 'long', timeZone: 'UTC' });
+    // The saved cell labels its date with the full UTC calendar form (weekday included) instead of a <time> element.
+    const savedDue = calendarDateLabel('2026-10-20', undefined, true);
     const savedCell = within(screen.getByRole('button', { name: `Edit due date for ${task.title}` })).getByLabelText(savedDue);
     expect(savedCell).toHaveAttribute('title', savedDue);
-    expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Due date' })).not.toBeInTheDocument();
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(1);
   });
 
   it('cancels an unsent due date on Escape and carries no draft or write across Board', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath);
-    await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` })); fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
-    await user.keyboard('{Escape}'); expect(screen.queryByLabelText('Due date')).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` })); fireEvent.change(screen.getByRole('textbox', { name: 'Due date' }), { target: { value: '2026-10-20' } });
+    await user.keyboard('{Escape}'); expect(screen.queryByRole('textbox', { name: 'Due date' })).not.toBeInTheDocument();
     await board(user);
     expect(screen.queryByRole('button', { name: 'Resume original editor' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: task.title }));

@@ -101,7 +101,8 @@ describe('local Asana upload', () => {
     await choose(view); await view.user.click(screen.getByRole('button', { name: 'Check files' }));
     await view.user.click(await screen.findByRole('button', { name: 'Import project' }));
     expect(await screen.findByRole('link', { name: 'Open project' })).toHaveAttribute('href', `/app/w/balancy/projects/${projectId}`);
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.projectList(anna.id, alpha.id), exact: true });
+    // invalidateProjectList is a prefix invalidation (no `exact`), so the archived list under it refreshes too.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.projectList(anna.id, alpha.id) });
     const apply = api.calls.find(call => call.path.endsWith('/apply'));
     expect(apply?.body).toEqual({}); expect(apply?.headers.get('X-Workloom-Actor-ID')).toBe(anna.id);
   });
