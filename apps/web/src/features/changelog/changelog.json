@@ -1,10 +1,14 @@
 {
-  "covers": "f391909d38bf98a514c47324b153c994ab9232d9",
+  "covers": "0e657f5eac6103301c792b247a6a2c356db0fb4d",
   "days": [
     {
       "date": "2026-11-13",
       "items": [
-        "What's new: this page lists what has changed in Workloom, and a short note offers to open it when something new arrives."
+        "What's new: this page lists what has changed in Workloom, and a short note offers to open it when something new arrives.",
+        "Status and priority dots now have the same colour in the table and in the pickers, in every theme. A completed task's button shows its status name, such as Done.",
+        "Escape clears the selected tasks even after a click beside the table.",
+        "The pinned Task column header no longer shows stray lines when the table is scrolled to the right.",
+        "Long task names wrap onto several lines in the task pane instead of running out of sight."
       ]
     },
     {

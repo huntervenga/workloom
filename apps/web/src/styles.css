@@ -110,6 +110,11 @@
 .task-title-input:not(:focus) { box-shadow: none; }
 .task-title-input:hover { border-color: var(--color-line); }
 .task-title-input:focus { border-color: var(--color-accent-line); }
+.task-title-area {
+  field-sizing: content;
+  resize: none;
+  overflow-wrap: anywhere;
+}
 
 .description-frame {
   min-height: 6rem;

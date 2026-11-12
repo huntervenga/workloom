@@ -1,12 +1,12 @@
 import { t, useTranslation } from '../../i18n';
 import { descriptionPlainText, type MembershipDto, type SectionDto, type TagDto, type TaskPriority, type TaskStatusDto } from '@workloom/contracts';
-import { TextInput, cn } from '@workloom/ui';
+import { TextInput, cn, inputClassName } from '@workloom/ui';
 import { X } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { formatEstimate, parseEstimateInput } from '../task-table';
 import { TagLink } from '../tags/TagLink';
-import { TaskDescriptionField } from './TaskDescriptionField';
+import { TaskDescriptionField, useTextareaHeight } from './TaskDescriptionField';
 import { tagColor } from './tagColors';
 import { priorityColor, statusTones } from './taskTones';
 import { TaskDateInput } from './TaskDateInput';
@@ -282,23 +282,50 @@ export function TaskFields({
     commit(key);
   };
 
+  // The pane heading wraps a long name over several lines; it stays one line of text.
+  const headingTitle = part === 'primary' || saved;
+  const titleArea = useRef<HTMLTextAreaElement>(null);
+  useTextareaHeight(titleArea, draft.title, headingTitle);
+  const endTitleOnEnter = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.metaKey || event.ctrlKey) return;
+    event.preventDefault();
+    if (onCommit) commit('title'); else event.currentTarget.form?.requestSubmit();
+  };
   const titleField = (
 <div>
-        <label htmlFor={ids.title} className={part === 'primary' || saved ? 'sr-only' : labelClassName}>
+        <label htmlFor={ids.title} className={headingTitle ? 'sr-only' : labelClassName}>
           {t('tasks.taskFields.taskName')}</label>
-        <TextInput
-          id={ids.title}
-          className={part === 'primary' || saved ? 'task-title-input' : 'mt-1.5'}
-          value={draft.title}
-          maxLength={TASK_TITLE_MAX}
-          autoComplete="off"
-          autoFocus={autoFocusTitle}
-          aria-invalid={errors.title ? true : undefined}
-          aria-describedby={errors.title ? ids.titleError : undefined}
-          onChange={(event) => onChange({ title: event.target.value })}
-          onBlur={() => commit('title')}
-          onKeyDown={commitOnEnter('title')}
-        />
+        {headingTitle ? (
+          <textarea
+            ref={titleArea}
+            id={ids.title}
+            rows={1}
+            className={inputClassName('task-title-input task-title-area')}
+            value={draft.title}
+            maxLength={TASK_TITLE_MAX}
+            autoComplete="off"
+            autoFocus={autoFocusTitle}
+            aria-invalid={errors.title ? true : undefined}
+            aria-describedby={errors.title ? ids.titleError : undefined}
+            onChange={(event) => onChange({ title: event.target.value.replace(/\r?\n/g, ' ') })}
+            onBlur={() => commit('title')}
+            onKeyDown={endTitleOnEnter}
+          />
+        ) : (
+          <TextInput
+            id={ids.title}
+            className="mt-1.5"
+            value={draft.title}
+            maxLength={TASK_TITLE_MAX}
+            autoComplete="off"
+            autoFocus={autoFocusTitle}
+            aria-invalid={errors.title ? true : undefined}
+            aria-describedby={errors.title ? ids.titleError : undefined}
+            onChange={(event) => onChange({ title: event.target.value })}
+            onBlur={() => commit('title')}
+            onKeyDown={commitOnEnter('title')}
+          />
+        )}
         <FieldError id={ids.titleError} message={errors.title} />
       </div>
   );

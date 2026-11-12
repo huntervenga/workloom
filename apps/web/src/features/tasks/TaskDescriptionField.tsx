@@ -26,7 +26,8 @@ interface Props {
   commitOnCtrlEnter: boolean;
 }
 
-function useTextareaHeight(input: RefObject<HTMLTextAreaElement | null>, value: string, visible: boolean) {
+/** Grows a textarea with its text where CSS `field-sizing: content` is missing (Firefox, older Safari). */
+export function useTextareaHeight(input: RefObject<HTMLTextAreaElement | null>, value: string, visible: boolean) {
   useLayoutEffect(() => {
     const element = input.current;
     if (!element || window.CSS?.supports?.('field-sizing', 'content')) return;

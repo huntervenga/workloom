@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
 import { makeMember, makeSection, statuses } from '../task-table/taskTableFixtures';
 import { TaskFields, type TaskFieldsProps } from './TaskFields';
 import { emptyDraft, type TaskDraft } from './taskDraft';
@@ -31,6 +32,21 @@ describe('task field parts for the compact drawer', () => {
     expect(screen.queryByLabelText('Description')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Team estimate, hours')).not.toBeInTheDocument();
     expect(screen.queryByText('More details')).not.toBeInTheDocument();
+  });
+
+  it('wraps a long name in the saved pane heading, keeps it one line of text and saves on Enter', async () => {
+    const onCommit = vi.fn();
+    show({ part: 'saved', onCommit });
+    const name = screen.getByRole('textbox', { name: 'Task name' });
+    // A multi-line box wraps a long name instead of scrolling it sideways out of sight.
+    expect(name.tagName).toBe('TEXTAREA');
+    const user = userEvent.setup();
+    await user.click(name);
+    await user.keyboard(' with a much longer name{Enter}');
+    expect(name).toHaveValue('Stored task with a much longer name');
+    expect(onCommit).toHaveBeenLastCalledWith(['title']);
+    await user.paste('\npasted\r\nlines');
+    expect(name).toHaveValue('Stored task with a much longer name pasted lines');
   });
 
   it('shows the estimate, priority, participants and tags openly instead of behind More details', () => {
