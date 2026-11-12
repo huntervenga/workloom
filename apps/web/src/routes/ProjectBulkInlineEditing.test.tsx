@@ -368,6 +368,23 @@ describe('Escape and the selection', () => {
     expect(writes(calls)).toHaveLength(0);
   });
 
+  it('clears the selection when the focus rests outside the table, as after a click beside it', async () => {
+    const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath); await selectBoth(user);
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.body).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(gutter(first)).toHaveAttribute('aria-pressed', 'false'); expect(gutter(second)).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('region', { name: 'Edit selected tasks' })).not.toBeInTheDocument();
+    expect(writes(calls)).toHaveLength(0);
+  });
+
+  it('keeps the selection for an Escape in a field outside the table', async () => {
+    installFakeApi(routes()); const { user } = renderApp(tablePath); await selectBoth(user);
+    screen.getByRole('searchbox', { name: /search/i }).focus();
+    await user.keyboard('{Escape}');
+    expect(gutter(first)).toHaveAttribute('aria-pressed', 'true'); expect(gutter(second)).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('closes an open picker first and clears the selection only on the next neutral Escape', async () => {
     const { calls } = installFakeApi(routes()); const { user } = renderApp(tablePath); await selectBoth(user);
     await user.click(cell(/status/, first)); expect(screen.getByRole('listbox', { name: 'Status' })).toBeInTheDocument();

@@ -23,7 +23,7 @@ import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import * as RowMenu from '@radix-ui/react-menu';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, House, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2, TriangleAlert, UserRound } from 'lucide-react';
-import { useCallback, useId, useMemo, useRef, useState, Fragment, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import type { DateIssueInfo } from '../projects/dateConsistency';
 import { visibleTaskRows, type TaskGroup, type TaskTreeNode } from './taskTree';
@@ -294,6 +294,15 @@ function pinnedHeaderClassName(side: 'left' | 'right'): string {
 }
 
 const menuItemClassName = 'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-highlighted:bg-accent-soft data-disabled:cursor-default data-disabled:opacity-50';
+
+/**
+ * Focus that rests on no widget: after a click on the page background it falls to the body or the
+ * main region, where the table's own Escape handler never hears the key.
+ */
+function restsOutsideWidgets(target: Element): boolean {
+  if (target === document.body || target === document.documentElement) return true;
+  return target.closest('input, textarea, select, button, a[href], summary, [contenteditable="true"], [tabindex]:not([tabindex="-1"]), [role="dialog"], [role="menu"], [role="listbox"], [role="combobox"], form, [data-task-panel]') === null;
+}
 
 /** Editors and text fields keep their native context menu and keyboard. */
 function ownsNativeMenu(target: EventTarget): boolean {
@@ -1310,6 +1319,20 @@ export function TaskTable({
     if (ownsNativeMenu(event.target) || (event.target instanceof Element && event.target.closest('form, [data-task-section-editor], [data-choice-picker-menu], [role="combobox"][aria-expanded="true"], [aria-haspopup][aria-expanded="true"]') !== null)) return;
     if (onClearSelection()) event.preventDefault();
   };
+  // The same neutral Escape with the focus resting outside the table, e.g. after a click beside it.
+  const clearSelectionOnOutsideEscape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+    if (!(event.target instanceof Element) || scrollRef.current?.contains(event.target) || !restsOutsideWidgets(event.target)) return;
+    if (!onClearSelection || selectionDisabled || selectedTaskIds.length === 0 || drag !== null) return;
+    if (onClearSelection()) event.preventDefault();
+  };
+  const outsideEscape = useRef(clearSelectionOnOutsideEscape);
+  useLayoutEffect(() => { outsideEscape.current = clearSelectionOnOutsideEscape; });
+  useEffect(() => {
+    const listen = (event: KeyboardEvent) => outsideEscape.current(event);
+    document.addEventListener('keydown', listen);
+    return () => document.removeEventListener('keydown', listen);
+  }, []);
   const move: RowMove | null = moveEnabled ? {
     canMove: task => canEditTaskInline(task) && activeSection(task.sectionId),
     blocked: moveBlocked,
