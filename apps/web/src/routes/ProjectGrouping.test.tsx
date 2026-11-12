@@ -175,7 +175,7 @@ describe('page-owned task grouping', () => {
     await act(async () => first.lose());
     expect(assigneePicker()).toHaveTextContent(NEXT.displayName); expect(assigneePicker()).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(screen.queryByLabelText('Assignee')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Assignee' })).not.toBeInTheDocument());
     await screen.findByText(`Assignee saved: ${NEXT.displayName}.`);
     const sent = writes(calls); expect(sent).toHaveLength(2); expect(sent[0]?.body).toEqual({ expectedRevision: parent.revision, responsibleMembershipId: NEXT.id });
     expect(sent[1]?.body).toEqual(sent[0]?.body); expect(sent[1]?.headers.get('Idempotency-Key')).toBe(sent[0]?.headers.get('Idempotency-Key'));

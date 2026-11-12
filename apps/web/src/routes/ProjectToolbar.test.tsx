@@ -73,7 +73,7 @@ it('restores retained week/person, search/filter/group/sort and unsaved personal
   await user.click(screen.getByText('Filters', { selector: 'summary' })); await chooseFilter(user, 'Task participant', member.displayName);
   await user.click(screen.getByText('Filters (1)', { selector: 'summary' }));
   await tableChoice(user, screen.getByLabelText('Group by'), 'assignee'); await tableChoice(user, screen.getByLabelText('Sort'), 'due_asc');
-  await user.click(screen.getByRole('button', { name: 'Columns' })); await user.click(screen.getByLabelText('Tags')); await user.keyboard('{Escape}');
+  await user.click(screen.getByRole('button', { name: 'Columns' })); await user.click(screen.getByRole('checkbox', { name: 'Tags' })); await user.keyboard('{Escape}');
   const reportHref = `${tablePath}/reports`;
   expect(views().getByRole('link', { name: 'Reports' })).toHaveAttribute('href', reportHref);
   expect(views().queryByRole('link', { name: 'Legacy weekly planning' })).not.toBeInTheDocument();
@@ -90,7 +90,7 @@ it('restores retained week/person, search/filter/group/sort and unsaved personal
   expect(screen.getByLabelText('Search tasks')).toHaveValue('retained search'); expect(screen.getByText('Filters (1)', { selector: 'summary' })).toBeInTheDocument();
   expect(filterPicker('Task participant')).toHaveTextContent(member.displayName);
   expect(screen.getByLabelText('Group by')).toHaveTextContent('Assignee'); expect(screen.getByLabelText('Sort')).toHaveTextContent('Due date');
-  await user.click(screen.getByRole('button', { name: 'Columns · unsaved' })); expect(screen.getByLabelText('Tags')).not.toBeChecked();
+  await user.click(screen.getByRole('button', { name: 'Columns · unsaved' })); expect(screen.getByRole('checkbox', { name: 'Tags' })).not.toBeChecked();
   expect(writes(calls)).toHaveLength(0);
 });
 
@@ -101,7 +101,7 @@ it.each(['board', 'gantt', 'graph', 'import'] as const)('resumes a real unknown 
     current = columnHead(1, (request.body as { columns: ColumnChoice[] }).columns); return ok(current);
   } }));
   const { user } = renderApp(tablePath); await user.click(await screen.findByRole('button', { name: 'Columns' }));
-  await user.click(screen.getByLabelText('Tags')); await user.click(screen.getByRole('button', { name: 'Save columns' }));
+  await user.click(screen.getByRole('checkbox', { name: 'Tags' })); await user.click(screen.getByRole('button', { name: 'Save columns' }));
   await waitFor(() => expect(attempts).toBe(1)); await user.keyboard('{Escape}'); await show(user, view);
   expect(screen.queryByRole('button', { name: 'Columns · unsaved' })).not.toBeInTheDocument();
   await act(async () => first.lose());
@@ -155,7 +155,7 @@ it('hides cached column choices on a current denial when the command is resumed 
   const first = lostResponse(); let attempts = 0;
   const { calls } = installFakeApi(routes({ [`GET ${preferencePath}`]: () => ok(columnHead()), [`PUT ${preferencePath}`]: () => ++attempts === 1 ? first.promise : failure(403, 'FORBIDDEN', 'private preference details') }));
   const { user } = renderApp(tablePath); await user.click(await screen.findByRole('button', { name: 'Columns' }));
-  await user.click(screen.getByLabelText('Tags')); await user.click(screen.getByRole('button', { name: 'Save columns' }));
+  await user.click(screen.getByRole('checkbox', { name: 'Tags' })); await user.click(screen.getByRole('button', { name: 'Save columns' }));
   await waitFor(() => expect(attempts).toBe(1)); await user.keyboard('{Escape}'); await show(user, 'graph'); await act(async () => first.lose());
   await user.click(await screen.findByRole('button', { name: 'Resume column save' }));
   const dialog = within(await screen.findByRole('dialog', { name: 'My task columns' })); await user.click(dialog.getByRole('button', { name: 'Retry original columns' }));

@@ -190,7 +190,7 @@ it('keeps original task-command recovery reachable when a saved preference hides
   const { calls } = installFakeApi({ ...tableRoutes(), [`GET ${path}`]: () => ok(preference), [`GET ${rootPath}/tasks/${task.id}`]: () => ok(task), [`PATCH ${rootPath}/tasks/${task.id}`]: () => unknown, [`PUT ${path}`]: request => ok(preference = head(1, (request.body as { columns: ColumnChoice[] }).columns)) });
   const { user } = renderApp(tablePath);
   await user.click(await screen.findByRole('button', { name: `Edit due date for ${task.title}` }));
-  fireEvent.change(screen.getByLabelText('Due date'), { target: { value: '2026-10-20' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Due date' }), { target: { value: '2026-10-20' } });
   await user.keyboard('{Enter}');
   await waitFor(() => expect(calls.some(call => call.method === 'PATCH')).toBe(true));
   await act(async () => lose()); await screen.findByRole('button', { name: 'Retry' });
