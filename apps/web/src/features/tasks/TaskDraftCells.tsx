@@ -1,10 +1,11 @@
-import { taskPrioritySchema, type TagDto, type TaskPriority, type TaskStatusGroup } from '@workloom/contracts';
+import { taskPrioritySchema, type TagDto } from '@workloom/contracts';
 import { cn } from '@workloom/ui';
 import { ChevronDown } from 'lucide-react';
 import { useId, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { formatDate, useTranslation } from '../../i18n';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { CellPopover } from './CellPopover';
+import { priorityColor, statusTones } from './taskTones';
 import { keepFocusOnPopoverPress, TaskDateInput } from './TaskDateInput';
 import { fieldLabels, formatDraftValue, priorityLabels, type TaskLookups } from './TaskFields';
 import type { InlineTagCreateBinding } from './inlineTagCreate';
@@ -62,8 +63,6 @@ export function taskDraftPreviewText(columnId: string, draft: TaskDraft, lookups
   return formatDraftValue(key, draft, lookups);
 }
 
-const statusColors: Record<TaskStatusGroup, string> = { todo: '#94a3b8', in_progress: '#6366f1', done: '#10b981', cancelled: '#cbd5e1' };
-const priorityColors: Partial<Record<TaskPriority, string>> = { low: '#94a3b8', medium: '#64748b', high: '#d97706', urgent: '#e11d48' };
 
 /** Same fixed height as table cell editors; the row never grows. */
 const cellInputClassName = cn('block h-8 w-full min-w-0 border border-transparent bg-transparent px-2 text-sm text-ink outline-none hover:border-line focus:border-accent-line focus:ring-2 focus:ring-accent-soft read-only:text-muted aria-[invalid=true]:border-red-300', 'rounded');
@@ -78,7 +77,7 @@ function TaskDraftCell({ cell, context }: { cell: TaskDraftCellId; context: Task
     case 'status': {
       const options: ChoiceOption[] = [
         ...(!lookups.statuses.some(status => status.id === draft.statusId) ? [{ value: draft.statusId, label: t('tasks.taskFields.statusUnavailable'), disabled: true }] : []),
-        ...[...lookups.statuses].sort((a, b) => a.position - b.position).map(status => ({ value: status.id, label: status.name, color: statusColors[status.group] })),
+        ...[...lookups.statuses].sort((a, b) => a.position - b.position).map(status => ({ value: status.id, label: status.name, color: statusTones[status.group].color })),
       ];
       return <ChoicePicker compact className={cellPickerClassName} label={fieldLabels.statusId} value={draft.statusId} options={options} disabled={disabled} onValueChange={statusId => onChange({ statusId })} />;
     }
@@ -92,7 +91,7 @@ function TaskDraftCell({ cell, context }: { cell: TaskDraftCellId; context: Task
       return <ChoicePicker compact searchable className={cellPickerClassName} label={fieldLabels.responsibleMembershipId} value={held ?? ''} options={options} disabled={disabled} onValueChange={value => onChange({ responsibleMembershipId: value || null })} />;
     }
     case 'priority': {
-      const options: ChoiceOption[] = taskPrioritySchema.options.map(priority => ({ value: priority, label: priorityLabels[priority], color: priorityColors[priority] }));
+      const options: ChoiceOption[] = taskPrioritySchema.options.map(priority => ({ value: priority, label: priorityLabels[priority], color: priorityColor(priority) }));
       return <ChoicePicker compact className={cellPickerClassName} label={fieldLabels.priority} value={draft.priority} options={options} disabled={disabled}
         onValueChange={value => { const priority = taskPrioritySchema.safeParse(value); if (priority.success) onChange({ priority: priority.data }); }} />;
     }

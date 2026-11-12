@@ -2,6 +2,7 @@ import { rowShortcut, type RowShortcut } from './rowShortcuts';
 import { calendarDateLabel, TaskDateLabel } from '../tasks/TaskDateLabel';
 import { isTabKeyDown, isTabWalkBackward, openOnTabFromSameRow } from './tabWalk';
 import { TagBadge } from '../tasks/TagBadge';
+import { priorityTones, statusTones } from '../tasks/taskTones';
 import { AttachmentCount } from '../attachments/AttachmentCount';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { TaskDragPreview } from './TaskDragPreview';
@@ -17,7 +18,6 @@ import type {
   TaskDto,
   TaskPriority,
   TaskStatusDto,
-  TaskStatusGroup,
 } from '@workloom/contracts';
 import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
@@ -290,18 +290,12 @@ function ownsNativeMenu(target: EventTarget): boolean {
   return target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [data-editing], [role="menu"], [role="listbox"], [role="dialog"]') !== null;
 }
 
-const statusDotClasses: Record<TaskStatusGroup, string> = {
-  todo: 'bg-slate-400',
-  in_progress: 'bg-accent',
-  done: 'bg-emerald-500',
-  cancelled: 'bg-slate-300',
-};
 
 const priorityView: Record<Exclude<TaskPriority, 'none'>, { label: string; className: string }> = {
-  low: { get label() { return t('taskTable.taskTable.low'); }, className: 'text-muted' },
-  medium: { get label() { return t('taskTable.taskTable.medium'); }, className: 'text-ink-soft' },
-  high: { get label() { return t('taskTable.taskTable.high'); }, className: 'text-amber-700' },
-  urgent: { get label() { return t('taskTable.taskTable.urgent'); }, className: 'text-rose-700' },
+  low: { get label() { return t('taskTable.taskTable.low'); }, className: priorityTones.low.text },
+  medium: { get label() { return t('taskTable.taskTable.medium'); }, className: priorityTones.medium.text },
+  high: { get label() { return t('taskTable.taskTable.high'); }, className: priorityTones.high.text },
+  urgent: { get label() { return t('taskTable.taskTable.urgent'); }, className: priorityTones.urgent.text },
 };
 
 function formatTaskCount(count: number): string {
@@ -761,7 +755,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
           </div>
         </div>
       </td>),
-    status: td('status', 'statusId', cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)),
+    status: td('status', 'statusId', cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusTones[status.group].dot)} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)),
     responsible: td('responsible', 'responsibleMembershipId', cell('responsibleMembershipId', task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)),
     participants: td('participants', null, <span className="flex h-8 min-w-0 items-center px-1.5"><ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} /></span>),
     dueDate: td('dueDate', 'dueDate', cell('dueDate', <DueDateCell startDate={task.startDate ?? null} dueDate={task.dueDate} today={ctx.today} finished={finished} issue={ctx.dateIssues?.get(task.id) ?? null} />)),
@@ -838,7 +832,7 @@ function LinkedTaskRow({ row, depth, ctx, renderCell, move }: { row: TaskTableLi
         </div>
       </div>
     </td>,
-    status: td('status', plain(<span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[row.status.group])} /><span className="truncate">{row.status.name}</span></span>)),
+    status: td('status', plain(<span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusTones[row.status.group].dot)} /><span className="truncate">{row.status.name}</span></span>)),
     responsible: td('responsible', plain(task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)),
     participants: td('participants', plain(<ParticipantsCell membershipIds={participantIds} memberById={ctx.memberById} />)),
     dueDate: td('dueDate', plain(<DueDateCell startDate={task.startDate ?? null} dueDate={task.dueDate} today={ctx.today} finished={finished} />)),

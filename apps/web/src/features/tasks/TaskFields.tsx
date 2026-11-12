@@ -1,5 +1,5 @@
 import { t, useTranslation } from '../../i18n';
-import { descriptionPlainText, type MembershipDto, type SectionDto, type TagDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup } from '@workloom/contracts';
+import { descriptionPlainText, type MembershipDto, type SectionDto, type TagDto, type TaskPriority, type TaskStatusDto } from '@workloom/contracts';
 import { TextInput, cn } from '@workloom/ui';
 import { X } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
@@ -8,6 +8,7 @@ import { formatEstimate, parseEstimateInput } from '../task-table';
 import { TagLink } from '../tags/TagLink';
 import { TaskDescriptionField } from './TaskDescriptionField';
 import { tagColor } from './tagColors';
+import { priorityColor, statusTones } from './taskTones';
 import { TaskDateInput } from './TaskDateInput';
 import { TaskCompactDateField } from './TaskCompactDateField';
 import { TaskParticipantPicker } from './TaskParticipantPicker';
@@ -23,9 +24,6 @@ export const priorityLabels: Record<TaskPriority, string> = {
 
 const priorities: TaskPriority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 
-// Picker dots match the task table: slate/accent/emerald status dots, amber/rose priorities.
-const statusColors: Record<TaskStatusGroup, string> = { todo: '#94a3b8', in_progress: '#6366f1', done: '#10b981', cancelled: '#cbd5e1' };
-const priorityColors: Record<TaskPriority, string | undefined> = { none: undefined, low: '#94a3b8', medium: '#64748b', high: '#d97706', urgent: '#e11d48' };
 
 export const fieldLabels: Record<TaskDraftKey, string> = {
   get title() { return t('tasks.taskFields.taskName'); },
@@ -230,7 +228,7 @@ export function TaskFields({
   // A current reference without a known record stays as its own neutral choice, never renamed.
   const statusChoices: ChoiceOption[] = [
     ...(statusKnown ? [] : [{ value: draft.statusId, label: t('tasks.taskFields.statusUnavailable') }]),
-    ...orderedStatuses.map((status) => ({ value: status.id, label: status.name, color: statusColors[status.group] })),
+    ...orderedStatuses.map((status) => ({ value: status.id, label: status.name, color: statusTones[status.group].color })),
   ];
   // '' is the picker value for null: Unassigned and No section are ordinary choices.
   const responsibleChoices: ChoiceOption[] = [
@@ -249,7 +247,7 @@ export function TaskFields({
   const priorityChoices: ChoiceOption[] = priorities.map((priority) => ({
     value: priority,
     label: priorityLabels[priority],
-    color: priorityColors[priority],
+    color: priorityColor(priority),
   }));
 
   // Retained references to memberships outside the workspace: shown without names, removable.
