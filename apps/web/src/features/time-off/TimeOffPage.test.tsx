@@ -19,7 +19,7 @@ describe('time off workspace', () => {
     const {calls}=installFakeApi(routes({ [`GET ${prefix}/overview`]:()=>ok(data), [`POST ${prefix}/preview`]:()=>ok({sourceVersion:'b'.repeat(64),today:data.today,chargedDays:[],totalMicrodays:0,unavailableMinutes:480,overlappingRequestIds:[],pausesAccrual:true,balancesBefore:[],balancesAfter:[],deficits:[]}) }));
     const {user}=renderApp(uiPath); await screen.findByRole('table',{name:'Team calendar'}); expect(screen.queryByRole('button',{name:'Policies'})).not.toBeInTheDocument(); await user.click(screen.getByRole('button',{name:'Request time off'}));
     await user.click(screen.getByRole('combobox',{name:'Leave type'})); await user.click(screen.getByRole('option',{name:'Unpaid leave'}));
-    expect(screen.getByLabelText('Start date')).toHaveAttribute('min','2026-10-20'); expect(screen.getByText(/entire calendar day|every calendar day in the interval/)).toBeVisible();
+    expect(screen.getByLabelText('Start date')).toHaveValue('2026-10-20'); expect(screen.getByLabelText('Start date')).not.toHaveAttribute('min'); expect(screen.getByText(/entire calendar day|every calendar day in the interval/)).toBeVisible();
     await user.click(screen.getByRole('button',{name:'Review charge'})); expect(await screen.findByRole('region',{name:'Charge preview'})).toHaveTextContent('0 balance days · 8 working hours unavailable'); expect(writes(calls)).toHaveLength(0);
     expect(screen.getByRole('button',{name:'Submit request'})).toBeEnabled();
   });
