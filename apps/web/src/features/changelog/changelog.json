@@ -2,13 +2,18 @@
   "covers": "f391909d38bf98a514c47324b153c994ab9232d9",
   "days": [
     {
+      "date": "2026-11-13",
+      "items": [
+        "What's new: this page lists what has changed in Workloom, and a short note offers to open it when something new arrives."
+      ]
+    },
+    {
       "date": "2026-11-12",
       "items": [
         "Project templates: mark a project as a template and create a new week from it with all its tasks (admins).",
         "Every project now has time fields, Hours Est and Hours Fact. They can be hidden but not deleted.",
         "\"Leave this page?\" now lists the unsaved drafts by name.",
-        "MCP: listing tasks by project includes tasks linked from other projects, and adding a task to a project can move it to a section.",
-        "What's new: this page lists what has changed in Workloom, and a short note offers to open it when something new arrives."
+        "MCP: listing tasks by project includes tasks linked from other projects, and adding a task to a project can move it to a section."
       ]
     },
     {

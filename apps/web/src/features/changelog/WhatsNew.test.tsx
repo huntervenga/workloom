@@ -85,7 +85,7 @@ describe('What\'s new in the shell', () => {
 
     const days = screen.getAllByRole('heading', { level: 2 });
     expect(days).toHaveLength(CHANGELOG.days.length);
-    expect(days[0]).toHaveTextContent('November 12, 2026');
+    expect(days[0]).toHaveTextContent(new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${newest.date}T00:00:00Z`)));
     // A first visit marks only the newest day, so the page is not a wall of "New".
     expect(within(must(days[0])).getByText('New')).toBeInTheDocument();
     for (const day of days.slice(1)) expect(within(day).queryByText('New')).not.toBeInTheDocument();
