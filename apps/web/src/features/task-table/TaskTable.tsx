@@ -661,7 +661,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
           <span aria-hidden="true" data-task-drop-before={task.id} className="pointer-events-none absolute inset-x-0 top-0 h-1/2" />
           <span aria-hidden="true" data-task-drop-after={task.id} className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2" />
           {movableHere ? (
-            <button type="button" data-task-move-handle={task.id} aria-label={t('taskTable.move.handle', { title: task.title })} title={t('taskTable.move.handleHint')}
+            <button type="button" data-task-move-handle={task.id} aria-label={t('taskTable.move.handle', { title: task.title })} title={ctx.move?.blocked ? t('taskTable.move.wait') : t('taskTable.move.handleHint')}
               aria-disabled={ctx.move?.blocked || undefined} aria-describedby={`${hierarchyDescriptionId}-move`}
               onPointerDown={event => ctx.move?.startDrag(task, event)}
               onKeyDown={event => {
@@ -669,7 +669,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
                 event.preventDefault();
                 moveBy(event.key === 'ArrowUp' ? -1 : 1);
               }}
-              className={cn('absolute -left-3 top-2 z-[1] flex h-6 w-3 cursor-grab touch-none items-center justify-center rounded text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing', rowActionClassName, ctx.draggingTaskId === task.id && 'pointer-events-auto opacity-100')}>
+              className={cn('absolute -left-3 inset-y-0 z-[1] flex w-3 cursor-grab touch-none items-center justify-center rounded text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing aria-disabled:cursor-wait', rowActionClassName, ctx.draggingTaskId === task.id && 'pointer-events-auto opacity-100')}>
               <GripVertical size={12} aria-hidden="true" />
               <span id={`${hierarchyDescriptionId}-move`} className="sr-only">{t('taskTable.move.handleHint')}</span>
             </button>
@@ -829,7 +829,7 @@ function LinkedTaskRow({ row, depth, ctx, renderCell, move }: { row: TaskTableLi
     title: <td className={titleCellClassName} style={{ paddingLeft: 12, ...cellStyle }}>
       <div className="relative flex h-10 min-w-0 items-center gap-1">
         <span aria-hidden="true" className="absolute inset-y-1.5 -left-3 w-[3px] rounded-r bg-accent" />
-        {move ? <button type="button" data-linked-move-handle={row.id} aria-label={t('placements.linkedRow.moveHandle', { title: task.title })} title={t('taskTable.move.handleHint')}
+        {move ? <button type="button" data-linked-move-handle={row.id} aria-label={t('placements.linkedRow.moveHandle', { title: task.title })} title={move.blocked ? t('taskTable.move.wait') : t('taskTable.move.handleHint')}
           aria-disabled={move.blocked || undefined} onPointerDown={move.start}
           onKeyDown={event => {
             if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
@@ -837,7 +837,7 @@ function LinkedTaskRow({ row, depth, ctx, renderCell, move }: { row: TaskTableLi
             const up = event.key === 'ArrowUp', anchor = up ? move.previous : move.next;
             if (anchor && !move.blocked) move.move(anchor, up ? 'before' : 'after');
           }}
-          className={cn('absolute -left-3 top-2 z-[2] flex h-6 w-3 cursor-grab touch-none items-center justify-center rounded bg-surface text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing', rowActionClassName, move.dragging && 'pointer-events-auto opacity-100')}>
+          className={cn('absolute -left-3 inset-y-0 z-[2] flex w-3 cursor-grab touch-none items-center justify-center rounded bg-surface text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing aria-disabled:cursor-wait', rowActionClassName, move.dragging && 'pointer-events-auto opacity-100')}>
           <GripVertical size={12} aria-hidden="true" />
         </button> : null}
         <span className="mr-1 flex h-10 w-8 shrink-0 items-center justify-center text-accent-ink" title={hint}><Link2 size={14} aria-hidden="true" /></span>

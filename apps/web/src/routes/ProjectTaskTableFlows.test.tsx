@@ -18,6 +18,7 @@ const creates = (calls: Calls) => calls.filter(call => call.method === 'POST' &&
 const moves = (calls: Calls) => calls.filter(call => call.method === 'POST' && call.path.endsWith('/move'));
 const nameInput = () => screen.getByRole('textbox', { name: 'Task name' });
 const rowOf = (node: HTMLElement) => node.closest('tr') as HTMLTableRowElement;
+const handleOf = (task: { title: string }) => screen.getByRole('button', { name: `Move task: ${task.title}` });
 /** Real rows by task ID and draft rows by state, in document order. */
 const order = () => [...document.querySelectorAll('tr[data-task-row], tr[data-task-draft-row]')]
   .map(item => item.getAttribute('data-task-row') ?? `draft:${item.getAttribute('data-task-draft-state') ?? ''}`);
@@ -152,7 +153,7 @@ describe('row title, free area and actions', () => {
 });
 
 describe('manual reorder', () => {
-  it('sends one guarded move and shows the order only from the refetched list', async () => {
+  it('sends one guarded move and shows the row at its drop place before the answer', async () => {
     const answer = deferred<undefined>();
     let stored = [A, B, C];
     const { calls } = installFakeApi(routes(() => stored, {
@@ -174,12 +175,34 @@ describe('manual reorder', () => {
     await waitFor(() => expect(moves(calls)).toHaveLength(1));
     expect(moves(calls)[0]?.body).toEqual({ expectedRevision: A.revision, anchorTaskId: C.id, placement: 'after', captureUndo: true });
     expect(moves(calls)[0]?.headers.get('Idempotency-Key')).toBeTruthy();
-    // The pointer position is not persistence: nothing moves before the server answers.
-    expect(order()).toEqual([A.id, B.id, C.id]);
+    // The row shows at its drop place at once; the stored order still comes from the server.
+    await waitFor(() => expect(order()).toEqual([B.id, C.id, A.id]));
 
     answer.resolve(undefined);
-    await waitFor(() => expect(order()).toEqual([B.id, C.id, A.id]));
+    await waitFor(() => expect(handleOf(A)).not.toHaveAttribute('aria-disabled'));
+    expect(order()).toEqual([B.id, C.id, A.id]);
     expect(writes(calls)).toHaveLength(1);
+  });
+
+  it('returns a refused move to its stored place and says why the handle waits meanwhile', async () => {
+    const answer = deferred<undefined>();
+    installFakeApi(routes(() => [A, B, C], {
+      [`POST ${rootPath}/tasks/${A.id}/move`]: async () => {
+        await answer.promise;
+        return failure(409, 'conflict', 'The task changed meanwhile');
+      },
+    }));
+    const { user } = renderApp(tablePath);
+
+    (await screen.findByRole('button', { name: `Move task: ${A.title}` })).focus();
+    await user.keyboard('{ArrowDown}');
+    await waitFor(() => expect(order()).toEqual([B.id, A.id, C.id]));
+    // A blocked handle says it waits instead of silently not dragging.
+    expect(handleOf(B)).toHaveAttribute('aria-disabled', 'true');
+    expect(handleOf(B)).toHaveAttribute('title', 'Wait until the current save is confirmed, then move the task again.');
+
+    answer.resolve(undefined);
+    await waitFor(() => expect(order()).toEqual([A.id, B.id, C.id]));
   });
 
   it('refuses further moves while a move outcome is unknown', async () => {
