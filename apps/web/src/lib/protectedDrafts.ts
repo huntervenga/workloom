@@ -9,7 +9,8 @@ export function protectedDraftsFor(client:QueryClient):ProtectedCommandRegistry 
  let actor=(client.getQueryData(queryKeys.me) as {actor?:{id?:string}}|undefined)?.actor?.id;
  client.getQueryCache().subscribe(event=>{if(event.type!=='updated'||event.query.queryKey[0]!=='me')return;const next=(event.query.state.data as {actor?:{id?:string}}|undefined)?.actor?.id;if(next&&actor&&next!==actor)registry.clear();if(next)actor=next;});return registry;
 }
-export function useProtectedDraft(dirty:boolean):void {
+/** `label` names the draft in the "Leave this page?" question, for example "A new section name". */
+export function useProtectedDraft(dirty:boolean,label?:string):void {
  const registry=protectedDraftsFor(useQueryClient());
- useEffect(()=>{const entry=registry.register();entry.set(dirty);return entry.dispose;},[registry,dirty]);
+ useEffect(()=>{const entry=registry.register(label?()=>[label]:undefined);entry.set(dirty);return entry.dispose;},[registry,dirty,label]);
 }

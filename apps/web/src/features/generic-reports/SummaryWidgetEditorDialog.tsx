@@ -3,7 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import type { GenericHeaderWidgetDto, GenericReportMeasure, MembershipDto, SummaryTemplateWidgetDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { DialogShell } from '../../shared/DialogShell';
 import { ReportSelect } from './ReportConfigEditor';
@@ -14,7 +14,7 @@ export function SummaryWidgetEditorDialog(props:Props){
  const{t}=useTranslation(),[form,setForm]=useState(()=>widgetFormFromValue(props.widget)),[baseline]=useState(()=>widgetFormFromValue(props.widget)),[key]=useState(()=>props.widget?.key??`w_${crypto.randomUUID()}`),[problem,setProblem]=useState<'field'|'person'|'manual'|'range'|null>(null),[closeRequest,setCloseRequest]=useState(false);
  const{onDirtyChange}=props;
  const alertRef=useRef<HTMLDivElement>(null),dirty=JSON.stringify(form)!==JSON.stringify(baseline),portable=props.mode==='template';
- useProtectedDraft(dirty);
+ useProtectedDraft(dirty,translate('shell.draftColumnSummary'));
  useLayoutEffect(()=>{onDirtyChange?.(dirty);return()=>onDirtyChange?.(false);},[dirty,onDirtyChange]);
  useLayoutEffect(()=>{if(problem||closeRequest)alertRef.current?.focus();},[problem,closeRequest]);
  const patch=(part:Partial<WidgetForm>)=>{setProblem(null);setForm(current=>part.kind!==undefined&&part.kind!==current.kind?{...emptyWidgetForm(),editingKey:current.editingKey,...part}:{...current,...part});};

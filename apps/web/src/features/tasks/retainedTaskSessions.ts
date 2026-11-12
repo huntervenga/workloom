@@ -35,6 +35,11 @@ export function createRetainedTaskSessions() {
   return {
     createSession, editSessions,
     getSnapshot: () => dirty,
+    /** The retained drafts by task: edited tasks (title before the edit) and an unsent new task (its typed title). */
+    describe: (): { kind: 'edit' | 'create'; title: string }[] => [
+      ...[...edits.values()].filter(session => changedKeys(draftFromTask(session.base), session.draft).length > 0).map(session => ({ kind: 'edit' as const, title: session.base.title })),
+      ...(create ? [{ kind: 'create' as const, title: create.draft.title.trim() }] : []),
+    ],
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
   };
 }

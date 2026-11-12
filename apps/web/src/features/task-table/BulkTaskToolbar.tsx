@@ -2,7 +2,7 @@ import type { BulkUpdateTasksInput, MembershipDto, TaskDto } from '@workloom/con
 import { bulkUpdateTasksInputSchema } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
 import { useEffect, useRef, useState } from 'react';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { ChoicePicker } from '../../shared/ChoicePicker';
 import { SaveFeedback } from '../../shared/SaveFeedback';
@@ -48,7 +48,7 @@ export function BulkTaskToolbar({ projectId, tasks, count, members, commands, wr
   }, [datesOpen]);
   const held = command.pendingCommand !== null || command.uncertain !== null;
   const dirty = Object.keys(changes).length > 0;
-  useProtectedDraft(dirty);
+  useProtectedDraft(dirty, translate('shell.draftBulkEdit'));
   const unavailable = tasks.length !== count || tasks.some(task => task.meetingId !== null || task.archivedAt !== null || commands.editSessions.current.has(task.id));
   const locked = held || reloading || blocked || !writable || unavailable;
   const apply = () => {

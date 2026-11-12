@@ -1,7 +1,7 @@
 import { createSectionInputSchema, type SectionDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { useCreateSectionMutation } from './queries';
@@ -21,7 +21,7 @@ export function useSectionCreate(actorId: string, workspaceId: string, projectId
   const returnFocus = useRef<HTMLButtonElement>(null);
   const sent = mutation.pendingCommand?.variables ?? mutation.uncertain?.variables;
   const held = sent !== undefined;
-  useProtectedDraft(name.trim() !== '' && !held);
+  useProtectedDraft(name.trim() !== '' && !held, translate('shell.draftSectionName', { name: name.trim() }));
   useLayoutEffect(() => {
     if (!writable || head.current.presentationKey !== presentationKey) revealLease.current = null;
     head.current = { writable, presentationKey };

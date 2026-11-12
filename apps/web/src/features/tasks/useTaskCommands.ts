@@ -6,6 +6,7 @@ import { ApiError, isUncertainOutcome } from '../../lib/api';
 import { PendingCommandError } from '../../lib/idempotency';
 import { protectedCommandsFor } from '../../lib/protectedCommands';
 import { protectedDraftsFor } from '../../lib/protectedDrafts';
+import { t } from '../../i18n';
 import { fetchTask } from './api';
 import { createRetainedTaskSessions } from './retainedTaskSessions';
 import { createTaskAutosave } from './taskAutosave';
@@ -258,7 +259,11 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
     notifyQuick();
   };
   useEffect(() => {
-    const entry = drafts.register();
+    const entry = drafts.register(() => {
+      if (!quickProtected()) return [];
+      const title = (quick.queue[0]?.session.draft.title ?? quick.draft?.draft.title ?? '').trim();
+      return [title ? t('shell.draftQuickTaskNamed', { title }) : t('shell.draftQuickTask')];
+    });
     quick.publish = () => entry.set(quickProtected());
     quick.publish();
     const warn = (event: BeforeUnloadEvent) => {
@@ -269,7 +274,9 @@ export function useTaskCommands(actorId: string, workspaceId: string, canCreateT
     return () => { quick.publish = () => {}; entry.dispose(); window.removeEventListener('beforeunload', warn); };
   }, [drafts, quick, quickProtected]);
   useEffect(() => {
-    const entry = drafts.register();
+    const entry = drafts.register(() => sessions.describe().map(item => item.kind === 'edit'
+      ? t('shell.draftTaskEdit', { title: item.title })
+      : item.title ? t('shell.draftNewTaskNamed', { title: item.title }) : t('shell.draftNewTask')));
     const sync = () => entry.set(sessions.getSnapshot());
     const unsubscribe = sessions.subscribe(sync);
     sync();

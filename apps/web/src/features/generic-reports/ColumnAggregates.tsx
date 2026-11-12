@@ -8,7 +8,7 @@ import { reportGroupLabel } from './groupLabel';
 import { useState, type ReactNode } from 'react';
 import type { GenericReportConfig, GenericReportResultDto, MembershipDto, SectionDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button } from '@workloom/ui';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import type { TaskFilterValue } from '../tasks/TaskFilters';
 import type { TaskGroupingMode } from '../task-table/taskGrouping';
 import { ApiError } from '../../lib/api';
@@ -45,7 +45,7 @@ export function useColumnAggregates({ actorId, workspaceId, projectId, fields, m
   const readable = enabled && (access !== 'blocked' || presentation) && settings.isSuccess && settings.data.workspaceId === workspaceId && settings.data.projectId === projectId;
   const currentTotals = readable && !unsupported && result.isSuccess ? result.data : undefined;
   const currentHeaders = readable && !unsupported && headerResult.isSuccess && headerResult.data.projectId === projectId && headerResult.data.settingsRevision === settings.data.revision && headerResult.data.groupBy === grouping ? headerResult.data : undefined;
-  useProtectedDraft(edit !== null);
+  useProtectedDraft(edit !== null, translate('shell.draftColumnSummary'));
   const save = () => { if (edit && writable && !held && !command.hasOtherProtectedCommands()) command.mutate({ input: { expectedRevision: edit.revision, measures: edit.config.measures } }, { onSuccess: () => { setEdit(null); setOpen(false); } }); };
   const retryRead = async (target: 'settings' | 'totals' | 'headers') => {
     if (retryingRead !== null) return;

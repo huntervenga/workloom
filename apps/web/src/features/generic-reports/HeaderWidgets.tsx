@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Pencil, Settings2, Trash2 } from 'lucide-react';
 import { Button } from '@workloom/ui';
 import { genericHeaderWidgetSchema, type GenericHeaderWidgetDto, type GenericHeaderWidgetGroupDto, type GenericHeaderWidgetRuleDto, type GenericHeaderWidgetsResultDto, type MembershipDto, type TaskFieldDefinitionDto, type PlanningCheckRuleDto } from '@workloom/contracts';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import { DialogShell } from '../../shared/DialogShell';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { SummaryTemplateControls } from '../summary-templates/SummaryTemplateControls';
@@ -23,7 +23,7 @@ export function HeaderWidgets({ group, title, rules, result, fields, members, wo
  const canEdit=writable&&!disabled&&!uncertain,templateHeld=Boolean(templateController?.command.pendingCommand||templateController?.command.uncertain);
  const saved=rules.find(rule=>sameWidgetGroup(rule.group,group))?.widgets??[],resolved=result?.settingsRevision===revision?result.groups.find(item=>sameWidgetGroup(item.group,group)):undefined;
  const linked=templateController?.catalog.data?.bindings.some(binding=>!binding.detached&&sameSummaryGroup(binding.group,group))??false;
- useProtectedDraft(templateDirty);
+ useProtectedDraft(templateDirty,translate('shell.draftColumnSummary'));
  useLayoutEffect(()=>{if(closeNotice)noticeRef.current?.focus();},[closeNotice]);
  const closeAll=()=>{setEditor(null);setCloseNotice(null);setDraft(null);};
  const requestClose=()=>{if(editor)return;if(templateHeld||disabled||uncertain){setCloseNotice({kind:'held'});return;}if(templateDirty){setCloseNotice({kind:'discard'});return;}closeAll();};

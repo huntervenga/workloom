@@ -1,7 +1,7 @@
 import type { PlanFactTemplateResultDto, ProjectColumnsDto, ProjectDto, TaskFieldDefinitionDto } from '@workloom/contracts';
 import { Button, TextInput } from '@workloom/ui';
 import { useState } from 'react';
-import { useTranslation } from '../../i18n';
+import { t as translate, useTranslation } from '../../i18n';
 import { useProtectedDraft } from '../../lib/protectedDrafts';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import type { useReportCommands } from './queries';
@@ -9,7 +9,7 @@ export function PlanFactTemplate({ project, writable, columns, fields, command, 
   const { t } = useTranslation();
   const [open, setOpen] = useState(false), [planName, setPlan] = useState(''), [factName, setFact] = useState(''), [reportName, setReport] = useState('');
   const held = command.pendingCommand !== null || command.uncertain !== null;
-  useProtectedDraft(open && (planName !== '' || factName !== '' || reportName !== ''));
+  useProtectedDraft(open && (planName !== '' || factName !== '' || reportName !== ''), translate('shell.draftReportTemplate'));
   const proposed = [planName.trim().toLowerCase(), factName.trim().toLowerCase()];
   const conflicts = held ? [] : (fields ?? []).filter(field => field.workspaceId === project.workspaceId && field.projectId === project.id && proposed.includes(field.name.toLowerCase()));
   const sameName = proposed[0] !== '' && proposed[0] === proposed[1];

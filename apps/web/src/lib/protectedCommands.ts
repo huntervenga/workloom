@@ -19,6 +19,8 @@ export type DepartureConfirmation = () => Promise<boolean>;
 
 interface Slot {
   disposed: boolean;
+  /** Says what this slot protects, in words the person recognises; read when the guard asks. */
+  describe: (() => readonly string[]) | undefined;
 }
 
 /**
@@ -37,8 +39,8 @@ export class ProtectedCommandRegistry {
     return this.active.size > 0;
   }
 
-  register(): ProtectedCommandEntry {
-    const slot: Slot = { disposed: false };
+  register(describe?: () => readonly string[]): ProtectedCommandEntry {
+    const slot: Slot = { disposed: false, describe };
     this.slots.add(slot);
     return {
       set: (active) => {
@@ -72,6 +74,13 @@ export class ProtectedCommandRegistry {
   };
 
   getSnapshot = (): boolean => this.protecting;
+
+  /** What the active slots protect, each named once (for the departure question). Unnamed slots add nothing. */
+  describe(): string[] {
+    const names: string[] = [];
+    for (const slot of this.active) for (const name of slot.describe?.() ?? []) if (name && !names.includes(name)) names.push(name);
+    return names;
+  }
 
   /** Installed by the mounted navigation guard; returns the uninstaller. */
   setConfirmer(confirmer: DepartureConfirmation): () => void {
