@@ -52,11 +52,12 @@ export async function fetchStatuses(workspaceId: string, projectId: string, sign
   return (await apiGet(`${projectPath(workspaceId, projectId)}/statuses`, taskStatusListResponseSchema, signal)).data;
 }
 
+/** Every project made here starts with its time fields: time is a property of every task. */
 export function createProjectRequest(workspaceId: string, input: CreateProjectInput) {
   return prepareMutation({
     method: 'POST',
     path: `${workspacePath(workspaceId)}/projects`,
-    input,
+    input: { timeFields: true, ...input },
     inputSchema: createProjectInputSchema,
     responseSchema: projectResponseSchema,
   });

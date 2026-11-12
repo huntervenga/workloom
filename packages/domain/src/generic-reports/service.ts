@@ -145,10 +145,15 @@ export function createGenericReportService(deps: GenericReportDependencies): Gen
       return mutate(ctx, 'generic_report.template', pid, parsed, C.planFactTemplateResultSchema, async scope => {
         await project(scope, pid, true); const columns = await scope.repository.findProjectColumns(scope.context.workspaceId, pid);
         revision(columns?.revision ?? 1, parsed.expectedColumnsRevision);
+        // The project's time fields are the plan and the fact. A project without them (made before every project had them)
+        // gets ordinary duration fields, as before.
+        const active = (await scope.repository.listFields(scope.context.workspaceId, pid)).filter(field => field.archivedAt === null);
+        const existing = { estimate: active.find(field => field.timeRole === 'estimate'), fact: active.find(field => field.timeRole === 'fact') };
         const fieldInput = (name: string) => C.createTaskFieldInputSchema.parse({ projectId: pid, name, type: 'duration', historyEnabled: true, locked: false, options: [] });
-        const inputs = [fieldInput(parsed.planName), fieldInput(parsed.factName)] as const;
-        for (const value of inputs) { const blocked = await scope.planningGuard.check({ family: 'field', command: 'field.create', target: null, input: value }); if (blocked) return blocked; }
-        const plan = await createTaskFieldInScope(scope, inputs[0], deps), fact = await createTaskFieldInScope(scope, inputs[1], deps);
+        const missing = [existing.estimate ? null : fieldInput(parsed.planName), existing.fact ? null : fieldInput(parsed.factName)] as const;
+        for (const value of missing) { if (!value) continue; const blocked = await scope.planningGuard.check({ family: 'field', command: 'field.create', target: null, input: value }); if (blocked) return blocked; }
+        const plan = existing.estimate ?? await createTaskFieldInScope(scope, found(missing[0]), deps);
+        const fact = existing.fact ?? await createTaskFieldInScope(scope, found(missing[1]), deps);
         const config: C.GenericReportConfig = { projectId: pid, hierarchy: 'all_tasks', measures: [{ key: 'plan', operation: 'sum', fieldId: plan.id }, { key: 'fact', operation: 'sum', fieldId: fact.id }], comparison: { planFieldId: plan.id, factFieldId: fact.id, completion: 'done_only' }, groupBy: { kind: 'assignee' }, filters: { statusGroups: [], tagIds: [], assignee: { kind: 'all' }, dateRange: null } };
         const created = await create(scope, { name: parsed.reportName, config });
         return { fields: [plan, fact] as [C.TaskFieldDefinitionDto, C.TaskFieldDefinitionDto], columns: found(await scope.repository.findProjectColumns(scope.context.workspaceId, pid)), report: created };

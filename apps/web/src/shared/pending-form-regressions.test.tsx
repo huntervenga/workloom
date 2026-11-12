@@ -116,7 +116,7 @@ describe('pending and uncertain name forms', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
     const { bodies, keys } = writesOf(calls, 'POST');
-    expect(bodies).toEqual([{ name: 'Запуск сайта' }, { name: 'Запуск сайта' }]);
+    expect(bodies).toEqual([{ name: 'Запуск сайта', timeFields: true }, { name: 'Запуск сайта', timeFields: true }]);
     expect(keys[0]).toMatch(UUID);
     expect(keys[1]).toBe(keys[0]);
   });

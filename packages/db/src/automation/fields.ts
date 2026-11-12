@@ -17,6 +17,7 @@ export function toPublicField(field: TaskFieldDefinitionDto): PublicFieldDto {
   return {
     id: field.id, name: field.name, type: field.type, locked: field.locked,
     options: [...field.options].filter(option => option.archivedAt === null).sort((a, b) => a.position - b.position).map(option => ({ id: option.id, name: option.name })),
+    ...(field.timeRole !== undefined ? { timeRole: field.timeRole } : {}),
   };
 }
 

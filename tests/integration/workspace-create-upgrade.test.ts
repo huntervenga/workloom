@@ -9,6 +9,7 @@ import { expect, it } from 'vitest';
 import { createLegacyProject, createLegacyTask, insertLegacyAuthPrincipal, insertLegacyAuthSession, insertLegacyFixtureOwner,
   insertLegacyLoginAttempt, seedLegacyDemoData, sha256Hex } from './support/legacy-upgrade-fixture.js';
 import { createThrowawayDatabase, type ThrowawayDatabase } from './support/test-database.js';
+import { expectLegacyRowsKeptByTimeFields } from './support/time-field-upgrade.js';
 import { requireTestDatabaseUrl } from './support/test-database-url.js';
 
 requireTestDatabaseUrl();
@@ -81,7 +82,7 @@ it('preserves0014→0015 legacy rows, then upgrades the isolated fixture before 
     for(const entry of later)await copyFile(join(migrations,`${entry.tag}.sql`),join(folder,`${entry.tag}.sql`));
     await writeFile(join(folder,'meta/_journal.json'),JSON.stringify({...journal,entries:currentPrefix}));
     expect((await runMigrations(target.url,{requireLoopback:true,migrationsFolder:folder})).appliedNow).toEqual(later.map(entry=>entry.tag));
-    expect(await legacyRows()).toEqual(before);
+    expectLegacyRowsKeptByTimeFields(await legacyRows(), before);
     expect(await db.sql`select count(avatar_url)::int as avatars from users`).toEqual([{avatars:0}]);
     const currentReceipts=await db.sql`select * from drizzle.__drizzle_migrations order by id`;
     expect(currentReceipts.slice(0,afterReceipts.length)).toEqual(afterReceipts);expect(currentReceipts).toHaveLength(currentPrefix.length);

@@ -24,8 +24,11 @@ describe('automation field contracts', () => {
     expect(publicSetTaskFieldsSchema.safeParse({ items: [] }).success).toBe(false);
   });
 
-  it('defaults the time summary fields and requires a complete range', () => {
-    expect(publicTimeSummaryQuerySchema.parse({ project: 'Week 45' })).toMatchObject({ planField: 'Estimation', factField: 'Fact', includeTasks: true });
+  it('leaves the time summary fields to the project\'s time fields and requires a complete range', () => {
+    const parsed = publicTimeSummaryQuerySchema.parse({ project: 'Week 45' });
+    expect(parsed).toMatchObject({ includeTasks: true });
+    expect(parsed.planField).toBeUndefined();
+    expect(parsed.factField).toBeUndefined();
     expect(publicTimeSummaryQuerySchema.parse({ project: 'W', people: 'me,Anna', includeTasks: 'false' })).toMatchObject({ people: ['me', 'Anna'], includeTasks: false });
     expect(publicTimeSummaryQuerySchema.safeParse({ project: 'W', from: '2026-11-02' }).success).toBe(false);
     expect(publicTimeSummaryQuerySchema.safeParse({ project: 'W', from: '2026-11-08', to: '2026-11-02' }).success).toBe(false);

@@ -208,6 +208,11 @@ export const taskSchema = z.object({
 
 export const createProjectInputSchema = z.strictObject({
   name: nameSchema,
+  /**
+   * Creates the project's time fields ("Hours Est" and "Hours Fact", roles estimate and fact) with it. The web app always
+   * asks for them; a project copy brings its own.
+   */
+  timeFields: z.boolean().optional(),
 });
 
 export const updateProjectInputSchema = z

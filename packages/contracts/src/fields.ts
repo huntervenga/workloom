@@ -74,6 +74,16 @@ export const taskFieldTypeSchema = z.enum([
 
 const SELECT_TYPES: readonly TaskFieldType[] = ['single_select', 'multi_select'];
 
+/**
+ * Time is a property of every task, kept in two duration fields of each project: the one with role `estimate` (plan)
+ * and the one with role `fact` (actual). A project has at most one active field per role; a field with a role cannot be
+ * archived (its column can be hidden). Reports, time summaries and agents find time by role, not by name.
+ */
+export const taskFieldTimeRoleSchema = z.enum(['estimate', 'fact']);
+export type TaskFieldTimeRole = z.infer<typeof taskFieldTimeRoleSchema>;
+/** Names of the time fields a new project starts with. */
+export const DEFAULT_TIME_FIELD_NAMES: Readonly<Record<TaskFieldTimeRole, string>> = { estimate: 'Hours Est', fact: 'Hours Fact' };
+
 const fieldNameSchema = z.string().trim().min(1).max(160);
 const optionNameSchema = z.string().trim().min(1).max(100);
 const optionColorSchema = z
@@ -126,10 +136,15 @@ export const taskFieldDefinitionSchema = z
     locked: z.boolean(),
     archivedAt: utcTimestampSchema.nullable(),
     options: z.array(taskFieldOptionSchema),
+    /** Present only on the project's time fields. */
+    timeRole: taskFieldTimeRoleSchema.optional(),
     createdAt: utcTimestampSchema,
     updatedAt: utcTimestampSchema,
   })
   .superRefine((field, ctx) => {
+    if (field.timeRole !== undefined && field.type !== 'duration') {
+      ctx.addIssue({ code: 'custom', path: ['timeRole'], message: 'Only duration fields hold time.' });
+    }
     if (!SELECT_TYPES.includes(field.type) && field.options.length > 0) {
       ctx.addIssue({ code: 'custom', path: ['options'], message: 'Only select fields have options.' });
     }
@@ -218,6 +233,8 @@ export const createTaskFieldInputSchema = z.strictObject({
   historyEnabled: z.boolean().default(true),
   locked: z.boolean().default(false),
   options: z.array(optionInputSchema).max(100).default([]),
+  /** Makes the new duration field the project's estimate or fact; the project must not have an active one already. */
+  timeRole: taskFieldTimeRoleSchema.optional(),
 });
 
 /** `type` is accepted only so the domain can answer 422 when it differs; it never migrates data. */

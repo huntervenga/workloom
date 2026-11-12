@@ -106,7 +106,8 @@ export const publicTaskAddToProjectSchema = z.strictObject({
   section: ref.nullable().optional(),
   /**
    * true: the target becomes the home. false: the task is only shown there. Omitted: the target becomes the home when
-   * it has duration fields (tracks time) and the current home has none; when both track time the call asks for a choice.
+   * it tracks time — a period project with a date range, such as a week — and the current home does not; when both
+   * track time the call asks for a choice. (Every project has time fields, so the fields alone no longer decide.)
    */
   home: z.boolean().optional(),
 });
@@ -122,7 +123,7 @@ export const publicTaskProjectSchema = z.object({
   outcome: z.enum(['added', 'restored', 'unchanged', 'section_changed']),
   /** The home moved to this project in this call; the former home stays among the task's projects. */
   homeChanged: z.boolean(),
-  /** requested: home was given; time_fields: the target tracks time and the former home did not; already_home; kept: the home did not change. */
+  /** requested: home was given; time_fields: the target tracks time (a dated project such as a week) and the former home did not; already_home; kept: the home did not change. */
   homeReason: z.enum(['requested', 'time_fields', 'already_home', 'kept']),
   /** Custom field values moved to the new home (same field name and type): written there and cleared in the former home. */
   copiedValues: z.number().int().min(0),
@@ -158,6 +159,8 @@ export const publicFieldSchema = z.object({
   type: taskFieldTypeSchema,
   locked: z.boolean(),
   options: z.array(z.object({ id: idSchema, name: z.string() })),
+  /** "estimate" or "fact" on the project's time fields: plan and actual hours of every task. */
+  timeRole: z.enum(['estimate', 'fact']).optional(),
 });
 export type PublicFieldDto = z.infer<typeof publicFieldSchema>;
 
@@ -253,8 +256,9 @@ export const publicTimeSummaryQuerySchema = z.strictObject({
   to: date.optional(),
   /** People to report; defaults to everyone who has a task in the project, plus the caller. */
   people: csv(100).optional(),
-  planField: ref.default('Estimation'),
-  factField: ref.default('Fact'),
+  /** Omitted: the project's time fields (roles estimate and fact), else fields named "Estimation" and "Fact". */
+  planField: ref.optional(),
+  factField: ref.optional(),
   includeTasks: bool.default(true),
 }).refine(input => (input.from === undefined) === (input.to === undefined), 'Pass both from and to, or neither.')
   .refine(input => input.from === undefined || input.to === undefined || input.from <= input.to, 'from must not be after to.');
@@ -404,8 +408,8 @@ export const MCP_TOOL_INPUTS = {
     project: ref.describe('Project name or UUID, usually the week project.'),
     from: date.optional(), to: date.optional(),
     people: z.array(ref).max(100).optional().describe('Names, membership ids or "me". Default: everyone with a task in the project plus you.'),
-    planField: ref.optional().describe('Plan field name; default "Estimation".'),
-    factField: ref.optional().describe('Fact field name; default "Fact".'),
+    planField: ref.optional().describe('Plan field name; default: the project\'s estimate time field.'),
+    factField: ref.optional().describe('Fact field name; default: the project\'s fact time field.'),
     includeTasks: z.boolean().optional(),
   }),
   create_task: publicTaskCreateSchema.extend({ workspace: workspaceRef, operationKey }),
@@ -415,7 +419,7 @@ export const MCP_TOOL_INPUTS = {
     workspace: workspaceRef, taskId: idSchema,
     project: ref.describe('Project name or UUID to add the task to, usually the week project.'),
     section: ref.nullable().optional().describe('Section name or UUID in that project, for example the person\'s section.'),
-    home: z.boolean().optional().describe('true: hours and fields count in this project from now on (it becomes the home; the former home stays listed). false: only show the task there. Omit to let the server decide: the project becomes the home when it tracks time (has duration fields) and the current home does not; if both track time it asks you to choose, so ask the user.'),
+    home: z.boolean().optional().describe('true: hours and fields count in this project from now on (it becomes the home; the former home stays listed). false: only show the task there. Omit to let the server decide: the project becomes the home when it tracks time (a project with dates, such as a week) and the current home does not; if both track time it asks you to choose, so ask the user.'),
     operationKey,
   }),
   create_project_from_template: publicProjectFromTemplateSchema.extend({ workspace: workspaceRef, operationKey }),
