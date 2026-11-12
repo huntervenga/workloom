@@ -50,6 +50,13 @@ describe('column resizing in the task table', () => {
     expect(document.body.style.cursor).toBe('');
   });
 
+  it('keeps the pinned Task header above the resize handles of the columns scrolled under it', () => {
+    render(<Example />);
+    const layer = (className: string, prefix: string) => Number(new RegExp(`(?:^|\\s)${prefix}z-\\[(\\d+)\\]`).exec(className)?.[1] ?? Number.NaN);
+    const pinned = layer(screen.getByRole('columnheader', { name: 'Task' }).className, 'lg:');
+    for (const name of ['Status', 'Score']) expect(pinned).toBeGreaterThan(layer(handle(name).className, ''));
+  });
+
   it('supports keyboard sizing and resets custom fields independently', async () => {
     const user = userEvent.setup(); render(<Example />);
     handle('Score').focus();
