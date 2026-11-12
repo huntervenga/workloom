@@ -94,12 +94,15 @@ export type PublicTaskUpdate = z.infer<typeof publicTaskUpdateSchema>;
 /**
  * Adds an existing task to another project, for example a task from a backlog to the week project.
  * Hours and custom fields count only in the task's home project, so the call can also make the target the home;
- * the former home then stays among the task's projects. A task already in the project is left as it is there,
- * and a placement removed earlier is restored.
+ * the former home then stays among the task's projects. A task already in the project is left as it is there, except
+ * that a given section moves it to that section; a placement removed earlier is restored.
  */
 export const publicTaskAddToProjectSchema = z.strictObject({
   project: ref,
-  /** Section in the target project; used when the task is added, restored or made at home there. */
+  /**
+   * Section in the target project; used when the task is added, restored or made at home there. A task already in the
+   * project is moved to this section when it is in another one (outcome `section_changed`).
+   */
   section: ref.nullable().optional(),
   /**
    * true: the target becomes the home. false: the task is only shown there. Omitted: the target becomes the home when
@@ -115,7 +118,8 @@ export const publicTaskProjectSchema = z.object({
   /** The project is now the task's home project, where its hours and fields count. */
   home: z.boolean(),
   homeProject: z.object({ id: idSchema, name: z.string() }),
-  outcome: z.enum(['added', 'restored', 'unchanged']),
+  /** section_changed: the task was already in the project, only its section there changed. */
+  outcome: z.enum(['added', 'restored', 'unchanged', 'section_changed']),
   /** The home moved to this project in this call; the former home stays among the task's projects. */
   homeChanged: z.boolean(),
   /** requested: home was given; time_fields: the target tracks time and the former home did not; already_home; kept: the home did not change. */
@@ -309,6 +313,16 @@ export const taskViewSchema = z.object({
   archived: z.boolean(),
   createdAt: utcTimestampSchema,
   updatedAt: utcTimestampSchema,
+  /**
+   * Every project the task is in, with the task's section there: the home project first (`home: true`, the same as
+   * `project` and `section`), then the projects it is shown in from its home. Absent in results saved before it existed.
+   */
+  projects: z.array(z.object({
+    id: idSchema,
+    name: z.string(),
+    home: z.boolean(),
+    section: z.object({ id: idSchema, name: z.string() }).nullable(),
+  })).optional(),
   /** Present only when fields were requested: values of the task's home project fields. */
   fields: z.array(publicFieldValueSchema).optional(),
 });

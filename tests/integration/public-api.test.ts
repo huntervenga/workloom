@@ -452,4 +452,58 @@ describe('personal access tokens, public API and MCP', () => {
     expect(viaMcp.result.isError ?? false).toBe(false);
     expect(viaMcp.result.structuredContent.result).toMatchObject({ project: { name: `47 week ${stamp}`, dateRange: { from: '2026-11-23', to: '2026-11-29' } }, copied: { tasks: 1 } });
   });
+
+  it('lists tasks shown in a project from another home, and moves a task already in a project to the given section', async () => {
+    interface Shown extends TaskV { projects?: { id: string; name: string; home: boolean; section: { name: string } | null }[] }
+    interface Placement { section: { name: string } | null; home: boolean; outcome: string; homeReason: string }
+    const backlog = await h.owner.tasks.createProject(`Shown backlog ${Date.now()}`);
+    const doing = await h.owner.tasks.createSection(backlog.id, { name: 'Doing' });
+    const week = await h.owner.tasks.createProject(`Shown week ${Date.now()}`);
+    await h.owner.tasks.createSection(week.id, { name: 'Michael' });
+    await h.owner.tasks.createSection(week.id, { name: 'Anna' });
+    const created = env<TaskV>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: backlog.id, title: 'Shown in the week' } })).data;
+    const placed = (body: unknown) => call(`${ws()}/tasks/${created.id}/projects`, { token: owner.token, method: 'POST', body });
+    const listed = async (query: string) => {
+      const res = await call(`${ws()}/tasks?${query}`, { token: owner.token });
+      expect(res.status, res.text()).toBe(200);
+      return env<Shown[]>(res).data.find(task => task.id === created.id);
+    };
+
+    expect(env<Placement>(await placed({ project: week.name, section: 'Michael', home: false })).data).toMatchObject({ outcome: 'added', home: false, section: { name: 'Michael' } });
+    // The week lists the task although its home is the backlog, with its section in each project.
+    const inWeek = need(await listed(`project=${encodeURIComponent(week.name)}`));
+    expect(inWeek.project.id).toBe(backlog.id);
+    expect(inWeek.projects).toEqual([
+      { id: backlog.id, name: backlog.name, home: true, section: null },
+      { id: week.id, name: week.name, home: false, section: expect.objectContaining({ name: 'Michael' }) },
+    ]);
+    expect(await listed(`project=${week.id}&section=Michael`)).toBeDefined();
+    expect(await listed(`project=${week.id}&section=Anna`)).toBeUndefined();
+    expect(await listed(`project=${backlog.id}`)).toBeDefined();
+
+    // Given another section, the call moves the shown task there instead of answering unchanged.
+    const moved = await placed({ project: week.id, section: 'Anna', home: false });
+    expect(moved.status, moved.text()).toBe(200);
+    expect(env<Placement>(moved).data).toMatchObject({ outcome: 'section_changed', home: false, section: { name: 'Anna' } });
+    expect(await listed(`project=${week.id}&section=Anna`)).toBeDefined();
+    expect(await listed(`project=${week.id}&section=Michael`)).toBeUndefined();
+    expect(env<Placement>(await placed({ project: week.id, section: 'Anna', home: false })).data).toMatchObject({ outcome: 'unchanged' });
+
+    // At home the given section moves the task itself.
+    const home = await placed({ project: backlog.name, section: 'Doing' });
+    expect(env<Placement>(home).data).toMatchObject({ outcome: 'section_changed', home: true, homeReason: 'already_home', section: { name: 'Doing' } });
+    const read = env<Shown>(await call(`${ws()}/tasks/${created.id}`, { token: owner.token })).data;
+    expect(read.section?.name).toBe('Doing');
+    expect(read.projects?.[0]).toMatchObject({ id: backlog.id, home: true, section: { name: 'Doing' } });
+    expect(await listed(`project=${backlog.id}&section=${doing.id}`)).toBeDefined();
+
+    // Over MCP the week's list includes it too; once removed from the week it is gone from that list.
+    const viaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'list_tasks', arguments: { project: [week.name] } }, 40))).result;
+    expect(viaMcp.isError, JSON.stringify(viaMcp)).toBeFalsy();
+    expect(viaMcp.structuredContent.result.tasks.map(task => task.id)).toContain(created.id);
+    const [row] = await h.db.sql<{ id: string; revision: number }[]>`select id, revision from task_project_placements where task_id = ${created.id} and project_id = ${week.id}`;
+    const detached = await h.owner.tasks.post(`/task-project-placements/${need(row).id}/detach`, { expectedRevision: need(row).revision });
+    expect(detached.status, detached.text()).toBe(200);
+    expect(await listed(`project=${week.id}`)).toBeUndefined();
+  });
 });
