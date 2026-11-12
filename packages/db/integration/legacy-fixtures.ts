@@ -74,8 +74,18 @@ export async function snapshotLegacyRows(sql: Sql, previous?: readonly LegacyTab
   const result: LegacyTableSnapshot[] = [];
   for (const table of tables) {
     if (![table.table, ...table.columns].every(name => /^[a-z_]+$/.test(name))) throw new Error('Unsafe historical fixture identifier.');
-    const columns = table.columns.map(name => `"${name}"`).join(',');
-    const rows = await sql.unsafe<{ line: string }[]>(`select row_to_json(t)::text as line from (select ${columns} from public."${table.table}") t order by row_to_json(t)::text collate "C"`);
+    // Migration 0044 gives every existing project its time fields: it adds their definitions, first versions and columns
+    // and moves the column-settings revision. Those rows are recognised by the role in their version snapshot (fields that
+    // got a role by name keep their old snapshot) and left out, so every other old row is still compared exactly.
+    const selected = table.table === 'project_column_settings' ? table.columns.filter(name => name !== 'revision') : table.columns;
+    const columns = selected.map(name => `"${name}"`).join(',');
+    const timeField = (column: string) => `exists (select 1 from public.task_field_definition_versions v where v.field_id = ${column} and v.snapshot ? 'timeRole')`;
+    const where = table.table === 'task_field_definitions' ? `where not ${timeField('public.task_field_definitions.id')}`
+      : table.table === 'task_field_definition_versions' ? `where not (snapshot ? 'timeRole')`
+        : table.table === 'project_columns' ? `where not ${timeField('public.project_columns.field_id')}`
+          // A settings row whose project has only time-field columns was created for those fields.
+          : table.table === 'project_column_settings' ? `where not (exists (select 1 from public.project_columns pc where pc.workspace_id = public.project_column_settings.workspace_id and pc.project_id = public.project_column_settings.project_id) and not exists (select 1 from public.project_columns pc where pc.workspace_id = public.project_column_settings.workspace_id and pc.project_id = public.project_column_settings.project_id and not ${timeField('pc.field_id')}))` : '';
+    const rows = await sql.unsafe<{ line: string }[]>(`select row_to_json(t)::text as line from (select ${columns} from public."${table.table}" ${where}) t order by row_to_json(t)::text collate "C"`);
     result.push({ table: table.table, columns: [...table.columns], count: rows.length, sha256: createHash('sha256').update(rows.map(row => row.line).join('\n')).digest('hex') });
   }
   return result;

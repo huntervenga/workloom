@@ -278,6 +278,8 @@
     "created": "Created “{{name}}”.",
     "archive": "Archive field for the project",
     "archiveHint": "Removes this field from project tables. Values and history are kept, and the field can be restored. To hide it only for yourself, use the table + menu.",
+    "timeEstimateHint": "This is the project’s estimate: the planned time of every task. It cannot be archived; hide the column if you do not need it.",
+    "timeFactHint": "This is the project’s fact: the time actually spent on every task. It cannot be archived; hide the column if you do not need it.",
     "archived": "Archived fields",
     "restore": "Restore"
   }

@@ -394,8 +394,11 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         : project.dateRange ? { from: project.dateRange.from, to: project.dateRange.to, source: 'project' as const } : null;
       if (!range) throw new DomainError('VALIDATION_FAILED', `Project "${project.name}" has no date range. Pass from and to.`, { details: { field: 'from', reason: 'required' } });
       const fields = await activeFields(s, project.id);
-      const planField = resolveField(fields, query.planField, 'planField');
-      const factField = resolveField(fields, query.factField, 'factField');
+      // By default time is read from the project's time fields; old projects without them fall back to the names.
+      const timeField = (reference: string | undefined, role: 'estimate' | 'fact', fallback: string, label: string) =>
+        reference !== undefined ? resolveField(fields, reference, label) : fields.find(field => field.timeRole === role) ?? resolveField(fields, fallback, label);
+      const planField = timeField(query.planField, 'estimate', 'Estimation', 'planField');
+      const factField = timeField(query.factField, 'fact', 'Fact', 'factField');
       for (const field of [planField, factField]) if (field.type !== 'duration') throw new DomainError('VALIDATION_FAILED', `${field.name} is a ${field.type} field, not a duration.`, { details: { field: field.id === planField.id ? 'planField' : 'factField', reason: 'not_duration' } });
       const rows = [];
       let cursor: string | undefined;
@@ -789,7 +792,8 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         const section = parsed.data.section === undefined || parsed.data.section === null ? null : resolveRef('section', parsed.data.section, sections);
         const existing = (await app.placements.listTaskPlacements(s.context, targetId)).find(row => row.projectId === project.id) ?? null;
         // A project tracks time when it has an active duration field, like the week projects' plan and fact.
-        const tracksTime = async (projectId: string) => (await activeFields(s, projectId)).some(field => field.type === 'duration');
+        // Every project has time fields, so "tracks time" means a period project (a week): it has a date range.
+        const tracksTime = async (projectId: string) => { const target = await app.getProject(s.context, projectId); return Boolean(target.dateRange) && target.isTemplate !== true; };
         // A template is never chosen as the home by itself: its hours are not counted anywhere.
         const time = project.id === task.projectId ? null : { target: !project.template && await tracksTime(project.id), home: await tracksTime(task.projectId) };
         return { hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions), task, project, home, sections, section, existing, time };

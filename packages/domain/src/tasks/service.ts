@@ -52,6 +52,7 @@ import {
   type UpdateSectionInput,
   type UpdateTagInput,
   type UpdateTaskInput,
+  DEFAULT_TIME_FIELD_NAMES,
 } from '@workloom/contracts';
 
 import { authorizeWorkspace } from '../access/access-queries.js';
@@ -60,7 +61,7 @@ import type { CommandContext } from '../access/context.js';
 import { DomainError, notFoundError, unauthenticatedError } from '../errors.js';
 import type { RecordedChange } from '../transactions/ports.js';
 import type { TaskFieldRepository } from '../fields/ports.js';
-import { setTaskFieldValueInScope } from '../fields/service.js';
+import { createTaskFieldInScope, setTaskFieldValueInScope } from '../fields/service.js';
 import { resolveTaskDefaults } from '../task-defaults/apply.js';
 import { loadTaskActivityLabels, taskActivityDiff } from './activity.js';
 import type { TaskApplication, TaskPage } from './application.js';
@@ -214,6 +215,14 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           statusIds.push(row.id);
         }
         await record(scope, 'project', project.id, 'created', 1, { name: project.name, statusIds }, {});
+        if (parsed.timeFields === true) {
+          // Time is a property of every task: the project starts with its estimate and fact fields, like its statuses.
+          if (!scope.fieldRepository) throw new Error('Time fields need the same-transaction field repository.');
+          const fieldScope = { ...scope, repository: scope.fieldRepository, planningGuard: scope.planningGuard };
+          for (const role of ['estimate', 'fact'] as const) {
+            await createTaskFieldInScope(fieldScope, { projectId: project.id, name: DEFAULT_TIME_FIELD_NAMES[role], type: 'duration', historyEnabled: true, locked: false, options: [], timeRole: role }, { newId });
+          }
+        }
         return project;
       });
     },

@@ -125,7 +125,7 @@ describe('projects', () => {
 
     const writes = calls.filter((call) => call.method === 'POST');
     const keys = writes.map((call) => call.headers.get('idempotency-key'));
-    expect(writes.map((call) => call.body)).toEqual([{ name: 'Запуск сайта' }, { name: 'Запуск сайта' }, { name: 'Запуск сайта' }]);
+    expect(writes.map((call) => call.body)).toEqual([{ name: 'Запуск сайта', timeFields: true }, { name: 'Запуск сайта', timeFields: true }, { name: 'Запуск сайта', timeFields: true }]);
     expect(keys[0]).toMatch(UUID);
     expect(keys[1]).toBe(keys[0]);
     expect(keys[2]).toMatch(UUID);

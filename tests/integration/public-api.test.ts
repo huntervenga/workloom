@@ -363,16 +363,21 @@ describe('personal access tokens, public API and MCP', () => {
 
   it('makes a project that tracks time the home, keeps the former home listed, and asks for a choice when both track time', async () => {
     interface Placement { project: { id: string }; home: boolean; homeProject: { id: string }; outcome: string; homeChanged: boolean; homeReason: string; copiedValues: number }
-    const duration = async (id: string) => { const res = await h.owner.tasks.post('/fields', { projectId: id, name: 'Hours Est', type: 'duration', historyEnabled: true, locked: false, options: [] }); expect(res.status, res.text()).toBeLessThan(300); };
+    // A week tracks time: it has dates (every project has time fields, so they no longer decide). Its hours field is for values.
+    const duration = async (id: string, from: string) => {
+      const res = await h.owner.tasks.post('/fields', { projectId: id, name: 'Hours Est', type: 'duration', historyEnabled: true, locked: false, options: [] }); expect(res.status, res.text()).toBeLessThan(300);
+      const project = await h.owner.tasks.getProject(id);
+      await h.owner.tasks.updateProject(id, { expectedRevision: project.revision, dateRange: { from, to: from } });
+    };
     const backlog = await h.owner.tasks.createProject(`Backlog ${Date.now()}`);
     const week = await h.owner.tasks.createProject(`Week time ${Date.now()}`);
-    await duration(week.id);
+    await duration(week.id, '2026-11-09');
     const created = env<TaskV>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: backlog.id, title: 'Plan me this week' } })).data;
     const path = `${ws()}/tasks/${created.id}/projects`;
     const placed = (body: unknown) => call(path, { token: owner.token, method: 'POST', body });
     const homeOf = async () => env<TaskV>(await call(`${ws()}/tasks/${created.id}`, { token: owner.token })).data.project.id;
 
-    // The backlog has no time fields and the week has: the week becomes the home, the backlog stays among its projects.
+    // The backlog has no dates and the week has: the week becomes the home, the backlog stays among its projects.
     const moved = await placed({ project: week.name });
     expect(moved.status, moved.text()).toBe(201);
     expect(env<Placement>(moved).data).toMatchObject({ project: { id: week.id }, home: true, homeProject: { id: week.id }, outcome: 'added', homeChanged: true, homeReason: 'time_fields' });
@@ -385,7 +390,7 @@ describe('personal access tokens, public API and MCP', () => {
     const fields = await call(`${ws()}/task-fields`, { token: owner.token, method: 'POST', body: { items: [{ taskId: created.id, project: week.id, values: [{ field: 'Hours Est', value: '2h' }] }] } });
     expect(fields.status, fields.text()).toBe(200);
     const next = await h.owner.tasks.createProject(`Next week ${Date.now()}`);
-    await duration(next.id);
+    await duration(next.id, '2026-11-16');
     const ask = await placed({ project: next.name });
     expect(ask.status, ask.text()).toBe(400);
     expect(env(ask).error?.details).toMatchObject({ field: 'home', reason: 'choice_required', homeProject: { id: week.id }, project: { id: next.id } });
@@ -505,5 +510,20 @@ describe('personal access tokens, public API and MCP', () => {
     const detached = await h.owner.tasks.post(`/task-project-placements/${need(row).id}/detach`, { expectedRevision: need(row).revision });
     expect(detached.status, detached.text()).toBe(200);
     expect(await listed(`project=${week.id}`)).toBeUndefined();
+  });
+
+  it('finds time by role: list_fields marks the time fields and time_summary uses them by default', async () => {
+    const res = await h.owner.tasks.post('/projects', { name: `Timed week ${Date.now()}`, timeFields: true });
+    expect(res.status, res.text()).toBe(201);
+    const project = JSON.parse(res.text()).data as { id: string; revision: number };
+    await h.owner.tasks.updateProject(project.id, { expectedRevision: project.revision, dateRange: { from: '2026-11-09', to: '2026-11-15' } });
+    const fields = env<{ name: string; timeRole?: string }[]>(await call(`${ws()}/projects/${project.id}/fields`, { token: owner.token })).data;
+    expect(fields.map(field => [field.name, field.timeRole])).toEqual([['Hours Est', 'estimate'], ['Hours Fact', 'fact']]);
+    const task = env<TaskV>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: 'Timed task', assignee: 'me' } })).data;
+    const written = await call(`${ws()}/task-fields`, { token: owner.token, method: 'POST', body: { items: [{ taskId: task.id, values: [{ field: 'Hours Est', value: '2h' }, { field: 'Hours Fact', value: '90m' }] }] } });
+    expect(written.status, written.text()).toBe(200);
+    const summary = env<{ planField: { name: string }; factField: { name: string }; people: { planMinutes: number; factMinutes: number }[] }>(await call(`${ws()}/projects/${project.id}/time-summary`, { token: owner.token })).data;
+    expect(summary).toMatchObject({ planField: { name: 'Hours Est' }, factField: { name: 'Hours Fact' } });
+    expect(summary.people.some(person => person.planMinutes === 120 && person.factMinutes === 90)).toBe(true);
   });
 });

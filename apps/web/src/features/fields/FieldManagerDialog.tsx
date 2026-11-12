@@ -462,10 +462,13 @@ function EditFieldPanel({
         }}
         onCancel={() => onDone(null)}
       />
-      <div className="border-t border-line pt-3">
+      {base.timeRole ? <div className="border-t border-line pt-3">
+        {/* Time is a property of every task: its fields stay; the column can be hidden. */}
+        <p className="text-xs text-muted">{t(base.timeRole === 'estimate' ? 'taskTable.columnMenu.timeEstimateHint' : 'taskTable.columnMenu.timeFactHint')}</p>
+      </div> : <div className="border-t border-line pt-3">
         <Button size="sm" variant="ghost" disabled={own !== null || otherTarget || optionBusy || correctable} onClick={() => updateField.mutate({ fieldId: field.id, input: { expectedRevision: base.revision, archived: true } }, callbacks)}>{t('taskTable.columnMenu.archive')}</Button>
         <p className="mt-1 text-xs text-muted">{t('taskTable.columnMenu.archiveHint')}</p>
-      </div>
+      </div>}
       {isSelectType(base.type) ? (
         <FieldOptionsEditor
           field={base}

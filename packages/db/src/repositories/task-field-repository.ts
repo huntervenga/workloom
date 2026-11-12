@@ -169,6 +169,7 @@ function toField(row: typeof taskFieldDefinitions.$inferSelect, options: TaskFie
     locked: row.locked,
     archivedAt: toIsoOrNull(row.archivedAt),
     options,
+    ...(row.timeRole ? { timeRole: row.timeRole } : {}),
     createdAt: toIso(row.createdAt),
     updatedAt: toIso(row.updatedAt),
   };
@@ -298,6 +299,8 @@ export function createTaskFieldRepository(source: Database | WorkloomExecutor): 
           workspaceId: row.workspaceId,
           projectId: row.projectId,
           type: row.type,
+          // The time role is set once, when the field is created.
+          timeRole: row.timeRole ?? null,
           createdAt: new Date(row.createdAt),
         }),
       );

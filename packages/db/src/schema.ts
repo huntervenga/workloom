@@ -559,6 +559,8 @@ export const taskFieldDefinitions = pgTable(
     definitionVersionId: uuid('definition_version_id').notNull(),
     historyEnabled: boolean('history_enabled').notNull().default(true),
     locked: boolean('locked').notNull().default(false),
+    /** 'estimate' or 'fact' on the project's time fields (duration only, one active per role; migration 0044). */
+    timeRole: text('time_role').$type<'estimate' | 'fact'>(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

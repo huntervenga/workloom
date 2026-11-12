@@ -178,7 +178,7 @@ describe('uncertain write with a changed payload', () => {
     await waitFor(() => expect(result.current.write.isError).toBe(true));
     expect(server.sends).toHaveLength(1);
     const [original] = server.sends;
-    expect(original?.body).toEqual({ name: 'Запуск' });
+    expect(original?.body).toEqual({ name: 'Запуск', timeFields: true });
     expect(isUuid(original?.key ?? '')).toBe(true);
     expect(result.current.write.uncertain?.variables).toEqual({ input: { name: '  Запуск  ' } });
 
@@ -220,7 +220,7 @@ describe('uncertain write with a changed payload', () => {
     server.state.answer = 'confirm';
     act(() => result.current.write.mutate({ input: { name: 'Исправлено' } }));
     await waitFor(() => expect(result.current.write.isSuccess).toBe(true));
-    expect(server.sends.map((send) => send.body)).toEqual([{ name: 'Отклонено' }, { name: 'Исправлено' }]);
+    expect(server.sends.map((send) => send.body)).toEqual([{ name: 'Отклонено', timeFields: true }, { name: 'Исправлено', timeFields: true }]);
     expect(server.sends[1]?.key).not.toBe(server.sends[0]?.key);
   });
 });

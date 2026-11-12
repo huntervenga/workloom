@@ -248,6 +248,9 @@ export function createTaskFieldApplication(dependencies: TaskFieldApplicationDep
         const repo = scope.repository;
         const field = requireFound(await repo.findField(ws, id));
         expectRevision(field.revision, parsed.expectedRevision);
+        if (parsed.archived === true && field.timeRole !== undefined && field.archivedAt === null) {
+          throw ruleError('Time is a property of every task: this field cannot be archived. Hide its column instead.', 'archived');
+        }
         if (parsed.type !== undefined && parsed.type !== field.type) {
           throw ruleError('The field type cannot be changed.', 'type');
         }
@@ -865,17 +868,22 @@ export async function createTaskFieldInScope(scope: TaskFieldWriteScope, input: 
   if (!SELECT_TYPES.includes(parsed.type) && parsed.options.length > 0) throw ruleError('Only select fields have options.', 'options');
   const siblings = await repo.listFields(ws, projectId);
   assertFieldNameFree(siblings, parsed.name, null); assertActiveFieldCapacity(siblings, null);
+  if (parsed.timeRole !== undefined) {
+    if (parsed.type !== 'duration') throw ruleError('Only a duration field can hold time.', 'timeRole');
+    if (siblings.some(sibling => sibling.archivedAt === null && sibling.timeRole === parsed.timeRole)) throw ruleError(`This project already has its ${parsed.timeRole} time field.`, 'timeRole');
+  }
   const options: TaskFieldOptionDto[] = [];
   for (const [position, option] of parsed.options.entries()) {
     assertOptionNameFree(options, option.name, null);
     options.push({ id: newId(), name: option.name, color: option.color, position, revision: 1, archivedAt: null });
   }
   const field: TaskFieldDefinitionDto = { id: newId(), workspaceId: ws, projectId, name: parsed.name, type: parsed.type, revision: 1,
-    definitionVersionId: newId(), historyEnabled: parsed.historyEnabled, locked: parsed.locked, archivedAt: null, options, createdAt: now, updatedAt: now };
+    definitionVersionId: newId(), historyEnabled: parsed.historyEnabled, locked: parsed.locked, archivedAt: null, options,
+    ...(parsed.timeRole !== undefined ? { timeRole: parsed.timeRole } : {}), createdAt: now, updatedAt: now };
   await repo.insertField(field);
   for (const option of options) await repo.insertOption(toOptionRecord(field, option));
   await repo.insertDefinitionVersion(field);
-  await recordField(scope, field, 'created', { name: field.name, type: field.type, historyEnabled: field.historyEnabled, locked: field.locked, options: options.map(optionMetadata) });
+  await recordField(scope, field, 'created', { name: field.name, type: field.type, historyEnabled: field.historyEnabled, locked: field.locked, options: options.map(optionMetadata), ...(field.timeRole !== undefined ? { timeRole: field.timeRole } : {}) });
   const current = await loadColumns(repo, ws, projectId);
   const next = { ...current, revision: current.revision + 1, columns: appendColumn(current.columns, field.id) };
   await repo.saveProjectColumns(next);

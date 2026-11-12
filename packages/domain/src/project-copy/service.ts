@@ -78,6 +78,8 @@ export function createProjectCopyService(deps: ProjectCopyDependencies): Project
         const copy = await deps.fields.createField(step(`field:${field.id}`), {
           projectId: created.id, name: field.name, type: field.type, historyEnabled: field.historyEnabled, locked: field.locked,
           options: activeOptions.map(option => ({ name: option.name, color: option.color })),
+          // The copy's time fields are the source's, with the same names and roles.
+          ...(field.timeRole !== undefined ? { timeRole: field.timeRole } : {}),
         });
         link(field.id, copy.id);
         const copied = [...copy.options].sort((a, b) => a.position - b.position);

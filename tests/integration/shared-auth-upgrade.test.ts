@@ -8,6 +8,7 @@ import { expect, it } from 'vitest';
 import { seedLegacyDemoData, createLegacyProject, createLegacySection, createLegacyTag, createLegacyTask,
   insertLegacyFixtureOwner } from './support/legacy-upgrade-fixture.js';
 import { createThrowawayDatabase, type ThrowawayDatabase } from './support/test-database.js';
+import { expectLegacyRowsKeptByTimeFields } from './support/time-field-upgrade.js';
 import { requireTestDatabaseUrl } from './support/test-database-url.js';
 
 requireTestDatabaseUrl();
@@ -95,7 +96,8 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
     await writeFile(join(folder, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: currentPrefix }));
     expect((await runMigrations(target.url, { requireLoopback: true, migrationsFolder: folder })).appliedNow)
       .toEqual(currentPrefix.filter(entry=>entry.idx>14).map(entry=>entry.tag));
-    expect(await legacyRows()).toEqual(before);
+    expectLegacyRowsKeptByTimeFields(await legacyRows(), before);
+    const upgradedRows = await legacyRows();
     const currentReceipts = await db.sql`select * from drizzle.__drizzle_migrations order by id`;
     expect(currentReceipts.slice(0, afterReceipts.length)).toEqual(afterReceipts);
     expect(currentReceipts).toHaveLength(currentPrefix.length);
@@ -103,7 +105,7 @@ it('upgrades populated 0013 to 0014 without changing any legacy public row or mi
     expect(principal.user.kind).toBe('real');
     expect(await db.sql`select id from tasks where workspace_id=${principal.workspaceId}`).toHaveLength(0);
     expect(await legacyRows().then(rows => Object.fromEntries(tables.filter(table => !['users', 'workspaces', 'memberships'].includes(table.name)).map(table => [table.name, rows[table.name]]))))
-      .toEqual(Object.fromEntries(tables.filter(table => !['users', 'workspaces', 'memberships'].includes(table.name)).map(table => [table.name, before[table.name]])));
+      .toEqual(Object.fromEntries(tables.filter(table => !['users', 'workspaces', 'memberships'].includes(table.name)).map(table => [table.name, upgradedRows[table.name]])));
     expect((await runMigrations(target.url, { requireLoopback: true, migrationsFolder: folder })).appliedNow).toEqual([]);
   } finally {
     await db?.close();
