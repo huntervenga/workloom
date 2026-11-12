@@ -25,7 +25,10 @@ describe('complete split button', () => {
     const task = makeTask({ id: 't2', statusId: 'status-done' });
     render(<CompleteSplitButton task={task} statuses={statuses} busy={false} onComplete={onComplete} onContinue={onContinue} />);
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: 'Completed' }));
+    // Named like the Status field, not a separate "Completed" state.
+    const shown = screen.getByRole('button', { name: 'Done' });
+    expect(shown).toHaveAttribute('aria-pressed', 'true');
+    await user.click(shown);
     expect(onComplete).toHaveBeenCalledWith(task, 'status-todo', expect.anything());
     await user.click(screen.getByRole('button', { name: 'More ways to complete' }));
     expect(await screen.findByRole('menuitem', { name: 'Continue in another project…' })).toBeInTheDocument();

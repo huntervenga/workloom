@@ -379,7 +379,6 @@
   },
   "completeButton": {
     "complete": "Mark complete",
-    "completed": "Completed",
     "reopenHint": "Click to reopen",
     "more": "More ways to complete",
     "completeAndContinue": "Complete and continue in another project…",

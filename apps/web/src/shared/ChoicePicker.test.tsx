@@ -280,6 +280,21 @@ describe('ChoicePicker', () => {
     expect(screen.queryAllByRole('option', { selected: true })).toEqual([]);
   });
 
+  it('draws theme colour tokens like hex dots and ignores any other value', async () => {
+    const user = userEvent.setup();
+    render(
+      <ChoicePicker
+        label="Status"
+        value="done"
+        options={[{ value: 'done', label: 'Done', color: 'var(--color-emerald-500)' }, { value: 'odd', label: 'Odd', color: 'url(x)' }]}
+        onValueChange={() => undefined}
+      />,
+    );
+    await user.click(trigger('Status'));
+    expect(screen.getByRole('option', { name: 'Done' }).querySelector('[aria-hidden="true"]')).toHaveAttribute('style', 'background-color: var(--color-emerald-500);');
+    expect(screen.getByRole('option', { name: 'Odd' }).querySelector('[aria-hidden="true"]')).not.toHaveAttribute('style');
+  });
+
   it('keeps menu keys and clicks away from surrounding handlers', async () => {
     const user = userEvent.setup();
     const outerKey = vi.fn();

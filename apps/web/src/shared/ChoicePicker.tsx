@@ -18,7 +18,7 @@ export interface ChoiceOption {
   avatarSeed?: string | undefined;
   /** Profile photo shown instead of the `avatarName` initials when it loads. */
   avatarUrl?: string | null | undefined;
-  /** A `#rgb`/`#rrggbb` dot for statuses and enum options; other values draw a neutral ring. */
+  /** A `#rgb`/`#rrggbb` dot for enum options, or a theme `var(--color-…)` for statuses and priorities; other values draw a neutral ring. */
   color?: string | undefined;
   /** Shown but never selectable, e.g. a retained archived option. */
   disabled?: boolean | undefined;
@@ -56,6 +56,8 @@ const EDGE = 8;
 const GAP = 4;
 const TYPEAHEAD_MS = 700;
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+/** A theme colour token, so a status dot follows the theme like the table cell beside it. */
+const THEME_COLOR = /^var\(--color-[a-z0-9-]+\)$/;
 // Selectors are written without spaces: they are DOM queries, never displayed copy.
 const TABBABLE = 'a[href],area[href],button,input:not([type="hidden"]),select,textarea,summary,iframe,[tabindex],[contenteditable=""],[contenteditable="true"]';
 const MODAL = '[role="dialog"],[role="alertdialog"]';
@@ -117,7 +119,7 @@ function ChoiceMark({ option, mark }: { option: ChoiceOption; mark: Mark }) {
     );
   }
   if (mark === 'dot') {
-    const color = option.color !== undefined && HEX_COLOR.test(option.color) ? option.color : null;
+    const color = option.color !== undefined && (HEX_COLOR.test(option.color) || THEME_COLOR.test(option.color)) ? option.color : null;
     return (
       <span
         aria-hidden="true"
