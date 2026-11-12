@@ -82,7 +82,7 @@ export function createInboxReadRepository(db: WorkloomExecutor): InboxReadReposi
         join users u on u.id = e.actor_user_id
         left join tasks t on t.workspace_id = ${workspaceId} and t.id = e.task_id
         left join projects p on p.workspace_id = t.workspace_id and p.id = t.project_id
-        where (e.task_id is null or (t.id is not null and t.archived_at is null and p.archived_at is null))
+        where (e.task_id is null or (t.id is not null and t.archived_at is null and p.archived_at is null and not p.is_template))
         order by e.at desc, e.id desc
         limit ${take}`);
       return [...rows].map((row): InboxItemDto => ({

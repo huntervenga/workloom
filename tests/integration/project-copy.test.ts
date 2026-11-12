@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  createDatabase, createGenericReportApplication, createPlanningCheckApplication, createProjectCopyApplication, createTaskApplication,
+  createDatabase, createGenericReportApplication, createMyTasksApplication, createPlanningCheckApplication, createProjectCopyApplication, createTaskApplication, FIXTURE_MEMBERSHIP_IDS as M,
   createTaskDefaultsApplication, createTaskFieldApplication, runMigrations, seedDemoData, FIXTURE_USER_IDS as U, FIXTURE_WORKSPACE_IDS as W, type Database,
 } from '@workloom/db';
 import type { CommandContext } from '@workloom/domain';
@@ -90,6 +90,79 @@ describe('project copy on isolated PostgreSQL', () => {
 
     // The source is untouched.
     expect(await tasks.listTasks(ctx(), { projectId: s.project.id, limit: 50 })).toMatchObject({ items: [expect.objectContaining({ title: 'Existing task' })] });
+  });
+
+  it('clones a template with its tasks, subtasks and every field value, and keeps template tasks out of My tasks', async () => {
+    const tasks = createTaskApplication(db), fields = createTaskFieldApplication(db), copies = createProjectCopyApplication(db);
+    const created = await tasks.createProject(ctx(), { name: 'Week template' });
+    const dated = await tasks.updateProject(ctx(), created.id, { expectedRevision: created.revision, dateRange: { from: '2026-11-09', to: '2026-11-15' } });
+    const project = await tasks.updateProject(ctx(), created.id, { expectedRevision: dated.revision, isTemplate: true });
+    expect(project.isTemplate).toBe(true);
+    const michael = await tasks.createSection(ctx(), project.id, { name: 'Michael' });
+    await tasks.createSection(ctx(), project.id, { name: 'Anna' });
+    const est = await fields.createField(ctx(), { projectId: project.id, name: 'Hours Est', type: 'duration', historyEnabled: true, locked: false, options: [] });
+    const fact = await fields.createField(ctx(), { projectId: project.id, name: 'Hours Fact', type: 'duration', historyEnabled: true, locked: false, options: [] });
+    const stage = await fields.createField(ctx(), { projectId: project.id, name: 'Stage', type: 'single_select', historyEnabled: true, locked: false, options: [{ name: 'Design', color: null }, { name: 'Build', color: null }] });
+    const review = await fields.createField(ctx(), { projectId: project.id, name: 'Review', type: 'date', historyEnabled: false, locked: false, options: [] });
+    const frozen = await fields.createField(ctx(), { projectId: project.id, name: 'Frozen note', type: 'text', historyEnabled: false, locked: false, options: [] });
+    const statuses = await tasks.listStatuses(ctx(), project.id);
+    const doing = need(statuses.find(x => x.group === 'in_progress'));
+    const todo = need(statuses.find(x => x.group === 'todo'));
+    const qa = await tasks.createTask(ctx(), { projectId: project.id, sectionId: michael.id, title: 'Template QA', statusId: doing.id, responsibleMembershipId: M.teamOwner, participantMembershipIds: [M.teamMemberA], dueDate: '2026-11-13', priority: 'high', estimateMinutes: 300 });
+    const detail = await tasks.createTask(ctx(), { projectId: project.id, sectionId: michael.id, parentTaskId: qa.id, title: 'Template regression', statusId: todo.id });
+    const extra = await tasks.createTask(ctx(), { projectId: project.id, sectionId: michael.id, parentTaskId: qa.id, title: 'Template extra scope', statusId: todo.id, workScope: 'added_scope', estimateMinutes: 30 });
+    const old = await tasks.createTask(ctx(), { projectId: project.id, title: 'Template archived', statusId: todo.id });
+    await tasks.archiveTask(ctx(), old.id, { expectedRevision: old.revision });
+    const build = need(stage.options.find(o => o.name === 'Build'));
+    await fields.setTaskValue(ctx(), qa.id, est.id, { expectedRevision: 0, expectedDefinitionRevision: est.revision, value: { type: 'duration', value: 300 } });
+    await fields.setTaskValue(ctx(), qa.id, fact.id, { expectedRevision: 0, expectedDefinitionRevision: fact.revision, value: { type: 'duration', value: 60 } });
+    await fields.setTaskValue(ctx(), qa.id, stage.id, { expectedRevision: 0, expectedDefinitionRevision: stage.revision, value: { type: 'single_select', value: build.id } });
+    await fields.setTaskValue(ctx(), qa.id, review.id, { expectedRevision: 0, expectedDefinitionRevision: review.revision, value: { type: 'date', value: '2026-11-12' } });
+    await fields.setTaskValue(ctx(), detail.id, est.id, { expectedRevision: 0, expectedDefinitionRevision: est.revision, value: { type: 'duration', value: 120 } });
+    await fields.setTaskValue(ctx(), extra.id, frozen.id, { expectedRevision: 0, expectedDefinitionRevision: frozen.revision, value: { type: 'text', value: 'keep' } });
+    await fields.updateField(ctx(), frozen.id, { expectedRevision: frozen.revision, locked: true });
+
+    // Template tasks are not anyone's work: the owner's My tasks leaves them out.
+    const myTasks = createMyTasksApplication(db, { secret: 'synthetic-personal-task-cursor-test-secret' });
+    expect((await myTasks.list(ctx(), { search: 'Template QA' })).items).toEqual([]);
+
+    const key = randomUUID();
+    const result = await copies.duplicateProject(ctx(U.owner, key), project.id, { name: '46 week', shiftDays: 7, copy: { tasks: true } });
+    expect(result.copied.tasks).toBe(3);
+    expect(result.warnings).toEqual([{ part: 'tasks', message: 'Values of locked fields were not copied: Frozen note.' }]);
+    const copy = await tasks.getProject(ctx(), result.projectId);
+    expect(copy.isTemplate).toBeUndefined();
+    expect(copy.dateRange).toEqual({ from: '2026-11-16', to: '2026-11-22' });
+
+    const rows = (await tasks.listTasks(ctx(), { projectId: result.projectId, limit: 50, includeArchived: true })).items;
+    expect(rows.map(row => row.title).sort()).toEqual(['Template QA', 'Template extra scope', 'Template regression']);
+    const byTitle = (title: string) => need(rows.find(row => row.title === title));
+    const [newQa, newDetail, newExtra] = [byTitle('Template QA'), byTitle('Template regression'), byTitle('Template extra scope')];
+    const newSections = await tasks.listSections(ctx(), result.projectId), newStatuses = await tasks.listStatuses(ctx(), result.projectId);
+    expect(newQa).toMatchObject({ parentTaskId: null, sectionId: need(newSections.find(x => x.name === 'Michael')).id, statusId: need(newStatuses.find(x => x.group === 'in_progress')).id, responsibleMembershipId: M.teamOwner, dueDate: '2026-11-20', priority: 'high', estimateMinutes: 300, position: qa.position });
+    expect(newQa.participants.filter(p => p.active).map(p => p.membershipId)).toEqual([M.teamMemberA]);
+    expect(newDetail).toMatchObject({ parentTaskId: newQa.id, workPackageId: newQa.workPackageId });
+    expect(newExtra).toMatchObject({ parentTaskId: newQa.id, estimateMinutes: 30 });
+    expect(newExtra.workPackageId).not.toBe(newQa.workPackageId);
+
+    const newFields = await fields.listFields(ctx(), result.projectId);
+    const fieldNamed = (name: string) => need(newFields.find(f => f.name === name));
+    const values = await fields.listProjectValues(ctx(), result.projectId, { taskIds: [newQa.id, newDetail.id, newExtra.id] });
+    const valueOf = (taskId: string, name: string) => values.find(v => v.taskId === taskId && v.fieldId === fieldNamed(name).id)?.value.value ?? null;
+    expect(valueOf(newQa.id, 'Hours Est')).toBe(300);
+    expect(valueOf(newQa.id, 'Hours Fact')).toBe(60);
+    expect(valueOf(newQa.id, 'Stage')).toBe(need(fieldNamed('Stage').options.find(o => o.name === 'Build')).id);
+    expect(valueOf(newQa.id, 'Review')).toBe('2026-11-19');
+    expect(valueOf(newDetail.id, 'Hours Est')).toBe(120);
+    expect(valueOf(newExtra.id, 'Frozen note')).toBeNull();
+
+    // The copy is real work; a retry with the same key continues the same copy and creates nothing more.
+    expect((await myTasks.list(ctx(), { search: 'Template QA' })).items.map(item => item.task.id)).toEqual([newQa.id]);
+    const again = await copies.duplicateProject(ctx(U.owner, key), project.id, { name: '46 week', shiftDays: 7, copy: { tasks: true } });
+    expect(again).toEqual(result);
+    expect((await tasks.listTasks(ctx(), { projectId: result.projectId, limit: 50, includeArchived: true })).items).toHaveLength(3);
+    // The template itself is untouched.
+    expect((await tasks.listTasks(ctx(), { projectId: project.id, limit: 50 })).items.map(row => row.title).sort()).toEqual(['Template QA', 'Template extra scope', 'Template regression']);
   });
 
   it('is resumable: the same key returns the same project and does not create a second one', async () => {

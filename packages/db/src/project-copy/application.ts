@@ -11,11 +11,16 @@ import { resumableWorkflow } from '../workflows/resumable.js';
 import { createProjectRulesApplication } from '../project-rules/application.js';
 import { createTaskDefaultsApplication } from '../task-defaults/application.js';
 import { createTaskApplication } from '../tasks/task-application.js';
+import type { WorkspaceWriteOptions } from '../transactions/workspace-write.js';
 
-/** Copies a project's structure and settings by running the ordinary commands one after another (resumable by idempotency key). */
-export function createProjectCopyApplication(source: Database | WorkloomExecutor): ProjectCopyApplication {
+/**
+ * Copies a project's structure and settings by running the ordinary commands one after another (resumable by idempotency
+ * key). `authorizeInScope` (the public API's token check) runs again in the workflow and in every task and field write.
+ */
+export function createProjectCopyApplication(source: Database | WorkloomExecutor, options: Pick<WorkspaceWriteOptions, 'authorizeInScope'> = {}): ProjectCopyApplication {
+  const write = options.authorizeInScope ? { authorizeInScope: options.authorizeInScope } : {};
   const service = createProjectCopyService({
-    tasks: createTaskApplication(source), fields: createTaskFieldApplication(source), checks: createPlanningCheckApplication(source),
+    tasks: createTaskApplication(source, write), fields: createTaskFieldApplication(source, write), checks: createPlanningCheckApplication(source),
     reports: createGenericReportApplication(source), defaults: createTaskDefaultsApplication(source), rules: createProjectRulesApplication(source), categories: createWorkCategoryApplication(source),
     digest: value => createHash('sha256').update(value).digest('hex'),
   });
@@ -24,7 +29,7 @@ export function createProjectCopyApplication(source: Database | WorkloomExecutor
       const id=idSchema.safeParse(sourceProjectId),parsed=duplicateProjectInputSchema.safeParse(input);
       if(!id.success||!parsed.success)throw new DomainError('VALIDATION_FAILED','Invalid project copy request.');
       return resumableWorkflow(source,context,{command:'project.duplicate',capability:'fields.manage',input:{projectId:id.data,input:parsed.data},schema:duplicateProjectResultSchema,
-        authorize:async scope=>{if(!await createTaskRepository(scope.tx).findProject(context.workspaceId,id.data))throw notFoundError();},
+        authorize:async scope=>{await options.authorizeInScope?.(scope);if(!await createTaskRepository(scope.tx).findProject(context.workspaceId,id.data))throw notFoundError();},
         work:()=>service.duplicateProject(context,id.data,parsed.data)});
     },
     async applySettings(context: CommandContext, sourceProjectId, input) {

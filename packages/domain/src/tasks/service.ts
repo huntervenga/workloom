@@ -232,8 +232,11 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           revision: project.revision + 1,
           updatedAt: now,
         };
+        // Like the date range, the template mark is only present when set.
+        if (parsed.isTemplate === true) next.isTemplate = true;
+        else if (parsed.isTemplate === false) delete next.isTemplate;
         await scope.repository.saveProject(next);
-        await record(scope, 'project', id, 'updated', next.revision, changedFields(project, next, ['name', 'archivedAt', 'dateRange']), {});
+        await record(scope, 'project', id, 'updated', next.revision, changedFields(project, next, ['name', 'archivedAt', 'dateRange', 'isTemplate']), {});
         return next;
       });
     },

@@ -403,6 +403,56 @@ describe('personal access tokens, public API and MCP', () => {
     expect(await homeOf()).toBe(backlog.id);
   });
 
+  it('creates a project from a template with its tasks, and leaves template tasks out of workspace-wide lists', async () => {
+    const stamp = Date.now();
+    const created = await h.owner.tasks.createProject(`Week template ${stamp}`);
+    const dated = await h.owner.tasks.updateProject(created.id, { expectedRevision: created.revision, dateRange: { from: '2026-11-09', to: '2026-11-15' } });
+    const plain = await h.owner.tasks.createProject(`Plain project ${stamp}`);
+    const section = await h.owner.tasks.createSection(created.id, { name: 'Michael' });
+    const todo = need((await h.owner.tasks.listStatuses(created.id)).find(x => x.group === 'todo'));
+    const title = `Standard QA ${stamp}`;
+    await h.owner.tasks.createTask({ projectId: created.id, sectionId: section.id, title, statusId: todo.id, dueDate: '2026-11-13' });
+
+    // Not a template yet: refused, nothing created.
+    const refused = await call(`${ws()}/projects`, { token: owner.token, method: 'POST', body: { template: created.id, name: `Week copy ${stamp}` } });
+    expect(refused.status, refused.text()).toBe(400);
+    expect(env(refused).error?.details).toMatchObject({ field: 'template' });
+
+    await h.owner.tasks.updateProject(created.id, { expectedRevision: dated.revision, isTemplate: true });
+    const projects = env<{ id: string; template?: boolean }[]>(await call(`${ws()}/projects`, { token: owner.token })).data;
+    expect(need(projects.find(p => p.id === created.id)).template).toBe(true);
+    expect(need(projects.find(p => p.id === plain.id)).template).toBeUndefined();
+
+    // A template without dates cannot be moved to a start date.
+    const undated = await h.owner.tasks.createProject(`Undated template ${stamp}`);
+    await h.owner.tasks.updateProject(undated.id, { expectedRevision: undated.revision, isTemplate: true });
+    const noRange = await call(`${ws()}/projects`, { token: owner.token, method: 'POST', body: { template: undated.id, name: `Undated copy ${stamp}`, startDate: '2026-11-16' } });
+    expect(noRange.status, noRange.text()).toBe(400);
+    expect(env(noRange).error?.details).toMatchObject({ field: 'startDate' });
+
+    const key = `from-template-${stamp}`;
+    const made = await call(`${ws()}/projects`, { token: owner.token, method: 'POST', headers: { 'idempotency-key': key }, body: { template: `Week template ${stamp}`, name: `46 week ${stamp}`, startDate: '2026-11-16' } });
+    expect(made.status, made.text()).toBe(201);
+    const copy = env<{ project: { id: string; name: string; dateRange: { from: string; to: string } | null }; template: { id: string }; copied: { sections: number; tasks: number }; warnings: unknown[] }>(made).data;
+    expect(copy).toMatchObject({ project: { name: `46 week ${stamp}`, dateRange: { from: '2026-11-16', to: '2026-11-22' } }, template: { id: created.id }, copied: { sections: 1, tasks: 1 }, warnings: [] });
+    const again = await call(`${ws()}/projects`, { token: owner.token, method: 'POST', headers: { 'idempotency-key': key }, body: { template: `Week template ${stamp}`, name: `46 week ${stamp}`, startDate: '2026-11-16' } });
+    expect(env<{ project: { id: string } }>(again).data.project.id).toBe(copy.project.id);
+
+    // Workspace-wide: only the copy is work. With the template as the project filter its task is listed.
+    const everywhere = env<TaskV[]>(await call(`${ws()}/tasks?q=${encodeURIComponent(title)}`, { token: owner.token })).data;
+    expect(everywhere.map(t => t.project.id)).toEqual([copy.project.id]);
+    expect(need(everywhere[0])).toMatchObject({ dueDate: '2026-11-20', section: { name: 'Michael' } });
+    const inTemplate = env<TaskV[]>(await call(`${ws()}/tasks?project=${created.id}&q=${encodeURIComponent(title)}`, { token: owner.token })).data;
+    expect(inTemplate.map(t => t.project.id)).toEqual([created.id]);
+
+    // The same through MCP.
+    const tools = json<Rpc>(await mcp(owner.token, rpc('tools/list', {}, 40))).result.tools.map(t => t.name);
+    expect(tools).toContain('create_project_from_template');
+    const viaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'create_project_from_template', arguments: { workspace: TEAM, template: created.id, name: `47 week ${stamp}`, startDate: '2026-11-23' } }, 41)));
+    expect(viaMcp.result.isError ?? false).toBe(false);
+    expect(viaMcp.result.structuredContent.result).toMatchObject({ project: { name: `47 week ${stamp}`, dateRange: { from: '2026-11-23', to: '2026-11-29' } }, copied: { tasks: 1 } });
+  });
+
   it('lists tasks shown in a project from another home, and moves a task already in a project to the given section', async () => {
     interface Shown extends TaskV { projects?: { id: string; name: string; home: boolean; section: { name: string } | null }[] }
     interface Placement { section: { name: string } | null; home: boolean; outcome: string; homeReason: string }

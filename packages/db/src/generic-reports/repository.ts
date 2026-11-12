@@ -14,7 +14,7 @@ export function createGenericReportRepository(tx: WorkloomExecutor, workspaceId:
   const fields = createTaskFieldRepository(tx);
   return {
     async workspaceCatalog(){
-      const rows=await tx.select({report:genericReportDefinitions,projectName:projects.name}).from(genericReportDefinitions).innerJoin(projects,and(eq(projects.workspaceId,workspaceId),eq(projects.id,genericReportDefinitions.projectId),isNull(projects.archivedAt))).where(and(eq(genericReportDefinitions.workspaceId,workspaceId),isNull(genericReportDefinitions.archivedAt))).orderBy(asc(projects.name),asc(genericReportDefinitions.createdAt),asc(genericReportDefinitions.id)).limit(1001);
+      const rows=await tx.select({report:genericReportDefinitions,projectName:projects.name}).from(genericReportDefinitions).innerJoin(projects,and(eq(projects.workspaceId,workspaceId),eq(projects.id,genericReportDefinitions.projectId),isNull(projects.archivedAt),eq(projects.isTemplate,false))).where(and(eq(genericReportDefinitions.workspaceId,workspaceId),isNull(genericReportDefinitions.archivedAt))).orderBy(asc(projects.name),asc(genericReportDefinitions.createdAt),asc(genericReportDefinitions.id)).limit(1001);
       if(rows.length>1000)throw new DomainError('DOMAIN_VALIDATION_FAILED','The workspace report source catalogue exceeds 1000 saved reports.');
       const definitions=new Map<string,awaitedFields>();
       type awaitedFields=Awaited<ReturnType<typeof fields.listFields>>;
@@ -50,7 +50,9 @@ export function createGenericReportRepository(tx: WorkloomExecutor, workspaceId:
       const [head] = await tx.select({ seq: workspaces.changeSeq, epoch: workspaces.permissionEpoch }).from(workspaces).where(eq(workspaces.id, workspaceId)); if (!head) throw notFoundError();
       // One target-project placement at most (SQL unique constraint), canonical task ID is the identity.
       const rows = await tx.select({ id: tasks.id, projectId: tasks.projectId, title: tasks.title, revision: tasks.revision, parentTaskId: tasks.parentTaskId, homeSectionId: tasks.sectionId, linkedSectionId: taskProjectPlacements.sectionId, responsibleMembershipId: tasks.responsibleMembershipId, dueDate: tasks.dueDate, statusGroup: taskStatuses.group }).from(tasks)
-        .innerJoin(projects, and(eq(projects.workspaceId, workspaceId), eq(projects.id, tasks.projectId), isNull(projects.archivedAt)))
+        .innerJoin(projects, and(eq(projects.workspaceId, workspaceId), eq(projects.id, tasks.projectId), isNull(projects.archivedAt),
+          // A template's tasks are not work: shown in another project they stay out of its sums; the template's own report keeps them.
+          or(eq(projects.id, config.projectId), eq(projects.isTemplate, false))))
         .innerJoin(taskStatuses, and(eq(taskStatuses.workspaceId, workspaceId), eq(taskStatuses.projectId, tasks.projectId), eq(taskStatuses.id, tasks.statusId)))
         .leftJoin(taskProjectPlacements, and(eq(taskProjectPlacements.workspaceId, workspaceId), eq(taskProjectPlacements.taskId, tasks.id), eq(taskProjectPlacements.projectId, config.projectId), isNull(taskProjectPlacements.archivedAt)))
         .where(and(eq(tasks.workspaceId, workspaceId), eq(tasks.visibility, 'workspace'), isNull(tasks.archivedAt), or(eq(tasks.projectId, config.projectId), isNotNull(taskProjectPlacements.id)))).orderBy(asc(tasks.id)).limit(5001);

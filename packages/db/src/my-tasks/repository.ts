@@ -18,6 +18,8 @@ export function createMyTasksReadRepository(db: WorkloomExecutor): MyTasksReadRe
       const conditions: (SQL | undefined)[] = [eq(tasks.workspaceId, workspaceId), filters.relation === 'assigned' ? assigned : filters.relation === 'participating' ? participant : or(assigned, participant)];
       if (filters.completion !== 'all') conditions.push(filters.completion === 'open' ? or(eq(taskStatuses.group, 'todo'), eq(taskStatuses.group, 'in_progress')) : or(eq(taskStatuses.group, 'done'), eq(taskStatuses.group, 'cancelled')));
       if (!filters.includeArchived) conditions.push(isNull(tasks.archivedAt), isNull(projects.archivedAt));
+      // A template's tasks name people for future weeks; they are not anyone's work now.
+      conditions.push(eq(projects.isTemplate, false));
       if (filters.search) {
         const pattern = `%${filters.search.replace(/[\\%_]/g, match => `\\${match}`)}%`;
         conditions.push(or(sql`${tasks.title} ilike ${pattern} escape '\\'`, sql`${tasks.description} ilike ${pattern} escape '\\'`));

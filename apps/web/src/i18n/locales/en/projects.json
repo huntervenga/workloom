@@ -104,7 +104,8 @@
     },
     "viewSummary": "View: {{view}}",
     "teamColumns": "Team columns",
-    "board": "Board"
+    "board": "Board",
+    "template": "Template"
   },
   "sectionCreate": {
     "form": "Add section",
@@ -223,5 +224,16 @@
     "archiveAction": "Archive",
     "archiving": "Archiving…",
     "deleting": "Deleting the project and its tasks… please wait"
+  },
+  "template": {
+    "mark": "Make a template",
+    "unmark": "Not a template",
+    "markTitle": "Make this project a template?",
+    "markWarning": "A template holds the standard sections and tasks of new projects, for example the tasks every week needs. Its tasks are not real work: they leave My tasks, the inbox, workspace reports and time summaries. Create a project from it with “New project from template”.",
+    "markAction": "Make a template",
+    "marking": "Saving…",
+    "failed": "The template mark could not be saved. Reload the page and try again.",
+    "cancel": "Cancel",
+    "sidebarBadge": "template"
   }
 }

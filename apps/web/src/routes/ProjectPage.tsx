@@ -85,6 +85,7 @@ import { BulkContinueDialog } from '../features/task-continuation/BulkContinueDi
 import { ContinueInProjectDialog } from '../features/task-continuation/ContinueInProjectDialog';
 import { DuplicateProjectDialog } from '../features/project-copy/DuplicateProjectDialog';
 import { ApplySettingsDialog } from '../features/project-copy/ApplySettingsDialog';
+import { ProjectTemplateButton } from '../features/projects/ProjectTemplate';
 import { ProjectRulesDialog } from '../features/project-rules/ProjectRulesDialog';
 import { TaskDefaultsDialog } from '../features/task-defaults/TaskDefaultsDialog';
 import { useProjectViewMemory } from '../features/projects/projectViewMemory';
@@ -1218,6 +1219,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {project.archivedAt === null ? <FavoriteWorkButton actorId={actorId} workspaceId={workspace.id} target={{ kind: 'project', id: project.id }} /> : null}
             <ProjectDateRange actorId={actorId} workspaceId={workspace.id} project={project} writable={canEdit && project.archivedAt === null}/>
             {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
+            {project.isTemplate ? <Badge tone="muted">{t('projects.projectPage.template')}</Badge> : null}
           </div>
         </div>
         {writable && metadataReady ? <ProjectCreateMenu returnFocus={sectionCreate.returnFocus} onAddTask={() => { if (grouping === 'section' && tableMode) startQuickAdd(null); else startCreate({ sectionId: null, parent: null }); }} onAddSection={startSection} /> : null}
@@ -1227,6 +1229,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             <WorkCategorySettings actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <DuplicateProjectDialog actorId={actorId} workspaceId={workspace.id} project={project} canManage={canManageFields} unfinished={unfinishedTasks} />
             <ApplySettingsDialog actorId={actorId} workspaceId={workspace.id} project={project} canManage={canManageFields} />
+            {canEdit && project.archivedAt === null ? <ProjectTemplateButton actorId={actorId} workspaceId={workspace.id} project={project} /> : null}
             <TaskDefaultsDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <ProjectRulesDialog actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
             <TagManagerDialog actorId={actorId} workspaceId={workspace.id} canEdit={canEdit} />
