@@ -1,4 +1,4 @@
-import { taskPrioritySchema, type MembershipDto, type SectionDto, type TagDto, type TaskDto, type TaskPriority, type TaskStatusDto, type TaskStatusGroup, type UpdateTaskInput, type BulkUpdateTasksInput } from '@workloom/contracts';
+import { taskPrioritySchema, type MembershipDto, type SectionDto, type TagDto, type TaskDto, type TaskStatusDto, type UpdateTaskInput, type BulkUpdateTasksInput } from '@workloom/contracts';
 import { Button, cn } from '@workloom/ui';
 import { Expand, LoaderCircle, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
@@ -8,6 +8,7 @@ import { useUnsavedChangesWarning } from '../../lib/useUnsavedChangesWarning';
 import { ChoicePicker, type ChoiceOption } from '../../shared/ChoicePicker';
 import { SaveFeedback } from '../../shared/SaveFeedback';
 import { CellPopover } from './CellPopover';
+import { priorityColor, statusTones } from './taskTones';
 import { priorityLabels } from './TaskFields';
 import { keepFocusOnPopoverPress, TaskDateInput } from './TaskDateInput';
 import { TaskTagPicker } from './TaskTagPicker';
@@ -112,8 +113,6 @@ export interface InlineTaskEditProps {
   singleOnly?: boolean | undefined;
 }
 
-const statusColors: Record<TaskStatusGroup, string> = { todo: '#94a3b8', in_progress: '#6366f1', done: '#10b981', cancelled: '#cbd5e1' };
-const priorityColors: Partial<Record<TaskPriority, string>> = { low: '#94a3b8', medium: '#64748b', high: '#d97706', urgent: '#e11d48' };
 const choiceFields = new Set<TaskInlineField>(['statusId', 'priority', 'responsibleMembershipId', 'sectionId']);
 
 /** A fixed-height cell control: it fills the cell and never changes the row or column size. */
@@ -433,14 +432,14 @@ export function InlineTaskEdit({ task, field, statuses, members, sections = [], 
   } as const;
   const statusOptions: ChoiceOption[] = [
     ...(!statuses.some(status => status.id === session.draft.statusId) ? [{ value: session.draft.statusId, label: t('tasks.taskFields.statusUnavailable'), disabled: true }] : []),
-    ...[...statuses].sort((a, b) => a.position - b.position).map(status => ({ value: status.id, label: status.name, color: statusColors[status.group] })),
+    ...[...statuses].sort((a, b) => a.position - b.position).map(status => ({ value: status.id, label: status.name, color: statusTones[status.group].color })),
   ];
   const assigneeOptions: ChoiceOption[] = [
     { value: '', label: t('tasks.taskFields.unassigned') },
     ...(session.draft.responsibleMembershipId && !members.some(member => member.id === session.draft.responsibleMembershipId) ? [{ value: session.draft.responsibleMembershipId, label: t('tasks.taskFields.memberUnavailable'), disabled: true }] : []),
     ...members.map(member => ({ value: member.id, label: member.displayName, avatarName: member.displayName, avatarSeed: member.userId, avatarUrl: member.avatarUrl })),
   ];
-  const priorityOptions: ChoiceOption[] = taskPrioritySchema.options.map(priority => ({ value: priority, label: priorityLabels[priority], color: priorityColors[priority] }));
+  const priorityOptions: ChoiceOption[] = taskPrioritySchema.options.map(priority => ({ value: priority, label: priorityLabels[priority], color: priorityColor(priority) }));
   // Active sections in their project order. A current archived or unknown section stays visible
   // and selected, but is never offered as a move target.
   const draftSection = session.draft.sectionId;

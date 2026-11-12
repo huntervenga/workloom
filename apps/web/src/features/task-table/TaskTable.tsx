@@ -2,6 +2,7 @@ import { rowShortcut, type RowShortcut } from './rowShortcuts';
 import { calendarDateLabel, TaskDateLabel } from '../tasks/TaskDateLabel';
 import { isTabKeyDown, isTabWalkBackward, openOnTabFromSameRow } from './tabWalk';
 import { TagBadge } from '../tasks/TagBadge';
+import { priorityTones, statusTones } from '../tasks/taskTones';
 import { AttachmentCount } from '../attachments/AttachmentCount';
 import { UserAvatar } from '../../shared/UserAvatar';
 import { TaskDragPreview } from './TaskDragPreview';
@@ -17,13 +18,12 @@ import type {
   TaskDto,
   TaskPriority,
   TaskStatusDto,
-  TaskStatusGroup,
 } from '@workloom/contracts';
 import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import * as RowMenu from '@radix-ui/react-menu';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, House, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2, TriangleAlert, UserRound } from 'lucide-react';
-import { useCallback, useId, useMemo, useRef, useState, Fragment, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import type { DateIssueInfo } from '../projects/dateConsistency';
 import { visibleTaskRows, type TaskGroup, type TaskTreeNode } from './taskTree';
@@ -283,25 +283,38 @@ const stickyEstimateClassName =
 const titleCellClassName =
   'task-table-pinned-column h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]';
 
+/**
+ * A pinned header cell stacks above every column's resize handle (`z-[2]`): the handles of the
+ * columns scrolled under it would otherwise draw their lines across it.
+ */
+function pinnedHeaderClassName(side: 'left' | 'right'): string {
+  return side === 'left'
+    ? 'task-table-pinned-column max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[3] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]'
+    : 'task-table-pinned-column lg:sticky lg:right-0 lg:z-[3] lg:bg-surface';
+}
+
 const menuItemClassName = 'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm outline-none data-highlighted:bg-accent-soft data-disabled:cursor-default data-disabled:opacity-50';
+
+/**
+ * Focus that rests on no widget: after a click on the page background it falls to the body or the
+ * main region, where the table's own Escape handler never hears the key.
+ */
+function restsOutsideWidgets(target: Element): boolean {
+  if (target === document.body || target === document.documentElement) return true;
+  return target.closest('input, textarea, select, button, a[href], summary, [contenteditable="true"], [tabindex]:not([tabindex="-1"]), [role="dialog"], [role="menu"], [role="listbox"], [role="combobox"], form, [data-task-panel]') === null;
+}
 
 /** Editors and text fields keep their native context menu and keyboard. */
 function ownsNativeMenu(target: EventTarget): boolean {
   return target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"], [data-editing], [role="menu"], [role="listbox"], [role="dialog"]') !== null;
 }
 
-const statusDotClasses: Record<TaskStatusGroup, string> = {
-  todo: 'bg-slate-400',
-  in_progress: 'bg-accent',
-  done: 'bg-emerald-500',
-  cancelled: 'bg-slate-300',
-};
 
 const priorityView: Record<Exclude<TaskPriority, 'none'>, { label: string; className: string }> = {
-  low: { get label() { return t('taskTable.taskTable.low'); }, className: 'text-muted' },
-  medium: { get label() { return t('taskTable.taskTable.medium'); }, className: 'text-ink-soft' },
-  high: { get label() { return t('taskTable.taskTable.high'); }, className: 'text-amber-700' },
-  urgent: { get label() { return t('taskTable.taskTable.urgent'); }, className: 'text-rose-700' },
+  low: { get label() { return t('taskTable.taskTable.low'); }, className: priorityTones.low.text },
+  medium: { get label() { return t('taskTable.taskTable.medium'); }, className: priorityTones.medium.text },
+  high: { get label() { return t('taskTable.taskTable.high'); }, className: priorityTones.high.text },
+  urgent: { get label() { return t('taskTable.taskTable.urgent'); }, className: priorityTones.urgent.text },
 };
 
 function formatTaskCount(count: number): string {
@@ -761,7 +774,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
           </div>
         </div>
       </td>),
-    status: td('status', 'statusId', cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[status.group])} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)),
+    status: td('status', 'statusId', cell('statusId', status === undefined ? <span className="text-muted">{t('taskTable.taskTable.statusUnavailable')}</span> : <span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusTones[status.group].dot)} /><span className="truncate text-ink-soft" title={status.name}>{status.name}</span></span>)),
     responsible: td('responsible', 'responsibleMembershipId', cell('responsibleMembershipId', task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)),
     participants: td('participants', null, <span className="flex h-8 min-w-0 items-center px-1.5"><ParticipantsCell membershipIds={activeParticipantIds} memberById={ctx.memberById} /></span>),
     dueDate: td('dueDate', 'dueDate', cell('dueDate', <DueDateCell startDate={task.startDate ?? null} dueDate={task.dueDate} today={ctx.today} finished={finished} issue={ctx.dateIssues?.get(task.id) ?? null} />)),
@@ -838,7 +851,7 @@ function LinkedTaskRow({ row, depth, ctx, renderCell, move }: { row: TaskTableLi
         </div>
       </div>
     </td>,
-    status: td('status', plain(<span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusDotClasses[row.status.group])} /><span className="truncate">{row.status.name}</span></span>)),
+    status: td('status', plain(<span className="flex min-w-0 items-center gap-1.5"><span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', statusTones[row.status.group].dot)} /><span className="truncate">{row.status.name}</span></span>)),
     responsible: td('responsible', plain(task.responsibleMembershipId === null ? <Empty label={t('taskTable.taskTable.unassigned')} /> : <MemberName membershipId={task.responsibleMembershipId} memberById={ctx.memberById} />)),
     participants: td('participants', plain(<ParticipantsCell membershipIds={participantIds} memberById={ctx.memberById} />)),
     dueDate: td('dueDate', plain(<DueDateCell startDate={task.startDate ?? null} dueDate={task.dueDate} today={ctx.today} finished={finished} />)),
@@ -1300,6 +1313,20 @@ export function TaskTable({
     if (ownsNativeMenu(event.target) || (event.target instanceof Element && event.target.closest('form, [data-task-section-editor], [data-choice-picker-menu], [role="combobox"][aria-expanded="true"], [aria-haspopup][aria-expanded="true"]') !== null)) return;
     if (onClearSelection()) event.preventDefault();
   };
+  // The same neutral Escape with the focus resting outside the table, e.g. after a click beside it.
+  const clearSelectionOnOutsideEscape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+    if (!(event.target instanceof Element) || scrollRef.current?.contains(event.target) || !restsOutsideWidgets(event.target)) return;
+    if (!onClearSelection || selectionDisabled || selectedTaskIds.length === 0 || drag !== null) return;
+    if (onClearSelection()) event.preventDefault();
+  };
+  const outsideEscape = useRef(clearSelectionOnOutsideEscape);
+  useLayoutEffect(() => { outsideEscape.current = clearSelectionOnOutsideEscape; });
+  useEffect(() => {
+    const listen = (event: KeyboardEvent) => outsideEscape.current(event);
+    document.addEventListener('keydown', listen);
+    return () => document.removeEventListener('keydown', listen);
+  }, []);
   const move: RowMove | null = moveEnabled ? {
     canMove: task => canEditTaskInline(task) && activeSection(task.sectionId),
     blocked: moveBlocked,
@@ -1405,7 +1432,7 @@ export function TaskTable({
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth, width: minWidth }}>
         <caption className="sr-only">{caption}</caption>
         <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? resolvedTitleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
-        <thead ref={headerRef} className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} data-task-column={column.id} scope="col" aria-label={column.label} className={cn('relative h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && 'task-table-pinned-column max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line)]', column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && 'task-table-pinned-column lg:sticky lg:right-0 lg:z-[1] lg:bg-surface')}><span className="flex min-w-0 items-center">{column.id === 'title' ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span><ColumnResizeHandle key={`${layout.key}:${column.id}`} columnId={column.id} label={column.label} width={column.width}
+        <thead ref={headerRef} className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} data-task-column={column.id} scope="col" aria-label={column.label} className={cn('relative h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && pinnedHeaderClassName('left'), column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && pinnedHeaderClassName('right'))}><span className="flex min-w-0 items-center">{column.id === 'title' ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span><ColumnResizeHandle key={`${layout.key}:${column.id}`} columnId={column.id} label={column.label} width={column.width}
           onPreview={width => previewWidth(column.id, width)} onCommit={width => layout.setColumnWidth(column.id, width)} /></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {
