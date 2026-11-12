@@ -11,6 +11,7 @@ import { OverviewPage } from '../routes/OverviewPage';
 import { ArchivedProjectsPage } from '../routes/ArchivedProjectsPage';
 import { ProjectsPage } from '../routes/ProjectsPage';
 import { TagsPage } from '../routes/TagsPage';
+import { WHATS_NEW_PATH, WhatsNewPage } from '../features/changelog/WhatsNew';
 import { WorkspaceLayout } from '../routes/WorkspaceLayout';
 import { useSession } from './session';
 import { AppShell } from './shell/AppShell';
@@ -58,6 +59,7 @@ export function AppRoutes() {
           <Route path="projects/:projectId" element={<ProjectPage />} />
           <Route path="projects/:projectId/reports" element={<ReportsPage />} />
           <Route path="projects/:projectId/week" element={<WeeklyPage />} />
+          <Route path={WHATS_NEW_PATH} element={<WhatsNewPage />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Route>

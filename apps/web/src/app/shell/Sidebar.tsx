@@ -4,7 +4,8 @@ import { WorkspaceLink as Link, WorkspaceNavLink as NavLink, useCanonicalWorkspa
 import { t, useTranslation } from '../../i18n';
 import type { MeDto } from '@workloom/contracts';
 import { Logomark, Skeleton, cn } from '@workloom/ui';
-import { BarChart3, Bell, CalendarDays, CheckCheck, Folder, FolderKanban, LayoutDashboard, RefreshCw, Tags, Users } from 'lucide-react';
+import { BarChart3, Bell, CalendarDays, CheckCheck, Folder, FolderKanban, LayoutDashboard, RefreshCw, Sparkles, Tags, Users } from 'lucide-react';
+import { WHATS_NEW_PATH, WhatsNewDot } from '../../features/changelog/WhatsNew';
 import { useLocation } from 'react-router';
 import { useProjectsQuery } from '../../features/projects/queries';
 import type { WorkspaceRole } from '../../features/workspace/roles';
@@ -184,6 +185,13 @@ export function SidebarContent({ me, workspaceId, role, onNavigate, onSettings }
                     <Users size={18} aria-hidden="true" />
 
                     {t('routes.members')}
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink to={`/w/${workspaceId}/${WHATS_NEW_PATH}`} className={navLinkClass} onClick={onNavigate}>
+                    <Sparkles size={18} aria-hidden="true" />
+                    {t('whatsNew.nav')}
+                    <WhatsNewDot actorId={me.actor.id} />
                   </NavLink>
                 </li>
               </>
