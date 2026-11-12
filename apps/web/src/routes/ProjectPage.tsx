@@ -107,7 +107,7 @@ import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMu
 import { RenameSectionDialog } from '../features/projects/SectionDialogs';
 import { ProjectCreateMenu } from '../features/projects/ProjectCreateMenu';
 import { SectionCreateForm, useSectionCreate } from '../features/projects/SectionCreateForm';
-import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, type TaskDropPlacement, type TaskTableCustomColumn, type TaskTableDraftRow, type TaskTableQuickAdd } from '../features/task-table';
+import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, withPendingMove, type PendingMove, type TaskDropPlacement, type TaskTableCustomColumn, type TaskTableDraftRow, type TaskTableQuickAdd } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
 import { TableColumnMenu } from '../features/task-table/TableColumnMenu';
 import { ProjectUndoSurface } from '../features/undo/ProjectUndoSurface';
@@ -261,6 +261,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const dependencies = useDependencyWorkspace(actorId, workspace.id, project.id);
   const schedule = useScheduleWorkspace(actorId, workspace.id, project.id, workspace.timezone);
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  // A dropped row shows at its drop place from the drop until the list read after the answer lands;
+  // a failed or unknown move drops it at once (the row returns to its stored place).
+  const [shownMove, setShownMove] = useState<{ move: PendingMove; confirmedAt: number | null } | null>(null);
   const selectionLedger = useRef(new Map<string, TaskDto>());
   const reloadSelectedTask = useReloadTask(actorId, workspace.id);
   const selectionScope = `${actorId}:${workspace.id}:${project.id}`;
@@ -1154,10 +1157,25 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     invalidateInlineSave();
     setActiveInline(null);
     setAnnouncement(message('taskTable.move.moving', { title: task.title }));
+    const shown: PendingMove = { taskId: task.id, anchorTaskId: anchor?.id ?? null, placement, ...(target ? { responsibleMembershipId: target.responsibleMembershipId } : {}) };
+    setShownMove({ move: shown, confirmedAt: null });
     commands.move.mutate({ taskId: task.id, input: { expectedRevision: task.revision, anchorTaskId: anchor?.id ?? null, placement, ...(target ? { responsibleMembershipId: target.responsibleMembershipId } : {}) } }, {
-      onSuccess: moved => setAnnouncement(message('taskTable.move.moved', { title: moved.title })),
+      onSuccess: moved => {
+        setShownMove(current => current?.move === shown ? { move: shown, confirmedAt: Date.now() } : current);
+        setAnnouncement(message('taskTable.move.moved', { title: moved.title }));
+      },
+      onError: () => setShownMove(current => current?.move === shown ? null : current),
     });
   };
+  // The answer carries only the moved task while the server renumbered the whole order: the drop place
+  // stays shown until the list read that the answer started has landed (at most a few seconds).
+  useEffect(() => {
+    if (shownMove?.confirmedAt === null || shownMove?.confirmedAt === undefined) return;
+    const confirmedAt = shownMove.confirmedAt;
+    if (!tasks.isFetching && tasks.dataUpdatedAt > confirmedAt) { setShownMove(null); return; }
+    const timer = window.setTimeout(() => setShownMove(current => current?.confirmedAt === confirmedAt ? null : current), 10_000);
+    return () => window.clearTimeout(timer);
+  }, [shownMove, tasks.isFetching, tasks.dataUpdatedAt]);
 
   // A linked task moves in the project's shared order through its placement; its home and own tasks keep their order.
   const linkedMoveBlocked = moveBlocked || placementCommands.pendingCommand !== null || placementCommands.uncertain !== null;
@@ -1437,6 +1455,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             query={tasks}
             deletedTaskIds={deletedTaskIds}
             tagCatalog={tags.data}
+            pendingMove={shownMove?.move ?? null}
             pendingEdit={[...(commands.update.pendingCommand ? [{ taskId: commands.update.pendingCommand.variables.taskId, input: commands.update.pendingCommand.variables.input }] : []), ...pendingEditsOfBulk(commands.bulk.pendingCommand?.variables.input)]}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
@@ -1551,6 +1570,8 @@ interface TaskListProps {
   deletedTaskIds: ReadonlySet<string>;
   /** The sent, unanswered update: its row shows the new values meanwhile. */
   pendingEdit?: PendingEdit | readonly PendingEdit[] | null | undefined;
+  /** The dropped, unconfirmed table move: its row shows at the drop place meanwhile. */
+  pendingMove?: PendingMove | null | undefined;
   /** Workspace tags, to name the tags a pending edit sent. */
   tagCatalog?: readonly TagDto[] | undefined;
   filtered: boolean;
@@ -1596,7 +1617,7 @@ interface TaskListProps {
   onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
-function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, project, boardMode, ...table }: TaskListProps) {
+function TaskList({ query, deletedTaskIds, pendingEdit, pendingMove, tagCatalog, filtered, project, boardMode, ...table }: TaskListProps) {
   const workspaceToday = useWorkspaceDay();
   const { t } = useTranslation();
   if (query.isPending) {
@@ -1623,7 +1644,9 @@ function TaskList({ query, deletedTaskIds, pendingEdit, tagCatalog, filtered, pr
 
   const loadedScope = loadedTaskScope(query.data);
   const keptScope = deletedTaskIds.size === 0 ? loadedScope : { ...loadedScope, tasks: withoutDeletedTasks(loadedScope.tasks, deletedTaskIds) };
-  const scope = pendingEdit && (!Array.isArray(pendingEdit) || pendingEdit.length > 0) ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit, tagCatalog, { status: !boardMode, responsible: table.grouping !== 'assignee' }) } : keptScope;
+  const editedScope = pendingEdit && (!Array.isArray(pendingEdit) || pendingEdit.length > 0) ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit, tagCatalog, { status: !boardMode, responsible: table.grouping !== 'assignee' }) } : keptScope;
+  // Only table rows move this way; Board cards move between status lanes with their own command.
+  const scope = pendingMove && !boardMode ? { ...editedScope, tasks: withPendingMove(editedScope.tasks, pendingMove) } : editedScope;
   // Banners about completion dates describe stored data, never a value that is only shown early.
   const dateIssues = completedDateIssues(project, keptScope.tasks, table.statuses);
   const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, { kind: issue.kind, finished: issue.finished }] as const));
