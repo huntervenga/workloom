@@ -174,6 +174,11 @@ export interface TaskTableProps {
    * locally: the refetched list is the authoritative order.
    */
   onMoveTask?: ((task: TaskDto, anchor: TaskDto | null, placement: TaskDropPlacement, target?: { responsibleMembershipId: string | null }) => void) | undefined;
+  /**
+   * Several selected rows dragged together: the selected rows on the dragged row's level, in the order
+   * shown. Without it a drag moves only the dragged row.
+   */
+  onMoveTasks?: ((tasks: readonly TaskDto[], anchor: TaskDto | null, placement: TaskDropPlacement, target?: { responsibleMembershipId: string | null }) => void) | undefined;
   /** A task command is still being sent or unconfirmed: reordering is refused until it resolves. */
   moveBlocked?: boolean | undefined;
   acquireDragProtection?: (() => () => void) | undefined;
@@ -1056,7 +1061,7 @@ export function TaskTable({
   columnIds, layoutScope,
   onEditTaskField, isTaskFieldEditBusy, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
   showLegacySummary = true, aggregateFooter, showGroupAggregates = true, showProjectAggregates = true, renderColumnAggregate, renderGroupMetadata, renderTaskIndicator, columnMenu, onCreateSection,
-  onMoveTask, moveBlocked = false, acquireDragProtection,
+  onMoveTask, onMoveTasks, moveBlocked = false, acquireDragProtection,
   grouping = 'section',
   sortMode = 'manual',
   collapsedTaskIds,
@@ -1173,13 +1178,23 @@ export function TaskTable({
   const treeOrder = useMemo(() => groups.flatMap(group => visibleTaskRows(group.roots, new Set()).map(node => node.task)), [groups]);
   const activeSection = (sectionId: string | null) => sectionId === null || sectionById.get(sectionId)?.archivedAt === null;
   const siblingsOf = (task: TaskDto) => treeOrder.filter(item => grouping === 'assignee' ? item.responsibleMembershipId === task.responsibleMembershipId : item.parentTaskId === task.parentTaskId && item.sectionId === task.sectionId);
-  const dropAllowed = (source: TaskDto, anchor: TaskDto, placement: TaskDropPlacement): boolean => {
+  // A dragged selected row carries the other selected rows on its level, in the order shown.
+  const movingBlock = (source: TaskDto): readonly TaskDto[] => {
+    if (!onMoveTasks || selectedTaskIds.length < 2 || !selectedTaskIds.includes(source.id)) return [source];
+    const selected = new Set(selectedTaskIds), seen = new Set<string>();
+    const block = treeOrder.filter(task => selected.has(task.id) && !seen.has(task.id) && seen.add(task.id)
+      && task.parentTaskId === source.parentTaskId && canEditTaskInline(task) && activeSection(task.sectionId));
+    return block.length > 1 ? block : [source];
+  };
+  const dropAllowed = (source: TaskDto, anchor: TaskDto, placement: TaskDropPlacement, block: readonly TaskDto[] = [source]): boolean => {
+    if (block.length > 1 && block.some(task => task.id === anchor.id)) return false;
     if (grouping === 'assignee' && anchor.responsibleMembershipId !== null && !memberById.has(anchor.responsibleMembershipId)) return false;
     if (anchor.id === source.id || (grouping === 'section' && anchor.parentTaskId !== source.parentTaskId) || !canEditTaskInline(anchor) || !activeSection(anchor.sectionId)) return false;
     if (grouping === 'assignee') {
       if (anchor.responsibleMembershipId !== source.responsibleMembershipId) return true;
     } else if (anchor.sectionId !== source.sectionId) return source.parentTaskId === null;
-    if (partial) return true;
+    // A block may also land right next to one of its own rows: the others still move.
+    if (partial || block.length > 1) return true;
     const siblings = siblingsOf(source);
     const index = siblings.findIndex(item => item.id === source.id);
     // Dropping right next to itself changes nothing and sends nothing.
@@ -1187,13 +1202,15 @@ export function TaskTable({
   };
   const commitMove = (source: TaskDto, anchor: TaskDto | null, placement: TaskDropPlacement, target?: { responsibleMembershipId: string | null }) => {
     if (!moveEnabled || moveBlocked || !canEditTaskInline(source) || !activeSection(source.sectionId)) return;
-    if (anchor && !dropAllowed(source, anchor, placement)) return;
+    const block = movingBlock(source);
+    if (anchor && !dropAllowed(source, anchor, placement, block)) return;
     if (!anchor && target === undefined) return;
     if (target && (grouping !== 'assignee' || (target.responsibleMembershipId !== null && !memberById.has(target.responsibleMembershipId)) || (anchor && anchor.responsibleMembershipId !== target.responsibleMembershipId))) return;
+    if (block.length > 1) { if (target) onMoveTasks?.(block, anchor, placement, target); else onMoveTasks?.(block, anchor, placement); return; }
     if (target) onMoveTask?.(source, anchor, placement, target);
     else onMoveTask?.(source, anchor, placement);
   };
-  const { drag, startDrag } = usePointerRowDrag({ taskById, dropAllowed, blocked: moveBlocked || !moveEnabled, acquireProtection: acquireDragProtection, contextKey: `${dragScope ?? ''}:${grouping}:${sortMode}`,
+  const { drag, startDrag } = usePointerRowDrag({ taskById, dropAllowed: (source, anchor, placement) => dropAllowed(source, anchor, placement, movingBlock(source)), blocked: moveBlocked || !moveEnabled, acquireProtection: acquireDragProtection, contextKey: `${dragScope ?? ''}:${grouping}:${sortMode}`,
     onMove: (source, anchor, placement) => commitMove(source, anchor, placement),
     resolveDrop: grouping !== 'assignee' ? undefined : (source, over, point) => {
       const body = over?.closest<HTMLElement>('[data-task-assignee-group]');
@@ -1207,7 +1224,7 @@ export function TaskTable({
         if (!anchor) return null;
         const rect = element.getBoundingClientRect();
         const placement = point.y < rect.top + rect.height / 2 ? 'before' : 'after';
-        return dropAllowed(source, anchor, placement) ? { taskId: anchor.id, placement, responsibleMembershipId: memberId } : null;
+        return dropAllowed(source, anchor, placement, movingBlock(source)) ? { taskId: anchor.id, placement, responsibleMembershipId: memberId } : null;
       }
       // Only the group header (expanded or collapsed) and the empty-group row mean the group end; draft rows do not.
       if (!over?.closest('tr[data-task-group-header], tr[data-task-group-drop]')) return null;
@@ -1427,7 +1444,7 @@ export function TaskTable({
   return (
     <div ref={scrollRef} data-task-table-scroll="" data-task-range-select={rangeSelect.active ? '' : undefined} onKeyDown={clearSelectionOnEscape} className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', rangeSelect.active && 'select-none', className)}>
       {selectionLimit ? <div role="status" className="fixed right-3 bottom-24 z-[70] max-w-sm rounded-lg border border-line bg-surface p-3 text-sm shadow-lg">{t('taskTable.selection.limit')}<Button size="sm" variant="ghost" onClick={() => setSelectionLimit(false)}>{t('taskTable.selection.dismiss')}</Button></div> : null}
-      {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} /> : null}
+      {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} count={movingBlock(drag.task).length} /> : null}
       {linkedDrag ? <TaskDragPreview task={linkedDrag.task} pointer={linkedDrag.pointer} /> : null}
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth, width: minWidth }}>
         <caption className="sr-only">{caption}</caption>

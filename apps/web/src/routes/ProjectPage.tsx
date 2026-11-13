@@ -107,7 +107,7 @@ import { useProjectQuery, useSectionsQuery, useStatusesQuery, useUpdateSectionMu
 import { RenameSectionDialog } from '../features/projects/SectionDialogs';
 import { ProjectCreateMenu } from '../features/projects/ProjectCreateMenu';
 import { SectionCreateForm, useSectionCreate } from '../features/projects/SectionCreateForm';
-import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, withPendingMove, type PendingMove, type TaskDropPlacement, type TaskTableCustomColumn, type TaskTableDraftRow, type TaskTableQuickAdd } from '../features/task-table';
+import { TaskTable, buildTaskGroups, visibleTaskRows, dedupeTasks, summarizeWorkPackages, blockMoves, withPendingMoves, type PendingMove, type TaskDropPlacement, type TaskTableCustomColumn, type TaskTableDraftRow, type TaskTableQuickAdd } from '../features/task-table';
 import { TagManagerDialog } from '../features/tasks/TagDialogs';
 import { TableColumnMenu } from '../features/task-table/TableColumnMenu';
 import { ProjectUndoSurface } from '../features/undo/ProjectUndoSurface';
@@ -263,7 +263,9 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   // A dropped row shows at its drop place from the drop until the list read after the answer lands;
   // a failed or unknown move drops it at once (the row returns to its stored place).
-  const [shownMove, setShownMove] = useState<{ move: PendingMove; confirmedAt: number | null } | null>(null);
+  const [shownMove, setShownMove] = useState<{ moves: readonly PendingMove[]; confirmedAt: number | null } | null>(null);
+  // Several dropped rows are sent one move after another; nothing else moves until the last answer.
+  const [movingMany, setMovingMany] = useState(false);
   const selectionLedger = useRef(new Map<string, TaskDto>());
   const reloadSelectedTask = useReloadTask(actorId, workspace.id);
   const selectionScope = `${actorId}:${workspace.id}:${project.id}`;
@@ -1131,7 +1133,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
   } : undefined;
 
   // Manual reorder: one guarded move at a time, after every other task command has resolved.
-  const moveBlocked = !completionWritable || unresolvedTaskCommand(commands) !== null || commands.move.pendingCommand !== null || commands.move.uncertain !== null
+  const moveBlocked = movingMany || !completionWritable || unresolvedTaskCommand(commands) !== null || commands.move.pendingCommand !== null || commands.move.uncertain !== null
     || commands.quick.queue.length > 0 || commands.quick.sending || tasks.isFetching;
   // Board drag is one explicit status intent, using the same page-owned serialized field writer.
   const moveBoardCard: BoardMoveCard = (seen, statusId, anchor, placement) => {
@@ -1157,15 +1159,55 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     invalidateInlineSave();
     setActiveInline(null);
     setAnnouncement(message('taskTable.move.moving', { title: task.title }));
-    const shown: PendingMove = { taskId: task.id, anchorTaskId: anchor?.id ?? null, placement, ...(target ? { responsibleMembershipId: target.responsibleMembershipId } : {}) };
-    setShownMove({ move: shown, confirmedAt: null });
+    const shown: readonly PendingMove[] = [{ taskId: task.id, anchorTaskId: anchor?.id ?? null, placement, ...(target ? { responsibleMembershipId: target.responsibleMembershipId } : {}) }];
+    setShownMove({ moves: shown, confirmedAt: null });
     commands.move.mutate({ taskId: task.id, input: { expectedRevision: task.revision, anchorTaskId: anchor?.id ?? null, placement, ...(target ? { responsibleMembershipId: target.responsibleMembershipId } : {}) } }, {
       onSuccess: moved => {
-        setShownMove(current => current?.move === shown ? { move: shown, confirmedAt: Date.now() } : current);
+        setShownMove(current => current?.moves === shown ? { moves: shown, confirmedAt: Date.now() } : current);
         setAnnouncement(message('taskTable.move.moved', { title: moved.title }));
       },
-      onError: () => setShownMove(current => current?.move === shown ? null : current),
+      onError: () => setShownMove(current => current?.moves === shown ? null : current),
     });
+  };
+  // Selected rows dropped together: one guarded move per row, in the order shown, each next row right
+  // after the one before. Every move renumbers the order, so each next row is guarded by the revision
+  // the previous answer reports for it (moveUndo.afterHeads), never by a fresh read: a change by
+  // someone else in between still fails the guard. A failed move stops the rest; done moves stay.
+  const moveTasks = (moving: readonly TaskDto[], anchor: TaskDto | null, placement: TaskDropPlacement, target?: { responsibleMembershipId: string | null }) => {
+    if (!completionWritable || sortMode !== 'manual' || moving.length === 0 || (!anchor && target === undefined)) return;
+    const drafted = moving.find(task => commands.editSessions.current.has(task.id));
+    if (drafted) { setAnnouncement(message('taskTable.move.draft', { title: drafted.title })); return; }
+    if (moveBlocked) { setAnnouncement(message('taskTable.move.wait')); return; }
+    invalidateInlineSave();
+    setActiveInline(null);
+    const shown = blockMoves(moving.map(task => task.id), anchor?.id ?? null, placement, target?.responsibleMembershipId);
+    setShownMove({ moves: shown, confirmedAt: null });
+    setMovingMany(true);
+    setAnnouncement(message('taskTable.move.movingMany', { count: moving.length }));
+    const revisions = new Map(moving.map(task => [task.id, task.revision]));
+    void (async () => {
+      let done = 0;
+      try {
+        for (const move of shown) {
+          const expectedRevision = revisions.get(move.taskId);
+          if (expectedRevision === undefined) break;
+          const moved = await commands.move.mutateAsync({ taskId: move.taskId, input: {
+            expectedRevision, anchorTaskId: move.anchorTaskId, placement: move.placement,
+            ...(move.responsibleMembershipId !== undefined ? { responsibleMembershipId: move.responsibleMembershipId } : {}),
+          } });
+          for (const head of moved.moveUndo?.afterHeads ?? []) revisions.set(head.taskId, head.revision);
+          revisions.set(moved.id, moved.revision);
+          done += 1;
+        }
+        setShownMove(current => current?.moves === shown ? { moves: shown, confirmedAt: Date.now() } : current);
+        setAnnouncement(message('taskTable.move.movedMany', { count: done }));
+      } catch {
+        setShownMove(current => current?.moves === shown ? null : current);
+        setAnnouncement(message('taskTable.move.movedPart', { count: done, total: shown.length }));
+      } finally {
+        setMovingMany(false);
+      }
+    })();
   };
   // The answer carries only the moved task while the server renumbered the whole order: the drop place
   // stays shown until the list read that the answer started has landed (at most a few seconds).
@@ -1444,6 +1486,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             quickAdd={quickAdd}
             sectionComposer={sectionCreate.open && grouping === 'section' ? <SectionCreateForm controller={sectionCreate} writable={completionWritable} /> : undefined}
             onMoveTask={moveTask}
+            onMoveTasks={moveTasks}
             onMoveBoardCard={moveBoardCard}
             moveBlocked={moveBlocked}
             acquireDragProtection={acquireDragProtection}
@@ -1455,7 +1498,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             query={tasks}
             deletedTaskIds={deletedTaskIds}
             tagCatalog={tags.data}
-            pendingMove={shownMove?.move ?? null}
+            pendingMoves={shownMove?.moves ?? null}
             pendingEdit={[...(commands.update.pendingCommand ? [{ taskId: commands.update.pendingCommand.variables.taskId, input: commands.update.pendingCommand.variables.input }] : []), ...pendingEditsOfBulk(commands.bulk.pendingCommand?.variables.input)]}
             filtered={hasActiveTaskFilters(filters)}
             project={project}
@@ -1570,8 +1613,8 @@ interface TaskListProps {
   deletedTaskIds: ReadonlySet<string>;
   /** The sent, unanswered update: its row shows the new values meanwhile. */
   pendingEdit?: PendingEdit | readonly PendingEdit[] | null | undefined;
-  /** The dropped, unconfirmed table move: its row shows at the drop place meanwhile. */
-  pendingMove?: PendingMove | null | undefined;
+  /** The dropped, unconfirmed table moves: their rows show at the drop place meanwhile. */
+  pendingMoves?: readonly PendingMove[] | null | undefined;
   /** Workspace tags, to name the tags a pending edit sent. */
   tagCatalog?: readonly TagDto[] | undefined;
   filtered: boolean;
@@ -1604,6 +1647,7 @@ interface TaskListProps {
   renderGroupMetadata?: ComponentProps<typeof TaskTable>['renderGroupMetadata'];
   renderTaskIndicator?: ComponentProps<typeof TaskTable>['renderTaskIndicator'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
+  onMoveTasks: NonNullable<ComponentProps<typeof TaskTable>['onMoveTasks']>;
   onMoveBoardCard: BoardMoveCard;
   moveBlocked: boolean;
   acquireDragProtection: () => () => void;
@@ -1617,7 +1661,7 @@ interface TaskListProps {
   onDuplicateSection?: ComponentProps<typeof TaskTable>['onDuplicateSection'];
 }
 
-function TaskList({ query, deletedTaskIds, pendingEdit, pendingMove, tagCatalog, filtered, project, boardMode, ...table }: TaskListProps) {
+function TaskList({ query, deletedTaskIds, pendingEdit, pendingMoves, tagCatalog, filtered, project, boardMode, ...table }: TaskListProps) {
   const workspaceToday = useWorkspaceDay();
   const { t } = useTranslation();
   if (query.isPending) {
@@ -1646,7 +1690,7 @@ function TaskList({ query, deletedTaskIds, pendingEdit, pendingMove, tagCatalog,
   const keptScope = deletedTaskIds.size === 0 ? loadedScope : { ...loadedScope, tasks: withoutDeletedTasks(loadedScope.tasks, deletedTaskIds) };
   const editedScope = pendingEdit && (!Array.isArray(pendingEdit) || pendingEdit.length > 0) ? { ...keptScope, tasks: withPendingEdit(keptScope.tasks, pendingEdit, tagCatalog, { status: !boardMode, responsible: table.grouping !== 'assignee' }) } : keptScope;
   // Only table rows move this way; Board cards move between status lanes with their own command.
-  const scope = pendingMove && !boardMode ? { ...editedScope, tasks: withPendingMove(editedScope.tasks, pendingMove) } : editedScope;
+  const scope = pendingMoves && pendingMoves.length > 0 && !boardMode ? { ...editedScope, tasks: withPendingMoves(editedScope.tasks, pendingMoves) } : editedScope;
   // Banners about completion dates describe stored data, never a value that is only shown early.
   const dateIssues = completedDateIssues(project, keptScope.tasks, table.statuses);
   const dateIssueKinds = new Map(dateIssues.map(issue => [issue.taskId, { kind: issue.kind, finished: issue.finished }] as const));

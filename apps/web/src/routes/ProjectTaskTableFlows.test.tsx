@@ -11,6 +11,43 @@ const row = (suffix: string, position: number, extra: Partial<TaskDto> = {}): Ta
 const A = row('a1', 0, { title: 'Alpha row' });
 const B = row('b1', 1, { title: 'Bravo row' });
 const C = row('c1', 2, { title: 'Charlie row' });
+const D = row('d1', 3, { title: 'Delta row' });
+
+/**
+ * A move as the server makes it: guarded by the task's revision, next to its anchor (a root task takes
+ * the anchor's section), the whole order renumbered, and every written row's revision raised and
+ * reported in `moveUndo.afterHeads`.
+ */
+function moveRoutes(store: { rows: TaskDto[] }): RouteTable {
+  const handler = renumberingMove(store);
+  return Object.fromEntries(store.rows.map(item => [`POST ${rootPath}/tasks/${item.id}/move`, handler]));
+}
+
+function renumberingMove(store: { rows: TaskDto[] }): RouteTable[string] {
+  return request => {
+    const id = request.path.split('/').at(-2) ?? '';
+    const body = request.body as { expectedRevision: number; anchorTaskId: string; placement: 'before' | 'after' };
+    const moving = store.rows.find(item => item.id === id);
+    const anchorRow = store.rows.find(item => item.id === body.anchorTaskId);
+    if (!moving || !anchorRow) return failure(404, 'not_found', 'Missing task');
+    if (moving.revision !== body.expectedRevision) return failure(409, 'conflict', 'The task changed meanwhile');
+    const rest = store.rows.filter(item => item.id !== id);
+    const at = rest.findIndex(item => item.id === anchorRow.id) + (body.placement === 'after' ? 1 : 0);
+    const placed = { ...moving, sectionId: moving.parentTaskId === null ? anchorRow.sectionId : moving.sectionId };
+    const before = new Map(store.rows.map(item => [item.id, item]));
+    store.rows = [...rest.slice(0, at), placed, ...rest.slice(at)].map((item, position) => {
+      const was = before.get(item.id);
+      return was && (was.position !== position || item.id === id) ? { ...item, position, revision: item.revision + 1 } : item;
+    });
+    const written = store.rows.filter(item => before.get(item.id)?.revision !== item.revision).sort((x, y) => x.id.localeCompare(y.id));
+    const moved = store.rows.find(item => item.id === id);
+    return ok({ ...moved, moveUndo: {
+      originalKey: request.headers.get('Idempotency-Key') ?? 'missing', orderFingerprint: 'fixture-order',
+      beforeHeads: written.map(item => ({ taskId: item.id, revision: before.get(item.id)?.revision ?? 0 })),
+      afterHeads: written.map(item => ({ taskId: item.id, revision: item.revision })),
+    } });
+  };
+}
 const preference = { workspaceId: alpha.id, projectId: PROJECT_ID, membershipId: alphaMembers[0]?.id, revision: 1, columns: [{ column: { kind: 'builtin', key: 'title' }, visible: true }, { column: { kind: 'builtin', key: 'status' }, visible: true }] };
 type Calls = ReturnType<typeof installFakeApi>['calls'];
 const writes = (calls: Calls) => calls.filter(call => call.method !== 'GET');
@@ -203,6 +240,65 @@ describe('manual reorder', () => {
 
     answer.resolve(undefined);
     await waitFor(() => expect(order()).toEqual([A.id, B.id, C.id]));
+  });
+
+  it('moves the selected rows together, guarding each next move with the revision the previous answer reports', async () => {
+    const store = { rows: [A, B, C, D] };
+    const { calls } = installFakeApi(routes(() => store.rows, { ...moveRoutes(store) }));
+    const { user } = renderApp(tablePath);
+
+    await user.click(await screen.findByRole('button', { name: `Select task: ${A.title}` }));
+    await user.keyboard('{Control>}'); await user.click(screen.getByRole('button', { name: `Select task: ${B.title}` })); await user.keyboard('{/Control}');
+    await waitFor(() => expect(screen.getByRole('button', { name: `Select task: ${B.title}` })).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByRole('button', { name: `Select task: ${A.title}` })).toHaveAttribute('aria-pressed', 'true');
+
+    const target = within(rowOf(screen.getByRole('button', { name: D.title }))).getByRole('button', { name: D.title });
+    await user.pointer({ keys: '[MouseLeft>]', target: handleOf(A), coords: { clientX: 2, clientY: 2 } });
+    await user.pointer({ target, coords: { clientX: 2, clientY: 90 } });
+    // The drag card says the other selected row moves too.
+    expect(screen.getByTestId('task-drag-preview')).toHaveTextContent('+1 more');
+    await user.pointer({ keys: '[/MouseLeft]', target, coords: { clientX: 2, clientY: 90 } });
+
+    // Both rows show at the drop place at once, in the order they were shown.
+    await waitFor(() => expect(order()).toEqual([C.id, D.id, A.id, B.id]));
+    await waitFor(() => expect(moves(calls)).toHaveLength(2));
+    expect(moves(calls).map(call => [call.path.split('/').at(-2), (call.body as { anchorTaskId: string }).anchorTaskId, (call.body as { placement: string }).placement])).toEqual([
+      [A.id, D.id, 'after'], [B.id, A.id, 'after'],
+    ]);
+    // B was renumbered by the first move: the second move is guarded by the revision that answer reported.
+    expect((moves(calls)[1]?.body as { expectedRevision: number }).expectedRevision).toBe(B.revision + 1);
+    await waitFor(() => expect(handleOf(A)).not.toHaveAttribute('aria-disabled'));
+    expect(order()).toEqual([C.id, D.id, A.id, B.id]);
+  });
+
+  it('moves the selected rows into another section next to the row they are dropped on', async () => {
+    const other = 'f5000000-0000-4000-8000-0000000000e1';
+    const first = 'f5000000-0000-4000-8000-0000000000e2';
+    const store = { rows: [{ ...A, sectionId: first }, { ...B, sectionId: first }, { ...C, sectionId: first }, { ...D, sectionId: other }] };
+    const sectionRow = (id: string, name: string, position: number) => ({ id, workspaceId: alpha.id, projectId: PROJECT_ID, name, position, revision: 1, archivedAt: null });
+    const { calls } = installFakeApi(routes(() => store.rows, {
+      [`GET ${rootPath}/projects/${PROJECT_ID}/sections`]: () => ok([sectionRow(first, 'First section', 0), sectionRow(other, 'Other section', 1)]),
+      ...moveRoutes(store),
+    }));
+    const { user } = renderApp(tablePath);
+
+    await user.click(await screen.findByRole('button', { name: `Select task: ${A.title}` }));
+    await user.keyboard('{Control>}'); await user.click(screen.getByRole('button', { name: `Select task: ${C.title}` })); await user.keyboard('{/Control}');
+    await waitFor(() => expect(screen.getByRole('button', { name: `Select task: ${C.title}` })).toHaveAttribute('aria-pressed', 'true'));
+
+    const target = within(rowOf(screen.getByRole('button', { name: D.title }))).getByRole('button', { name: D.title });
+    await user.pointer({ keys: '[MouseLeft>]', target: handleOf(C), coords: { clientX: 2, clientY: 2 } });
+    await user.pointer({ target, coords: { clientX: 2, clientY: 90 } });
+    await user.pointer({ keys: '[/MouseLeft]', target, coords: { clientX: 2, clientY: 90 } });
+
+    await waitFor(() => expect(moves(calls)).toHaveLength(2));
+    expect(moves(calls).map(call => [call.path.split('/').at(-2), (call.body as { anchorTaskId: string }).anchorTaskId, (call.body as { placement: string }).placement])).toEqual([
+      [A.id, D.id, 'after'], [C.id, A.id, 'after'],
+    ]);
+    await waitFor(() => expect(store.rows.filter(item => item.sectionId === other).map(item => item.id)).toEqual([D.id, A.id, C.id]));
+    const otherGroup = rowOf(screen.getByRole('button', { name: D.title })).closest('tbody');
+    await waitFor(() => expect(within(otherGroup as HTMLElement).getByRole('button', { name: A.title })).toBeInTheDocument());
+    expect(within(otherGroup as HTMLElement).getByRole('button', { name: C.title })).toBeInTheDocument();
   });
 
   it('refuses further moves while a move outcome is unknown', async () => {
