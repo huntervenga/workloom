@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { desktopPalettes } from './palettes';
 import { createThemeManager, type ThemeEnvironment } from './ThemeManager';
 
 function browser(dark = false) {
@@ -44,4 +45,13 @@ describe('server-controlled theme presentation', () => {
     expect(() => manager.start()()).not.toThrow(); expect(manager.getTheme()).toBe('light');
     manager.setTheme('unknown' as never); expect(manager.getChoice()).toBe('default');
   });
+});
+
+it.each(desktopPalettes)('applies $id with the correct native color scheme and chrome', palette => {
+  const b = browser(), manager = createThemeManager(b.env);
+  const meta = b.doc.createElement('meta'); meta.name = 'theme-color'; b.doc.head.append(meta);
+  manager.setTheme(palette.id);
+  expect(b.doc.documentElement.style.colorScheme).toBe(palette.mode);
+  expect(meta.content).toBe(palette.canvas);
+  b.system(true); expect(manager.getTheme()).toBe(palette.id);
 });

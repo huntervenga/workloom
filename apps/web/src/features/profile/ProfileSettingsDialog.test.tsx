@@ -26,6 +26,7 @@ async function open(ui: ReturnType<typeof harness>) {
   await ui.user.click(await screen.findByRole('button', { name: `User menu for ${anna.displayName}` }));
   await ui.user.click(await screen.findByRole('menuitem', { name: 'Settings' }));
   await screen.findByRole('dialog', { name: 'Settings' });
+  await ui.user.click(screen.getByRole('button', { name: 'Appearance' }));
 }
 describe('profile theme settings', () => {
   it('opens from the user menu, saves automatically, restores after reopening, and uses no local theme storage', async () => {
@@ -61,4 +62,14 @@ describe('profile theme settings', () => {
     await act(async () => pending.resolve(ok({ ...initial, revision: 1, settings: { version: 1, theme: 'dark' } })));
     await waitFor(() => expect(themeManager.getChoice()).toBe('light'));
   });
+});
+
+it('separates profile from appearance and saves a light desktop palette from its preview card', async () => {
+  const ui = harness(); await open(ui);
+  expect(screen.getByText('DARK')).toBeVisible(); expect(screen.getByText('LIGHT')).toBeVisible();
+  await ui.user.click(screen.getByRole('radio', { name: 'Kanagawa Lotus' }));
+  await waitFor(() => expect(ui.saved().settings.theme).toBe('kanagawa-lotus'));
+  expect(document.documentElement.style.colorScheme).toBe('light');
+  await ui.user.click(screen.getByRole('button', { name: 'Profile' }));
+  expect(screen.queryByRole('radio', { name: 'Kanagawa Lotus' })).not.toBeInTheDocument();
 });

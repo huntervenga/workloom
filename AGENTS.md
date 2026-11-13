@@ -2,6 +2,8 @@
 
 **24 October 2026: shared calls were removed** (UI, API and write code; see [127](docs/127-shared-calls-removed.md)). Mentions of shared activities below are historical.
 
+**Latest local slice (13 November 2026): desktop theme catalog.** [Appearance and checks](docs/133-omnissiah-theme.md): all 29 desktop palettes, separate Profile/Appearance sections, DARK/LIGHT preview grids, account autosave and per-palette native color scheme/browser chrome. No migration. Focused web 55/4, predeploy and isolated Vite build passed; synthetic desktop/mobile browser checks passed. Real account and production unchanged.
+
 **Latest local slice (9 November 2026): Omnissiah theme.** [Palette, how to add a theme, checks](docs/133-omnissiah-theme.md): a fourth profile theme (warm soot/bone/brass dark palette from the owner's desktop), `dark-theme:` variant and `calendar-weekend` token instead of dark-only arbitrary variants; migration 0040 replaces the `user_settings` theme list check with a name-shape check, so the theme list lives only in `userThemeSchema`.
 
 **Previous slice (9 November 2026, deployed `90552e0`): connected apps (OAuth) for the remote MCP.** [Setup, design and checks](docs/132-oauth-connected-apps.md): discovery metadata, dynamic registration of public clients (claude.ai callbacks and loopback only), authorization code + PKCE S256 with in-app consent at `/app/connect`, rotating refresh tokens; a grant is an `api_tokens` row (`oauth_client_id`), so scopes, role checks, revocation and audit match personal tokens. Migration 0039 is additive. OAuth PostgreSQL+API 5/5, consent web 4/4, migration journal test updated 14/14. Real claude.ai/mobile, deployed Claude Code/Codex and Cloudflare are NOT CHECKED.

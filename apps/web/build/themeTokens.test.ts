@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL as NodeURL } from 'node:url';
 import ganttViewSource from '../src/features/schedule/GanttView.tsx?raw';
 import { describe, expect, it } from 'vitest';
+import { desktopPalettes } from '../src/features/theme/palettes';
+import { userThemeSchema } from '@workloom/contracts';
 import { graphNodeBoxStyle } from '../src/features/dependencies/GraphNodeContent';
 import { graphEdgeColor, graphEdgeStyle, graphNodeTone } from '../src/features/dependencies/graphPresentation';
 import { connectorStyles } from '../src/features/schedule/GanttConnectors';
@@ -22,7 +24,7 @@ function tokens(block: string): Record<string, string> {
 
 const lightBlocks = [...sharedCss.matchAll(/@theme(?: static)? \{([\s\S]*?)\n\}/g)].map(match => match[1] ?? '');
 const light = tokens(lightBlocks.join('\n'));
-const darkBlock = /:root:is\(\[data-theme="dark"\], \[data-theme="default-dark"\], \[data-theme="omnissiah"\]\) \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '';
+const darkBlock = /:root:is\(\[data-theme="dark"\], \[data-theme="default-dark"\], \[data-theme="omnissiah"\][^)]*\) \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '';
 const dark = tokens(darkBlock);
 const neutral = { ...dark, ...tokens(/:root\[data-theme="dark"\] \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '') };
 const omnissiahBlock = /:root\[data-theme="omnissiah"\] \{([\s\S]*?)\n {2}\}/.exec(sharedCss)?.[1] ?? '';
@@ -186,5 +188,21 @@ describe('landing palette', () => {
     expect(contrast(darkValue('landing-chip-active-ink'), darkValue('landing-chip-active'))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(darkValue('landing-focus'), darkValue('landing-bg'))).toBeGreaterThanOrEqual(3);
     expect(landingCss).not.toMatch(/filter|invert\(/);
+  });
+});
+
+
+describe('desktop palette catalog', () => {
+  it('covers every account theme and gives every desktop palette readable semantic roles', () => {
+    expect(userThemeSchema.options.toSorted()).toEqual(['default', 'dark', 'light', ...desktopPalettes.map(p => p.id)].toSorted());
+    for (const entry of desktopPalettes) {
+      const block = new RegExp(':root\\[data-theme="' + entry.id + '"\\] \\{([\\s\\S]*?)\\n {2}\\}').exec(sharedCss)?.[1] ?? '';
+      expect(block, entry.id).not.toBe('');
+      const p = tokens(block);
+      for (const surface of ['canvas', 'surface']) expect(contrast(p['color-ink']!, p['color-' + surface]!), entry.id).toBeGreaterThanOrEqual(7);
+      for (const surface of ['canvas', 'surface', 'surface-hover', 'selection', 'tag-surface']) expect(contrast(p['color-muted']!, p['color-' + surface]!), entry.id).toBeGreaterThanOrEqual(4.5);
+      expect(contrast('#ffffff', p['color-accent']!), entry.id).toBeGreaterThanOrEqual(4.5);
+      for (const series of ['chart-plan', 'chart-fact']) expect(contrast(p['color-' + series]!, p['color-chart-track']!), entry.id).toBeGreaterThanOrEqual(3);
+    }
   });
 });

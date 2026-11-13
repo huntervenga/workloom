@@ -33,5 +33,9 @@
   "avatarConflict": "Your photo changed elsewhere. Reload it before trying again.",
   "avatarFailed": "The photo change could not be confirmed. Reload your profile before trying again.",
   "avatarReload": "Reload profile photo",
-  "avatarSaved": "Profile photo updated."
+  "avatarSaved": "Profile photo updated.",
+  "profileTab": "Profile",
+  "appearanceTab": "Appearance",
+  "darkGroup": "DARK",
+  "lightGroup": "LIGHT"
 }

@@ -3,7 +3,7 @@ import { envelopeSchema } from './common/envelope.js';
 import { idSchema } from './common/ids.js';
 
 /** Theme names are validated here; the database only checks their shape, so a new theme needs no migration. */
-export const userThemeSchema = z.enum(['default', 'dark', 'light', 'omnissiah']);
+export const userThemeSchema = z.enum(['default', 'dark', 'light', 'catppuccin', 'catppuccin-latte', 'ethereal', 'everforest', 'flexoki-light', 'graphite', 'gruvbox', 'hackerman', 'jade-horse', 'kanagawa', 'kanagawa-dragon', 'kanagawa-lotus', 'last-horizon', 'lumon', 'lupine', 'matte-black', 'miasma', 'nord', 'omnissiah', 'retro-82', 'ristretto', 'rose-pine', 'solitude', 'starship', 'tesla-day', 'tesla-night', 'tokyo-night', 'vantablack', 'white']);
 export const userPreferencesSchema = z.object({ version: z.literal(1), theme: userThemeSchema });
 export const userSettingsSchema = z.object({
   userId: idSchema,

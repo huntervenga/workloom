@@ -4,10 +4,10 @@
 @source "../../../packages/ui/src";
 
 /* Any dark palette (Default on a dark system, Dark, Omnissiah). */
-@custom-variant dark-theme (&:where([data-theme="dark"] *, [data-theme="default-dark"] *, [data-theme="omnissiah"] *));
+@custom-variant dark-theme (&:where([data-theme="dark"] *, [data-theme="default-dark"] *, [data-theme="omnissiah"] *, [data-theme="catppuccin"] *, [data-theme="ethereal"] *, [data-theme="everforest"] *, [data-theme="graphite"] *, [data-theme="gruvbox"] *, [data-theme="hackerman"] *, [data-theme="jade-horse"] *, [data-theme="kanagawa"] *, [data-theme="kanagawa-dragon"] *, [data-theme="last-horizon"] *, [data-theme="lumon"] *, [data-theme="matte-black"] *, [data-theme="miasma"] *, [data-theme="nord"] *, [data-theme="retro-82"] *, [data-theme="ristretto"] *, [data-theme="solitude"] *, [data-theme="starship"] *, [data-theme="tesla-night"] *, [data-theme="tokyo-night"] *, [data-theme="vantablack"] *));
 
 /* React Flow reads these documented overrides; the light theme keeps the library defaults. */
-:root:is([data-theme="dark"], [data-theme="default-dark"], [data-theme="omnissiah"]) .react-flow {
+:root:is([data-theme="dark"], [data-theme="default-dark"], [data-theme="omnissiah"], [data-theme="catppuccin"], [data-theme="ethereal"], [data-theme="everforest"], [data-theme="graphite"], [data-theme="gruvbox"], [data-theme="hackerman"], [data-theme="jade-horse"], [data-theme="kanagawa"], [data-theme="kanagawa-dragon"], [data-theme="last-horizon"], [data-theme="lumon"], [data-theme="matte-black"], [data-theme="miasma"], [data-theme="nord"], [data-theme="retro-82"], [data-theme="ristretto"], [data-theme="solitude"], [data-theme="starship"], [data-theme="tesla-night"], [data-theme="tokyo-night"], [data-theme="vantablack"]) .react-flow {
   --xy-background-color: var(--color-canvas);
   --xy-background-pattern-color: var(--color-line-strong);
   --xy-node-color: var(--color-ink);

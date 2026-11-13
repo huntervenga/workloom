@@ -23,6 +23,19 @@ const english = new Map(Object.entries(catalogs.en).flatMap(([namespace, value])
 const violations = [];
 // These diagnostics are never shown directly: safe error descriptions use fixed catalog keys.
 const literalExemptions = new Map([
+  ["apps/web/src/features/theme/palettes.ts:Catppuccin Latte", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Flexoki Light", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Jade Horse", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Kanagawa Dragon", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Kanagawa Lotus", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Last Horizon", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Matte Black", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Retro 82", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Rose Pine", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Tesla Day", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Tesla Night", 'Desktop theme proper name, preserved from the source palette catalog.'],
+  ["apps/web/src/features/theme/palettes.ts:Tokyo Night", 'Desktop theme proper name, preserved from the source palette catalog.'],
+
   ['apps/web/src/features/task-table/BulkCustomFieldCell.tsx:input[type=checkbox]:not([disabled]), button:not([disabled])', 'Exact DOM focus selector for an editable checkbox or button; never rendered as copy.'],
   ['apps/web/src/features/fields/InlineFieldValueCell.tsx:input[type="checkbox"]:not([disabled]), button:not([disabled])', 'Exact DOM focus selector for an editable checkbox or button; never rendered as copy.'],
   ['apps/web/src/main.tsx:Root element #root is missing', 'Developer bootstrap diagnostic; never displayed.'],
