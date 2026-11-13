@@ -34,3 +34,21 @@ export function withPendingMove<T extends TaskDto>(tasks: readonly T[], move: Pe
   const responsibleMembershipId = byAssignee ? move.responsibleMembershipId ?? null : moved.responsibleMembershipId;
   return tasks.map(task => task.id === moved.id ? { ...task, position, sectionId, responsibleMembershipId } : task);
 }
+
+/** Several moves of one drop, in the order they are sent: each next row is placed after the one before. */
+export function withPendingMoves<T extends TaskDto>(tasks: readonly T[], moves: readonly PendingMove[] | null | undefined): readonly T[] {
+  return (moves ?? []).reduce<readonly T[]>((shown, move) => withPendingMove(shown, move), tasks);
+}
+
+/**
+ * The moves that drop several rows together: the first lands at the drop place, every next one right
+ * after the one before, so the rows keep the order they were shown in (and the anchor's section).
+ */
+export function blockMoves(taskIds: readonly string[], anchorTaskId: string | null, placement: 'before' | 'after', responsibleMembershipId?: string | null): PendingMove[] {
+  return taskIds.map((taskId, index) => ({
+    taskId,
+    anchorTaskId: index === 0 ? anchorTaskId : taskIds[index - 1] ?? null,
+    placement: index === 0 ? placement : 'after',
+    ...(responsibleMembershipId !== undefined ? { responsibleMembershipId } : {}),
+  }));
+}

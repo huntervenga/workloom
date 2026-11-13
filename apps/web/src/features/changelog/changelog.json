@@ -1,5 +1,5 @@
 {
-  "covers": "27a418f7425c7ef940b31c673dc85626d8d40a2d",
+  "covers": "55abc91c9bcbbe0011b885003db3a77c34c58550",
   "days": [
     {
       "date": "2026-11-13",
@@ -9,7 +9,8 @@
         "Escape clears the selected tasks even after a click beside the table.",
         "The pinned Task column header no longer shows stray lines when the table is scrolled to the right.",
         "Long task names wrap onto several lines in the task pane instead of running out of sight.",
-        "Reordering tasks: a dropped row moves to its new place at once, the drag handle covers the whole row height, and it shows when it has to wait for the previous move."
+        "Reordering tasks: a dropped row moves to its new place at once, the drag handle covers the whole row height, and it shows when it has to wait for the previous move.",
+        "Drag several selected tasks at once: they move together and keep their order, also into another section."
       ]
     },
     {

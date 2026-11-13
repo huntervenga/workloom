@@ -2,7 +2,7 @@ import type { TaskDto } from '@workloom/contracts';
 import { describe, expect, it } from 'vitest';
 import { buildTaskGroups, visibleTaskRows } from './taskTree';
 import { makeSection, makeTask } from './taskTableFixtures';
-import { withPendingMove } from './pendingMove';
+import { blockMoves, withPendingMove, withPendingMoves } from './pendingMove';
 
 const first = makeSection({ id: 'section-first', name: 'First', position: 0 });
 const second = makeSection({ id: 'section-second', name: 'Second', position: 1 });
@@ -34,6 +34,20 @@ describe('a dropped row before the list confirms it', () => {
     const anna = makeTask({ id: 'anna-task', responsibleMembershipId: 'member-anna', position: 5 });
     const shown = withPendingMove([...tasks, anna], { taskId: 'a', anchorTaskId: anna.id, placement: 'after', responsibleMembershipId: 'member-anna' });
     expect(shown.find(task => task.id === 'a')).toMatchObject({ responsibleMembershipId: 'member-anna', sectionId: first.id, position: 6 });
+  });
+
+  it('shows a dropped block in its shown order at the drop place, also in another section', () => {
+    expect(blockMoves(['a', 'c'], 'd', 'after')).toEqual([
+      { taskId: 'a', anchorTaskId: 'd', placement: 'after' },
+      { taskId: 'c', anchorTaskId: 'a', placement: 'after' },
+    ]);
+    expect(order(withPendingMoves(tasks, blockMoves(['a', 'c'], 'd', 'after')))).toEqual([['b'], ['d', 'a', 'c']]);
+    expect(order(withPendingMoves(tasks, blockMoves(['b', 'c'], 'a', 'before')))).toEqual([['b', 'c', 'a'], ['d']]);
+    expect(blockMoves(['a', 'b'], null, 'after', 'member')).toEqual([
+      { taskId: 'a', anchorTaskId: null, placement: 'after', responsibleMembershipId: 'member' },
+      { taskId: 'b', anchorTaskId: 'a', placement: 'after', responsibleMembershipId: 'member' },
+    ]);
+    expect(withPendingMoves(tasks, [])).toBe(tasks);
   });
 
   it('leaves the list alone without an anchor, for an unknown task or across parents', () => {
