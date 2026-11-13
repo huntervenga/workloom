@@ -9,6 +9,8 @@ export interface PendingMove {
   placement: 'before' | 'after';
   /** Given when rows are grouped by assignee: the person of the lane the row was dropped in. */
   responsibleMembershipId?: string | null | undefined;
+  /** Without an anchor: the (empty) section the row was dropped in; its place in the order stays. */
+  sectionId?: string | null | undefined;
 }
 
 /**
@@ -19,6 +21,10 @@ export interface PendingMove {
  * the move fails, and a move without an anchor (an empty lane) waits for the answer.
  */
 export function withPendingMove<T extends TaskDto>(tasks: readonly T[], move: PendingMove | null | undefined): readonly T[] {
+  if (move && move.anchorTaskId === null && move.sectionId !== undefined) {
+    const sectionId = move.sectionId;
+    return tasks.map(task => task.id === move.taskId && task.parentTaskId === null ? { ...task, sectionId } : task);
+  }
   if (!move || move.anchorTaskId === null || move.anchorTaskId === move.taskId) return tasks;
   const moved = tasks.find(task => task.id === move.taskId);
   const anchor = tasks.find(task => task.id === move.anchorTaskId);

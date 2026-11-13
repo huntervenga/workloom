@@ -179,6 +179,8 @@ export interface TaskTableProps {
    * shown. Without it a drag moves only the dragged row.
    */
   onMoveTasks?: ((tasks: readonly TaskDto[], anchor: TaskDto | null, placement: TaskDropPlacement, target?: { responsibleMembershipId: string | null }) => void) | undefined;
+  /** Rows dropped on a section that has no row to be placed next to: they only change their section. */
+  onMoveToSection?: ((tasks: readonly TaskDto[], sectionId: string | null) => void) | undefined;
   /** A task command is still being sent or unconfirmed: reordering is refused until it resolves. */
   moveBlocked?: boolean | undefined;
   acquireDragProtection?: (() => () => void) | undefined;
@@ -1061,7 +1063,7 @@ export function TaskTable({
   columnIds, layoutScope,
   onEditTaskField, isTaskFieldEditBusy, renderTaskFieldEditor, activeFieldEditor, renderCompletionAction, draftTaskIds = new Set(), quickAdd, sectionComposer,
   showLegacySummary = true, aggregateFooter, showGroupAggregates = true, showProjectAggregates = true, renderColumnAggregate, renderGroupMetadata, renderTaskIndicator, columnMenu, onCreateSection,
-  onMoveTask, onMoveTasks, moveBlocked = false, acquireDragProtection,
+  onMoveTask, onMoveTasks, onMoveToSection, moveBlocked = false, acquireDragProtection,
   grouping = 'section',
   sortMode = 'manual',
   collapsedTaskIds,
@@ -1210,9 +1212,46 @@ export function TaskTable({
     if (target) onMoveTask?.(source, anchor, placement, target);
     else onMoveTask?.(source, anchor, placement);
   };
+  // An empty section has no row to be placed next to: its rows only change their section (root tasks only).
+  const sectionDropAllowed = (block: readonly TaskDto[], sectionId: string | null): boolean => onMoveToSection !== undefined && activeSection(sectionId)
+    && block.some(task => task.sectionId !== sectionId) && block.every(task => task.parentTaskId === null && canMoveTaskSection(task) && canEditTaskInline(task));
+  const commitSection = (source: TaskDto, sectionId: string | null) => {
+    if (!moveEnabled || moveBlocked || grouping !== 'section' || !canEditTaskInline(source)) return;
+    const block = movingBlock(source);
+    if (!sectionDropAllowed(block, sectionId)) return;
+    onMoveToSection?.(block.filter(task => task.sectionId !== sectionId), sectionId);
+  };
+  /**
+   * A drop on a section rather than on a row: its header means its top, anything below its rows its end.
+   * Next to its first or last root row as a usual move; an empty section only changes the rows' section.
+   */
+  const resolveSectionDrop = (source: TaskDto, over: Element | null, point: { y: number }): DropTarget | null => {
+    const body = over?.closest<HTMLElement>('tbody[data-task-section-group]');
+    if (!body || !moveEnabled || moveBlocked) return null;
+    const sectionId = body.dataset.taskSectionGroup || null;
+    const row = over?.closest<HTMLElement>('tr[data-task-row]');
+    const block = movingBlock(source);
+    if (row) {
+      const anchor = taskById.get(row.dataset.taskRow ?? '');
+      if (!anchor) return null;
+      const rect = row.getBoundingClientRect();
+      const placement = point.y < rect.top + rect.height / 2 ? 'before' : 'after';
+      return dropAllowed(source, anchor, placement, block) ? { taskId: anchor.id, placement } : null;
+    }
+    if (over?.closest('tr[data-linked-row]')) return null;
+    const moving = new Set(block.map(task => task.id));
+    const roots = treeOrder.filter(task => task.parentTaskId === null && task.sectionId === sectionId && !moving.has(task.id));
+    const top = over?.closest('tr[data-task-group-header]') !== null;
+    const anchor = top ? roots[0] : roots.at(-1);
+    if (anchor) {
+      const placement: TaskDropPlacement = top ? 'before' : 'after';
+      return dropAllowed(source, anchor, placement, block) ? { taskId: anchor.id, placement } : null;
+    }
+    return sectionDropAllowed(block, sectionId) ? { taskId: null, placement: 'after', sectionId } : null;
+  };
   const { drag, startDrag } = usePointerRowDrag({ taskById, dropAllowed: (source, anchor, placement) => dropAllowed(source, anchor, placement, movingBlock(source)), blocked: moveBlocked || !moveEnabled, acquireProtection: acquireDragProtection, contextKey: `${dragScope ?? ''}:${grouping}:${sortMode}`,
     onMove: (source, anchor, placement) => commitMove(source, anchor, placement),
-    resolveDrop: grouping !== 'assignee' ? undefined : (source, over, point) => {
+    resolveDrop: grouping === 'section' ? resolveSectionDrop : grouping !== 'assignee' ? undefined : (source, over, point) => {
       const body = over?.closest<HTMLElement>('[data-task-assignee-group]');
       if (!body || !moveEnabled || moveBlocked) return null;
       const memberId = body.dataset.taskAssigneeGroup || null;
@@ -1231,6 +1270,7 @@ export function TaskTable({
       return { taskId: null, placement: 'after', responsibleMembershipId: memberId };
     },
     onDrop: (source, target) => {
+      if (target.taskId === null && target.sectionId !== undefined) { commitSection(source, target.sectionId); return; }
       const anchor = target.taskId ? taskById.get(target.taskId) ?? null : null;
       commitMove(source, anchor, target.placement, target.responsibleMembershipId === undefined ? undefined : { responsibleMembershipId: target.responsibleMembershipId });
     },
@@ -1479,11 +1519,14 @@ export function TaskTable({
           }
           const emptyRow = !collapsed && items.length === 0;
           // A null-anchor group-end drop is drawn on the empty-group row, otherwise on the header.
-          const groupEnd = group.kind === 'assignee' && drag?.target?.taskId === null && drag.target.responsibleMembershipId === group.membershipId;
+          const groupEnd = drag?.target?.taskId === null && (group.kind === 'assignee'
+            ? drag.target.responsibleMembershipId === group.membershipId
+            : grouping === 'section' && drag.target.sectionId !== undefined && drag.target.sectionId === group.sectionId);
           return (
-            <tbody key={group.key} className="[counter-reset:task-row]" data-task-assignee-group={group.kind === 'assignee' ? group.membershipId ?? '' : undefined}>
+            <tbody key={group.key} className="[counter-reset:task-row]" data-task-assignee-group={group.kind === 'assignee' ? group.membershipId ?? '' : undefined}
+              data-task-section-group={grouping === 'section' && group.kind !== 'assignee' ? group.sectionId ?? '' : undefined}>
               <GroupHeader
-                dropMembershipId={group.kind === 'assignee' && moveEnabled ? group.membershipId ?? '' : undefined}
+                dropMembershipId={moveEnabled ? group.kind === 'assignee' ? group.membershipId ?? '' : grouping === 'section' ? group.sectionId ?? '' : undefined : undefined}
                 dropLine={groupEnd && !emptyRow}
                 group={group}
                 disclosureTitle={titles[index] ?? groupTitle(group)}
@@ -1504,7 +1547,7 @@ export function TaskTable({
                 linkedCount={(linkedByGroup.get(linkedGroupKey(group)) ?? []).reduce((sum, block) => sum + block.rows.length, 0)}
               />
               {collapsed ? null : emptyRow
-                ? <tr data-task-group-drop={group.kind === 'assignee' ? group.membershipId ?? '' : undefined} data-task-drop={groupEnd ? 'after' : undefined} className={cn('h-10 border-t border-line', groupEnd && 'shadow-[inset_0_-2px_0_var(--color-accent)]')}><td colSpan={columnCount} className="h-10 py-0 pr-3 pl-[42px] text-sm text-muted" style={dropCellStyle(groupEnd ? 'after' : undefined)}>{group.kind === 'assignee' && moveEnabled ? t('taskTable.move.emptyGroup', { name: groupTitle(group) }) : partial ? t('taskTable.taskTable.noLoadedTasksInThisSection') : t('taskTable.taskTable.noTasksYet')}</td></tr>
+                ? <tr data-task-group-drop={group.kind === 'assignee' ? group.membershipId ?? '' : grouping === 'section' ? group.sectionId ?? '' : undefined} data-task-drop={groupEnd ? 'after' : undefined} className={cn('h-10 border-t border-line', groupEnd && 'shadow-[inset_0_-2px_0_var(--color-accent)]')}><td colSpan={columnCount} className="h-10 py-0 pr-3 pl-[42px] text-sm text-muted" style={dropCellStyle(groupEnd ? 'after' : undefined)}>{group.kind === 'assignee' && moveEnabled ? t('taskTable.move.emptyGroup', { name: groupTitle(group) }) : partial ? t('taskTable.taskTable.noLoadedTasksInThisSection') : t('taskTable.taskTable.noTasksYet')}</td></tr>
                 : items}
               {/* Asana-style: the quick row, or a persistent Add task row, closes every expanded section. */}
               {grouping !== 'section' || collapsed ? null : anchored === null && quickAdd?.sectionId === group.sectionId ? quickRows(group, 0)
