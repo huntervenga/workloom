@@ -7,6 +7,7 @@ import './styles.css';
 import { runBootstrap } from './app/bootstrap';
 import { takeAuthCallback } from './features/auth/callbackHandoff';
 import { invitationHandoff } from './features/team/invitationHandoff';
+import { installManager, registerAppWorker } from './features/pwa/install';
 import { themeManager } from './features/theme/ThemeManager';
 
 // Remove invitation secrets before the asynchronous app import creates its router or sign-in gate.
@@ -14,6 +15,8 @@ invitationHandoff.capture(window.location, window.history);
 
 // Once per page, outside React: /theme-init.js already painted this theme, the manager keeps it.
 themeManager.start();
+installManager.start();
+registerAppWorker();
 
 void runBootstrap(
   window.location,

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="base" x2="1" y2="1"><stop stop-color="#7775f7"/><stop offset=".5" stop-color="#5654d9"/><stop offset="1" stop-color="#34329b"/></linearGradient>
+    <linearGradient id="thread" x2="0" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#dddfff"/></linearGradient>
+    <radialGradient id="glow" cx=".15" cy="0" r="1"><stop stop-color="#c4c8ff" stop-opacity=".4"/><stop offset="1" stop-color="#c4c8ff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#base)"/>
+  <rect x="1" y="1" width="510" height="510" rx="111" fill="url(#glow)" stroke="#ffffff" stroke-opacity=".15" stroke-width="2"/>
+  <path d="M150 187h212M150 260h212M150 333h212" stroke="#171558" stroke-opacity=".18" stroke-width="34" stroke-linecap="round"/>
+  <path d="M150 179h212M150 252h212M150 325h212" stroke="#d6d9ff" stroke-opacity=".66" stroke-width="30" stroke-linecap="round"/>
+  <path d="M203 145v222M309 145v222" stroke="#211c78" stroke-opacity=".24" stroke-width="38" stroke-linecap="round"/>
+  <path d="M203 137v222M309 137v222" stroke="url(#thread)" stroke-width="32" stroke-linecap="round"/>
+  <path d="M185 252h36M291 252h36" stroke="#a9b0ff" stroke-width="30"/>
+</svg>

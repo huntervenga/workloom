@@ -139,6 +139,11 @@ export async function registerStaticWeb(app: FastifyInstance, distDir: string): 
       else if (reply.getHeader('cache-control') !== NO_STORE) reply.header('cache-control', REVALIDATE);
     },
   });
+  // /app is now also a real asset directory (worker and reconnect page). Keep its canonical
+  // navigations out of fastify-static's directory handling, which otherwise returns 403.
+  for (const path of [APP_PREFIX, `${APP_PREFIX}/`]) {
+    app.get(path, async (request, reply) => shouldServeSpa(request) ? sendSpaIndex(reply) : reply.callNotFound());
+  }
   app.get('/', async (_request, reply) => sendLanding(reply));
   for (const locale of PUBLIC_LOCALES) {
     for (const path of [`/${locale}`, `/start/${locale}`]) {

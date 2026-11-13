@@ -23,6 +23,7 @@ const english = new Map(Object.entries(catalogs.en).flatMap(([namespace, value])
 const violations = [];
 // These diagnostics are never shown directly: safe error descriptions use fixed catalog keys.
 const literalExemptions = new Map([
+  ['apps/web/src/features/pwa/install.ts:(display-mode: standalone)', 'Exact browser display-mode media query; never shown as prose.'],
   ["apps/web/src/features/theme/palettes.ts:Catppuccin Latte", 'Desktop theme proper name, preserved from the source palette catalog.'],
   ["apps/web/src/features/theme/palettes.ts:Flexoki Light", 'Desktop theme proper name, preserved from the source palette catalog.'],
   ["apps/web/src/features/theme/palettes.ts:Jade Horse", 'Desktop theme proper name, preserved from the source palette catalog.'],

@@ -1,0 +1,18 @@
+{
+  "id": "/app",
+  "name": "Workloom",
+  "short_name": "Workloom",
+  "description": "Your team's tasks, plans and time in one place.",
+  "lang": "en",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#f8fafc",
+  "categories": ["productivity", "business"],
+  "icons": [
+    { "src": "/icons/workloom-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/workloom-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/workloom-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

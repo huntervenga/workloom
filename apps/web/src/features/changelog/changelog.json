@@ -4,6 +4,7 @@
     {
       "date": "2026-11-13",
       "items": [
+        "Install Workloom from your account menu to open it in its own window, with a home screen icon and quick navigation on mobile.",
         "What's new: this page lists what has changed in Workloom, and a short note offers to open it when something new arrives.",
         "Status and priority dots now have the same colour in the table and in the pickers, in every theme. A completed task's button shows its status name, such as Done.",
         "Escape clears the selected tasks even after a click beside the table.",

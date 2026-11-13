@@ -47,7 +47,7 @@ export function ProjectListTable({ projects, actorId, workspaceId, timeZone, can
     : <span className="text-subtle">{t('projects.list.notSet')}</span>;
 
   return (
-    <div className="min-w-0 overflow-x-auto rounded-2xl border border-line bg-surface" role="region" aria-label={t('routes.projects')} tabIndex={0}>
+    <div className="relative min-w-0 overflow-x-auto rounded-2xl border border-line bg-surface" role="region" aria-label={t('routes.projects')} tabIndex={0}>
       <table className="w-full text-left text-sm">
         <caption className="sr-only">{t('routes.projects')}</caption>
         <thead className="border-b border-line bg-canvas/70 text-xs text-muted">

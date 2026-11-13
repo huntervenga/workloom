@@ -2,6 +2,8 @@
 
 **24 October 2026: shared calls were removed** (UI, API and write code; see [127](docs/127-shared-calls-removed.md)). Mentions of shared activities below are historical.
 
+**Latest local slice (13 November 2026): installable PWA.** [Installation, caching and checks](docs/134-progressive-web-app.md): account-menu install, branded PNG/maskable/Apple icons, standalone mobile navigation and safe areas; worker caches only a public reconnect document, never account data or app HTML, and never forces reload. Explicit `/app` routes preserve SPA entry despite the new static directory. Web 48/10, API/security 20/2, predeploy and isolated Vite build passed; real Chrome manifest/installability and offline/reconnect passed, standalone shell emulated. No migration or production activation; physical device/OS installation not checked.
+
 **Latest local slice (13 November 2026): desktop theme catalog.** [Appearance and checks](docs/133-omnissiah-theme.md): all 29 desktop palettes, separate Profile/Appearance sections, DARK/LIGHT preview grids, account autosave and per-palette native color scheme/browser chrome. No migration. Focused web 55/4, predeploy and isolated Vite build passed; synthetic desktop/mobile browser checks passed. Real account and production unchanged.
 
 **Latest local slice (9 November 2026): Omnissiah theme.** [Palette, how to add a theme, checks](docs/133-omnissiah-theme.md): a fourth profile theme (warm soot/bone/brass dark palette from the owner's desktop), `dark-theme:` variant and `calendar-weekend` token instead of dark-only arbitrary variants; migration 0040 replaces the `user_settings` theme list check with a name-shape check, so the theme list lives only in `userThemeSchema`.

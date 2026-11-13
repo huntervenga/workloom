@@ -43,7 +43,7 @@ export function Topbar({ actorId, workspaceId, workspaceName, menu, localMode = 
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-canvas/90 px-4 backdrop-blur-sm sm:gap-3 sm:px-6 lg:px-10">
+    <header className="app-topbar sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-canvas/90 px-4 backdrop-blur-sm sm:gap-3 sm:px-6 lg:px-10">
       {menu}
       <nav aria-label={t('shell.breadcrumbs')} className="min-w-0 flex-1">
         <ol className="flex min-w-0 items-center gap-1.5 text-sm">

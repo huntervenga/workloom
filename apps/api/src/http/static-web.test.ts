@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -55,6 +55,10 @@ const HTML = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
 function writeDist(files: { readonly landing: boolean; readonly index: boolean }): string {
   const dist = mkdtempSync(join(tmpdir(), 'workloom-static-web-'));
   mkdirSync(join(dist, 'assets'));
+  mkdirSync(join(dist, 'app'));
+  writeFileSync(join(dist, 'manifest.webmanifest'), readFileSync(new URL('../../../web/public/manifest.webmanifest', import.meta.url)));
+  writeFileSync(join(dist, 'app/sw.js'), readFileSync(new URL('../../../web/public/app/sw.js', import.meta.url)));
+  writeFileSync(join(dist, 'app/offline.html'), readFileSync(new URL('../../../web/public/app/offline.html', import.meta.url)));
   if (files.landing) writeFileSync(join(dist, 'landing.html'), LANDING_HTML);
   if (files.index) writeFileSync(join(dist, 'index.html'), SPA_HTML);
   writeFileSync(join(dist, 'assets', 'app-abc.js'), 'console.log(1);');
@@ -158,6 +162,18 @@ describe('API app routing the landing and /app SPA', () => {
   beforeAll(async () => {
     dist = writeDist({ landing: true, index: true });
     app = await buildApp(dist);
+  });
+
+  it('serves the PWA manifest, scoped worker and public offline document with revalidation', async () => {
+    const manifest = await request(app, 'GET', '/manifest.webmanifest', 'application/manifest+json');
+    expect(manifest.statusCode).toBe(200); expect(manifest.json()).toMatchObject({ start_url: '/app/', scope: '/app/', display: 'standalone' });
+    expect(manifest.headers['content-type']).toContain('manifest+json');
+    for (const path of ['/app/sw.js', '/app/offline.html']) {
+      const response = await request(app, 'GET', path);
+      expect(response.statusCode).toBe(200); expect(response.headers['cache-control']).toBe('no-cache');
+      expect(response.body).not.toContain(SPA_MARKER);
+    }
+    expect((await request(app, 'GET', '/app/sw.js')).headers['content-type']).toMatch(/javascript/);
   });
 
   afterAll(async () => {

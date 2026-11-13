@@ -148,3 +148,36 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+
+/* Installed mobile shell: retain browser navigation guards and leave room for system gestures. */
+.pwa-bottom-nav { display: none; }
+@media (display-mode: standalone) {
+  .app-topbar {
+    height: calc(3.5rem + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+  .app-shell-main {
+    padding-left: max(.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(.75rem, env(safe-area-inset-right, 0px));
+  }
+}
+@media (display-mode: standalone) and (max-width: 63.999rem) {
+  .pwa-has-bottom-nav .app-changelog-note { bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)); }
+  .pwa-has-bottom-nav .app-shell-main { padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)); }
+  .pwa-bottom-nav {
+    display: flex;
+    position: fixed;
+    z-index: 30;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    gap: .25rem;
+    padding: .375rem max(.5rem, env(safe-area-inset-right, 0px)) calc(.375rem + env(safe-area-inset-bottom, 0px)) max(.5rem, env(safe-area-inset-left, 0px));
+    border-top: 1px solid var(--color-line);
+    background: var(--color-surface);
+  }
+  input, textarea, select { font-size: max(1rem, 1em); }
+}

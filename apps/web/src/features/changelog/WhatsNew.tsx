@@ -59,7 +59,7 @@ export function WhatsNewNote({ actorId, workspaceId, log = CHANGELOG }: { actorI
   const newest = log.days[0];
   if (!state.note || !newest || location.pathname.endsWith(`/${WHATS_NEW_PATH}`)) return null;
   return (
-    <section aria-label={t('whatsNew.noteLabel')} className="fixed right-5 bottom-5 z-[80] w-[min(22rem,calc(100vw-2.5rem))] rounded-xl border border-line bg-surface p-4 text-sm shadow-lg">
+    <section aria-label={t('whatsNew.noteLabel')} className="app-changelog-note fixed right-5 bottom-5 z-[35] w-[min(22rem,calc(100vw-2.5rem))] rounded-xl border border-line bg-surface p-4 text-sm shadow-lg">
       <p className="flex items-center gap-2 font-semibold text-ink"><Sparkles size={16} aria-hidden="true" className="shrink-0 text-accent" />{t('whatsNew.noteTitle')}</p>
       <p className="mt-1 line-clamp-3 text-ink-soft">{newest.items[0]}</p>
       <div className="mt-3 flex flex-wrap justify-end gap-2">

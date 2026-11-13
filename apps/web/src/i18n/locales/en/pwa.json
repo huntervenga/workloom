@@ -1,0 +1,17 @@
+{
+  "installTitle": "Install Workloom",
+  "installDescription": "Your workspace, one tap away.",
+  "tagline": "A dedicated space for your team's work.",
+  "windowBenefit": "Open from your home screen or dock in its own window.",
+  "accountBenefit": "Your account, projects and theme stay with you.",
+  "connectionBenefit": "An internet connection is needed to load and save work.",
+  "installAction": "Install app",
+  "installing": "Opening installation…",
+  "installed": "Workloom is installed. Open it from your home screen or app launcher.",
+  "manualTitle": "Install from your browser",
+  "iosInstructions": "On iPhone or iPad, open Workloom in Safari, tap Share, then Add to Home Screen. Keep Open as Web App enabled if offered.",
+  "browserInstructions": "On desktop or Android, open your browser menu and look for Install app or Add to Home Screen. Availability depends on your browser.",
+  "installFailed": "Installation could not be opened. Try your browser's Install app menu instead.",
+  "navigation": "App navigation",
+  "offlineNotice": "You're offline. Reconnect to load and save changes."
+}

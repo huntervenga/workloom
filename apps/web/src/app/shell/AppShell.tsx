@@ -6,6 +6,8 @@ import { Outlet, useNavigate } from 'react-router';
 import { LoginScreen } from '../../features/auth/LoginScreen';
 import { MeProvider, useMe, useMeQuery } from '../../features/identity/identity';
 import { themeManager } from '../../features/theme/ThemeManager';
+import { AppBottomNav } from '../../features/pwa/AppBottomNav';
+import { AppConnectionNotice } from '../../features/pwa/AppConnectionNotice';
 import { ProfileMenu } from '../../features/profile/ProfileMenu';
 import { ProfileSettingsDialog } from '../../features/profile/ProfileSettingsDialog';
 import { useWorkspaceQuery } from '../../features/workspace/queries';
@@ -184,7 +186,7 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
   );
 
   return (
-    <div className="min-h-dvh">
+    <div className={workspaceId && sessionActive ? 'pwa-has-bottom-nav min-h-dvh' : 'min-h-dvh'}>
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg"
@@ -215,12 +217,14 @@ function ShellFrame({ sessionActive = true }: { sessionActive?: boolean }) {
           data-app-shell-main=""
           className="app-shell-main w-full min-w-0 flex-1 px-3 py-4 outline-none sm:px-4 sm:py-5 lg:py-6"
         >
+          <AppConnectionNotice />
           <SwitchErrorNotice />
           {shared ? <SignOutNotice /> : null}
           <Outlet />
           {settingsOpen && sessionActive ? <ProfileSettingsDialog key={actorId} me={me} onClose={() => setSettingsOpen(false)} /> : null}
         </main>
       </div>
+      {workspaceId && sessionActive ? <AppBottomNav workspaceId={workspaceId} /> : null}
       {workspaceId && sessionActive ? <WhatsNewNote actorId={actorId} workspaceId={workspaceId} /> : null}
     </div>
   );
