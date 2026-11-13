@@ -50,6 +50,12 @@ describe('a dropped row before the list confirms it', () => {
     expect(withPendingMoves(tasks, [])).toBe(tasks);
   });
 
+  it('moves a row into an empty section without an anchor, keeping its place in the order', () => {
+    const empty = makeSection({ id: 'section-empty', name: 'Empty', position: 2 });
+    const shown = withPendingMoves(tasks, [{ taskId: 'a', anchorTaskId: null, placement: 'after', sectionId: empty.id }, { taskId: 'c', anchorTaskId: null, placement: 'after', sectionId: empty.id }]);
+    expect(buildTaskGroups(shown, [first, second, empty]).map(group => visibleTaskRows(group.roots, new Set()).map(node => node.task.id))).toEqual([['b'], ['d'], ['a', 'c']]);
+  });
+
   it('leaves the list alone without an anchor, for an unknown task or across parents', () => {
     expect(withPendingMove(tasks, { taskId: 'a', anchorTaskId: null, placement: 'after' })).toBe(tasks);
     expect(withPendingMove(tasks, { taskId: 'missing', anchorTaskId: 'a', placement: 'after' })).toBe(tasks);

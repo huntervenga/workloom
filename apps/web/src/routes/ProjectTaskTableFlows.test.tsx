@@ -18,6 +18,25 @@ const D = row('d1', 3, { title: 'Delta row' });
  * the anchor's section), the whole order renumbered, and every written row's revision raised and
  * reported in `moveUndo.afterHeads`.
  */
+const FIRST = 'f5000000-0000-4000-8000-0000000000f1';
+const OTHER = 'f5000000-0000-4000-8000-0000000000f2';
+const twoSections = [
+  { id: FIRST, workspaceId: alpha.id, projectId: PROJECT_ID, name: 'First section', position: 0, revision: 1, archivedAt: null },
+  { id: OTHER, workspaceId: alpha.id, projectId: PROJECT_ID, name: 'Other section', position: 1, revision: 1, archivedAt: null },
+];
+const bulkUpdates = (calls: Calls) => calls.filter(call => call.method === 'POST' && call.path.endsWith('/tasks/bulk-update'));
+
+/** A guarded bulk section change as the server makes it: every listed row at its next revision. */
+function sectionChange(store: { rows: TaskDto[] }): RouteTable[string] {
+  return request => {
+    const body = request.body as { tasks: { taskId: string; expectedRevision: number }[]; changes: { sectionId: string | null } };
+    if (body.tasks.some(target => store.rows.find(item => item.id === target.taskId)?.revision !== target.expectedRevision)) return failure(409, 'conflict', 'A task changed meanwhile');
+    const changed = body.tasks.map(target => ({ ...store.rows.find(item => item.id === target.taskId) as TaskDto, sectionId: body.changes.sectionId, revision: target.expectedRevision + 1 }));
+    store.rows = store.rows.map(item => changed.find(next => next.id === item.id) ?? item);
+    return ok(changed);
+  };
+}
+
 function moveRoutes(store: { rows: TaskDto[] }): RouteTable {
   const handler = renumberingMove(store);
   return Object.fromEntries(store.rows.map(item => [`POST ${rootPath}/tasks/${item.id}/move`, handler]));
@@ -299,6 +318,75 @@ describe('manual reorder', () => {
     const otherGroup = rowOf(screen.getByRole('button', { name: D.title })).closest('tbody');
     await waitFor(() => expect(within(otherGroup as HTMLElement).getByRole('button', { name: A.title })).toBeInTheDocument());
     expect(within(otherGroup as HTMLElement).getByRole('button', { name: C.title })).toBeInTheDocument();
+  });
+
+  it('moves the selected rows into an empty section with one guarded section change', async () => {
+    const store = { rows: [{ ...A, sectionId: FIRST }, { ...B, sectionId: FIRST }, { ...C, sectionId: FIRST }] };
+    const { calls } = installFakeApi(routes(() => store.rows, {
+      [`GET ${rootPath}/projects/${PROJECT_ID}/sections`]: () => ok(twoSections),
+      [`POST ${rootPath}/tasks/bulk-update`]: sectionChange(store),
+    }));
+    const { user } = renderApp(tablePath);
+
+    await user.click(await screen.findByRole('button', { name: `Select task: ${A.title}` }));
+    await user.keyboard('{Control>}'); await user.click(screen.getByRole('button', { name: `Select task: ${C.title}` })); await user.keyboard('{/Control}');
+    await waitFor(() => expect(screen.getByRole('button', { name: `Select task: ${C.title}` })).toHaveAttribute('aria-pressed', 'true'));
+
+    const empty = screen.getByText('No tasks yet');
+    await user.pointer({ keys: '[MouseLeft>]', target: handleOf(C), coords: { clientX: 2, clientY: 2 } });
+    await user.pointer({ target: empty, coords: { clientX: 2, clientY: 90 } });
+    expect(rowOf(empty)).toHaveAttribute('data-task-drop', 'after');
+    await user.pointer({ keys: '[/MouseLeft]', target: empty, coords: { clientX: 2, clientY: 90 } });
+
+    await waitFor(() => expect(bulkUpdates(calls)).toHaveLength(1));
+    expect(bulkUpdates(calls)[0]?.body).toEqual({ projectId: PROJECT_ID, tasks: [{ taskId: A.id, expectedRevision: A.revision }, { taskId: C.id, expectedRevision: C.revision }], changes: { sectionId: OTHER } });
+    expect(moves(calls)).toHaveLength(0);
+    const otherGroup = () => rowOf(screen.getByRole('button', { name: A.title })).closest('tbody') as HTMLElement;
+    await waitFor(() => expect(otherGroup()).toHaveAttribute('data-task-section-group', OTHER));
+    expect(within(otherGroup()).getByRole('button', { name: C.title })).toBeInTheDocument();
+    expect(within(otherGroup()).queryByRole('button', { name: B.title })).not.toBeInTheDocument();
+  });
+
+  it('moves a single row into an empty section too', async () => {
+    const store = { rows: [{ ...A, sectionId: FIRST }, { ...B, sectionId: FIRST }] };
+    const { calls } = installFakeApi(routes(() => store.rows, {
+      [`GET ${rootPath}/projects/${PROJECT_ID}/sections`]: () => ok(twoSections),
+      [`POST ${rootPath}/tasks/bulk-update`]: sectionChange(store),
+    }));
+    const { user } = renderApp(tablePath);
+
+    const empty = await screen.findByText('No tasks yet');
+    await user.pointer({ keys: '[MouseLeft>]', target: handleOf(B), coords: { clientX: 2, clientY: 2 } });
+    await user.pointer({ target: empty, coords: { clientX: 2, clientY: 90 } });
+    await user.pointer({ keys: '[/MouseLeft]', target: empty, coords: { clientX: 2, clientY: 90 } });
+
+    await waitFor(() => expect(bulkUpdates(calls)).toHaveLength(1));
+    expect((bulkUpdates(calls)[0]?.body as { tasks: unknown[] }).tasks).toEqual([{ taskId: B.id, expectedRevision: B.revision }]);
+    await waitFor(() => expect(rowOf(screen.getByRole('button', { name: B.title })).closest('tbody')).toHaveAttribute('data-task-section-group', OTHER));
+  });
+
+  it('puts rows dropped on a section header at the top of that section', async () => {
+    const store = { rows: [{ ...A, sectionId: FIRST }, { ...B, sectionId: FIRST }, { ...C, sectionId: OTHER }, { ...D, sectionId: OTHER }] };
+    const { calls } = installFakeApi(routes(() => store.rows, {
+      [`GET ${rootPath}/projects/${PROJECT_ID}/sections`]: () => ok(twoSections),
+      ...moveRoutes(store),
+    }));
+    const { user } = renderApp(tablePath);
+
+    await user.click(await screen.findByRole('button', { name: `Select task: ${A.title}` }));
+    await user.keyboard('{Control>}'); await user.click(screen.getByRole('button', { name: `Select task: ${B.title}` })); await user.keyboard('{/Control}');
+    await waitFor(() => expect(screen.getByRole('button', { name: `Select task: ${B.title}` })).toHaveAttribute('aria-pressed', 'true'));
+
+    const header = rowOf(within(rowOf(screen.getByRole('button', { name: C.title })).closest('tbody') as HTMLElement).getAllByRole('rowheader')[0] as HTMLElement);
+    await user.pointer({ keys: '[MouseLeft>]', target: handleOf(A), coords: { clientX: 2, clientY: 2 } });
+    await user.pointer({ target: header, coords: { clientX: 2, clientY: 90 } });
+    await user.pointer({ keys: '[/MouseLeft]', target: header, coords: { clientX: 2, clientY: 90 } });
+
+    await waitFor(() => expect(moves(calls)).toHaveLength(2));
+    expect(moves(calls).map(call => [call.path.split('/').at(-2), (call.body as { anchorTaskId: string }).anchorTaskId, (call.body as { placement: string }).placement])).toEqual([
+      [A.id, C.id, 'before'], [B.id, A.id, 'after'],
+    ]);
+    await waitFor(() => expect(store.rows.filter(item => item.sectionId === OTHER).map(item => item.id)).toEqual([A.id, B.id, C.id, D.id]));
   });
 
   it('refuses further moves while a move outcome is unknown', async () => {

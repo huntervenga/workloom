@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import { scrollDragEdge } from './dragAutoScroll';
 import type { TaskDropPlacement } from './TaskTable';
 
-export interface DropTarget { taskId: string | null; placement: TaskDropPlacement; responsibleMembershipId?: string | null }
+export interface DropTarget { taskId: string | null; placement: TaskDropPlacement; responsibleMembershipId?: string | null; sectionId?: string | null }
 
 export interface PointerRowDragOptions {
   /** Rows that may be dropped on, as currently loaded; their revisions guard the move. */

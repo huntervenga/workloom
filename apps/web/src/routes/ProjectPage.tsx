@@ -1169,6 +1169,25 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
       onError: () => setShownMove(current => current?.moves === shown ? null : current),
     });
   };
+  // Rows dropped on an empty section: one guarded bulk section change; their place in the order stays.
+  const moveToSection = (moving: readonly TaskDto[], sectionId: string | null) => {
+    if (!completionWritable || sortMode !== 'manual' || moving.length === 0) return;
+    const drafted = moving.find(task => commands.editSessions.current.has(task.id));
+    if (drafted) { setAnnouncement(message('taskTable.move.draft', { title: drafted.title })); return; }
+    if (moveBlocked || commands.bulk.pendingCommand !== null || commands.bulk.uncertain !== null) { setAnnouncement(message('taskTable.move.wait')); return; }
+    invalidateInlineSave();
+    setActiveInline(null);
+    const shown: readonly PendingMove[] = moving.map(task => ({ taskId: task.id, anchorTaskId: null, placement: 'after', sectionId }));
+    setShownMove({ moves: shown, confirmedAt: null });
+    setAnnouncement(moving.length > 1 ? message('taskTable.move.movingMany', { count: moving.length }) : message('taskTable.move.moving', { title: moving[0]?.title ?? '' }));
+    commands.bulk.mutate({ input: { projectId: project.id, tasks: moving.map(task => ({ taskId: task.id, expectedRevision: task.revision })), changes: { sectionId } } }, {
+      onSuccess: () => {
+        setShownMove(current => current?.moves === shown ? { moves: shown, confirmedAt: Date.now() } : current);
+        setAnnouncement(moving.length > 1 ? message('taskTable.move.movedMany', { count: moving.length }) : message('taskTable.move.moved', { title: moving[0]?.title ?? '' }));
+      },
+      onError: () => setShownMove(current => current?.moves === shown ? null : current),
+    });
+  };
   // Selected rows dropped together: one guarded move per row, in the order shown, each next row right
   // after the one before. Every move renumbers the order, so each next row is guarded by the revision
   // the previous answer reports for it (moveUndo.afterHeads), never by a fresh read: a change by
@@ -1487,6 +1506,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             sectionComposer={sectionCreate.open && grouping === 'section' ? <SectionCreateForm controller={sectionCreate} writable={completionWritable} /> : undefined}
             onMoveTask={moveTask}
             onMoveTasks={moveTasks}
+            onMoveToSection={moveToSection}
             onMoveBoardCard={moveBoardCard}
             moveBlocked={moveBlocked}
             acquireDragProtection={acquireDragProtection}
@@ -1648,6 +1668,7 @@ interface TaskListProps {
   renderTaskIndicator?: ComponentProps<typeof TaskTable>['renderTaskIndicator'];
   onMoveTask: NonNullable<ComponentProps<typeof TaskTable>['onMoveTask']>;
   onMoveTasks: NonNullable<ComponentProps<typeof TaskTable>['onMoveTasks']>;
+  onMoveToSection: NonNullable<ComponentProps<typeof TaskTable>['onMoveToSection']>;
   onMoveBoardCard: BoardMoveCard;
   moveBlocked: boolean;
   acquireDragProtection: () => () => void;
