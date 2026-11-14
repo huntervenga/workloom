@@ -102,6 +102,7 @@ const TASK_CORE_KEYS = [
   'startDate',
   'dueDate',
   'priority',
+  'requestedBy',
   'position',
 ] as const;
 
@@ -504,6 +505,7 @@ export function createTaskApplication(dependencies: TaskApplicationDependencies)
           startDate: parsed.startDate === undefined ? task.startDate ?? null : parsed.startDate,
           dueDate: parsed.dueDate === undefined ? task.dueDate : parsed.dueDate,
           priority: parsed.priority ?? task.priority,
+          requestedBy: parsed.requestedBy === undefined ? task.requestedBy ?? null : parsed.requestedBy,
           position: parsed.position ?? task.position,
           revision: coreTouched ? task.revision + 1 : task.revision,
           participantsRevision,
@@ -1228,6 +1230,7 @@ export async function createTaskInScope(scope:TaskWriteScope,input:CreateTaskInp
           priority: parsed.priority ?? 'none',
           tags: [],
           estimateMinutes: workPackage?.estimateMinutes ?? parent?.estimateMinutes ?? null,
+          requestedBy: parsed.requestedBy ?? null,
           revision: 1,
           position,
           visibility: 'workspace',

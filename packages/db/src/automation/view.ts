@@ -44,7 +44,7 @@ export async function loadTaskViews(tx: WorkloomExecutor, workspaceId: string, r
       status: { id: row.statusId, name: state?.name ?? '', group: state?.group ?? 'todo' },
       assignee: row.responsibleMembershipId ? person(row.responsibleMembershipId) : null,
       participants: participantRows.filter(item => item.taskId === row.id).map(item => person(item.membershipId)),
-      priority: row.priority, startDate: row.startDate ?? null, dueDate: row.dueDate ?? null,
+      priority: row.priority, startDate: row.startDate ?? null, dueDate: row.dueDate ?? null, requestedBy: row.requestedBy ?? null,
       estimateMinutes: pkg.get(row.workPackageId)?.estimate ?? null,
       tags: tagRows.filter(tag => tag.taskId === row.id).map(tag => ({ id: tag.id, name: tag.name })).sort((a, b) => a.name.localeCompare(b.name)),
       parentTaskId: row.parentTaskId, revision: row.revision, archived: row.archivedAt !== null,
@@ -131,6 +131,8 @@ export async function listTaskViews(tx: WorkloomExecutor, workspaceId: string, q
   if (query.q) where.push(or(ilike(tasks.title, `%${escapeLike(query.q)}%`), ilike(tasks.description, `%${escapeLike(query.q)}%`)) ?? sql`false`);
   if (query.dueBefore) where.push(sql`${tasks.dueDate} <= ${query.dueBefore}::date`);
   if (query.dueAfter) where.push(sql`${tasks.dueDate} >= ${query.dueAfter}::date`);
+  if (query.requestedBy?.length) where.push(sql`lower(${tasks.requestedBy}) in (${sql.join(query.requestedBy.map(value => sql`lower(${value})`), sql`, `)})`);
+  if (query.updatedAfter) where.push(gt(tasks.updatedAt, new Date(query.updatedAfter)));
   const groups = query.statusGroup ?? (query.open ? ['todo', 'in_progress'] : undefined);
   if (groups) where.push(sql`exists (select 1 from ${taskStatuses} ts where ts.workspace_id = ${tasks.workspaceId} and ts.id = ${tasks.statusId} and ts."group" in (${sql.join(groups.map(group => sql`${group}`), sql`, `)}))`);
   void meId;

@@ -151,6 +151,7 @@
     "dueDate": "Due date",
     "priority": "Priority",
     "tags": "Tags",
+    "requestedBy": "Requested by",
     "teamEstimate": "Team estimate",
     "memberUnavailable": "Member unavailable",
     "noDescription": "No description",

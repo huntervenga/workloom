@@ -79,6 +79,13 @@ const titleSchema = z.string().trim().min(1).max(500);
 const descriptionSchema = z.string().max(20_000);
 const tagNameSchema = z.string().trim().min(1).max(80);
 const tagColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i, { error: 'Expected a #rrggbb color.' });
+/**
+ * Who asked for a task (an assistant, a project, a script): free text, 1–200 characters. No commas, so a list filter can
+ * name several; no control, format (bidi) or line-separator characters, so a shown name cannot be disguised.
+ */
+export const taskRequestedBySchema = z.string().trim().min(1).max(200)
+  .refine((value) => !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(value), { message: 'requestedBy must not contain control, format or line-separator characters.' })
+  .refine((value) => !value.includes(','), { message: 'requestedBy must not contain commas.' });
 
 function hasUniqueIds(ids: readonly string[]): boolean {
   return new Set(ids.map((id) => id.toLowerCase())).size === ids.length;
@@ -198,6 +205,8 @@ export const taskSchema = z.object({
    * personal allocation (allocations arrive in P2).
    */
   estimateMinutes: minutesSchema.nullable(),
+  /** Who asked for the task, as its creator's client named them. Optional: older cached JSON has none. */
+  requestedBy: taskRequestedBySchema.nullable().optional(),
   revision: revisionSchema,
   position: positionSchema,
   visibility: z.literal('workspace'),
@@ -286,6 +295,7 @@ export const createTaskInputSchema = z
     priority: taskPrioritySchema.optional(),
     tagIds: tagIdListSchema.optional(),
     estimateMinutes: minutesSchema.nullable().optional(),
+    requestedBy: taskRequestedBySchema.nullable().optional(),
     position: positionSchema.optional(),
     workScope: taskWorkScopeSchema.optional(),
     insertion: taskInsertionSchema.optional(),
@@ -317,6 +327,7 @@ const taskMutationKeys = [
   'priority',
   'tagIds',
   'estimateMinutes',
+  'requestedBy',
   'position',
 ] as const;
 
@@ -356,6 +367,8 @@ export const updateTaskInputSchema = z
     tagIds: tagIdListSchema.optional(),
     estimateMinutes: minutesSchema.nullable().optional(),
     expectedWorkPackageRevision: revisionSchema.optional(),
+    /** `null` clears it. */
+    requestedBy: taskRequestedBySchema.nullable().optional(),
     position: positionSchema.optional(),
   })
   .superRefine((input, ctx) => {
