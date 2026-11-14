@@ -526,4 +526,80 @@ describe('personal access tokens, public API and MCP', () => {
     expect(summary).toMatchObject({ planField: { name: 'Hours Est' }, factField: { name: 'Hours Fact' } });
     expect(summary.people.some(person => person.planMinutes === 120 && person.factMinutes === 90)).toBe(true);
   });
+  it('creates and renames sections and creates tags over REST and MCP, within the caller\'s role', async () => {
+    const stamp = Date.now();
+    const project = await h.owner.tasks.createProject(`Structure ${stamp}`);
+
+    // REST: a section by project name, a repeat with the same key is the same section, a rename by section name.
+    const key = `section-${stamp}`;
+    const made = await call(`${ws()}/projects/${encodeURIComponent(project.name)}/sections`, { token: owner.token, method: 'POST', headers: { 'idempotency-key': key }, body: { name: ' Michael ' } });
+    expect(made.status, made.text()).toBe(201);
+    const section = env<{ id: string; name: string; project: { id: string; name: string } }>(made).data;
+    expect(section).toMatchObject({ name: 'Michael', project: { id: project.id, name: project.name } });
+    const again = await call(`${ws()}/projects/${project.id}/sections`, { token: owner.token, method: 'POST', headers: { 'idempotency-key': key }, body: { name: 'Michael' } });
+    expect(env<{ id: string }>(again).data.id).toBe(section.id);
+    const renameKey = `rename-${stamp}`;
+    const renamed = await call(`${ws()}/projects/${project.id}/sections/Michael`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': renameKey }, body: { name: 'Decisions' } });
+    expect(renamed.status, renamed.text()).toBe(200);
+    expect(env(renamed).data).toMatchObject({ id: section.id, name: 'Decisions' });
+    // A retry after a lost answer still names the section by the name it replaced: the first result comes back.
+    const retried = await call(`${ws()}/projects/${project.id}/sections/Michael`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': renameKey }, body: { name: 'Decisions' } });
+    expect(retried.status, retried.text()).toBe(200);
+    expect(env(retried).data).toMatchObject({ id: section.id, name: 'Decisions' });
+    expect((await call(`${ws()}/projects/${project.id}/sections/Michael`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': renameKey }, body: { name: 'Other' } })).status).toBe(409);
+    // A no-op is recorded too: after a later rename the same key does not rename the section back.
+    const noopKey = `noop-${stamp}`;
+    const same = await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': noopKey }, body: { name: 'Decisions' } });
+    expect(same.status, same.text()).toBe(200);
+    await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', body: { name: 'Interim' } });
+    expect(env((await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': noopKey }, body: { name: 'Decisions' } }))).data).toMatchObject({ name: 'Decisions' });
+    expect(env<ProjectDetail>(await call(`${ws()}/projects/${project.id}`, { token: owner.token })).data.sections.map(x => x.name)).toEqual(['Interim']);
+    await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', body: { name: 'Decisions' } });
+    const detail = env<ProjectDetail>(await call(`${ws()}/projects/${project.id}`, { token: owner.token })).data;
+    expect(detail.sections.map(x => x.name)).toEqual(['Decisions']);
+    expect((await call(`${ws()}/projects/${project.id}/sections/Nope`, { token: owner.token, method: 'PATCH', body: { name: 'x' } })).status).toBe(400);
+    expect((await call(`${ws()}/projects/${project.id}/sections`, { token: owner.token, method: 'POST', body: { name: '' } })).status).toBe(400);
+
+    // REST: a tag; its name is unique in the workspace ignoring case, and create_task can use it at once.
+    const tagName = `decision ${stamp}`;
+    const tag = await call(`${ws()}/tags`, { token: owner.token, method: 'POST', body: { name: tagName, color: '#AA3300' } });
+    expect(tag.status, tag.text()).toBe(201);
+    const tagId = env<{ id: string; name: string }>(tag).data.id;
+    expect(env(tag).data).toMatchObject({ name: tagName });
+    const clash = await call(`${ws()}/tags`, { token: owner.token, method: 'POST', body: { name: tagName.toUpperCase() } });
+    expect(clash.status, clash.text()).toBe(422);
+    const tagged = await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, section: 'Decisions', title: `Tagged ${stamp}`, tags: [tagName] } });
+    expect(tagged.status, tagged.text()).toBe(201);
+    expect(env<{ tags: { id: string }[] }>(tagged).data.tags.map(t => t.id)).toEqual([tagId]);
+
+    // Roles and scopes: a member organizes sections but does not manage tags; a viewer and a read-only token write nothing.
+    const member = await issue(h.member, { name: `member ${stamp}` });
+    expect((await call(`${ws()}/projects/${project.id}/sections`, { token: member.token, method: 'POST', body: { name: 'Member section' } })).status).toBe(201);
+    expect((await call(`${ws()}/tags`, { token: member.token, method: 'POST', body: { name: `member tag ${stamp}` } })).status).toBe(403);
+    const viewer = await issue(h.viewer, { name: `viewer ${stamp}` });
+    expect((await call(`${ws()}/projects/${project.id}/sections`, { token: viewer.token, method: 'POST', body: { name: 'Viewer section' } })).status).toBe(403);
+    const readOnly = await issue(h.owner, { name: `ro ${stamp}`, scopes: ['read'] });
+    expect((await call(`${ws()}/tags`, { token: readOnly.token, method: 'POST', body: { name: `ro tag ${stamp}` } })).status).toBe(403);
+    const leaked = await h.db.sql`select count(*)::int as n from workspace_tags where name in (${`member tag ${stamp}`}, ${`ro tag ${stamp}`})`;
+    expect(leaked[0]?.n).toBe(0);
+    const roTools = json<Rpc>(await mcp(readOnly.token, rpc('tools/list', {}, 50))).result.tools.map(t => t.name);
+    expect(roTools).not.toEqual(expect.arrayContaining(['create_section']));
+    expect(roTools).not.toContain('create_tag');
+
+    // MCP: the same three operations.
+    const tools = json<Rpc>(await mcp(owner.token, rpc('tools/list', {}, 51))).result.tools.map(t => t.name);
+    expect(tools).toEqual(expect.arrayContaining(['create_section', 'rename_section', 'create_tag']));
+    const viaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'create_section', arguments: { workspace: TEAM, project: project.name, name: 'Claude', operationKey: `mcp-section-${stamp}` } }, 52))).result;
+    expect(viaMcp.isError ?? false, JSON.stringify(viaMcp)).toBe(false);
+    expect(viaMcp.structuredContent.result).toMatchObject({ name: 'Claude', project: { id: project.id } });
+    const renamedViaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'rename_section', arguments: { workspace: TEAM, project: project.id, section: 'Claude', name: 'Agents' } }, 53))).result;
+    expect(renamedViaMcp.structuredContent.result).toMatchObject({ name: 'Agents' });
+    const tagViaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'create_tag', arguments: { workspace: TEAM, name: `Claude ${stamp}` } }, 54))).result;
+    expect(tagViaMcp.isError ?? false, JSON.stringify(tagViaMcp)).toBe(false);
+    expect(tagViaMcp.structuredContent.result).toMatchObject({ name: `Claude ${stamp}` });
+    const dupViaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'create_tag', arguments: { workspace: TEAM, name: `claude ${stamp}` } }, 55))).result;
+    expect(dupViaMcp.isError).toBe(true);
+    const tags = env<{ name: string }[]>(await call(`${ws()}/tags`, { token: owner.token })).data.map(t => t.name);
+    expect(tags).toEqual(expect.arrayContaining([tagName, `Claude ${stamp}`]));
+  });
 });

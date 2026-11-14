@@ -2,6 +2,7 @@ import {
   envelopeSchema, idSchema, publicMeSchema, publicMemberSchema, publicProjectDetailSchema, publicProjectSchema, publicTagSchema,
   publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicWorkspaceSchema, taskViewSchema, API_TOKEN_LIMITS,
   publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTimeSummarySchema, publicTaskAddToProjectSchema, publicTaskProjectSchema, publicProjectCopySchema, publicProjectFromTemplateSchema,
+  publicSectionCreateSchema, publicSectionSchema, publicSectionUpdateSchema, publicTagCreateSchema,
 } from '@workloom/contracts';
 import type { AutomationApplication } from '@workloom/db';
 import { DomainError, unauthenticatedError } from '@workloom/domain';
@@ -15,6 +16,7 @@ const empty = z.strictObject({});
 const ws = z.object({ ws: z.string().min(1).max(200) });
 const wsProject = ws.extend({ project: z.string().min(1).max(200) });
 const wsTask = ws.extend({ taskId: idSchema });
+const wsSection = wsProject.extend({ section: z.string().min(1).max(200) });
 const IDEMPOTENCY = /^[\x21-\x7e]{1,128}$/;
 const taskQuery = z.strictObject({ includeFields: z.enum(['true', 'false']).transform(value => value === 'true').optional() });
 
@@ -117,6 +119,27 @@ export function registerPublicApiRoutes(app: FastifyInstance, deps: PublicApiDep
     const input = parseInput(publicProjectFromTemplateSchema, request.body);
     const result = await automation.createProjectFromTemplate(bearerToken(request), p.ws, input, { requestId: request.id, idempotencyKey: idempotencyKey(request) });
     return sendData(request, reply, envelopeSchema(publicProjectCopySchema), result, { statusCode: 201 });
+  });
+  app.post(`${base}/workspaces/:ws/projects/:project/sections`, write, async (request, reply) => {
+    parseInput(empty, request.query);
+    const p = parseInput(wsProject, request.params);
+    const input = parseInput(publicSectionCreateSchema, request.body);
+    const result = await automation.createSection(bearerToken(request), p.ws, p.project, input, { requestId: request.id, idempotencyKey: idempotencyKey(request) });
+    return sendData(request, reply, envelopeSchema(publicSectionSchema), result, { statusCode: 201 });
+  });
+  app.patch(`${base}/workspaces/:ws/projects/:project/sections/:section`, write, async (request, reply) => {
+    parseInput(empty, request.query);
+    const p = parseInput(wsSection, request.params);
+    const input = parseInput(publicSectionUpdateSchema, request.body);
+    const result = await automation.renameSection(bearerToken(request), p.ws, p.project, p.section, input, { requestId: request.id, idempotencyKey: idempotencyKey(request) });
+    return sendData(request, reply, envelopeSchema(publicSectionSchema), result);
+  });
+  app.post(`${base}/workspaces/:ws/tags`, write, async (request, reply) => {
+    parseInput(empty, request.query);
+    const p = parseInput(ws, request.params);
+    const input = parseInput(publicTagCreateSchema, request.body);
+    const result = await automation.createTag(bearerToken(request), p.ws, input, { requestId: request.id, idempotencyKey: idempotencyKey(request) });
+    return sendData(request, reply, envelopeSchema(publicTagSchema), result, { statusCode: 201 });
   });
   app.post(`${base}/workspaces/:ws/tasks/:taskId/projects`, write, async (request, reply) => {
     parseInput(empty, request.query);

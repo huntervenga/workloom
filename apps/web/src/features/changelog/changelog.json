@@ -2,6 +2,12 @@
   "covers": "48bd51c74abb591ea949e770a808a9f9299cea36",
   "days": [
     {
+      "date": "2026-11-14",
+      "items": [
+        "AI assistants and scripts can add a section to a project, rename a section and create a tag through the API and MCP (create_section, rename_section, create_tag)."
+      ]
+    },
+    {
       "date": "2026-11-13",
       "items": [
         "Install Workloom from your account menu to open it in its own window, with a home screen icon and quick navigation on mobile.",

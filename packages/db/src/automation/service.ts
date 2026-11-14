@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   publicProjectCopySchema, publicProjectFromTemplateSchema, type PublicProjectCopyDto,
+  publicSectionCreateSchema, publicSectionSchema, publicSectionUpdateSchema, publicTagCreateSchema, type PublicSectionDto,
   publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskProjectSchema, publicTaskUpdateSchema, publicTimeSummaryQuerySchema, taskViewSchema, updateTaskInputSchema,
   type PublicFieldDto, type PublicFieldValueDto, type PublicSetTaskFieldsResult, type PublicTimeSummaryDto, type TaskFieldData, type TaskFieldDefinitionDto, type TaskFieldValueDto,
   type ApiTokenDto, type ApiTokenScope, type CreateApiTokenInput, type CreatedApiTokenDto, type PublicMeDto, type PublicMemberDto,
@@ -57,6 +58,12 @@ export interface AutomationApplication {
   addTaskToProject(token: string, workspace: string | undefined, taskId: string, input: PublicTaskAddToProject, options: WriteOptions): Promise<PublicTaskProjectDto>;
   /** A new project cloned from a template project: structure, settings and tasks with their field values. */
   createProjectFromTemplate(token: string, workspace: string | undefined, input: unknown, options: WriteOptions): Promise<PublicProjectCopyDto>;
+  /** A new section after the project's last one. */
+  createSection(token: string, workspace: string | undefined, project: string, input: unknown, options: WriteOptions): Promise<PublicSectionDto>;
+  /** Renames an active section; the same name again is a no-op. */
+  renameSection(token: string, workspace: string | undefined, project: string, section: string, input: unknown, options: WriteOptions): Promise<PublicSectionDto>;
+  /** A new workspace tag; needs the role that manages tags in the app. */
+  createTag(token: string, workspace: string | undefined, input: unknown, options: WriteOptions): Promise<PublicTagDto>;
 }
 
 interface ReadScope {
@@ -747,6 +754,76 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
       };
       return outcomeValue(await barrier(s => saveOutcome(s, { state: 'done', view: taskViewSchema.parse(view) })));
     },
+    async createSection(token, workspace, projectRef, rawInput, writeOptions) {
+      const parsed = publicSectionCreateSchema.safeParse(rawInput);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid section.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      const plan = await prepared(token, workspace, async (s, hash) => ({
+        hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions),
+        project: resolveRef('project', projectRef, (await projectItems(s)).filter(item => !item.archived)),
+      }));
+      const section = await writeApp(plan.hash, plan.workspaceId, plan.userId).createSection(plan.context, plan.project.id, { name: parsed.data.name });
+      return { id: section.id, name: section.name, project: { id: plan.project.id, name: plan.project.name } };
+    },
+
+    async renameSection(token, workspace, projectRef, sectionRef, rawInput, writeOptions) {
+      const parsed = publicSectionUpdateSchema.safeParse(rawInput);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid section change.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      const owner = await prepared(token, workspace, async (s, hash) => ({ hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions) }));
+      const key = owner.context.idempotencyKey;
+      if (!key) throw new DomainError('VALIDATION_FAILED', 'A valid Idempotency-Key is required.');
+      // The public receipt is bound to the caller's own words (a section may be named by the name this call replaces),
+      // so a retry after a lost answer replays the first result instead of resolving the names again.
+      const command = 'public.section.rename';
+      const payloadHash = createHash('sha256').update(JSON.stringify({ project: projectRef, section: sectionRef, input: parsed.data })).digest('hex');
+      type Plan = { sectionId: string; expectedRevision: number; project: PublicSectionDto['project']; unchanged: PublicSectionDto | null };
+      const conflict = () => new DomainError('IDEMPOTENCY_KEY_REUSED', 'This key was used for another section change.');
+      const runner = createWorkspaceWriteRunner(source, { ...options, authorizeInScope: tokenInScope(owner.hash, owner.workspaceId, owner.userId) });
+      const barrier = <T>(work: (tx: WorkloomExecutor) => Promise<T>) => runner.run(owner.context, 'task.edit', scope => work(scope.tx));
+      const stored = async (tx: WorkloomExecutor, name: string): Promise<unknown> => {
+        const receipt = await createTaskRepository(tx).findIdempotency(owner.workspaceId, owner.userId, name, key);
+        if (!receipt) return null;
+        if (receipt.payloadHash !== payloadHash) throw conflict();
+        return receipt.result;
+      };
+      const save = async (tx: WorkloomExecutor, name: string, result: unknown) => createTaskRepository(tx).insertIdempotency({ workspaceId: owner.workspaceId, actorUserId: owner.userId,
+        command: name, idempotencyKey: key, payloadHash, result, createdAt: (await databaseNow(tx)).toISOString() });
+      const first = await barrier(async (tx): Promise<{ done: PublicSectionDto } | { plan: Plan }> => {
+        const done = await stored(tx, command);
+        if (done) return { done: publicSectionSchema.parse(done) };
+        const claimed = await stored(tx, `${command}.plan`);
+        if (claimed) return { plan: claimed as Plan };
+        const app = createTaskApplication(tx, { cursorSecret });
+        const projects = (await app.listProjects(owner.context)).filter(item => item.archivedAt === null).map(item => ({ id: item.id, name: item.name }));
+        const project = resolveRef('project', projectRef, projects);
+        const section = resolveRef('section', sectionRef, (await app.listSections(owner.context, project.id)).filter(row => row.archivedAt === null));
+        const unchanged = section.name === parsed.data.name ? { id: section.id, name: section.name, project } : null;
+        if (unchanged) { await save(tx, command, unchanged); return { done: unchanged }; }
+        const plan: Plan = { sectionId: section.id, expectedRevision: section.revision, project, unchanged: null };
+        await save(tx, `${command}.plan`, plan);
+        return { plan };
+      });
+      if ('done' in first) return first.done;
+      const { plan } = first;
+      // The domain receipt under a key derived from the caller's makes the write itself happen once.
+      const derived = createHash('sha256').update(`${key}\0${command}`).digest('hex');
+      const section = await writeApp(owner.hash, owner.workspaceId, owner.userId).updateSection({ ...owner.context, idempotencyKey: derived }, plan.sectionId, { expectedRevision: plan.expectedRevision, name: parsed.data.name });
+      const result: PublicSectionDto = { id: section.id, name: section.name, project: plan.project };
+      return barrier(async tx => {
+        const done = await stored(tx, command);
+        if (done) return publicSectionSchema.parse(done);
+        await save(tx, command, result);
+        return result;
+      });
+    },
+
+    async createTag(token, workspace, rawInput, writeOptions) {
+      const parsed = publicTagCreateSchema.safeParse(rawInput);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid tag.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      const plan = await prepared(token, workspace, async (s, hash) => ({ hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions) }));
+      const tag = await writeApp(plan.hash, plan.workspaceId, plan.userId).createTag(plan.context, { name: parsed.data.name, ...(parsed.data.color !== undefined ? { color: parsed.data.color.toLowerCase() } : {}) });
+      return { id: tag.id, name: tag.name };
+    },
+
     async createProjectFromTemplate(token, workspace, rawInput, writeOptions) {
       const parsed = publicProjectFromTemplateSchema.safeParse(rawInput);
       if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid project from template.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
