@@ -538,11 +538,23 @@ describe('personal access tokens, public API and MCP', () => {
     expect(section).toMatchObject({ name: 'Michael', project: { id: project.id, name: project.name } });
     const again = await call(`${ws()}/projects/${project.id}/sections`, { token: owner.token, method: 'POST', headers: { 'idempotency-key': key }, body: { name: 'Michael' } });
     expect(env<{ id: string }>(again).data.id).toBe(section.id);
-    const renamed = await call(`${ws()}/projects/${project.id}/sections/Michael`, { token: owner.token, method: 'PATCH', body: { name: 'Decisions' } });
+    const renameKey = `rename-${stamp}`;
+    const renamed = await call(`${ws()}/projects/${project.id}/sections/Michael`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': renameKey }, body: { name: 'Decisions' } });
     expect(renamed.status, renamed.text()).toBe(200);
     expect(env(renamed).data).toMatchObject({ id: section.id, name: 'Decisions' });
-    const same = await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', body: { name: 'Decisions' } });
+    // A retry after a lost answer still names the section by the name it replaced: the first result comes back.
+    const retried = await call(`${ws()}/projects/${project.id}/sections/Michael`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': renameKey }, body: { name: 'Decisions' } });
+    expect(retried.status, retried.text()).toBe(200);
+    expect(env(retried).data).toMatchObject({ id: section.id, name: 'Decisions' });
+    expect((await call(`${ws()}/projects/${project.id}/sections/Michael`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': renameKey }, body: { name: 'Other' } })).status).toBe(409);
+    // A no-op is recorded too: after a later rename the same key does not rename the section back.
+    const noopKey = `noop-${stamp}`;
+    const same = await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': noopKey }, body: { name: 'Decisions' } });
     expect(same.status, same.text()).toBe(200);
+    await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', body: { name: 'Interim' } });
+    expect(env((await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', headers: { 'idempotency-key': noopKey }, body: { name: 'Decisions' } }))).data).toMatchObject({ name: 'Decisions' });
+    expect(env<ProjectDetail>(await call(`${ws()}/projects/${project.id}`, { token: owner.token })).data.sections.map(x => x.name)).toEqual(['Interim']);
+    await call(`${ws()}/projects/${project.id}/sections/${section.id}`, { token: owner.token, method: 'PATCH', body: { name: 'Decisions' } });
     const detail = env<ProjectDetail>(await call(`${ws()}/projects/${project.id}`, { token: owner.token })).data;
     expect(detail.sections.map(x => x.name)).toEqual(['Decisions']);
     expect((await call(`${ws()}/projects/${project.id}/sections/Nope`, { token: owner.token, method: 'PATCH', body: { name: 'x' } })).status).toBe(400);
