@@ -373,9 +373,28 @@ export const publicProjectCopySchema = z.object({
 });
 export type PublicProjectCopyDto = z.infer<typeof publicProjectCopySchema>;
 
+/** `POST /workspaces/{ws}/projects/{project}/sections`: a new section, added after the project's last section. */
+export const publicSectionCreateSchema = z.strictObject({
+  name: z.string().trim().min(1).max(160).describe('Section name, for example "Backlog" or a person\'s name.'),
+});
+export type PublicSectionCreate = z.infer<typeof publicSectionCreateSchema>;
+/** `PATCH /workspaces/{ws}/projects/{project}/sections/{section}`: renames a section; the same name again changes nothing. */
+export const publicSectionUpdateSchema = z.strictObject({
+  name: z.string().trim().min(1).max(160).describe('New section name.'),
+});
+export type PublicSectionUpdate = z.infer<typeof publicSectionUpdateSchema>;
+export const publicSectionSchema = z.object({ id: idSchema, name: z.string(), project: z.object({ id: idSchema, name: z.string() }) });
+export type PublicSectionDto = z.infer<typeof publicSectionSchema>;
+/** `POST /workspaces/{ws}/tags`: a new workspace tag. Tag names are unique in a workspace, ignoring case. */
+export const publicTagCreateSchema = z.strictObject({
+  name: z.string().trim().min(1).max(80).describe('Tag name, unique in the workspace (case-insensitive).'),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i).optional().describe('Optional #rrggbb color.'),
+});
+export type PublicTagCreate = z.infer<typeof publicTagCreateSchema>;
+
 /** Shared by the remote MCP tools: `workspace` may be omitted when the user has exactly one workspace. */
 const workspaceRef = ref.optional();
-export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'add_task_to_project', 'list_fields', 'set_task_fields', 'time_summary', 'create_project_from_template'] as const;
+export const MCP_TOOL_NAMES = ['whoami', 'list_workspaces', 'list_projects', 'get_project', 'list_members', 'list_tags', 'list_tasks', 'get_task', 'create_task', 'update_task', 'set_task_status', 'add_task_to_project', 'list_fields', 'set_task_fields', 'time_summary', 'create_project_from_template', 'create_section', 'rename_section', 'create_tag'] as const;
 export type McpToolName = (typeof MCP_TOOL_NAMES)[number];
 const operationKey = z.string().regex(/^[\x21-\x7e]{1,128}$/).optional();
 export const MCP_TOOL_INPUTS = {
@@ -423,11 +442,18 @@ export const MCP_TOOL_INPUTS = {
     operationKey,
   }),
   create_project_from_template: publicProjectFromTemplateSchema.extend({ workspace: workspaceRef, operationKey }),
+  create_section: publicSectionCreateSchema.extend({ workspace: workspaceRef, project: ref.describe('Project name or UUID.'), operationKey }),
+  rename_section: publicSectionUpdateSchema.extend({
+    workspace: workspaceRef, project: ref.describe('Project name or UUID.'), section: ref.describe('Current section name or UUID in that project.'), operationKey,
+  }),
+  create_tag: publicTagCreateSchema.extend({ workspace: workspaceRef, operationKey }),
 } as const;
 export const MCP_TOOL_SCOPE: Readonly<Record<McpToolName, ApiTokenScope>> = {
   whoami: 'read', list_workspaces: 'read', list_projects: 'read', get_project: 'read', list_members: 'read', list_tags: 'read',
   list_tasks: 'read', get_task: 'read', create_task: 'tasks:write', update_task: 'tasks:write', set_task_status: 'tasks:write', add_task_to_project: 'tasks:write',
   list_fields: 'read', set_task_fields: 'tasks:write', time_summary: 'read', create_project_from_template: 'tasks:write',
+  // Organizing work belongs with writing it, like a project from a template: no separate scope, so existing tokens keep working.
+  create_section: 'tasks:write', rename_section: 'tasks:write', create_tag: 'tasks:write',
 };
 
 /** What the consent page shows about a pending connected-app authorization. */

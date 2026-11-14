@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import {
   publicProjectCopySchema, publicProjectFromTemplateSchema, type PublicProjectCopyDto,
+  publicSectionCreateSchema, publicSectionUpdateSchema, publicTagCreateSchema, type PublicSectionDto,
   publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskProjectSchema, publicTaskUpdateSchema, publicTimeSummaryQuerySchema, taskViewSchema, updateTaskInputSchema,
   type PublicFieldDto, type PublicFieldValueDto, type PublicSetTaskFieldsResult, type PublicTimeSummaryDto, type TaskFieldData, type TaskFieldDefinitionDto, type TaskFieldValueDto,
   type ApiTokenDto, type ApiTokenScope, type CreateApiTokenInput, type CreatedApiTokenDto, type PublicMeDto, type PublicMemberDto,
@@ -57,6 +58,12 @@ export interface AutomationApplication {
   addTaskToProject(token: string, workspace: string | undefined, taskId: string, input: PublicTaskAddToProject, options: WriteOptions): Promise<PublicTaskProjectDto>;
   /** A new project cloned from a template project: structure, settings and tasks with their field values. */
   createProjectFromTemplate(token: string, workspace: string | undefined, input: unknown, options: WriteOptions): Promise<PublicProjectCopyDto>;
+  /** A new section after the project's last one. */
+  createSection(token: string, workspace: string | undefined, project: string, input: unknown, options: WriteOptions): Promise<PublicSectionDto>;
+  /** Renames an active section; the same name again is a no-op. */
+  renameSection(token: string, workspace: string | undefined, project: string, section: string, input: unknown, options: WriteOptions): Promise<PublicSectionDto>;
+  /** A new workspace tag; needs the role that manages tags in the app. */
+  createTag(token: string, workspace: string | undefined, input: unknown, options: WriteOptions): Promise<PublicTagDto>;
 }
 
 interface ReadScope {
@@ -747,6 +754,41 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
       };
       return outcomeValue(await barrier(s => saveOutcome(s, { state: 'done', view: taskViewSchema.parse(view) })));
     },
+    async createSection(token, workspace, projectRef, rawInput, writeOptions) {
+      const parsed = publicSectionCreateSchema.safeParse(rawInput);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid section.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      const plan = await prepared(token, workspace, async (s, hash) => ({
+        hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions),
+        project: resolveRef('project', projectRef, (await projectItems(s)).filter(item => !item.archived)),
+      }));
+      const section = await writeApp(plan.hash, plan.workspaceId, plan.userId).createSection(plan.context, plan.project.id, { name: parsed.data.name });
+      return { id: section.id, name: section.name, project: { id: plan.project.id, name: plan.project.name } };
+    },
+
+    async renameSection(token, workspace, projectRef, sectionRef, rawInput, writeOptions) {
+      const parsed = publicSectionUpdateSchema.safeParse(rawInput);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid section change.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      const plan = await prepared(token, workspace, async (s, hash) => {
+        const project = resolveRef('project', projectRef, (await projectItems(s)).filter(item => !item.archived));
+        const sections = (await taskApp(s.tx).listSections(s.context, project.id)).filter(row => row.archivedAt === null);
+        const section = resolveRef('section', sectionRef, sections);
+        return { hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions), project, section };
+      });
+      const project = { id: plan.project.id, name: plan.project.name };
+      if (plan.section.name === parsed.data.name) return { id: plan.section.id, name: plan.section.name, project };
+      // The revision read above makes a concurrent change fail instead of being overwritten.
+      const section = await writeApp(plan.hash, plan.workspaceId, plan.userId).updateSection(plan.context, plan.section.id, { expectedRevision: plan.section.revision, name: parsed.data.name });
+      return { id: section.id, name: section.name, project };
+    },
+
+    async createTag(token, workspace, rawInput, writeOptions) {
+      const parsed = publicTagCreateSchema.safeParse(rawInput);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid tag.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      const plan = await prepared(token, workspace, async (s, hash) => ({ hash, workspaceId: s.workspaceId, userId: s.principal.userId, context: await writeContext(s, writeOptions) }));
+      const tag = await writeApp(plan.hash, plan.workspaceId, plan.userId).createTag(plan.context, { name: parsed.data.name, ...(parsed.data.color !== undefined ? { color: parsed.data.color.toLowerCase() } : {}) });
+      return { id: tag.id, name: tag.name };
+    },
+
     async createProjectFromTemplate(token, workspace, rawInput, writeOptions) {
       const parsed = publicProjectFromTemplateSchema.safeParse(rawInput);
       if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid project from template.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });

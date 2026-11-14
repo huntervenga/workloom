@@ -1,4 +1,4 @@
-import { publicProjectCopySchema, publicProjectFromTemplateSchema, publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummarySchema, taskViewSchema, createApiTokenInputSchema } from '@workloom/contracts';
+import { publicProjectCopySchema, publicProjectFromTemplateSchema, publicSectionCreateSchema, publicSectionSchema, publicSectionUpdateSchema, publicTagCreateSchema, publicTagSchema, publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicTimeSummarySchema, taskViewSchema, createApiTokenInputSchema } from '@workloom/contracts';
 import { z } from 'zod';
 
 const json = (schema: z.ZodType, io: 'input' | 'output' = 'output') => {
@@ -27,7 +27,7 @@ const queryParams = Object.entries((json(publicTaskListQuerySchema, 'input').pro
 
 export const PUBLIC_API_OPENAPI = {
   openapi: '3.1.0',
-  info: { title: 'Workloom public API', version: '1', description: 'Create, read and update tasks with a personal access token. Permissions are those of the token owner; scopes can only narrow them. Names and UUIDs are accepted for projects, sections, statuses, tags and people.' },
+  info: { title: 'Workloom public API', version: '1', description: 'Create, read and update tasks, sections and tags with a personal access token. Permissions are those of the token owner; scopes can only narrow them. Names and UUIDs are accepted for projects, sections, statuses, tags and people.' },
   servers: [{ url: '/api/public/v1' }],
   security: [{ bearer: [] }],
   components: { securitySchemes: { bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'wlm_pat_…' } }, schemas: { Task: json(taskViewSchema), TaskCreate: json(publicTaskCreateSchema, 'input'), TaskUpdate: json(publicTaskUpdateSchema, 'input'), TokenCreate: json(createApiTokenInputSchema, 'input') } },
@@ -40,7 +40,12 @@ export const PUBLIC_API_OPENAPI = {
     },
     '/workspaces/{ws}/projects/{project}': { get: { summary: 'One project with its sections and statuses', parameters: [wsParam, { name: 'project', in: 'path', required: true, description: 'Project UUID or exact name.', schema: { type: 'string' } }], responses: { '200': ok('OK', envelope({ type: 'object' })), ...errors } } },
     '/workspaces/{ws}/members': { get: { summary: 'Members you can assign', parameters: [wsParam], responses: { '200': ok('OK', envelope({ type: 'array', items: { type: 'object' } }, true)), ...errors } } },
-    '/workspaces/{ws}/tags': { get: { summary: 'Tags', parameters: [wsParam], responses: { '200': ok('OK', envelope({ type: 'array', items: { type: 'object' } }, true)), ...errors } } },
+    '/workspaces/{ws}/tags': {
+      get: { summary: 'Tags', parameters: [wsParam], responses: { '200': ok('OK', envelope({ type: 'array', items: { type: 'object' } }, true)), ...errors } },
+      post: { summary: 'Create a workspace tag. Names are unique in a workspace, ignoring case. Needs the role that manages tags in the app.', parameters: [wsParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: json(publicTagCreateSchema, 'input') } } }, responses: { '201': ok('Created', envelope(json(publicTagSchema))), ...errors } },
+    },
+    '/workspaces/{ws}/projects/{project}/sections': { post: { summary: 'Add a section after the project\'s last section', parameters: [wsParam, projectParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: json(publicSectionCreateSchema, 'input') } } }, responses: { '201': ok('Created', envelope(json(publicSectionSchema))), ...errors } } },
+    '/workspaces/{ws}/projects/{project}/sections/{section}': { patch: { summary: 'Rename a section; the same name again changes nothing', parameters: [wsParam, projectParam, { name: 'section', in: 'path', required: true, description: 'Current section UUID or exact name.', schema: { type: 'string' } }, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: json(publicSectionUpdateSchema, 'input') } } }, responses: { '200': ok('OK', envelope(json(publicSectionSchema))), ...errors } } },
     '/workspaces/{ws}/tasks': {
       get: { summary: 'List tasks. Repeat a parameter or comma-separate values; assignee=me means yours.', parameters: [wsParam, ...queryParams], responses: { '200': ok('OK', envelope({ type: 'array', items: { $ref: '#/components/schemas/Task' } }, true)), ...errors } },
       post: { summary: 'Create a task', parameters: [wsParam, idemHeader], requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/TaskCreate' } } } }, responses: { '201': ok('Created', envelope({ $ref: '#/components/schemas/Task' })), ...errors } },

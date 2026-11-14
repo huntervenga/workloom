@@ -153,6 +153,9 @@ curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/projects/{project}</code></td><td>read</td><td>One project with its sections and statuses.</td></tr>
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/members</code></td><td>read</td><td>People tasks can be assigned to.</td></tr>
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tags</code></td><td>read</td><td>Tags.</td></tr>
+    <tr><td><span class="method post">POST</span><code>/workspaces/{ws}/tags</code></td><td>tasks:write</td><td>Create a tag: <code>{"name": "decision", "color": "#aa3300"}</code>. Names are unique in a workspace, ignoring case. Needs a role that may manage fields.</td></tr>
+    <tr><td><span class="method post">POST</span><code>/workspaces/{ws}/projects/{project}/sections</code></td><td>tasks:write</td><td>Add a section after the project’s last one: <code>{"name": "Backlog"}</code>.</td></tr>
+    <tr><td><span class="method patch">PATCH</span><code>/workspaces/{ws}/projects/{project}/sections/{section}</code></td><td>tasks:write</td><td>Rename a section (<code>{section}</code> is its name or UUID): <code>{"name": "Next"}</code>. The same name again changes nothing.</td></tr>
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tasks</code></td><td>read</td><td>List and filter tasks (below).</td></tr>
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/tasks/{taskId}</code></td><td>read</td><td>One task. Add <code>?includeFields=true</code> for its custom field values.</td></tr>
     <tr><td><span class="method">GET</span><code>/workspaces/{ws}/projects/{project}/fields</code></td><td>read</td><td>Custom fields of a project with their types and option names.</td></tr>
@@ -313,6 +316,9 @@ codex</code></pre>
     <tr><td><code>update_task</code></td><td>tasks:write</td><td><code>taskId</code> and <code>changes</code> (same fields as the REST update).</td></tr>
     <tr><td><code>set_task_status</code></td><td>tasks:write</td><td><code>taskId</code> and <code>status</code> (name or UUID).</td></tr>
     <tr><td><code>create_project_from_template</code></td><td>tasks:write</td><td><code>template</code>, <code>name</code> and an optional <code>startDate</code>: a new project, usually the next week, cloned from a template with its tasks (see <a href="#from-template">Create a project from a template</a>).</td></tr>
+    <tr><td><code>create_section</code></td><td>tasks:write</td><td><code>project</code> and <code>name</code>: add a section after the project’s last one.</td></tr>
+    <tr><td><code>rename_section</code></td><td>tasks:write</td><td><code>project</code>, <code>section</code> (current name or UUID) and the new <code>name</code>.</td></tr>
+    <tr><td><code>create_tag</code></td><td>tasks:write</td><td><code>name</code> and an optional <code>color</code>. Check <code>list_tags</code> first: names are unique in a workspace. Needs a role that may manage fields.</td></tr>
     <tr><td><code>add_task_to_project</code></td><td>tasks:write</td><td><code>taskId</code>, <code>project</code>, an optional <code>section</code> and <code>home</code>: put the task into one more project and choose where its hours count (see <a href="#add-to-project">Add a task to another project</a>).</td></tr>
   </tbody>
 </table>

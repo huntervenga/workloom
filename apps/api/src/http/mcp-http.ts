@@ -29,6 +29,9 @@ const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   set_task_fields: 'Set custom field values by field name for one or more tasks, for example {"field":"Fact","value":"1h 30m"}. Durations take minutes or text such as "90m", "1.5h", "1h 30m"; options and people take names; null clears. Run with dryRun first to show the user the plan, then repeat without dryRun. Each value is saved separately; check summary.failed.',
   time_summary: 'For a project (usually the week project): per person, the sum of Estimation and Fact on their tasks (a subtask without an assignee counts for the assignee of its parent task) and the hours they are expected to work in the range (work schedule minus holidays and time off). factGapMinutes = expected − fact. The range defaults to the project dates.',
   create_project_from_template: 'Create a new project, usually the next week, from a template project: its sections, fields, settings and tasks with assignees, estimates and every field value are cloned. Give the template (name or UUID), the new name and the first day (startDate) of the new project; every date moves with it. Pass the same operationKey when retrying after an unknown outcome.',
+  create_section: 'Add a section to a project, after its last section. Check get_project first: a project may already have a section with that name. Pass the same operationKey when retrying after an unknown outcome.',
+  rename_section: 'Rename a section of a project. section is its current name or UUID; renaming to the current name changes nothing.',
+  create_tag: 'Create a workspace tag (optionally with a #rrggbb color). Tag names are unique in a workspace, ignoring case: check list_tags first and reuse an existing tag. Needs the role that manages tags in the app.',
 };
 
 /** Sent once on initialize; tells any client how this team uses Workloom for weekly time. */
@@ -93,6 +96,18 @@ async function run(automation: AutomationApplication, token: string, name: McpTo
       void _w; void _k;
       return automation.createProjectFromTemplate(token, workspace, input, { requestId, idempotencyKey: key });
     }
+    case 'create_section': {
+      const { project, name } = a as Args<'create_section'>;
+      return automation.createSection(token, workspace, project, { name }, { requestId, idempotencyKey: key });
+    }
+    case 'rename_section': {
+      const { project, section, name } = a as Args<'rename_section'>;
+      return automation.renameSection(token, workspace, project, section, { name }, { requestId, idempotencyKey: key });
+    }
+    case 'create_tag': {
+      const { name, color } = a as Args<'create_tag'>;
+      return automation.createTag(token, workspace, { name, ...(color !== undefined ? { color } : {}) }, { requestId, idempotencyKey: key });
+    }
     case 'add_task_to_project': {
       const { taskId, project, section, home } = a as Args<'add_task_to_project'>;
       return automation.addTaskToProject(token, workspace, taskId, { project, ...(section !== undefined ? { section } : {}), ...(home !== undefined ? { home } : {}) }, { requestId, idempotencyKey: key });
@@ -111,7 +126,7 @@ function createServer(automation: AutomationApplication, token: string, scopes: 
     server.registerTool(name, {
       description: DESCRIPTIONS[name],
       inputSchema: MCP_TOOL_INPUTS[name] as z.ZodObject<z.ZodRawShape>,
-      annotations: { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: readOnly || name === 'set_task_status' || name === 'add_task_to_project', openWorldHint: false },
+      annotations: { readOnlyHint: readOnly, destructiveHint: false, idempotentHint: readOnly || name === 'set_task_status' || name === 'add_task_to_project' || name === 'rename_section', openWorldHint: false },
     }, async (input: Record<string, unknown>): Promise<CallToolResult> => {
       try {
         const result = await run(automation, token, name, input, requestId);
