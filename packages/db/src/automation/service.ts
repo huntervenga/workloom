@@ -3,13 +3,16 @@ import { and, eq, sql } from 'drizzle-orm';
 import {
   publicProjectCopySchema, publicProjectFromTemplateSchema, type PublicProjectCopyDto,
   publicSectionCreateSchema, publicSectionSchema, publicSectionUpdateSchema, publicTagCreateSchema, type PublicSectionDto,
+  publicTaskCommentsQuerySchema, type PublicTaskCommentDto,
   publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTaskAddToProjectSchema, publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskProjectSchema, publicTaskUpdateSchema, publicTimeSummaryQuerySchema, taskViewSchema, updateTaskInputSchema,
   type PublicFieldDto, type PublicFieldValueDto, type PublicSetTaskFieldsResult, type PublicTimeSummaryDto, type TaskFieldData, type TaskFieldDefinitionDto, type TaskFieldValueDto,
   type ApiTokenDto, type ApiTokenScope, type CreateApiTokenInput, type CreatedApiTokenDto, type PublicMeDto, type PublicMemberDto,
   type PublicProjectDetailDto, type PublicProjectDto, type PublicTagDto, type PublicTaskCreate, type PublicTaskListQuery, type PublicTaskUpdate,
   type PublicTaskAddToProject, type PublicTaskProjectDto, type PublicWorkspaceDto, type TaskView, type UpdateTaskInput, type TaskDto,
 } from '@workloom/contracts';
-import { attributedAssignees, authorizeWorkspace, capabilityRequiredError, DomainError, isDomainError, listWorkspaceMembers, notFoundError, type Capability, type CommandContext } from '@workloom/domain';
+import { attributedAssignees, authorizeWorkspace, capabilityRequiredError, createTaskCommentsApplication, DomainError, isDomainError, listWorkspaceMembers, notFoundError, type Capability, type CommandContext } from '@workloom/domain';
+import { createTaskTimelineCursorCodec } from '../task-comments/cursor.js';
+import { createTaskCommentsRepository } from '../task-comments/repository.js';
 import { isDatabase, type Database, type WorkloomExecutor } from '../client.js';
 import { createAccessRepository } from '../repositories/access-repository.js';
 import { createTaskRepository } from '../repositories/task-repository.js';
@@ -64,6 +67,8 @@ export interface AutomationApplication {
   renameSection(token: string, workspace: string | undefined, project: string, section: string, input: unknown, options: WriteOptions): Promise<PublicSectionDto>;
   /** A new workspace tag; needs the role that manages tags in the app. */
   createTag(token: string, workspace: string | undefined, input: unknown, options: WriteOptions): Promise<PublicTagDto>;
+  /** A page of a task's comments, newest first, the same feed as the app. */
+  listTaskComments(token: string, workspace: string | undefined, taskId: string, query: unknown): Promise<{ items: PublicTaskCommentDto[]; nextCursor: string | null }>;
 }
 
 interface ReadScope {
@@ -151,6 +156,15 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
   }
 
   const taskApp = (tx: WorkloomExecutor) => createTaskApplication(tx, { cursorSecret });
+  // Comments are read through the domain feed inside the token's own read transaction; its cursors are bound to the caller.
+  const commentCursors = createTaskTimelineCursorCodec({ secret: cursorSecret });
+  const commentsIn = (tx: WorkloomExecutor) => createTaskCommentsApplication({
+    read: work => work(createTaskCommentsRepository(tx)),
+    run: () => Promise.reject(new Error('The public comment feed is read-only.')),
+  }, {
+    newId: () => randomUUID(), digest: value => createHash('sha256').update(value, 'utf8').digest('hex'),
+    encodeCursor: commentCursors.encode, decodeCursor: commentCursors.decode,
+  });
 
   async function projectItems(s: ReadScope) {
     return (await taskApp(s.tx).listProjects(s.context)).map(project => ({ id: project.id, name: project.name, archived: project.archivedAt !== null, ...(project.isTemplate ? { template: true } : {}) }));
@@ -823,6 +837,17 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
       const tag = await writeApp(plan.hash, plan.workspaceId, plan.userId).createTag(plan.context, { name: parsed.data.name, ...(parsed.data.color !== undefined ? { color: parsed.data.color.toLowerCase() } : {}) });
       return { id: tag.id, name: tag.name };
     },
+
+    listTaskComments: (token, workspace, taskId, rawQuery) => authorizedRead(token, 'read', workspace, READ_CAPABILITY, async s => {
+      if (!isUuid(taskId)) throw notFoundError();
+      const parsed = publicTaskCommentsQuerySchema.safeParse(rawQuery);
+      if (!parsed.success) throw new DomainError('VALIDATION_FAILED', 'Invalid comment query.', { details: { issues: parsed.error.issues.slice(0, 10).map(issue => ({ path: issue.path.join('.'), message: issue.message })) } });
+      const page = await commentsIn(s.tx).listComments(s.context, taskId.toLowerCase(), parsed.data);
+      return {
+        items: page.items.map(comment => ({ id: comment.id, body: comment.body, createdAt: comment.createdAt, author: { membershipId: comment.authorMembershipId, displayName: comment.authorDisplayNameSnapshot } })),
+        nextCursor: page.nextCursor,
+      };
+    }),
 
     async createProjectFromTemplate(token, workspace, rawInput, writeOptions) {
       const parsed = publicProjectFromTemplateSchema.safeParse(rawInput);

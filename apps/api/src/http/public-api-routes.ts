@@ -3,6 +3,7 @@ import {
   publicTaskCreateSchema, publicTaskListQuerySchema, publicTaskUpdateSchema, publicWorkspaceSchema, taskViewSchema, API_TOKEN_LIMITS,
   publicFieldSchema, publicSetTaskFieldsResultSchema, publicSetTaskFieldsSchema, publicTimeSummarySchema, publicTaskAddToProjectSchema, publicTaskProjectSchema, publicProjectCopySchema, publicProjectFromTemplateSchema,
   publicSectionCreateSchema, publicSectionSchema, publicSectionUpdateSchema, publicTagCreateSchema,
+  publicTaskCommentSchema, publicTaskCommentsQuerySchema,
 } from '@workloom/contracts';
 import type { AutomationApplication } from '@workloom/db';
 import { DomainError, unauthenticatedError } from '@workloom/domain';
@@ -105,6 +106,12 @@ export function registerPublicApiRoutes(app: FastifyInstance, deps: PublicApiDep
     const input = parseInput(publicTaskCreateSchema, request.body);
     const task = await automation.createTask(bearerToken(request), p.ws, input, { requestId: request.id, idempotencyKey: idempotencyKey(request) });
     return sendData(request, reply, envelopeSchema(taskViewSchema), task, { statusCode: 201 });
+  });
+  app.get(`${base}/workspaces/:ws/tasks/:taskId/comments`, async (request, reply) => {
+    const p = parseInput(wsTask, request.params);
+    const query = parseInput(publicTaskCommentsQuerySchema, request.query);
+    const page = await automation.listTaskComments(bearerToken(request), p.ws, p.taskId, query);
+    return sendData(request, reply, envelopeSchema(publicTaskCommentSchema.array()), page.items, { nextCursor: page.nextCursor });
   });
   app.patch(`${base}/workspaces/:ws/tasks/:taskId`, write, async (request, reply) => {
     parseInput(empty, request.query);
