@@ -461,13 +461,14 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
     [personalColumns.query.data?.columns, fieldDefinitions.data, fieldDefinitions.isSuccess, projectColumns.data, projectColumns.isSuccess, workspace.id, project.id, timeAvailable]);
   const ordinaryAggregates = useColumnAggregates({ actorId, workspaceId: workspace.id, projectId: project.id, projectDateRange: project.dateRange ?? null, projectRevision: project.revision, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], grouping, filters: { ...filters, search }, writable, enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && projectColumns.isSuccess && members.isSuccess && !personalColumns.denied });
   const planningChecks = useProjectPlanningChecks({ templateController: ordinaryAggregates.templateController, actorId, workspaceId: workspace.id, projectId: project.id, projectRevision: project.revision, fields: fieldDefinitions.data ?? [], members: members.data ?? [], sections: sections.data ?? [], tags: tags.data ?? [], enabled: tableMode && !timeAvailable && fieldDefinitions.isSuccess && members.isSuccess && !personalColumns.denied, writable: canManageFields, requestedOpen: searchParams.get('checks') === '1', requestedFieldId: searchParams.get('checkField') ?? undefined, onOpenTask: id => openTask(id) });
-  // Unfinished dependency links of the listed tasks: an hourglass or a raised hand beside each name.
+  // Unfinished dependency links of the listed tasks: an hourglass or a raised hand beside each name. Finished
+  // tasks show none, so nothing shows until the project's statuses say which tasks are finished.
   const shownTaskIds = useMemo(() => shownTasks.map(task => task.id), [shownTasks]);
   const dependencyCounts = useDependencyCounts(actorId, workspace.id, shownTaskIds, tableMode);
   const finishedStatusIds = useMemo(() => new Set((statuses.data ?? []).filter(status => status.group === 'done').map(status => status.id)), [statuses.data]);
   const renderTaskIndicator = (task: TaskDto) => <>
     {planningChecks.renderTaskIndicator(task)}
-    {finishedStatusIds.has(task.statusId) ? null : <DependencyBadges title={task.title} counts={dependencyCounts.get(task.id)} onOpen={() => openTask(task.id)} />}
+    {statuses.data === undefined || finishedStatusIds.has(task.statusId) ? null : <DependencyBadges title={task.title} counts={dependencyCounts.get(task.id)} onOpen={() => openTask(task.id)} />}
   </>;
   const duplication = useDuplication({ actorId, workspaceId: workspace.id, projectId: project.id, fields: fieldDefinitions.data ?? [], members: members.data ?? [], writable, onDuplicated: result => { setAnnouncement(message(result.kind === 'task' ? 'duplication.createdTask' : 'duplication.createdSection')); if (result.rootTaskId !== null) openTask(result.rootTaskId); } });
   const visibleColumnIds = useMemo(() => reconciledColumns.effectiveVisibleRefs.map(tableColumnId), [reconciledColumns]);

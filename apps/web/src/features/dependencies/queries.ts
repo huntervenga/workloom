@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { layoutReceiptKey, newestLayout, reconcileLayoutAck } from './layoutReceiptCache';
 import { recordLayoutUndo } from '../undo/recordSpatialUndo';
-import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TaskDependencyCountsDto, CreateTaskDependencyInput, UpdateTaskDependencyInput, UpdateDependencyPolicyInput, SetGraphLayoutInput, TaskDependencyDto, GraphLayoutDto, ProjectDependencyPolicyDto, DependencyGraphDto } from '@workloom/contracts';
 import { isUuid } from '../../lib/format';
 import { invalidateTaskTimelines } from '../task-comments/queries';
@@ -29,23 +29,28 @@ export function useGraphQuery(a: string, w: string, p: string, roots: string[], 
   }, enabled: roots.length > 0 && roots.length <= 100, retry: false });
 }
 const COUNTS_PER_REQUEST = 100;
-const noCounts: ReadonlyMap<string, TaskDependencyCountsDto> = new Map();
+/** Stable, so useQueries reruns it only when a chunk's state changes. */
+const countRows = (results: readonly { data?: readonly TaskDependencyCountsDto[] | undefined }[]) => results.flatMap(result => result.data ?? []);
 /**
- * Unfinished links of the given tasks, keyed by task ID, for list badges. Lives under the dependency root, so edge
- * changes, task status changes and workspace live refresh all refetch it; the previous answer stays while it does.
+ * Unfinished links of the given tasks, keyed by task ID, for list badges. Each 100 tasks, in the order they were
+ * loaded, are one cached request, so loading another page of tasks fetches only the new tasks and a failed request
+ * hides only its own badges. The keys live under the dependency root, so edge changes, task status changes and
+ * workspace live refresh all refetch them; the previous answer stays meanwhile.
  */
 export function useDependencyCounts(a: string, w: string, taskIds: readonly string[], enabled = true): ReadonlyMap<string, TaskDependencyCountsDto> {
-  const ids = useMemo(() => [...new Set(taskIds.filter(isUuid).map(id => id.toLowerCase()))].sort(), [taskIds]);
-  const query = useQuery({
-    queryKey: dependencyKeys.counts(a, w, ids),
-    queryFn: async ({ signal }) => {
-      const chunks: string[][] = [];
-      for (let i = 0; i < ids.length; i += COUNTS_PER_REQUEST) chunks.push(ids.slice(i, i + COUNTS_PER_REQUEST));
-      return (await Promise.all(chunks.map(chunk => fetchDependencyCounts(w, chunk, signal)))).flat();
-    },
-    enabled: enabled && ids.length > 0, retry: false, placeholderData: keepPreviousData,
-  });
-  return useMemo(() => query.data ? new Map(query.data.map(row => [row.taskId, row])) : noCounts, [query.data]);
+  const chunks = useMemo(() => {
+    const ids = [...new Set(taskIds.filter(isUuid).map(id => id.toLowerCase()))];
+    const out: string[][] = [];
+    for (let i = 0; i < ids.length; i += COUNTS_PER_REQUEST) out.push(ids.slice(i, i + COUNTS_PER_REQUEST).sort());
+    return out;
+  }, [taskIds]);
+  const rows = useQueries({ queries: chunks.map(chunk => ({
+    queryKey: dependencyKeys.counts(a, w, chunk),
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchDependencyCounts(w, chunk, signal),
+    enabled, retry: false, placeholderData: keepPreviousData,
+  })), combine: countRows });
+  // Rebuilt only when an answer changed, so table rows keep their props between unrelated renders.
+  return useMemo(() => new Map(rows.map(row => [row.taskId, row])), [rows]);
 }
 export const usePolicyQuery = (a: string, w: string, p: string) => useQuery({ queryKey: dependencyKeys.policy(a, w, p), queryFn: ({ signal }) => fetchDependencyPolicy(w, p, signal), enabled: isUuid(p), retry: false });
 export function useLayoutQuery(a: string, w: string, p: string) {
