@@ -234,6 +234,7 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
       ...(input.priority !== undefined ? { priority: input.priority } : {}),
       ...(input.tags !== undefined ? { tagIds: resolveRefs('tag', input.tags, tagRows.filter(row => row.archivedAt === null)).map(tag => tag.id) } : {}),
       ...(input.estimateMinutes !== undefined ? { estimateMinutes: input.estimateMinutes } : {}),
+      ...(input.requestedBy !== undefined ? { requestedBy: input.requestedBy } : {}),
       ...(input.parentTask !== undefined ? { parentTaskId: input.parentTask } : {}),
     };
   }
@@ -667,6 +668,7 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
           if (change.title !== undefined) set('title', change.title, change.title === current.title);
           if (change.description !== undefined) set('description', change.description, change.description === current.description);
           if (change.priority !== undefined) set('priority', change.priority, change.priority === current.priority);
+          if (change.requestedBy !== undefined) set('requestedBy', change.requestedBy, change.requestedBy === (current.requestedBy ?? null));
           if (change.startDate !== undefined) set('startDate', change.startDate, change.startDate === (current.startDate ?? null));
           if (change.dueDate !== undefined) set('dueDate', change.dueDate, change.dueDate === current.dueDate);
           if (change.status !== undefined) { const status = resolveRef('status', change.status, await app.listStatuses(s.context, current.projectId)); set('statusId', status.id, status.id === current.statusId); }
@@ -747,7 +749,7 @@ export function createAutomationApplication(source: Database | WorkloomExecutor,
         assignee: updated.responsibleMembershipId === null ? null : person(updated.responsibleMembershipId),
         participants: updated.participants.filter(member => member.active).map(member => person(member.membershipId)),
         priority: updated.priority, startDate: updated.startDate ?? null, dueDate: updated.dueDate,
-        estimateMinutes: updated.estimateMinutes,
+        estimateMinutes: updated.estimateMinutes, requestedBy: updated.requestedBy ?? null,
         tags: updated.tags.map(tag => plan.tags.find(item => item.id === tag.id) ?? { id: tag.id, name: tag.name }),
         parentTaskId: updated.parentTaskId, revision: updated.revision, archived: updated.archivedAt !== null,
         createdAt: updated.createdAt, updatedAt: updated.updatedAt,

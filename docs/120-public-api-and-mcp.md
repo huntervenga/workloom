@@ -37,11 +37,11 @@ POST  /workspaces/{ws}/tags                новый тег (name, color); им
 POST  /workspaces/{ws}/projects/{project}/sections            новая секция в конце проекта (name)
 PATCH /workspaces/{ws}/projects/{project}/sections/{section}  переименовать секцию (name); то же имя — без изменений
 GET   /workspaces/{ws}/tasks               фильтры: project, section, status, statusGroup, assignee,
-                                           tag, q, dueBefore, dueAfter, open, includeArchived,
+                                           tag, requestedBy, updatedAfter, q, dueBefore, dueAfter, open, includeArchived,
                                            sort=updated|due|created, limit, cursor
 GET   /workspaces/{ws}/tasks/{taskId}
 POST  /workspaces/{ws}/tasks               project обязателен; section/status/assignee/... необязательны
-PATCH /workspaces/{ws}/tasks/{taskId}      status, section, assignee, title, dates, tags, ...
+PATCH /workspaces/{ws}/tasks/{taskId}      status, section, assignee, title, dates, tags, requestedBy, ...
 POST  /workspaces/{ws}/tasks/{taskId}/projects  задача ещё в одном проекте (project, section, home)
 GET   /openapi.json
 ```
@@ -49,6 +49,8 @@ GET   /openapi.json
 Выдача PAT с явным `workspaceIds: []` отклоняется; отсутствие списка означает все доступные пользователю workspace. Ранее сохранённые токены с `workspaceIds = null` сохраняют это значение: исходный пустой список и отсутствие списка по сохранённой записи неразличимы. Исправление не меняет существующие токены автоматически.
 
 Списки: `project`, `section`, `status`, `assignee`, `tag` принимают значения через запятую; `assignee=me` — «мои задачи».
+
+`requestedBy` — кто попросил задачу (текст до 200 символов без запятых, управляющих и bidi-символов, например имя ассистента или проекта): задаётся при создании и в PATCH (`null` очищает), виден в задаче, фильтр `requestedBy` — без учёта регистра. Фильтр `updatedAfter` (ISO 8601 UTC) оставляет задачи, изменённые позже этого момента: так проверка «что закрыли с прошлого раза» — `statusGroup=done&updatedAfter=<отметка>`. Отметка — самый новый `updatedAt` из прошлого ответа (время сервера, не часы клиента); обойти все страницы, отступить на минуту (медленная запись может закоммититься с более ранним временем) и пропускать уже обработанные пары id + revision. Это текущее состояние, а не журнал переходов: задача, закрытая и снова открытая между проверками, не попадёт в `done`. Колонка `tasks.requested_by` — миграция 0045, добавочная. Поле называется не `source`, потому что `source` в Workloom — канал команды (web, api, job), клиент его задавать не может.
 
 ## MCP-инструменты
 

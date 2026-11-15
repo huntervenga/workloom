@@ -4,6 +4,7 @@
     {
       "date": "2026-11-14",
       "items": [
+        "A task can show who asked for it (Requested by), and AI assistants and scripts can list the tasks they asked for and only the ones that changed since their last check.",
         "AI assistants and scripts can add a section to a project, rename a section and create a tag through the API and MCP (create_section, rename_section, create_tag)."
       ]
     },

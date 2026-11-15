@@ -388,6 +388,8 @@ export const tasks = pgTable(
     startDate: date('start_date', { mode: 'string' }),
     dueDate: date('due_date', { mode: 'string' }),
     priority: taskPriorityEnum('priority').notNull().default('none'),
+    /** Who asked for the task, as the client that set it names them (an assistant, a project, a script); free text. */
+    requestedBy: text('requested_by'),
     revision: integer('revision').notNull().default(1),
     position: integer('position').notNull(),
     visibility: taskVisibilityEnum('visibility').notNull().default('workspace'),
@@ -396,6 +398,7 @@ export const tasks = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    check('tasks_requested_by_check', sql`${table.requestedBy} IS NULL OR char_length(btrim(${table.requestedBy})) BETWEEN 1 AND 200`),
     check('tasks_dates_range_check',sql`${table.startDate} IS NULL OR ${table.dueDate} IS NULL OR ${table.startDate} <= ${table.dueDate}`),
     check('tasks_dates_supported_year_check',sql`(${table.startDate} IS NULL OR ${table.startDate} BETWEEN DATE '0001-01-01' AND DATE '9999-12-31') AND (${table.dueDate} IS NULL OR ${table.dueDate} BETWEEN DATE '0001-01-01' AND DATE '9999-12-31')`),
     foreignKey({
