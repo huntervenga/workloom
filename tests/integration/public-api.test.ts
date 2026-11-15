@@ -605,22 +605,22 @@ describe('personal access tokens, public API and MCP', () => {
   it('records who asked for a task and lists by requester and by the time of the last change', async () => {
     const stamp = Date.now();
     const project = await h.owner.tasks.createProject(`Requests ${stamp}`);
-    const asked = await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: `Decide ${stamp}`, requestedBy: ' Tiago Villares ' } });
+    const asked = await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: `Decide ${stamp}`, requestedBy: ' Release Planning ' } });
     expect(asked.status, asked.text()).toBe(201);
     const task = env<TaskV & { requestedBy: string | null; updatedAt: string }>(asked).data;
-    expect(task.requestedBy).toBe('Tiago Villares');
-    const other = env<{ id: string }>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: `Other ${stamp}`, requestedBy: 'Personal Assistant' } })).data;
+    expect(task.requestedBy).toBe('Release Planning');
+    const other = env<{ id: string }>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: `Other ${stamp}`, requestedBy: 'Support Desk' } })).data;
     const plain = env<{ id: string; requestedBy: string | null }>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: `Plain ${stamp}` } })).data;
     expect(plain.requestedBy).toBeNull();
     expect((await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: 'x', requestedBy: 'y'.repeat(201) } })).status).toBe(400);
-    for (const bad of ['   ', 'Smith, Inc.', 'evil\u202eTiago', 'a\nb']) {
+    for (const bad of ['   ', 'Smith, Inc.', 'evil\u202eDesk', 'a\nb']) {
       expect((await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: 'x', requestedBy: bad } })).status, bad).toBe(400);
     }
 
     // By requester, ignoring case; several requesters at once.
-    const byOne = env<TaskV[]>(await call(`${ws()}/tasks?project=${project.id}&requestedBy=tiago%20villares`, { token: owner.token })).data.map(t => t.id);
+    const byOne = env<TaskV[]>(await call(`${ws()}/tasks?project=${project.id}&requestedBy=release%20planning`, { token: owner.token })).data.map(t => t.id);
     expect(byOne).toEqual([task.id]);
-    const byTwo = env<TaskV[]>(await call(`${ws()}/tasks?project=${project.id}&requestedBy=Tiago%20Villares,Personal%20Assistant`, { token: owner.token })).data.map(t => t.id).sort();
+    const byTwo = env<TaskV[]>(await call(`${ws()}/tasks?project=${project.id}&requestedBy=Release%20Planning,Support%20Desk`, { token: owner.token })).data.map(t => t.id).sort();
     expect(byTwo).toEqual([task.id, other.id].sort());
 
     // Only what changed after the last check: the closed task, not the untouched ones.
@@ -633,15 +633,15 @@ describe('personal access tokens, public API and MCP', () => {
     expect((await call(`${ws()}/tasks?updatedAfter=yesterday`, { token: owner.token })).status).toBe(400);
 
     // The requester is changed or cleared like any field; an unchanged value is a no-op.
-    const moved = await call(`${ws()}/tasks/${other.id}`, { token: owner.token, method: 'PATCH', body: { requestedBy: 'Mine' } });
+    const moved = await call(`${ws()}/tasks/${other.id}`, { token: owner.token, method: 'PATCH', body: { requestedBy: 'Weekly Review' } });
     const movedTask = env<{ requestedBy: string; revision: number; updatedAt: string }>(moved).data;
-    expect(movedTask.requestedBy).toBe('Mine');
-    const repeated = env<{ revision: number; updatedAt: string }>(await call(`${ws()}/tasks/${other.id}`, { token: owner.token, method: 'PATCH', body: { requestedBy: ' Mine ' } })).data;
+    expect(movedTask.requestedBy).toBe('Weekly Review');
+    const repeated = env<{ revision: number; updatedAt: string }>(await call(`${ws()}/tasks/${other.id}`, { token: owner.token, method: 'PATCH', body: { requestedBy: ' Weekly Review ' } })).data;
     expect(repeated).toMatchObject({ revision: movedTask.revision, updatedAt: movedTask.updatedAt });
     const cleared = await call(`${ws()}/tasks/${other.id}`, { token: owner.token, method: 'PATCH', body: { requestedBy: null } });
     expect(env<{ requestedBy: string | null }>(cleared).data.requestedBy).toBeNull();
     const row = await h.db.sql`select requested_by from tasks where id = ${task.id}`;
-    expect(row[0]?.requested_by).toBe('Tiago Villares');
+    expect(row[0]?.requested_by).toBe('Release Planning');
 
     // The same over MCP.
     const viaMcp = json<Rpc>(await mcp(owner.token, rpc('tools/call', { name: 'create_task', arguments: { workspace: TEAM, project: project.name, title: `From a session ${stamp}`, requestedBy: 'Claude session' } }, 60))).result;
