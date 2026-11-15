@@ -89,6 +89,8 @@ function defaultFieldRoute(request: FakeRequest): Response | null {
   if (new RegExp(`${workspaces}${segment}/work-type-report-runs$`).test(request.path)) return ok([]);
   if (new RegExp(`${workspaces}${segment}/inbox$`).test(request.path) || new RegExp(`${workspaces}${segment}/inbox\\?`).test(request.path)) return ok([]);
   if (new RegExp(`${workspaces}${segment}/my-tasks$`).test(request.path)) return json(200, { data: [], meta: { requestId: 'fake-my-tasks', nextCursor: null } });
+  // List badges: like a server where these tasks have no unfinished dependency links.
+  if (new RegExp(`${workspaces}${segment}/dependencies/counts$`).test(request.path)) return ok([]);
   const projectRules = new RegExp(`${workspaces}${segment}/projects/${segment}/rules$`).exec(request.path);
   if (projectRules) return ok({ workspaceId: decodeURIComponent(projectRules[1] ?? ''), projectId: decodeURIComponent(projectRules[2] ?? ''), revision: 0, config: { singleProject: false, lockMoves: false } });
   const taskDefaults = new RegExp(`${workspaces}${segment}/projects/${segment}/task-defaults$`).exec(request.path);
