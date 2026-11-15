@@ -65,8 +65,8 @@ describe('dependency counts for list badges', () => {
   });
 
   it('keeps counts inside each workspace', async () => {
-    const mine = await planningProject(owner, 'Своё пространство');
-    const [a, b] = await Promise.all(['A', 'B'].map(name => planningTask(owner, mine.project, 60, uniqueName(`Своя связь ${name}`))));
+    const own = await planningProject(owner, 'Своё пространство');
+    const [a, b] = await Promise.all(['A', 'B'].map(name => planningTask(owner, own.project, 60, uniqueName(`Своя связь ${name}`))));
     const foreign = await planningProject(outsider, 'Чужое пространство');
     const [p, q] = await Promise.all(['P', 'Q'].map(name => planningTask(outsider, foreign.project, 60, uniqueName(`Чужая связь ${name}`))));
     if (!a || !b || !p || !q) throw new Error('Four tasks required.');
