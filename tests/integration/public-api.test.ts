@@ -602,4 +602,62 @@ describe('personal access tokens, public API and MCP', () => {
     const tags = env<{ name: string }[]>(await call(`${ws()}/tags`, { token: owner.token })).data.map(t => t.name);
     expect(tags).toEqual(expect.arrayContaining([tagName, `Claude ${stamp}`]));
   });
+  it('reads a task\'s comments newest first, page by page, within the caller\'s access', async () => {
+    const stamp = Date.now();
+    const project = await h.owner.tasks.createProject(`Comments ${stamp}`);
+    const task = env<{ id: string }>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: `Ask ${stamp}` } })).data;
+    const comment = async (text: string, key: string) => {
+      const res = await rawRequest(h.owner.api.baseUrl, `/api/v1/workspaces/${TEAM}/tasks/${task.id}/comments`, { method: 'POST', headers: { origin: h.owner.api.baseUrl, 'content-type': 'application/json', 'idempotency-key': key }, body: JSON.stringify({ body: text }) });
+      expect(res.status, res.text()).toBe(201);
+    };
+    await comment('First answer', `comment-1-${stamp}`);
+    await comment('Done, see the notes.\nSecond line.', `comment-2-${stamp}`);
+    type CommentV = { id: string; body: string; createdAt: string; author: { membershipId: string; displayName: string } };
+
+    const all = await call(`${ws()}/tasks/${task.id}/comments`, { token: owner.token });
+    expect(all.status, all.text()).toBe(200);
+    const page = env<CommentV[]>(all);
+    expect(page.data.map(c => c.body)).toEqual(['Done, see the notes.\nSecond line.', 'First answer']);
+    expect(need(page.data[0])).toMatchObject({ createdAt: expect.any(String), author: { membershipId: expect.any(String), displayName: expect.any(String) } });
+    expect(page.meta.nextCursor).toBeNull();
+
+    // Page by page with the cursor from meta.nextCursor; a tampered cursor is a validation error.
+    const first = env<CommentV[]>(await call(`${ws()}/tasks/${task.id}/comments?limit=1`, { token: owner.token }));
+    expect(first.data.map(c => c.body)).toEqual(['Done, see the notes.\nSecond line.']);
+    const cursor = need(first.meta.nextCursor);
+    const second = env<CommentV[]>(await call(`${ws()}/tasks/${task.id}/comments?limit=1&cursor=${encodeURIComponent(cursor)}`, { token: owner.token }));
+    expect(second.data.map(c => c.id)).toEqual([need(page.data[1]).id]);
+    expect(second.meta.nextCursor).toBeNull();
+    expect((await call(`${ws()}/tasks/${task.id}/comments?limit=1&cursor=tampered`, { token: owner.token })).status).toBe(400);
+    // A cursor belongs to its person and task: another member or another task cannot continue it.
+    const other = env<{ id: string }>(await call(`${ws()}/tasks`, { token: owner.token, method: 'POST', body: { project: project.id, title: `Other ${stamp}` } })).data;
+    expect((await call(`${ws()}/tasks/${other.id}/comments?limit=1&cursor=${encodeURIComponent(cursor)}`, { token: owner.token })).status).toBe(400);
+    expect((await call(`${ws()}/tasks/${task.id}/comments?limit=101`, { token: owner.token })).status).toBe(400);
+
+    // A read-only token and a viewer read them; an outsider and an unknown task get 404.
+    const readOnly = await issue(h.owner, { name: `ro comments ${stamp}`, scopes: ['read'] });
+    expect(env<CommentV[]>(await call(`${ws()}/tasks/${task.id}/comments`, { token: readOnly.token })).data).toHaveLength(2);
+    const viewer = await issue(h.viewer, { name: `viewer comments ${stamp}` });
+    expect((await call(`${ws()}/tasks/${task.id}/comments`, { token: viewer.token })).status).toBe(200);
+    expect((await call(`${ws()}/tasks/${task.id}/comments?limit=1&cursor=${encodeURIComponent(cursor)}`, { token: viewer.token })).status).toBe(400);
+    const outsider = await issue(h.outsider, { name: `outsider comments ${stamp}` });
+    expect((await call(`${ws()}/tasks/${task.id}/comments`, { token: outsider.token })).status).toBe(404);
+    expect((await call(`${ws()}/tasks/00000000-0000-4000-8000-000000000000/comments`, { token: owner.token })).status).toBe(404);
+    // A task of another workspace is not read through this workspace's path.
+    const outsideProject = await h.outsider.tasks.createProject(`Outside ${stamp}`);
+    const outsideCreated = await call(`${ws(OUTSIDE)}/tasks`, { token: outsider.token, method: 'POST', body: { project: outsideProject.id, title: `Outside ${stamp}` } });
+    expect(outsideCreated.status, outsideCreated.text()).toBe(201);
+    const outsideTask = env<{ id: string }>(outsideCreated).data;
+    expect((await call(`${ws()}/tasks/${outsideTask.id}/comments`, { token: owner.token })).status).toBe(404);
+    expect((await call(`${ws(OUTSIDE)}/tasks/${outsideTask.id}/comments`, { token: outsider.token })).status).toBe(200);
+
+    // The same over MCP, also for a read-only token.
+    const roTools = json<Rpc>(await mcp(readOnly.token, rpc('tools/list', {}, 70))).result.tools.map(t => t.name);
+    expect(roTools).toContain('list_task_comments');
+    const viaMcp = json<Rpc>(await mcp(readOnly.token, rpc('tools/call', { name: 'list_task_comments', arguments: { workspace: TEAM, taskId: task.id } }, 71))).result;
+    expect(viaMcp.isError ?? false, JSON.stringify(viaMcp)).toBe(false);
+    const result = viaMcp.structuredContent.result as unknown as { comments: CommentV[]; nextCursor: string | null };
+    expect(result.comments.map(c => c.body)).toEqual(['Done, see the notes.\nSecond line.', 'First answer']);
+    expect(result.nextCursor).toBeNull();
+  });
 });

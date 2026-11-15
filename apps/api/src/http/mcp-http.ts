@@ -31,6 +31,7 @@ const DESCRIPTIONS: Readonly<Record<McpToolName, string>> = {
   create_project_from_template: 'Create a new project, usually the next week, from a template project: its sections, fields, settings and tasks with assignees, estimates and every field value are cloned. Give the template (name or UUID), the new name and the first day (startDate) of the new project; every date moves with it. Pass the same operationKey when retrying after an unknown outcome.',
   create_section: 'Add a section to a project, after its last section. Check get_project first: a project may already have a section with that name. Pass the same operationKey when retrying after an unknown outcome.',
   rename_section: 'Rename a section of a project. section is its current name or UUID; renaming to the current name changes nothing.',
+  list_task_comments: 'Read the comments of a task, newest first: body, time and author. People often answer a request in a comment before they close the task, so read them when a task you asked for is done; limit 1 gives the latest. Use nextCursor as cursor for older comments.',
   create_tag: 'Create a workspace tag (optionally with a #rrggbb color). Tag names are unique in a workspace, ignoring case: check list_tags first and reuse an existing tag. Needs the role that manages tags in the app.',
 };
 
@@ -107,6 +108,11 @@ async function run(automation: AutomationApplication, token: string, name: McpTo
     case 'create_tag': {
       const { name, color } = a as Args<'create_tag'>;
       return automation.createTag(token, workspace, { name, ...(color !== undefined ? { color } : {}) }, { requestId, idempotencyKey: key });
+    }
+    case 'list_task_comments': {
+      const { taskId, limit, cursor } = a as Args<'list_task_comments'>;
+      const page = await automation.listTaskComments(token, workspace, taskId, { ...(limit !== undefined ? { limit } : {}), ...(cursor !== undefined ? { cursor } : {}) });
+      return { comments: page.items, nextCursor: page.nextCursor };
     }
     case 'add_task_to_project': {
       const { taskId, project, section, home } = a as Args<'add_task_to_project'>;

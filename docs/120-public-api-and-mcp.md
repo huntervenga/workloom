@@ -40,6 +40,7 @@ GET   /workspaces/{ws}/tasks               фильтры: project, section, sta
                                            tag, q, dueBefore, dueAfter, open, includeArchived,
                                            sort=updated|due|created, limit, cursor
 GET   /workspaces/{ws}/tasks/{taskId}
+GET   /workspaces/{ws}/tasks/{taskId}/comments  комментарии, сначала новые (как в приложении): body, createdAt, author; limit (до 100) и cursor к более старым
 POST  /workspaces/{ws}/tasks               project обязателен; section/status/assignee/... необязательны
 PATCH /workspaces/{ws}/tasks/{taskId}      status, section, assignee, title, dates, tags, ...
 POST  /workspaces/{ws}/tasks/{taskId}/projects  задача ещё в одном проекте (project, section, home)
@@ -52,7 +53,7 @@ GET   /openapi.json
 
 ## MCP-инструменты
 
-`whoami`, `list_workspaces`, `list_projects`, `get_project`, `list_members`, `list_tags`, `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`, `add_task_to_project`, `create_section`, `rename_section`, `create_tag`. Секции и теги пишутся со scope `tasks:write`, как и проект из шаблона: отдельного scope нет, поэтому выданные токены и подключения продолжают работать. Права роли те же, что в интерфейсе: секцию может завести участник (`task.edit`), тег — только тот, кто управляет полями (`fields.manage`: владелец и администратор). Схемы входа — те же Zod-схемы, что у REST (общий пакет contracts). Если у пользователя ровно один доступный workspace, параметр `workspace` можно опустить. Каждый вызов заново проверяет токен, scope и роль; `tools/list` показывает только разрешённые инструменты.
+`whoami`, `list_workspaces`, `list_projects`, `get_project`, `list_members`, `list_tags`, `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`, `add_task_to_project`, `create_section`, `rename_section`, `create_tag`, `list_task_comments` (scope `read`: комментарии задачи, сначала новые; ответ на просьбу часто пишут в комментарии перед закрытием задачи). Секции и теги пишутся со scope `tasks:write`, как и проект из шаблона: отдельного scope нет, поэтому выданные токены и подключения продолжают работать. Права роли те же, что в интерфейсе: секцию может завести участник (`task.edit`), тег — только тот, кто управляет полями (`fields.manage`: владелец и администратор). Схемы входа — те же Zod-схемы, что у REST (общий пакет contracts). Если у пользователя ровно один доступный workspace, параметр `workspace` можно опустить. Каждый вызов заново проверяет токен, scope и роль; `tools/list` показывает только разрешённые инструменты.
 
 ## Файлы
 
