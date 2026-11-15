@@ -20,6 +20,8 @@ export interface DependencyRepository {
  taskContexts(ws:string,ids:readonly string[]):Promise<DependencyTaskProjection[]>;
  unresolvedIncoming(ws:string,taskId:string,after:string|null,take:number):Promise<TaskDependencyDto[]>;
  unresolvedCounts(ws:string,taskIds:readonly string[]):Promise<Map<string,number>>;
+ /** Per task: active predecessors not done (`waitingOn`) and, for an unfinished task, active successors not done (`blocking`). */
+ dependencyCounts(ws:string,taskIds:readonly string[]):Promise<Map<string,{waitingOn:number;blocking:number}>>;
  getPolicy(ws:string,projectId:string):Promise<ProjectDependencyPolicyDto>;
  getPolicies(ws:string,projectIds:readonly string[]):Promise<Map<string,ProjectDependencyPolicyDto>>;
  savePolicy(ws:string,row:ProjectDependencyPolicyDto):Promise<void>;

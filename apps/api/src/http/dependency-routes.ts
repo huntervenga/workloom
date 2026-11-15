@@ -1,5 +1,7 @@
 import {
   createTaskDependencyInputSchema,
+  dependencyCountsQuerySchema,
+  dependencyCountsResponseSchema,
   dependencyGraphQuerySchema,
   dependencyGraphResponseSchema,
   graphLayoutResponseSchema,
@@ -61,6 +63,11 @@ export function registerDependencyRoutes(app: FastifyInstance, deps: DependencyR
     const { query, ctx } = await read(request, workspaceParamsSchema, taskDependencyListQuerySchema);
     const page = await deps.dependencies.listDependencies(ctx, query);
     return sendData(request, reply, taskDependencyListResponseSchema, page.items, { nextCursor: page.nextCursor });
+  });
+  app.get(`${BASE}/dependencies/counts`, async (request, reply) => {
+    // CSV task IDs (at most 100), parsed once; tasks with no unfinished links are left out of the answer.
+    const { query, ctx } = await read(request, workspaceParamsSchema, dependencyCountsQuerySchema);
+    return sendData(request, reply, dependencyCountsResponseSchema, await deps.dependencies.countDependencies(ctx, query));
   });
   app.post(`${BASE}/dependencies`, async (request, reply) => {
     const { input, ctx } = await command(request, workspaceParamsSchema, createTaskDependencyInputSchema);

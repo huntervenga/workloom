@@ -1,6 +1,6 @@
 import {
   createTaskDependencyInputSchema, updateTaskDependencyInputSchema, updateDependencyPolicyInputSchema, setGraphLayoutInputSchema,
-  taskDependencyListQuerySchema, taskBlockingQuerySchema, dependencyGraphInputSchema,
+  taskDependencyListQuerySchema, taskBlockingQuerySchema, dependencyGraphInputSchema, dependencyCountsInputSchema, dependencyCountsResponseSchema,
   taskDependencyResponseSchema, taskDependencyListResponseSchema, taskBlockingResponseSchema,
   projectDependencyPolicyResponseSchema, dependencyGraphResponseSchema, graphLayoutResponseSchema,
   type CreateTaskDependencyInput, type UpdateTaskDependencyInput, type UpdateDependencyPolicyInput, type SetGraphLayoutInput,
@@ -34,6 +34,13 @@ export async function fetchDependencyGraph(w: string, p: string, input: Dependen
   const result = await apiGet(`${project(w, p)}/graph?${params}`, dependencyGraphResponseSchema, signal);
   if (result.data.projectId !== p.toLowerCase() || result.data.nodes.some(row => row.task.projectId !== row.context.project.id || row.task.statusId !== row.context.status.id)) throw new ApiError({ kind: 'invalid_response', status: 200 });
   return result.data;
+}
+/** Unfinished links per task, for list badges; at most 100 task IDs per request. */
+export async function fetchDependencyCounts(w: string, taskIds: readonly string[], signal?: AbortSignal) {
+  const parsed = dependencyCountsInputSchema.safeParse({ taskIds: [...taskIds] });
+  if (!parsed.success) throw new ApiError({ kind: 'invalid_input', status: null });
+  const params = new URLSearchParams({ taskIds: parsed.data.taskIds.join(',') });
+  return (await apiGet(`${root(w)}/dependencies/counts?${params}`, dependencyCountsResponseSchema, signal)).data;
 }
 export async function fetchDependencyPolicy(w: string, p: string, signal?: AbortSignal) {
   return (await apiGet(`${project(w, p)}/dependency-policy`, projectDependencyPolicyResponseSchema, signal)).data;

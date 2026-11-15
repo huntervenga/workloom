@@ -1,4 +1,4 @@
-import {createTaskDependencyInputSchema,updateTaskDependencyInputSchema,updateDependencyPolicyInputSchema,setGraphLayoutInputSchema,taskDependencyListQuerySchema,taskBlockingQuerySchema,dependencyGraphInputSchema,taskDependencySchema,projectDependencyPolicySchema,graphLayoutSchema,idSchema,type TaskDto,type TaskDependencyDto,type TaskBlockingSummaryDto,type DependencyGraphDto,type ProjectDependencyPolicyDto,type TaskStatusGroup} from '@workloom/contracts';
+import {createTaskDependencyInputSchema,updateTaskDependencyInputSchema,updateDependencyPolicyInputSchema,setGraphLayoutInputSchema,taskDependencyListQuerySchema,taskBlockingQuerySchema,dependencyGraphInputSchema,dependencyCountsInputSchema,taskDependencySchema,projectDependencyPolicySchema,graphLayoutSchema,idSchema,type TaskDto,type TaskDependencyDto,type TaskBlockingSummaryDto,type DependencyGraphDto,type ProjectDependencyPolicyDto,type TaskStatusGroup} from '@workloom/contracts';
 import type {z} from 'zod';
 import {DomainError,notFoundError,unauthenticatedError} from '../errors.js';
 import {canonicalJson} from '../tasks/service.js';
@@ -73,6 +73,11 @@ export function createDependencyApplication({writer,tools}:DependencyApplication
   async getProjectPolicy(ctx0,id){const ctx=normalize(ctx0),projectId=parse(idSchema,id);return writer.read(ctx,'task.read',async repo=>{found(await repo.tasks.findProject(ctx.workspaceId,projectId));return repo.getPolicy(ctx.workspaceId,projectId);});},
   async updateProjectPolicy(ctx0,id,input){const ctx=normalize(ctx0),projectId=parse(idSchema,id),p=parse(updateDependencyPolicyInputSchema,input);return mutate(ctx,'dependencies.manage','dependency.policy.update',{projectId},p,projectDependencyPolicySchema,async repo=>{found(await repo.tasks.findProject(ctx.workspaceId,projectId));},async scope=>{
    const row=await scope.dependencies.getPolicy(ctx.workspaceId,projectId);revision(row.revision,p.expectedRevision);if(row.mode===p.mode)return row;const next={projectId,mode:p.mode,revision:row.revision+1,updatedAt:scope.barrierAt.toISOString()};await scope.dependencies.savePolicy(ctx.workspaceId,next);await event(scope,'dependency_policy',projectId,'updated',next.revision,{mode:p.mode});return next;
+  });},
+  async countDependencies(ctx0,input){const ctx=normalize(ctx0),q=parse(dependencyCountsInputSchema,input);return writer.read(ctx,'task.read',async repo=>{
+   // Tasks outside this workspace (or unknown) simply have no counts: the query is scoped to the workspace.
+   const counts=await repo.dependencyCounts(ctx.workspaceId,q.taskIds);
+   return q.taskIds.flatMap(taskId=>{const c=counts.get(taskId);return c&&(c.waitingOn>0||c.blocking>0)?[{taskId,waitingOn:c.waitingOn,blocking:c.blocking}]:[];});
   });},
   async getGraph(ctx0,id,input){const ctx=normalize(ctx0),projectId=parse(idSchema,id),q=parse(dependencyGraphInputSchema,input);return writer.read(ctx,'task.read',async repo=>{
    const ws=ctx.workspaceId;found(await repo.tasks.findProject(ws,projectId));const roots=await requireTasks(repo,ws,q.rootTaskIds);if(roots.some(c=>c.task.projectId!==projectId))throw rule('Graph roots must belong to the selected project.');

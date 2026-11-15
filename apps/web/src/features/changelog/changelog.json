@@ -2,6 +2,12 @@
   "covers": "48bd51c74abb591ea949e770a808a9f9299cea36",
   "days": [
     {
+      "date": "2026-11-15",
+      "items": [
+        "Dependencies in the task list: an hourglass marks a task that waits on unfinished tasks, a raised hand marks a task that unfinished tasks wait on. Hover for the count; click to open the task. Links to tasks in other projects count too."
+      ]
+    },
+    {
       "date": "2026-11-14",
       "items": [
         "AI assistants and scripts can add a section to a project, rename a section and create a tag through the API and MCP (create_section, rename_section, create_tag)."
