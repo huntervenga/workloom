@@ -54,6 +54,13 @@ const MENU_MIN_HEIGHT = 120;
 const MENU_MIN_WIDTH = 224;
 const EDGE = 8;
 const GAP = 4;
+/**
+ * Phone portrait: the menu is a full-width sheet placed by CSS alone (bottom, or top when it searches,
+ * so the keyboard never covers it). Installed iPhone apps were seen to misplace a menu positioned from
+ * measured coordinates, so a sheet measures nothing.
+ */
+const SHEET_QUERY = '(max-width: 39.999rem)';
+type Sheet = 'top' | 'bottom' | null;
 const TYPEAHEAD_MS = 700;
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** A theme colour token, so a status dot follows the theme like the table cell beside it. */
@@ -175,7 +182,7 @@ export function ChoicePicker({
   const keyboardClickRef = useRef(false);
   const typeaheadRef = useRef({ text: '', at: 0 });
   // Search mode and container are fixed when the menu opens, so later option loads never move focus.
-  const [menu, setMenu] = useState<{ container: HTMLElement; search: boolean } | null>(null);
+  const [menu, setMenu] = useState<{ container: HTMLElement; search: boolean; sheet: Sheet } | null>(null);
   const [query, setQuery] = useState('');
   const [activeValue, setActiveValue] = useState<string | null>(null);
   const open = menu !== null;
@@ -221,7 +228,9 @@ export function ChoicePicker({
           : start === 'last'
             ? pool.at(-1)?.value
             : (pool.find((option) => option.value === value) ?? pool[0])?.value;
-    setMenu({ container: trigger.closest<HTMLElement>(MODAL) ?? trigger.ownerDocument.body, search });
+    const view = trigger.ownerDocument.defaultView;
+    const phone = typeof view?.matchMedia === 'function' && view.matchMedia(SHEET_QUERY).matches;
+    setMenu({ container: trigger.closest<HTMLElement>(MODAL) ?? trigger.ownerDocument.body, search, sheet: phone ? (search ? 'top' : 'bottom') : null });
     setQuery(search ? seed : '');
     setActiveValue(initial ?? null);
   };
@@ -389,6 +398,18 @@ export function ChoicePicker({
     const list = listRef.current;
     const container = menu?.container;
     if (!trigger || !element || !list || !container) return;
+    if (menu?.sheet) {
+      const style = element.style;
+      style.left = 'calc(8px + env(safe-area-inset-left, 0px))';
+      style.right = 'calc(8px + env(safe-area-inset-right, 0px))';
+      style.width = 'auto';
+      style.top = menu.sheet === 'top' ? 'calc(8px + env(safe-area-inset-top, 0px))' : 'auto';
+      style.bottom = menu.sheet === 'bottom' ? 'calc(8px + env(safe-area-inset-bottom, 0px))' : 'auto';
+      style.maxHeight = menu.sheet === 'top' ? `min(${MENU_MAX_HEIGHT}px, 45dvh)` : `min(${MENU_MAX_HEIGHT}px, 60dvh)`;
+      element.dataset.side = menu.sheet;
+      element.dataset.sheet = menu.sheet;
+      return;
+    }
     const doc = trigger.ownerDocument;
     const view = doc.defaultView ?? window;
     const viewport = view.visualViewport;

@@ -2,6 +2,15 @@
   "covers": "48bd51c74abb591ea949e770a808a9f9299cea36",
   "days": [
     {
+      "date": "2026-11-15",
+      "items": [
+        "On a phone, the task list gives the Task column the width of the screen: names wrap onto several lines, the row number and drag handle are hidden, and tapping a name opens the task. Swipe left to see the other columns.",
+        "On a phone, the project name gets a line of its own instead of being cut to a few letters.",
+        "On a phone, lists such as Status, Priority and Assignee open across the bottom of the screen, or across the top when they have a search box, so they never open off-screen.",
+        "On phones and tablets, text fields use a larger font, so the iPhone no longer zooms the page in when you start typing."
+      ]
+    },
+    {
       "date": "2026-11-14",
       "items": [
         "AI assistants and scripts can add a section to a project, rename a section and create a tag through the API and MCP (create_section, rename_section, create_tag)."
