@@ -61,6 +61,24 @@ const GAP = 4;
  */
 const SHEET_QUERY = '(max-width: 39.999rem)';
 type Sheet = 'top' | 'bottom' | null;
+
+/**
+ * Whether `element` or an ancestor positions fixed descendants against itself instead of the viewport
+ * (transform, translate, filter, containment…), as a centered dialog does. A sheet there would follow
+ * the dialog's box and its scrolling, so the measured placement is kept instead.
+ */
+function anchorsFixed(element: HTMLElement): boolean {
+  const view = element.ownerDocument.defaultView;
+  if (!view) return false;
+  const set = (value: string | undefined) => value !== undefined && value !== '' && value !== 'none' && value !== 'auto' && value !== 'normal';
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    const style = view.getComputedStyle(node);
+    if ([style.transform, style.translate, style.scale, style.rotate, style.perspective, style.filter, style.backdropFilter].some(set)) return true;
+    if (/transform|translate|scale|rotate|perspective|filter/.test(style.willChange)) return true;
+    if (/layout|paint|strict|content/.test(style.contain) || /size/.test(style.containerType)) return true;
+  }
+  return false;
+}
 const TYPEAHEAD_MS = 700;
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** A theme colour token, so a status dot follows the theme like the table cell beside it. */
@@ -229,8 +247,9 @@ export function ChoicePicker({
             ? pool.at(-1)?.value
             : (pool.find((option) => option.value === value) ?? pool[0])?.value;
     const view = trigger.ownerDocument.defaultView;
-    const phone = typeof view?.matchMedia === 'function' && view.matchMedia(SHEET_QUERY).matches;
-    setMenu({ container: trigger.closest<HTMLElement>(MODAL) ?? trigger.ownerDocument.body, search, sheet: phone ? (search ? 'top' : 'bottom') : null });
+    const container = trigger.closest<HTMLElement>(MODAL) ?? trigger.ownerDocument.body;
+    const phone = typeof view?.matchMedia === 'function' && view.matchMedia(SHEET_QUERY).matches && !anchorsFixed(container);
+    setMenu({ container, search, sheet: phone ? (search ? 'top' : 'bottom') : null });
     setQuery(search ? seed : '');
     setActiveValue(initial ?? null);
   };

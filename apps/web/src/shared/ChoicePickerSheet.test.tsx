@@ -58,3 +58,25 @@ it('keeps the anchored menu on wider screens', async () => {
   expect(menu()?.dataset.sheet).toBeUndefined();
   expect(menu()?.style.right).toBe('');
 });
+
+it('keeps the anchored menu inside a dialog that positions fixed content against itself, such as a centered one', async () => {
+  phone(true);
+  const user = userEvent.setup();
+  render(<div role="dialog" aria-label="Centered" style={{ transform: 'translate(-50%, -50%)' }}>
+    <ChoicePicker label="Status" value="todo" options={statuses} onValueChange={vi.fn()} />
+  </div>);
+  await user.click(screen.getByRole('combobox', { name: 'Status' }));
+  expect(menu()?.parentElement).toBe(screen.getByRole('dialog', { name: 'Centered' }));
+  expect(menu()?.dataset.sheet).toBeUndefined();
+});
+
+it('uses the sheet inside a full-screen dialog without its own positioning, such as the task pane on a phone', async () => {
+  phone(true);
+  const user = userEvent.setup();
+  render(<div role="dialog" aria-label="Task">
+    <ChoicePicker label="Status" value="todo" options={statuses} onValueChange={vi.fn()} />
+  </div>);
+  await user.click(screen.getByRole('combobox', { name: 'Status' }));
+  expect(menu()?.parentElement).toBe(screen.getByRole('dialog', { name: 'Task' }));
+  expect(menu()?.dataset.sheet).toBe('bottom');
+});

@@ -867,7 +867,7 @@ function LinkedTaskRow({ row, depth, ctx, renderCell, move }: { row: TaskTableLi
             const up = event.key === 'ArrowUp', anchor = up ? move.previous : move.next;
             if (anchor && !move.blocked) move.move(anchor, up ? 'before' : 'after');
           }}
-          className={cn('absolute -left-3 inset-y-0 z-[2] flex w-3 cursor-grab touch-none items-center justify-center rounded bg-surface text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing aria-disabled:cursor-wait max-sm:hidden', rowActionClassName, move.dragging && 'pointer-events-auto opacity-100')}>
+          className={cn('absolute -left-3 inset-y-0 z-[2] flex w-3 cursor-grab touch-none items-center justify-center rounded bg-surface text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing aria-disabled:cursor-wait', rowActionClassName, move.dragging && 'pointer-events-auto opacity-100')}>
           <GripVertical size={12} aria-hidden="true" />
         </button> : null}
         <span className="mr-1 flex h-10 w-8 shrink-0 items-center justify-center text-accent-ink max-sm:w-5" title={hint}><Link2 size={14} aria-hidden="true" /></span>
