@@ -1,4 +1,5 @@
 import {and,asc,eq,inArray,sql,or,gt,notInArray} from 'drizzle-orm';
+import {alias} from 'drizzle-orm/pg-core';
 import type {TaskDependencyDto} from '@workloom/contracts';
 import {notFoundError,type DependencyRepository} from '@workloom/domain';
 import {isDatabase,type Database,type WorkloomExecutor} from '../client.js';
@@ -11,6 +12,8 @@ const edge=(r:typeof taskDependencies.$inferSelect):TaskDependencyDto=>({...r,cr
 function updated(rows:readonly unknown[]){if(!rows.length)throw notFoundError();}
 export function createDependencyRepository(source:Database|WorkloomExecutor):DependencyRepository {
  const db=isDatabase(source)?source.db:source,taskRepo=createTaskRepository(source);
+ /** Active predecessors of each task that are not in a done status. */
+ async function unresolvedCounts(ws:string,ids:readonly string[]):Promise<Map<string,number>>{if(!ids.length)return new Map();const rows=await db.select({taskId:taskDependencies.successorTaskId,count:sql<number>`count(*)::int`}).from(taskDependencies).innerJoin(tasks,and(eq(tasks.workspaceId,taskDependencies.workspaceId),eq(tasks.id,taskDependencies.predecessorTaskId))).innerJoin(taskStatuses,and(eq(taskStatuses.workspaceId,tasks.workspaceId),eq(taskStatuses.projectId,tasks.projectId),eq(taskStatuses.id,tasks.statusId))).where(and(eq(taskDependencies.workspaceId,ws),inArray(taskDependencies.successorTaskId,[...ids]),eq(taskDependencies.state,'active'),sql`${taskStatuses.group} <> 'done'`)).groupBy(taskDependencies.successorTaskId);return new Map(rows.map(r=>[r.taskId,r.count]));}
  return {
   tasks:taskRepo,
   async currentChangeSeq(ws){const [r]=await db.select({seq:workspaces.changeSeq}).from(workspaces).where(eq(workspaces.id,ws));if(!r)throw notFoundError();return r.seq.toString();},
@@ -33,7 +36,23 @@ export function createDependencyRepository(source:Database|WorkloomExecutor):Dep
    return projected.map(task=>{const project=projectRows.find(p=>p.id===task.projectId),status=statusRows.find(s=>s.id===task.statusId&&s.projectId===task.projectId);if(!project||!status)throw new Error('A task lost its scoped project/status.');return {task,context:{project:{id:project.id,name:project.name,archivedAt:project.archivedAt?iso(project.archivedAt):null},status:{id:status.id,name:status.name,group:status.group}}};});
   },
   async unresolvedIncoming(ws,taskId,after,take){const rows=await db.select({edge:taskDependencies}).from(taskDependencies).innerJoin(tasks,and(eq(tasks.workspaceId,taskDependencies.workspaceId),eq(tasks.id,taskDependencies.predecessorTaskId))).innerJoin(taskStatuses,and(eq(taskStatuses.workspaceId,tasks.workspaceId),eq(taskStatuses.projectId,tasks.projectId),eq(taskStatuses.id,tasks.statusId))).where(and(eq(taskDependencies.workspaceId,ws),eq(taskDependencies.successorTaskId,taskId),eq(taskDependencies.state,'active'),sql`${taskStatuses.group} <> 'done'`,after?gt(taskDependencies.id,after):undefined)).orderBy(asc(taskDependencies.id)).limit(take);return rows.map(r=>edge(r.edge));},
-  async unresolvedCounts(ws,ids){if(!ids.length)return new Map();const rows=await db.select({taskId:taskDependencies.successorTaskId,count:sql<number>`count(*)::int`}).from(taskDependencies).innerJoin(tasks,and(eq(tasks.workspaceId,taskDependencies.workspaceId),eq(tasks.id,taskDependencies.predecessorTaskId))).innerJoin(taskStatuses,and(eq(taskStatuses.workspaceId,tasks.workspaceId),eq(taskStatuses.projectId,tasks.projectId),eq(taskStatuses.id,tasks.statusId))).where(and(eq(taskDependencies.workspaceId,ws),inArray(taskDependencies.successorTaskId,[...ids]),eq(taskDependencies.state,'active'),sql`${taskStatuses.group} <> 'done'`)).groupBy(taskDependencies.successorTaskId);return new Map(rows.map(r=>[r.taskId,r.count]));},
+  unresolvedCounts,
+  async dependencyCounts(ws,ids){
+   const result=new Map<string,{waitingOn:number;blocking:number}>();if(!ids.length)return result;
+   const at=(id:string)=>{let c=result.get(id);if(!c){c={waitingOn:0,blocking:0};result.set(id,c);}return c;};
+   for(const [id,count] of await unresolvedCounts(ws,ids))at(id).waitingOn=count;
+   // A finished task blocks nothing: its own status must be unfinished, and so must the successor's.
+   const own=alias(tasks,'own'),ownStatus=alias(taskStatuses,'own_status');
+   const rows=await db.select({taskId:taskDependencies.predecessorTaskId,count:sql<number>`count(*)::int`}).from(taskDependencies)
+    .innerJoin(tasks,and(eq(tasks.workspaceId,taskDependencies.workspaceId),eq(tasks.id,taskDependencies.successorTaskId)))
+    .innerJoin(taskStatuses,and(eq(taskStatuses.workspaceId,tasks.workspaceId),eq(taskStatuses.projectId,tasks.projectId),eq(taskStatuses.id,tasks.statusId)))
+    .innerJoin(own,and(eq(own.workspaceId,taskDependencies.workspaceId),eq(own.id,taskDependencies.predecessorTaskId)))
+    .innerJoin(ownStatus,and(eq(ownStatus.workspaceId,own.workspaceId),eq(ownStatus.projectId,own.projectId),eq(ownStatus.id,own.statusId)))
+    .where(and(eq(taskDependencies.workspaceId,ws),inArray(taskDependencies.predecessorTaskId,[...ids]),eq(taskDependencies.state,'active'),sql`${taskStatuses.group} <> 'done'`,sql`${ownStatus.group} <> 'done'`))
+    .groupBy(taskDependencies.predecessorTaskId);
+   for(const r of rows)at(r.taskId).blocking=r.count;
+   return result;
+  },
   async getPolicy(ws,projectId){const [r]=await db.select().from(projectDependencyPolicies).where(and(eq(projectDependencyPolicies.workspaceId,ws),eq(projectDependencyPolicies.projectId,projectId)));return r?{projectId:r.projectId,mode:r.mode,revision:r.revision,updatedAt:iso(r.updatedAt)}:{projectId,mode:'warn',revision:0,updatedAt:null};},
   async getPolicies(ws,ids){if(!ids.length)return new Map();const rows=await db.select().from(projectDependencyPolicies).where(and(eq(projectDependencyPolicies.workspaceId,ws),inArray(projectDependencyPolicies.projectId,[...ids])));return new Map(ids.map(id=>{const r=rows.find(r=>r.projectId===id);return [id,r?{projectId:id,mode:r.mode,revision:r.revision,updatedAt:iso(r.updatedAt)}:{projectId:id,mode:'warn' as const,revision:0,updatedAt:null}];}));},
   async savePolicy(ws,row){if(row.revision===1){await db.insert(projectDependencyPolicies).values({workspaceId:ws,projectId:row.projectId,mode:row.mode,revision:row.revision,updatedAt:date(row.updatedAt)});return;}updated(await db.update(projectDependencyPolicies).set({mode:row.mode,revision:row.revision,updatedAt:date(row.updatedAt)}).where(and(eq(projectDependencyPolicies.workspaceId,ws),eq(projectDependencyPolicies.projectId,row.projectId))).returning({id:projectDependencyPolicies.projectId}));},

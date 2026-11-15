@@ -243,5 +243,23 @@
       "other": "{{count}} tasks"
     },
     "header": "{{name}} · {{count}} tasks"
+  },
+  "badges": {
+    "waitingOn": {
+      "one": "Waiting on {{count}} unfinished task",
+      "other": "Waiting on {{count}} unfinished tasks"
+    },
+    "waitingOnTask": {
+      "one": "{{title}}: waiting on {{count}} unfinished task. Open the task",
+      "other": "{{title}}: waiting on {{count}} unfinished tasks. Open the task"
+    },
+    "blocking": {
+      "one": "Blocking {{count}} unfinished task",
+      "other": "Blocking {{count}} unfinished tasks"
+    },
+    "blockingTask": {
+      "one": "{{title}}: blocking {{count}} unfinished task. Open the task",
+      "other": "{{title}}: blocking {{count}} unfinished tasks. Open the task"
+    }
   }
 }

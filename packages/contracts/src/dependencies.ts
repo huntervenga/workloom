@@ -19,6 +19,14 @@ export const graphPositionSchema=z.object({taskId:idSchema,x:z.number().finite()
 const positions=z.array(graphPositionSchema).max(DEPENDENCY_LIMITS.maxPositions).refine(v=>new Set(v.map(p=>p.taskId)).size===v.length,'Duplicate task positions.');
 export const graphLayoutSchema=z.object({workspaceId:idSchema,projectId:idSchema,membershipId:idSchema,viewKey:z.literal('default'),revision:nonnegative,positions,updatedAt:utcTimestampSchema.nullable()});
 export const dependencyGraphSchema=z.object({projectId:idSchema,rootTaskIds:uniqueIds(100),neighborDepth:z.number().int().min(0).max(2),asOfChangeSeq:z.string().regex(/^[0-9]+$/),nodes:z.array(z.object({task:taskSchema,context:dependencyTaskContextSchema,blocking:taskBlockingSummarySchema,hasOutsideDependencies:z.boolean(),outsideUnresolvedPredecessorCount:nonnegative})).max(500),edges:z.array(taskDependencySchema).max(1000)});
+/**
+ * Unfinished tasks on each side of a task's active finish-to-start dependencies: `waitingOn` counts predecessors
+ * not in a done status (as the blocking summary does), `blocking` counts successors not in a done status while the
+ * task itself is unfinished. Only tasks with a nonzero count are listed.
+ */
+export const taskDependencyCountsSchema=z.object({taskId:idSchema,waitingOn:nonnegative,blocking:nonnegative});
+export const dependencyCountsQuerySchema=z.object({taskIds:z.string().min(1).transform(v=>v.split(',')).pipe(uniqueIds(100)).transform(v=>v.sort())}).strict();
+export const dependencyCountsInputSchema=z.object({taskIds:uniqueIds(100).transform(v=>v.sort())}).strict();
 export const createTaskDependencyInputSchema=z.object({predecessorTaskId:idSchema,successorTaskId:idSchema,type:z.literal('finish_to_start'),expectedAbsent:z.literal(true)}).strict();
 export const updateTaskDependencyInputSchema=z.object({expectedRevision:revisionSchema,state:z.enum(['active','removed'])}).strict();
 export const updateDependencyPolicyInputSchema=z.object({expectedRevision:nonnegative,mode:dependencyPolicyModeSchema}).strict();
@@ -37,6 +45,7 @@ export const taskBlockingResponseSchema=envelopeSchema(taskBlockingSchema);
 export const projectDependencyPolicyResponseSchema=envelopeSchema(projectDependencyPolicySchema);
 export const dependencyGraphResponseSchema=envelopeSchema(dependencyGraphSchema);
 export const graphLayoutResponseSchema=envelopeSchema(graphLayoutSchema);
+export const dependencyCountsResponseSchema=envelopeSchema(z.array(taskDependencyCountsSchema));
 export type TaskDependencyDto=z.infer<typeof taskDependencySchema>;
 export type ProjectDependencyPolicyDto=z.infer<typeof projectDependencyPolicySchema>;
 export type DependencyPolicyMode=z.infer<typeof dependencyPolicyModeSchema>;
@@ -54,3 +63,5 @@ export type SetGraphLayoutInput=z.infer<typeof setGraphLayoutInputSchema>;
 export type TaskDependencyListQuery=z.infer<typeof taskDependencyListQuerySchema>;
 export type TaskBlockingQuery=z.infer<typeof taskBlockingQuerySchema>;
 export type DependencyGraphQuery=z.infer<typeof dependencyGraphInputSchema>;
+export type TaskDependencyCountsDto=z.infer<typeof taskDependencyCountsSchema>;
+export type DependencyCountsQuery=z.infer<typeof dependencyCountsInputSchema>;

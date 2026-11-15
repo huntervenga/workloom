@@ -34,6 +34,7 @@ const context = contracts.dependencyTaskContextSchema.parse({ project: { id: ids
 const summary = contracts.taskBlockingSummarySchema.parse({ taskId: ids.otherTask, policy: { projectId: ids.project, mode: 'warn', revision: 0 }, isBlocked: true, unresolvedCount: 1, canStart: true, canComplete: true, violatesCurrentStatus: false });
 const blocking = contracts.taskBlockingSchema.parse({ summary, blockers: [{ dependency, predecessor: task, predecessorContext: context }], asOfChangeSeq: '9007199254740993' });
 const graph = contracts.dependencyGraphSchema.parse({ projectId: ids.project, rootTaskIds: [ids.task], neighborDepth: 1, asOfChangeSeq: '9007199254740993', nodes: [{ task, context, blocking: { ...summary, taskId: ids.task }, hasOutsideDependencies: true, outsideUnresolvedPredecessorCount: 1 }], edges: [] });
+const counts = [contracts.taskDependencyCountsSchema.parse({ taskId: ids.otherTask, waitingOn: 1, blocking: 0 })];
 const layout = contracts.graphLayoutSchema.parse({ workspaceId: W, projectId: ids.project, membershipId: ids.membership, viewKey: 'default', revision: 0, positions: [], updatedAt: null });
 type Method = keyof DependencyApplication;
 interface Call { method: Method; ctx: CommandContext; args: unknown[] }
@@ -51,6 +52,7 @@ const application: DependencyApplication = {
   getTaskBlocking: record('getTaskBlocking', { data: blocking, nextCursor: CURSOR }),
   getProjectPolicy: record('getProjectPolicy', policy), updateProjectPolicy: record('updateProjectPolicy', policy),
   getGraph: record('getGraph', graph), getGraphLayout: record('getGraphLayout', layout), setGraphLayout: record('setGraphLayout', layout),
+  countDependencies: record('countDependencies', counts),
 };
 const repository: AccessRepository = {
   findUser: async id => DEMO_USERS.find(user => user.id === id) ?? null,
@@ -75,6 +77,7 @@ const routes: Route[] = [
   { method: 'GET', path: `${P}/graph`, query: `rootTaskIds=${ids.task}`, service: 'getGraph', args: [ids.project, { rootTaskIds: [ids.task], neighborDepth: 1 }], result: graph },
   { method: 'GET', path: `${P}/graph-layout`, service: 'getGraphLayout', args: [ids.project], result: layout },
   { method: 'PUT', path: `${P}/graph-layout`, input: layoutInput, service: 'setGraphLayout', args: [ids.project, layoutInput], result: layout },
+  { method: 'GET', path: '/dependencies/counts', query: `taskIds=${ids.otherTask},${ids.task}`, service: 'countDependencies', args: [{ taskIds: [ids.task, ids.otherTask].sort() }], result: counts },
 ];
 const writes = routes.filter(route => route.method !== 'GET');
 const headers = () => ({ host: HOST, origin: ORIGIN, 'idempotency-key': KEY });
@@ -86,8 +89,8 @@ afterAll(async () => { await app.close(); });
 beforeEach(() => { calls.length = 0; overrides.clear(); });
 
 describe('P4a dependency HTTP adapter', () => {
-  it('covers the exact nine application methods', () => {
-    expect(routes).toHaveLength(9);
+  it('covers the exact ten application methods', () => {
+    expect(routes).toHaveLength(10);
     expect(new Set(routes.map(route => route.service))).toEqual(new Set(Object.keys(application)));
   });
   it.each(routes)('$method $path forwards normalized input, trusted context and exact envelope', async route => {
@@ -151,6 +154,14 @@ describe('P4a dependency HTTP adapter', () => {
     `rootTaskIds=${Array.from({ length: 101 }, (_, i) => uuid(1000 + i)).join(',')}`,
   ])('rejects malformed or unbounded graph query %s', async query => {
     expect((await app.inject({ url: `${BASE}${P}/graph?${query}`, headers: headers() })).statusCode).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+  it.each([
+    '', `taskIds=`, `taskIds=${ids.task},`, `taskIds=${ids.task},${ids.task}`, `taskIds=${ids.task}&taskIds=${ids.otherTask}`,
+    `taskIds[]=${ids.task}`, `taskIds=${ids.task}&projectId=${ids.project}`, `taskIds=not-a-task`,
+    `taskIds=${Array.from({ length: 101 }, (_, i) => uuid(1000 + i)).join(',')}`,
+  ])('rejects malformed or unbounded dependency count query %s', async query => {
+    expect((await app.inject({ url: `${BASE}/dependencies/counts?${query}`, headers: headers() })).statusCode).toBe(400);
     expect(calls).toHaveLength(0);
   });
   it('accepts500 fully escaped layout positions above16KiB only on PUT layout', async () => {
