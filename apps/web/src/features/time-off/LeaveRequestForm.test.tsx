@@ -368,16 +368,48 @@ describe('bulk retrospective reason feedback',()=>{
 });
 
 describe('LeaveRequestForm drafts and validation', () => {
-  it('employee cannot set historical start dates', async () => {
+  it('employee can request today or past dates, which are sent for approval without a reason', async () => {
     const data = overview();
     data.capabilities = { canManage: false, canApprove: false, canRequest: true };
+    installFakeApi({
+      [`POST ${prefix}/preview`]: () => ok({
+        sourceVersion: 'b'.repeat(64),
+        today: '2026-10-19',
+        chargedDays: [{ date: '2026-10-15', microdays: 1_000_000, scheduledMinutes: 480 }, { date: '2026-10-16', microdays: 1_000_000, scheduledMinutes: 480 }],
+        totalMicrodays: 2_000_000,
+        unavailableMinutes: 960,
+        overlappingRequestIds: [],
+        pausesAccrual: false,
+        balancesBefore: [],
+        balancesAfter: [],
+        deficits: [],
+      }),
+    });
+    const user = userEvent.setup();
+    const { onCreate, unmount, client } = mount(data);
+    const hint = 'Requests that start today or earlier are sent to an owner or admin for approval.';
 
-    const { unmount, client } = mount(data);
-
-    // Employee should have min constraint on start date
+    // The default start (tomorrow, 2026-10-20) is an ordinary future request.
     const startInput = screen.getByLabelText('Start date');
-    // futureDate(today) = 2026-10-20
-    expect(startInput).toHaveAttribute('min', '2026-10-20');
+    expect(startInput).not.toHaveAttribute('min');
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+
+    await user.clear(startInput);
+    await user.type(startInput, '2026-10-19');
+    expect(screen.getByText(hint)).toBeVisible();
+
+    await user.clear(startInput);
+    await user.type(startInput, '2026-10-15');
+    await user.clear(screen.getByLabelText('End date (inclusive)'));
+    await user.type(screen.getByLabelText('End date (inclusive)'), '2026-10-16');
+    expect(screen.getByText(hint)).toBeVisible();
+    // Only administrators record a reason; an employee's past request just waits for approval.
+    expect(screen.queryByLabelText(/Reason \/ correction note/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Review charge' }));
+    await screen.findByRole('region', { name: 'Charge preview' });
+    await user.click(screen.getByRole('button', { name: 'Submit request' }));
+    expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ membershipId: MEMBER, typeId: VACATION, startDate: '2026-10-15', endDate: '2026-10-16', reason: '', expectedSourceVersion: 'b'.repeat(64) }));
 
     unmount();
     client.clear();
