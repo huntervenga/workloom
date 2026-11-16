@@ -1,4 +1,4 @@
-# 134 · Member time-off requests for today and past dates
+# 135 · Member time-off requests for today and past dates
 
 **What it is.** Members (role `member`) can ask for time off that starts today or earlier, for example a sick day or an emergency. Before this change the earliest date a member could pick was tomorrow, and the server rejected anything earlier with "Started and past absence days are locked." Owners and admins could already record past absences with a reason ([118](118-recording-historical-absences.md), [119](119-systemic-administrative-time-off.md)); that path is unchanged.
 
