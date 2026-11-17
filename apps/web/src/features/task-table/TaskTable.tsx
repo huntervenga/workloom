@@ -23,7 +23,7 @@ import { Badge, Button, cn } from '@workloom/ui';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import * as RowMenu from '@radix-ui/react-menu';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Copy, Flag, FolderInput, GripVertical, House, Link2, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2, TriangleAlert, UserRound } from 'lucide-react';
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, Fragment, type CSSProperties, type FocusEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { formatEstimate } from './estimate';
 import type { DateIssueInfo } from '../projects/dateConsistency';
 import { visibleTaskRows, type TaskGroup, type TaskTreeNode } from './taskTree';
@@ -201,6 +201,20 @@ export interface TaskTableProps {
  * A surrounding layout may narrow it through `--task-title-width`; the column and minimum width share it.
  */
 const titleWidth = 'var(--task-title-width,clamp(280px,32vw,460px))';
+
+/**
+ * Phone portrait (below Tailwind `sm`): the title column takes the table's visible width, keeping a
+ * narrow peek of the next column, names wrap instead of truncating, the row number and drag handle
+ * are hidden, and tapping a name opens the task instead of renaming it in place.
+ */
+export const PHONE_TABLE_QUERY = '(max-width: 39.999rem)';
+
+/** The row-number column (`w-8` plus `mr-1`) that phones do not show. */
+const PHONE_HIDDEN_ROW_NUMBER = 36;
+
+function phoneTableLayout(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia(PHONE_TABLE_QUERY).matches;
+}
 const noCustomColumns: readonly TaskTableCustomColumn[] = [];
 
 /**
@@ -288,7 +302,7 @@ const stickyEstimateClassName =
 
 /** The title cell of every row, real or draft: pinned left from `lg`. */
 const titleCellClassName =
-  'task-table-pinned-column h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]';
+  'task-table-pinned-column h-10 max-h-10 overflow-hidden whitespace-nowrap py-0 pr-1 align-middle max-sm:max-h-none max-sm:whitespace-normal max-lg:shadow-[inset_-1px_0_0_var(--color-line)] lg:sticky lg:left-0 lg:z-[1] lg:bg-surface lg:shadow-[inset_-1px_0_0_var(--color-line),8px_0_8px_-8px_rgb(15_23_42/0.18)] lg:group-hover:bg-[color-mix(in_srgb,var(--color-canvas)_70%,var(--color-surface))]';
 
 /**
  * A pinned header cell stacks above every column's resize handle (`z-[2]`): the handles of the
@@ -613,7 +627,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   </>;
   const describedBy = node.depth > 0 ? hierarchyDescriptionId : undefined;
   // The name is only as wide as its text; the free area to its right opens the task.
-  const titleClassName = cn('min-w-0 max-w-full shrink truncate px-1 py-1 text-left text-sm font-medium leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', 'rounded', finished ? 'text-muted' : 'text-ink');
+  const titleClassName = cn('min-w-0 max-w-full shrink truncate px-1 py-1 text-left text-sm font-medium leading-5 outline-none max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent', 'rounded', finished ? 'text-muted' : 'text-ink');
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPoint, setMenuPoint] = useState<{ x: number; y: number } | null>(null);
   const menuTrigger = useRef<HTMLButtonElement>(null);
@@ -646,8 +660,17 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
   };
   const drop = ctx.dropTarget?.taskId === task.id ? ctx.dropTarget.placement : undefined;
   const selected = ctx.selectedTaskIds.includes(task.id);
+  const openFromRow = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (event.detail > 0 && (!selected || event.shiftKey || event.metaKey || event.ctrlKey)) ctx.selectRow?.(task.id, event);
+    ctx.onOpenTask(task.id);
+  };
   // A pointer click on the name opens at the clicked character; keyboard activation keeps the default.
   const editTitle = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    // On a phone a tap on the name opens the task, like the free area beside it; renaming happens in the pane.
+    if (event.detail > 0 && phoneTableLayout()) {
+      openFromRow(event);
+      return;
+    }
     if (event.detail > 0 && ctx.selectRow) {
       // Asana-style: Shift/Ctrl/Cmd + click on the name only selects (a range or a toggle) and never starts editing;
       // a plain click moves the selection to this row and starts editing it.
@@ -663,7 +686,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
         data-editing={isEditing('title') ? '' : undefined}
         className={titleCellClassName}
         style={{ paddingLeft: 12, ...rowCellStyle(drop, selected) }}>
-        <div className="relative flex h-10 min-w-0 items-center gap-1">
+        <div className="relative flex h-10 min-w-0 items-center gap-1 max-sm:h-auto max-sm:min-h-10 max-sm:py-1">
           {/* Boundaries of this row for a pointer drop; hit-testing reads the whole row. */}
           <span aria-hidden="true" data-task-drop-before={task.id} className="pointer-events-none absolute inset-x-0 top-0 h-1/2" />
           <span aria-hidden="true" data-task-drop-after={task.id} className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2" />
@@ -676,14 +699,14 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
                 event.preventDefault();
                 moveBy(event.key === 'ArrowUp' ? -1 : 1);
               }}
-              className={cn('absolute -left-3 inset-y-0 z-[1] flex w-3 cursor-grab touch-none items-center justify-center rounded text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing aria-disabled:cursor-wait', rowActionClassName, ctx.draggingTaskId === task.id && 'pointer-events-auto opacity-100')}>
+              className={cn('absolute -left-3 inset-y-0 z-[1] flex w-3 cursor-grab touch-none items-center justify-center rounded text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing aria-disabled:cursor-wait max-sm:hidden', rowActionClassName, ctx.draggingTaskId === task.id && 'pointer-events-auto opacity-100')}>
               <GripVertical size={12} aria-hidden="true" />
               <span id={`${hierarchyDescriptionId}-move`} className="sr-only">{t('taskTable.move.handleHint')}</span>
             </button>
           ) : null}
           {/* Keep the title aligned while the press target fills the row height, left inset,
               hierarchy indentation and the unused disclosure space. The drag handle stays above it. */}
-          <span className="relative mr-1 h-10 w-8 shrink-0">
+          <span className="relative mr-1 h-10 w-8 shrink-0 max-sm:hidden">
             {ctx.selectRow ? <button type="button" data-task-select={task.id} aria-label={t('taskTable.selection.select', { title: task.title })} aria-pressed={selected} aria-disabled={ctx.selectionDisabled || undefined}
               style={{ width: 12 + 40 + Math.min(node.depth, 2) * 20 + (childCount === 0 ? 28 : 0) }}
               onPointerDown={event => ctx.rangeSelect?.start(task.id, event)}
@@ -715,7 +738,7 @@ function TaskRow({ node, group, ctx }: { node: TaskTreeNode; group: TableTaskGro
               <span className="flex max-w-[35%] min-w-0 shrink-0 items-center gap-1 overflow-hidden">{meta}</span>
               {/* Everything right of the name opens the task; it never wraps the row's other controls. */}
               <button type="button" data-task-open-area={task.id} aria-label={t('taskTable.taskTable.openTask', { title: task.title })} title={t('taskTable.taskTable.openDetails')}
-                onClick={event => { if (event.detail > 0 && (!selected || event.shiftKey || event.metaKey || event.ctrlKey)) ctx.selectRow?.(task.id, event); ctx.onOpenTask(task.id); }} onFocus={relayTabFromEditor}
+                onClick={openFromRow} onFocus={relayTabFromEditor}
                 className="group/open flex h-8 min-w-4 flex-1 items-center justify-end rounded px-1 text-subtle outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
                 <PanelRightOpen size={14} aria-hidden="true" className="opacity-0 transition-opacity group-hover:opacity-60 group-focus-visible/open:opacity-100" />
               </button>
@@ -834,7 +857,7 @@ function LinkedTaskRow({ row, depth, ctx, renderCell, move }: { row: TaskTableLi
   const td = (id: string, content: ReactNode, className?: string) => <td className={cn(cellClassName, ctx.columnLine(id), className)} style={cellStyle}>{content}</td>;
   const cells: Record<string, ReactNode> = {
     title: <td className={titleCellClassName} style={{ paddingLeft: 12, ...cellStyle }}>
-      <div className="relative flex h-10 min-w-0 items-center gap-1">
+      <div className="relative flex h-10 min-w-0 items-center gap-1 max-sm:h-auto max-sm:min-h-10 max-sm:py-1">
         <span aria-hidden="true" className="absolute inset-y-1.5 -left-3 w-[3px] rounded-r bg-accent" />
         {move ? <button type="button" data-linked-move-handle={row.id} aria-label={t('placements.linkedRow.moveHandle', { title: task.title })} title={move.blocked ? t('taskTable.move.wait') : t('taskTable.move.handleHint')}
           aria-disabled={move.blocked || undefined} onPointerDown={move.start}
@@ -847,11 +870,11 @@ function LinkedTaskRow({ row, depth, ctx, renderCell, move }: { row: TaskTableLi
           className={cn('absolute -left-3 inset-y-0 z-[2] flex w-3 cursor-grab touch-none items-center justify-center rounded bg-surface text-subtle outline-none focus-visible:ring-2 focus-visible:ring-accent active:cursor-grabbing aria-disabled:cursor-wait', rowActionClassName, move.dragging && 'pointer-events-auto opacity-100')}>
           <GripVertical size={12} aria-hidden="true" />
         </button> : null}
-        <span className="mr-1 flex h-10 w-8 shrink-0 items-center justify-center text-accent-ink" title={hint}><Link2 size={14} aria-hidden="true" /></span>
+        <span className="mr-1 flex h-10 w-8 shrink-0 items-center justify-center text-accent-ink max-sm:w-5" title={hint}><Link2 size={14} aria-hidden="true" /></span>
         <div className="flex min-w-0 flex-1 items-center gap-1.5" style={{ paddingLeft: Math.min(depth, 2) * 20 }}>
           <button type="button" data-linked-open={task.id} onClick={() => ctx.onOpenTask(task.id)} title={task.title}
             aria-label={t('placements.linkedRow.open', { title: task.title, project: row.homeProject.name })}
-            className="min-w-0 truncate rounded text-left outline-none hover:text-accent-ink focus-visible:ring-2 focus-visible:ring-accent">{task.title}</button>
+            className="min-w-0 truncate rounded text-left outline-none hover:text-accent-ink focus-visible:ring-2 focus-visible:ring-accent max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]">{task.title}</button>
           <span title={hint} className="inline-flex min-w-0 max-w-48 shrink items-center gap-1 rounded-full bg-surface px-1.5 py-px text-[11px] font-medium text-accent-ink ring-1 ring-inset ring-accent-line">
             <House size={11} aria-hidden="true" className="shrink-0" /><span className="truncate">{row.homeProject.name}</span>
           </span>
@@ -999,7 +1022,8 @@ function AddTaskRow({ sectionId, label, columnCount, titleInset, onCreate }: { s
   return (
     <tr className="h-10 border-t border-line">
       <td colSpan={columnCount} className="h-10 p-0">
-        <div className="sticky left-0 flex h-10 w-[min(100cqw,44rem)] max-w-full items-center pr-2" style={{ paddingLeft: titleInset }}>
+        <div className="sticky left-0 flex h-10 w-[min(100cqw,44rem)] max-w-full items-center pr-2 pl-[var(--add-task-inset)] max-sm:pl-[var(--add-task-inset-phone)]"
+          style={{ '--add-task-inset': `${titleInset}px`, '--add-task-inset-phone': `${titleInset - PHONE_HIDDEN_ROW_NUMBER}px` } as CSSProperties}>
           <button type="button" data-add-task-row={sectionId ?? ''} aria-label={label} onClick={onCreate}
             className="flex h-8 min-w-0 flex-1 items-center rounded text-left text-sm text-muted outline-none hover:bg-canvas hover:text-ink focus-visible:bg-canvas focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent">
             <span className="truncate">{t('taskTable.taskTable.addTaskRow')}</span>
@@ -1136,7 +1160,9 @@ export function TaskTable({
   // default title fills spare room; an explicit personal title width remains exact.
   const resolvedTitleWidth = widthOverride('title') === undefined
     ? `max(${titleWidth},calc(100cqw - ${otherColumnsWidth}px))` : `${widthOverride('title')}px`;
-  const minWidth = `calc(${resolvedTitleWidth} + ${otherColumnsWidth}px)`;
+  // On a phone the scroller's `--task-phone-title-width` replaces any desktop or personal title width.
+  const titleColumnWidth = `var(--task-phone-title-width,${resolvedTitleWidth})`;
+  const minWidth = `calc(${titleColumnWidth} + ${otherColumnsWidth}px)`;
   const stickyEstimate = visibleIds.at(-1) === 'estimate' && !trailingColumn;
   const columnLine = (id: string): string | undefined => {
     const index = visibleIds.indexOf(id);
@@ -1432,7 +1458,7 @@ export function TaskTable({
       {visibleIds.map(id => id === 'title' ? (
         <td key={id} className={titleCellClassName} style={{ paddingLeft: 12 }}>
           <div className="flex h-10 min-w-0 items-center gap-1">
-            <span aria-hidden="true" className="mr-1 h-8 w-8 shrink-0" />
+            <span aria-hidden="true" className="mr-1 h-8 w-8 shrink-0 max-sm:hidden" />
             <div className="flex min-w-0 flex-1 items-center gap-1" style={{ paddingLeft: Math.min(depth, 2) * 20 }}>
               <span aria-hidden="true" className="size-6 shrink-0" />
               {renderCell(id)}
@@ -1482,14 +1508,14 @@ export function TaskTable({
   })();
 
   return (
-    <div ref={scrollRef} data-task-table-scroll="" data-task-range-select={rangeSelect.active ? '' : undefined} onKeyDown={clearSelectionOnEscape} className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', rangeSelect.active && 'select-none', className)}>
+    <div ref={scrollRef} data-task-table-scroll="" data-task-range-select={rangeSelect.active ? '' : undefined} onKeyDown={clearSelectionOnEscape} className={cn('@container relative min-w-0 overflow-auto rounded-2xl border border-line bg-surface', otherColumnsWidth > 0 ? 'max-sm:[--task-phone-title-width:calc(100cqw-3rem)]' : 'max-sm:[--task-phone-title-width:100cqw]', rangeSelect.active && 'select-none', className)}>
       {selectionLimit ? <div role="status" className="fixed right-3 bottom-24 z-[70] max-w-sm rounded-lg border border-line bg-surface p-3 text-sm shadow-lg">{t('taskTable.selection.limit')}<Button size="sm" variant="ghost" onClick={() => setSelectionLimit(false)}>{t('taskTable.selection.dismiss')}</Button></div> : null}
       {drag ? <TaskDragPreview task={drag.task} pointer={drag.pointer} count={movingBlock(drag.task).length} /> : null}
       {linkedDrag ? <TaskDragPreview task={linkedDrag.task} pointer={linkedDrag.pointer} /> : null}
       <table className="w-full table-fixed border-collapse text-left text-sm" style={{ minWidth, width: minWidth }}>
         <caption className="sr-only">{caption}</caption>
-        <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? resolvedTitleWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
-        <thead ref={headerRef} className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} data-task-column={column.id} scope="col" aria-label={column.label} className={cn('relative h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && pinnedHeaderClassName('left'), column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && pinnedHeaderClassName('right'))}><span className="flex min-w-0 items-center">{column.id === 'title' ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span><ColumnResizeHandle key={`${layout.key}:${column.id}`} columnId={column.id} label={column.label} width={column.width}
+        <colgroup>{columns.map(column => <col key={column.id} style={{ width: column.id === 'title' ? titleColumnWidth : column.width }} />)}{trailingColumn ? <col style={{ width: 44 }} /> : null}</colgroup>
+        <thead ref={headerRef} className="sticky top-0 z-10 bg-surface text-xs text-muted shadow-[inset_0_-1px_0_var(--color-line)]"><tr className="h-9">{columns.map((column, index) => <th key={column.id} data-task-column={column.id} scope="col" aria-label={column.label} className={cn('relative h-9 overflow-hidden whitespace-nowrap px-3 font-medium transition-colors hover:bg-canvas hover:text-ink-soft', columnLine(column.id), column.id === 'title' && pinnedHeaderClassName('left'), column.id === 'estimate' && 'text-right', column.id === 'estimate' && index === columns.length - 1 && !trailingColumn && pinnedHeaderClassName('right'))}><span className="flex min-w-0 items-center">{column.id === 'title' ? <span aria-hidden="true" className="mr-1 w-8 shrink-0 pr-1 text-center text-[10px] text-subtle max-sm:hidden"></span> : null}<span className={cn('block truncate', column.id === 'title' && 'pl-[30px]')} title={column.label}>{column.label}</span>{column.onEdit || column.onConfigureCheck ? <Menu.Root modal={false}><Menu.Trigger asChild><button type="button" aria-label={t('genericReports.tableAggregates.editColumn', { field: column.label })} className="ml-auto rounded p-1 text-muted hover:bg-canvas focus-visible:ring-2 focus-visible:ring-accent"><ChevronDown size={12} aria-hidden="true" /></button></Menu.Trigger><Menu.Portal><Menu.Content align="end" className="z-50 min-w-40 rounded-lg border border-line bg-surface p-1 text-xs text-ink shadow-lg">{column.onEdit ? <Menu.Item onSelect={column.onEdit} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('genericReports.tableAggregates.editField')}</Menu.Item> : null}{column.onConfigureCheck ? <Menu.Item onSelect={column.onConfigureCheck} className="cursor-pointer rounded px-3 py-2 outline-none data-[highlighted]:bg-canvas">{t('planningChecks.configureField')}</Menu.Item> : null}</Menu.Content></Menu.Portal></Menu.Root> : null}</span><ColumnResizeHandle key={`${layout.key}:${column.id}`} columnId={column.id} label={column.label} width={column.width}
           onPreview={width => previewWidth(column.id, width)} onCommit={width => layout.setColumnWidth(column.id, width)} /></th>)}{trailingColumn ? <th scope="col" className="h-9 px-1 font-normal">{columnMenu}</th> : null}</tr></thead>
         {groups.length === 0 ? <tbody><tr><td colSpan={columnCount} className="px-3 py-3 text-sm text-muted">{t('taskTable.grouping.empty')}</td></tr></tbody> : null}
         {groups.map((group, index) => {

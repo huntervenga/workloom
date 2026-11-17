@@ -103,13 +103,15 @@ it('keeps Assignee grouping flat with existing parent context instead of a false
   expect(screen.queryByRole('button', { name: /subtasks of/ })).not.toBeInTheDocument();
 });
 
-it('keeps every task on one fixed-height line: long names truncate with the full name kept as tooltip and accessible name', () => {
+it('keeps every task on one fixed-height line from sm up: long names truncate with the full name kept as tooltip and accessible name', () => {
   const long = makeTask({ id: 'long', title: titles[3].repeat(3), sectionId: main.id, responsibleMembershipId: owner.id });
   render(<TaskTable tasks={[long]} sections={[main]} members={[owner]} statuses={statuses} {...handlers()} writable draftTaskIds={new Set(['long'])} />);
   const name = screen.getByRole('button', { name: long.title });
   expect(name).toHaveAttribute('title', long.title);
   expect(name.className).toContain('truncate');
-  expect(name.className).not.toContain('whitespace-normal');
+  // Only a phone (below sm) wraps the name instead of truncating it.
+  expect(name.className.split(' ')).not.toContain('whitespace-normal');
+  expect(name.className.split(' ')).toContain('max-sm:whitespace-normal');
   const row = name.closest('tr');
   if (!row) throw Error('Task row required.');
   expect(row.className).toContain('h-10');

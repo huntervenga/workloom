@@ -1290,17 +1290,19 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
 
   return (
     <div className="min-w-0 space-y-3 pb-36">
-      <header className="flex min-w-0 items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <BackToProjects href={projectsHref} />
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 title={project.name} className="min-w-0 truncate text-xl font-semibold tracking-tight text-ink">{project.name}</h1>
+      {/* On a phone the name takes a whole line and wraps; the star, dates and project actions share the next one. */}
+      <header className="flex min-w-0 items-center gap-3 max-sm:flex-wrap max-sm:gap-x-2 max-sm:gap-y-1">
+        <div className="min-w-0 flex-1 max-sm:contents">
+          <div className="max-sm:basis-full"><BackToProjects href={projectsHref} /></div>
+          <div className="flex min-w-0 items-center gap-2 max-sm:contents">
+            <h1 title={project.name} className="min-w-0 truncate text-xl font-semibold tracking-tight text-ink max-sm:basis-full max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]">{project.name}</h1>
             {project.archivedAt === null ? <FavoriteWorkButton actorId={actorId} workspaceId={workspace.id} target={{ kind: 'project', id: project.id }} /> : null}
             <ProjectDateRange actorId={actorId} workspaceId={workspace.id} project={project} writable={canEdit && project.archivedAt === null}/>
             {project.archivedAt ? <Badge tone="muted">{t('projects.projectPage.archived')}</Badge> : null}
             {project.isTemplate ? <Badge tone="muted">{t('projects.projectPage.template')}</Badge> : null}
           </div>
         </div>
+        <div className="flex shrink-0 items-center gap-3 max-sm:ml-auto max-sm:gap-2">
         {writable && metadataReady ? <ProjectCreateMenu returnFocus={sectionCreate.returnFocus} onAddTask={() => { if (grouping === 'section' && tableMode) startQuickAdd(null); else startCreate({ sectionId: null, parent: null }); }} onAddSection={startSection} /> : null}
         <ProjectActions>
             {writable && metadataReady ? <Button size="sm" variant="ghost" onClick={() => meetingController.setCreateOpen(true)}>{t('projects.projectPage.newMeeting')}</Button> : null}
@@ -1315,6 +1317,7 @@ function ProjectContent({ actorId, workspace, project, projectsHref }: ProjectCo
             {canEdit ? <ArchiveProjectButton actorId={actorId} workspaceId={workspace.id} project={project} onChanged={next => { if (next.archivedAt !== null) navigate(projectsHref); }} /> : null}
             <FieldManagerDialog onConfigurePlanningCheck={planningChecks.configureField} initialFieldId={fieldManagerInitialId ?? undefined} open={fieldManagerOpen} onOpenChange={open => { setFieldManagerOpen(open); if (!open) setFieldManagerInitialId(null); }} triggerLabel={t('projects.projectPage.teamColumns')} actorId={actorId} workspaceId={workspace.id} projectId={project.id} canManage={canManageFields} />
         </ProjectActions>
+        </div>
       </header>
       {planningChecks.dialogs}
       {bulkContinueTasks ? <BulkContinueDialog actorId={actorId} workspaceId={workspace.id} tasks={bulkContinueTasks} currentProjectId={project.id} onClose={() => setBulkContinueTasks(null)} onFinished={() => { selectionLedger.current.clear(); setSelectedTaskIds([]); }} /> : null}
