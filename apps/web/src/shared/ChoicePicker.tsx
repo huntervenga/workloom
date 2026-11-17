@@ -54,6 +54,25 @@ const MENU_MIN_HEIGHT = 120;
 const MENU_MIN_WIDTH = 224;
 const EDGE = 8;
 const GAP = 4;
+
+/**
+ * The element that fixed descendants of `element` are positioned against, or null for the viewport:
+ * the nearest ancestor with a transform, filter, containment or size container, as a translated
+ * dialog or pane has. It is measured instead of the menu itself, because iOS WebKit can still report
+ * a fixed menu's previous box right after it moves, which doubled or erased a measured correction.
+ */
+function fixedContainingBlock(element: HTMLElement): HTMLElement | null {
+  const view = element.ownerDocument.defaultView;
+  if (!view) return null;
+  const set = (value: string | undefined) => value !== undefined && value !== '' && value !== 'none' && value !== 'auto' && value !== 'normal';
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const style = view.getComputedStyle(node);
+    if ([style.transform, style.translate, style.scale, style.rotate, style.perspective, style.filter, style.backdropFilter].some(set)) return node;
+    if (/transform|translate|scale|rotate|perspective|filter/.test(style.willChange)) return node;
+    if (/layout|paint|strict|content/.test(style.contain) || /size/.test(style.containerType)) return node;
+  }
+  return null;
+}
 const TYPEAHEAD_MS = 700;
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** A theme colour token, so a status dot follows the theme like the table cell beside it. */
@@ -418,20 +437,16 @@ export function ChoicePicker({
     const placeBelow = below >= wanted || below >= above;
     const height = Math.max(Math.min(wanted, placeBelow ? below : above), Math.min(wanted, MENU_MIN_HEIGHT));
     const y = Math.max(top, Math.min(placeBelow ? anchor.bottom + GAP : anchor.top - GAP - height, bottom - height));
+    // A transformed ancestor becomes the containing block of fixed elements: place against its padding
+    // box, which scrolls with its content. The menu itself is never measured after it moves.
+    const block = fixedContainingBlock(element);
+    const origin = block?.getBoundingClientRect();
+    const dx = block && origin ? origin.left + block.clientLeft - block.scrollLeft : 0;
+    const dy = block && origin ? origin.top + block.clientTop - block.scrollTop : 0;
     element.style.maxHeight = `${height}px`;
-    element.style.left = `${x}px`;
-    element.style.top = `${y}px`;
+    element.style.left = `${x - dx}px`;
+    element.style.top = `${y - dy}px`;
     element.dataset.side = placeBelow ? 'bottom' : 'top';
-    // A transformed ancestor becomes the containing block of fixed elements; cancel its offset.
-    const actual = element.getBoundingClientRect();
-    if (actual.width > 0) {
-      const dx = actual.left - x;
-      const dy = actual.top - y;
-      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-        element.style.left = `${x - dx}px`;
-        element.style.top = `${y - dy}px`;
-      }
-    }
   }, [menu]);
 
   // Every render while open: the option list or trigger size may have changed.
