@@ -30,11 +30,9 @@ it('opens a short list as a full-width bottom sheet on a phone, placed without m
   render(<ChoicePicker label="Status" value="todo" options={statuses} onValueChange={chosen} />);
   await user.click(screen.getByRole('combobox', { name: 'Status' }));
   const sheet = menu();
+  // jsdom has no cascade: the [data-sheet] rules in styles.css place it, so no inline position is left.
   expect(sheet?.dataset.sheet).toBe('bottom');
-  expect(sheet?.style.left).toContain('8px');
-  expect(sheet?.style.right).toContain('8px');
-  expect(sheet?.style.top).toBe('auto');
-  expect(sheet?.style.bottom).toContain('safe-area-inset-bottom');
+  expect([sheet?.style.left, sheet?.style.right, sheet?.style.top, sheet?.style.bottom, sheet?.style.width, sheet?.style.maxHeight]).toEqual(['', '', '', '', '', '']);
   await user.click(screen.getByRole('option', { name: 'Done' }));
   expect(chosen).toHaveBeenCalledWith('done');
   expect(menu()).toBeNull();
@@ -46,7 +44,7 @@ it('puts a searchable list at the top on a phone, so the keyboard does not cover
   render(<ChoicePicker label="Assignee" value="" options={many} onValueChange={vi.fn()} />);
   await user.click(screen.getByRole('combobox', { name: 'Assignee' }));
   expect(menu()?.dataset.sheet).toBe('top');
-  expect(menu()?.style.top).toContain('safe-area-inset-top');
+  expect(menu()?.style.top).toBe('');
   expect(screen.getByRole('combobox', { name: 'Search: Assignee' })).toHaveFocus();
 });
 

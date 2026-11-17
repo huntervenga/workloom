@@ -418,13 +418,9 @@ export function ChoicePicker({
     const container = menu?.container;
     if (!trigger || !element || !list || !container) return;
     if (menu?.sheet) {
+      // Insets, width and height come from the [data-sheet] rules in styles.css: safe areas and dvh.
       const style = element.style;
-      style.left = 'calc(8px + env(safe-area-inset-left, 0px))';
-      style.right = 'calc(8px + env(safe-area-inset-right, 0px))';
-      style.width = 'auto';
-      style.top = menu.sheet === 'top' ? 'calc(8px + env(safe-area-inset-top, 0px))' : 'auto';
-      style.bottom = menu.sheet === 'bottom' ? 'calc(8px + env(safe-area-inset-bottom, 0px))' : 'auto';
-      style.maxHeight = menu.sheet === 'top' ? `min(${MENU_MAX_HEIGHT}px, 45dvh)` : `min(${MENU_MAX_HEIGHT}px, 60dvh)`;
+      style.left = style.right = style.top = style.bottom = style.width = style.maxHeight = '';
       element.dataset.side = menu.sheet;
       element.dataset.sheet = menu.sheet;
       return;
