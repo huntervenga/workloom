@@ -6,7 +6,7 @@
       "items": [
         "On a phone, the task list gives the Task column the width of the screen: names wrap onto several lines, the row number and drag handle are hidden, and tapping a name opens the task. Swipe left to see the other columns.",
         "On a phone, the project name gets a line of its own instead of being cut to a few letters.",
-        "On a phone, lists such as Status, Priority and Assignee open across the bottom of the screen, or across the top when they have a search box, so they never open off-screen.",
+        "On a phone, lists such as Status, Priority and Assignee open right under the field you tap, above it when there is no room below, and stay on screen.",
         "On phones and tablets, text fields use a larger font, so the iPhone no longer zooms the page in when you start typing."
       ]
     },

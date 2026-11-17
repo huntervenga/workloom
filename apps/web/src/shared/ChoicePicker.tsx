@@ -54,31 +54,6 @@ const MENU_MIN_HEIGHT = 120;
 const MENU_MIN_WIDTH = 224;
 const EDGE = 8;
 const GAP = 4;
-/**
- * Phone portrait: the menu is a full-width sheet placed by CSS alone (bottom, or top when it searches,
- * so the keyboard never covers it). Installed iPhone apps were seen to misplace a menu positioned from
- * measured coordinates, so a sheet measures nothing.
- */
-const SHEET_QUERY = '(max-width: 39.999rem)';
-type Sheet = 'top' | 'bottom' | null;
-
-/**
- * Whether `element` or an ancestor positions fixed descendants against itself instead of the viewport
- * (transform, translate, filter, containment…), as a centered dialog does. A sheet there would follow
- * the dialog's box and its scrolling, so the measured placement is kept instead.
- */
-function anchorsFixed(element: HTMLElement): boolean {
-  const view = element.ownerDocument.defaultView;
-  if (!view) return false;
-  const set = (value: string | undefined) => value !== undefined && value !== '' && value !== 'none' && value !== 'auto' && value !== 'normal';
-  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
-    const style = view.getComputedStyle(node);
-    if ([style.transform, style.translate, style.scale, style.rotate, style.perspective, style.filter, style.backdropFilter].some(set)) return true;
-    if (/transform|translate|scale|rotate|perspective|filter/.test(style.willChange)) return true;
-    if (/layout|paint|strict|content/.test(style.contain) || /size/.test(style.containerType)) return true;
-  }
-  return false;
-}
 const TYPEAHEAD_MS = 700;
 const HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 /** A theme colour token, so a status dot follows the theme like the table cell beside it. */
@@ -200,7 +175,7 @@ export function ChoicePicker({
   const keyboardClickRef = useRef(false);
   const typeaheadRef = useRef({ text: '', at: 0 });
   // Search mode and container are fixed when the menu opens, so later option loads never move focus.
-  const [menu, setMenu] = useState<{ container: HTMLElement; search: boolean; sheet: Sheet } | null>(null);
+  const [menu, setMenu] = useState<{ container: HTMLElement; search: boolean } | null>(null);
   const [query, setQuery] = useState('');
   const [activeValue, setActiveValue] = useState<string | null>(null);
   const open = menu !== null;
@@ -246,10 +221,7 @@ export function ChoicePicker({
           : start === 'last'
             ? pool.at(-1)?.value
             : (pool.find((option) => option.value === value) ?? pool[0])?.value;
-    const view = trigger.ownerDocument.defaultView;
-    const container = trigger.closest<HTMLElement>(MODAL) ?? trigger.ownerDocument.body;
-    const phone = typeof view?.matchMedia === 'function' && view.matchMedia(SHEET_QUERY).matches && !anchorsFixed(container);
-    setMenu({ container, search, sheet: phone ? (search ? 'top' : 'bottom') : null });
+    setMenu({ container: trigger.closest<HTMLElement>(MODAL) ?? trigger.ownerDocument.body, search });
     setQuery(search ? seed : '');
     setActiveValue(initial ?? null);
   };
@@ -417,14 +389,6 @@ export function ChoicePicker({
     const list = listRef.current;
     const container = menu?.container;
     if (!trigger || !element || !list || !container) return;
-    if (menu?.sheet) {
-      // Insets, width and height come from the [data-sheet] rules in styles.css: safe areas and dvh.
-      const style = element.style;
-      style.left = style.right = style.top = style.bottom = style.width = style.maxHeight = '';
-      element.dataset.side = menu.sheet;
-      element.dataset.sheet = menu.sheet;
-      return;
-    }
     const doc = trigger.ownerDocument;
     const view = doc.defaultView ?? window;
     const viewport = view.visualViewport;

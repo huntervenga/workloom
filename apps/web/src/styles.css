@@ -196,24 +196,3 @@
     input, textarea, select, [contenteditable]:not([contenteditable="false"]) { font-size: max(1rem, 1em); }
   }
 }
-
-/*
- * Phone sheet of a choice picker (ChoicePicker place() sets data-sheet): inset from the screen edges
- * and safe areas, at the bottom, or at the top when it has a search box so the keyboard leaves it in
- * view. Unlayered, so it wins over the menu's fixed top-0/left-0 utilities. 320px is MENU_MAX_HEIGHT.
- */
-[data-choice-picker-menu][data-sheet] {
-  left: calc(8px + env(safe-area-inset-left, 0px));
-  right: calc(8px + env(safe-area-inset-right, 0px));
-  width: auto;
-}
-[data-choice-picker-menu][data-sheet="bottom"] {
-  top: auto;
-  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-  max-height: min(320px, 60dvh);
-}
-[data-choice-picker-menu][data-sheet="top"] {
-  top: calc(8px + env(safe-area-inset-top, 0px));
-  bottom: auto;
-  max-height: min(320px, 45dvh);
-}
