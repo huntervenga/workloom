@@ -126,6 +126,8 @@ export interface TaskFieldsProps {
   projectName?: string | undefined;
   /** Independently saved project placements of an existing canonical task. */
   projectsField?: ReactNode;
+  /** Who asked for the task (set by the client that created it); shown read-only when present. */
+  requestedBy?: string | null;
   /** Asana-style Projects block: receives the section picker of the home project, which then sits in the project's own row. */
   projectsSection?: ((homeSectionPicker: ReactNode) => ReactNode) | undefined;
   /** Read-only history beneath the estimate, outside the disabled editable controls. */
@@ -179,6 +181,7 @@ export function TaskFields({
   projectName,
   projectsField,
   projectsSection,
+  requestedBy,
   estimateSupplement,
   disabled = false,
   onCommit,
@@ -533,6 +536,10 @@ export function TaskFields({
               ) : draft.tagIds.length === 0 ? <span className="text-sm text-muted">{t('tasks.taskFields.noTagsYet')}</span> : null}
               {tagAction}
             </dd>
+            {requestedBy ? <>
+              <dt className={rowLabel}>{t('tasks.taskFields.requestedBy')}</dt>
+              <dd className="flex min-h-8 min-w-0 items-center text-sm [overflow-wrap:anywhere] text-ink-soft">{requestedBy}</dd>
+            </> : null}
             <dt className={rowLabel}>{participantsLabel??t('tasks.taskFields.participants')}</dt>
             <dd className="min-w-0"><TaskParticipantPicker members={members} value={draft.participantMembershipIds} retainedIds={unavailableParticipantIds} disabled={disabled}
               onChange={participantMembershipIds => choose({ participantMembershipIds })} /></dd>

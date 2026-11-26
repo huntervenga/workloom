@@ -196,6 +196,7 @@ curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&
     <tr><td><code>tags</code></td><td>string[]</td><td>Optional. Existing tags, by name or UUID. Up to 20.</td></tr>
     <tr><td><code>estimateMinutes</code></td><td>integer | null</td><td>Optional work estimate.</td></tr>
     <tr><td><code>parentTask</code></td><td>UUID | null</td><td>Optional. Makes this a subtask.</td></tr>
+    <tr><td><code>requestedBy</code></td><td>string | null</td><td>Optional. Who asks for the task, for example the assistant or project that creates it: up to 200 characters, no commas. Shown on the task; <code>PATCH</code> changes it and <code>null</code> clears it. List by it to find the tasks you asked for.</td></tr>
   </tbody>
 </table>
 
@@ -230,6 +231,8 @@ curl -s -X PATCH "$WORKLOOM_URL/api/public/v1/workspaces/acme/tasks/&lt;task-id&
     <tr><td><code>assignee</code></td><td><code>me</code>, <code>none</code> (unassigned), a name or ID. Matches the responsible person or a participant.</td></tr>
     <tr><td><code>q</code></td><td>Text in the title or description.</td></tr>
     <tr><td><code>dueBefore</code>, <code>dueAfter</code></td><td>Inclusive dates, <code>YYYY-MM-DD</code>.</td></tr>
+    <tr><td><code>requestedBy</code></td><td>Tasks asked for by one of these requesters, ignoring case.</td></tr>
+    <tr><td><code>updatedAfter</code></td><td>Only tasks changed after this moment, ISO 8601 UTC (<code>2026-11-14T10:00:00Z</code>), for example with <code>statusGroup=done</code> to see what was closed since your last check. Take the moment from the server, not your clock: the newest <code>updatedAt</code> you received. Read every page, step back a minute (a slow write can commit with an earlier time) and skip the task ids and revisions you have already handled.</td></tr>
     <tr><td><code>includeArchived</code></td><td><code>true</code> to include archived tasks and projects.</td></tr>
     <tr><td><code>sort</code></td><td><code>updated</code> (default, newest first), <code>created</code> (newest first) or <code>due</code> (earliest first, undated last).</td></tr>
     <tr><td><code>limit</code>, <code>cursor</code></td><td>Page size 1–200 (default 50). When <code>meta.nextCursor</code> is not null pass it back as <code>cursor</code> with the same filters.</td></tr>
@@ -307,7 +310,7 @@ codex</code></pre>
     <tr><td><code>get_project</code></td><td>read</td><td>Sections and statuses of a project (name or UUID).</td></tr>
     <tr><td><code>list_members</code></td><td>read</td><td>People you can assign.</td></tr>
     <tr><td><code>list_tags</code></td><td>read</td><td>Tags.</td></tr>
-    <tr><td><code>list_tasks</code></td><td>read</td><td>Filter by <code>project[]</code>, <code>section[]</code>, <code>status[]</code>, <code>statusGroup[]</code>, <code>assignee[]</code> (<code>"me"</code>), <code>tag[]</code>, <code>q</code>, <code>dueBefore</code>, <code>dueAfter</code>, <code>open</code>, <code>sort</code>, <code>limit</code>, <code>cursor</code>, <code>includeFields</code>. Returns <code>tasks</code> and <code>nextCursor</code>.</td></tr>
+    <tr><td><code>list_tasks</code></td><td>read</td><td>Filter by <code>project[]</code>, <code>section[]</code>, <code>status[]</code>, <code>statusGroup[]</code>, <code>assignee[]</code> (<code>"me"</code>), <code>tag[]</code>, <code>requestedBy[]</code>, <code>updatedAfter</code>, <code>q</code>, <code>dueBefore</code>, <code>dueAfter</code>, <code>open</code>, <code>sort</code>, <code>limit</code>, <code>cursor</code>, <code>includeFields</code>. Returns <code>tasks</code> and <code>nextCursor</code>.</td></tr>
     <tr><td><code>get_task</code></td><td>read</td><td>One task by ID, with its custom field values.</td></tr>
     <tr><td><code>list_fields</code></td><td>read</td><td>Custom fields of a project (for example Estimation and Fact).</td></tr>
     <tr><td><code>time_summary</code></td><td>read</td><td>Per person: Estimation and Fact totals and the expected hours of the range. See <a href="#fields">Custom fields and time</a>.</td></tr>

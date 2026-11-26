@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { idSchema } from './common/ids.js';
 import { sqlCalendarDateSchema } from './common/sql-date.js';
 import { taskFieldTypeSchema } from './fields.js';
-import { minutesSchema, taskPrioritySchema, taskStatusGroupSchema, utcTimestampSchema } from './tasks.js';
+import { minutesSchema, taskPrioritySchema, taskRequestedBySchema, taskStatusGroupSchema, utcTimestampSchema } from './tasks.js';
 import { workspaceRoleSchema } from './workspaces.js';
 
 /**
@@ -72,6 +72,7 @@ export const publicTaskCreateSchema = z.strictObject({
   tags: refList(20).optional(),
   estimateMinutes: minutesSchema.nullable().optional(),
   parentTask: idSchema.nullable().optional(),
+  requestedBy: taskRequestedBySchema.nullable().optional().describe('Who asks for the task, for example your project or assistant name, so they can be told when it changes.'),
 });
 export const publicTaskUpdateSchema = z.strictObject({
   title: title.optional(),
@@ -85,6 +86,7 @@ export const publicTaskUpdateSchema = z.strictObject({
   priority: taskPrioritySchema.optional(),
   tags: refList(20).optional(),
   estimateMinutes: minutesSchema.nullable().optional(),
+  requestedBy: taskRequestedBySchema.nullable().optional(),
   /** Optional optimistic-concurrency guard; without it the supplied fields are applied to the current task. */
   ifRevision: z.number().int().positive().optional(),
 }).refine(input => Object.keys(input).some(key => key !== 'ifRevision' && (input as Record<string, unknown>)[key] !== undefined), 'Send at least one field to change.');
@@ -139,9 +141,13 @@ export const publicTaskListQuerySchema = z.strictObject({
   statusGroup: csv(4).pipe(z.array(taskStatusGroupSchema)).optional(),
   assignee: csv(20).optional(),
   tag: csv(20).optional(),
+  /** Exact requesters, ignoring case. */
+  requestedBy: csv(20).optional(),
   q: z.string().trim().min(1).max(200).optional(),
   dueBefore: date.optional(),
   dueAfter: date.optional(),
+  /** Only tasks changed after this moment (ISO 8601 UTC), for example since the last check. */
+  updatedAfter: utcTimestampSchema.optional(),
   open: bool.optional(),
   includeArchived: bool.optional(),
   sort: z.enum(['updated', 'due', 'created']).default('updated'),
@@ -311,6 +317,8 @@ export const taskViewSchema = z.object({
   startDate: z.string().nullable(),
   dueDate: z.string().nullable(),
   estimateMinutes: z.number().int().nullable(),
+  /** Who asked for the task. Absent in results saved before it existed. */
+  requestedBy: z.string().nullable().optional(),
   tags: z.array(z.object({ id: idSchema, name: z.string() })),
   parentTaskId: idSchema.nullable(),
   revision: z.number().int().positive(),
@@ -410,6 +418,8 @@ export const MCP_TOOL_INPUTS = {
     statusGroup: z.array(taskStatusGroupSchema).max(4).optional(),
     assignee: z.array(ref).max(20).optional().describe('Use "me" for the caller, "none" for unassigned, or a name/membership id.'),
     tag: z.array(ref).max(20).optional(), q: z.string().trim().min(1).max(200).optional(),
+    requestedBy: z.array(ref).max(20).optional().describe('Tasks whose requestedBy is one of these, ignoring case.'),
+    updatedAfter: utcTimestampSchema.optional().describe('Only tasks changed after this moment (ISO 8601 UTC), for example the time of your last check.'),
     dueBefore: date.optional(), dueAfter: date.optional(), open: z.boolean().optional(), includeArchived: z.boolean().optional(),
     sort: z.enum(['updated', 'due', 'created']).optional(), limit: z.number().int().min(1).max(50).optional(), cursor: z.string().max(2048).optional(),
     includeFields: z.boolean().optional().describe('Add custom field values such as Estimation and Fact to every task.'),
