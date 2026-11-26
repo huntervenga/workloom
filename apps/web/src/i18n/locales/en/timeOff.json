@@ -104,6 +104,8 @@
   "cancelRequest": "Cancel request",
   "pastLocked": "Past days are locked. An administrator can record a correction with a reason.",
   "futureTailOnly": "The request has started. You can shorten its future portion; started and past days stay unchanged.",
+  "retroactiveRequestHint": "Requests that start today or earlier are sent to an owner or admin for approval.",
+  "startedPendingHint": "An owner or admin still needs to approve this request. You can cancel it while it waits; days that have started can't be changed.",
   "approve": "Approve",
   "reject": "Reject",
   "profilePerson": "Person settings",
